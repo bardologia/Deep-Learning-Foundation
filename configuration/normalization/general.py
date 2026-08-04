@@ -120,21 +120,21 @@ class Presets:
 
 
 _SLOT_STRATEGIES: dict[str, ChannelStrategy] = {
-    "chan/mag"        : Presets.ROBUST_IQR_LOG1P,
-    "chan/raw_re_im"  : Presets.ZSCORE,
-    "chan/norm_re_im" : Presets.ZSCORE,
-    "chan/phase"      : Presets.ZSCORE,
+    "chan/mag"           : Presets.ROBUST_IQR_LOG1P,
+    "chan/raw_re_im"     : Presets.ZSCORE,
+    "chan/norm_re_im"    : Presets.ZSCORE,
+    "chan/phase"         : Presets.ZSCORE,
 
-    "derived/mag"         : Presets.ROBUST_IQR_LOG1P,
-    "derived/raw_re_im"   : Presets.ZSCORE,
-    "derived/norm_re_im"  : Presets.ZSCORE,
-    "derived/phase"       : Presets.FIXED_DIV_PI,
+    "derived/mag"        : Presets.ROBUST_IQR_LOG1P,
+    "derived/raw_re_im"  : Presets.ZSCORE,
+    "derived/norm_re_im" : Presets.ZSCORE,
+    "derived/phase"      : Presets.FIXED_DIV_PI,
 
-    "out/amp"         : Presets.ROBUST_IQR_LOG1P,
-    "out/mu"          : Presets.ZSCORE,
-    "out/sigma"       : Presets.ROBUST_IQR_LOG1P,
+    "out/amp"            : Presets.ROBUST_IQR_LOG1P,
+    "out/mu"             : Presets.ZSCORE,
+    "out/sigma"          : Presets.ROBUST_IQR_LOG1P,
 
-    "aux/value"   : Presets.ZSCORE,
+    "aux/value"          : Presets.ZSCORE,
 }
 
 
