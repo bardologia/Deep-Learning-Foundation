@@ -138,38 +138,24 @@ def test_compute_loss_runs_on_tiny_batch():
     assert torch.isfinite(out["total_loss"])
 
 
-def test_compute_loss_embedding_path_ignores_kz():
-    trainer = make_trainer_shim()
-    images  = torch.randn(2, 2, SPATIAL, SPATIAL)
-    gt      = torch.rand(2, N_GAUSSIANS * 3, SPATIAL, SPATIAL)
-    kz      = torch.rand(2, 4, SPATIAL, SPATIAL)
-
-    out = trainer._compute_loss((images, gt, kz))
-
-    assert torch.isfinite(out["total_loss"])
-
-
-def test_compute_loss_param_path_forwards_kz():
+def test_compute_loss_param_path_calls_the_criterion():
     trainer             = make_trainer_shim()
     trainer.has_profile = False
 
     captured = {}
 
-    def criterion(pred, gt, kz_map):
-        captured["kz_map"] = kz_map
+    def criterion(pred, gt):
+        captured["gt"] = gt
         return {"total_loss": torch.zeros(())}
 
     trainer.criterion = criterion
 
     images = torch.randn(2, 2, SPATIAL, SPATIAL)
     gt     = torch.rand(2, N_GAUSSIANS * 3, SPATIAL, SPATIAL)
-    kz     = torch.rand(2, 4, SPATIAL, SPATIAL)
-
-    trainer._compute_loss((images, gt, kz))
-    assert torch.equal(captured["kz_map"], kz)
 
     trainer._compute_loss((images, gt))
-    assert captured["kz_map"] is None
+
+    assert torch.equal(captured["gt"], gt)
 
 
 def test_optimizer_step_updates_online_branch():
