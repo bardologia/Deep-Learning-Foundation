@@ -49,10 +49,10 @@ class ErfComputation:
         rr, cc = np.meshgrid(coords, coords, indexing="ij")
         weight = grad / grad.sum()
 
-        var_az = float((weight * (rr - center) ** 2).sum())
-        var_rg = float((weight * (cc - center) ** 2).sum())
+        var_row = float((weight * (rr - center) ** 2).sum())
+        var_col = float((weight * (cc - center) ** 2).sum())
 
-        return math.sqrt(var_az), math.sqrt(var_rg)
+        return math.sqrt(var_row), math.sqrt(var_col)
 
     def mass_profile(self, grad: np.ndarray) -> dict[int, float]:
         center = self.window // 2
@@ -68,14 +68,14 @@ class ErfComputation:
 
 class ReceptiveFieldPlots(PlotBase):
 
-    def erf_map(self, grad: np.ndarray, sigma_az: float, sigma_rg: float, path: Path) -> Path:
+    def erf_map(self, grad: np.ndarray, sigma_row: float, sigma_col: float, path: Path) -> Path:
         display = np.log10(grad / grad.max() + 1e-12)
 
         return self._imshow_figure(
             display,
-            x_label        = "Range offset [px]",
-            y_label        = "Azimuth offset [px]",
-            title          = f"Effective receptive field (log10, σ_az {sigma_az:.1f} px, σ_rg {sigma_rg:.1f} px)",
+            x_label        = "Col offset [px]",
+            y_label        = "Row offset [px]",
+            title          = f"Effective receptive field (log10, σ_row {sigma_row:.1f} px, σ_col {sigma_col:.1f} px)",
             cmap           = self._cmap_with_bad("inferno"),
             vmin           = -6.0,
             vmax           = 0.0,
@@ -108,27 +108,27 @@ class RunReceptiveField(AnalysisRun):
     def _batch_size(self) -> int:
         return 1
 
-    def _write_summary(self, run, centers, sigma_az: float, sigma_rg: float, masses: dict[int, float]) -> Path:
+    def _write_summary(self, run, centers, sigma_row: float, sigma_col: float, masses: dict[int, float]) -> Path:
         payload = {
             "backbone"        : run.backbone_name,
             "checkpoint"      : self.config.checkpoint_name,
             "split"           : self.config.split,
             "window"          : self.config.window,
-            "probes"          : [[az, rg] for az, rg in centers],
-            "sigma_az_px"     : sigma_az,
-            "sigma_rg_px"     : sigma_rg,
+            "probes"          : [[row, col] for row, col in centers],
+            "sigma_az_px"     : sigma_row,
+            "sigma_rg_px"     : sigma_col,
             "mass_by_window"  : {str(w): mass for w, mass in sorted(masses.items())},
         }
 
         return FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
-    def _write_report(self, run, sigma_az: float, sigma_rg: float, masses: dict[int, float], figure_paths: dict[str, Path]) -> Path:
+    def _write_report(self, run, sigma_row: float, sigma_col: float, masses: dict[int, float], figure_paths: dict[str, Path]) -> Path:
         doc = MarkdownDoc(title=f"Effective receptive field: {run.backbone_name}")
-        doc.paragraph(f"Measured on the '{self.config.split}' split with {self.config.n_azimuth_probes * self.config.n_range_probes} probe pixels and a {self.config.window}px window: gradient of the centre-pixel output magnitude with respect to the input window, averaged over probes.")
+        doc.paragraph(f"Measured on the '{self.config.split}' split with {self.config.n_row_probes * self.config.n_col_probes} probe pixels and a {self.config.window}px window: gradient of the centre-pixel output magnitude with respect to the input window, averaged over probes.")
 
         doc.kv_table({
-            "ERF sigma azimuth" : f"{sigma_az:.2f} px",
-            "ERF sigma range"   : f"{sigma_rg:.2f} px",
+            "ERF sigma row" : f"{sigma_row:.2f} px",
+            "ERF sigma col" : f"{sigma_col:.2f} px",
         })
 
         table    = MarkdownTable(("Window", "Mass inside", "Marginal"))
@@ -149,29 +149,29 @@ class RunReceptiveField(AnalysisRun):
 
         run     = self._load_run()
         probes  = ProbeWindows(run, self.config.window)
-        centers = probes.centers(self.config.n_azimuth_probes, self.config.n_range_probes)
+        centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
 
         erf  = ErfComputation(run.model.module, self.config.window, self.config.mass_windows)
         grad = erf.gradient_map(windows)
 
-        sigma_az, sigma_rg = erf.sigma(grad)
+        sigma_row, sigma_col = erf.sigma(grad)
         masses             = erf.mass_profile(grad)
 
         np.save(self.output_dir / self.GRAD_FILENAME, grad.astype(np.float32))
 
         plots        = ReceptiveFieldPlots()
         figure_paths = {
-            "erf_map"    : plots.erf_map(grad, sigma_az, sigma_rg, self.output_dir / "erf_map.png"),
+            "erf_map"    : plots.erf_map(grad, sigma_row, sigma_col, self.output_dir / "erf_map.png"),
             "mass_curve" : plots.mass_curve(masses, self.output_dir / "mass_curve.png"),
         }
 
-        self._write_summary(run, centers, sigma_az, sigma_rg, masses)
-        report_path = self._write_report(run, sigma_az, sigma_rg, masses, figure_paths)
+        self._write_summary(run, centers, sigma_row, sigma_col, masses)
+        report_path = self._write_report(run, sigma_row, sigma_col, masses, figure_paths)
 
-        self.logger.ok(f"{self.run_dir.name}: ERF σ az {sigma_az:.2f} px, rg {sigma_rg:.2f} px -> {report_path}")
+        self.logger.ok(f"{self.run_dir.name}: ERF σ row {sigma_row:.2f} px, col {sigma_col:.2f} px -> {report_path}")
 
-        return {"sigma_az": sigma_az, "sigma_rg": sigma_rg, "masses": masses, "report": report_path}
+        return {"sigma_row": sigma_row, "sigma_col": sigma_col, "masses": masses, "report": report_path}
 
 
 class ReceptiveFieldBatch(RunBatch):

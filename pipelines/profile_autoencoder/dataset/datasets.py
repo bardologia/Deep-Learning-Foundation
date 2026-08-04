@@ -15,7 +15,7 @@ class ProfileDataset(Dataset):
     def __init__(
         self,
         param_arrays    : list[np.ndarray],
-        x_axis          : np.ndarray,
+        z_axis          : np.ndarray,
         n_gaussians     : int,
         split_name      : str,
         amp_zero_thr    : float,
@@ -26,7 +26,7 @@ class ProfileDataset(Dataset):
         augmenter       : Optional[ProfileAugmenter]  = None,
         logger          : Optional[Logger] = None,
     ) -> None:
-        self.x_axis      = np.asarray(x_axis, dtype=np.float32)
+        self.z_axis      = np.asarray(z_axis, dtype=np.float32)
         self.n_gaussians = int(n_gaussians)
         self.split_name  = split_name
         self.normalizer  = normalizer
@@ -62,7 +62,7 @@ class ProfileDataset(Dataset):
         empty_idx  = np.flatnonzero(~active)
 
         if len(active_idx) == 0:
-            raise ValueError(f"Split '{self.split_name}' holds no pixel with an amplitude above amp_zero_thr={amp_zero_thr}; lower the threshold or pick a split region that carries scatterers.")
+            raise ValueError(f"Split '{self.split_name}' holds no pixel with an amplitude above amp_zero_thr={amp_zero_thr}; lower the threshold or pick a split region that carries components.")
 
         if 0.0 < pixel_subsample < 1.0:
             keep       = max(1, int(round(len(active_idx) * pixel_subsample)))
@@ -84,7 +84,7 @@ class ProfileDataset(Dataset):
             "Total pixels"   : int(self.amps.shape[0]),
             "Active pixels"  : self.n_active,
             "Kept pixels"    : int(self.index.shape[0]),
-            "Profile length" : int(self.x_axis.shape[0]),
+            "Profile length" : int(self.z_axis.shape[0]),
             "Gaussians"      : self.n_gaussians,
         })
 
@@ -94,7 +94,7 @@ class ProfileDataset(Dataset):
     def __getitem__(self, i: int):
         idx   = self.index[i]
         curve = GaussianMixture.evaluate_batch(
-            self.x_axis,
+            self.z_axis,
             self.amps[idx:idx + 1],
             self.mus[idx:idx + 1],
             self.sigs[idx:idx + 1],

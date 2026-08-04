@@ -14,14 +14,14 @@ class SeedDisagreementPlots(PlotBase):
 
     CMAP = "inferno"
 
-    def map_figure(self, data: np.ndarray, title: str, colorbar_label: str, az_offset: int, rg_offset: int, path: Path) -> Path:
+    def map_figure(self, data: np.ndarray, title: str, colorbar_label: str, row_offset: int, col_offset: int, path: Path) -> Path:
         H, W   = data.shape
-        extent = [rg_offset, rg_offset + W, az_offset + H, az_offset]
+        extent = [col_offset, col_offset + W, row_offset + H, row_offset]
 
         return self._imshow_figure(
             np.asarray(data, dtype=np.float64),
-            x_label        = "Range [px]",
-            y_label        = "Azimuth [px]",
+            x_label        = "Col [px]",
+            y_label        = "Row [px]",
             title          = title,
             cmap           = self._cmap_with_bad(self.CMAP),
             extent         = extent,
@@ -152,10 +152,10 @@ class SeedDisagreementMaps:
     MIN_ACTIVE   = 2
 
     MAP_TITLES = {
-        "seed_std_profile" : "Across-seed std of the reconstructed profile (mean over elevation)",
+        "seed_std_profile" : "Across-seed std of the reconstructed profile (mean over z)",
         "seed_std_amp"     : "Across-seed std of predicted amplitude (GT-matched slots)",
-        "seed_std_mu"      : "Across-seed std of predicted mu (GT-matched slots, metres)",
-        "seed_std_sigma"   : "Across-seed std of predicted sigma (GT-matched slots, metres)",
+        "seed_std_mu"      : "Across-seed std of predicted mu (GT-matched slots, z units)",
+        "seed_std_sigma"   : "Across-seed std of predicted sigma (GT-matched slots, z units)",
     }
 
     def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], cubes_subdir: str, metrics_filename: str, output_dir: Path, logger) -> None:
@@ -189,19 +189,19 @@ class SeedDisagreementMaps:
         if "split_region" not in metrics:
             raise KeyError(f"{self.inference_dirs[0] / self.metrics_filename} has no split_region; re-run inference to regenerate it")
 
-        az_start, _az_end, rg_start, _rg_end = (int(v) for v in metrics["split_region"])
-        return az_start, rg_start
+        row_start, _az_end, col_start, _rg_end = (int(v) for v in metrics["split_region"])
+        return row_start, col_start
 
     def _profile_map(self) -> np.ndarray:
         curves             = self._open_cubes(self.PROFILE_CUBE)
-        n_elev, n_az, n_rg = curves[0].shape
+        n_z, n_rows, n_cols = curves[0].shape
 
-        acc = np.zeros((n_az, n_rg), dtype=np.float64)
-        for e in range(n_elev):
+        acc = np.zeros((n_rows, n_cols), dtype=np.float64)
+        for e in range(n_z):
             stack = np.stack([np.asarray(cube[e], dtype=np.float64) for cube in curves])
             acc  += stack.std(axis=0, ddof=1)
 
-        return (acc / n_elev).astype(np.float32)
+        return (acc / n_z).astype(np.float32)
 
     def _masked_std(self, values: np.ndarray, active: np.ndarray) -> np.ndarray:
         n    = active.sum(axis=0)
@@ -222,11 +222,11 @@ class SeedDisagreementMaps:
 
     def _param_maps(self) -> dict[str, np.ndarray]:
         aligned          = self._aligned_params()
-        n_ch, n_az, n_rg = aligned[0].shape
+        n_ch, n_rows, n_cols = aligned[0].shape
         n_k              = n_ch // 3
 
-        sums   = {field: np.zeros((n_az, n_rg), dtype=np.float64) for field in ("amp", "mu", "sigma")}
-        counts = {field: np.zeros((n_az, n_rg), dtype=np.int32)   for field in ("amp", "mu", "sigma")}
+        sums   = {field: np.zeros((n_rows, n_cols), dtype=np.float64) for field in ("amp", "mu", "sigma")}
+        counts = {field: np.zeros((n_rows, n_cols), dtype=np.int32)   for field in ("amp", "mu", "sigma")}
 
         for k in range(n_k):
             stacks = {
@@ -279,7 +279,7 @@ class SeedDisagreementMaps:
         return summary
 
     def _render_figures(self, maps: dict[str, np.ndarray]) -> dict[str, Path]:
-        az_offset, rg_offset = self._offsets()
+        row_offset, col_offset = self._offsets()
         plots                = SeedDisagreementPlots()
 
         figures = {}
@@ -288,8 +288,8 @@ class SeedDisagreementMaps:
                 data,
                 title          = self.MAP_TITLES[name],
                 colorbar_label = "Across-seed std",
-                az_offset      = az_offset,
-                rg_offset      = rg_offset,
+                row_offset     = row_offset,
+                col_offset     = col_offset,
                 path           = self.figures_dir / f"{name}.png",
             )
 
@@ -321,13 +321,13 @@ class SeedDisagreementMaps:
         for cube_dir in self.cube_dirs:
             np.save(cube_dir / "label_suspect.npy", mask)
 
-        az_offset, rg_offset    = self._offsets()
+        row_offset, col_offset    = self._offsets()
         figures["label_suspect"] = SeedDisagreementPlots().map_figure(
             mask.astype(np.float64),
             title          = "Label suspects: seeds agree with each other, not with the label",
             colorbar_label = "Suspect",
-            az_offset      = az_offset,
-            rg_offset      = rg_offset,
+            row_offset     = row_offset,
+            col_offset     = col_offset,
             path           = self.figures_dir / "label_suspect.png",
         )
 

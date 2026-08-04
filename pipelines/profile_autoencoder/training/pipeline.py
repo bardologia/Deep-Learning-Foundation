@@ -28,8 +28,8 @@ class TrainingPipeline(AutoencoderTrainingPipeline):
         trainer_config.inherit_shared_from(base)
         return trainer_config
 
-    def _build_model(self, x_len: int, config):
-        config.profile_length = x_len
+    def _build_model(self, z_len: int, config):
+        config.profile_length = z_len
         model, _ = get_profile_autoencoder(self.ae_model_name, config)
         return model
 
@@ -61,15 +61,15 @@ class TrainingPipeline(AutoencoderTrainingPipeline):
         profile_config   = self._profile_dataset_config()
         dataset_pipeline = ProfileDatasetPipeline(profile_config, run_directory, logger=logger, seed=self.entry.seed)
 
-        (train_loader, val_loader, test_loader), datasets, x_axis, x_len, _normalizer = dataset_pipeline.run()
+        (train_loader, val_loader, test_loader), datasets, z_axis, z_len, _normalizer = dataset_pipeline.run()
 
-        return train_loader, val_loader, test_loader, x_axis, x_len, datasets, (profile_config, x_len)
+        return train_loader, val_loader, test_loader, z_axis, z_len, datasets, (profile_config, z_len)
 
-    def _save_metadata(self, run_meta, profile_config: ProfileDatasetConfig, x_len: int) -> None:
+    def _save_metadata(self, run_meta, profile_config: ProfileDatasetConfig, z_len: int) -> None:
         run_meta.save_trainer_config()
         ProfileAutoencoderConfigIO.save(self.autoencoder_cfg, self.ae_model_name, run_meta.metadata_directory)
         ProfileDatasetConfigIO.save(profile_config, run_meta.metadata_directory)
-        run_meta.save_run_summary("profile_ae", in_channels=x_len, out_channels=self.autoencoder_cfg.embedding_dim, x_axis_length=x_len, seed=self.entry.seed)
+        run_meta.save_run_summary("profile_ae", in_channels=z_len, out_channels=self.autoencoder_cfg.embedding_dim, x_axis_length=z_len, seed=self.entry.seed)
 
 
 class SingleTrainRunner(EntryConfigTrainRunner):

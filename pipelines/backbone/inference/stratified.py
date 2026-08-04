@@ -30,16 +30,16 @@ class StratifiedErrors:
         if self.loaded.complex_inputs is not None:
             out["primary_amplitude"] = (np.abs(self.loaded.complex_inputs[0]).astype(np.float64), False)
 
-        dem = self.loaded.dataset.dem
-        if dem is not None:
-            grad_az, grad_rg = np.gradient(np.asarray(dem, dtype=np.float64))
-            out["dem_slope"]  = (np.hypot(grad_az, grad_rg), False)
+        aux = self.loaded.dataset.aux
+        if aux is not None:
+            grad_row, grad_col = np.gradient(np.asarray(aux, dtype=np.float64))
+            out["aux_gradient"]  = (np.hypot(grad_row, grad_col), False)
 
         if self.result.label_r2 is not None:
             out["label_r2"] = (np.asarray(self.result.label_r2, dtype=np.float64), False)
 
         if not out:
-            raise ValueError("No covariate is available for error stratification; the run holds neither GT params, inputs, DEM nor a label-quality map")
+            raise ValueError("No covariate is available for error stratification; the run holds neither GT params, inputs, Aux nor a label-quality map")
 
         return out
 

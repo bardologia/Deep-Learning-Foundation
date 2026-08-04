@@ -11,7 +11,7 @@ from tools.runtime.run_tag import RunTag
 
 class Detacher:
 
-    ENV_FLAG = "TOMOSAR_DETACHED"
+    ENV_FLAG = "MLTEMPLATE_DETACHED"
     FLAGS    = ("--detach", "--nohup")
 
     def __init__(self, log_dir: str = "logs") -> None:

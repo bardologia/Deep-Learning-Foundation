@@ -71,62 +71,62 @@ class Animator:
         self.logger.subsection(f"max frames per GIF             : {max_frames}")
         self.logger.subsection(f"CPU workers for rendering      : {num_workers if num_workers is not None else 'auto'} \n")
 
-    def _build_axis(self, axis: str, cubes: tuple, x_axis: np.ndarray, az_offset: int, rg_offset: int) -> dict:
-        N_elev, az, rg = cubes[0].shape
+    def _build_axis(self, axis: str, cubes: tuple, z_axis: np.ndarray, row_offset: int, col_offset: int) -> dict:
+        N_z, row, col = cubes[0].shape
         sort_idx = None
 
-        if axis in ("range", "azimuth"):
-            sort_idx = np.argsort(x_axis)
-            x_axis   = x_axis[sort_idx]
+        if axis in ("col", "row"):
+            sort_idx = np.argsort(z_axis)
+            z_axis   = z_axis[sort_idx]
 
-        if axis == "elevation":
+        if axis == "z":
             return dict(
-                n_total   = N_elev,
-                get_slice = lambda i: self._slice_elevation(cubes, i),
-                extent    = [rg_offset, rg_offset + rg, az_offset + az, az_offset],
-                x_label   = "range index",
-                y_label   = "azimuth index",
-                title_fn  = lambda i: f"elevation = {x_axis[i]:.2f} m  (idx {i}/{N_elev - 1})",
+                n_total   = N_z,
+                get_slice = lambda i: self._slice_z(cubes, i),
+                extent    = [col_offset, col_offset + col, row_offset + row, row_offset],
+                x_label   = "col index",
+                y_label   = "row index",
+                title_fn  = lambda i: f"z = {z_axis[i]:.2f} m  (idx {i}/{N_z - 1})",
                 origin    = "upper",
             )
 
-        if axis == "range":
+        if axis == "col":
             return dict(
-                n_total   = rg,
-                get_slice = lambda i: self._slice_range(cubes, sort_idx, i),
-                extent    = [az_offset, az_offset + az, float(x_axis[0]), float(x_axis[-1])],
-                x_label   = "azimuth index",
-                y_label   = "elevation [m]",
-                title_fn  = lambda i: f"range = {i + rg_offset}",
+                n_total   = col,
+                get_slice = lambda i: self._slice_col(cubes, sort_idx, i),
+                extent    = [row_offset, row_offset + row, float(z_axis[0]), float(z_axis[-1])],
+                x_label   = "row index",
+                y_label   = "z",
+                title_fn  = lambda i: f"col = {i + col_offset}",
                 origin    = "lower",
             )
 
-        if axis == "azimuth":
+        if axis == "row":
             return dict(
-                n_total   = az,
-                get_slice = lambda i: self._slice_azimuth(cubes, sort_idx, i),
-                extent    = [rg_offset, rg_offset + rg, float(x_axis[0]), float(x_axis[-1])],
-                x_label   = "range index",
-                y_label   = "elevation [m]",
-                title_fn  = lambda i: f"azimuth = {i + az_offset}",
+                n_total   = row,
+                get_slice = lambda i: self._slice_row(cubes, sort_idx, i),
+                extent    = [col_offset, col_offset + col, float(z_axis[0]), float(z_axis[-1])],
+                x_label   = "col index",
+                y_label   = "z",
+                title_fn  = lambda i: f"row = {i + row_offset}",
                 origin    = "lower",
             )
 
-        raise ValueError(f"axis must be elevation|range|azimuth, got {axis!r}")
+        raise ValueError(f"axis must be z|col|row, got {axis!r}")
 
     @staticmethod
-    def _slice_elevation(cubes: tuple, i: int) -> tuple:
+    def _slice_z(cubes: tuple, i: int) -> tuple:
         return tuple(cube[i] if cube is not None else None for cube in cubes)
 
     @staticmethod
-    def _slice_range(cubes: tuple, sort_idx: np.ndarray | None, i: int) -> tuple:
+    def _slice_col(cubes: tuple, sort_idx: np.ndarray | None, i: int) -> tuple:
         slices = tuple(cube[:, :, i] if cube is not None else None for cube in cubes)
         if sort_idx is not None:
             slices = tuple(s[sort_idx] if s is not None else None for s in slices)
         return slices
 
     @staticmethod
-    def _slice_azimuth(cubes: tuple, sort_idx: np.ndarray | None, i: int) -> tuple:
+    def _slice_row(cubes: tuple, sort_idx: np.ndarray | None, i: int) -> tuple:
         slices = tuple(cube[:, i, :] if cube is not None else None for cube in cubes)
         if sort_idx is not None:
             slices = tuple(s[sort_idx] if s is not None else None for s in slices)
@@ -163,7 +163,7 @@ class Animator:
 
         panels = []
         if spec.full is not None:
-            panels.append((spec.full, "Full tomogram (raw)", spec.cmap, spec.vmin, spec.vmax))
+            panels.append((spec.full, "Full cube (raw)", spec.cmap, spec.vmin, spec.vmax))
 
         panels += [
             (g,  "GT (Gaussian)", spec.cmap,     spec.vmin, spec.vmax),
@@ -215,9 +215,9 @@ class Animator:
 
         for frame_order, fi in enumerate(frame_indices):
             i    = int(fi)
-            slc  = get_slice(i)
-            p, g = slc[0], slc[1]
-            f    = slc[2] if has_full else None
+            parts = get_slice(i)
+            p, g = parts[0], parts[1]
+            f    = parts[2] if has_full else None
 
             yield FrameSpec(
                 frame_order = frame_order,
@@ -245,10 +245,10 @@ class Animator:
         axis      : str,
         out_path  : Path,
         *,
-        x_axis    : np.ndarray,
-        az_offset : int,
-        rg_offset : int,
-        full_cube : np.ndarray | None = None,
+        z_axis     : np.ndarray,
+        row_offset : int,
+        col_offset : int,
+        full_cube  : np.ndarray | None = None,
     ) -> Path:
         plt.rcParams.update(Plotter.SCIENTIFIC_RC)
         plt.rcParams.update(Plotter.REPORT_RC)
@@ -256,7 +256,7 @@ class Animator:
         plt.rcParams["savefig.dpi"] = self.dpi
 
         cubes     = (pred_cube, gt_cube) if full_cube is None else (pred_cube, gt_cube, full_cube)
-        spec      = self._build_axis(axis, cubes, x_axis, az_offset, rg_offset)
+        spec      = self._build_axis(axis, cubes, z_axis, row_offset, col_offset)
         n_total   = spec["n_total"]
         get_slice = spec["get_slice"]
 

@@ -15,7 +15,7 @@ class PeakInitialiser:
         list(self._pool.map(abs, range(n_workers)))
 
     @staticmethod
-    def _prominence_worker(raw_chunk : np.ndarray, height_axis : np.ndarray, K : int, sigma_guess : float, min_dist : int, prominence_frac : float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _prominence_worker(raw_chunk : np.ndarray, z_axis : np.ndarray, K : int, sigma_guess : float, min_dist : int, prominence_frac : float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         chunk_N, H = raw_chunk.shape
         amps = np.zeros((chunk_N, K), dtype=np.float32)
         mus  = np.zeros((chunk_N, K), dtype=np.float32)
@@ -58,14 +58,14 @@ class PeakInitialiser:
 
             for g, idx in enumerate(idxs[:K]):
                 amps[n, g] = max(float(raw[idx]), 1e-10)
-                mus [n, g] = float(height_axis[idx])
+                mus [n, g] = float(z_axis[idx])
 
         return amps, mus, sigs
 
-    def run(self, prof_raw : np.ndarray, height_axis : np.ndarray, K : int, prominence_frac : float = 0.05, sigma_divisor : float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def run(self, prof_raw : np.ndarray, z_axis : np.ndarray, K : int, prominence_frac : float = 0.05, sigma_divisor : float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         N, H        = prof_raw.shape
-        h_span      = float(height_axis[-1] - height_axis[0])
-        dh          = float(height_axis[1] - height_axis[0])
+        h_span      = float(z_axis[-1] - z_axis[0])
+        dh          = float(z_axis[1] - z_axis[0])
         sigma_base  = max(2.0 * dh, h_span / (8.0 * K))
         sigma_guess = sigma_base / max(float(sigma_divisor), 1e-6)
         min_dist    = max(1, int(sigma_base / dh))
@@ -76,7 +76,7 @@ class PeakInitialiser:
 
         worker_fn  = partial(
             self._prominence_worker,
-            height_axis     = height_axis,
+            z_axis          = z_axis,
             K               = K,
             sigma_guess     = sigma_guess,
             min_dist        = min_dist,

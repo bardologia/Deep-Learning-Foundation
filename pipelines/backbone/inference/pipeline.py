@@ -98,22 +98,22 @@ class InferencePipeline:
         n_slices = max(1, min(n_slices, n_total))
         return np.unique(np.linspace(n_total * 0.1, n_total * 0.9, n_slices).round().astype(int))
 
-    def _compute_slice_indices(self, cfg: InferenceConfig, n_elev: int, n_az: int, n_rg: int) -> dict:
+    def _compute_slice_indices(self, cfg: InferenceConfig, n_z: int, n_rows: int, n_cols: int) -> dict:
         return {
-            "slice_elev_idx"  : self._equal_indices(n_elev, cfg.n_elevation_slices),
-            "slice_range_idx" : self._equal_indices(n_rg,   cfg.n_range_slices),
-            "slice_az_idx"    : self._equal_indices(n_az,   cfg.n_azimuth_slices),
-            "all_elev_idx"    : np.arange(n_elev),
-            "all_range_idx"   : np.arange(n_rg),
-            "all_az_idx"      : np.arange(n_az),
+            "slice_z_idx"   : self._equal_indices(n_z, cfg.n_z_slices),
+            "slice_col_idx" : self._equal_indices(n_cols,   cfg.n_col_slices),
+            "slice_row_idx" : self._equal_indices(n_rows,   cfg.n_row_slices),
+            "all_z_idx"     : np.arange(n_z),
+            "all_col_idx"   : np.arange(n_cols),
+            "all_row_idx"   : np.arange(n_rows),
         }
 
-    def _evaluate_metrics(self, result, x_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict) -> dict:
-        global_metrics = Metrics(result, x_axis_np, run.n_gaussians).compute(
-            elev_indices  = indices["all_elev_idx"],
-            range_indices = indices["all_range_idx"],
-            az_indices    = indices["all_az_idx"],
-            param_space   = self.components.param_space,
+    def _evaluate_metrics(self, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict) -> dict:
+        global_metrics = Metrics(result, z_axis_np, run.n_gaussians).compute(
+            z_indices   = indices["all_z_idx"],
+            col_indices = indices["all_col_idx"],
+            row_indices = indices["all_row_idx"],
+            param_space = self.components.param_space,
         )
 
         global_metrics["split"]        = run.split_name
@@ -131,8 +131,8 @@ class InferencePipeline:
         global_metrics.update(evaluator.run())
         Metrics.write_json(global_metrics, meta.metrics_path)
 
-    def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, x_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
-        r2_map, stats = Metrics(result, x_axis_np, run.n_gaussians).label_quality(run.full_curves)
+    def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
+        r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians).label_quality(run.full_curves)
 
         result.label_r2 = r2_map
         global_metrics["label_quality_status"] = "computed"
@@ -258,12 +258,12 @@ class InferencePipeline:
         if "clamp_amp_ceil_frac" in stats:
             logger.subsection(f"Clamp hits  : amp ceil {stats['clamp_amp_ceil_frac'] * 100.0:.2f}%, sigma floor {stats['clamp_sigma_floor_frac'] * 100.0:.2f}%, mu at axis edge {stats['clamp_mu_edge_frac'] * 100.0:.2f}%")
 
-    def _compose_figures(self, composer: FigureComposer, result, run, global_metrics: dict, x_axis_np: np.ndarray, indices: dict) -> Dict[str, List[Path]]:
+    def _compose_figures(self, composer: FigureComposer, result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict) -> Dict[str, List[Path]]:
         return composer.compose(
             result         = result,
             run            = run,
             global_metrics = global_metrics,
-            x_axis_np      = x_axis_np,
+            z_axis_np      = z_axis_np,
             indices        = indices,
             param_space    = self.components.param_space,
         )
@@ -273,7 +273,7 @@ class InferencePipeline:
         meta           : InferenceMetadata,
         run,
         cfg            : InferenceConfig,
-        x_axis_np      : np.ndarray,
+        z_axis_np      : np.ndarray,
         global_metrics : dict,
         figure_paths   : Dict[str, List[Path]],
         gif_paths      : Dict[str, Path],
@@ -281,7 +281,7 @@ class InferencePipeline:
 
         return Report(
             output_dir       = meta.output_dir,
-            run_summary      = ReportPayloadBuilder.run_summary(run, x_axis_np),
+            run_summary      = ReportPayloadBuilder.run_summary(run, z_axis_np),
             inference_config = ReportPayloadBuilder.inference_config(cfg, run),
             checkpoint_meta  = run.checkpoint_meta,
             global_metrics   = global_metrics,
@@ -297,16 +297,16 @@ class InferencePipeline:
         run    = self._load_run(cfg, logger)
         result = self._predict(cfg, meta, run, logger)
 
-        x_axis_np         = np.asarray(run.x_axis, dtype=np.float64)
-        _N_elev, _az, _rg = result.pred_curves.shape
+        z_axis_np         = np.asarray(run.z_axis, dtype=np.float64)
+        _N_z, _row, _col = result.pred_curves.shape
 
         logger.section("[Inference: Metrics]")
-        indices        = self._compute_slice_indices(cfg, _N_elev, _az, _rg)
-        global_metrics = self._evaluate_metrics(result, x_axis_np, run, meta, indices)
+        indices        = self._compute_slice_indices(cfg, _N_z, _row, _col)
+        global_metrics = self._evaluate_metrics(result, z_axis_np, run, meta, indices)
         logger.subsection(f"Global metrics written : {meta.metrics_path}")
 
         self._evaluate_embeddings(meta, run, global_metrics, logger)
-        self._evaluate_label_quality(cfg, meta, run, result, x_axis_np, global_metrics, logger)
+        self._evaluate_label_quality(cfg, meta, run, result, z_axis_np, global_metrics, logger)
         self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)
         self._stratify_errors(cfg, meta, run, result, global_metrics, logger)
         self._classify_failures(cfg, meta, run, result, global_metrics, logger)
@@ -321,13 +321,13 @@ class InferencePipeline:
 
             if cfg.save_plots:
                 logger.section("[Inference: Plots]")
-                figure_paths = self._compose_figures(composer, result, run, global_metrics, x_axis_np, indices)
+                figure_paths = self._compose_figures(composer, result, run, global_metrics, z_axis_np, indices)
             else:
                 logger.section("[Inference: Plots skipped]")
 
             if cfg.save_animations:
                 logger.section("[Inference: Animations]")
-                gif_paths = composer.animate(result, run, x_axis_np)
+                gif_paths = composer.animate(result, run, z_axis_np)
             else:
                 logger.section("[Inference: Animations skipped]")
         else:
@@ -338,7 +338,7 @@ class InferencePipeline:
             meta           = meta,
             run            = run,
             cfg            = cfg,
-            x_axis_np      = x_axis_np,
+            z_axis_np      = z_axis_np,
             global_metrics = global_metrics,
             figure_paths   = figure_paths,
             gif_paths      = gif_paths,

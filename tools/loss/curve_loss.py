@@ -49,8 +49,8 @@ class MomentLoss:
         return (values * mask).sum() / mask.sum().clamp(min=1.0)
 
     @staticmethod
-    def moment_sums(curves: torch.Tensor, x_axis: torch.Tensor, dx: float) -> tuple:
-        x = x_axis.reshape(1, -1, 1, 1)
+    def moment_sums(curves: torch.Tensor, z_axis: torch.Tensor, dx: float) -> tuple:
+        x = z_axis.reshape(1, -1, 1, 1)
 
         s0 = curves.sum(dim=1) * dx
         s1 = (curves * x).sum(dim=1) * dx
@@ -69,11 +69,11 @@ class MomentLoss:
         return MomentLoss.masked_mean(rel, mask)
 
     @staticmethod
-    def moments(pred: torch.Tensor, target: torch.Tensor, x_axis: torch.Tensor, dx: float, floor: float, weights: tuple) -> torch.Tensor:
-        p0, p1, p2 = MomentLoss.moment_sums(pred,   x_axis, dx)
-        t0, t1, t2 = MomentLoss.moment_sums(target, x_axis, dx)
+    def moments(pred: torch.Tensor, target: torch.Tensor, z_axis: torch.Tensor, dx: float, floor: float, weights: tuple) -> torch.Tensor:
+        p0, p1, p2 = MomentLoss.moment_sums(pred,   z_axis, dx)
+        t0, t1, t2 = MomentLoss.moment_sums(target, z_axis, dx)
 
-        x_range = float(x_axis[-1] - x_axis[0])
+        x_range = float(z_axis[-1] - z_axis[0])
         mask    = (t0 > floor).to(pred.dtype)
 
         p0c = p0.clamp(min=floor)

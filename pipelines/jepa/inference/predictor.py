@@ -12,7 +12,7 @@ class JepaCurvePredictor(Predictor):
     def _forward_pass(self):
         run = self.run
         n_K = run.n_gaussians
-        x   = np.asarray(run.x_axis, dtype=np.float32).reshape(1, 1, -1, 1, 1)
+        x   = np.asarray(run.z_axis, dtype=np.float32).reshape(1, 1, -1, 1, 1)
 
         all_indices : list = []
         all_pred    : list = []
@@ -43,9 +43,9 @@ class JepaCurvePredictor(Predictor):
         return all_indices, all_pred, all_gt
 
     def _stitch_curves(self, all_indices, all_pred, all_gt):
-        n_elev  = self.run.x_axis_length
-        pred_st = self._create_stitcher(n_elev, "pred_curves")
-        gt_st   = self._create_stitcher(n_elev, "gt_curves")
+        n_z     = self.run.x_axis_length
+        pred_st = self._create_stitcher(n_z, "pred_curves")
+        gt_st   = self._create_stitcher(n_z, "gt_curves")
 
         for batch_indices, pc, gc in zip(all_indices, all_pred, all_gt):
             for b, idx in enumerate(batch_indices):
@@ -89,8 +89,8 @@ class JepaCurvePredictor(Predictor):
             pixel_cosine       = pixel_cos,
             pixel_peak_err_idx = pixel_peak_idx,
             cube_directory     = self.cube_dir,
-            azimuth_offset     = self.run.split_region.azimuth_start,
-            range_offset       = self.run.split_region.range_start,
+            row_offset         = self.run.split_region.row_start,
+            col_offset         = self.run.split_region.col_start,
         )
 
     def run_inference(self) -> Result:

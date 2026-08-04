@@ -34,7 +34,7 @@ class MetadataWriter:
         payload["preprocessing_run_directory"] = str(config.preprocessing_run_directory)
         payload["input_config"]                = config.input_config.as_dict()
         payload["output_config"]               = config.output_config.as_dict()
-        payload.pop("x_axis", None)
+        payload.pop("z_axis", None)
 
         return FileIO.save_json(payload, out_path)
 

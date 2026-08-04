@@ -56,11 +56,11 @@ class ExtractionPlanResolver:
             output_prefix = self.entry_config.output_prefix,
             output_suffix = self.entry_config.output_suffix,
 
-            height_range = self.entry_config.height_range,
+            z_range = self.entry_config.z_range,
 
             fit_settings = FitSettings(fit_config=fit_config),
 
-            range_batch_size     = self.entry_config.range_batch_size,
+            col_batch_size       = self.entry_config.col_batch_size,
             gpu_pixel_batch_size = self.entry_config.gpu_pixel_batch_size,
             adam_steps           = self.entry_config.adam_steps,
             adam_lr              = self.entry_config.adam_lr,

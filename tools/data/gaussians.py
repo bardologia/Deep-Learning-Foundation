@@ -28,9 +28,9 @@ class GaussianMixture:
         return amp * np.exp(expon)
 
     @classmethod
-    def evaluate_batch(cls, height_axis: np.ndarray, amps: np.ndarray, mus: np.ndarray, sigs: np.ndarray) -> np.ndarray:
-        pred = np.zeros((amps.shape[0], height_axis.shape[0]), dtype=np.float32)
-        h    = height_axis[None, :]
+    def evaluate_batch(cls, z_axis: np.ndarray, amps: np.ndarray, mus: np.ndarray, sigs: np.ndarray) -> np.ndarray:
+        pred = np.zeros((amps.shape[0], z_axis.shape[0]), dtype=np.float32)
+        h    = z_axis[None, :]
 
         for g in range(amps.shape[1]):
             pred += cls.kernel(amps[:, g:g + 1], mus[:, g:g + 1], sigs[:, g:g + 1], h)
@@ -47,12 +47,12 @@ class GaussianMixture:
         return reconstructed
 
     @classmethod
-    def evaluate_pixel(cls, params: np.ndarray, height_axis: np.ndarray, n_gaussians: int) -> tuple:
+    def evaluate_pixel(cls, params: np.ndarray, z_axis: np.ndarray, n_gaussians: int) -> tuple:
         components = []
-        total      = np.zeros_like(height_axis, dtype=np.float64)
+        total      = np.zeros_like(z_axis, dtype=np.float64)
 
         for k in range(n_gaussians):
-            comp = cls.kernel(float(params[3 * k]), float(params[3 * k + 1]), float(params[3 * k + 2]), height_axis)
+            comp = cls.kernel(float(params[3 * k]), float(params[3 * k + 1]), float(params[3 * k + 2]), z_axis)
             components.append(comp)
             total += comp
 
@@ -71,13 +71,13 @@ class GaussianReconstructor:
         return out.astype(np.float32)
 
     @staticmethod
-    def components(params: np.ndarray, x_axis: np.ndarray, n_gaussians: int) -> List[np.ndarray]:
-        return [GaussianMixture.kernel(float(params[3 * k]), float(params[3 * k + 1]), float(params[3 * k + 2]), x_axis) for k in range(n_gaussians)]
+    def components(params: np.ndarray, z_axis: np.ndarray, n_gaussians: int) -> List[np.ndarray]:
+        return [GaussianMixture.kernel(float(params[3 * k]), float(params[3 * k + 1]), float(params[3 * k + 2]), z_axis) for k in range(n_gaussians)]
 
 
 class GaussianCurve:
     @staticmethod
-    def reconstruct(params: torch.Tensor, x_axis: torch.Tensor, ppg: int = 3) -> torch.Tensor:
+    def reconstruct(params: torch.Tensor, z_axis: torch.Tensor, ppg: int = 3) -> torch.Tensor:
         B, C, H, W = params.shape
 
         if C % ppg != 0:
@@ -89,7 +89,7 @@ class GaussianCurve:
         a   = p[:, :, 0, :, :]
         mu  = p[:, :, 1, :, :]
         sig = p[:, :, 2, :, :]
-        x   = x_axis.reshape(1, -1, 1, 1)
+        x   = z_axis.reshape(1, -1, 1, 1)
 
         curves = torch.zeros((B, x.shape[1], H, W), dtype=params.dtype, device=params.device)
 
@@ -108,8 +108,8 @@ class GaussianCurve:
 class GaussianSlotSorter:
     @staticmethod
     def by_mean(parameters_array: np.ndarray, n_gaussians: int, activity_threshold: float) -> np.ndarray:
-        n_params, azimuth, range_ = parameters_array.shape
-        reshaped                  = parameters_array.reshape(n_gaussians, 3, azimuth, range_)
+        n_params, n_row, n_col = parameters_array.shape
+        reshaped               = parameters_array.reshape(n_gaussians, 3, n_row, n_col)
 
         amps = reshaped[:, 0, :, :]
         mus  = reshaped[:, 1, :, :]
@@ -118,7 +118,7 @@ class GaussianSlotSorter:
         order     = np.argsort(sort_keys, axis=0)
         ordered   = np.take_along_axis(reshaped, order[:, np.newaxis, :, :], axis=0)
 
-        return ordered.reshape(n_params, azimuth, range_)
+        return ordered.reshape(n_params, n_row, n_col)
 
 
 class GaussianHead:
@@ -131,14 +131,14 @@ class GaussianClamp:
     @staticmethod
     def apply(
         params      : torch.Tensor,
-        x_axis      : torch.Tensor,
+        z_axis      : torch.Tensor,
         amp_max     : float,
         ppg         : int   = 3,
         leaky_slope : float = 0.0,
     ) -> torch.Tensor:
-        x_min   = x_axis.min()
-        x_max   = x_axis.max()
-        x_step  = (x_max - x_min) / (x_axis.shape[0] - 1)
+        x_min   = z_axis.min()
+        x_max   = z_axis.max()
+        x_step  = (x_max - x_min) / (z_axis.shape[0] - 1)
         x_range = x_max - x_min
         n_gauss = params.shape[1] // ppg
         slices  = []

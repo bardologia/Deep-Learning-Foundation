@@ -14,9 +14,9 @@ class GaussianConfig:
 
     @classmethod
     def from_dataset(cls, dataset_dir: str | Path, parameters_path: str | Path) -> "GaussianConfig":
-        meta_dir     = Path(dataset_dir) / "meta"
-        cfg          = json.loads((meta_dir / "config_state.json").read_text())
-        height_range = cfg["tomogram_config"]["height_range"]
+        meta_dir = Path(dataset_dir) / "meta"
+        cfg      = json.loads((meta_dir / "config_state.json").read_text())
+        z_range  = cfg["cube_config"]["z_range"]
 
         extraction_meta_path = Path(parameters_path).parent / "param_extraction_meta.json"
 
@@ -27,6 +27,6 @@ class GaussianConfig:
 
         return cls(
             n_default_gaussians = int(extraction["k_max"]),
-            x_min               = float(height_range[0]),
-            x_max               = float(height_range[1]),
+            x_min               = float(z_range[0]),
+            x_max               = float(z_range[1]),
         )

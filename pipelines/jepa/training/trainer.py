@@ -25,7 +25,7 @@ class Trainer(BaseTrainer):
     stage_name    = "JEPA"
     section_title = "[JEPA Predictor Training]"
 
-    def __init__(self, model: JepaModule, backbone_cfg, x_axis, config, run_dir, logger, norm_stats, profile_normalizer):
+    def __init__(self, model: JepaModule, backbone_cfg, z_axis, config, run_dir, logger, norm_stats, profile_normalizer):
         self.backbone_cfg       = backbone_cfg
         self.gaussian_cfg       = config.gaussian
         self.norm_stats         = norm_stats
@@ -43,7 +43,7 @@ class Trainer(BaseTrainer):
             self.profile_mode.apply(model.profile_autoencoder)
             self.validate_coupling(self.profile_mode, config.target_provider, config.embedding_loss, model.profile_autoencoder)
 
-        super().__init__(model, config, run_dir, logger, x_axis)
+        super().__init__(model, config, run_dir, logger, z_axis)
 
     @staticmethod
     def validate_coupling(profile_mode: CouplingMode, target_provider: str, embedding_cfg, autoencoder) -> None:
@@ -69,9 +69,9 @@ class Trainer(BaseTrainer):
     def _build_criterion(self):
         if self.has_profile:
             target_provider = TargetProvider(self.config.target_provider)
-            return EmbeddingLoss(self.model.profile_autoencoder, target_provider, self.config.embedding_loss, self.x_axis, self.norm_stats, self.gaussian_cfg.params_per_gaussian, self.profile_normalizer)
+            return EmbeddingLoss(self.model.profile_autoencoder, target_provider, self.config.embedding_loss, self.z_axis, self.norm_stats, self.gaussian_cfg.params_per_gaussian, self.profile_normalizer)
 
-        return ParameterLoss(self.x_axis, self.logger, self.tracker, self.gaussian_cfg, self.config.param_loss, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses)
+        return ParameterLoss(self.z_axis, self.logger, self.tracker, self.gaussian_cfg, self.config.param_loss, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses)
 
     def _set_train_mode(self):
         self.model.backbone.train()

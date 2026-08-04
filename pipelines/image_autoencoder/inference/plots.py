@@ -25,9 +25,9 @@ class ImageAePlots(AePlotsBase):
         cmap       = self._cmap_with_bad(self.INTENSITY_CMAP)
         err_cmap   = self._cmap_with_bad(self.ERROR_CMAP)
 
-        gt_path   = self._imshow_figure(gt,    x_label="range (px)", y_label="azimuth (px)", title=f"{label} #{rank + 1}  ground truth (ch 0)", cmap=cmap,     vmin=vmin, vmax=vmax, colorbar_label="intensity",     path=Path(f"{stem}_gt.png"))
-        pred_path = self._imshow_figure(pred,  x_label="range (px)", y_label="azimuth (px)", title=f"{label} #{rank + 1}  reconstruction (ch 0)", cmap=cmap,   vmin=vmin, vmax=vmax, colorbar_label="intensity",     path=Path(f"{stem}_recon.png"))
-        err_path  = self._imshow_figure(error, x_label="range (px)", y_label="azimuth (px)", title=f"{label} #{rank + 1}  abs error  (MSE = {mse:.4g})", cmap=err_cmap, colorbar_label="absolute error", path=Path(f"{stem}_error.png"))
+        gt_path   = self._imshow_figure(gt,    x_label="col (px)", y_label="row (px)", title=f"{label} #{rank + 1}  ground truth (ch 0)", cmap=cmap,     vmin=vmin, vmax=vmax, colorbar_label="intensity",     path=Path(f"{stem}_gt.png"))
+        pred_path = self._imshow_figure(pred,  x_label="col (px)", y_label="row (px)", title=f"{label} #{rank + 1}  reconstruction (ch 0)", cmap=cmap,   vmin=vmin, vmax=vmax, colorbar_label="intensity",     path=Path(f"{stem}_recon.png"))
+        err_path  = self._imshow_figure(error, x_label="col (px)", y_label="row (px)", title=f"{label} #{rank + 1}  abs error  (MSE = {mse:.4g})", cmap=err_cmap, colorbar_label="absolute error", path=Path(f"{stem}_error.png"))
 
         return [gt_path, pred_path, err_path]
 

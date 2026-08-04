@@ -257,14 +257,14 @@ class ParamPlotter(PlotTools):
         params_gt   : np.ndarray,
         n_gaussians : int,
         out_dir     : Path,
-        az_offset   : int,
-        rg_offset   : int,
+        row_offset  : int,
+        col_offset  : int,
         assignment  : Optional[np.ndarray] = None,
     ) -> List[Path]:
 
         aligned = self.alignment.of(params_pred, params_gt, n_gaussians, assignment)
         H, W    = params_pred.shape[-2:]
-        extent  = [rg_offset, rg_offset + W, az_offset + H, az_offset]
+        extent  = [col_offset, col_offset + W, row_offset + H, row_offset]
         paths   = []
 
         for k in range(n_gaussians):
@@ -287,8 +287,8 @@ class ParamPlotter(PlotTools):
                 paths.append(self._imshow_panel(
                     data       = err,
                     title      = f"|Δ{short}| — GT g{k + 1}  (matched, p99={vmax:.3g})",
-                    x_label    = "range index",
-                    y_label    = "azimuth index",
+                    x_label    = "col index",
+                    y_label    = "row index",
                     cbar_label = f"|Δ{short}|",
                     extent     = extent,
                     cmap       = self.err_cmap,

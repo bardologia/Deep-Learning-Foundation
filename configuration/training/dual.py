@@ -22,18 +22,18 @@ def _parity_resunet_features() -> list[int]:
 
 
 def _default_dual_routing_trials() -> dict:
-    full   = ["pass", "ifg"]
-    passes = ["pass"]
-    ifg    = ["ifg"]
+    full    = ["chan", "derived"]
+    passes  = ["chan"]
+    derived = ["derived"]
 
     return {
-        "full-full" : {"params": full,   "existence": full},
-        "pass-full" : {"params": passes, "existence": full},
-        "full-pass" : {"params": full,   "existence": passes},
-        "ifg-full"  : {"params": ifg,    "existence": full},
-        "full-ifg"  : {"params": full,   "existence": ifg},
-        "pass-ifg"  : {"params": passes, "existence": ifg},
-        "ifg-pass"  : {"params": ifg,    "existence": passes},
+        "full-full"    : {"params": full,   "existence": full},
+        "pass-full"    : {"params": passes, "existence": full},
+        "full-pass"    : {"params": full,   "existence": passes},
+        "derived-full" : {"params": derived,    "existence": full},
+        "full-derived" : {"params": full,   "existence": derived},
+        "pass-derived" : {"params": passes, "existence": derived},
+        "derived-pass" : {"params": derived,    "existence": passes},
     }
 
 
@@ -88,8 +88,8 @@ class DualEntryConfig:
 
     params_backbone     : str       = "unet_skip"
     existence_backbone  : str       = "unet_skip"
-    params_input        : list[str] = field(default_factory=lambda: ["pass", "ifg"])
-    existence_input     : list[str] = field(default_factory=lambda: ["pass", "ifg"])
+    params_input        : list[str] = field(default_factory=lambda: ["chan", "derived"])
+    existence_input     : list[str] = field(default_factory=lambda: ["chan", "derived"])
     params_overrides    : dict      = field(default_factory=dict)
     existence_overrides : dict      = field(default_factory=dict)
 

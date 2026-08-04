@@ -57,7 +57,7 @@ class AutoencoderTrainingPipeline:
     def _prepare_data(self, run_directory, logger):
         raise NotImplementedError
 
-    def _run_overfit_check(self, run_meta, logger, model_dim: int, x_axis, datasets) -> None:
+    def _run_overfit_check(self, run_meta, logger, model_dim: int, z_axis, datasets) -> None:
         check = OverfitCheck(self.entry.overfit_check, run_meta.run_directory, logger)
         if not check.enabled:
             return
@@ -68,18 +68,18 @@ class AutoencoderTrainingPipeline:
         gate_trainer_config = check.sanitized_trainer_config(self.trainer_config)
 
         gate_model   = self._build_model(model_dim, gate_arch_config)
-        gate_trainer = self.trainer_class(gate_model, gate_arch_config, x_axis, gate_trainer_config, check.work_directory, logger)
+        gate_trainer = self.trainer_class(gate_model, gate_arch_config, z_axis, gate_trainer_config, check.work_directory, logger)
 
         check.run(gate_trainer, datasets["train"])
 
     def _save_metadata(self, run_meta, *args) -> None:
         raise NotImplementedError
 
-    def _make_trainer(self, run_directory, logger, model, x_axis):
-        return self.trainer_class(model, self.autoencoder_cfg, x_axis, self.trainer_config, run_directory, logger)
+    def _make_trainer(self, run_directory, logger, model, z_axis):
+        return self.trainer_class(model, self.autoencoder_cfg, z_axis, self.trainer_config, run_directory, logger)
 
-    def _train(self, run_meta, logger, model, x_axis, train_loader, val_loader, test_loader):
-        trainer = self._make_trainer(run_meta.run_directory, logger, model, x_axis)
+    def _train(self, run_meta, logger, model, z_axis, train_loader, val_loader, test_loader):
+        trainer = self._make_trainer(run_meta.run_directory, logger, model, z_axis)
         try:
             results = trainer.train(train_loader, val_loader, test_loader)
         finally:
@@ -89,10 +89,10 @@ class AutoencoderTrainingPipeline:
     def build_pretrain_trainer(self, work_dir, logger):
         work_dir = Path(work_dir)
 
-        _train_loader, _val_loader, _test_loader, x_axis, model_dim, datasets, _metadata_args = self._prepare_data(work_dir, logger)
+        _train_loader, _val_loader, _test_loader, z_axis, model_dim, datasets, _metadata_args = self._prepare_data(work_dir, logger)
 
         model   = self._build_model(model_dim, self.autoencoder_cfg)
-        trainer = self._make_trainer(work_dir, logger, model, x_axis)
+        trainer = self._make_trainer(work_dir, logger, model, z_axis)
 
         return trainer, datasets["train"], model
 
@@ -100,7 +100,7 @@ class AutoencoderTrainingPipeline:
         run_meta = TrainingRunMetadata(self.trainer_config, self.run_label, Path(self.trainer_config.io.logdir), self.entry.run_name)
         logger   = run_meta.logger
 
-        train_loader, val_loader, test_loader, x_axis, model_dim, datasets, metadata_args = self._prepare_data(run_meta.run_directory, logger)
+        train_loader, val_loader, test_loader, z_axis, model_dim, datasets, metadata_args = self._prepare_data(run_meta.run_directory, logger)
 
         model = self._build_model(model_dim, self.autoencoder_cfg)
         self._log_model(logger, model, model_dim)
@@ -108,9 +108,9 @@ class AutoencoderTrainingPipeline:
         self._save_metadata(run_meta, *metadata_args)
 
         try:
-            self._run_overfit_check(run_meta, logger, model_dim, x_axis, datasets)
+            self._run_overfit_check(run_meta, logger, model_dim, z_axis, datasets)
         except BaseException:
             run_meta.close()
             raise
 
-        return self._train(run_meta, logger, model, x_axis, train_loader, val_loader, test_loader)
+        return self._train(run_meta, logger, model, z_axis, train_loader, val_loader, test_loader)

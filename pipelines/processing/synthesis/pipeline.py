@@ -8,7 +8,7 @@ from configuration.synthesis                    import SynthesisConfig
 from pipelines.processing.synthesis.diagnostics import FitDiagnosticsBuilder
 from pipelines.processing.synthesis.fields      import WhiteNoiseSampler
 from pipelines.processing.synthesis.parameters  import ParameterFieldBuilder
-from pipelines.processing.synthesis.scene       import ElevationBuilder, HeightAxis, PassBuilder, ProfileBuilder, TomogramBuilder
+from pipelines.processing.synthesis.scene       import AuxFieldBuilder, ZAxis, ChannelBuilder, ProfileBuilder, CubeBuilder
 from pipelines.processing.synthesis.writer      import DatasetWriter
 from tools.data.io                              import FileIO
 from tools.monitoring.logger                    import Logger
@@ -18,22 +18,22 @@ class SyntheticDatasetPipeline:
     def __init__(self, config: SynthesisConfig, logger: Logger) -> None:
         config.validate()
 
-        self.config      = config
-        self.logger      = logger
-        self.height_axis = HeightAxis.build(config)
-        self.noise       = WhiteNoiseSampler(config.seed + 7919)
-        self.writer      = DatasetWriter(config, logger=logger)
+        self.config = config
+        self.logger = logger
+        self.z_axis = ZAxis.build(config)
+        self.noise  = WhiteNoiseSampler(config.seed + 7919)
+        self.writer = DatasetWriter(config, logger=logger)
 
         self.logger.section("[Synthetic Dataset Pipeline Initialized]")
         self.logger.kv_table({
             "Output Directory" : str(config.output_directory),
             "Global Crop"      : config.global_crop,
-            "Scene"            : f"{config.azimuth_size} azimuth x {config.range_size} range",
+            "Scene"            : f"{config.row_size} rows x {config.col_size} cols",
             "Profile Length"   : config.profile_length,
-            "Height Range"     : config.height_range,
+            "Z Range"          : config.z_range,
             "Components"       : config.k_max,
             "Parameter Run"    : config.params_run_name,
-            "Pass Labels"      : ", ".join(config.pass_labels),
+            "Pass Labels"      : ", ".join(config.channel_labels),
             "Seed"             : config.seed,
         }, title="Synthesis")
 
@@ -52,19 +52,19 @@ class SyntheticDatasetPipeline:
     def _stage_scene(self, amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
         self.logger.section("[Stage 2] Evaluating profiles and observations")
 
-        profiles                              = ProfileBuilder(self.height_axis).evaluate(amps, mus, sigmas)
-        tomogram                              = TomogramBuilder(self.config, self.noise).build(profiles)
-        primary, secondaries, interferograms  = PassBuilder(self.config, self.height_axis, self.noise).build(profiles)
-        elevation                             = ElevationBuilder(self.config).build()
+        profiles = ProfileBuilder(self.z_axis).evaluate(amps, mus, sigmas)
+        cube     = CubeBuilder(self.config, self.noise).build(profiles)
+        primary, secondaries, derived  = ChannelBuilder(self.config, self.z_axis, self.noise).build(profiles)
+        z                             = AuxFieldBuilder(self.config).build()
 
         del profiles
 
-        return tomogram, primary, secondaries, interferograms, elevation
+        return cube, primary, secondaries, derived, z
 
-    def _stage_parameter_run(self, tomogram: np.ndarray, amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
+    def _stage_parameter_run(self, cube: np.ndarray, amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
         self.logger.section("[Stage 3] Scoring the mixture against the observed cube")
 
-        parameters, diagnostics = FitDiagnosticsBuilder(self.config, self.height_axis).build(tomogram, amps, mus, sigmas)
+        parameters, diagnostics = FitDiagnosticsBuilder(self.config, self.z_axis).build(cube, amps, mus, sigmas)
         best_k                  = diagnostics["best_k_map"]
 
         self.logger.kv_table({
@@ -88,16 +88,16 @@ class SyntheticDatasetPipeline:
     def run(self) -> dict:
         amps, mus, sigmas = self._stage_parameters()
 
-        tomogram, primary, secondaries, interferograms, elevation = self._stage_scene(amps, mus, sigmas)
+        cube, primary, secondaries, derived, z = self._stage_scene(amps, mus, sigmas)
 
-        parameters, diagnostics = self._stage_parameter_run(tomogram, amps, mus, sigmas)
+        parameters, diagnostics = self._stage_parameter_run(cube, amps, mus, sigmas)
 
         arrays = {
-            "primary"        : primary,
-            "secondaries"    : secondaries,
-            "interferograms" : interferograms,
-            "dem_full"       : elevation,
-            "tomogram_full"  : tomogram,
+            "primary"     : primary,
+            "secondaries" : secondaries,
+            "derived"     : derived,
+            "aux_full"    : z,
+            "cube_full"   : cube,
         }
 
         outputs = self._stage_write(arrays, parameters, diagnostics)

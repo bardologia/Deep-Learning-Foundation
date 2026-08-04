@@ -25,7 +25,7 @@ class BaseTrainer:
     stage_name    = "Training"
     section_title = "[Training Loop]"
 
-    def __init__(self, model, config, run_dir, logger, x_axis):
+    def __init__(self, model, config, run_dir, logger, z_axis):
         self.logger = logger
         self.config = config
 
@@ -38,7 +38,7 @@ class BaseTrainer:
         self.tracker         = Tracker(writer=self.config.io.writer, debug=config.training.log_debug)
 
         self.model  = model.to(self.device)
-        self.x_axis = torch.tensor(x_axis, device=self.device, dtype=torch.float32)
+        self.z_axis = torch.tensor(z_axis, device=self.device, dtype=torch.float32)
 
         self.epochs                  = config.training.epochs
         self.validation_frequency    = config.training.validation_frequency
@@ -211,7 +211,7 @@ class BaseTrainer:
         return {
             "epoch"  : epoch,
             "params" : self.model.state_dict(),
-            "x_axis" : self.x_axis.cpu().numpy(),
+            "z_axis" : self.z_axis.cpu().numpy(),
         }
 
     def train_epoch(self, loader: DataLoader, epoch: int):

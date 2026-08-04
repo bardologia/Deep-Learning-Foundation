@@ -62,7 +62,7 @@ class ImageAeRunLoader(RunArtifactLoader):
         model, ae_name, ae_cfg = self._build_model(device)
 
         ckpt_path               = self.run_directory / config.checkpoint_name
-        ckpt, x_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
+        ckpt, z_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
 
         model.load_state_dict(ckpt["params"])
         model.eval()
@@ -70,10 +70,10 @@ class ImageAeRunLoader(RunArtifactLoader):
         dataset, grid, region, _global_crop, _arrays = self._build_dataset(
             dataset_config = dataset_config,
             split_name     = config.split,
-            x_axis         = x_axis,
+            z_axis         = z_axis,
             n_gaussians    = dataset_config.n_gaussians,
             norm_stats     = norm_stats,
-            load_tomogram  = False,
+            load_cube      = False,
         )
 
         if dataset.input_channels != int(summary["in_channels"]):

@@ -11,7 +11,7 @@ from pipelines.shared.training.run_naming       import RunNaming
 class TrunkChannelMap:
 
     MAX_TRACKS = 64
-    GROUPS     = ("pass", "ifg")
+    GROUPS     = ("chan", "derived")
 
     @classmethod
     def resolve(cls, input_config, in_channels: int, groups: tuple) -> tuple[int, ...]:
@@ -55,8 +55,8 @@ class DualTrainingPipeline(TrainingPipeline):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
 
-        if self.dataset_config.input_config.use_dem:
-            raise ValueError("The dual model never uses the DEM channel; disable input.use_dem")
+        if self.dataset_config.input_config.use_aux:
+            raise ValueError("The dual model never uses the Aux channel; disable input.use_aux")
 
     def _build_model(self, in_channels: int, out_channels: int):
         model, model_cfg = super()._build_model(in_channels, out_channels)

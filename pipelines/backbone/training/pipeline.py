@@ -57,11 +57,11 @@ class TrainingPipeline:
             seed                   = self.seed,
         )
 
-        self.dataset_config.x_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, dataset_pipeline.layout.profile_length)
+        self.dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, dataset_pipeline.layout.profile_length)
 
         return dataset_pipeline
 
-    def _run_overfit_check(self, train_dataset, in_channels: int, out_channels: int, x_axis) -> None:
+    def _run_overfit_check(self, train_dataset, in_channels: int, out_channels: int, z_axis) -> None:
         check = OverfitCheck(self.overfit_check, self.run_metadata.run_directory, self.logger)
         if not check.enabled:
             return
@@ -89,7 +89,7 @@ class TrainingPipeline:
         gate_trainer = Trainer(
             model      = gate_model,
             model_cfg  = gate_model_cfg,
-            x_axis     = x_axis,
+            z_axis     = z_axis,
             config     = gate_trainer_config,
             run_dir    = check.work_directory,
             logger     = self.logger,
@@ -126,11 +126,11 @@ class TrainingPipeline:
     def _model_factory(self):
         return get_backbone
 
-    def _make_trainer(self, model, model_cfg, x_axis, norm_stats, run_dir: Path, logger, emit_docs: bool = True):
+    def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir: Path, logger, emit_docs: bool = True):
         return Trainer(
             model      = model,
             model_cfg  = model_cfg,
-            x_axis     = x_axis,
+            z_axis     = z_axis,
             config     = self.trainer_config,
             run_dir    = run_dir,
             logger     = logger,
@@ -148,11 +148,11 @@ class TrainingPipeline:
         dataset      = datasets["train"]
         in_channels  = dataset.input_channels
         out_channels = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, gaussian_cfg.n_default_gaussians)
-        x_axis       = np.asarray(self.dataset_config.x_axis, dtype=np.float32)
+        z_axis       = np.asarray(self.dataset_config.z_axis, dtype=np.float32)
 
         model, model_cfg = self._model_factory()(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
 
-        trainer = self._make_trainer(model, model_cfg, x_axis, dataset.normalizer, work_dir, logger, emit_docs=False)
+        trainer = self._make_trainer(model, model_cfg, z_axis, dataset.normalizer, work_dir, logger, emit_docs=False)
         trainer.criterion.set_curriculum(LossComponentCatalog.probe_union(self.trainer_config.curriculum), context="probe union of all curriculum stages")
 
         return trainer, dataset, model
@@ -175,7 +175,7 @@ class TrainingPipeline:
         self.logger.kv_table({
             "Seed"           : self.seed,
             "Gaussian slots" : self.trainer_config.gaussian.n_default_gaussians,
-            "Elevation axis" : f"[{self.trainer_config.gaussian.x_min:g}, {self.trainer_config.gaussian.x_max:g}] m (sample count set by the dataset profile length)",
+            "Z axis"         : f"[{self.trainer_config.gaussian.x_min:g}, {self.trainer_config.gaussian.x_max:g}] m (sample count set by the dataset profile length)",
         })
 
         self.dataset_pipeline = self._build_dataset_pipeline(self.run_metadata.run_directory, self.logger)
@@ -188,8 +188,8 @@ class TrainingPipeline:
         in_channels   = train_dataset.input_channels
         n_gaussians   = gaussian_cfg.n_default_gaussians
         out_channels  = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, n_gaussians)
-        x_axis        = np.asarray(self.dataset_config.x_axis, dtype=np.float32)
-        x_axis_length = int(x_axis.size)
+        z_axis        = np.asarray(self.dataset_config.z_axis, dtype=np.float32)
+        x_axis_length = int(z_axis.size)
 
         model, model_cfg = self._build_model(in_channels=in_channels, out_channels=out_channels)
 
@@ -206,9 +206,9 @@ class TrainingPipeline:
         )
 
         try:
-            self._run_overfit_check(train_dataset, in_channels, out_channels, x_axis)
+            self._run_overfit_check(train_dataset, in_channels, out_channels, z_axis)
 
-            trainer = self._make_trainer(model, model_cfg, x_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger)
+            trainer = self._make_trainer(model, model_cfg, z_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger)
 
             trainer.maybe_run_loss_probe(train_loader, probe_config)
             results = trainer.train(train_loader, val_loader, test_loader)

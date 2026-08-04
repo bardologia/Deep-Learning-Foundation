@@ -9,10 +9,10 @@ from tools.data.preprocessing             import ProfilePreprocessor
 
 
 class FitDiagnosticsBuilder:
-    def __init__(self, config: SynthesisConfig, height_axis: np.ndarray) -> None:
-        self.config      = config
-        self.height_axis = height_axis
-        self.profiles    = ProfileBuilder(height_axis)
+    def __init__(self, config: SynthesisConfig, z_axis: np.ndarray) -> None:
+        self.config   = config
+        self.z_axis   = z_axis
+        self.profiles = ProfileBuilder(z_axis)
 
     @staticmethod
     def _rank_by_amplitude(amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
@@ -24,9 +24,9 @@ class FitDiagnosticsBuilder:
             np.take_along_axis(sigmas, order, axis=0),
         )
 
-    def observed_profiles(self, tomogram: np.ndarray) -> tuple:
+    def observed_profiles(self, cube: np.ndarray) -> tuple:
         config    = self.config
-        magnitude = np.abs(tomogram).astype(np.float32)
+        magnitude = np.abs(cube).astype(np.float32)
         observed  = ProfilePreprocessor.apply(magnitude, config.threshold_factor, config.truncation_index)
 
         peak   = observed.max(axis=0)
@@ -35,15 +35,15 @@ class FitDiagnosticsBuilder:
 
         return (observed / scale[None, :, :]).astype(np.float32), active, scale
 
-    def build(self, tomogram: np.ndarray, amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
+    def build(self, cube: np.ndarray, amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
         config                                  = self.config
-        observed_norm, active, scale            = self.observed_profiles(tomogram)
+        observed_norm, active, scale            = self.observed_profiles(cube)
         ranked_amps, ranked_mus, ranked_sigmas  = self._rank_by_amplitude(amps, mus, sigmas)
 
         spatial     = active.shape
         mse_per_k   = np.full((config.k_max,) + spatial, np.nan, dtype=np.float32)
         running     = np.zeros_like(observed_norm)
-        axis        = self.height_axis[:, None, None]
+        axis        = self.z_axis[:, None, None]
 
         for slot in range(config.k_max):
             self.profiles.accumulate(running, ranked_amps[slot], ranked_mus[slot], ranked_sigmas[slot], axis)

@@ -68,7 +68,7 @@ class RunArtifactLoader:
 
     def _load_checkpoint(self, ckpt_path: Path, device: str) -> tuple[dict, np.ndarray, dict]:
         ckpt   = torch.load(str(ckpt_path), map_location=device, weights_only=False)
-        x_axis = np.asarray(ckpt["x_axis"], dtype=np.float32)
+        z_axis = np.asarray(ckpt["z_axis"], dtype=np.float32)
 
         meta = {
             "epoch"         : int(ckpt["epoch"]),
@@ -76,9 +76,9 @@ class RunArtifactLoader:
             "best_epoch"    : int(ckpt["best_epoch"]),
         }
 
-        return ckpt, x_axis, meta
+        return ckpt, z_axis, meta
 
-    def _build_dataset(self, dataset_config : DatasetConfig, split_name : str, x_axis : np.ndarray, n_gaussians : int, norm_stats : Stats, load_tomogram : bool) -> Tuple[PatchDataset, GridInfo, CropRegion, CropRegion, dict]:
+    def _build_dataset(self, dataset_config : DatasetConfig, split_name : str, z_axis : np.ndarray, n_gaussians : int, norm_stats : Stats, load_cube : bool) -> Tuple[PatchDataset, GridInfo, CropRegion, CropRegion, dict]:
         layout  = Layout(dataset_config.preprocessing_run_directory, logger=self.logger, parameters_path=dataset_config.parameters_path)
         cropper = Cropper(layout, dataset_config.split_regions, logger=self.logger, secondary_labels=dataset_config.secondary_labels)
 
@@ -87,10 +87,10 @@ class RunArtifactLoader:
             raise ValueError(f"Inference requires a single contiguous region for split '{split_name}'; found {len(regions)} disjoint regions. Stitching is only defined over one rectangular crop.")
 
         region = regions[0]
-        arrays = cropper.load_split(region, load_tomogram=load_tomogram)
+        arrays = cropper.load_split(region, load_cube=load_cube)
 
         grid = Patcher.build(
-            spatial_size          = (region.azimuth_size, region.range_size),
+            spatial_size          = (region.row_size, region.col_size),
             patch_size            = dataset_config.patch.size,
             stride                = dataset_config.patch.stride,
             use_symmetric_padding = dataset_config.patch.use_symmetric_padding,
@@ -100,17 +100,17 @@ class RunArtifactLoader:
         gt_parameters = arrays["parameters"]
 
         dataset = PatchDataset(
-            inputs           = inputs,
-            gt_parameters    = gt_parameters,
-            grid             = grid,
-            input_config     = dataset_config.input_config,
-            output_config    = dataset_config.output_config,
-            split_name       = split_name,
-            n_secondaries    = arrays["n_secondaries"],
-            n_interferograms = arrays["n_interferograms"],
-            normalizer       = Normalizer(norm_stats),
-            n_gaussians      = n_gaussians,
-            dem              = arrays["dem"] if dataset_config.input_config.use_dem else None,
+            inputs        = inputs,
+            gt_parameters = gt_parameters,
+            grid          = grid,
+            input_config  = dataset_config.input_config,
+            output_config = dataset_config.output_config,
+            split_name    = split_name,
+            n_secondaries = arrays["n_secondaries"],
+            n_derived     = arrays["n_derived"],
+            normalizer    = Normalizer(norm_stats),
+            n_gaussians   = n_gaussians,
+            aux           = arrays["aux"] if dataset_config.input_config.use_aux else None,
         )
 
         return dataset, grid, region, layout.global_crop, arrays

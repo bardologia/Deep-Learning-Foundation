@@ -17,7 +17,7 @@ class NormalizationAudit:
         self.result = result
 
     def input_health(self) -> Dict[str, float]:
-        normalized = self.loaded.dataset.assemble_window(self.loaded.complex_inputs, self.loaded.dataset.dem)
+        normalized = self.loaded.dataset.assemble_window(self.loaded.complex_inputs, self.loaded.dataset.aux)
 
         out            = {}
         worst_abs_mean = 0.0
@@ -55,9 +55,9 @@ class NormalizationAudit:
         params = np.asarray(self.result.params_pred, dtype=np.float64)
         clamp  = self.loaded.dataset.normalizer.stats.clamp
         n_k    = self.loaded.n_gaussians
-        x_min  = float(self.loaded.x_axis[0])
-        x_max  = float(self.loaded.x_axis[-1])
-        x_step = float(self.loaded.x_axis[1]) - x_min
+        x_min  = float(self.loaded.z_axis[0])
+        x_max  = float(self.loaded.z_axis[-1])
+        x_step = float(self.loaded.z_axis[1]) - x_min
 
         sigma_floor = 0.5 * x_step
         sigma_ceil  = 0.5 * (x_max - x_min)

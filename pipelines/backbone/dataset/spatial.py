@@ -25,59 +25,59 @@ class Cropper:
         self._validate_parameters_extent()
 
         self.logger.section("[Cropper Initialized]")
-        self.logger.subsection(f"Secondary selection : {', '.join(self.secondary_labels) if self.secondary_labels else 'all passes'}")
-        self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Azimuth (lines)", "Range (samples)"])
+        self.logger.subsection(f"Secondary selection : {', '.join(self.secondary_labels) if self.secondary_labels else 'all channels'}")
+        self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Rows", "Cols"])
 
     def _resolve_labels(self, secondary_labels) -> list | None:
         if self.secondary_indices is None:
             return None
-        secondaries = self.layout.pass_labels[1:]
+        secondaries = self.layout.channel_labels[1:]
         return [secondaries[index] for index in self.secondary_indices]
 
     def _validate_parameters_extent(self) -> None:
         parameters_path = self.layout.artifact_path("parameters")
         parameters      = np.load(str(parameters_path), mmap_mode="r", allow_pickle=False)
-        expected        = (self.layout.global_crop.azimuth_size, self.layout.global_crop.range_size)
+        expected        = (self.layout.global_crop.row_size, self.layout.global_crop.col_size)
 
         if tuple(parameters.shape[-2:]) != expected:
-            raise ValueError(f"Parameters artifact {parameters_path} has spatial shape {tuple(parameters.shape[-2:])} but the preprocessing global crop is {expected} (azimuth, range); the parameter extraction does not belong to this dataset crop.")
+            raise ValueError(f"Parameters artifact {parameters_path} has spatial shape {tuple(parameters.shape[-2:])} but the preprocessing global crop is {expected} (row, col); the parameter extraction does not belong to this dataset crop.")
 
     def _to_local_slices(self, region: CropRegion) -> Tuple[slice, slice]:
         return region.local_slices(self.layout.global_crop)
 
-    def _select_channels(self, array: np.ndarray, az_slice: slice, rg_slice: slice) -> np.ndarray:
+    def _select_channels(self, array: np.ndarray, row_slice: slice, col_slice: slice) -> np.ndarray:
         if self.secondary_indices is None:
-            return array[..., az_slice, rg_slice]
+            return array[..., row_slice, col_slice]
 
-        return np.stack([array[index, az_slice, rg_slice] for index in self.secondary_indices])
+        return np.stack([array[index, row_slice, col_slice] for index in self.secondary_indices])
 
     def _group_enabled(self, flag: str) -> bool:
         return getattr(self.input_config, flag) if self.input_config is not None else True
 
-    def _group_view(self, artifact: str, flag: str, az_slice: slice, rg_slice: slice) -> Optional[np.ndarray]:
+    def _group_view(self, artifact: str, flag: str, row_slice: slice, col_slice: slice) -> Optional[np.ndarray]:
         if not self._group_enabled(flag):
             return None
 
         array = np.load(str(self.layout.artifact_path(artifact)), mmap_mode="r", allow_pickle=False)
 
-        return self._select_channels(array, az_slice, rg_slice)
+        return self._select_channels(array, row_slice, col_slice)
 
-    def _stack_inputs(self, az_slice: slice, rg_slice: slice) -> Tuple[np.ndarray, int, int, int]:
+    def _stack_inputs(self, row_slice: slice, col_slice: slice) -> Tuple[np.ndarray, int, int, int]:
         primary      = np.load(str(self.layout.artifact_path("primary")), mmap_mode="r", allow_pickle=False)
-        primary_view = primary[..., az_slice, rg_slice]
+        primary_view = primary[..., row_slice, col_slice]
 
-        secondaries_view    = self._group_view("secondaries",    "use_secondaries",    az_slice, rg_slice)
-        interferograms_view = self._group_view("interferograms", "use_interferograms", az_slice, rg_slice)
+        secondaries_view = self._group_view("secondaries",    "use_secondaries",    row_slice, col_slice)
+        derived_view     = self._group_view("derived", "use_derived", row_slice, col_slice)
 
-        n_primary        = 1 if self._group_enabled("use_primary") else 0
-        n_secondaries    = secondaries_view.shape[0]    if secondaries_view    is not None else 0
-        n_interferograms = interferograms_view.shape[0] if interferograms_view is not None else 0
+        n_primary     = 1 if self._group_enabled("use_primary") else 0
+        n_secondaries = secondaries_view.shape[0]    if secondaries_view    is not None else 0
+        n_derived     = derived_view.shape[0] if derived_view is not None else 0
 
-        n_passes = n_primary + n_secondaries + n_interferograms
-        az_size  = primary_view.shape[-2]
-        rg_size  = primary_view.shape[-1]
+        n_channels = n_primary + n_secondaries + n_derived
+        row_size   = primary_view.shape[-2]
+        col_size   = primary_view.shape[-1]
 
-        inputs_split = np.empty((n_passes, az_size, rg_size), dtype=primary.dtype)
+        inputs_split = np.empty((n_channels, row_size, col_size), dtype=primary.dtype)
 
         if n_primary:
             inputs_split[0] = primary_view
@@ -85,54 +85,54 @@ class Cropper:
         if secondaries_view is not None:
             inputs_split[n_primary:n_primary + n_secondaries] = secondaries_view
 
-        if interferograms_view is not None:
-            inputs_split[n_primary + n_secondaries:] = interferograms_view
+        if derived_view is not None:
+            inputs_split[n_primary + n_secondaries:] = derived_view
 
-        return inputs_split, n_primary, n_secondaries, n_interferograms
+        return inputs_split, n_primary, n_secondaries, n_derived
 
-    def _load_targets(self, az_slice: slice, rg_slice: slice) -> Tuple[np.ndarray, np.ndarray]:
+    def _load_targets(self, row_slice: slice, col_slice: slice) -> Tuple[np.ndarray, np.ndarray]:
         parameters = np.load(str(self.layout.artifact_path("parameters")), mmap_mode="r", allow_pickle=False)
-        dem        = np.load(str(self.layout.artifact_path("dem_full")),   mmap_mode="r", allow_pickle=False)
+        aux        = np.load(str(self.layout.artifact_path("aux_full")),   mmap_mode="r", allow_pickle=False)
 
-        parameters_split = np.ascontiguousarray(parameters[..., az_slice, rg_slice])
-        dem_split        = np.ascontiguousarray(dem[az_slice, rg_slice].astype(np.float32))
+        parameters_split = np.ascontiguousarray(parameters[..., row_slice, col_slice])
+        aux_split        = np.ascontiguousarray(aux[row_slice, col_slice].astype(np.float32))
 
-        return parameters_split, dem_split
+        return parameters_split, aux_split
 
-    def _load_tomogram(self, az_slice: slice, rg_slice: slice) -> np.ndarray:
-        tomogram = np.load(str(self.layout.artifact_path("tomogram_full")), mmap_mode="r", allow_pickle=False)
-        return np.ascontiguousarray(np.abs(tomogram[:, az_slice, rg_slice]).astype(np.float32))
+    def _load_cube(self, row_slice: slice, col_slice: slice) -> np.ndarray:
+        cube = np.load(str(self.layout.artifact_path("cube_full")), mmap_mode="r", allow_pickle=False)
+        return np.ascontiguousarray(np.abs(cube[:, row_slice, col_slice]).astype(np.float32))
 
-    def _log_crop(self, inputs_split: np.ndarray, dem_split: np.ndarray, parameters_split: np.ndarray, tomogram_split: Optional[np.ndarray], n_primary: int, n_secondaries: int, n_interferograms: int) -> None:
+    def _log_crop(self, inputs_split: np.ndarray, aux_split: np.ndarray, parameters_split: np.ndarray, cube_split: Optional[np.ndarray], n_primary: int, n_secondaries: int, n_derived: int) -> None:
         self.logger.section("[Crop Loaded]")
         self.logger.kv_table({
             "Primary"          : inputs_split[:n_primary].shape,
             "Secondaries"      : inputs_split[n_primary:n_primary + n_secondaries].shape,
-            "Interferograms"   : inputs_split[n_primary + n_secondaries:].shape,
-            "Selection"        : ", ".join(self.secondary_labels) if self.secondary_labels else "all passes",
-            "Inputs (stacked)" : f"{inputs_split.shape}  ({inputs_split.nbytes/1e9:.2f} GB)  [{n_primary} primary + {n_secondaries} secondaries + {n_interferograms} interferograms]",
-            "DEM"              : f"{dem_split.shape}  ({dem_split.nbytes/1e6:.2f} MB)",
+            "Derived"          : inputs_split[n_primary + n_secondaries:].shape,
+            "Selection"        : ", ".join(self.secondary_labels) if self.secondary_labels else "all channels",
+            "Inputs (stacked)" : f"{inputs_split.shape}  ({inputs_split.nbytes/1e9:.2f} GB)  [{n_primary} primary + {n_secondaries} secondaries + {n_derived} derived]",
+            "Aux"              : f"{aux_split.shape}  ({aux_split.nbytes/1e6:.2f} MB)",
             "Parameters"       : f"{parameters_split.shape}  ({parameters_split.nbytes/1e9:.2f} GB)",
-            "Full tomogram"    : f"{tomogram_split.shape}  ({tomogram_split.nbytes/1e9:.2f} GB)" if tomogram_split is not None else "not loaded",
+            "Full cube"        : f"{cube_split.shape}  ({cube_split.nbytes/1e9:.2f} GB)" if cube_split is not None else "not loaded",
         })
 
-    def load_split(self, region: CropRegion, load_tomogram: bool = False) -> dict[str, np.ndarray]:
-        az_slice, rg_slice = self._to_local_slices(region)
+    def load_split(self, region: CropRegion, load_cube: bool = False) -> dict[str, np.ndarray]:
+        row_slice, col_slice = self._to_local_slices(region)
 
-        inputs_split, n_primary, n_secondaries, n_interferograms = self._stack_inputs(az_slice, rg_slice)
-        parameters_split, dem_split                              = self._load_targets(az_slice, rg_slice)
-        tomogram_split                                           = self._load_tomogram(az_slice, rg_slice) if load_tomogram else None
+        inputs_split, n_primary, n_secondaries, n_derived = self._stack_inputs(row_slice, col_slice)
+        parameters_split, aux_split                              = self._load_targets(row_slice, col_slice)
+        cube_split                                           = self._load_cube(row_slice, col_slice) if load_cube else None
 
-        self._log_crop(inputs_split, dem_split, parameters_split, tomogram_split, n_primary, n_secondaries, n_interferograms)
+        self._log_crop(inputs_split, aux_split, parameters_split, cube_split, n_primary, n_secondaries, n_derived)
 
         return {
             "inputs"           : inputs_split,
-            "dem"              : dem_split,
+            "aux"              : aux_split,
             "parameters"       : parameters_split,
-            "tomogram"         : tomogram_split,
+            "cube"             : cube_split,
             "n_primary"        : n_primary,
             "n_secondaries"    : n_secondaries,
-            "n_interferograms" : n_interferograms,
+            "n_derived"        : n_derived,
             "secondary_labels" : self.secondary_labels,
         }
 

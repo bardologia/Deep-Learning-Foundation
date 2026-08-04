@@ -132,7 +132,7 @@ class SeedComparisonReport:
         out.append(
             "Per-pixel across-seed standard deviation of the model outputs, written as cubes into every seed's inference cube directory "
             "(they appear as metric-map layers in the cube explorer). Predicted slots are first matched to the shared GT slots per seed, "
-            "so the parameter maps compare the same physical scatterer across seeds; a slot contributes where it is matched in at "
+            "so the parameter maps compare the same physical component across seeds; a slot contributes where it is matched in at "
             f"least {SeedDisagreementMaps.MIN_ACTIVE} seeds.\n"
         )
 
@@ -162,7 +162,7 @@ class SeedComparisonReport:
         return out
 
     def _write_report(self, per_seed: list[dict], means: dict, stds: dict) -> Path:
-        lines = ["# TomoSAR Seed-Comparison Report", ""]
+        lines = ["# ML Template Seed-Comparison Report", ""]
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")
         lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's existing inference (no inference re-run). Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std.")

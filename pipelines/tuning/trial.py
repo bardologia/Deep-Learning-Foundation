@@ -29,11 +29,11 @@ class TrialPipeline(TrainingPipeline):
         self._emit_docs = emit_docs
         super().__init__(*args, **kwargs)
 
-    def _make_trainer(self, model, model_cfg, x_axis, norm_stats, run_dir, logger, emit_docs=True):
+    def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir, logger, emit_docs=True):
         return TrialTrainer(
             model      = model,
             model_cfg  = model_cfg,
-            x_axis     = x_axis,
+            z_axis     = z_axis,
             config     = self.trainer_config,
             run_dir    = run_dir,
             logger     = logger,
@@ -60,8 +60,8 @@ class TrialProfileAePipeline(AeTrainingPipeline):
         self._trial = trial
         super().__init__(*args, **kwargs)
 
-    def _make_trainer(self, run_directory, logger, model, x_axis):
-        return TrialProfileAeTrainer(model, self.autoencoder_cfg, x_axis, self.trainer_config, run_directory, logger, trial=self._trial)
+    def _make_trainer(self, run_directory, logger, model, z_axis):
+        return TrialProfileAeTrainer(model, self.autoencoder_cfg, z_axis, self.trainer_config, run_directory, logger, trial=self._trial)
 
 
 class TrialImageAeTrainer(ImageAeTrainer):
@@ -81,8 +81,8 @@ class TrialImageAePipeline(ImageAeTrainingPipeline):
         self._trial = trial
         super().__init__(*args, **kwargs)
 
-    def _make_trainer(self, run_directory, logger, model, x_axis):
-        return TrialImageAeTrainer(model, self.autoencoder_cfg, x_axis, self.trainer_config, run_directory, logger, trial=self._trial)
+    def _make_trainer(self, run_directory, logger, model, z_axis):
+        return TrialImageAeTrainer(model, self.autoencoder_cfg, z_axis, self.trainer_config, run_directory, logger, trial=self._trial)
 
 
 class TrialJepaTrainer(JepaTrainer):
@@ -102,5 +102,5 @@ class TrialJepaPipeline(JepaTrainingPipeline):
         self._trial = trial
         super().__init__(*args, **kwargs)
 
-    def _make_trainer(self, model, backbone_cfg, x_axis, run_dir, logger, norm_stats, profile_normalizer):
-        return TrialJepaTrainer(model, backbone_cfg, x_axis, self.trainer_config, run_dir, logger, norm_stats, profile_normalizer, trial=self._trial)
+    def _make_trainer(self, model, backbone_cfg, z_axis, run_dir, logger, norm_stats, profile_normalizer):
+        return TrialJepaTrainer(model, backbone_cfg, z_axis, self.trainer_config, run_dir, logger, norm_stats, profile_normalizer, trial=self._trial)

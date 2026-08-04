@@ -41,17 +41,17 @@ class ProfileDatasetPipeline:
         })
 
     def _build_axis(self) -> Tuple[np.ndarray, int]:
-        x_len  = self.cropper.profile_length()
-        x_axis = GaussianAxis.build(self.config.x_min, self.config.x_max, x_len)
+        z_len  = self.cropper.profile_length()
+        z_axis = GaussianAxis.build(self.config.x_min, self.config.x_max, z_len)
 
-        return x_axis, x_len
+        return z_axis, z_len
 
-    def _build_dataset(self, split_name: str, x_axis: np.ndarray, normalizer: Optional[ProfileNormalizer] = None, augmenter: Optional[ProfileAugmenter] = None) -> ProfileDataset:
+    def _build_dataset(self, split_name: str, z_axis: np.ndarray, normalizer: Optional[ProfileNormalizer] = None, augmenter: Optional[ProfileAugmenter] = None) -> ProfileDataset:
         param_arrays = self.cropper.load_split(split_name)
 
         return ProfileDataset(
             param_arrays    = param_arrays,
-            x_axis          = x_axis,
+            z_axis          = z_axis,
             n_gaussians     = self.config.n_gaussians,
             split_name      = split_name,
             amp_zero_thr    = self.config.amp_zero_thr,
@@ -70,16 +70,16 @@ class ProfileDatasetPipeline:
         return ProfileNormalizer(stats)
 
     def run(self) -> Tuple[Tuple[DataLoader, DataLoader, DataLoader], dict[str, ProfileDataset], np.ndarray, int, ProfileNormalizer]:
-        x_axis, x_len = self._build_axis()
+        z_axis, z_len = self._build_axis()
 
-        train_ds   = self._build_dataset("train", x_axis)
+        train_ds   = self._build_dataset("train", z_axis)
         normalizer = self._fit_normalizer(train_ds)
 
         train_ds.normalizer = normalizer
         train_ds.augmenter  = self.augmenter
 
-        val_ds  = self._build_dataset("val",  x_axis, normalizer=normalizer)
-        test_ds = self._build_dataset("test", x_axis, normalizer=normalizer)
+        val_ds  = self._build_dataset("val",  z_axis, normalizer=normalizer)
+        test_ds = self._build_dataset("test", z_axis, normalizer=normalizer)
 
         train_loader, val_loader, test_loader = Loader.build(
             train_dataset   = train_ds,
@@ -97,4 +97,4 @@ class ProfileDatasetPipeline:
 
         datasets = {"train": train_ds, "val": val_ds, "test": test_ds}
 
-        return (train_loader, val_loader, test_loader), datasets, x_axis, x_len, normalizer
+        return (train_loader, val_loader, test_loader), datasets, z_axis, z_len, normalizer

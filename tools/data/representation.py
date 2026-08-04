@@ -5,7 +5,7 @@ from enum import Enum
 import numpy as np
 
 
-_CHANNELS_PER_PASS: dict[str, int] = {
+_CHANNELS_PER_SOURCE: dict[str, int] = {
     "real_imag"     : 2,
     "mag_real_imag" : 3,
     "mag_angle"     : 2,
@@ -24,8 +24,8 @@ class Representation(Enum):
     MAG_ONLY      = "mag_only"
 
     @property
-    def channels_per_pass(self) -> int:
-        return _CHANNELS_PER_PASS[self.value]
+    def channels_per_source(self) -> int:
+        return _CHANNELS_PER_SOURCE[self.value]
 
     @property
     def slot_kinds(self) -> list[str]:
@@ -64,7 +64,7 @@ class Representation(Enum):
         raise ValueError(f"Unsupported representation: {self}")
 
     def convert_into(self, out: np.ndarray, data: np.ndarray) -> None:
-        cpp      = _CHANNELS_PER_PASS[self.value]
+        cpp      = _CHANNELS_PER_SOURCE[self.value]
         channels = self.channel_values(data)
 
         for c, arr in enumerate(channels):

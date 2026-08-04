@@ -21,8 +21,8 @@ class SlotPlotter(PlotTools):
         params_gt     : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
-        az_offset     : int,
-        rg_offset     : int,
+        row_offset    : int,
+        col_offset    : int,
         amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
     ) -> List[Path]:
 
@@ -41,7 +41,7 @@ class SlotPlotter(PlotTools):
         rgb[diff <  0] = [0.20, 0.45, 0.90]
         rgb[diff >  0] = [0.90, 0.25, 0.25]
 
-        extent = [rg_offset, rg_offset + W, az_offset + H, az_offset]
+        extent = [col_offset, col_offset + W, row_offset + H, row_offset]
 
         n_total   = H * W
         n_correct = int((diff == 0).sum())
@@ -52,8 +52,8 @@ class SlotPlotter(PlotTools):
 
         fig, ax = plt.subplots(figsize=(6.6, 4.6))
         ax.imshow(rgb, aspect="auto", interpolation="nearest", extent=extent)
-        ax.set_xlabel("range index")
-        ax.set_ylabel("azimuth index")
+        ax.set_xlabel("col index")
+        ax.set_ylabel("row index")
         ax.set_title("Active-count agreement per pixel")
 
         legend_els = [
@@ -68,8 +68,8 @@ class SlotPlotter(PlotTools):
         fig, ax = plt.subplots(figsize=(6.6, 4.6))
         vabs = max(1, int(np.abs(diff).max()))
         im   = ax.imshow(diff, cmap="RdBu_r", vmin=-vabs, vmax=vabs, aspect="auto", interpolation="nearest", extent=extent)
-        ax.set_xlabel("range index")
-        ax.set_ylabel("azimuth index")
+        ax.set_xlabel("col index")
+        ax.set_ylabel("row index")
         ax.set_title("Signed count difference  (pred − GT)")
         cb = fig.colorbar(im, ax=ax, fraction=0.045, pad=0.02)
         cb.set_label("pred − GT  [#Gaussians]")

@@ -32,12 +32,12 @@ class AblationCatalog:
     DUAL_BASELINE_ARCHITECTURE = "unet"
 
     CHANNEL_NORMS = (
-        ("out_amp",   "out_amp",   "robust_iqr_log1p", "zscore"),
-        ("out_sigma", "out_sigma", "robust_iqr_log1p", "zscore"),
-        ("pass_mag",  "pass_mag",  "robust_iqr_log1p", "zscore_log1p"),
-        ("ifg_phase", "ifg_phase", "fixed_div_pi",     "zscore"),
-        ("ifg_mag",   "ifg_mag",   "robust_iqr_log1p", "zscore"),
-        ("dem",       "dem",       "robust_iqr_log1p", "zscore"),
+        ("out_amp",       "out_amp",   "robust_iqr_log1p", "zscore"),
+        ("out_sigma",     "out_sigma", "robust_iqr_log1p", "zscore"),
+        ("chan_mag",      "chan_mag",  "robust_iqr_log1p", "zscore_log1p"),
+        ("derived_phase", "derived_phase", "fixed_div_pi",     "zscore"),
+        ("derived_mag",   "derived_mag",   "robust_iqr_log1p", "zscore"),
+        ("aux",           "aux",       "robust_iqr_log1p", "zscore"),
     )
 
     AUGMENTATION_DEFAULTS = (
@@ -211,7 +211,7 @@ class AblationCatalog:
         "loss_curriculum",
         "cosine_curve", "architecture_param_loss", "augmentation",
         "active_norm", "lr_per_group", "lr_warmup",
-        "out_sigma", "out_amp", "ifg_phase", "pass_mag",
+        "out_sigma", "out_amp", "derived_phase", "chan_mag",
         "output_clamp",
     )
 

@@ -3,21 +3,21 @@ from pipelines.processing.synthesis.diagnostics import FitDiagnosticsBuilder
 from pipelines.processing.synthesis.fields      import SmoothFieldSampler, WhiteNoiseSampler
 from pipelines.processing.synthesis.parameters  import ParameterFieldBuilder
 from pipelines.processing.synthesis.pipeline    import SyntheticDatasetPipeline, SyntheticDatasetSession
-from pipelines.processing.synthesis.scene       import ElevationBuilder, HeightAxis, PassBuilder, ProfileBuilder, TomogramBuilder
+from pipelines.processing.synthesis.scene       import AuxFieldBuilder, ZAxis, ChannelBuilder, ProfileBuilder, CubeBuilder
 from pipelines.processing.synthesis.writer      import DatasetWriter
 
 __all__ = [
     "DatasetWriter",
-    "ElevationBuilder",
+    "AuxFieldBuilder",
     "FitDiagnosticsBuilder",
-    "HeightAxis",
+    "ZAxis",
     "ParameterFieldBuilder",
-    "PassBuilder",
+    "ChannelBuilder",
     "ProfileBuilder",
     "SmoothFieldSampler",
     "SynthesisConfig",
     "SyntheticDatasetPipeline",
     "SyntheticDatasetSession",
-    "TomogramBuilder",
+    "CubeBuilder",
     "WhiteNoiseSampler",
 ]

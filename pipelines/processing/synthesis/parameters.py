@@ -12,13 +12,13 @@ class ParameterFieldBuilder:
     def __init__(self, config: SynthesisConfig) -> None:
         self.config  = config
         self.sampler = SmoothFieldSampler(
-            shape            = (config.azimuth_size, config.range_size),
+            shape            = (config.row_size, config.col_size),
             smoothing_pixels = config.field_smoothing_pixels,
             seed             = config.seed,
         )
 
     def _slot_band(self, slot: int) -> tuple:
-        low, high = self.config.height_range
+        low, high = self.config.z_range
         width     = (high - low) / self.config.k_max
         margin    = self.config.slot_band_margin * width
 
@@ -26,7 +26,7 @@ class ParameterFieldBuilder:
 
     def build(self) -> tuple:
         config = self.config
-        amps   = np.zeros((config.k_max, config.azimuth_size, config.range_size), dtype=np.float32)
+        amps   = np.zeros((config.k_max, config.row_size, config.col_size), dtype=np.float32)
         mus    = np.zeros_like(amps)
         sigmas = np.zeros_like(amps)
 

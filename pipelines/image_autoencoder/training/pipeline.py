@@ -33,17 +33,17 @@ class TrainingPipeline(AutoencoderTrainingPipeline):
         return model
 
     def _prepare_data(self, run_directory, logger):
-        loaders, datasets, x_axis, x_len      = BackboneDatasetPreparation(self.dataset_config, self.trainer_config, run_directory, logger, self.entry.seed).run()
+        loaders, datasets, z_axis, z_len      = BackboneDatasetPreparation(self.dataset_config, self.trainer_config, run_directory, logger, self.entry.seed).run()
         train_loader, val_loader, test_loader = loaders
 
         in_channels = datasets["train"].input_channels
 
-        return train_loader, val_loader, test_loader, x_axis, in_channels, datasets, (in_channels, x_len)
+        return train_loader, val_loader, test_loader, z_axis, in_channels, datasets, (in_channels, z_len)
 
-    def _save_metadata(self, run_meta, in_channels: int, x_len: int) -> None:
+    def _save_metadata(self, run_meta, in_channels: int, z_len: int) -> None:
         run_meta.save_trainer_config()
         ImageAutoencoderConfigIO.save(self.autoencoder_cfg, self.ae_model_name, run_meta.metadata_directory)
-        run_meta.save_run_summary("image_ae", in_channels=in_channels, out_channels=self.autoencoder_cfg.embedding_dim, x_axis_length=x_len, seed=self.entry.seed)
+        run_meta.save_run_summary("image_ae", in_channels=in_channels, out_channels=self.autoencoder_cfg.embedding_dim, x_axis_length=z_len, seed=self.entry.seed)
 
 
 class SingleTrainRunner(EntryConfigTrainRunner):

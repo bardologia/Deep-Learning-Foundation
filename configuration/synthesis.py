@@ -11,13 +11,13 @@ class SynthesisConfig:
 
     global_crop    : Tuple[int, int, int, int] = (1000, 1512, 500, 820)
     profile_length : int                       = 64
-    height_range   : Tuple[float, float]       = (-20.0, 80.0)
+    z_range        : Tuple[float, float]       = (-20.0, 80.0)
 
     k_max           : int = 2
     params_run_name : str = "params_k2"
 
-    primary_label    : str   = "FL01_PS02"
-    secondary_labels : tuple = ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+    primary_label    : str   = "CH00"
+    secondary_labels : tuple = ("CH01", "CH02", "CH03", "CH04")
 
     field_smoothing_pixels : float = 6.0
     phase_smoothing_pixels : float = 14.0
@@ -30,12 +30,12 @@ class SynthesisConfig:
     dropped_slot_fraction : float = 0.35
 
     sensitivity_width_fraction : float = 0.22
-    pass_wavenumbers           : tuple = (0.012, 0.024, 0.036, 0.048)
+    channel_phase_rates        : tuple = (0.012, 0.024, 0.036, 0.048)
 
-    tomogram_noise_fraction : float = 0.03
-    pass_noise_fraction     : float = 0.01
+    cube_noise_fraction    : float = 0.03
+    channel_noise_fraction : float = 0.01
 
-    dem_range : Tuple[float, float] = (0.0, 30.0)
+    aux_range : Tuple[float, float] = (0.0, 30.0)
 
     lambda_k           : float = 0.01
     activity_threshold : float = 1e-3
@@ -43,18 +43,18 @@ class SynthesisConfig:
     truncation_index   : int   = 170
 
     dataset_type       : str   = "synthetic"
-    tomogram_tag       : str   = "synthetic"
+    cube_tag           : str   = "synthetic"
     parameter_tag      : str   = "params"
     max_amplitude_clip : float = 4.0
 
     seed : int = 0
 
     @property
-    def azimuth_size(self) -> int:
+    def row_size(self) -> int:
         return int(self.global_crop[1] - self.global_crop[0])
 
     @property
-    def range_size(self) -> int:
+    def col_size(self) -> int:
         return int(self.global_crop[3] - self.global_crop[2])
 
     @property
@@ -62,7 +62,7 @@ class SynthesisConfig:
         return len(self.secondary_labels)
 
     @property
-    def pass_labels(self) -> list:
+    def channel_labels(self) -> list:
         return [str(self.primary_label)] + [str(label) for label in self.secondary_labels]
 
     @property
@@ -78,20 +78,20 @@ class SynthesisConfig:
         return Path(self.output_directory) / "params" / self.params_run_name
 
     def validate(self) -> None:
-        if self.azimuth_size <= 0 or self.range_size <= 0:
-            raise ValueError(f"global_crop {self.global_crop} must describe a positive (azimuth, range) extent; got azimuth_size={self.azimuth_size} and range_size={self.range_size}.")
+        if self.row_size <= 0 or self.col_size <= 0:
+            raise ValueError(f"global_crop {self.global_crop} must describe a positive (row, col) extent; got row_size={self.row_size} and col_size={self.col_size}.")
 
         if self.profile_length < 4:
             raise ValueError(f"profile_length must sample the height axis with at least 4 bins; got {self.profile_length}.")
 
-        if self.height_range[1] <= self.height_range[0]:
-            raise ValueError(f"height_range must be increasing; got {self.height_range}.")
+        if self.z_range[1] <= self.z_range[0]:
+            raise ValueError(f"z_range must be increasing; got {self.z_range}.")
 
         if self.k_max < 1:
             raise ValueError(f"k_max must place at least one Gaussian per pixel; got {self.k_max}.")
 
-        if len(self.pass_wavenumbers) != self.n_secondaries:
-            raise ValueError(f"pass_wavenumbers lists {len(self.pass_wavenumbers)} entries but secondary_labels lists {self.n_secondaries}; every secondary needs exactly one wavenumber.")
+        if len(self.channel_phase_rates) != self.n_secondaries:
+            raise ValueError(f"channel_phase_rates lists {len(self.channel_phase_rates)} entries but secondary_labels lists {self.n_secondaries}; every secondary needs exactly one wavenumber.")
 
         if self.primary_label in self.secondary_labels:
             raise ValueError(f"primary_label {self.primary_label} also appears in secondary_labels {self.secondary_labels}; the reference pass is never a secondary.")
@@ -99,7 +99,7 @@ class SynthesisConfig:
         if len(set(self.secondary_labels)) != self.n_secondaries:
             raise ValueError(f"secondary_labels contains duplicates: {self.secondary_labels}")
 
-        span      = self.height_range[1] - self.height_range[0]
+        span      = self.z_range[1] - self.z_range[0]
         bin_width = span / (self.profile_length - 1)
 
         if self.sigma_range[0] < bin_width:

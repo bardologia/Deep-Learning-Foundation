@@ -34,9 +34,9 @@ class LossScaleProbe:
             if getattr(self.loss_cfg, term.use_flag):
                 setattr(self.loss_cfg, term.weight_key, 1.0)
 
-    def _build_criterion(self, x_axis: torch.Tensor):
+    def _build_criterion(self, z_axis: torch.Tensor):
         return Loss(
-            x_axis       = x_axis,
+            z_axis       = z_axis,
             logger       = NullLogger(),
             tracker      = NullTracker(),
             gaussian_cfg = self.gaussian_cfg,
@@ -137,11 +137,11 @@ class LossScaleProbe:
 
         return f"{weight:.6f}" + ("  (reference)" if name == ref else "")
 
-    def run(self, train_loader, model, device, x_axis: torch.Tensor) -> dict[str, float]:
+    def run(self, train_loader, model, device, z_axis: torch.Tensor) -> dict[str, float]:
         if not self.probe_cfg.enabled:
             return {}
 
-        criterion = self._build_criterion(x_axis)
+        criterion = self._build_criterion(z_axis)
 
         self.logger.section("[Loss Scale Probe]")
         self.logger.subsection(f"Averaging over {self.probe_cfg.n_batches} batches; all enabled term weights forced to 1.0.")

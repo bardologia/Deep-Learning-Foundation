@@ -25,7 +25,7 @@ class ParameterExtractor:
         prominence_frac      : float       = 0.05,
         sigma_init_divisor   : float       = 1.0,
         activity_threshold   : float       = 1e-3,
-        range_batch_size     : int         = 256,
+        col_batch_size       : int         = 256,
         adam_steps           : int         = 800,
         adam_lr              : float       = 1e-2,
         adam_b1              : float       = 0.9,
@@ -51,7 +51,7 @@ class ParameterExtractor:
             prominence_frac      = prominence_frac,
             sigma_init_divisor   = sigma_init_divisor,
             activity_threshold   = activity_threshold,
-            range_batch_size     = range_batch_size,
+            col_batch_size       = col_batch_size,
             adam_steps           = adam_steps,
             adam_lr              = adam_lr,
             adam_b1              = adam_b1,
@@ -66,10 +66,10 @@ class ParameterExtractor:
         self.logger.subsection(f"Backend : JAX GPU (modes: {', '.join(modes)})")
         self.logger.subsection(f"Lambdas : {list(lambda_values)}")
 
-    def run(self, tomogram_path: Path, height_range: Tuple[float, float]) -> Dict[tuple, Tuple[np.ndarray, dict]]:
-        self.logger.section(f"[Extraction Start] Source: {tomogram_path.name}")
+    def run(self, cube_path: Path, z_range: Tuple[float, float]) -> Dict[tuple, Tuple[np.ndarray, dict]]:
+        self.logger.section(f"[Extraction Start] Source: {cube_path.name}")
 
-        results        = self._gpu_extractor.run(tomogram_path, height_range)
+        results        = self._gpu_extractor.run(cube_path, z_range)
         sorted_results = {key: (GaussianSlotSorter.by_mean(params, self.k_max, self.activity_threshold), diagnostics) for key, (params, diagnostics) in results.items()}
 
         self.logger.subsection("[Extraction Complete]")
@@ -78,10 +78,10 @@ class ParameterExtractor:
 
 class ParamExtractionPipeline:
     def __init__(self, group: ExtractionGroup, logger: Logger | None = None, peak_initialiser: object | None = None, kernel_backend: tuple | None = None) -> None:
-        self.group         = group
-        self.shared        = group.shared
-        self.tomogram_path = self.shared.discover_tomogram_path()
-        self.height_range  = self.shared.discover_height_range()
+        self.group     = group
+        self.shared    = group.shared
+        self.cube_path = self.shared.discover_cube_path()
+        self.z_range   = self.shared.discover_z_range()
 
         log_dir = Path(self.shared.processed_data_path) / "params" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -100,7 +100,7 @@ class ParamExtractionPipeline:
             prominence_frac      = fit_cfg.prominence_frac,
             sigma_init_divisor   = fit_cfg.sigma_init_divisor,
             activity_threshold   = fit_cfg.activity_threshold,
-            range_batch_size     = self.shared.range_batch_size,
+            col_batch_size       = self.shared.col_batch_size,
             adam_steps           = self.shared.adam_steps,
             adam_lr              = self.shared.adam_lr,
             adam_b1              = self.shared.adam_b1,
@@ -113,8 +113,8 @@ class ParamExtractionPipeline:
         self.parameter_io = ParameterIO(logger=self.logger)
 
         self.logger.section("[Param Extraction Pipeline Initialized]")
-        self.logger.subsection(f"Source tomogram : {self.tomogram_path}")
-        self.logger.subsection(f"Height range    : {self.height_range}")
+        self.logger.subsection(f"Source cube : {self.cube_path}")
+        self.logger.subsection(f"Z range       : {self.z_range}")
         self.logger.subsection(f"k_max           : {group.k_max}")
         self.logger.subsection(f"Fit modes       : {group.modes}")
         self.logger.subsection(f"Lambda values   : {group.lambda_values}")
@@ -122,19 +122,19 @@ class ParamExtractionPipeline:
 
     def _stage_extract(self) -> Dict[tuple, Tuple[np.ndarray, dict]]:
         self.logger.subsection("Extracting multi-Gaussian parameters (shared load + init across modes and lambdas)")
-        return self.parameter_extractor.run(tomogram_path = self.tomogram_path, height_range = self.height_range)
+        return self.parameter_extractor.run(cube_path = self.cube_path, z_range = self.z_range)
 
     def _stage_save(self, config: ExtractionConfig, parameters_array: np.ndarray, diagnostics: dict) -> dict[str, Path]:
         npy_path  = self.parameter_io.save_params(parameters_array, config.parameters_npy_path)
         diag_path = self.parameter_io.save_diagnostics(diagnostics, config.diagnostics_npz_path)
-        meta_path = ExtractionMetadataManager(config, logger=self.logger).save_run_metadata(npy_path, diag_path, self.tomogram_path, self.height_range)
+        meta_path = ExtractionMetadataManager(config, logger=self.logger).save_run_metadata(npy_path, diag_path, self.cube_path, self.z_range)
 
         return {
             "parameters_npy"   : npy_path,
             "diagnostics_npz"  : diag_path,
             "metadata"         : meta_path,
             "output_directory" : config.output_directory,
-            "source_tomogram"  : self.tomogram_path,
+            "source_cube"      : self.cube_path,
         }
 
     def run(self) -> Dict[tuple, dict]:

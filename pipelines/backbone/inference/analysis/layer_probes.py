@@ -226,7 +226,7 @@ class LayerProbeRun(AnalysisRun):
         doc = MarkdownDoc(title=f"Layer-wise linear probes: {run.backbone_name}")
         doc.paragraph(
             f"Ridge probes (λ={self.config.ridge_lambda}) on {len(layers)} layers over {self.config.max_batches} '{self.config.split}' batches: "
-            "held-out R² of a linear readout predicting the GT active Gaussian count and the dominant scatterer elevation from each layer's features. "
+            "held-out R² of a linear readout predicting the GT active Gaussian count and the dominant component position along z from each layer's features. "
             "Rising curves show where the quantity becomes linearly decodable inside the network."
         )
 

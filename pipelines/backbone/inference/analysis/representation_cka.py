@@ -120,7 +120,7 @@ class CkaComparison:
             num_workers     = 0,
             device          = self.config.device,
             checkpoint_name = self.config.checkpoint_name,
-            load_tomogram   = False,
+            load_cube       = False,
         )
 
     @staticmethod

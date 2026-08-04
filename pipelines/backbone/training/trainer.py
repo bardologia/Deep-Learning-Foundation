@@ -61,7 +61,7 @@ class Trainer(BaseTrainer):
     stage_name    = "Total"
     section_title = "[PyTorch Training Loop]"
 
-    def __init__(self, model, model_cfg, x_axis, config, run_dir, logger, norm_stats=None, emit_docs=True):
+    def __init__(self, model, model_cfg, z_axis, config, run_dir, logger, norm_stats=None, emit_docs=True):
         self.model_cfg        = model_cfg
         self.gaussian_cfg     = config.gaussian
         self.curriculum       = config.curriculum
@@ -71,7 +71,7 @@ class Trainer(BaseTrainer):
         self.param_sampler    = ParamSampler(config.gaussian.params_per_gaussian)
         self.slot_vitals      = SlotVitals(config.gaussian.params_per_gaussian, grad_scale=float(config.training.gradient_accumulation_steps))
 
-        super().__init__(model, config, run_dir, logger, x_axis)
+        super().__init__(model, config, run_dir, logger, z_axis)
 
         self.recon_figures = ReconstructionFigures(self.tracker, self.device)
 
@@ -117,7 +117,7 @@ class Trainer(BaseTrainer):
         stage = "curriculum.warmup" if self.curriculum.enabled else "curriculum.complete (curriculum disabled)"
         self.logger.subsection(f"Loss built from {stage}")
 
-        return Loss(self.x_axis, self.logger, self.tracker, self.gaussian_cfg, self.initial_loss_cfg, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses, sampler=self.param_sampler, slot_vitals=self.slot_vitals)
+        return Loss(self.z_axis, self.logger, self.tracker, self.gaussian_cfg, self.initial_loss_cfg, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses, sampler=self.param_sampler, slot_vitals=self.slot_vitals)
 
     def _warn_nonfinite(self, tensor: torch.Tensor, name: str) -> None:
         if torch.isnan(tensor).any() or torch.isinf(tensor).any():
@@ -206,4 +206,4 @@ class Trainer(BaseTrainer):
             norm_stats   = self.norm_stats,
             logger       = self.logger,
         )
-        probe.run(train_loader, self.model, self.device, self.x_axis)
+        probe.run(train_loader, self.model, self.device, self.z_axis)

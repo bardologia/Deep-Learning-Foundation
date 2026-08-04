@@ -16,14 +16,14 @@ from tools.reporting.plotting                        import PlotBase
 
 class EvolutionFrames(PlotBase):
 
-    def frame(self, x_axis: np.ndarray, gt_curve: np.ndarray, pred_curve: np.ndarray, epoch: int, ylim: float) -> Image.Image:
+    def frame(self, z_axis: np.ndarray, gt_curve: np.ndarray, pred_curve: np.ndarray, epoch: int, ylim: float) -> Image.Image:
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=(5.0, 3.2), dpi=110)
-        ax.plot(x_axis, gt_curve,   color="black",   linestyle="--", linewidth=1.2, label="Ground truth")
-        ax.plot(x_axis, pred_curve, color="#1f77b4", linestyle="-",  linewidth=1.5, label=f"Epoch {epoch}")
+        ax.plot(z_axis, gt_curve,   color="black",   linestyle="--", linewidth=1.2, label="Ground truth")
+        ax.plot(z_axis, pred_curve, color="#1f77b4", linestyle="-",  linewidth=1.5, label=f"Epoch {epoch}")
 
-        ax.set_xlabel("Elevation [m]")
+        ax.set_xlabel("Z")
         ax.set_ylabel("Amplitude")
         ax.set_ylim(0.0, ylim)
         ax.legend(frameon=False, loc="upper right")
@@ -51,8 +51,8 @@ class TrainingEvolutionRun(AnalysisRun):
     def _batch_size(self) -> int:
         return 1
 
-    def _gt_curve(self, run, renderer: PredictionCurves, az: int, rg: int) -> np.ndarray:
-        params = np.asarray(run.dataset.gt_parameters[:, az, rg], dtype=np.float64)
+    def _gt_curve(self, run, renderer: PredictionCurves, row: int, col: int) -> np.ndarray:
+        params = np.asarray(run.dataset.gt_parameters[:, row, col], dtype=np.float64)
         return renderer.render(params.reshape(1, -1, 1, 1))[0, :, 0, 0]
 
     def _predict_centers(self, run, renderer: PredictionCurves, windows: torch.Tensor, centers_local: list[tuple[int, int]]) -> list[np.ndarray]:
@@ -67,15 +67,15 @@ class TrainingEvolutionRun(AnalysisRun):
 
         run       = self._load_run()
         snapshots = self._snapshots()
-        renderer  = PredictionCurves(run.n_gaussians, run.x_axis)
+        renderer  = PredictionCurves(run.n_gaussians, run.z_axis)
 
         probes  = ProbeWindows(run, self.config.window)
-        centers = probes.centers(self.config.n_azimuth_probes, self.config.n_range_probes)
+        centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
         half    = self.config.window // 2
 
         centers_local = [(half, half)] * len(centers)
-        gt_curves     = [self._gt_curve(run, renderer, az, rg) for az, rg in centers]
+        gt_curves     = [self._gt_curve(run, renderer, row, col) for row, col in centers]
 
         module     = run.model.module
         best_state = {name: tensor.detach().clone() for name, tensor in module.state_dict().items()}
@@ -100,14 +100,14 @@ class TrainingEvolutionRun(AnalysisRun):
             module.load_state_dict(best_state)
 
         gifs = {}
-        for index, (az, rg) in enumerate(centers):
-            images = [frame_renderer.frame(run.x_axis, gt_curves[index], prediction, epoch, ylims[index]) for epoch, prediction in frames_by_pix[index]]
+        for index, (row, col) in enumerate(centers):
+            images = [frame_renderer.frame(run.z_axis, gt_curves[index], prediction, epoch, ylims[index]) for epoch, prediction in frames_by_pix[index]]
 
-            gif_path = self.output_dir / f"evolution_az{az:04d}_rg{rg:04d}.gif"
+            gif_path = self.output_dir / f"evolution_row{row:04d}_col{col:04d}.gif"
             images[0].save(gif_path, save_all=True, append_images=images[1:], duration=int(1000 / self.config.fps), loop=0)
-            gifs[f"az {az}, rg {rg}"] = gif_path
+            gifs[f"row {row}, col {col}"] = gif_path
 
-        payload = {"backbone": run.backbone_name, "split": self.config.split, "epochs": epochs, "pixels": [[az, rg] for az, rg in centers]}
+        payload = {"backbone": run.backbone_name, "split": self.config.split, "epochs": epochs, "pixels": [[row, col] for row, col in centers]}
         FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
         doc = MarkdownDoc(title=f"Training evolution: {run.backbone_name}")

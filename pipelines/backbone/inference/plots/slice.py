@@ -19,15 +19,14 @@ class SlicePlotter(PlotTools):
         pred_curves    : np.ndarray,
         gt_curves      : np.ndarray,
         params_pred    : Optional[np.ndarray],
-        x_axis         : np.ndarray,
+        z_axis         : np.ndarray,
         pixels         : np.ndarray,
         tag            : str,
         out_dir        : Path,
         n_gaussians    : int,
         pixel_metrics  : Dict[str, np.ndarray],
-        az_offset      : int,
-        rg_offset      : int,
-        reduced_curves : Optional[np.ndarray] = None,
+        row_offset     : int,
+        col_offset     : int,
         full_curves    : Optional[np.ndarray] = None,
     ) -> List[Path]:
 
@@ -37,40 +36,33 @@ class SlicePlotter(PlotTools):
         for p, (y, x) in enumerate(pixels):
             gt    = gt_curves  [:, y, x]
             pred  = pred_curves[:, y, x]
-            comps = self._gaussian_components(params_pred[:, y, x], x_axis, n_gaussians) if params_pred is not None else []
+            comps = self._gaussian_components(params_pred[:, y, x], z_axis, n_gaussians) if params_pred is not None else []
 
             fig, ax = plt.subplots(figsize=(5.2, 3.4))
 
             if full_curves is not None:
-                ax.plot(x_axis, full_curves[:, y, x], color="0.55", linewidth=1.0, label="Full tomo (raw)", zorder=1)
+                ax.plot(z_axis, full_curves[:, y, x], color="0.55", linewidth=1.0, label="Full cube (raw)", zorder=1)
 
-            ax.plot(x_axis, gt,   color="black", linewidth=1.4, label="GT",   zorder=3)
-            ax.plot(x_axis, pred, color="C3",    linewidth=1.2, label="Pred", linestyle="--", zorder=4)
-
-            if reduced_curves is not None:
-                reduced   = reduced_curves[:, y, x]
-                red_peak  = float(np.nanmax(reduced))
-                gt_peak   = float(np.nanmax(gt))
-                red_scale = (gt_peak / red_peak) if red_peak > 1e-12 else 1.0
-                ax.plot(x_axis, reduced * red_scale, color="C2", linewidth=1.1, label="Reduced (GT-peak)", linestyle=":", zorder=2)
+            ax.plot(z_axis, gt,   color="black", linewidth=1.4, label="GT",   zorder=3)
+            ax.plot(z_axis, pred, color="C3",    linewidth=1.2, label="Pred", linestyle="--", zorder=4)
 
             for k, comp in enumerate(comps):
-                ax.plot(x_axis, comp, color=base_colors[k % len(base_colors)], linewidth=0.8, alpha=0.75, label=f"$g_{{{k+1}}}$")
+                ax.plot(z_axis, comp, color=base_colors[k % len(base_colors)], linewidth=0.8, alpha=0.75, label=f"$g_{{{k+1}}}$")
 
-            ax.fill_between(x_axis, pred - gt, 0.0, color="C0", alpha=0.10, linewidth=0)
+            ax.fill_between(z_axis, pred - gt, 0.0, color="C0", alpha=0.10, linewidth=0)
 
             mse = float(pixel_metrics["mse"][y, x])
             r2  = float(pixel_metrics["r2"] [y, x])
             cos = float(pixel_metrics["cos"][y, x])
 
-            ax.set_title(f"az={y + az_offset}, rg={x + rg_offset}   MSE={mse:.3g}  R²={r2:.3f}  cos={cos:.3f}", fontsize=9)
-            ax.set_xlabel("elevation [m]")
+            ax.set_title(f"row={y + row_offset}, col={x + col_offset}   MSE={mse:.3g}  R²={r2:.3f}  cos={cos:.3f}", fontsize=9)
+            ax.set_xlabel("z")
             ax.set_ylabel("intensity")
             ax.grid(True, which="both", linewidth=0.3, alpha=0.4)
             ax.legend(loc="best", framealpha=0.85, fontsize=7, ncol=2)
             fig.tight_layout()
 
-            paths.append(self._save(fig, out_dir / f"{tag}_{p + 1:02d}_az{y + az_offset}_rg{x + rg_offset}.png"))
+            paths.append(self._save(fig, out_dir / f"{tag}_{p + 1:02d}_row{y + row_offset}_col{x + col_offset}.png"))
 
         return paths
 
@@ -80,8 +72,8 @@ class SlicePlotter(PlotTools):
         title      : str,
         label      : str,
         out_path   : Path,
-        az_offset  : int,
-        rg_offset  : int,
+        row_offset : int,
+        col_offset : int,
         cmap       : str   = "jet",
         log        : bool  = False,
         q_low      : float = 1.0,
@@ -89,7 +81,7 @@ class SlicePlotter(PlotTools):
     ) -> Path:
 
         H, W   = metric_map.shape
-        extent = [rg_offset, rg_offset + W, az_offset + H, az_offset]
+        extent = [col_offset, col_offset + W, row_offset + H, row_offset]
 
         data = metric_map.copy()
         if log:
@@ -100,8 +92,8 @@ class SlicePlotter(PlotTools):
         return self._imshow_panel(
             data       = data,
             title      = title,
-            x_label    = "range index",
-            y_label    = "azimuth index",
+            x_label    = "col index",
+            y_label    = "row index",
             cbar_label = label + (" [log10]" if log else ""),
             extent     = extent,
             cmap       = cmap,
@@ -118,36 +110,36 @@ class SlicePlotter(PlotTools):
         n_secondaries  : int,
         labels         : Optional[List[str]],
         out_dir        : Path,
-        az_offset      : int,
-        rg_offset      : int,
+        row_offset     : int,
+        col_offset     : int,
         primary_label  : str = "primary",
     ) -> List[Path]:
 
         H, W   = complex_inputs.shape[-2:]
-        extent = [rg_offset, rg_offset + W, az_offset + H, az_offset]
+        extent = [col_offset, col_offset + W, row_offset + H, row_offset]
         names  = list(labels) if labels else [f"secondary {i + 1}" for i in range(n_secondaries)]
         paths  = []
 
-        paths.append(self._amplitude_panel(complex_inputs[0], f"Primary {primary_label} — amplitude", out_dir / "pass_primary_amplitude.png", extent))
+        paths.append(self._amplitude_panel(complex_inputs[0], f"Primary {primary_label} — amplitude", out_dir / "channel_primary_amplitude.png", extent))
 
         for i in range(n_secondaries):
-            paths.append(self._amplitude_panel(complex_inputs[1 + i], f"Secondary {names[i]} — amplitude", out_dir / f"pass_{names[i]}_amplitude.png", extent))
+            paths.append(self._amplitude_panel(complex_inputs[1 + i], f"Secondary {names[i]} — amplitude", out_dir / f"channel_{names[i]}_amplitude.png", extent))
 
         for i in range(n_secondaries):
             phase = np.angle(complex_inputs[1 + n_secondaries + i]).astype(np.float32)
 
             paths.append(self._imshow_panel(
                 data       = phase,
-                title      = f"Interferogram {primary_label} × {names[i]} — phase",
-                x_label    = "range index",
-                y_label    = "azimuth index",
+                title      = f"Derived {primary_label} × {names[i]} — phase",
+                x_label    = "col index",
+                y_label    = "row index",
                 cbar_label = "phase [rad]",
                 extent     = extent,
                 cmap       = self._phase_cmap(),
                 vmin       = -np.pi,
                 vmax       = np.pi,
                 origin     = "upper",
-                path       = out_dir / f"interferogram_{names[i]}_phase.png",
+                path       = out_dir / f"derived_{names[i]}_phase.png",
             ))
 
         return paths
@@ -159,8 +151,8 @@ class SlicePlotter(PlotTools):
         return self._imshow_panel(
             data       = amplitude,
             title      = title,
-            x_label    = "range index",
-            y_label    = "azimuth index",
+            x_label    = "col index",
+            y_label    = "row index",
             cbar_label = "amplitude",
             extent     = extent,
             cmap       = "gray",
@@ -187,7 +179,7 @@ class SlicePlotter(PlotTools):
         pred_title : str = "Prediction",
         err_title  : str = "|Pred − GT|",
         full_slice : Optional[np.ndarray] = None,
-        full_title : str = "Full tomogram (raw)",
+        full_title : str = "Full cube (raw)",
     ) -> List[Path]:
 
         err_gt_slice = np.abs(pred_slice - gt_slice)
@@ -233,46 +225,46 @@ class SlicePlotter(PlotTools):
             for data, title, cmap_used, vlo, vhi, cbar, kind in panels
         ]
 
-    def plot_tomogram_slice(
+    def plot_cube_slice(
         self,
         pred_cube  : np.ndarray,
         gt_cube    : np.ndarray,
         axis       : str,
         index      : int,
-        x_axis     : np.ndarray,
+        z_axis     : np.ndarray,
         out_dir    : Path,
         stem       : str,
-        az_offset  : int,
-        rg_offset  : int,
+        row_offset : int,
+        col_offset : int,
         ssim_value : Optional[float] = None,
         ref_title  : str = "GT (Gaussian)",
         pred_title : str = "Prediction",
         err_title  : str = "|Pred − GT|",
         full_cube  : Optional[np.ndarray] = None,
-        full_title : str = "Full tomogram (raw)",
+        full_title : str = "Full cube (raw)",
     ) -> List[Path]:
 
-        if axis == "range":
+        if axis == "col":
             pred_slice = pred_cube[:, :, index]
             gt_slice   = gt_cube  [:, :, index]
             full_slice = full_cube[:, :, index] if full_cube is not None else None
-            x_label    = "azimuth index"
-            x_extent_lo, x_extent_hi = az_offset, az_offset + pred_slice.shape[1]
-            title_pos                = f"range = {index + rg_offset}"
+            x_label    = "row index"
+            x_extent_lo, x_extent_hi = row_offset, row_offset + pred_slice.shape[1]
+            title_pos                = f"col = {index + col_offset}"
 
-        elif axis == "azimuth":
+        elif axis == "row":
             pred_slice = pred_cube[:, index, :]
             gt_slice   = gt_cube  [:, index, :]
             full_slice = full_cube[:, index, :] if full_cube is not None else None
-            x_label    = "range index"
-            x_extent_lo, x_extent_hi = rg_offset, rg_offset + pred_slice.shape[1]
-            title_pos                = f"azimuth = {index + az_offset}"
+            x_label    = "col index"
+            x_extent_lo, x_extent_hi = col_offset, col_offset + pred_slice.shape[1]
+            title_pos                = f"row = {index + row_offset}"
 
         else:
-            raise ValueError(f"axis must be 'range' or 'azimuth', got {axis!r}")
+            raise ValueError(f"axis must be 'col' or 'row', got {axis!r}")
 
-        sort_idx      = np.argsort(x_axis)
-        x_axis_sorted = x_axis[sort_idx]
+        sort_idx      = np.argsort(z_axis)
+        x_axis_sorted = z_axis[sort_idx]
         pred_slice    = pred_slice[sort_idx]
         gt_slice      = gt_slice  [sort_idx]
         full_slice    = full_slice[sort_idx] if full_slice is not None else None
@@ -284,7 +276,7 @@ class SlicePlotter(PlotTools):
             gt_slice   = gt_slice,
             extent     = extent,
             x_label    = x_label,
-            y_label    = "elevation [m]",
+            y_label    = "z",
             origin     = "lower",
             title_pos  = title_pos,
             ssim_value = ssim_value,
@@ -297,38 +289,38 @@ class SlicePlotter(PlotTools):
             full_title = full_title,
         )
 
-    def plot_elevation_intensity_slice(
+    def plot_z_intensity_slice(
         self,
         pred_cube  : np.ndarray,
         gt_cube    : np.ndarray,
-        elev_idx   : int,
-        x_axis     : np.ndarray,
+        z_idx      : int,
+        z_axis     : np.ndarray,
         out_dir    : Path,
         stem       : str,
-        az_offset  : int,
-        rg_offset  : int,
+        row_offset : int,
+        col_offset : int,
         ssim_value : Optional[float] = None,
         ref_title  : str = "GT (Gaussian)",
         pred_title : str = "Prediction",
         err_title  : str = "|Pred − GT|",
         full_cube  : Optional[np.ndarray] = None,
-        full_title : str = "Full tomogram (raw)",
+        full_title : str = "Full cube (raw)",
     ) -> List[Path]:
 
-        pred_slice = pred_cube[elev_idx]
-        gt_slice   = gt_cube  [elev_idx]
-        full_slice = full_cube[elev_idx] if full_cube is not None else None
+        pred_slice = pred_cube[z_idx]
+        gt_slice   = gt_cube  [z_idx]
+        full_slice = full_cube[z_idx] if full_cube is not None else None
 
         H, W      = pred_slice.shape
-        extent    = [rg_offset, rg_offset + W, az_offset + H, az_offset]
-        title_pos = f"elev = {x_axis[elev_idx]:.2f} m (idx {elev_idx})"
+        extent    = [col_offset, col_offset + W, row_offset + H, row_offset]
+        title_pos = f"z = {z_axis[z_idx]:.2f} m (idx {z_idx})"
 
         return self._render_slice_panels(
             pred_slice = pred_slice,
             gt_slice   = gt_slice,
             extent     = extent,
-            x_label    = "range index",
-            y_label    = "azimuth index",
+            x_label    = "col index",
+            y_label    = "row index",
             origin     = "upper",
             title_pos  = title_pos,
             ssim_value = ssim_value,
@@ -402,35 +394,35 @@ class SlicePlotter(PlotTools):
 
         return self._save(fig, out_path)
 
-    def plot_elev_metric_curves(
+    def plot_z_metric_curves(
         self,
         global_metrics : dict,
         out_dir        : Path,
-        n_elev         : int,
-        x_axis         : np.ndarray,
+        n_z            : int,
+        z_axis         : np.ndarray,
         suffix         : str = "gt",
         series_label   : str = "pred × GT (Gaussian)",
     ) -> List[Path]:
 
         metric_specs = [
-            ("elev_mae",  "mae",           "MAE",           "mean absolute error"),
-            ("elev_rmse", "rmse",          "RMSE",          "root mean squared error"),
-            ("elev_r2",   "r2",            "R²",            "coefficient of determination"),
-            ("elev_ce",   "cross_entropy", "cross-entropy", "cross-entropy (normalised profiles)"),
+            ("z_mae",  "mae",           "MAE",           "mean absolute error"),
+            ("z_rmse", "rmse",          "RMSE",          "root mean squared error"),
+            ("z_r2",   "r2",            "R²",            "coefficient of determination"),
+            ("z_ce",   "cross_entropy", "cross-entropy", "cross-entropy (normalised profiles)"),
         ]
 
         paths = []
         for key, fname, ylabel, desc in metric_specs:
-            vals_gt = np.array([global_metrics[f"{key}_{suffix}_{i}"]  for i in range(n_elev)], dtype=np.float64)
+            vals_gt = np.array([global_metrics[f"{key}_{suffix}_{i}"]  for i in range(n_z)], dtype=np.float64)
             mean_gt = float(global_metrics[f"{key}_{suffix}_mean"])
 
             fig, ax = plt.subplots(figsize=(5.8, 3.6))
-            ax.plot(x_axis, vals_gt, color="C0", linewidth=0.9, label=series_label, alpha=0.9)
+            ax.plot(z_axis, vals_gt, color="C0", linewidth=0.9, label=series_label, alpha=0.9)
             ax.axhline(mean_gt, color="C0", linestyle="--", linewidth=1.0, label=f"mean = {mean_gt:.4g}")
 
-            ax.set_xlabel("elevation [m]")
+            ax.set_xlabel("z")
             ax.set_ylabel(ylabel)
-            ax.set_title(f"{ylabel} per elevation bin — {desc}")
+            ax.set_title(f"{ylabel} per z bin — {desc}")
             ax.legend(framealpha=0.9)
             ax.grid(True, axis="y", which="major", linewidth=0.3, alpha=0.5)
             fig.tight_layout()

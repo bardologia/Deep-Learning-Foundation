@@ -208,9 +208,9 @@ class Predictor:
 
     @staticmethod
     def _cpu_worker(args: tuple) -> tuple:
-        pred_params_chunk, gt_params_chunk, x_axis, n_gaussians, render_amp_floor = args
+        pred_params_chunk, gt_params_chunk, z_axis, n_gaussians, render_amp_floor = args
 
-        x          = x_axis.reshape(1, 1, -1, 1, 1).astype(np.float32)
+        x          = z_axis.reshape(1, 1, -1, 1, 1).astype(np.float32)
         B, _, H, W = pred_params_chunk.shape
 
         n_K        = n_gaussians
@@ -240,14 +240,14 @@ class Predictor:
         run    = self.run
         n_K    = run.n_gaussians
         out_ch = run.out_channels
-        n_elev = run.x_axis_length
+        n_z    = run.x_axis_length
 
-        pred_curve_stitcher = self._create_stitcher(n_elev,  "pred_curves")
-        gt_curve_stitcher   = self._create_stitcher(n_elev,  "gt_curves")
+        pred_curve_stitcher = self._create_stitcher(n_z,  "pred_curves")
+        gt_curve_stitcher   = self._create_stitcher(n_z,  "gt_curves")
         param_pred_stitcher = self._create_param_stitcher(out_ch,  "params_pred")
         gt_param_stitcher   = self._create_param_stitcher(n_K * 3, "params_gt")
 
-        tasks     = [(pred, gt, run.x_axis, n_K, self.render_amp_floor) for pred, gt in zip(all_pred_params, all_gt_params)]
+        tasks     = [(pred, gt, run.z_axis, n_K, self.render_amp_floor) for pred, gt in zip(all_pred_params, all_gt_params)]
         in_flight = 2 * self.cpu_workers
 
         with self.logger.track(transient=True) as prog:
@@ -355,8 +355,8 @@ class Predictor:
             pixel_cosine       = pixel_cos,
             pixel_peak_err_idx = pixel_peak_idx,
             cube_directory     = self.cube_dir,
-            azimuth_offset     = self.run.split_region.azimuth_start,
-            range_offset       = self.run.split_region.range_start,
+            row_offset         = self.run.split_region.row_start,
+            col_offset         = self.run.split_region.col_start,
         )
 
     def run_inference(self) -> Result:

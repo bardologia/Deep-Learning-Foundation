@@ -12,15 +12,15 @@ from tools.runtime.run_tag     import RunTag
 
 class ReportPayloadBuilder:
     @staticmethod
-    def run_summary(run, x_axis_np: np.ndarray) -> Dict[str, Any]:
+    def run_summary(run, z_axis_np: np.ndarray) -> Dict[str, Any]:
         return {
             "model_name"        : run.backbone_name,
             "in_channels"       : run.in_channels,
             "out_channels"      : run.out_channels,
             "n_gaussians"       : run.n_gaussians,
             "x_axis_length"     : run.x_axis_length,
-            "x_axis_min"        : float(x_axis_np.min()),
-            "x_axis_max"        : float(x_axis_np.max()),
+            "x_axis_min"        : float(z_axis_np.min()),
+            "x_axis_max"        : float(z_axis_np.max()),
             "split"             : run.split_name,
             "split_region"      : str(run.split_region.as_tuple()),
             "global_crop"       : str(run.global_crop.as_tuple()),
@@ -29,29 +29,29 @@ class ReportPayloadBuilder:
             "patch_stride"      : run.grid.stride,
             "preprocessing_dir" : str(run.dataset_config.preprocessing_run_directory),
             "input_config"      : run.dataset_config.input_config.as_dict(),
-            "secondary_labels"  : ", ".join(run.secondary_labels) if run.secondary_labels else "all passes",
+            "secondary_labels"  : ", ".join(run.secondary_labels) if run.secondary_labels else "all channels",
         }
 
     @staticmethod
     def inference_config(cfg, run) -> Dict[str, Any]:
         return {
-            "stitch_window"      : cfg.stitch_window,
-            "cube_dtype"         : cfg.cube_dtype,
-            "save_cubes"         : cfg.save_cubes,
-            "save_plots"         : cfg.save_plots,
-            "save_animations"    : cfg.save_animations,
-            "n_best_profiles"    : cfg.n_best_profiles,
-            "n_worst_profiles"   : cfg.n_worst_profiles,
-            "n_random_profiles"  : cfg.n_random_profiles,
-            "n_range_slices"     : cfg.n_range_slices,
-            "n_azimuth_slices"   : cfg.n_azimuth_slices,
-            "n_elevation_slices" : cfg.n_elevation_slices,
-            "gif_axes"           : cfg.gif_axes,
-            "gif_fps"            : cfg.gif_fps,
-            "gif_max_frames"     : cfg.gif_max_frames,
-            "device"             : cfg.device,
-            "batch_size"         : run.dataset_config.batch_size,
-            "num_workers"        : cfg.num_workers,
+            "stitch_window"     : cfg.stitch_window,
+            "cube_dtype"        : cfg.cube_dtype,
+            "save_cubes"        : cfg.save_cubes,
+            "save_plots"        : cfg.save_plots,
+            "save_animations"   : cfg.save_animations,
+            "n_best_profiles"   : cfg.n_best_profiles,
+            "n_worst_profiles"  : cfg.n_worst_profiles,
+            "n_random_profiles" : cfg.n_random_profiles,
+            "n_col_slices"      : cfg.n_col_slices,
+            "n_row_slices"      : cfg.n_row_slices,
+            "n_z_slices"        : cfg.n_z_slices,
+            "gif_axes"          : cfg.gif_axes,
+            "gif_fps"           : cfg.gif_fps,
+            "gif_max_frames"    : cfg.gif_max_frames,
+            "device"            : cfg.device,
+            "batch_size"        : run.dataset_config.batch_size,
+            "num_workers"       : cfg.num_workers,
         }
 
 
@@ -60,7 +60,7 @@ class Report:
     _DATASET_KEYS = frozenset({
         "gt_mean", "gt_std", "gt_max",
         "pred_mean", "pred_std", "pred_max",
-        "n_pixels", "n_elevation",
+        "n_pixels", "n_z",
         "x_axis_min", "x_axis_max", "x_axis_step",
     })
 
@@ -122,9 +122,9 @@ class Report:
         return "\n".join(table.render())
 
     _PER_SLICE_PREFIXES = (
-        "ssim_gt_elev_",   "ssim_gt_range_",   "ssim_gt_azimuth_",
-        "ssim_norm_elev_", "ssim_norm_range_", "ssim_norm_azimuth_",
-        "elev_mae_gt_",  "elev_rmse_gt_",  "elev_r2_gt_",  "elev_ce_gt_",
+        "ssim_gt_z_",   "ssim_gt_col_",   "ssim_gt_row_",
+        "ssim_norm_z_", "ssim_norm_col_", "ssim_norm_row_",
+        "z_mae_gt_",  "z_rmse_gt_",  "z_r2_gt_",  "z_ce_gt_",
     )
 
     @classmethod
@@ -178,23 +178,23 @@ class Report:
 
         out.append("\n### 1.5 Inference configuration\n")
         out.append(self._kv_table([
-            ("device",             cfg["device"]),
-            ("batch_size",         cfg["batch_size"]),
-            ("num_workers",        cfg["num_workers"]),
-            ("stitch_window",      cfg["stitch_window"]),
-            ("cube_dtype",         cfg["cube_dtype"]),
-            ("save_cubes",         cfg["save_cubes"]),
-            ("save_plots",         cfg["save_plots"]),
-            ("save_animations",    cfg["save_animations"]),
-            ("n_best_profiles",    cfg["n_best_profiles"]),
-            ("n_worst_profiles",   cfg["n_worst_profiles"]),
-            ("n_random_profiles",  cfg["n_random_profiles"]),
-            ("n_range_slices",     cfg["n_range_slices"]),
-            ("n_azimuth_slices",   cfg["n_azimuth_slices"]),
-            ("n_elevation_slices", cfg["n_elevation_slices"]),
-            ("gif_axes",           cfg["gif_axes"]),
-            ("gif_fps",            cfg["gif_fps"]),
-            ("gif_max_frames",     cfg["gif_max_frames"]),
+            ("device",            cfg["device"]),
+            ("batch_size",        cfg["batch_size"]),
+            ("num_workers",       cfg["num_workers"]),
+            ("stitch_window",     cfg["stitch_window"]),
+            ("cube_dtype",        cfg["cube_dtype"]),
+            ("save_cubes",        cfg["save_cubes"]),
+            ("save_plots",        cfg["save_plots"]),
+            ("save_animations",   cfg["save_animations"]),
+            ("n_best_profiles",   cfg["n_best_profiles"]),
+            ("n_worst_profiles",  cfg["n_worst_profiles"]),
+            ("n_random_profiles", cfg["n_random_profiles"]),
+            ("n_col_slices",      cfg["n_col_slices"]),
+            ("n_row_slices",      cfg["n_row_slices"]),
+            ("n_z_slices",        cfg["n_z_slices"]),
+            ("gif_axes",          cfg["gif_axes"]),
+            ("gif_fps",           cfg["gif_fps"]),
+            ("gif_max_frames",    cfg["gif_max_frames"]),
         ]))
         out.append("")
 
@@ -206,7 +206,7 @@ class Report:
 
         out.append("**Curve-level** (aggregated over the full stitched test cube)\n")
         out.append(self._three_col_table([
-            ("MSE",     gm["curve_mse_gt"],   "Mean squared error over all (elev, az, rg)"),
+            ("MSE",     gm["curve_mse_gt"],   "Mean squared error over all (z, row, col)"),
             ("MAE",     gm["curve_mae_gt"],   "Mean absolute error"),
             ("RMSE",    gm["curve_rmse_gt"],  "Root mean squared error"),
             ("R\u00b2", gm["overall_r2_gt"],  "Global coefficient of determination"),
@@ -214,7 +214,7 @@ class Report:
         ]))
         out.append("")
 
-        out.append("**Per-pixel** (computed per (az, rg) pixel over the elevation axis)\n")
+        out.append("**Per-pixel** (computed per (row, col) pixel over the z axis)\n")
         out.append(self._three_col_table([
             ("MSE mean",        gm["pixel_mse_gt_mean"],              "Mean of per-pixel MSE"),
             ("MSE median",      gm["pixel_mse_gt_median"],            "Median of per-pixel MSE"),
@@ -225,7 +225,7 @@ class Report:
             ("R\u00b2 p5",      gm["pixel_r2_gt_p5"],                 "5th percentile (worst tail)"),
             ("Cosine mean",     gm["pixel_cosine_gt_mean"],           "Mean cosine similarity"),
             ("Cosine median",   gm["pixel_cosine_gt_median"],         "Median cosine similarity"),
-            ("Peak err mean",   gm["pixel_peak_err_units_mean_gt"],   "|\u0394 peak| in elevation units"),
+            ("Peak err mean",   gm["pixel_peak_err_units_mean_gt"],   "|\u0394 peak| in z units"),
             ("Peak err median", gm["pixel_peak_err_units_median_gt"], "Median"),
             ("Peak err p95",    gm["pixel_peak_err_units_p95_gt"],    "95th percentile"),
         ]))
@@ -233,26 +233,26 @@ class Report:
 
         out.append("**SSIM** (denorm, mean over all slices of that axis)\n")
         out.append(self._three_col_table([
-            ("SSIM elev mean",    gm["ssim_gt_elev_mean"],    "H\u00d7W intensity-at-elevation-bin planes"),
-            ("SSIM range mean",   gm["ssim_gt_range_mean"],   "n_elev\u00d7H cross-sectional planes"),
-            ("SSIM azimuth mean", gm["ssim_gt_azimuth_mean"], "n_elev\u00d7W cross-sectional planes"),
+            ("SSIM z mean",     gm["ssim_gt_z_mean"],    "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM range mean", gm["ssim_gt_col_mean"],   "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean",   gm["ssim_gt_row_mean"], "n_z\u00d7W cross-sectional planes"),
         ]))
         out.append("")
 
         out.append("**SSIM** (unit-area normalised pred vs GT, mean over all slices of that axis)\n")
         out.append(self._three_col_table([
-            ("SSIM elev mean",    gm["ssim_norm_elev_mean"],    "H\u00d7W intensity-at-elevation-bin planes"),
-            ("SSIM range mean",   gm["ssim_norm_range_mean"],   "n_elev\u00d7H cross-sectional planes"),
-            ("SSIM azimuth mean", gm["ssim_norm_azimuth_mean"], "n_elev\u00d7W cross-sectional planes"),
+            ("SSIM z mean",     gm["ssim_norm_z_mean"],    "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM range mean", gm["ssim_norm_col_mean"],   "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean",   gm["ssim_norm_row_mean"], "n_z\u00d7W cross-sectional planes"),
         ]))
         out.append("")
 
-        out.append("**Per-elevation-bin** (mean over all elevation bins)\n")
+        out.append("**Per-z-bin** (mean over all z bins)\n")
         out.append(self._three_col_table([
-            ("MAE mean",           gm["elev_mae_gt_mean"],   "Mean absolute error averaged over elevation"),
-            ("RMSE mean",          gm["elev_rmse_gt_mean"],  "Root mean squared error averaged over elevation"),
-            ("R\u00b2 mean",       gm["elev_r2_gt_mean"],    "Coefficient of determination averaged over elevation"),
-            ("Cross-entropy mean", gm["elev_ce_gt_mean"],    "Cross-entropy (normalised profiles) averaged over elevation"),
+            ("MAE mean",           gm["z_mae_gt_mean"],   "Mean absolute error averaged over z"),
+            ("RMSE mean",          gm["z_rmse_gt_mean"],  "Root mean squared error averaged over z"),
+            ("R\u00b2 mean",       gm["z_r2_gt_mean"],    "Coefficient of determination averaged over z"),
+            ("Cross-entropy mean", gm["z_ce_gt_mean"],    "Cross-entropy (normalised profiles) averaged over z"),
         ]))
         out.append("")
 
@@ -364,7 +364,7 @@ class Report:
         out.append(
             "Each pixel's predicted Gaussians are Hungarian-matched to its GT Gaussians on |Δμ| before "
             "scoring, so the errors are independent of slot ordering. A match counts as a detection hit when "
-            f"|Δμ| ≤ {self._fmt(gm['matched_tol'])} elevation units.\n"
+            f"|Δμ| ≤ {self._fmt(gm['matched_tol'])} z units.\n"
         )
         out.append(self._three_col_table([
             ("Matched μ MAE",   gm["matched_mu_mae"],    "Mean |Δμ| over matched pairs (all counts)"),
@@ -452,7 +452,7 @@ class Report:
     _METRIC_TAXONOMY = (
         ("3.1 Dataset statistics",                               lambda k: k in Report._DATASET_KEYS or k.endswith("_status")),
         ("3.12 JEPA embedding diagnostics",                      lambda k: k.startswith("jepa_")),
-        ("3.13 Label quality (GT fit vs raw tomogram)",          lambda k: k.startswith("label_")),
+        ("3.13 Label quality (GT fit vs raw cube)",              lambda k: k.startswith("label_")),
         ("3.14 Normalization & clamp health",                    lambda k: k.startswith(("norm_in_", "clamp_"))),
         ("3.15 Flip-equivariance consistency",                   lambda k: k.startswith("flip_")),
         ("3.16 Stratified errors (by scene covariate)",          lambda k: k.startswith("strat")),
@@ -521,14 +521,14 @@ class Report:
         out = []
 
         input_groups = [(key, title) for key, title in (
-            ("input_channels", "Pass amplitudes and interferogram phases over the inference region"),
+            ("input_channels", "Pass amplitudes and derived phases over the inference region"),
         ) if fp.get(key)]
 
         if input_groups:
             out.append("\n## 3b. Model inputs\n")
             out.append(
-                "The model inputs for this run: the primary, the selected secondary passes and "
-                "their interferograms against the primary.\n"
+                "The model inputs for this run: the primary, the selected secondary channels and "
+                "their derived against the primary.\n"
             )
             self._numbered_section(out, "3b.", input_groups)
 
@@ -543,25 +543,25 @@ class Report:
                 "Each panel overlays the GT profile (black solid), "
                 "prediction (red dashed) and individual Gaussian components. "
                 "The shaded area shows the signed residual (pred \u2212 gt). "
-                "The raw full-stack tomogram that the GT Gaussians are fit to is drawn as a grey reference.\n"
+                "The raw full-stack cube that the GT Gaussians are fit to is drawn as a grey reference.\n"
             )
             self._section(out, profile_groups)
 
         pixel_groups = (
-            ("pixel_mse_map",       "5.1 MSE map (log scale, pred vs GT)"),
-            ("pixel_r2_map",        "5.2 R\u00b2 map (pred vs GT)"),
-            ("pixel_peak_map",      "5.3 Peak-location error map (|\u0394 peak index|)"),
-            ("label_r2_map",          "5.4 Label fit R\u00b2 map (GT curves vs raw tomogram)"),
-            ("flip_consistency_map",  "5.5 Flip-equivariance disagreement map"),
-            ("stratified_errors",     "5.6 Error stratified by scene covariates"),
-            ("failure_mode_map",      "5.7 Dominant failure mode per pixel"),
-            ("miss_by_separation",    "5.8 Miss rate by GT scatterer separation"),
-            ("metric_histograms",     "5.9 Metric distributions"),
+            ("pixel_mse_map",        "5.1 MSE map (log scale, pred vs GT)"),
+            ("pixel_r2_map",         "5.2 R\u00b2 map (pred vs GT)"),
+            ("pixel_peak_map",       "5.3 Peak-location error map (|\u0394 peak index|)"),
+            ("label_r2_map",         "5.4 Label fit R\u00b2 map (GT curves vs raw cube)"),
+            ("flip_consistency_map", "5.5 Flip-equivariance disagreement map"),
+            ("stratified_errors",    "5.6 Error stratified by scene covariates"),
+            ("failure_mode_map",     "5.7 Dominant failure mode per pixel"),
+            ("miss_by_separation",   "5.8 Miss rate by GT component separation"),
+            ("metric_histograms",    "5.9 Metric distributions"),
         )
         if any(fp.get(key) for key, _title in pixel_groups):
             out.append("\n## 5. Per-pixel metric maps\n")
             out.append(
-                "5.4 scores the labels themselves: the R\u00b2 of the fitted GT Gaussians against the raw Capon tomogram profile, "
+                "5.4 scores the labels themselves: the R\u00b2 of the fitted GT Gaussians against the raw reference cube profile, "
                 "so low-R\u00b2 areas in the model error maps above can be read against low label quality rather than model failure. "
                 "5.5, when computed, is the disagreement between the prediction and the unflipped prediction on flipped inputs, "
                 "a label-free confidence signal.\n"
@@ -607,46 +607,46 @@ class Report:
             self._numbered_section(out, "6b.", org_groups)
 
         slice_groups = [(key, title) for key, title in (
-            ("slices_range",        "Range cuts"),
-            ("slices_azimuth",      "Azimuth cuts"),
-            ("slices_elev",         "Elevation cuts"),
-            ("slices_range_norm",   "Range cuts (unit-area)"),
-            ("slices_azimuth_norm", "Azimuth cuts (unit-area)"),
-            ("slices_elev_norm",    "Elevation cuts (unit-area)"),
+            ("slices_col",      "Col cuts"),
+            ("slices_row",      "Row cuts"),
+            ("slices_z",        "Z cuts"),
+            ("slices_col_norm", "Col cuts (unit-area)"),
+            ("slices_row_norm", "Row cuts (unit-area)"),
+            ("slices_z_norm",   "Z cuts (unit-area)"),
         ) if fp.get(key)]
 
         if slice_groups:
-            out.append("\n## 7. Tomogram slices\n")
+            out.append("\n## 7. Cube slices\n")
             out.append(
                 "GT and prediction share a colour scale; "
                 "error figures are clipped at p99 of that slice. "
                 "SSIM (pred vs GT) is shown in the prediction title. "
-                "The raw full-stack tomogram (the reference the GT Gaussians are fit to) is shown as an extra panel. "
-                "Both denormalised slices and unit-area-normalised slices (each elevation profile normalised to unit area) are shown.\n"
+                "The raw full-stack cube (the reference the GT Gaussians are fit to) is shown as an extra panel. "
+                "Both denormalised slices and unit-area-normalised slices (each z profile normalised to unit area) are shown.\n"
             )
             self._numbered_section(out, "7.", slice_groups)
 
         ssim_groups = (
-            ("ssim_range",        "8.1 SSIM along range axis (denorm)"),
-            ("ssim_azimuth",      "8.2 SSIM along azimuth axis (denorm)"),
-            ("ssim_elev",         "8.3 SSIM along elevation axis (denorm)"),
-            ("ssim_range_norm",   "8.4 SSIM along range axis (unit-area)"),
-            ("ssim_azimuth_norm", "8.5 SSIM along azimuth axis (unit-area)"),
-            ("ssim_elev_norm",    "8.6 SSIM along elevation axis (unit-area)"),
+            ("ssim_col",      "8.1 SSIM along col axis (denorm)"),
+            ("ssim_row",      "8.2 SSIM along row axis (denorm)"),
+            ("ssim_z",        "8.3 SSIM along z axis (denorm)"),
+            ("ssim_col_norm", "8.4 SSIM along col axis (unit-area)"),
+            ("ssim_row_norm", "8.5 SSIM along row axis (unit-area)"),
+            ("ssim_z_norm",   "8.6 SSIM along z axis (unit-area)"),
         )
-        if any(fp.get(key) for key, _title in ssim_groups) or fp.get("elev_metric_curves"):
+        if any(fp.get(key) for key, _title in ssim_groups) or fp.get("z_metric_curves"):
             out.append("\n## 8. SSIM curves\n")
             out.append("SSIM plotted for every slice along each axis \u2014 pred vs GT, both denormalised and unit-area-normalised.\n")
             self._section(out, ssim_groups)
 
-        if fp.get("elev_metric_curves"):
-            out.append("\n### 8.7 Per-elevation-bin metrics (MAE, RMSE, R\u00b2, cross-entropy)\n")
+        if fp.get("z_metric_curves"):
+            out.append("\n### 8.7 Per-z-bin metrics (MAE, RMSE, R\u00b2, cross-entropy)\n")
             out.append(
-                "Each panel shows a metric aggregated over all (az\u00d7rg) pixels for every "
-                "elevation bin (pred vs GT). "
+                "Each panel shows a metric aggregated over all (row\u00d7rg) pixels for every "
+                "z bin (pred vs GT). "
                 "Dashed lines mark the mean over all bins.\n"
             )
-            out += self.assets.images("elev_metric_curves", fp["elev_metric_curves"])
+            out += self.assets.images("z_metric_curves", fp["z_metric_curves"])
 
 
         if gp:
@@ -666,7 +666,7 @@ class Report:
         report_path = self.report_path
 
         lines: List[str] = []
-        lines.append("# TomoSAR Inference Report")
+        lines.append("# ML Template Inference Report")
         lines.append("")
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")

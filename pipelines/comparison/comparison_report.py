@@ -14,7 +14,7 @@ from tools.monitoring.logger                       import Logger
 class TrialComparisonReport(ComparisonReportBase):
 
     FIGURE_SUBDIRS = [
-        ("tracks",              "Passes and interferograms"),
+        ("tracks",              "Channels and derived channels"),
         ("input_channels",      "Input channels"),
         ("profiles",            "Profile reconstructions"),
         ("pixel_maps",          "Per-pixel metric maps"),
@@ -26,10 +26,9 @@ class TrialComparisonReport(ComparisonReportBase):
         ("slots",               "Slot diagnostics"),
         ("ssim",                "SSIM curves (denorm)"),
         ("ssim_norm",           "SSIM curves (unit-area)"),
-        ("elev_metrics",        "Per-elevation-bin metrics"),
-        ("slices",              "Tomogram slices"),
-        ("slices_norm",         "Tomogram slices (unit-area)"),
-        ("reduced",             "Classical baseline"),
+        ("z_metrics",           "Per-z-bin metrics"),
+        ("slices",              "Cube slices"),
+        ("slices_norm",         "Cube slices (unit-area)"),
     ]
 
     HEADLINE_METRICS = [
@@ -39,10 +38,10 @@ class TrialComparisonReport(ComparisonReportBase):
         ("psnr_db_gt",                   "PSNR"),
         ("pixel_r2_gt_mean",             "Pixel R²"),
         ("pixel_cosine_gt_mean",         "Cosine"),
-        ("ssim_gt_elev_mean",            "SSIM elev"),
-        ("ssim_norm_elev_mean",          "SSIM norm"),
+        ("ssim_gt_z_mean",               "SSIM z"),
+        ("ssim_norm_z_mean",             "SSIM norm"),
         ("pixel_peak_err_units_mean_gt", "Peak err"),
-        ("relative_mse_reduction",       "vs Capon"),
+        ("relative_mse_reduction",       "vs reference"),
     ]
 
     COUNT_METRICS = [
@@ -54,10 +53,10 @@ class TrialComparisonReport(ComparisonReportBase):
     HEADLINE_GROUPS = [
         ("Curve error",           ["curve_rmse_gt", "curve_mae_gt", "psnr_db_gt"]),
         ("Variance explained",    ["overall_r2_gt", "pixel_r2_gt_mean"]),
-        ("Structural similarity", ["ssim_gt_elev_mean", "ssim_norm_elev_mean"]),
+        ("Structural similarity", ["ssim_gt_z_mean", "ssim_norm_z_mean"]),
         ("Shape (cosine)",        ["pixel_cosine_gt_mean"]),
         ("Peak location",         ["pixel_peak_err_units_mean_gt"]),
-        ("Gain vs Capon",         ["relative_mse_reduction"]),
+        ("Gain vs reference",     ["relative_mse_reduction"]),
     ]
 
     PRECISION_BUCKET_PATTERN = re.compile(r"^matched_precision_gt(\d+)$")
@@ -134,17 +133,17 @@ class TrialComparisonReport(ComparisonReportBase):
             "each cell is the group score with its group rank in parentheses (best in **bold**)."
         )
         precision_intro = (
-            "Matched (permutation-invariant) precision per GT scatterer count `k` — the share of predicted scatterers "
-            "that hit a true scatterer where the pixel truly holds `k`. Precision rewards under-prediction, so read it "
+            "Matched (permutation-invariant) precision per GT component count `k` — the share of predicted components "
+            "that hit a true component where the pixel truly holds `k`. Precision rewards under-prediction, so read it "
             "alongside the recall leaderboard, never on its own."
         )
         recall_intro = (
-            "Matched (permutation-invariant) recall per GT scatterer count `k` — the share of true scatterers in "
-            "`k`-scatterer pixels that the model recovers. This is the scatterer-recovery metric; rank trials on it "
+            "Matched (permutation-invariant) recall per GT component count `k` — the share of true components in "
+            "`k`-component pixels that the model recovers. This is the component-recovery metric; rank trials on it "
             "rather than on precision."
         )
         count_intro = (
-            "Count calibration: `Exact` is the pixel share where the predicted active scatterer count equals GT "
+            "Count calibration: `Exact` is the pixel share where the predicted active component count equals GT "
             "(higher better), `Under` / `Over` are the shares where the model predicts too few / too many (lower "
             "better). Permutation-invariant."
         )
@@ -188,7 +187,7 @@ class TrialComparisonReport(ComparisonReportBase):
         lines += [
             "> **Reading guide.** Gaussian accuracy is reported by the *Matched Gaussian "
             "(Permutation-Invariant)* section, which Hungarian-matches predicted Gaussians to GT before "
-            "scoring. `count_acc_gt{k}` is exact-count agreement (calibration), not scatterer recovery — use "
+            "scoring. `count_acc_gt{k}` is exact-count agreement (calibration), not component recovery — use "
             "`matched_recall_gt{k}`. Precision and F1 reward under-prediction (a model that collapses slots has "
             "few false positives), so do not rank trials on them; read them alongside recall.\n"
         ]

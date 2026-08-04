@@ -15,19 +15,19 @@ from pipelines.backbone.dataset.spatial      import Patcher
 class PatchDataset(Dataset):
     def __init__(
         self,
-        inputs           : np.ndarray,
-        gt_parameters    : np.ndarray,
-        grid             : Patcher,
-        input_config     : InputConfig,
-        output_config    : OutputConfig,
-        split_name       : str,
-        n_secondaries    : int,
-        n_interferograms : int,
-        n_primary        : int                        = 1,
-        normalizer       : Optional[Normalizer]       = None,
-        n_gaussians      : int                        = 1,
-        augmenter        : Optional[SpatialAugmenter] = None,
-        dem              : Optional[np.ndarray]       = None,
+        inputs        : np.ndarray,
+        gt_parameters : np.ndarray,
+        grid          : Patcher,
+        input_config  : InputConfig,
+        output_config : OutputConfig,
+        split_name    : str,
+        n_secondaries : int,
+        n_derived     : int,
+        n_primary     : int                        = 1,
+        normalizer    : Optional[Normalizer]       = None,
+        n_gaussians   : int                        = 1,
+        augmenter     : Optional[SpatialAugmenter] = None,
+        aux           : Optional[np.ndarray]       = None,
     ) -> None:
 
         self.inputs        = inputs
@@ -39,16 +39,16 @@ class PatchDataset(Dataset):
         self.normalizer    = normalizer
         self.n_gaussians   = n_gaussians
         self.augmenter     = augmenter
-        self.dem           = dem
+        self.aux           = aux
         self.input_layers  = int(inputs.shape[0])
 
-        self.n_primary        = n_primary
-        self.n_secondaries    = n_secondaries
-        self.n_interferograms = n_interferograms
+        self.n_primary     = n_primary
+        self.n_secondaries = n_secondaries
+        self.n_derived     = n_derived
 
-        expected_layers = n_primary + n_secondaries + n_interferograms
+        expected_layers = n_primary + n_secondaries + n_derived
         if expected_layers != self.input_layers:
-            raise ValueError(f"Input stack has {self.input_layers} layers but the dataset artifacts describe {expected_layers} ({n_primary} primary + {n_secondaries} secondaries + {n_interferograms} interferograms)")
+            raise ValueError(f"Input stack has {self.input_layers} layers but the dataset artifacts describe {expected_layers} ({n_primary} primary + {n_secondaries} secondaries + {n_derived} derived)")
 
         if input_config.use_primary and n_primary == 0:
             raise ValueError("Input config requests the primary but the cropped stack does not carry it. Rebuild the crop with the primary or set use_primary=False.")
@@ -56,13 +56,13 @@ class PatchDataset(Dataset):
         if input_config.use_secondaries and n_secondaries == 0:
             raise ValueError("Input config requests secondaries but the dataset stack contains none. Rebuild the dataset with secondaries or set use_secondaries=False.")
 
-        if input_config.use_interferograms and n_interferograms == 0:
-            raise ValueError("Input config requests interferograms but the dataset stack contains none. Rebuild the dataset with interferograms or set use_interferograms=False.")
+        if input_config.use_derived and n_derived == 0:
+            raise ValueError("Input config requests derived but the dataset stack contains none. Rebuild the dataset with derived or set use_derived=False.")
 
-        if input_config.use_dem and dem is None:
-            raise ValueError("Input config requests the DEM channel but no DEM array was provided; pass the dem array from the cropper or set use_dem=False.")
+        if input_config.use_aux and aux is None:
+            raise ValueError("Input config requests the Aux channel but no Aux array was provided; pass the aux array from the cropper or set use_aux=False.")
 
-        self.input_channels = input_config.total_channels(n_secondaries, n_interferograms)
+        self.input_channels = input_config.total_channels(n_secondaries, n_derived)
 
         self.output_channel_indices = output_config.selected_indices(n_gaussians = n_gaussians)
         self.gt_channels            = len(self.output_channel_indices)
@@ -72,12 +72,12 @@ class PatchDataset(Dataset):
         if required_gt_channels > available_gt_channels:
             raise ValueError(f"Configured n_gaussians={n_gaussians} indexes ground-truth parameter channel {required_gt_channels - 1} but the dataset provides only {available_gt_channels} ({available_gt_channels // 3} Gaussians). Set n_gaussians to match the parameter extraction used for this dataset.")
 
-    def _build_input_tensor(self, complex_patch: np.ndarray, dem_patch: Optional[np.ndarray] = None) -> np.ndarray:
-        ifg_offset          = self.n_primary + self.n_secondaries
+    def _build_input_tensor(self, complex_patch: np.ndarray, aux_patch: Optional[np.ndarray] = None) -> np.ndarray:
+        derived_offset          = self.n_primary + self.n_secondaries
 
-        primary_data        = complex_patch[               : self.n_primary                        ]
-        secondaries_data    = complex_patch[self.n_primary : ifg_offset                            ]
-        interferograms_data = complex_patch[ifg_offset     : ifg_offset + self.n_interferograms    ]
+        primary_data     = complex_patch[               : self.n_primary                        ]
+        secondaries_data = complex_patch[self.n_primary : derived_offset                            ]
+        derived_data     = complex_patch[derived_offset     : derived_offset + self.n_derived    ]
 
         p_h, p_w     = complex_patch.shape[-2], complex_patch.shape[-1]
         input_tensor = np.empty((self.input_channels, p_h, p_w), dtype=np.float32)
@@ -85,22 +85,22 @@ class PatchDataset(Dataset):
         offset = 0
 
         if self.input_config.use_primary:
-            n = self.input_config.primary_channels_per_pass
+            n = self.input_config.primary_channels_per_source
             self.input_config.primary_representation.convert_into(input_tensor[offset:offset + n], primary_data)
             offset += n
 
         if self.input_config.use_secondaries:
-            n = self.n_secondaries * self.input_config.secondaries_channels_per_pass
+            n = self.n_secondaries * self.input_config.secondaries_channels_per_source
             self.input_config.secondaries_representation.convert_into(input_tensor[offset:offset + n], secondaries_data)
             offset += n
 
-        if self.input_config.use_interferograms:
-            n = self.n_interferograms * self.input_config.interferograms_channels_per_pass
-            self.input_config.interferograms_representation.convert_into(input_tensor[offset:offset + n], interferograms_data)
+        if self.input_config.use_derived:
+            n = self.n_derived * self.input_config.derived_channels_per_source
+            self.input_config.derived_representation.convert_into(input_tensor[offset:offset + n], derived_data)
             offset += n
 
-        if self.input_config.use_dem:
-            input_tensor[offset] = dem_patch
+        if self.input_config.use_aux:
+            input_tensor[offset] = aux_patch
             offset += 1
 
         return input_tensor
@@ -122,8 +122,8 @@ class PatchDataset(Dataset):
 
         return self.normalizer.normalize_output(gt_params)
 
-    def assemble_window(self, complex_window: np.ndarray, dem_window: Optional[np.ndarray] = None) -> np.ndarray:
-        input_tensor = self._build_input_tensor(complex_window, dem_window)
+    def assemble_window(self, complex_window: np.ndarray, aux_window: Optional[np.ndarray] = None) -> np.ndarray:
+        input_tensor = self._build_input_tensor(complex_window, aux_window)
         return self._normalize_input_tensor(input_tensor)
 
     def __len__(self) -> int:
@@ -131,8 +131,8 @@ class PatchDataset(Dataset):
 
     def __getitem__(self, idx: int):
         complex_patch = self.grid.extract(self.inputs, idx)
-        dem_patch     = self.grid.extract(self.dem, idx) if self.input_config.use_dem else None
-        input_tensor  = self._build_input_tensor(complex_patch, dem_patch)
+        aux_patch     = self.grid.extract(self.aux, idx) if self.input_config.use_aux else None
+        input_tensor  = self._build_input_tensor(complex_patch, aux_patch)
 
         gt_patch  = self.grid.extract(self.gt_parameters, idx)
         gt_params = self._build_output_tensor(gt_patch)
@@ -170,11 +170,11 @@ class MultiRegionDataset(Dataset):
                 part.input_channels   == first.input_channels   and
                 part.n_primary        == first.n_primary        and
                 part.n_secondaries    == first.n_secondaries    and
-                part.n_interferograms == first.n_interferograms and
+                part.n_derived == first.n_derived and
                 part.gt_channels      == first.gt_channels
             )
             if not matches:
-                raise ValueError(f"MultiRegionDataset parts disagree on channel structure: part '{part.split_name}' has (input={part.input_channels}, primary={part.n_primary}, secondaries={part.n_secondaries}, interferograms={part.n_interferograms}, gt={part.gt_channels}) but the first part has (input={first.input_channels}, primary={first.n_primary}, secondaries={first.n_secondaries}, interferograms={first.n_interferograms}, gt={first.gt_channels}).")
+                raise ValueError(f"MultiRegionDataset parts disagree on channel structure: part '{part.split_name}' has (input={part.input_channels}, primary={part.n_primary}, secondaries={part.n_secondaries}, derived={part.n_derived}, gt={part.gt_channels}) but the first part has (input={first.input_channels}, primary={first.n_primary}, secondaries={first.n_secondaries}, derived={first.n_derived}, gt={first.gt_channels}).")
 
         self.input_config           = first.input_config
         self.output_config          = first.output_config
@@ -183,7 +183,7 @@ class MultiRegionDataset(Dataset):
         self.input_layers           = first.input_layers
         self.n_primary              = first.n_primary
         self.n_secondaries          = first.n_secondaries
-        self.n_interferograms       = first.n_interferograms
+        self.n_derived              = first.n_derived
         self.input_channels         = first.input_channels
         self.output_channel_indices = first.output_channel_indices
         self.gt_channels            = first.gt_channels

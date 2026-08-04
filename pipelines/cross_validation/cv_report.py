@@ -125,14 +125,14 @@ class CrossValidationReport:
 
         lines += ["## Fold Plan\n"]
 
-        plan_table = MarkdownTable(["Fold", "Test azimuth", "Val azimuth", "Train azimuth regions"])
+        plan_table = MarkdownTable(["Fold", "Test row", "Val row", "Train row regions"])
         for plan in self.planner.plans():
             test_region   = plan.split_regions.regions("test")[0]
             val_region    = plan.split_regions.regions("val")[0]
             train_regions = plan.split_regions.regions("train")
-            train_text    = ", ".join(f"[{r.azimuth_start}, {r.azimuth_end})" for r in train_regions)
-            test_text     = f"[{test_region.azimuth_start}, {test_region.azimuth_end})"
-            val_text      = f"[{val_region.azimuth_start}, {val_region.azimuth_end})"
+            train_text    = ", ".join(f"[{r.row_start}, {r.row_end})" for r in train_regions)
+            test_text     = f"[{test_region.row_start}, {test_region.row_end})"
+            val_text      = f"[{val_region.row_start}, {val_region.row_end})"
 
             plan_table.add_row(plan.fold_index, test_text, val_text, train_text)
 
