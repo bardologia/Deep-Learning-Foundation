@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name            = "ml-template"
 version         = "0.1.0"
-description     = "Deep-learning Gaussian-mixture profile estimation from stacked 2-D channels"
+description     = "Machine-learning project template: dense per-pixel regression pipelines, a configuration layer and a local run console"
 readme          = "README.md"
 requires-python = ">=3.11"
 dependencies    = [
@@ -25,9 +25,8 @@ dependencies    = [
 ]
 
 [project.optional-dependencies]
-processing = ["h5py>=3.11"]
-sigma      = ["jax>=0.4.30"]
-dev        = ["pytest==9.0.3", "pyflakes==3.4.0"]
+fitting = ["jax>=0.4.30"]
+dev     = ["pytest==9.0.3", "pyflakes==3.4.0"]
 
 [tool.setuptools.packages.find]
 include = ["configuration*", "models*", "pipelines*", "tools*"]
