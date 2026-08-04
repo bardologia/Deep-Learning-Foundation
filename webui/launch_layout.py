@@ -23,6 +23,7 @@ class LaunchLayout:
     NUM_ACCUM    = {"kind": "number", "int": True, "min": 1, "max": 64, "presets": [1, 2, 4, 8, 16]}
     NUM_PATIENCE = {"kind": "number", "int": True, "min": 1, "max": 200, "presets": [5, 10, 20, 30, 50, 100]}
     NUM_SEED     = {"kind": "number", "int": True, "min": 0, "max": 9999, "presets": [0, 1, 42, 123, 2024]}
+    NUM_K_MAX    = {"kind": "number", "int": True, "min": 1, "max": 10, "presets": [1, 2, 3, 5]}
     NUM_FREQ     = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 2, 5, 10]}
     NUM_ETA_MIN  = {"kind": "number", "log": True, "min": 1e-9, "max": 1e-2, "presets": [0, 1e-7, 1e-6, 1e-5]}
     NUM_WEIGHT   = {"kind": "number", "min": 0, "max": 10, "step": 0.05, "presets": [0, 0.05, 0.1, 0.5, 1, 2]}
@@ -50,8 +51,8 @@ class LaunchLayout:
     MULTI_INT     = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
 
     MULTI_TRUNK_INPUT = {"kind": "multi", "empty": "select at least one channel group", "choices": [
-        {"value": "pass", "label": "Passes (amplitudes)"},
-        {"value": "ifg",  "label": "Interferograms"},
+        {"value": "chan", "label": "Passes (amplitudes)"},
+        {"value": "derived",  "label": "Derived"},
     ]}
 
     MULTI_FIT_MODES = {"kind": "multi", "empty": "select at least one fit mode", "choices": [
@@ -166,9 +167,9 @@ class LaunchLayout:
                 "patch_size",
                 "patch_stride",
                 "use_symmetric_padding",
-                "train_azimuth",
-                "val_azimuth",
-                "test_azimuth",
+                "train_rows",
+                "val_rows",
+                "test_rows",
             ]},
         ],
         "paths_rest": [
@@ -181,13 +182,13 @@ class LaunchLayout:
         "input": [
             {"title": "Primary", "fields": [{"gate": "use_primary", "fields": ["primary_representation"]}]},
             {"title": "Secondaries", "fields": [{"gate": "use_secondaries", "fields": ["secondaries_representation"]}]},
-            {"title": "Interferograms", "fields": [{"gate": "use_interferograms", "fields": ["interferograms_representation"]}]},
-            {"title": "DEM", "fields": ["use_dem"]},
+            {"title": "Derived", "fields": [{"gate": "use_derived", "fields": ["derived_representation"]}]},
+            {"title": "Aux", "fields": ["use_aux"]},
         ],
         "input_dual": [
             {"title": "Primary", "fields": [{"gate": "use_primary", "fields": ["primary_representation"]}]},
             {"title": "Secondaries", "fields": [{"gate": "use_secondaries", "fields": ["secondaries_representation"]}]},
-            {"title": "Interferograms", "fields": [{"gate": "use_interferograms", "fields": ["interferograms_representation"]}]},
+            {"title": "Derived", "fields": [{"gate": "use_derived", "fields": ["derived_representation"]}]},
         ],
         "normalization": [
             {"title": "Strategy", "fields": [
@@ -195,14 +196,14 @@ class LaunchLayout:
                 {"path": "output_strategy", "widget": CH_NORM_GLOBAL},
             ]},
             {"title": "Per-channel overrides", "fields": [
-                {"path": "pass_mag",   "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "pass_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
-                {"path": "ifg_mag",    "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "ifg_phase",  "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "fixed_div_pi, per-slot"}},
+                {"path": "chan_mag",   "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
+                {"path": "channel_phase", "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
+                {"path": "derived_mag",    "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
+                {"path": "derived_phase",  "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "fixed_div_pi, per-slot"}},
                 {"path": "out_amp",    "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
                 {"path": "out_mu",     "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
                 {"path": "out_sigma",  "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "robust_iqr_log1p, per-slot"}},
-                {"path": "dem",        "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
+                {"path": "aux",        "widget": {"kind": "choice", "options": ["default"] + NORM_PRESETS, "default_label": "zscore, per-slot"}},
                 "fixed_out_bounds_min",
                 "fixed_out_bounds_max",
             ]},
@@ -240,7 +241,7 @@ class LaunchLayout:
             {"title": "Flip consistency", "fields": ["compute_flip_consistency"]},
             {"title": "Stratified errors", "fields": ["compute_stratified"]},
             {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles", {"path": "profile_seed", "widget": NUM_SEED}]},
-            {"title": "Slices", "fields": ["n_range_slices", "n_azimuth_slices", "n_elevation_slices"]},
+            {"title": "Slices", "fields": ["n_col_slices", "n_row_slices", "n_z_slices"]},
             {"title": "GIFs", "fields": ["gif_axes", "gif_fps", "gif_max_frames", {"path": "gif_dpi", "widget": NUM_DPI}]},
             {"title": "Figures", "fields": ["cmap_intensity", "cmap_error", "normalize_intensity", {"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
             {"title": "Output layout", "fields": [
@@ -262,7 +263,7 @@ class LaunchLayout:
             ]},
             {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window"]},
             {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles"]},
-            {"title": "Slices", "fields": ["n_range_slices", "n_azimuth_slices", "n_elevation_slices"]},
+            {"title": "Slices", "fields": ["n_col_slices", "n_row_slices", "n_z_slices"]},
             {"title": "GIFs", "fields": ["gif_axes", "gif_fps", "gif_max_frames"]},
         ],
         "profile_inference": [
@@ -331,8 +332,8 @@ class LaunchLayout:
     EXPERIMENT_TRIALS = [
         "trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "input_trials", "context_trials", "augmentation_trials",
         "head_trials.backbone", "head_trials.heads", "head_trials.matchings",
-        "normalization_trials.initial_pass_mag", "normalization_trials.initial_ifg_phase", "normalization_trials.initial_out_amp", "normalization_trials.initial_out_sigma",
-        "normalization_trials.final_pass_mag", "normalization_trials.final_ifg_phase", "normalization_trials.final_out_amp", "normalization_trials.final_out_sigma",
+        "normalization_trials.initial_chan_mag", "normalization_trials.initial_ifg_phase", "normalization_trials.initial_out_amp", "normalization_trials.initial_out_sigma",
+        "normalization_trials.final_chan_mag", "normalization_trials.final_ifg_phase", "normalization_trials.final_out_amp", "normalization_trials.final_out_sigma",
         "pair_trials.base_component", "pair_trials.base_weight", "pair_trials.components", "pair_trials.weights", "pair_trials.include_baseline",
         "secondary_trials.strategy", "secondary_trials.n_secondaries", "secondary_trials.n_trials", "secondary_trials.mean",
         "secondary_trials.sigma", "secondary_trials.block_step", "secondary_trials.spacing", "secondary_trials.seed",
@@ -408,6 +409,56 @@ class LaunchLayout:
     }
 
     LAYOUTS = {
+        "generate_dataset": {
+            "sections": [
+                {"key": "config", "title": "Configuration", "panels": [
+                    {"kind": "fields", "groups": [
+                        {"title": "Output", "fields": [
+                            "synthesis.output_directory",
+                            "synthesis.params_run_name",
+                            "synthesis.dataset_type",
+                            "synthesis.cube_tag",
+                            "synthesis.parameter_tag",
+                            "log_dir",
+                        ]},
+                        {"title": "Scene", "fields": [
+                            "synthesis.global_crop",
+                            "synthesis.profile_length",
+                            "synthesis.z_range",
+                            {"path": "synthesis.seed", "widget": NUM_SEED},
+                        ]},
+                        {"title": "Channels", "fields": [
+                            "synthesis.primary_label",
+                            "synthesis.secondary_labels",
+                            "synthesis.channel_phase_rates",
+                            "synthesis.sensitivity_width_fraction",
+                            "synthesis.aux_range",
+                            "synthesis.phase_smoothing_pixels",
+                            "synthesis.max_amplitude_clip",
+                        ]},
+                        {"title": "Mixture", "fields": [
+                            {"path": "synthesis.k_max", "widget": NUM_K_MAX},
+                            "synthesis.amplitude_range",
+                            "synthesis.sigma_range",
+                            "synthesis.slot_band_margin",
+                            "synthesis.field_smoothing_pixels",
+                            {"path": "synthesis.empty_pixel_fraction", "widget": NUM_FRACTION},
+                            {"path": "synthesis.dropped_slot_fraction", "widget": NUM_FRACTION},
+                        ]},
+                        {"title": "Noise", "fields": [
+                            {"path": "synthesis.cube_noise_fraction", "widget": NUM_FRACTION},
+                            {"path": "synthesis.channel_noise_fraction", "widget": NUM_FRACTION},
+                        ]},
+                        {"title": "Fit metadata", "fields": [
+                            "synthesis.lambda_k",
+                            "synthesis.activity_threshold",
+                            "synthesis.threshold_factor",
+                            "synthesis.truncation_index",
+                        ]},
+                    ]},
+                ]},
+            ],
+        },
         "extract_params": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
@@ -416,7 +467,7 @@ class LaunchLayout:
                             "dataset_base_path",
                             {"path": "dataset_filter", "widget": PICK_DATASETS},
                         ]},
-                        {"title": "Output", "fields": ["output_prefix", "output_suffix", "height_range"]},
+                        {"title": "Output", "fields": ["output_prefix", "output_suffix", "z_range"]},
                         {"title": "Fit sweep", "fields": [
                             {"path": "fit_k_values", "widget": MULTI_K},
                             {"path": "fit_lambda_values", "widget": MULTI_LAMBDA},
@@ -433,7 +484,7 @@ class LaunchLayout:
                         ]},
                         {"title": "Execution", "fields": [
                             {"path": "gpu_device_ids", "widget": GPU_MANY},
-                            "range_batch_size",
+                            "col_batch_size",
                             "gpu_pixel_batch_size",
                             {"path": "parameter_workers", "widget": NUM_WORKERS},
                         ]},
@@ -603,7 +654,7 @@ class LaunchLayout:
                     {"kind": "fields", "title": "Input channels", "template": "input_dual", "at": "input"},
                     {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
                     {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
-                    {"kind": "hidden", "fields": ["input.use_dem"]},
+                    {"kind": "hidden", "fields": ["input.use_aux"]},
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
@@ -718,7 +769,7 @@ class LaunchLayout:
                 {"key": "folds", "title": "Folds", "panels": [
                     {"kind": "hidden", "fields": ["gpus_file"]},
                     {"kind": "fields", "groups": [
-                        {"title": "Fold layout", "fields": ["folds.n_folds", "folds.azimuth_start", "folds.azimuth_end", "folds.guard"]},
+                        {"title": "Fold layout", "fields": ["folds.n_folds", "folds.row_start", "folds.row_end", "folds.guard"]},
                     ]},
                 ]},
                 {"key": "data", "title": "Data", "panels": [
@@ -915,7 +966,7 @@ class LaunchLayout:
                             "params_dir",
                             {"path": "run_tags", "widget": {"kind": "dataset", "mode": "param_trials", "multi": True, "baseFrom": "params_dir"}},
                         ]},
-                        {"title": "Sampling", "fields": ["pixel_sample", "block_size", "range_chunk"]},
+                        {"title": "Sampling", "fields": ["pixel_sample", "block_size", "col_chunk"]},
                         {"title": "Report", "fields": ["make_plots", "output_dir"]},
                     ]},
                 ]},
@@ -974,8 +1025,8 @@ class LaunchLayout:
                             "split",
                             "device",
                             {"path": "window",           "widget": {"kind": "number", "min": 32, "max": 512, "step": 16}},
-                            {"path": "n_azimuth_probes", "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
-                            {"path": "n_range_probes",   "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
+                            {"path": "n_row_probes", "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
+                            {"path": "n_col_probes",   "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
                             {"path": "mass_windows",     "widget": {"kind": "multi", "numeric": True}},
                         ]},
                         {"title": "Figures", "fields": [{"path": "figure_style", "widget": CH_FIGSTYLE}]},
@@ -997,8 +1048,8 @@ class LaunchLayout:
                             "split",
                             "device",
                             {"path": "window",           "widget": {"kind": "number", "min": 16, "max": 256, "step": 16}},
-                            {"path": "n_azimuth_probes", "widget": {"kind": "number", "min": 1, "max": 8, "step": 1}},
-                            {"path": "n_range_probes",   "widget": {"kind": "number", "min": 1, "max": 8, "step": 1}},
+                            {"path": "n_row_probes", "widget": {"kind": "number", "min": 1, "max": 8, "step": 1}},
+                            {"path": "n_col_probes",   "widget": {"kind": "number", "min": 1, "max": 8, "step": 1}},
                             {"path": "fps",              "widget": {"kind": "number", "min": 1, "max": 30, "step": 1}},
                         ]},
                         {"title": "Figures", "fields": [{"path": "figure_style", "widget": CH_FIGSTYLE}]},
@@ -1140,8 +1191,8 @@ class LaunchLayout:
                             "split",
                             "device",
                             {"path": "window",           "widget": {"kind": "number", "min": 16, "max": 256, "step": 16}},
-                            {"path": "n_azimuth_probes", "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
-                            {"path": "n_range_probes",   "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
+                            {"path": "n_row_probes", "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
+                            {"path": "n_col_probes",   "widget": {"kind": "number", "min": 1, "max": 16, "step": 1}},
                         ]},
                         {"title": "Occlusion", "fields": [
                             {"gate": "occlude", "fields": [

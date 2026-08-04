@@ -7,6 +7,11 @@ from script_config_resolver import ScriptConfigResolver
 class ScriptCatalog:
 
     META = {
+        "generate_dataset": {
+            "title"     : "Generate Dataset",
+            "category"  : "Data",
+            "purpose"   : "Write the bundled synthetic dataset the rest of the template runs on: smooth Gaussian-mixture parameter fields, the profiles they render, a primary plus secondary channel stack with its derived channels, an auxiliary field, the reference cube, and a matching parameter run. CPU only.",
+        },
         "extract_params": {
             "title"     : "Extract Parameters",
             "category"  : "Data",
@@ -15,7 +20,7 @@ class ScriptCatalog:
         "train_backbone": {
             "title"     : "Train Backbone",
             "category"  : "Training",
-            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, loss-pair searches, secondary-track selections, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, or cumulative normalization-strategy ladders.",
+            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, loss-pair searches, secondary-channel selections, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, or cumulative normalization-strategy ladders.",
         },
         "train_profile_autoencoder": {
             "title"     : "Train Profile Autoencoder",
@@ -35,7 +40,7 @@ class ScriptCatalog:
         "train_dual": {
             "title"     : "Train Dual",
             "category"  : "Training",
-            "purpose"   : "Train the dual-trunk set-prediction model: the standard build routes the full reduced stack to both unet_skip trunks at a 90/10 parameter split, the large trunk feeding the per-gaussian parameter heads and the small trunk feeding the existence gate; each trunk is any backbone-zoo architecture with routable channel groups. Shares the backbone dataset, loss curriculum, and trainer. Optionally fans out trials across GPUs: every backbone experiment ladder (loss-curriculum combinations, single-stage losses, slot-presence matrices, loss-pair searches, secondary-track selections, patch sizes, input-channel ablations, context ladders, size-matched reach comparisons, matching grids, augmentation pairs, normalization ladders, cumulative ablations) plus the dual-specific trunk-routing assignments and budget-matched arm-ratio splits.",
+            "purpose"   : "Train the dual-trunk set-prediction model: the standard build routes the full reduced stack to both unet_skip trunks at a 90/10 parameter split, the large trunk feeding the per-gaussian parameter heads and the small trunk feeding the existence gate; each trunk is any backbone-zoo architecture with routable channel groups. Shares the backbone dataset, loss curriculum, and trainer. Optionally fans out trials across GPUs: every backbone experiment ladder (loss-curriculum combinations, single-stage losses, slot-presence matrices, loss-pair searches, secondary-channel selections, patch sizes, input-channel ablations, context ladders, size-matched reach comparisons, matching grids, augmentation pairs, normalization ladders, cumulative ablations) plus the dual-specific trunk-routing assignments and budget-matched arm-ratio splits.",
         },
         "infer_backbone": {
             "title"     : "Infer Backbone",
@@ -65,7 +70,7 @@ class ScriptCatalog:
         "cross_validate": {
             "title"     : "Cross-validate",
             "category"  : "Experiments",
-            "purpose"   : "Run K-fold cross-validation for a model across azimuth folds, training and inferring each fold across GPUs.",
+            "purpose"   : "Run K-fold cross-validation for a model across row folds, training and inferring each fold across GPUs.",
         },
         "sweep_patches": {
             "title"     : "Patch-Size Sweep",
@@ -125,7 +130,7 @@ class ScriptCatalog:
         "attribute_inputs": {
             "title"     : "Attribute Inputs",
             "category"  : "Analysis",
-            "purpose"   : "Attribute the predictions of trained backbone runs to their input channels. Gradient attribution shares |∂ output/∂ input| across channels per output family (amp, mu, sigma) on probe windows, and an occlusion pass zeroes one normalized channel at a time to measure the prediction shift. Answers which tracks and which channel kinds (amplitude vs interferometric phase vs DEM) the model actually uses.",
+            "purpose"   : "Attribute the predictions of trained backbone runs to their input channels. Gradient attribution shares |∂ output/∂ input| across channels per output family (amp, mu, sigma) on probe windows, and an occlusion pass zeroes one normalized channel at a time to measure the prediction shift. Answers which channels and which channel kinds (amplitude vs derived-channel phase vs Aux) the model actually uses.",
         },
         "capture_attention": {
             "title"     : "Capture Attention",
@@ -135,7 +140,7 @@ class ScriptCatalog:
         "probe_layers": {
             "title"     : "Probe Layers",
             "category"  : "Analysis",
-            "purpose"   : "Probe trained backbone runs layer by layer with linear readouts. Ridge probes on sampled real pixels predict the GT active Gaussian count and the dominant scatterer elevation from each layer's features; the held-out R² by depth shows where each quantity becomes linearly decodable inside the network.",
+            "purpose"   : "Probe trained backbone runs layer by layer with linear readouts. Ridge probes on sampled real pixels predict the GT active Gaussian count and the dominant component position along z from each layer's features; the held-out R² by depth shows where each quantity becomes linearly decodable inside the network.",
         },
         "compare_representations": {
             "title"     : "Compare Representations",
@@ -150,7 +155,7 @@ class ScriptCatalog:
         "stress_inputs": {
             "title"     : "Stress Inputs",
             "category"  : "Analysis",
-            "purpose"   : "Stress trained backbone runs with controlled input degradation. Curve-MSE-vs-severity under gaussian noise on the normalized inputs and under whole-track dropout (secondary and interferogram channels zeroed, averaged over random track subsets). Complements the secondaries experiment with a post-hoc robustness axis that needs no retraining.",
+            "purpose"   : "Stress trained backbone runs with controlled input degradation. Curve-MSE-vs-severity under gaussian noise on the normalized inputs and under whole-channel dropout (secondary and derived channels zeroed, averaged over random channel subsets). Complements the secondaries experiment with a post-hoc robustness axis that needs no retraining.",
         },
         "animate_training": {
             "title"     : "Animate Training",

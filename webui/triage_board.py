@@ -79,34 +79,34 @@ class TriageBoard:
         return np.asarray(data, dtype=np.float64) if data.ndim == 2 else None
 
     def _block_rows(self, error_map: np.ndarray, mode_map: np.ndarray | None, aux: dict[str, np.ndarray]) -> list[dict]:
-        n_az, n_rg = error_map.shape
+        n_rows, n_cols = error_map.shape
         rows       = []
 
-        for az0 in range(0, n_az, self.BLOCK):
-            for rg0 in range(0, n_rg, self.BLOCK):
-                block = error_map[az0:az0 + self.BLOCK, rg0:rg0 + self.BLOCK]
+        for row0 in range(0, n_rows, self.BLOCK):
+            for col0 in range(0, n_cols, self.BLOCK):
+                block = error_map[row0:row0 + self.BLOCK, col0:col0 + self.BLOCK]
                 valid = np.isfinite(block)
                 if valid.sum() < max(4, block.size // 4):
                     continue
 
-                worst_flat   = np.nanargmax(np.where(valid, block, -np.inf))
-                worst_az     = az0 + int(worst_flat // block.shape[1])
-                worst_rg     = rg0 + int(worst_flat % block.shape[1])
+                worst_flat = np.nanargmax(np.where(valid, block, -np.inf))
+                worst_row  = row0 + int(worst_flat // block.shape[1])
+                worst_col  = col0 + int(worst_flat % block.shape[1])
 
                 row = {
-                    "case"     : f"{az0}_{rg0}",
-                    "az0"      : az0,
-                    "rg0"      : rg0,
-                    "az1"      : min(az0 + self.BLOCK, n_az),
-                    "rg1"      : min(rg0 + self.BLOCK, n_rg),
-                    "mse_mean" : float(block[valid].mean()),
-                    "mse_max"  : float(block[valid].max()),
-                    "worst_az" : worst_az,
-                    "worst_rg" : worst_rg,
+                    "case"      : f"{row0}_{col0}",
+                    "row0"      : row0,
+                    "col0"      : col0,
+                    "row1"      : min(row0 + self.BLOCK, n_rows),
+                    "col1"      : min(col0 + self.BLOCK, n_cols),
+                    "mse_mean"  : float(block[valid].mean()),
+                    "mse_max"   : float(block[valid].max()),
+                    "worst_row" : worst_row,
+                    "worst_col" : worst_col,
                 }
 
                 if mode_map is not None:
-                    modes            = mode_map[az0:az0 + self.BLOCK, rg0:rg0 + self.BLOCK].astype(np.int64)
+                    modes            = mode_map[row0:row0 + self.BLOCK, col0:col0 + self.BLOCK].astype(np.int64)
                     failing          = modes[modes > 0]
                     dominant         = int(np.bincount(failing).argmax()) if failing.size else 0
                     mode_names       = self.modes
@@ -114,7 +114,7 @@ class TriageBoard:
                     row["fail_frac"] = float((modes > 0).mean())
 
                 for name, layer in aux.items():
-                    patch  = layer[az0:az0 + self.BLOCK, rg0:rg0 + self.BLOCK]
+                    patch  = layer[row0:row0 + self.BLOCK, col0:col0 + self.BLOCK]
                     finite = patch[np.isfinite(patch)]
                     row[name] = float(finite.mean()) if finite.size else None
 
@@ -155,18 +155,18 @@ class TriageBoard:
             "cases"     : rows,
         }
 
-    def thumb(self, cube_id: str, az0: int, rg0: int) -> bytes | None:
+    def thumb(self, cube_id: str, row0: int, col0: int) -> bytes | None:
         error_map = self._load_map(Path(cube_id) / "cubes", "pixel_mse")
         if error_map is None:
             return None
 
-        n_az, n_rg = error_map.shape
-        if not (0 <= az0 < n_az and 0 <= rg0 < n_rg):
+        n_rows, n_cols = error_map.shape
+        if not (0 <= row0 < n_rows and 0 <= col0 < n_cols):
             return None
 
-        az_lo, az_hi = max(0, az0 - self.BLOCK), min(n_az, az0 + 2 * self.BLOCK)
-        rg_lo, rg_hi = max(0, rg0 - self.BLOCK), min(n_rg, rg0 + 2 * self.BLOCK)
-        crop         = error_map[az_lo:az_hi, rg_lo:rg_hi]
+        row_lo, row_hi = max(0, row0 - self.BLOCK), min(n_rows, row0 + 2 * self.BLOCK)
+        col_lo, col_hi = max(0, col0 - self.BLOCK), min(n_cols, col0 + 2 * self.BLOCK)
+        crop         = error_map[row_lo:row_hi, col_lo:col_hi]
 
         finite = np.isfinite(crop) & (crop > 0)
         logs   = np.log10(crop, out=np.full_like(crop, np.nan), where=finite)
@@ -176,8 +176,8 @@ class TriageBoard:
         colored = plt.get_cmap("viridis")(np.nan_to_num(norm))[..., :3]
         colored[~finite] = (0.06, 0.08, 0.10)
 
-        b_az_lo, b_az_hi = az0 - az_lo, min(az0 + self.BLOCK, n_az) - az_lo
-        b_rg_lo, b_rg_hi = rg0 - rg_lo, min(rg0 + self.BLOCK, n_rg) - rg_lo
+        b_az_lo, b_az_hi = row0 - row_lo, min(row0 + self.BLOCK, n_rows) - row_lo
+        b_rg_lo, b_rg_hi = col0 - col_lo, min(col0 + self.BLOCK, n_cols) - col_lo
 
         colored[b_az_lo, b_rg_lo:b_rg_hi]         = 1.0
         colored[b_az_hi - 1, b_rg_lo:b_rg_hi]     = 1.0
@@ -188,15 +188,15 @@ class TriageBoard:
         valid = np.isfinite(block)
         if valid.any():
             worst = np.nanargmax(np.where(valid, block, -np.inf))
-            w_az  = b_az_lo + int(worst // block.shape[1])
-            w_rg  = b_rg_lo + int(worst % block.shape[1])
-            colored[max(0, w_az - 1):w_az + 2, max(0, w_rg - 1):w_rg + 2] = (0.85, 0.10, 0.10)
+            w_row = b_az_lo + int(worst // block.shape[1])
+            w_col = b_rg_lo + int(worst % block.shape[1])
+            colored[max(0, w_row - 1):w_row + 2, max(0, w_col - 1):w_col + 2] = (0.85, 0.10, 0.10)
 
         buf = io.BytesIO()
         plt.imsave(buf, colored.astype(np.float32), format="png")
         return buf.getvalue()
 
-    def profile(self, cube_id: str, az: int, rg: int) -> dict:
+    def profile(self, cube_id: str, row: int, col: int) -> dict:
         stamp_dir = Path(cube_id)
         cubes_dir = stamp_dir / "cubes"
 
@@ -204,19 +204,19 @@ class TriageBoard:
             pred = np.load(cubes_dir / "pred_curves.npy", mmap_mode="r")
             gt   = np.load(cubes_dir / "gt_curves.npy", mmap_mode="r")
 
-            if not (0 <= az < pred.shape[1] and 0 <= rg < pred.shape[2]):
-                return {"ok": False, "error": f"pixel ({az}, {rg}) is outside the region {pred.shape[1:]}"}
+            if not (0 <= row < pred.shape[1] and 0 <= col < pred.shape[2]):
+                return {"ok": False, "error": f"pixel ({row}, {col}) is outside the region {pred.shape[1:]}"}
 
             metrics = json.loads((stamp_dir / "metrics.json").read_text(encoding="utf-8"))
-            x_axis  = np.linspace(float(metrics["x_axis_min"]), float(metrics["x_axis_max"]), pred.shape[0])
+            z_axis  = np.linspace(float(metrics["x_axis_min"]), float(metrics["x_axis_max"]), pred.shape[0])
 
             return {
                 "ok"     : True,
-                "az"     : az,
-                "rg"     : rg,
-                "x_axis" : [float(v) for v in x_axis],
-                "pred"   : [float(v) for v in pred[:, az, rg]],
-                "gt"     : [float(v) for v in gt[:, az, rg]],
+                "row"    : row,
+                "col"    : col,
+                "z_axis" : [float(v) for v in z_axis],
+                "pred"   : [float(v) for v in pred[:, row, col]],
+                "gt"     : [float(v) for v in gt[:, row, col]],
             }
         except (OSError, ValueError, KeyError) as error:
             return {"ok": False, "error": str(error)}

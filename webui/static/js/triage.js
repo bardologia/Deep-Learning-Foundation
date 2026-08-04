@@ -111,7 +111,7 @@ class TriageView {
       .map((name) => `${this._esc(name)}: ${Number(row[name]).toPrecision(3)}`)
       .join(" · ");
 
-    const thumb = `/api/triage/thumb?id=${encodeURIComponent(this.cubeId)}&az0=${row.az0}&rg0=${row.rg0}`;
+    const thumb = `/api/triage/thumb?id=${encodeURIComponent(this.cubeId)}&row0=${row.row0}&col0=${row.col0}`;
 
     const verdictBtns = TriageView.VERDICTS.map((verdict) => {
       const active = annotation.verdict === verdict;
@@ -121,13 +121,13 @@ class TriageView {
 
     return `
       <article class="fl-card">
-        <h3 class="cube-panel-title">#${index + 1} · az ${row.az0}–${row.az1}, rg ${row.rg0}–${row.rg1}</h3>
+        <h3 class="cube-panel-title">#${index + 1} · row ${row.row0}–${row.row1}, col ${row.col0}–${row.col1}</h3>
         <div class="triage-media">
           <img class="triage-thumb" src="${thumb}" loading="lazy" alt="pixel MSE around the block" title="log MSE, white = this block, red = worst pixel; click to open cuts" data-open="${index}" />
           <canvas class="triage-profile" id="triage-profile-${index}" width="420" height="132" title="GT vs prediction at the worst pixel"></canvas>
         </div>
         <p class="cube-hint">
-          block MSE ${row.mse_mean.toExponential(2)} (peak ${row.mse_max.toExponential(2)} at az ${row.worst_az}, rg ${row.worst_rg})<br>
+          block MSE ${row.mse_mean.toExponential(2)} (peak ${row.mse_max.toExponential(2)} at row ${row.worst_row}, col ${row.worst_col})<br>
           ${modeBadge}${aux ? `${aux}<br>` : ""}
         </p>
         <div class="triage-verdicts" role="group" aria-label="Verdict">${verdictBtns}</div>
@@ -141,14 +141,14 @@ class TriageView {
 
   async _loadProfile(row, index) {
     const data = await window.apiGet(
-      `/api/triage/profile?id=${encodeURIComponent(this.cubeId)}&az=${row.worst_az}&rg=${row.worst_rg}`
+      `/api/triage/profile?id=${encodeURIComponent(this.cubeId)}&row=${row.worst_row}&col=${row.worst_col}`
     );
     if (!data.ok) return;
 
     const canvas = this.refs.cases.querySelector(`#triage-profile-${index}`);
     if (!canvas) return;
 
-    window.drawLineChart(canvas, data.x_axis, [
+    window.drawLineChart(canvas, data.z_axis, [
       { values: data.gt,   color: "#111827", width: 1.2, label: "GT" },
       { values: data.pred, color: "#0f766e", width: 1.7, label: "pred" },
     ]);
@@ -190,8 +190,8 @@ class TriageView {
     scope.querySelectorAll("[data-open]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const row = this.cases[Number(btn.dataset.open)];
-        if (window.tomogramView) {
-          window.tomogramView.openAt(this.cubeId, row.worst_az, row.worst_rg);
+        if (window.cubeView) {
+          window.cubeView.openAt(this.cubeId, row.worst_row, row.worst_col);
           window.location.hash = "#/cube";
         }
       });

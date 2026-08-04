@@ -52,9 +52,9 @@ class MicroscopeView {
         <section class="ms-card ms-scene">
           <div class="ms-scene__map">
             <div class="fl-map__frame">
-              <span class="cube-axis cube-axis--y">azimuth &darr;</span>
+              <span class="cube-axis cube-axis--y">row &darr;</span>
               <div class="fl-map__wrap" id="probe-map-wrap">
-                <img id="probe-map-img" alt="Primary SLC amplitude" />
+                <img id="probe-map-img" alt="Primary channel amplitude" />
                 <div class="fl-marks" id="probe-marks"></div>
               </div>
               <span class="cube-axis cube-axis--x">range &rarr;</span>
@@ -69,12 +69,12 @@ class MicroscopeView {
             <p class="cube-coords" id="probe-coords">Click the map to probe a pixel.</p>
             <div class="fl-pixrow" role="group" aria-label="Probe a pixel by index">
               <span class="cube-jump__cell">
-                <label for="probe-az">az</label>
-                <input type="number" id="probe-az" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+                <label for="probe-row">row</label>
+                <input type="number" id="probe-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
               </span>
               <span class="cube-jump__cell">
-                <label for="probe-rg">rg</label>
-                <input type="number" id="probe-rg" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+                <label for="probe-col">col</label>
+                <input type="number" id="probe-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
               </span>
               <button type="button" class="btn btn--mini" id="probe-go">Probe</button>
             </div>
@@ -82,7 +82,7 @@ class MicroscopeView {
         </section>
 
         <div class="ms-main">
-          <div class="ms-idle" id="probe-idle">Click a pixel on the scene map, or type az / rg indices, to put it under the microscope.</div>
+          <div class="ms-idle" id="probe-idle">Click a pixel on the scene map, or type row / col indices, to put it under the microscope.</div>
 
           <div class="ms-cards" id="probe-cards" hidden>
             <section class="ms-card">
@@ -135,7 +135,7 @@ class MicroscopeView {
               <div class="ms-chiprow" id="probe-whatif-channels"></div>
               <div class="ms-wival" id="probe-whatif-valrow" hidden>
                 <label id="probe-whatif-value-label" for="probe-whatif-range">factor</label>
-                <input type="range" id="probe-whatif-range" min="0" max="2" step="0.05" value="0.5" />
+                <input type="col" id="probe-whatif-range" min="0" max="2" step="0.05" value="0.5" />
                 <input type="number" id="probe-whatif-value" class="cube-jump__input" min="0" max="2" step="0.05" value="0.5" />
                 <button type="button" class="btn btn--mini" id="probe-whatif-reroll" hidden>re-roll</button>
               </div>
@@ -159,8 +159,8 @@ class MicroscopeView {
       mapImg     : this.root.querySelector("#probe-map-img"),
       marks      : this.root.querySelector("#probe-marks"),
       coords     : this.root.querySelector("#probe-coords"),
-      azInput    : this.root.querySelector("#probe-az"),
-      rgInput    : this.root.querySelector("#probe-rg"),
+      rowInput   : this.root.querySelector("#probe-row"),
+      colInput   : this.root.querySelector("#probe-col"),
       goBtn      : this.root.querySelector("#probe-go"),
       idle       : this.root.querySelector("#probe-idle"),
       cards      : this.root.querySelector("#probe-cards"),
@@ -189,8 +189,8 @@ class MicroscopeView {
 
     this.refs.mapImg.addEventListener("click", (ev) => this._onMapClick(ev));
     this.refs.goBtn.addEventListener("click", () => this._probeInputs());
-    this.refs.azInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._probeInputs(); });
-    this.refs.rgInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._probeInputs(); });
+    this.refs.rowInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._probeInputs(); });
+    this.refs.colInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._probeInputs(); });
     this.refs.features.addEventListener("load", () => { this.refs.features.hidden = false; });
     this.refs.features.addEventListener("error", () => {
       this.refs.features.hidden = true;
@@ -329,13 +329,13 @@ class MicroscopeView {
     this.refs.coords.textContent = "Click the map to probe a pixel.";
     this.refs.mapImg.src         = `/api/probe/map?t=${Date.now()}`;
 
-    this.refs.azInput.max = info.azimuth_size - 1;
-    this.refs.rgInput.max = info.range_size - 1;
+    this.refs.rowInput.max = info.row_size - 1;
+    this.refs.colInput.max = info.col_size - 1;
 
     this.refs.meta.innerHTML = [
       `<span class="ms-chip"><b>K</b> ${info.n_gaussians}</span>`,
       `<span class="ms-chip"><b>in</b> ${info.in_channels} ch</span>`,
-      `<span class="ms-chip"><b>region</b> ${info.azimuth_size}&times;${info.range_size} px</span>`,
+      `<span class="ms-chip"><b>region</b> ${info.row_size}&times;${info.col_size} px</span>`,
       `<span class="ms-chip"><b>window</b> ${info.patch[0]}&times;${info.patch[1]} px</span>`,
       `<span class="ms-chip"><b>split</b> ${this._esc(info.split)}</span>`,
     ].join("");
@@ -458,28 +458,28 @@ class MicroscopeView {
   _onMapClick(ev) {
     if (!this.info) return;
     const rect = this.refs.mapImg.getBoundingClientRect();
-    const az   = Math.round(((ev.clientY - rect.top) / rect.height) * (this.info.azimuth_size - 1));
-    const rg   = Math.round(((ev.clientX - rect.left) / rect.width) * (this.info.range_size - 1));
-    this._probe(az, rg);
+    const row  = Math.round(((ev.clientY - rect.top) / rect.height) * (this.info.row_size - 1));
+    const col  = Math.round(((ev.clientX - rect.left) / rect.width) * (this.info.col_size - 1));
+    this._probe(row, col);
   }
 
   _probeInputs() {
-    const az = parseInt(this.refs.azInput.value, 10);
-    const rg = parseInt(this.refs.rgInput.value, 10);
-    if (Number.isFinite(az) && Number.isFinite(rg)) this._probe(az, rg);
+    const row = parseInt(this.refs.rowInput.value, 10);
+    const col = parseInt(this.refs.colInput.value, 10);
+    if (Number.isFinite(row) && Number.isFinite(col)) this._probe(row, col);
   }
 
-  async _probe(az, rg) {
-    az = Math.max(0, Math.min(this.info.azimuth_size - 1, az));
-    rg = Math.max(0, Math.min(this.info.range_size - 1, rg));
+  async _probe(row, col) {
+    row = Math.max(0, Math.min(this.info.row_size - 1, row));
+    col = Math.max(0, Math.min(this.info.col_size - 1, col));
 
-    this.pixel = { az, rg };
-    this.refs.azInput.value = az;
-    this.refs.rgInput.value = rg;
-    this.refs.coords.textContent = `az ${az} · rg ${rg} (absolute ${az + this.info.az_offset} · ${rg + this.info.rg_offset})`;
-    this._renderMark(az, rg);
+    this.pixel                   = { row, col };
+    this.refs.rowInput.value     = row;
+    this.refs.colInput.value     = col;
+    this.refs.coords.textContent = `row ${row} · col ${col} (absolute ${row + this.info.row_offset} · ${col + this.info.col_offset})`;
+    this._renderMark(row, col);
 
-    const out = await window.apiPost("/api/probe/predict", { az, rg });
+    const out = await window.apiPost("/api/probe/predict", { row, col });
     if (!out.ok) {
       this.refs.coords.textContent = out.error;
       return;
@@ -496,9 +496,9 @@ class MicroscopeView {
     this._runWhatIf();
   }
 
-  _renderMark(az, rg) {
-    const x = (rg / (this.info.range_size - 1)) * 100;
-    const y = (az / (this.info.azimuth_size - 1)) * 100;
+  _renderMark(row, col) {
+    const x                   = (col / (this.info.col_size - 1)) * 100;
+    const y                   = (row / (this.info.row_size - 1)) * 100;
     this.refs.marks.innerHTML = `<i class="fl-mark" style="left:${x}%;top:${y}%;background:#e11d48"></i>`;
   }
 
@@ -509,7 +509,7 @@ class MicroscopeView {
       { values: out.curve,     color: MicroscopeView.SERIES_COLORS.pred, width: 1.8, label: "pred" },
     ].filter((s) => Array.isArray(s.values));
 
-    window.drawLineChart(this.refs.profile, out.x_axis, series);
+    window.drawLineChart(this.refs.profile, out.z_axis, series);
   }
 
   _slotRow(slot, keyLabel, rowClass, stateLabel) {
@@ -524,7 +524,7 @@ class MicroscopeView {
   }
 
   _renderSlots(out) {
-    const head = `<thead><tr><th class="ms-slots__key">SLOT</th><th>AMP</th><th>&mu; [m]</th><th>&sigma; [m]</th><th class="ms-slots__state">STATE</th></tr></thead>`;
+    const head = `<thead><tr><th class="ms-slots__key">SLOT</th><th>AMP</th><th>&mu;</th><th>&sigma;</th><th class="ms-slots__state">STATE</th></tr></thead>`;
     const pred = out.slots.map((s) => this._slotRow(s, `${s.slot}`, s.active ? "" : "is-inactive", s.active ? "active" : "off"));
     const gt   = (out.gt_slots || []).filter((s) => s.active).map((s) => this._slotRow(s, `GT ${s.slot}`, "ms-slots__gt", "truth"));
 
@@ -539,7 +539,7 @@ class MicroscopeView {
     this.refs.gridChips.innerHTML  = "";
     this.refs.grid.innerHTML       = "";
 
-    const out = await window.apiPost("/api/probe/attribution", { az: this.pixel.az, rg: this.pixel.rg });
+    const out = await window.apiPost("/api/probe/attribution", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.attribToken) return;
 
     if (!out.ok) {
@@ -640,7 +640,7 @@ class MicroscopeView {
 
   _loadFeatures() {
     if (!this.pixel || !this.layer) return;
-    this.refs.features.src = `/api/probe/features?az=${this.pixel.az}&rg=${this.pixel.rg}&layer=${encodeURIComponent(this.layer)}&t=${Date.now()}`;
+    this.refs.features.src = `/api/probe/features?row=${this.pixel.row}&col=${this.pixel.col}&layer=${encodeURIComponent(this.layer)}&t=${Date.now()}`;
   }
 
   _whatIfDescription() {
@@ -689,7 +689,7 @@ class MicroscopeView {
     }
 
     const token = ++this.wiToken;
-    const out   = await window.apiPost("/api/probe/whatif", { az: this.pixel.az, rg: this.pixel.rg, perturbation });
+    const out   = await window.apiPost("/api/probe/whatif", { row: this.pixel.row, col: this.pixel.col, perturbation });
     if (token !== this.wiToken) return;
 
     if (!out.ok) {
@@ -705,7 +705,7 @@ class MicroscopeView {
     series.push({ values: out.base_curve,      color: MicroscopeView.SERIES_COLORS.pred,      width: 1.6, label: "base" });
     series.push({ values: out.perturbed_curve, color: MicroscopeView.SERIES_COLORS.perturbed, width: 1.6, label: "perturbed" });
 
-    window.drawLineChart(this.refs.wCanvas, out.x_axis, series);
+    window.drawLineChart(this.refs.wCanvas, out.z_axis, series);
 
     const power = out.base_curve.reduce((acc, v) => acc + v * v, 0) / out.base_curve.length;
     const rel   = power > 0 ? ` &mdash; ${((out.delta_mse / power) * 100).toFixed(2)}% of base curve power` : "";
@@ -715,7 +715,7 @@ class MicroscopeView {
   }
 
   _renderWhatIfSlots(base, perturbed) {
-    const head = `<thead><tr><th class="ms-slots__key">SLOT</th><th>AMP</th><th>&mu; [m]</th><th>&sigma; [m]</th></tr></thead>`;
+    const head = `<thead><tr><th class="ms-slots__key">SLOT</th><th>AMP</th><th>&mu;</th><th>&sigma;</th></tr></thead>`;
 
     const rows = base.map((b, k) => {
       const p     = perturbed[k];

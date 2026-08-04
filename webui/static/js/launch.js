@@ -22,7 +22,7 @@ class LaunchView extends ConfigForm {
       label  : "Backbone + profile autoencoder",
       summary: "Predicts the profile embedding from the raw image stack, then decodes it back to normalized profiles through the profile autoencoder decoder. Select a profile autoencoder run; leave the image autoencoder unset.",
       flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",          sub: "primary · secondaries · interferograms" },
+        { kind: "input",  glyph: "stack",   label: "Image stack",          sub: "primary · secondaries · derived" },
         { kind: "model",  glyph: "net",     label: "Backbone",             sub: "predictor" },
         { kind: "latent", glyph: "vector",  label: "Normalized embeddings" },
         { kind: "model",  glyph: "decoder", label: "Profile AE decoder",   sub: "frozen / fine-tuned" },
@@ -34,7 +34,7 @@ class LaunchView extends ConfigForm {
       label  : "Image autoencoder + backbone",
       summary: "Encodes the image stack with the image autoencoder front-end, then the backbone maps that latent straight to the Gaussian-mixture profile parameters. Select an image autoencoder run; leave the profile autoencoder unset.",
       flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",        sub: "primary · secondaries · interferograms" },
+        { kind: "input",  glyph: "stack",   label: "Image stack",        sub: "primary · secondaries · derived" },
         { kind: "model",  glyph: "encoder", label: "Image AE encoder",   sub: "frozen / fine-tuned" },
         { kind: "latent", glyph: "vector",  label: "Image embedding",    sub: "2D latent" },
         { kind: "model",  glyph: "net",     label: "Backbone",           sub: "predictor" },
@@ -46,7 +46,7 @@ class LaunchView extends ConfigForm {
       label  : "Image autoencoder + backbone + profile autoencoder",
       summary: "Encodes the image stack with the image autoencoder front-end, the backbone predicts the profile embedding from that latent, and the profile autoencoder decoder reconstructs the normalized profiles. Select both an image and a profile autoencoder run.",
       flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",          sub: "primary · secondaries · interferograms" },
+        { kind: "input",  glyph: "stack",   label: "Image stack",          sub: "primary · secondaries · derived" },
         { kind: "model",  glyph: "encoder", label: "Image AE encoder",     sub: "frozen / fine-tuned" },
         { kind: "latent", glyph: "vector",  label: "Image embedding",      sub: "2D latent" },
         { kind: "model",  glyph: "net",     label: "Backbone",             sub: "predictor" },
@@ -62,7 +62,7 @@ class LaunchView extends ConfigForm {
       title  : "Backbone",
       summary: "Supervised regression that maps the SAR image stack straight to the Gaussian-mixture profile parameters.",
       flow   : [
-        { kind: "input",  glyph: "stack",  label: "Image stack",  sub: "primary · secondaries · interferograms" },
+        { kind: "input",  glyph: "stack",  label: "Image stack",  sub: "primary · secondaries · derived" },
         { kind: "model",  glyph: "net",    label: "Backbone",     sub: "supervised network" },
         { kind: "output", glyph: "params", label: "Params array", sub: "amp, μ, σ, amp, μ, σ, …" },
       ],
@@ -82,7 +82,7 @@ class LaunchView extends ConfigForm {
       title  : "Image autoencoder",
       summary: "Learns the latent input space: encodes the SAR image stack into a 2D embedding and reconstructs it. The encoder later serves as a JEPA front-end.",
       flow   : [
-        { kind: "input",  glyph: "stack",   label: "Image stack",            sub: "primary · secondaries · interferograms" },
+        { kind: "input",  glyph: "stack",   label: "Image stack",            sub: "primary · secondaries · derived" },
         { kind: "model",  glyph: "encoder", label: "Encoder" },
         { kind: "latent", glyph: "vector",  label: "Image embedding",        sub: "2D latent" },
         { kind: "model",  glyph: "decoder", label: "Decoder" },
@@ -99,9 +99,9 @@ class LaunchView extends ConfigForm {
   static PROCESS_MEANINGS = {
     extract_params: {
       title  : "Extract Parameters",
-      summary: "Fits a per-pixel Gaussian mixture to the Capon tomogram to build the supervised profile-parameter targets.",
+      summary: "Fits a per-pixel Gaussian mixture to the reference cube to build the supervised profile-parameter targets.",
       flow   : [
-        { kind: "input",  glyph: "cube",   label: "Capon tomogram",      sub: "reflectivity profiles" },
+        { kind: "input",  glyph: "cube",   label: "Reference cube", sub: "profile intensities" },
         { kind: "model",  glyph: "fit",    label: "Gaussian-mixture fit", tag: "operation", sub: "per pixel" },
         { kind: "output", glyph: "params", label: "Params array",        sub: "amp, μ, σ, amp, μ, σ, …" },
       ],

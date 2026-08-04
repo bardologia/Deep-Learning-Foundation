@@ -164,7 +164,7 @@ class AutopsyView {
       data.hotspots.forEach((spot, index) => {
         html += `
           <article class="fl-card">
-            <h3 class="cube-panel-title">${spot.winner} wins · az ${spot.az}, rg ${spot.rg}</h3>
+            <h3 class="cube-panel-title">${spot.winner} wins · row ${spot.row}, col ${spot.col}</h3>
             <p class="cube-hint">block Δ pixel MSE (A−B): ${spot.mean_delta.toExponential(2)}</p>
             <canvas id="autopsy-spot-${index}" width="560" height="220"></canvas>
           </article>`;
@@ -179,14 +179,14 @@ class AutopsyView {
 
   async _loadProfile(spot, index) {
     const data = await window.apiGet(
-      `/api/autopsy/profile?a=${encodeURIComponent(this.pair.a)}&b=${encodeURIComponent(this.pair.b)}&az=${spot.az}&rg=${spot.rg}`
+      `/api/autopsy/profile?a=${encodeURIComponent(this.pair.a)}&b=${encodeURIComponent(this.pair.b)}&row=${spot.row}&col=${spot.col}`
     );
     if (!data.ok) return;
 
     const canvas = this.root.querySelector(`#autopsy-spot-${index}`);
     if (!canvas) return;
 
-    window.drawLineChart(canvas, data.x_axis, [
+    window.drawLineChart(canvas, data.z_axis, [
       { values: data.gt, color: "#111827", width: 1.2, label: "GT" },
       { values: data.a,  color: "#0f766e", width: 1.7, label: "A" },
       { values: data.b,  color: "#b91c1c", width: 1.7, label: "B" },

@@ -101,21 +101,21 @@ class ModelProbe:
             labels   = ChannelLabeler.build(run)
             layers   = self._probe_layers(run.model.module)
             modules  = dict(run.model.module.named_modules())
-            renderer = PredictionCurves(run.n_gaussians, run.x_axis)
+            renderer = PredictionCurves(run.n_gaussians, run.z_axis)
 
             info = {
-                "run"          : run_path,
-                "backbone"     : run.backbone_name,
-                "split"        : split,
-                "in_channels"  : run.in_channels,
-                "n_gaussians"  : run.n_gaussians,
-                "azimuth_size" : run.split_region.azimuth_size,
-                "range_size"   : run.split_region.range_size,
-                "az_offset"    : run.split_region.azimuth_start,
-                "rg_offset"    : run.split_region.range_start,
-                "patch"        : list(run.dataset_config.patch.size),
-                "channels"     : labels,
-                "n_layers"     : len(layers),
+                "run"         : run_path,
+                "backbone"    : run.backbone_name,
+                "split"       : split,
+                "in_channels" : run.in_channels,
+                "n_gaussians" : run.n_gaussians,
+                "row_size"    : run.split_region.row_size,
+                "col_size"    : run.split_region.col_size,
+                "row_offset"  : run.split_region.row_start,
+                "col_offset"  : run.split_region.col_start,
+                "patch"       : list(run.dataset_config.patch.size),
+                "channels"    : labels,
+                "n_layers"    : len(layers),
             }
 
             with self.lock:
@@ -160,24 +160,24 @@ class ModelProbe:
         plt.imsave(buf, primary, cmap="gray", vmin=float(vmin), vmax=float(vmax), format="png")
         return buf.getvalue()
 
-    def _window(self, az: int, rg: int) -> tuple[np.ndarray, int, int]:
+    def _window(self, row: int, col: int) -> tuple[np.ndarray, int, int]:
         run    = self.loaded["run"]
         ph, pw = self.loaded["patch"]
-        n_az   = run.split_region.azimuth_size
-        n_rg   = run.split_region.range_size
+        n_rows   = run.split_region.row_size
+        n_cols   = run.split_region.col_size
 
-        if not (0 <= az < n_az and 0 <= rg < n_rg):
-            raise ValueError(f"pixel ({az}, {rg}) is outside the {n_az}x{n_rg} region")
+        if not (0 <= row < n_rows and 0 <= col < n_cols):
+            raise ValueError(f"pixel ({row}, {col}) is outside the {n_rows}x{n_cols} region")
 
-        top  = int(np.clip(az - ph // 2, 0, n_az - ph))
-        left = int(np.clip(rg - pw // 2, 0, n_rg - pw))
+        top  = int(np.clip(row - ph // 2, 0, n_rows - ph))
+        left = int(np.clip(col - pw // 2, 0, n_cols - pw))
 
         complex_window = run.complex_inputs[:, top:top + ph, left:left + pw]
-        dem            = run.dataset.dem
-        dem_window     = dem[top:top + ph, left:left + pw] if dem is not None else None
+        aux            = run.dataset.aux
+        aux_window     = aux[top:top + ph, left:left + pw] if aux is not None else None
 
-        window = run.dataset.assemble_window(complex_window, dem_window)
-        return window[None].astype(np.float32), az - top, rg - left
+        window = run.dataset.assemble_window(complex_window, aux_window)
+        return window[None].astype(np.float32), row - top, col - left
 
     def _slots(self, params_center: np.ndarray) -> list[dict]:
         from tools.loss.param_loss import ParamMatcher
@@ -210,8 +210,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg           = int(body["az"]), int(body["rg"])
-                window, cy, cx   = self._window(az, rg)
+                row, col           = int(body["row"]), int(body["col"])
+                window, cy, cx   = self._window(row, col)
                 slots, curve     = self._predict_window(window, cy, cx)
 
                 run      = self.loaded["run"]
@@ -221,17 +221,17 @@ class ModelProbe:
                 gt_slots  = None
                 gt_params = run.dataset.gt_parameters
                 if gt_params is not None:
-                    center    = np.asarray(gt_params[:, az, rg], dtype=np.float64)
+                    center    = np.asarray(gt_params[:, row, col], dtype=np.float64)
                     gt_slots  = self._slots(center)
                     gt_curve  = [float(v) for v in renderer.render(center.reshape(1, -1, 1, 1))[0, :, 0, 0]]
 
-                raw_curve = [float(v) for v in run.full_curves[:, az, rg]]
+                raw_curve = [float(v) for v in run.full_curves[:, row, col]]
 
                 return {
                     "ok"        : True,
-                    "az"        : az,
-                    "rg"        : rg,
-                    "x_axis"    : [float(v) for v in run.x_axis],
+                    "row"       : row,
+                    "col"       : col,
+                    "z_axis"    : [float(v) for v in run.z_axis],
                     "slots"     : slots,
                     "curve"     : curve,
                     "gt_slots"  : gt_slots,
@@ -281,8 +281,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg         = int(body["az"]), int(body["rg"])
-                window, cy, cx = self._window(az, rg)
+                row, col         = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
                 families = [self._family_payload(family, grad) for family, grad in self._family_gradients(window, cy, cx)]
 
@@ -321,8 +321,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg         = int(body["az"]), int(body["rg"])
-                window, cy, cx = self._window(az, rg)
+                row, col         = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
                 base_slots, base_curve = self._predict_window(window, cy, cx)
 
@@ -335,9 +335,9 @@ class ModelProbe:
 
                 return {
                     "ok"              : True,
-                    "az"              : az,
-                    "rg"              : rg,
-                    "x_axis"          : [float(v) for v in self.loaded["run"].x_axis],
+                    "row"             : row,
+                    "col"             : col,
+                    "z_axis"          : [float(v) for v in self.loaded["run"].z_axis],
                     "base_slots"      : base_slots,
                     "base_curve"      : base_curve,
                     "perturbed_slots" : perturbed_slots,
@@ -347,7 +347,7 @@ class ModelProbe:
             except (ValueError, KeyError) as error:
                 return {"ok": False, "error": str(error)}
 
-    def features_png(self, az: int, rg: int, layer: str, max_channels: int = 16) -> bytes | None:
+    def features_png(self, row: int, col: int, layer: str, max_channels: int = 16) -> bytes | None:
         import torch
 
         from tools.diagnostics.activation_recorder import ActivationRecorder
@@ -356,7 +356,7 @@ class ModelProbe:
             if self.loaded is None or layer not in self.loaded["layers"]:
                 return None
 
-            window, _cy, _cx = self._window(az, rg)
+            window, _cy, _cx = self._window(row, col)
 
             recorder = ActivationRecorder(self.loaded["run"].model.module)
             recorder.attach_store([layer])

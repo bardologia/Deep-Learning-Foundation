@@ -185,7 +185,7 @@ class ProcessAnimator {
   _ease(p) { return p < 0 ? 0 : p > 1 ? 1 : 1 - Math.pow(1 - p, 3); }
   _lerp(a, b, p) { return a + (b - a) * p; }
 
-  _grid(pad) { this._axes(pad, "elevation", "power"); }
+  _grid(pad) { this._axes(pad, "z", "power"); }
 
   _axes(pad, xlab, ylab) {
     const { ctx, w, h } = this;
@@ -340,7 +340,7 @@ class ProcessAnimator {
     const py     = (v) => pad.t + (1 - Math.min(1, Math.max(0, v) / topVal)) * (h - pad.t - pad.b);
 
     if (tt < SORT0) {
-      this._axes(pad, "elevation", tt >= 13.0 ? "normalized power" : "power");
+      this._axes(pad, "z", tt >= 13.0 ? "normalized power" : "power");
 
       const truncX = px(TRUNC / NS);
       if (tt < 13.0) {
@@ -435,7 +435,7 @@ class ProcessAnimator {
     let model = null, iter = 0, caption = "", done = 0, highlight = false, modelDashed = false;
 
     if (tt < 2.5) {
-      caption = "Input: one elevation profile from the beamformed tomogram  ·  |tomogram| for one azimuth-range pixel";
+      caption = "Input: one z profile from the beamformed cube  ·  |cube| for one row-range pixel";
     } else if (tt < FITS0) {
       const thrY = py(thrZ);
       const inZoom = (tt >= 13.0 && tt < 15.5) || (tt >= 15.5 && tt < 22.0) || (tt >= 24.5 && tt < 30.9);
@@ -468,7 +468,7 @@ class ProcessAnimator {
       if (tt < 5.5) {
         caption = "Pre-clean 1/2: samples below threshold_factor × max (0.25) are zeroed out  ·  the baseline between lobes collapses to zero";
       } else if (tt < 8.0) {
-        caption = "Pre-clean 2/2: high-elevation samples beyond truncation_index = 170 are zeroed";
+        caption = "Pre-clean 2/2: high-z samples beyond truncation_index = 170 are zeroed";
       } else if (tt < 13.0) {
         const ga = this._ease(Math.min(1, (tt - 8.5) / 0.8));
         if (ga > 0) {
@@ -999,7 +999,7 @@ class ProcessAnimator {
 
     if (tt >= FINAL0 && tt < R2_0) {
       const tf = tt - FINAL0;
-      this._axes(pad, "elevation", "normalized power");
+      this._axes(pad, "z", "normalized power");
       const fm = finalModel(bestK);
 
       const plotT = pad.t, plotB = h - pad.b;
@@ -1053,7 +1053,7 @@ class ProcessAnimator {
 
     if (tt >= R2_0 && tt < CODA0) {
       const tr = tt - R2_0;
-      this._axes(pad, "elevation", "normalized power");
+      this._axes(pad, "z", "normalized power");
       const fm = finalModel(bestK);
       const plotT = pad.t, plotB = h - pad.b;
       const mapY = (v) => plotT + (1 - Math.min(1, Math.max(0, v) / topVal)) * (plotB - plotT);
@@ -1109,7 +1109,7 @@ class ProcessAnimator {
         }
         ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(143,176,170,0.85)";
         ctx.save(); ctx.textAlign = "center";
-        ctx.fillText("R² map  ·  Az × R", w / 2, gy0 + rows * s + 16);
+        ctx.fillText("R² map  ·  n_row × R", w / 2, gy0 + rows * s + 16);
         ctx.restore();
       }
 
@@ -1142,7 +1142,7 @@ class ProcessAnimator {
       ctx.fillStyle = "rgba(124,255,155,0.95)";
       ctx.fillText(`${cnt.toFixed(1)} M profiles`, w / 2, gy0 + rows * s + 22);
       ctx.restore();
-      caption = "This runs independently for every azimuth × range pixel  ·  millions of profiles  ·  output (3·K_max, Az, R)";
+      caption = "This runs independently for every row × range pixel  ·  millions of profiles  ·  output (3·K_max, n_row, R)";
     }
 
     if (model) {
@@ -1267,17 +1267,17 @@ class ProcessAnimator {
       field(sx, sy, sw2 * born, sh2, 0.85, 7);
       ctx.strokeStyle = "rgba(120,200,220,0.45)"; ctx.lineWidth = 1.4;
       ctx.strokeRect(sx, sy, sw2, sh2);
-      centerLabel("azimuth ->", sx + sw2 / 2, sy + sh2 + 22);
+      centerLabel("row ->", sx + sw2 / 2, sy + sh2 + 22);
       ctx.save(); ctx.translate(sx - 14, sy + sh2 / 2 + 32); ctx.rotate(-Math.PI / 2); label("range ->", 0, 0); ctx.restore();
 
       const ax = sx + sw2 + 40;
       const atW = w - ax - 44;
       const arts = [
-        { n: "primary", d: "1 reference pass (PS02)", c: "#35e6d0" },
+        { n: "primary", d: "1 reference channel (CH00)", c: "#35e6d0" },
         { n: "secondaries", d: "selected aligned passes", c: "rgba(178,204,210,0.95)" },
-        { n: "interferograms", d: "selected complex interferograms", c: "#ffcf6b" },
+        { n: "derived", d: "selected complex derived", c: "#ffcf6b" },
         { n: "parameters", d: "GMM targets · param pipeline", c: "#7cff9b" },
-        { n: "dem_full", d: "optional channel · off here", c: "rgba(178,204,210,0.95)" },
+        { n: "aux_full", d: "optional channel · off here", c: "rgba(178,204,210,0.95)" },
       ];
       const atY = sy + 12;
       const tA = c01((tt - 0.4) / 0.6);
@@ -1361,17 +1361,17 @@ class ProcessAnimator {
           ctx.fillStyle = "rgba(4,7,10,0.9)"; ctx.fillRect(bx5 - 8, by5 - 26, bw5 + 16, bh5 + 52);
           field(bx5, by5, bw5, bh5, 0.95, 7);
           ctx.strokeStyle = "#35e6d0"; ctx.lineWidth = 1.6; ctx.strokeRect(bx5, by5, bw5, bh5);
-          centerLabel("inputs_split (n_passes, az, rg)", bx5 + bw5 / 2, by5 + bh5 + 18, "#35e6d0", 13);
+          centerLabel("inputs_split (n_channels, row, col)", bx5 + bw5 / 2, by5 + bh5 + 18, "#35e6d0", 13);
           centerLabel("materialized into one RAM buffer", bx5 + bw5 / 2, by5 - 12, "rgba(206,228,222,0.9)", 12);
           ctx.restore();
         }
       }
 
       if (tt < 3.6) caption = "The processed artifacts are opened as memory-mapped files  ·  the data stays on disk";
-      else if (tt < 6.6) caption = "The scene is split along azimuth  ·  production uses explicit bounds, train az 1000–13000 (≈80%)";
-      else if (tt < 9.6) caption = "val az 13000–14500 (≈10%)  ·  test az 14500–16000 (≈10%)  ·  three disjoint azimuth windows";
+      else if (tt < 6.6) caption = "The scene is split along row  ·  production uses explicit bounds, train row 1000–13000 (≈80%)";
+      else if (tt < 9.6) caption = "val row 13000–14500 (≈10%)  ·  test row 14500–16000 (≈10%)  ·  three disjoint row windows";
       else if (tt < 12.2) caption = "The global crop is fixed (from dataset.json)  ·  each split maps into its local frame";
-      else caption = "Loading the train window  ·  1 primary + 4 secondaries + 4 interferograms copied into one stacked RAM buffer";
+      else caption = "Loading the train window  ·  1 primary + 4 secondaries + 4 derived copied into one stacked RAM buffer";
     } else if (tt < A2) {
       const ts = tt - A1;
       const kk = Math.min((w - 380) / 336, (h - 130) / 146);
@@ -1568,7 +1568,7 @@ class ProcessAnimator {
       const inGroups = [
         { n: 1, name: "mag · primary", kind: "mag", t0: 2.4, color: "#35e6d0" },
         { n: 4, name: "mag · secondaries", kind: "mag2", t0: 4.2, color: "rgba(178,204,210,0.95)" },
-        { n: 4, name: "phase · interferograms", kind: "ph", t0: 7.0, color: "#ffcf6b" },
+        { n: 4, name: "phase · derived", kind: "ph", t0: 7.0, color: "#ffcf6b" },
       ];
       let gx2 = cx0;
       inGroups.forEach((g) => { g.x = gx2; g.w = (g.n - 1) * step + cw; gx2 += g.w + ggap; });
@@ -1609,7 +1609,7 @@ class ProcessAnimator {
         if (ctx.roundRect) ctx.roundRect(dgx, dgy, cw, chh, 7); else ctx.rect(dgx, dgy, cw, chh);
         ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
         field(dgx + 6, dgy + 6, cw - 12, chh - 12, 0.4, 5, (i, j) => [i + 51, j + 9]);
-        centerLabel("dem · ZSCORE (use_dem off)", dgx + cw / 2, dgy + chh + 38, "rgba(178,204,210,0.95)", 12);
+        centerLabel("aux · ZSCORE (use_aux off)", dgx + cw / 2, dgy + chh + 38, "rgba(178,204,210,0.95)", 12);
         ctx.restore();
       }
 
@@ -1679,7 +1679,7 @@ class ProcessAnimator {
       if (ts < 2.2) caption = "Fetching one sample slices a 9-layer window out of the memory-mapped stack";
       else if (ts < 4.2) caption = "Primary pass  ·  its magnitude becomes channel 0";
       else if (ts < 7.0) caption = "Secondary passes  ·  one magnitude channel per pass";
-      else if (ts < 10.0) caption = "Interferograms  ·  one phase channel each";
+      else if (ts < 10.0) caption = "Derived  ·  one phase channel each";
       else if (ts < 12.0) caption = "1 + 4 + 4 = 9 channels written into a single tensor";
       else caption = "Targets repeat (a, mu, sigma) for each Gaussian  ->  3K layers of 64 x 64";
     } else if (tt < A4) {
@@ -1751,10 +1751,10 @@ class ProcessAnimator {
         };
         const p1 = xf(x, 6, as2 + 12), p2 = xf(x, as2 - 6, as2 + 12);
         arrow(p1[0], p1[1], p2[0], p2[1], col);
-        lab(p1, p2, "azimuth");
+        lab(p1, p2, "row");
         const q1 = xf(x, -12, as2 - 6), q2 = xf(x, -12, 6);
         arrow(q1[0], q1[1], q2[0], q2[1], col);
-        lab(q1, q2, "range");
+        lab(q1, q2, "col");
         ctx.restore();
       };
       axes(axL); axes(axR);
@@ -1833,10 +1833,10 @@ class ProcessAnimator {
       }
 
       const lanes = [
-        { g: "pass/mag", sub: "z-score + log1p", tag: "patches", c: "#35e6d0", kind: "log", mu0: 0.44, sg0: 0.18,
+        { g: "chan/mag", sub: "z-score + log1p", tag: "patches", c: "#35e6d0", kind: "log", mu0: 0.44, sg0: 0.18,
           raw: (x, b) => (Math.exp(-x * 5.4) * (1 + 0.25 * Math.sin(b * 1.7))) / 1.25,
           log: (x, b) => (Math.exp(-((x - 0.44) ** 2) / 0.06) * (1 + 0.12 * Math.sin(b * 2.3))) / 1.12 },
-        { g: "ifg/phase", sub: "z-score", tag: "patches", c: "#ffcf6b", kind: "phase" },
+        { g: "derived/phase", sub: "z-score", tag: "patches", c: "#ffcf6b", kind: "phase" },
         { g: "out/amp", sub: "z-score + log1p", tag: "full array", c: "#7cff9b", kind: "log", mu0: 0.45, sg0: 0.17,
           raw: (x, b) => Math.exp(-x * 5.0) * (1 + 0.2 * Math.sin(b * 1.9)),
           log: (x, b) => Math.exp(-((x - 0.45) ** 2) / 0.055) * (1 + 0.1 * Math.sin(b * 2.1)) },
@@ -2988,7 +2988,7 @@ class ProcessAnimator {
       const pace = this._lrPace, NQ = pace.length - 1;
       const q = Math.min(1, (ts - 15) / 8.0) * pace[NQ];
       let qlo = 0, qhi = NQ;
-      while (qlo < qhi) { const m = (qlo + qhi) >> 1; if (pace[m] < q) qlo = m + 1; else qhi = m; }
+      while (qlo < qhi) { const m = (qlo + qhi) >> 1; if (pace < q) qlo = m + 1; else qhi = m; }
       const st = (qlo / NQ) * (TOT - 1);
       const ep = Math.floor(st / d.SPE);
       const X = pxS(st), Y = pyL(d.lrAt(st));
@@ -3997,7 +3997,7 @@ class ProcessAnimator {
       else this._cap(`Training replay  ·  epoch ${Math.floor(eP)}/100  ·  complete loss: amp & sigma snap onto the target`);
     }
     else if (ts < 17.0) this._cap("The ordering rate hits 100% right at the curriculum swap — the sorted targets taught the net its output order");
-    else this._cap("Best checkpoint ships: model weights + the elevation axis  ·  next stop: the inference pipeline");
+    else this._cap("Best checkpoint ships: model weights + the z axis  ·  next stop: the inference pipeline");
   }
 
   /* ---------- inference: sliding window + stitch ---------- */
@@ -4035,7 +4035,7 @@ class ProcessAnimator {
     const NZ = 220;
     const scal = { r2: 0.962, rmse: 0.097, psnr: 28.4, mae: 0.061, mse: 0.011, cos: 0.994, peak: 1, mseP: 0.0094, maeP: 0.061, r2P: 0.971, cosP: 0.994, r2map: 0.94, mseMap: 0.011, ssimE: 0.93, ssimR: 0.88, ssimA: 0.90, order: 0.91, epoch: 87, bestE: 72, bestV: 0.0312, applied: 128, batch: 8 };
 
-    const sections = ["1 Run summary", "2 Headline metrics", "3 Metric tables", "4 Profiles", "5 Pixel maps", "6 Gaussian analysis", "7 Tomogram slices", "8 SSIM curves", "9 Animations", "10 Notes"];
+    const sections = ["1 Run summary", "2 Headline metrics", "3 Metric tables", "4 Profiles", "5 Pixel maps", "6 Gaussian analysis", "7 Cube slices", "8 SSIM curves", "9 Animations", "10 Notes"];
 
     this._inf = { grid, hann1d, tri1d, hann2d, target, predRaw, gtSort, mix, frac, c01, rnd, tex, places, NZ, scal, sections };
     return this._inf;
@@ -4171,7 +4171,7 @@ class ProcessAnimator {
       ["best_epoch", "72  (example)"],
       ["best_val_loss", "0.0312  (example)"],
       ["params", "[state_dict]"],
-      ["x_axis", "220 bins  (example)"],
+      ["z_axis", "220 bins  (example)"],
     ];
     rows.forEach((r, i) => {
       const ra = this._ease(c01((ts - 0.6 - i * 0.35) / 0.5));
@@ -4240,7 +4240,7 @@ class ProcessAnimator {
     const born = this._ease(c01(ts / 2.0));
     this._infField(gx, gy, gw * born, gh, 7, (i, j) => 0.05 + d.tex(i, j) * 0.3, [53, 230, 208], 0.9);
     ctx.strokeStyle = "rgba(120,200,220,0.5)"; ctx.lineWidth = 1.4; ctx.strokeRect(gx, gy, gw, gh);
-    this._infText("azimuth ->", gx + gw / 2 - 30, gy + gh + 22, "rgba(143,176,170,0.85)", 12);
+    this._infText("row ->", gx + gw / 2 - 30, gy + gh + 22, "rgba(143,176,170,0.85)", 12);
     ctx.save(); ctx.translate(gx - 14, gy + gh / 2 + 24); ctx.rotate(-Math.PI / 2); this._infText("range ->", 0, 0, "rgba(143,176,170,0.85)", 12); ctx.restore();
 
     if (ts >= 2.5) {
@@ -4452,7 +4452,7 @@ class ProcessAnimator {
     this._infText("pred", pad.l + 8, h - 24, "#35e6d0", 12);
     this._infText("GT", pad.l + 64, h - 24, "#ffcf6b", 12);
 
-    if (ts < 9.0) this._cap("Each slot's a, µ, σ reconstructs an elevation curve via the Gaussian mixture");
+    if (ts < 9.0) this._cap("Each slot's a, µ, σ reconstructs an z curve via the Gaussian mixture");
     else if (ts < 14.0) this._cap("Per pixel: MSE, MAE, R², cosine, peak-index error between pred and GT curves");
     else this._cap("Every pixel of every patch is scored in parallel across the CPU pool");
   }
@@ -4717,9 +4717,9 @@ class ProcessAnimator {
     });
 
     if (ts >= 3.0) {
-      const sa = this._ease(c01((ts - 3.0) / 0.8));
-      const axes = [["elevation", sc.ssimE], ["range", sc.ssimR], ["azimuth", sc.ssimA]];
-      const bx = tg, by = 150, bw = 200;
+      const sa   = this._ease(c01((ts - 3.0) / 0.8));
+      const axes = [["z", sc.ssimE], ["col", sc.ssimR], ["row", sc.ssimA]];
+      const bx   = tg, by = 150, bw = 200;
       this._infText("SSIM", bx, by - 6, "#e6f7f3", 13);
       axes.forEach((a, i) => {
         ctx.save(); ctx.globalAlpha = sa;
@@ -4746,8 +4746,8 @@ class ProcessAnimator {
     }
 
     if (ts >= 9.0) {
-      const la = this._ease(c01((ts - 9.0) / 0.8));
-      const list = ["per-Gaussian µ/σ MAE & RMSE", "slot-µ mean & std", "placeholder P / R / F1", "per-elevation MAE/RMSE/R²/CE"];
+      const la   = this._ease(c01((ts - 9.0) / 0.8));
+      const list = ["per-Gaussian µ/σ MAE & RMSE", "slot-µ mean & std", "placeholder P / R / F1", "per-z MAE/RMSE/R²/CE"];
       ctx.save(); ctx.globalAlpha = la * 0.7;
       this._infText("~30 metric groups → metrics.json", tg, h - 90, "#e6f7f3", 13);
       list.forEach((l, i) => this._infText("· " + l, tg, h - 68 + i * 16, "rgba(143,176,170,0.8)", 11));
@@ -4755,7 +4755,7 @@ class ProcessAnimator {
     }
 
     if (ts < 3.0) this._cap("Global suite on the stitched cubes: R², RMSE, PSNR, MAE");
-    else if (ts < 6.0) this._cap("SSIM is measured across elevation, range and azimuth slices");
+    else if (ts < 6.0) this._cap("SSIM is measured across z, range and row slices");
     else if (ts < 9.0) this._cap("µ-ordering rate and permutation consensus test whether slot roles stayed stable");
     else this._cap("~30 metric groups in total  ·  all written to metrics.json");
   }

@@ -28,14 +28,13 @@ class SliceFigureArchiver(PlotBase):
         "predb"   : "Prediction B",
         "diff"    : "Prediction A − B",
         "gt"      : "GT (Gaussian)",
-        "reduced" : "Capon reduced",
-        "full"    : "Capon full (raw)",
+        "full"    : "Reference (raw)",
     }
 
-    def render(self, data: np.ndarray, heights: np.ndarray, vmin: float, vmax: float, source: str, axis: str, az: int, rg: int, space: str, path: Path, cmap: str = "jet", label: str | None = None) -> Path:
-        x_label   = "azimuth index" if axis == "range" else "range index"
-        title_pos = f"range = {rg}" if axis == "range" else f"azimuth = {az}"
-        y_label   = "elevation bin" if source == "full" else "elevation [m]"
+    def render(self, data: np.ndarray, heights: np.ndarray, vmin: float, vmax: float, source: str, axis: str, row: int, col: int, space: str, path: Path, cmap: str = "jet", label: str | None = None) -> Path:
+        x_label   = "row index" if axis == "col" else "col index"
+        title_pos = f"col = {col}" if axis == "col" else f"row = {row}"
+        y_label   = "z bin" if source == "full" else "z"
         cbar      = "intensity (per-column normalised)" if space == "normalized" else "intensity"
         extent    = [0, int(data.shape[1]), float(heights[0]), float(heights[-1])]
         title     = f"{self.LABELS[source]} — {title_pos}" if label is None else f"{label} — {self.LABELS[source]} — {title_pos}"
@@ -70,8 +69,8 @@ class SliceFigureArchiver(PlotBase):
             return self._imshow_figure(
                 data,
                 x_label        = "sample along transect",
-                y_label        = "elevation bin" if source == "full" else "elevation [m]",
-                title          = f"{self.LABELS[source]} — transect az{start[0]},rg{start[1]} to az{end[0]},rg{end[1]}",
+                y_label        = "z bin" if source == "full" else "z",
+                title          = f"{self.LABELS[source]} — transect row{start[0]},col{start[1]} to row{end[0]},col{end[1]}",
                 cmap           = cmap,
                 vmin           = vmin,
                 vmax           = vmax,
@@ -87,9 +86,9 @@ class SliceFigureArchiver(PlotBase):
 
 class CubeExplorer:
 
-    SOURCES             = ("pred", "predb", "diff", "gt", "reduced", "full")
+    SOURCES             = ("pred", "predb", "diff", "gt", "full")
     PARAM_SOURCES       = ("pred", "gt")
-    CLOUD_CURVE_SOURCES = ("reduced", "full")
+    CLOUD_CURVE_SOURCES = ("full",)
     PARAM_FIELDS        = {"amp": 0, "mu": 1, "sigma": 2}
     PARAM_BAD           = "#10151a"
 
@@ -181,10 +180,10 @@ class CubeExplorer:
             return {"ok": False, "error": f"comparison cube shape {tuple(raw.shape)} does not match {tuple(pred['cube'].shape)}"}
 
         other_axis = self._curve_axis(other_dir, raw.shape[0])
-        if not np.allclose(other_axis, pred["x_axis"]):
-            return {"ok": False, "error": "comparison cube covers a different elevation axis"}
+        if not np.allclose(other_axis, pred["z_axis"]):
+            return {"ok": False, "error": "comparison cube covers a different z axis"}
 
-        predb = self._ingest(raw, pred["x_axis"], lambda: None)
+        predb = self._ingest(raw, pred["z_axis"], lambda: None)
         diff  = self._diff_entry(pred, predb)
 
         run_dir = other_dir.parent.parent
@@ -197,7 +196,7 @@ class CubeExplorer:
 
             meta = dict(self.loaded["meta"])
             meta["sources"]   = [s for s in self.SOURCES if s in self.loaded["entries"]]
-            meta["n_elev"]    = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
+            meta["n_z"]    = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
             meta["intensity"] = {s: [e["vmin"], e["vmax"]] for s, e in self.loaded["entries"].items()}
             meta["attached"]  = {"id": other_id, "run": run_dir.name, "stamp": other_dir.name}
             self.loaded["meta"] = meta
@@ -215,7 +214,7 @@ class CubeExplorer:
 
             meta = dict(self.loaded["meta"])
             meta["sources"]   = [s for s in self.SOURCES if s in self.loaded["entries"]]
-            meta["n_elev"]    = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
+            meta["n_z"]    = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
             meta["intensity"] = {s: [e["vmin"], e["vmax"]] for s, e in self.loaded["entries"].items()}
             meta["attached"]  = None
             self.loaded["meta"] = meta
@@ -233,32 +232,32 @@ class CubeExplorer:
 
         return {
             "cube"      : cube,
-            "x_axis"    : pred["x_axis"],
+            "z_axis"    : pred["z_axis"],
             "vmin"      : -peak,
             "vmax"      : peak,
             "diverging" : True,
         }
 
-    def profiles(self, cube_id: str, az: int, rg: int) -> dict:
+    def profiles(self, cube_id: str, row: int, col: int) -> dict:
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
             entries = self.loaded["entries"]
             meta    = self.loaded["meta"]
 
-        az = int(np.clip(az, 0, meta["n_az"] - 1))
-        rg = int(np.clip(rg, 0, meta["n_rg"] - 1))
+        row = int(np.clip(row, 0, meta["n_rows"] - 1))
+        col = int(np.clip(col, 0, meta["n_cols"] - 1))
 
         sources = {}
         for source, entry in entries.items():
-            order   = np.argsort(entry["x_axis"])
-            heights = np.asarray(entry["x_axis"])[order]
-            values  = entry["cube"][:, az, rg][order]
+            order   = np.argsort(entry["z_axis"])
+            heights = np.asarray(entry["z_axis"])[order]
+            values  = entry["cube"][:, row, col][order]
             sources[source] = {"heights": heights.tolist(), "values": values.astype(float).tolist()}
 
-        return {"ok": True, "az": az, "rg": rg, "sources": sources}
+        return {"ok": True, "row": row, "col": col, "sources": sources}
 
-    def slice_ssim(self, cube_id: str, az: int, rg: int, space: str = "physical") -> dict:
+    def slice_ssim(self, cube_id: str, row: int, col: int, space: str = "physical") -> dict:
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -267,24 +266,24 @@ class CubeExplorer:
 
         gt = entries.get("gt")
         if gt is None:
-            return {"ok": True, "az": int(az), "rg": int(rg), "range": {}, "azimuth": {}}
+            return {"ok": True, "col": {}, "row": {}}
 
-        az = int(np.clip(az, 0, meta["n_az"] - 1))
-        rg = int(np.clip(rg, 0, meta["n_rg"] - 1))
+        row = int(np.clip(row, 0, meta["n_rows"] - 1))
+        col = int(np.clip(col, 0, meta["n_cols"] - 1))
 
         gt_cube = gt["cube"]
-        out     = {"range": {}, "azimuth": {}}
+        out     = {"col": {}, "row": {}}
 
-        for source in ("pred", "predb", "reduced", "full"):
+        for source in ("pred", "predb", "full"):
             entry = entries.get(source)
             if entry is None or entry["cube"].shape != gt_cube.shape:
                 continue
 
             cube = entry["cube"]
-            out["range"][source]   = self._ssim_score(cube[:, :, rg], gt_cube[:, :, rg], space)
-            out["azimuth"][source] = self._ssim_score(cube[:, az, :], gt_cube[:, az, :], space)
+            out["col"][source]   = self._ssim_score(cube[:, :, col], gt_cube[:, :, col], space)
+            out["row"][source] = self._ssim_score(cube[:, row, :], gt_cube[:, row, :], space)
 
-        return {"ok": True, "az": az, "rg": rg, "range": out["range"], "azimuth": out["azimuth"]}
+        return {"ok": True, "col": out["col"], "row": out["row"]}
 
     @staticmethod
     def _ssim_score(cur: np.ndarray, ref: np.ndarray, space: str) -> float | None:
@@ -307,16 +306,16 @@ class CubeExplorer:
         value = float(ssim(ref, cur, data_range=data_range, win_size=win_size))
         return value if np.isfinite(value) else None
 
-    def slice_png(self, cube_id: str, source: str, axis: str, az: int, rg: int, space: str = "physical", cmap: str = "jet") -> bytes | None:
+    def slice_png(self, cube_id: str, source: str, axis: str, row: int, col: int, space: str = "physical", cmap: str = "jet") -> bytes | None:
         entry = self._entry(cube_id, source)
-        if entry is None or axis not in ("range", "azimuth"):
+        if entry is None or axis not in ("col", "row"):
             return None
 
-        n_elev, n_az, n_rg = entry["cube"].shape
-        az = int(np.clip(az, 0, n_az - 1))
-        rg = int(np.clip(rg, 0, n_rg - 1))
+        n_z, n_rows, n_cols = entry["cube"].shape
+        row = int(np.clip(row, 0, n_rows - 1))
+        col = int(np.clip(col, 0, n_cols - 1))
 
-        data, heights, vmin, vmax = self._cut(entry, axis, az, rg, space)
+        data, heights, vmin, vmax = self._cut(entry, axis, row, col, space)
 
         buf = io.BytesIO()
         plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, format="png")
@@ -327,13 +326,13 @@ class CubeExplorer:
         if entry is None:
             return None
 
-        cube   = entry["cube"]
-        n_elev = cube.shape[0]
-        order  = np.argsort(entry["x_axis"])
-        pos    = int(round(float(np.clip(frac, 0.0, 1.0)) * (n_elev - 1)))
-        elev   = int(order[pos])
+        cube  = entry["cube"]
+        n_z   = cube.shape[0]
+        order = np.argsort(entry["z_axis"])
+        pos   = int(round(float(np.clip(frac, 0.0, 1.0)) * (n_z - 1)))
+        z     = int(order[pos])
 
-        data = np.asarray(cube[elev], dtype=np.float32)
+        data = np.asarray(cube[z], dtype=np.float32)
 
         if space == "normalized":
             if entry.get("diverging"):
@@ -399,7 +398,7 @@ class CubeExplorer:
         plt.imsave(buf, ramp, cmap=cmap, vmin=0.0, vmax=1.0, format="png")
         return buf.getvalue()
 
-    def params_at(self, cube_id: str, az: int, rg: int) -> dict:
+    def params_at(self, cube_id: str, row: int, col: int) -> dict:
         resolved = self._param_state(cube_id)
         if resolved is None:
             return {"ok": False, "error": "no parameter cubes are loaded"}
@@ -408,20 +407,20 @@ class CubeExplorer:
         n_slots      = meta["n_slots"]
         threshold    = meta["threshold"]
 
-        az = int(np.clip(az, 0, next(iter(params.values())).shape[1] - 1))
-        rg = int(np.clip(rg, 0, next(iter(params.values())).shape[2] - 1))
+        row = int(np.clip(row, 0, next(iter(params.values())).shape[1] - 1))
+        col = int(np.clip(col, 0, next(iter(params.values())).shape[2] - 1))
 
         sources = {}
         for source, block in params.items():
             slots = []
             for k in range(n_slots):
-                amp   = float(block[3 * k,     az, rg])
-                mu    = float(block[3 * k + 1, az, rg])
-                sigma = float(block[3 * k + 2, az, rg])
+                amp   = float(block[3 * k,     row, col])
+                mu    = float(block[3 * k + 1, row, col])
+                sigma = float(block[3 * k + 2, row, col])
                 slots.append({"amp": amp, "mu": mu, "sigma": sigma, "active": bool(amp >= threshold)})
             sources[source] = slots
 
-        return {"ok": True, "az": az, "rg": rg, "n_slots": n_slots, "threshold": threshold, "sources": sources}
+        return {"ok": True, "row": row, "col": col, "n_slots": n_slots, "threshold": threshold, "sources": sources}
 
     def _param_state(self, cube_id: str) -> tuple[dict, dict] | None:
         with self.lock:
@@ -506,20 +505,20 @@ class CubeExplorer:
         mus  = block[1::3]
         mask = np.isfinite(amps) & (amps >= amp_min) & np.isfinite(mus)
 
-        k_idx, az_idx, rg_idx = np.nonzero(mask)
+        k_idx, row_idx, col_idx = np.nonzero(mask)
         total                 = int(k_idx.size)
 
         if total > max_points > 0:
-            keep   = np.linspace(0, total - 1, max_points).astype(int)
-            k_idx  = k_idx[keep]
-            az_idx = az_idx[keep]
-            rg_idx = rg_idx[keep]
+            keep    = np.linspace(0, total - 1, max_points).astype(int)
+            k_idx   = k_idx[keep]
+            row_idx = row_idx[keep]
+            col_idx = col_idx[keep]
 
         rows = np.stack([
-            az_idx.astype(np.float32),
-            rg_idx.astype(np.float32),
-            mus[k_idx, az_idx, rg_idx].astype(np.float32),
-            amps[k_idx, az_idx, rg_idx].astype(np.float32),
+            row_idx.astype(np.float32),
+            col_idx.astype(np.float32),
+            mus[k_idx, row_idx, col_idx].astype(np.float32),
+            amps[k_idx, row_idx, col_idx].astype(np.float32),
         ], axis=1)
 
         return self._points_blob(rows, total)
@@ -527,8 +526,8 @@ class CubeExplorer:
     @classmethod
     def _curve_points(cls, entry: dict, amp_min: float, max_points: int) -> bytes:
         cube   = entry["cube"]
-        x_axis = np.asarray(entry["x_axis"], dtype=np.float32)
-        n_rg   = cube.shape[2]
+        z_axis = np.asarray(entry["z_axis"], dtype=np.float32)
+        n_cols = cube.shape[2]
 
         counts = np.array([int((np.isfinite(plane) & (plane >= amp_min)).sum()) for plane in cube], dtype=np.int64)
         total  = int(counts.sum())
@@ -547,9 +546,9 @@ class CubeExplorer:
             vals = plane.ravel()[hits]
 
             chunks.append(np.stack([
-                (hits // n_rg).astype(np.float32),
-                (hits %  n_rg).astype(np.float32),
-                np.full(hits.size, x_axis[k], dtype=np.float32),
+                (hits // n_cols).astype(np.float32),
+                (hits %  n_cols).astype(np.float32),
+                np.full(hits.size, z_axis[k], dtype=np.float32),
                 vals.astype(np.float32),
             ], axis=1))
 
@@ -561,20 +560,20 @@ class CubeExplorer:
         header = np.array([rows.shape[0], total, 0.0, 0.0], dtype=np.float32)
         return header.tobytes() + np.ascontiguousarray(rows).tobytes()
 
-    def dem_grid_bin(self, cube_id: str) -> bytes | None:
+    def aux_grid_bin(self, cube_id: str) -> bytes | None:
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return None
-            dem = self.loaded["dem"]
+            aux = self.loaded["aux"]
 
-        if dem is None:
+        if aux is None:
             return None
 
-        finite = np.isfinite(dem)
-        median = float(np.median(dem[finite])) if finite.any() else 0.0
-        grid   = (dem - median).astype(np.float32)
+        finite = np.isfinite(aux)
+        median = float(np.median(aux[finite])) if finite.any() else 0.0
+        grid   = (aux - median).astype(np.float32)
 
-        header = np.array([dem.shape[0], dem.shape[1], median, 0.0], dtype=np.float32)
+        header = np.array([aux.shape[0], aux.shape[1], median, 0.0], dtype=np.float32)
         return header.tobytes() + np.ascontiguousarray(grid).tobytes()
 
     def metric_overlay_png(self, cube_id: str, key: str, vmin: float, vmax: float, keep_min: float, keep_max: float, alpha: float) -> bytes | None:
@@ -600,17 +599,17 @@ class CubeExplorer:
         plt.imsave(buf, blend.astype(np.float32), format="png")
         return buf.getvalue()
 
-    def metric_value_at(self, cube_id: str, key: str, az: int, rg: int) -> dict:
+    def metric_value_at(self, cube_id: str, key: str, row: int, col: int) -> dict:
         resolved = self._metric_state(cube_id, key)
         if resolved is None:
             return {"ok": False, "error": f"unknown metric map: {key}"}
 
         data, _ = resolved
-        az = int(np.clip(az, 0, data.shape[0] - 1))
-        rg = int(np.clip(rg, 0, data.shape[1] - 1))
+        row = int(np.clip(row, 0, data.shape[0] - 1))
+        col = int(np.clip(col, 0, data.shape[1] - 1))
 
-        value = float(data[az, rg])
-        return {"ok": True, "az": az, "rg": rg, "key": key, "value": value if np.isfinite(value) else None}
+        value = float(data[row, col])
+        return {"ok": True, "row": row, "col": col, "key": key, "value": value if np.isfinite(value) else None}
 
     def _metric_state(self, cube_id: str, key: str) -> tuple[np.ndarray, np.ndarray] | None:
         with self.lock:
@@ -681,18 +680,18 @@ class CubeExplorer:
             "rows"      : rows,
         }
 
-    def transect_png(self, cube_id: str, source: str, az0: int, rg0: int, az1: int, rg1: int, space: str = "physical", cmap: str = "jet") -> bytes | None:
+    def transect_png(self, cube_id: str, source: str, row0: int, col0: int, row1: int, col1: int, space: str = "physical", cmap: str = "jet") -> bytes | None:
         entry = self._entry(cube_id, source)
         if entry is None:
             return None
 
-        data, heights, vmin, vmax = self._transect_cut(entry, az0, rg0, az1, rg1, space)
+        data, heights, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
 
         buf = io.BytesIO()
         plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, format="png")
         return buf.getvalue()
 
-    def save_transect(self, cube_id: str, az0: int, rg0: int, az1: int, rg1: int, space: str = "physical", cmap: str = "jet") -> dict:
+    def save_transect(self, cube_id: str, row0: int, col0: int, row1: int, col1: int, space: str = "physical", cmap: str = "jet") -> dict:
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -705,47 +704,47 @@ class CubeExplorer:
         if space not in ("physical", "normalized"):
             return {"ok": False, "error": f"unknown space: {space}"}
 
-        az0 = int(np.clip(az0, 0, meta["n_az"] - 1))
-        az1 = int(np.clip(az1, 0, meta["n_az"] - 1))
-        rg0 = int(np.clip(rg0, 0, meta["n_rg"] - 1))
-        rg1 = int(np.clip(rg1, 0, meta["n_rg"] - 1))
+        row0 = int(np.clip(row0, 0, meta["n_rows"] - 1))
+        row1 = int(np.clip(row1, 0, meta["n_rows"] - 1))
+        col0 = int(np.clip(col0, 0, meta["n_cols"] - 1))
+        col1 = int(np.clip(col1, 0, meta["n_cols"] - 1))
 
         run_dir = stamp_dir.parent.parent
-        rel     = Path("figures") / "cube_transects" / f"az{az0:04d}_rg{rg0:04d}_to_az{az1:04d}_rg{rg1:04d}"
+        rel     = Path("figures") / "cube_transects" / f"row{row0:04d}_col{col0:04d}_to_row{row1:04d}_col{col1:04d}"
         out_dir = run_dir / rel
 
         files = []
         for source in meta["sources"]:
             entry = entries[source]
-            data, heights, vmin, vmax = self._transect_cut(entry, az0, rg0, az1, rg1, space)
-            saved = self.archiver.render_transect(data, heights, vmin, vmax, source, (az0, rg0), (az1, rg1), space, out_dir / f"transect_{source}_{space}.png", cmap=self._entry_cmap(entry, cmap))
+            data, heights, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
+            saved = self.archiver.render_transect(data, heights, vmin, vmax, source, (row0, col0), (row1, col1), space, out_dir / f"transect_{source}_{space}.png", cmap=self._entry_cmap(entry, cmap))
             files.append(saved.name)
 
         self.logger.ok(f"saved {len(files)} transect figures to {out_dir}")
         return {"ok": True, "dir": str(out_dir), "rel": str(rel), "files": files}
 
     @classmethod
-    def _transect_cut(cls, entry: dict, az0: int, rg0: int, az1: int, rg1: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
+    def _transect_cut(cls, entry: dict, row0: int, col0: int, row1: int, col1: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
         cube               = entry["cube"]
-        n_elev, n_az, n_rg = cube.shape
+        n_z, n_rows, n_cols = cube.shape
 
-        az0 = int(np.clip(az0, 0, n_az - 1))
-        az1 = int(np.clip(az1, 0, n_az - 1))
-        rg0 = int(np.clip(rg0, 0, n_rg - 1))
-        rg1 = int(np.clip(rg1, 0, n_rg - 1))
+        row0 = int(np.clip(row0, 0, n_rows - 1))
+        row1 = int(np.clip(row1, 0, n_rows - 1))
+        col0 = int(np.clip(col0, 0, n_cols - 1))
+        col1 = int(np.clip(col1, 0, n_cols - 1))
 
-        samples = int(max(abs(az1 - az0), abs(rg1 - rg0))) + 1
-        az_idx  = np.round(np.linspace(az0, az1, samples)).astype(int)
-        rg_idx  = np.round(np.linspace(rg0, rg1, samples)).astype(int)
-        data    = cube[:, az_idx, rg_idx]
+        samples = int(max(abs(row1 - row0), abs(col1 - col0))) + 1
+        row_idx = np.round(np.linspace(row0, row1, samples)).astype(int)
+        col_idx = np.round(np.linspace(col0, col1, samples)).astype(int)
+        data    = cube[:, row_idx, col_idx]
 
         data, vmin, vmax = cls._normalize_cut(entry, data, space)
 
-        order   = np.argsort(entry["x_axis"])
-        heights = np.asarray(entry["x_axis"], dtype=np.float64)[order]
+        order   = np.argsort(entry["z_axis"])
+        heights = np.asarray(entry["z_axis"], dtype=np.float64)[order]
         return data[order], heights, float(vmin), float(vmax)
 
-    def save_slices(self, cube_id: str, az: int, rg: int, space: str = "physical", cmap: str = "jet") -> dict:
+    def save_slices(self, cube_id: str, row: int, col: int, space: str = "physical", cmap: str = "jet") -> dict:
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -758,32 +757,32 @@ class CubeExplorer:
         if space not in ("physical", "normalized"):
             return {"ok": False, "error": f"unknown space: {space}"}
 
-        az = int(np.clip(az, 0, meta["n_az"] - 1))
-        rg = int(np.clip(rg, 0, meta["n_rg"] - 1))
+        row = int(np.clip(row, 0, meta["n_rows"] - 1))
+        col = int(np.clip(col, 0, meta["n_cols"] - 1))
 
         run_dir = stamp_dir.parent.parent
-        rel     = Path("figures") / "cube_slices" / f"az{az:04d}_rg{rg:04d}"
+        rel     = Path("figures") / "cube_slices" / f"row{row:04d}_col{col:04d}"
         out_dir = run_dir / rel
 
         files = []
         for source in meta["sources"]:
-            for axis in ("range", "azimuth"):
-                data, heights, vmin, vmax = self._cut(entries[source], axis, az, rg, space)
-                saved = self.archiver.render(data, heights, vmin, vmax, source, axis, az, rg, space, out_dir / f"{axis}_{source}_{space}.png", cmap=self._entry_cmap(entries[source], cmap))
+            for axis in ("col", "row"):
+                data, heights, vmin, vmax = self._cut(entries[source], axis, row, col, space)
+                saved = self.archiver.render(data, heights, vmin, vmax, source, axis, row, col, space, out_dir / f"{axis}_{source}_{space}.png", cmap=self._entry_cmap(entries[source], cmap))
                 files.append(saved.name)
 
         self.logger.ok(f"saved {len(files)} slice figures to {out_dir}")
-        return {"ok": True, "dir": str(out_dir), "rel": str(rel), "az": az, "rg": rg, "files": files}
+        return {"ok": True, "dir": str(out_dir), "rel": str(rel), "row": row, "col": col, "files": files}
 
     @classmethod
-    def _cut(cls, entry: dict, axis: str, az: int, rg: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
+    def _cut(cls, entry: dict, axis: str, row: int, col: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
         cube = entry["cube"]
-        data = cube[:, :, rg] if axis == "range" else cube[:, az, :]
+        data = cube[:, :, col] if axis == "col" else cube[:, row, :]
 
         data, vmin, vmax = cls._normalize_cut(entry, data, space)
 
-        order   = np.argsort(entry["x_axis"])
-        heights = np.asarray(entry["x_axis"], dtype=np.float64)[order]
+        order   = np.argsort(entry["z_axis"])
+        heights = np.asarray(entry["z_axis"], dtype=np.float64)[order]
         return data[order], heights, float(vmin), float(vmax)
 
     @staticmethod
@@ -822,10 +821,10 @@ class CubeExplorer:
 
     def _load_worker(self, cube_id: str, stamp_dir: Path) -> None:
         try:
-            entries, meta, primary, params, metric_maps, dem = self._load_all(stamp_dir)
+            entries, meta, primary, params, metric_maps, aux = self._load_all(stamp_dir)
 
             with self.lock:
-                self.loaded = {"id": cube_id, "entries": entries, "meta": meta, "primary": primary, "params": params, "metric_maps": metric_maps, "dem": dem}
+                self.loaded = {"id": cube_id, "entries": entries, "meta": meta, "primary": primary, "params": params, "metric_maps": metric_maps, "aux": aux}
                 self.status = {"state": "ready", "id": cube_id, "progress": 1.0, "stage": "ready", "error": ""}
 
             self.logger.muted(f"cube ready: {cube_id} sources={meta['sources']}")
@@ -842,16 +841,15 @@ class CubeExplorer:
         if pred_raw.ndim != 3:
             raise ValueError(f"pred_curves.npy is not a 3D cube: shape={pred_raw.shape}")
 
-        n_elev, n_az, n_rg = pred_raw.shape
-        curve_axis         = self._curve_axis(stamp_dir, n_elev)
+        n_z, n_rows, n_cols = pred_raw.shape
+        curve_axis         = self._curve_axis(stamp_dir, n_z)
 
-        plan = [("pred", pred_raw, curve_axis)]
-        for source in ("gt", "reduced"):
-            path = cubes_dir / f"{source}_curves.npy"
-            if path.is_file():
-                plan.append((source, np.load(path, mmap_mode="r"), curve_axis))
+        plan    = [("pred", pred_raw, curve_axis)]
+        gt_path = cubes_dir / "gt_curves.npy"
+        if gt_path.is_file():
+            plan.append(("gt", np.load(gt_path, mmap_mode="r"), curve_axis))
 
-        full_raw = self._full_raw(stamp_dir, n_az, n_rg)
+        full_raw = self._full_raw(stamp_dir, n_rows, n_cols)
         if full_raw is not None:
             plan.append(("full", full_raw, np.arange(full_raw.shape[0], dtype=np.float64)))
 
@@ -865,62 +863,62 @@ class CubeExplorer:
                 self.status["stage"]    = source
 
         entries = {}
-        for source, raw, x_axis in plan:
-            if raw.shape[1:] != (n_az, n_rg):
-                raise ValueError(f"source '{source}' spatial shape {raw.shape[1:]} does not match pred {(n_az, n_rg)}")
-            entries[source] = self._ingest(raw, x_axis, lambda s=source: advance(s))
+        for source, raw, z_axis in plan:
+            if raw.shape[1:] != (n_rows, n_cols):
+                raise ValueError(f"source '{source}' spatial shape {raw.shape[1:]} does not match pred {(n_rows, n_cols)}")
+            entries[source] = self._ingest(raw, z_axis, lambda s=source: advance(s))
 
-        primary     = self._primary_db(stamp_dir, n_az, n_rg)
-        params      = self._load_params(cubes_dir, n_az, n_rg)
-        metric_maps = self._load_metric_maps(cubes_dir, n_az, n_rg)
-        dem         = self._load_dem(stamp_dir, n_az, n_rg)
+        primary     = self._primary_db(stamp_dir, n_rows, n_cols)
+        params      = self._load_params(cubes_dir, n_rows, n_cols)
+        metric_maps = self._load_metric_maps(cubes_dir, n_rows, n_cols)
+        aux         = self._load_aux(stamp_dir, n_rows, n_cols)
 
         meta = {
             "sources"     : [s for s in self.SOURCES if s in entries],
-            "n_az"        : n_az,
-            "n_rg"        : n_rg,
-            "n_elev"      : {s: int(entries[s]["cube"].shape[0]) for s in entries},
+            "n_rows"      : n_rows,
+            "n_cols"      : n_cols,
+            "n_z"         : {s: int(entries[s]["cube"].shape[0]) for s in entries},
             "x_min"       : float(curve_axis[0]),
             "x_max"       : float(curve_axis[-1]),
             "intensity"   : {s: [entries[s]["vmin"], entries[s]["vmax"]] for s in entries},
             "params"      : self._params_meta(params, curve_axis),
             "metric_maps" : self._metric_maps_meta(metric_maps),
             "attached"    : None,
-            "dem"         : dem is not None,
+            "aux"         : aux is not None,
         }
-        return entries, meta, primary, params, metric_maps, dem
+        return entries, meta, primary, params, metric_maps, aux
 
-    def _load_dem(self, stamp_dir: Path, n_az: int, n_rg: int) -> np.ndarray | None:
+    def _load_aux(self, stamp_dir: Path, n_rows: int, n_cols: int) -> np.ndarray | None:
         resolved = self._preproc_layout(stamp_dir)
         if resolved is None:
             return None
 
         preproc_dir, layout = resolved
 
-        dem_name = layout["artifacts"].get("dem_full")
-        if not dem_name:
+        aux_name = layout["artifacts"].get("aux_full")
+        if not aux_name:
             return None
 
-        dem_path = preproc_dir / "data" / dem_name
-        if not dem_path.is_file():
+        aux_path = preproc_dir / "data" / aux_name
+        if not aux_path.is_file():
             return None
 
-        az_lo, az_hi, rg_lo, rg_hi = self._crop_bounds(stamp_dir, layout, n_az, n_rg)
+        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(stamp_dir, layout, n_rows, n_cols)
 
-        raw = np.load(dem_path, mmap_mode="r")
-        if raw.ndim != 2 or az_hi > raw.shape[0] or rg_hi > raw.shape[1] or az_lo < 0 or rg_lo < 0:
-            raise ValueError(f"dem_full shape {raw.shape} does not cover the cube region az[{az_lo}:{az_hi}] rg[{rg_lo}:{rg_hi}]")
+        raw = np.load(aux_path, mmap_mode="r")
+        if raw.ndim != 2 or row_hi > raw.shape[0] or col_hi > raw.shape[1] or row_lo < 0 or col_lo < 0:
+            raise ValueError(f"aux_full shape {raw.shape} does not cover the cube region row[{row_lo}:{row_hi}] col[{col_lo}:{col_hi}]")
 
-        return np.asarray(raw[az_lo:az_hi, rg_lo:rg_hi], dtype=np.float32)
+        return np.asarray(raw[row_lo:row_hi, col_lo:col_hi], dtype=np.float32)
 
-    def _load_metric_maps(self, cubes_dir: Path, n_az: int, n_rg: int) -> dict:
+    def _load_metric_maps(self, cubes_dir: Path, n_rows: int, n_cols: int) -> dict:
         maps = {}
         for path in sorted(cubes_dir.glob("*.npy")):
             if any(marker in path.name for marker in self.METRIC_EXCLUDED):
                 continue
 
             raw = np.load(path, mmap_mode="r")
-            if raw.ndim != 2 or raw.shape != (n_az, n_rg):
+            if raw.ndim != 2 or raw.shape != (n_rows, n_cols):
                 continue
 
             maps[path.stem] = np.asarray(raw, dtype=np.float32)
@@ -952,7 +950,7 @@ class CubeExplorer:
             vmax = vmin + 1.0
         return vmin, vmax
 
-    def _load_params(self, cubes_dir: Path, n_az: int, n_rg: int) -> dict:
+    def _load_params(self, cubes_dir: Path, n_rows: int, n_cols: int) -> dict:
         params = {}
         for source in self.PARAM_SOURCES:
             path = cubes_dir / f"params_{source}.npy"
@@ -961,9 +959,9 @@ class CubeExplorer:
 
             raw = np.asarray(np.load(path), dtype=np.float32)
             if raw.ndim != 3 or raw.shape[0] % 3 != 0 or raw.shape[0] == 0:
-                raise ValueError(f"params_{source}.npy is not a (3K, az, rg) cube: shape={raw.shape}")
-            if raw.shape[1:] != (n_az, n_rg):
-                raise ValueError(f"params_{source}.npy spatial shape {raw.shape[1:]} does not match the {n_az}x{n_rg} cube")
+                raise ValueError(f"params_{source}.npy is not a (3K, row, col) cube: shape={raw.shape}")
+            if raw.shape[1:] != (n_rows, n_cols):
+                raise ValueError(f"params_{source}.npy spatial shape {raw.shape[1:]} does not match the {n_rows}x{n_cols} cube")
 
             params[source] = raw
 
@@ -1008,7 +1006,7 @@ class CubeExplorer:
                 high = max(high, float(np.nanpercentile(channels, 99.0)))
         return high if high > 0.0 else 1.0
 
-    def _ingest(self, raw: np.ndarray, x_axis: np.ndarray, advance) -> dict:
+    def _ingest(self, raw: np.ndarray, z_axis: np.ndarray, advance) -> dict:
         cube = np.empty(raw.shape, dtype=np.float32)
 
         for i in range(raw.shape[0]):
@@ -1022,7 +1020,7 @@ class CubeExplorer:
 
         return {
             "cube"   : cube,
-            "x_axis" : x_axis,
+            "z_axis" : z_axis,
             "vmin"   : float(vmin),
             "vmax"   : float(vmax),
         }
@@ -1034,9 +1032,9 @@ class CubeExplorer:
 
         return json.loads(metrics_path.read_text(encoding="utf-8"))
 
-    def _curve_axis(self, stamp_dir: Path, n_elev: int) -> np.ndarray:
+    def _curve_axis(self, stamp_dir: Path, n_z: int) -> np.ndarray:
         metrics = self._metrics(stamp_dir)
-        return np.linspace(float(metrics["x_axis_min"]), float(metrics["x_axis_max"]), n_elev)
+        return np.linspace(float(metrics["x_axis_min"]), float(metrics["x_axis_max"]), n_z)
 
     def _preproc_layout(self, stamp_dir: Path) -> tuple[Path, dict] | None:
         meta_path = stamp_dir.parent.parent / "meta" / "dataset_creation_config.json"
@@ -1052,31 +1050,31 @@ class CubeExplorer:
         layout = json.loads(layout_path.read_text(encoding="utf-8"))
         return preproc_dir, layout
 
-    def _crop_bounds(self, stamp_dir: Path, layout: dict, n_az: int, n_rg: int) -> tuple[int, int, int, int]:
+    def _crop_bounds(self, stamp_dir: Path, layout: dict, n_rows: int, n_cols: int) -> tuple[int, int, int, int]:
         metrics = self._metrics(stamp_dir)
         if "split_region" not in metrics:
             raise KeyError(f"metrics.json in {stamp_dir} has no split_region; rerun inference to regenerate it")
 
-        az_start, az_end, rg_start, rg_end = (int(v) for v in metrics["split_region"])
-        if (az_end - az_start, rg_end - rg_start) != (n_az, n_rg):
-            raise ValueError(f"split_region {metrics['split_region']} does not match the {n_az}x{n_rg} cube")
+        row_start, az_end, col_start, rg_end = (int(v) for v in metrics["split_region"])
+        if (az_end - row_start, rg_end - col_start) != (n_rows, n_cols):
+            raise ValueError(f"split_region {metrics['split_region']} does not match the {n_rows}x{n_cols} cube")
 
         global_crop = layout["global_crop"]
 
-        az_lo = az_start - global_crop[0]
-        az_hi = az_end   - global_crop[0]
-        rg_lo = rg_start - global_crop[2]
-        rg_hi = rg_end   - global_crop[2]
-        return az_lo, az_hi, rg_lo, rg_hi
+        row_lo = row_start - global_crop[0]
+        row_hi = az_end   - global_crop[0]
+        col_lo = col_start - global_crop[2]
+        col_hi = rg_end   - global_crop[2]
+        return row_lo, row_hi, col_lo, col_hi
 
-    def _full_raw(self, stamp_dir: Path, n_az: int, n_rg: int) -> np.ndarray | None:
+    def _full_raw(self, stamp_dir: Path, n_rows: int, n_cols: int) -> np.ndarray | None:
         resolved = self._preproc_layout(stamp_dir)
         if resolved is None:
             return None
 
         preproc_dir, layout = resolved
 
-        tomo_name = layout["artifacts"].get("tomogram_full")
+        tomo_name = layout["artifacts"].get("cube_full")
         if not tomo_name:
             return None
 
@@ -1084,20 +1082,20 @@ class CubeExplorer:
         if not tomo_path.is_file():
             return None
 
-        az_lo, az_hi, rg_lo, rg_hi = self._crop_bounds(stamp_dir, layout, n_az, n_rg)
+        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(stamp_dir, layout, n_rows, n_cols)
 
         raw = np.load(tomo_path, mmap_mode="r")
         if raw.ndim != 3:
-            raise ValueError(f"full tomogram is not a 3D cube: shape={raw.shape}")
-        if az_lo < 0 or rg_lo < 0 or az_hi > raw.shape[1] or rg_hi > raw.shape[2]:
-            raise ValueError(f"cube region az[{az_lo}:{az_hi}] rg[{rg_lo}:{rg_hi}] falls outside the full tomogram {raw.shape}")
+            raise ValueError(f"full cube is not a 3D cube: shape={raw.shape}")
+        if row_lo < 0 or col_lo < 0 or row_hi > raw.shape[1] or col_hi > raw.shape[2]:
+            raise ValueError(f"cube region row[{row_lo}:{row_hi}] col[{col_lo}:{col_hi}] falls outside the full cube {raw.shape}")
 
-        return raw[:, az_lo:az_hi, rg_lo:rg_hi]
+        return raw[:, row_lo:row_hi, col_lo:col_hi]
 
-    def _primary_db(self, stamp_dir: Path, n_az: int, n_rg: int) -> np.ndarray:
+    def _primary_db(self, stamp_dir: Path, n_rows: int, n_cols: int) -> np.ndarray:
         resolved = self._preproc_layout(stamp_dir)
         if resolved is None:
-            raise FileNotFoundError(f"cannot resolve the preprocessing run for {stamp_dir}; the primary SLC is required for the cube map")
+            raise FileNotFoundError(f"cannot resolve the preprocessing run for {stamp_dir}; the primary channel is required for the cube map")
 
         preproc_dir, layout = resolved
 
@@ -1107,24 +1105,24 @@ class CubeExplorer:
 
         primary_path = preproc_dir / "data" / primary_name
         if not primary_path.is_file():
-            raise FileNotFoundError(f"primary SLC missing: {primary_path}")
+            raise FileNotFoundError(f"primary channel missing: {primary_path}")
 
-        az_lo, az_hi, rg_lo, rg_hi = self._crop_bounds(stamp_dir, layout, n_az, n_rg)
+        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(stamp_dir, layout, n_rows, n_cols)
 
         raw = np.load(primary_path, mmap_mode="r")
         if raw.ndim != 2:
-            raise ValueError(f"primary SLC is not a 2D image: shape={raw.shape}")
-        if az_lo < 0 or rg_lo < 0 or az_hi > raw.shape[0] or rg_hi > raw.shape[1]:
-            raise ValueError(f"cube region az[{az_lo}:{az_hi}] rg[{rg_lo}:{rg_hi}] falls outside the primary SLC {raw.shape}")
+            raise ValueError(f"primary channel is not a 2D image: shape={raw.shape}")
+        if row_lo < 0 or col_lo < 0 or row_hi > raw.shape[0] or col_hi > raw.shape[1]:
+            raise ValueError(f"cube region row[{row_lo}:{row_hi}] col[{col_lo}:{col_hi}] falls outside the primary channel {raw.shape}")
 
-        amplitude = np.abs(np.asarray(raw[az_lo:az_hi, rg_lo:rg_hi])).astype(np.float32)
+        amplitude = np.abs(np.asarray(raw[row_lo:row_hi, col_lo:col_hi])).astype(np.float32)
         return 20.0 * np.log10(np.maximum(amplitude, 1e-12))
 
 
 class SliceCollector:
 
     SOURCES    = ("pred", "gt", "reduced", "full")
-    AXES       = ("range", "azimuth")
+    AXES       = ("col", "row")
     MAX_RUNS   = 24
     MAX_POINTS = 24
     CACHE_CAP  = 16
@@ -1152,13 +1150,13 @@ class SliceCollector:
             "run"       : context["run"],
             "group"     : context["group"],
             "stamp"     : context["stamp"],
-            "n_az"      : context["n_az"],
-            "n_rg"      : context["n_rg"],
+            "n_rows"    : context["n_rows"],
+            "n_cols"    : context["n_cols"],
             "sources"   : [s for s in self.SOURCES if s in entries],
             "intensity" : {s: [entries[s]["vmin"], entries[s]["vmax"]] for s in entries},
         }
 
-    def slice_png(self, cube_id: str, source: str, axis: str, az: int, rg: int, space: str = "physical", cmap: str = "jet", vmin: float | None = None, vmax: float | None = None) -> bytes | None:
+    def slice_png(self, cube_id: str, source: str, axis: str, row: int, col: int, space: str = "physical", cmap: str = "jet", vmin: float | None = None, vmax: float | None = None) -> bytes | None:
         if source not in self.SOURCES or axis not in self.AXES or space not in ("physical", "normalized"):
             return None
 
@@ -1171,7 +1169,7 @@ class SliceCollector:
         if entry is None:
             return None
 
-        data, heights, lo, hi = self._cut(entry, axis, az, rg, space)
+        data, heights, lo, hi = self._cut(entry, axis, row, col, space)
         if space == "physical" and vmin is not None and vmax is not None and vmax > vmin:
             lo, hi = float(vmin), float(vmax)
 
@@ -1215,8 +1213,8 @@ class SliceCollector:
 
         files = []
         with self.render_lock:
-            for az, rg in points:
-                point_dir = out_dir / f"az{az:04d}_rg{rg:04d}"
+            for row, col in points:
+                point_dir = out_dir / f"row{row:04d}_col{col:04d}"
                 for source in sources:
                     clim = clims[source]
                     for axis in axes:
@@ -1226,13 +1224,13 @@ class SliceCollector:
                             if entry is None:
                                 continue
 
-                            az_i = int(np.clip(az, 0, context["n_az"] - 1))
-                            rg_i = int(np.clip(rg, 0, context["n_rg"] - 1))
-                            data, heights, vmin, vmax = self._cut(entry, axis, az_i, rg_i, space)
+                            row_i = int(np.clip(row, 0, context["n_rows"] - 1))
+                            col_i = int(np.clip(col, 0, context["n_cols"] - 1))
+                            data, heights, vmin, vmax = self._cut(entry, axis, row_i, col_i, space)
                             if clim is not None:
                                 vmin, vmax = clim
 
-                            saved = self.cubes.archiver.render(data, heights, vmin, vmax, source, axis, az_i, rg_i, space, cut_dir / f"{label}.png", cmap=CubeExplorer._entry_cmap(entry, cmap), label=label)
+                            saved = self.cubes.archiver.render(data, heights, vmin, vmax, source, axis, row_i, col_i, space, cut_dir / f"{label}.png", cmap=CubeExplorer._entry_cmap(entry, cmap), label=label)
                             files.append(str(saved.relative_to(out_dir)))
 
         if not files:
@@ -1246,7 +1244,7 @@ class SliceCollector:
             "shared"  : bool(shared),
             "axes"    : axes,
             "sources" : sources,
-            "points"  : [{"az": az, "rg": rg} for az, rg in points],
+            "points"  : [{"row": row, "col": col} for row, col in points],
             "clims"   : {source: (list(clim) if clim else None) for source, clim in clims.items()},
             "runs"    : [{"id": str(c["stamp_dir"]), "run": c["run"], "group": c["group"], "stamp": c["stamp"], "label": label} for c, label in zip(contexts, labels)],
             "missing" : missing,
@@ -1259,20 +1257,20 @@ class SliceCollector:
 
     def _points(self, raw) -> list:
         if not isinstance(raw, list) or not raw:
-            raise ValueError("points must be a non-empty list of {az, rg}")
+            raise ValueError("points must be a non-empty list of {row, col}")
         if len(raw) > self.MAX_POINTS:
             raise ValueError(f"at most {self.MAX_POINTS} points per collection, got {len(raw)}")
 
         points = []
         seen   = set()
         for entry in raw:
-            az, rg = int(entry["az"]), int(entry["rg"])
-            if az < 0 or rg < 0:
-                raise ValueError(f"point az={az}, rg={rg} is negative")
-            if (az, rg) in seen:
+            row, col = int(entry["row"]), int(entry["col"])
+            if row < 0 or col < 0:
+                raise ValueError(f"point row={row}, col={col} is negative")
+            if (row, col) in seen:
                 continue
-            seen.add((az, rg))
-            points.append((az, rg))
+            seen.add((row, col))
+            points.append((row, col))
 
         return points
 
@@ -1311,19 +1309,19 @@ class SliceCollector:
         return (vmin, vmax) if vmax > vmin else None
 
     @staticmethod
-    def _cut(entry: dict, axis: str, az: int, rg: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
+    def _cut(entry: dict, axis: str, row: int, col: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
         cube               = entry["cube"]
-        n_elev, n_az, n_rg = cube.shape
+        n_z, n_rows, n_cols = cube.shape
 
-        az   = int(np.clip(az, 0, n_az - 1))
-        rg   = int(np.clip(rg, 0, n_rg - 1))
-        data = np.asarray(cube[:, :, rg] if axis == "range" else cube[:, az, :])
+        row  = int(np.clip(row, 0, n_rows - 1))
+        col  = int(np.clip(col, 0, n_cols - 1))
+        data = np.asarray(cube[:, :, col] if axis == "col" else cube[:, row, :])
         data = np.abs(data).astype(np.float32) if np.iscomplexobj(data) else data.astype(np.float32)
 
         data, vmin, vmax = CubeExplorer._normalize_cut(entry, data, space)
 
-        order   = np.argsort(entry["x_axis"])
-        heights = np.asarray(entry["x_axis"], dtype=np.float64)[order]
+        order   = np.argsort(entry["z_axis"])
+        heights = np.asarray(entry["z_axis"], dtype=np.float64)[order]
         return data[order], heights, float(vmin), float(vmax)
 
     def _context(self, cube_id: str) -> dict | None:
@@ -1356,19 +1354,19 @@ class SliceCollector:
         if pred_raw.ndim != 3:
             raise ValueError(f"pred_curves.npy is not a 3D cube: shape={pred_raw.shape}")
 
-        n_elev, n_az, n_rg = pred_raw.shape
-        curve_axis         = self.cubes._curve_axis(stamp_dir, n_elev)
+        n_z, n_rows, n_cols = pred_raw.shape
+        curve_axis         = self.cubes._curve_axis(stamp_dir, n_z)
 
         entries = {"pred": self._entry(pred_raw, curve_axis)}
         for source in ("gt", "reduced"):
             path = cubes_dir / f"{source}_curves.npy"
             if path.is_file():
                 raw = np.load(path, mmap_mode="r")
-                if raw.shape[1:] != (n_az, n_rg):
-                    raise ValueError(f"source '{source}' spatial shape {raw.shape[1:]} does not match pred {(n_az, n_rg)}")
+                if raw.shape[1:] != (n_rows, n_cols):
+                    raise ValueError(f"source '{source}' spatial shape {raw.shape[1:]} does not match pred {(n_rows, n_cols)}")
                 entries[source] = self._entry(raw, curve_axis)
 
-        full_raw = self.cubes._full_raw(stamp_dir, n_az, n_rg)
+        full_raw = self.cubes._full_raw(stamp_dir, n_rows, n_cols)
         if full_raw is not None:
             entries["full"] = self._entry(full_raw, np.arange(full_raw.shape[0], dtype=np.float64))
 
@@ -1379,13 +1377,13 @@ class SliceCollector:
             "run"       : run_dir.name,
             "group"     : str(run_dir.relative_to(root).parent),
             "stamp"     : stamp_dir.name,
-            "n_az"      : n_az,
-            "n_rg"      : n_rg,
+            "n_rows"    : n_rows,
+            "n_cols"    : n_cols,
             "entries"   : entries,
         }
 
     @staticmethod
-    def _entry(raw: np.ndarray, x_axis: np.ndarray) -> dict:
+    def _entry(raw: np.ndarray, z_axis: np.ndarray) -> dict:
         sample = np.asarray(raw[:, :: max(1, raw.shape[1] // 256), :: max(1, raw.shape[2] // 256)])
         sample = np.abs(sample) if np.iscomplexobj(sample) else sample
         sample = sample[np.isfinite(sample)]
@@ -1393,7 +1391,7 @@ class SliceCollector:
 
         return {
             "cube"   : raw,
-            "x_axis" : x_axis,
+            "z_axis" : z_axis,
             "vmin"   : float(vmin),
             "vmax"   : float(vmax),
         }

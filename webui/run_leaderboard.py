@@ -79,9 +79,9 @@ class RunLeaderboard:
         {"key": "pixel_cosine_gt_median",          "label": "px cos med",     "direction": 1,  "default": True},
         {"key": "pixel_mse_gt_median",             "label": "px MSE med",     "direction": -1, "default": False},
         {"key": "pixel_peak_err_units_median_gt",  "label": "peak err med",   "direction": -1, "default": True},
-        {"key": "ssim_gt_azimuth_mean",            "label": "SSIM az",        "direction": 1,  "default": True},
-        {"key": "ssim_gt_elev_mean",               "label": "SSIM elev",      "direction": 1,  "default": True},
-        {"key": "ssim_gt_range_mean",              "label": "SSIM rg",        "direction": 1,  "default": True},
+        {"key": "ssim_gt_row_mean",            "label": "SSIM row",        "direction": 1,  "default": True},
+        {"key": "ssim_gt_z_mean",               "label": "SSIM z",      "direction": 1,  "default": True},
+        {"key": "ssim_gt_col_mean",              "label": "SSIM col",        "direction": 1,  "default": True},
         {"key": "relative_mse_reduction",          "label": "MSE reduction",  "direction": 1,  "default": False},
         {"key": "improvement_pixel_mse_mean",      "label": "improv mean",    "direction": 1,  "default": False},
     )

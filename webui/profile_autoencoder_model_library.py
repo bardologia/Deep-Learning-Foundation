@@ -37,7 +37,7 @@ class ProfileAutoencoderModelLibrary(ModelDefaultsLibrary):
         return [
             {
                 "family" : "Profile autoencoder",
-                "blurb"  : "Compress the fitted, normalized elevation profile into a latent embedding and reconstruct it. The encoder defines the output latent space later predicted by JEPA.",
+                "blurb"  : "Compress the fitted, normalized z profile into a latent embedding and reconstruct it. The encoder defines the output latent space later predicted by JEPA.",
                 "models" : [
                     {
                         "key": "mlp_ae", "name": "MLP Autoencoder", "skip": "Symmetric MLP",
@@ -47,12 +47,12 @@ class ProfileAutoencoderModelLibrary(ModelDefaultsLibrary):
                     {
                         "key": "conv1d_ae", "name": "Conv1D Autoencoder", "skip": "1D convolutions",
                         "head": "Conv stack to embedding", "params": "~1.60M", "recommended": False,
-                        "when": "Exploits the local smoothness of the elevation profile. Stacked 1D convolutions over the range axis capture neighbouring-bin correlations before pooling to the embedding.",
+                        "when": "Exploits the local smoothness of the z profile. Stacked 1D convolutions over the range axis capture neighbouring-bin correlations before pooling to the embedding.",
                     },
                     {
                         "key": "transformer1d_ae", "name": "Transformer1D Autoencoder", "skip": "Self-attention",
                         "head": "Transformer to embedding", "params": "~1.89M", "recommended": False,
-                        "when": "Long-range dependencies along the profile. A self-attention encoder and decoder model interactions between distant elevation bins, at a higher parameter cost.",
+                        "when": "Long-range dependencies along the profile. A self-attention encoder and decoder model interactions between distant z bins, at a higher parameter cost.",
                     },
                     {
                         "key": "resmlp_ae", "name": "ResMLP Autoencoder", "skip": "Residual MLP",
@@ -62,7 +62,7 @@ class ProfileAutoencoderModelLibrary(ModelDefaultsLibrary):
                     {
                         "key": "tcn_ae", "name": "TCN Autoencoder", "skip": "Dilated 1D conv",
                         "head": "Dilated conv to embedding", "params": "~1.61M", "recommended": False,
-                        "when": "Multi-scale local structure. Stacked dilated residual convolutions grow the receptive field exponentially over the range axis, capturing both narrow and broad elevation features without the cost of attention.",
+                        "when": "Multi-scale local structure. Stacked dilated residual convolutions grow the receptive field exponentially over the range axis, capturing both narrow and broad z features without the cost of attention.",
                     },
                     {
                         "key": "gru_ae", "name": "GRU Autoencoder", "skip": "Recurrent",

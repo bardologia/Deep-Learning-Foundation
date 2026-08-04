@@ -2,24 +2,24 @@
 
 class SliceCollectorView {
   static SOURCES = ["pred", "gt", "reduced", "full"];
-  static LABELS = { pred: "pred", gt: "gt", reduced: "capon reduced", full: "capon full" };
+  static LABELS  = { pred: "pred", gt: "gt", full: "reference" };
 
   constructor(refs) {
-    this.refs = refs;
-    this.cubes = [];
-    this.infos = new Map();
-    this.selected = [];
-    this.runStrip = null;
-    this.points = [];
-    this.axes = new Set(["range"]);
-    this.sources = new Set(["pred"]);
-    this.space = "physical";
-    this.shared = true;
+    this.refs          = refs;
+    this.cubes         = [];
+    this.infos         = new Map();
+    this.selected      = [];
+    this.runStrip      = null;
+    this.points        = [];
+    this.axes          = new Set(["col"]);
+    this.sources       = new Set(["pred"]);
+    this.space         = "physical";
+    this.shared        = true;
     this.debounceTimer = null;
-    this.collecting = false;
+    this.collecting    = false;
 
-    refs.azInput.addEventListener("input", () => this._schedule());
-    refs.rgInput.addEventListener("input", () => this._schedule());
+    refs.rowInput.addEventListener("input", () => this._schedule());
+    refs.colInput.addEventListener("input", () => this._schedule());
     refs.addBtn.addEventListener("click", () => this._addPoint());
     refs.clearBtn.addEventListener("click", () => {
       this.points = [];
@@ -135,14 +135,14 @@ class SliceCollectorView {
     this.refs.stage.hidden = !infos.length;
     if (!infos.length) return;
 
-    const azMax = Math.min(...infos.map((i) => i.n_az)) - 1;
-    const rgMax = Math.min(...infos.map((i) => i.n_rg)) - 1;
-    this.refs.azRange.textContent = `0–${azMax}`;
-    this.refs.rgRange.textContent = `0–${rgMax}`;
-    this.refs.azInput.max = azMax;
-    this.refs.rgInput.max = rgMax;
-    if (this.refs.azInput.value === "") this.refs.azInput.value = Math.floor((azMax + 1) / 2);
-    if (this.refs.rgInput.value === "") this.refs.rgInput.value = Math.floor((rgMax + 1) / 2);
+    const rowMax                   = Math.min(...infos.map((i) => i.n_rows)) - 1;
+    const colMax                   = Math.min(...infos.map((i) => i.n_cols)) - 1;
+    this.refs.rowRange.textContent = `0–${rowMax}`;
+    this.refs.colRange.textContent = `0–${colMax}`;
+    this.refs.rowInput.max         = rowMax;
+    this.refs.colInput.max         = colMax;
+    if (this.refs.rowInput.value === "") this.refs.rowInput.value = Math.floor((rowMax + 1) / 2);
+    if (this.refs.colInput.value === "") this.refs.colInput.value = Math.floor((colMax + 1) / 2);
 
     const avail = new Set();
     infos.forEach((i) => i.sources.forEach((s) => avail.add(s)));
@@ -178,10 +178,10 @@ class SliceCollectorView {
     this.refs.rows.innerHTML = "";
     if (!infos.length) return;
 
-    const az = this._num(this.refs.azInput);
-    const rg = this._num(this.refs.rgInput);
-    const cmap = this.refs.cmapSel.value;
-    const axes = ["range", "azimuth"].filter((a) => this.axes.has(a));
+    const row     = this._num(this.refs.rowInput);
+    const col     = this._num(this.refs.colInput);
+    const cmap    = this.refs.cmapSel.value;
+    const axes    = ["col", "row"].filter((a) => this.axes.has(a));
     const sources = SliceCollectorView.SOURCES.filter((s) => this.sources.has(s));
 
     axes.forEach((axis) => {
@@ -194,9 +194,9 @@ class SliceCollectorView {
         const row = document.createElement("section");
         row.className = "sc-row";
 
-        const title = document.createElement("h3");
+        const title     = document.createElement("h3");
         title.className = "sc-row__title";
-        const pos = axis === "range" ? `rg ${rg}` : `az ${az}`;
+        const pos       = axis === "col" ? `col ${col}` : `row ${row}`;
         title.innerHTML =
           `${this._esc(axis)} cut &middot; ${this._esc(SliceCollectorView.LABELS[source])} ` +
           `<span class="sc-row__sub">${this._esc(pos)} &middot; ${this._esc(this.space)}${clim ? " &middot; shared scale" : ""}</span>`;
@@ -211,7 +211,7 @@ class SliceCollectorView {
           const img = document.createElement("img");
           let url =
             `/api/slices/slice?id=${encodeURIComponent(info.id)}&source=${source}&axis=${axis}` +
-            `&az=${az}&rg=${rg}&space=${this.space}&cmap=${encodeURIComponent(cmap)}`;
+            `&row=${row}&col=${col}&space=${this.space}&cmap=${encodeURIComponent(cmap)}`;
           if (clim) url += `&vmin=${clim[0]}&vmax=${clim[1]}`;
           img.src = url;
           img.alt = `${info.run} ${axis} ${source}`;
@@ -243,24 +243,24 @@ class SliceCollectorView {
   }
 
   _addPoint() {
-    const az = this._num(this.refs.azInput);
-    const rg = this._num(this.refs.rgInput);
-    if (this.points.some((p) => p.az === az && p.rg === rg)) return;
-    this.points.push({ az, rg });
+    const row = this._num(this.refs.rowInput);
+    const col = this._num(this.refs.colInput);
+    if (this.points.some((p) => p.row === row && p.col === col)) return;
+    this.points.push({ row, col });
     this._renderPoints();
   }
 
   _renderPoints() {
     this.refs.points.innerHTML = "";
     this.points.forEach((p, idx) => {
-      const chip = document.createElement("span");
+      const chip     = document.createElement("span");
       chip.className = "fl-pixel";
-      chip.innerHTML = `az <b>${p.az}</b> rg <b>${p.rg}</b>`;
-      const rm = document.createElement("button");
-      rm.type = "button";
-      rm.className = "fl-pixel__rm";
+      chip.innerHTML = `row <b>${p.row}</b> col <b>${p.col}</b>`;
+      const rm       = document.createElement("button");
+      rm.type        = "button";
+      rm.className   = "fl-pixel__rm";
       rm.textContent = "×";
-      rm.title = "Remove this point";
+      rm.title       = "Remove this point";
       rm.addEventListener("click", () => {
         this.points.splice(idx, 1);
         this._renderPoints();
@@ -279,12 +279,12 @@ class SliceCollectorView {
     }
     if (this.collecting) return;
 
-    const fallback = [{ az: this._num(this.refs.azInput), rg: this._num(this.refs.rgInput) }];
-    const body = {
+    const fallback = [{ row: this._num(this.refs.rowInput), col: this._num(this.refs.colInput) }];
+    const body     = {
       ids: infos.map((i) => i.id),
       points: this.points.length ? this.points : fallback,
       sources: SliceCollectorView.SOURCES.filter((s) => this.sources.has(s)),
-      axes: ["range", "azimuth"].filter((a) => this.axes.has(a)),
+      axes: ["col", "row"].filter((a) => this.axes.has(a)),
       space: this.space,
       cmap: this.refs.cmapSel.value,
       shared: this.shared,
