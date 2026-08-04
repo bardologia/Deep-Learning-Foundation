@@ -3,202 +3,6 @@ from __future__ import annotations
 
 class EquationLibrary:
 
-    def _signal_model(self) -> dict:
-        return {
-            "group" : "Signal Model",
-            "blurb" : "How a stack of co-registered SAR passes becomes an elevation power spectrum, and the Gaussian mixture that summarises it.",
-            "items" : [
-                {
-                    "title" : "Tomographic observation model",
-                    "tex"   : r"\mathbf{y} = \int_{\xi} \gamma(\xi)\,\mathbf{a}(\xi)\,\mathrm{d}\xi + \mathbf{n}",
-                    "note"  : "The complex interferometric vector is the steering-weighted integral of reflectivity over elevation, plus noise. The code realises the forward map as a discrete sum sum_xi a(xi)*gamma(xi)*dx (synthesise_track) and the second-order statistics via the steering outer product.",
-                    "vars"  : [
-                        {"sym": r"\mathbf{y}",      "desc": "complex observation vector over the N_s passes"},
-                        {"sym": r"\xi",             "desc": "elevation coordinate (m)"},
-                        {"sym": r"\gamma(\xi)",     "desc": "normalised reflectivity along elevation"},
-                        {"sym": r"\mathbf{a}(\xi)", "desc": "steering vector built from the per-pass interferometric wavenumbers"},
-                        {"sym": r"\mathbf{n}",      "desc": "additive complex noise vector"},
-                    ],
-                },
-                {
-                    "title" : "Steering vector element",
-                    "tex"   : r"a_i(\xi) = \exp\!\left(j\,\kappa_{z,i}\,\xi\right)",
-                    "note"  : "Each pass turns elevation into a unit-modulus phase ramp whose rate is its interferometric wavenumber; the code builds it as torch.polar(1, kz*xi) with kz defined separately, per-pixel when the geometry field is active and per-track when it is not.",
-                    "vars"  : [
-                        {"sym": r"a_i(\xi)",     "desc": "steering element of pass i at elevation xi"},
-                        {"sym": r"j",            "desc": "imaginary unit, j^2 = -1"},
-                        {"sym": r"\kappa_{z,i}", "desc": "interferometric wavenumber of pass i (rad/m)"},
-                        {"sym": r"\xi",          "desc": "elevation coordinate (m)"},
-                    ],
-                },
-                {
-                    "title" : "Interferometric wavenumber",
-                    "tex"   : r"\kappa_{z,i} = \frac{4\pi}{\lambda}\,\frac{b_{\perp,i}}{r\,\sin\theta}\quad(\text{height}), \qquad \kappa_{z,i} = \frac{4\pi}{\lambda}\,\frac{b_{\perp,i}}{r}\quad(\text{slant})",
-                    "note"  : "Phase-to-elevation wavenumber per pass. When a physics-geometry loss term is active it is assembled per pixel from the geometry field (meta/geometry_field.npz, kz(convention) sliced per region into the batch kz_map); otherwise it collapses to one scalar per track from the config slant range and look angle via TomoGeometry. The default 'height' convention divides by sin(theta) so xi is a true vertical height; the 'slant' convention omits it.",
-                    "vars"  : [
-                        {"sym": r"\kappa_{z,i}", "desc": "interferometric wavenumber of pass i (rad/m)"},
-                        {"sym": r"\lambda",      "desc": "radar wavelength (m); config default 0.23, but read from the track parameters when the geometry field is active"},
-                        {"sym": r"b_{\perp,i}",  "desc": "perpendicular baseline of pass i (m)"},
-                        {"sym": r"r",            "desc": "slant range at the pixel's range bin (m)"},
-                        {"sym": r"\theta",       "desc": "look angle at the pixel's range bin (rad)"},
-                    ],
-                },
-                {
-                    "title" : "Per-pixel scene geometry",
-                    "tex"   : r"b_{\perp,i} = b_{h,i}\cos\theta + b_{v,i}\sin\theta, \qquad b_{\cdot,i} = p_{\cdot,i} - p_{\cdot,0}, \qquad \theta = \arccos\!\left(\frac{h}{r}\right)",
-                    "note"  : "The perpendicular baseline projects each pass's horizontal and vertical offset from the reference track onto the look direction; the offsets vary along azimuth while the look angle and slant range vary along range. The look angle is recovered per range bin from the sensor height above terrain h = h0 - terrain over the slant range, and the build rejects non-physical h that would give a zero look angle and infinite kz.",
-                    "vars"  : [
-                        {"sym": r"b_{\perp,i}",      "desc": "perpendicular baseline of pass i (m)"},
-                        {"sym": r"b_{h,i}, b_{v,i}", "desc": "horizontal / vertical baseline of pass i relative to the reference pass (m)"},
-                        {"sym": r"p_{\cdot,i}",      "desc": "horizontal or vertical track position of pass i along azimuth (m)"},
-                        {"sym": r"\theta",           "desc": "look angle from vertical (rad)"},
-                        {"sym": r"h",                "desc": "sensor height above terrain, h0 - terrain (m)"},
-                        {"sym": r"r",                "desc": "slant range at the range bin (m)"},
-                    ],
-                },
-                {
-                    "title" : "Capon beamformer",
-                    "tex"   : r"\hat{\gamma}_{\text{Capon}}(\xi) = \frac{1}{\mathbf{a}^{H}(\xi)\,\hat{\mathbf{R}}^{-1}\,\mathbf{a}(\xi)}",
-                    "note"  : "Minimum-variance distortionless response estimate of the elevation spectrum from the sample covariance; the default PyRat beamforming method.",
-                    "vars"  : [
-                        {"sym": r"\hat{\gamma}_{\text{Capon}}(\xi)", "desc": "estimated reflectivity at elevation xi"},
-                        {"sym": r"\mathbf{a}(\xi)",                  "desc": "steering vector at elevation xi"},
-                        {"sym": r"\mathbf{a}^{H}",                   "desc": "Hermitian (conjugate) transpose of the steering vector"},
-                        {"sym": r"\hat{\mathbf{R}}",                 "desc": "sample covariance estimated over a spatial window"},
-                    ],
-                },
-                {
-                    "title" : "Elevation axis",
-                    "tex"   : r"x_h = x_{\min} + h\cdot\frac{x_{\max}-x_{\min}}{H-1}, \qquad h = 0,\dots,H-1, \qquad \Delta\xi = \frac{x_{\max}-x_{\min}}{H-1}",
-                    "note"  : "Uniform grid of H elevation bins spanning the configured height range; the bin spacing recurs in fitting bounds and peak distances.",
-                    "vars"  : [
-                        {"sym": r"x_h",                "desc": "elevation value at bin index h (m)"},
-                        {"sym": r"h",                  "desc": "elevation bin index"},
-                        {"sym": r"x_{\min}, x_{\max}", "desc": "height range bounds, default (-20 m, 80 m)"},
-                        {"sym": r"H",                  "desc": "number of elevation bins"},
-                        {"sym": r"\Delta\xi",          "desc": "elevation bin spacing (m)"},
-                    ],
-                },
-                {
-                    "title" : "Gaussian mixture approximation",
-                    "tex"   : r"\hat{\gamma}(\xi) = \sum_{k=1}^{K} a_k\,\exp\!\left(-\frac{(\xi-\mu_k)^2}{2\sigma_k^2}\right)",
-                    "note"  : "Each per-pixel elevation spectrum is approximated by K Gaussians, one per scattering layer; these parameters are the supervised target.",
-                    "vars"  : [
-                        {"sym": r"\hat{\gamma}(\xi)", "desc": "modelled elevation power spectrum"},
-                        {"sym": r"\xi",               "desc": "elevation coordinate (m)"},
-                        {"sym": r"K",                 "desc": "number of Gaussian components"},
-                        {"sym": r"a_k",               "desc": "amplitude (peak reflectivity) of component k"},
-                        {"sym": r"\mu_k",             "desc": "mean elevation of component k (m)"},
-                        {"sym": r"\sigma_k",          "desc": "elevation spread of component k (m)"},
-                    ],
-                },
-                {
-                    "title" : "Per-pixel parameter vector",
-                    "tex"   : r"\theta = [\,a_1, \mu_1, \sigma_1,\; a_2, \mu_2, \sigma_2,\; \dots,\; a_{K}, \mu_{K}, \sigma_{K}\,] \in \mathbb{R}^{3K}",
-                    "note"  : "Interleaved layout used everywhere: the GT array, the model output channels, and the loss (a at 3k, mu at 3k+1, sigma at 3k+2). K is derived from the parameter run's k_max (not a user knob), amplitude is clamped to a floor of 0, and a slot counts as active when its amplitude exceeds amp_zero_thr = 1e-4.",
-                    "vars"  : [
-                        {"sym": r"\theta",               "desc": "per-pixel parameter vector"},
-                        {"sym": r"a_k, \mu_k, \sigma_k", "desc": "amplitude, mean elevation, spread of slot k"},
-                        {"sym": r"K",                    "desc": "number of Gaussian slots, K = k_max from param_extraction_meta.json (default 5)"},
-                        {"sym": r"3K",                   "desc": "channels per pixel, three parameters per slot"},
-                    ],
-                },
-            ],
-        }
-
-    def _processing(self) -> dict:
-        return {
-            "group" : "Processing",
-            "blurb" : "From F-SAR SLC data to the beamformed tomogram, DEM-deramped interferograms, and the per-pixel geometry field, dispatched across parallel PyRat workers.",
-            "items" : [
-                {
-                    "title" : "Azimuth crop subdivision",
-                    "tex"   : r"M = \left\lceil \frac{W_{az}}{W_{\max}} \right\rceil, \qquad s_m = a_{\mathrm{start}} + m\,W_{\max}, \qquad e_m = \min\!\left(s_m + W_{\max},\, a_{\mathrm{end}}\right)",
-                    "note"  : "The azimuth crop is divided into M non-overlapping subsections, one isolated PyRat subprocess each.",
-                    "vars"  : [
-                        {"sym": r"M",                                    "desc": "number of subsections"},
-                        {"sym": r"W_{az}",                               "desc": "total azimuth width in lines"},
-                        {"sym": r"W_{\max}",                             "desc": "max azimuth lines per worker, default 1000"},
-                        {"sym": r"m",                                    "desc": "subsection index, 0 to M-1"},
-                        {"sym": r"[s_m, e_m)",                           "desc": "azimuth bounds of subsection m"},
-                        {"sym": r"a_{\mathrm{start}}, a_{\mathrm{end}}", "desc": "azimuth crop bounds (absolute lines)"},
-                    ],
-                },
-                {
-                    "title" : "Worker auto-sizing",
-                    "tex"   : r"P^{\star} = \arg\min_{1 \le P \le \min(M,\,B)} \left\lceil \frac{M}{P} \right\rceil, \qquad T = \max\!\left(1,\ \min\!\left(16,\ \left\lfloor B/P \right\rfloor\right)\right), \qquad B = \max\!\left(1,\ \lfloor f_{\mathrm{effort}}\,C \rfloor\right)",
-                    "note"  : "Without explicit overrides the launched worker count minimises the number of sequential job waves ceil(M/P); because the loop scans workers ascending and only replaces a tied plan when it has strictly more threads, it settles on the fewest workers that still reach the minimum wave count, so wave-count ties resolve toward more threads per worker (not more workers). Each PyRat worker then takes floor(B/P) threads, capped at 16, out of the effort core budget B: low 25%, medium 50%, high 80% of the scheduler-affinity-visible cores. Setting tomogram_workers or pyrat_threads pins that value and lets the other adapt to the remaining budget.",
-                    "vars"  : [
-                        {"sym": r"P^{\star}",           "desc": "process-pool workers actually launched"},
-                        {"sym": r"T",                   "desc": "threads per PyRat subprocess, floored at 1 and capped at 16"},
-                        {"sym": r"M",                   "desc": "number of subsections (one job each)"},
-                        {"sym": r"B",                   "desc": "core budget max(1, floor(effort fraction x cores))"},
-                        {"sym": r"f_{\mathrm{effort}}", "desc": "effort fraction: low 0.25, medium 0.5, high 0.8"},
-                        {"sym": r"C",                   "desc": "CPU cores visible via scheduler affinity (fallback os.cpu_count)"},
-                    ],
-                },
-                {
-                    "title" : "Subsection concatenation",
-                    "tex"   : r"T_{\mathrm{comb}} = \mathrm{concat}\!\left[T_0, \dots, T_{M-1}\right]_{\mathrm{axis}=1}, \qquad \mathrm{DEM}_{\mathrm{comb}} = \mathrm{concat}\!\left[\mathrm{DEM}_0, \dots, \mathrm{DEM}_{M-1}\right]_{\mathrm{axis}=0}",
-                    "note"  : "Per-worker HDF5 outputs are reassembled along azimuth in two passes: shapes first, then slice-copies into pre-allocated buffers.",
-                    "vars"  : [
-                        {"sym": r"T_m",                          "desc": "tomogram of subsection m, shape (H, W_m, R_g)"},
-                        {"sym": r"T_{\mathrm{comb}}",            "desc": "combined tomogram, shape (H, SUM W_m, R_g)"},
-                        {"sym": r"\mathrm{DEM}_m",               "desc": "DEM of subsection m, shape (W_m, R_g)"},
-                        {"sym": r"\mathrm{DEM}_{\mathrm{comb}}", "desc": "combined DEM, shape (SUM W_m, R_g)"},
-                        {"sym": r"M",                            "desc": "number of subsections"},
-                    ],
-                },
-                {
-                    "title" : "Right-looking geometry gate",
-                    "tex"   : r"\mathrm{antdir}_i > 0 \quad \forall\, i \in \{0, 1, \dots, N_s\}",
-                    "note"  : "During the interferogram stage every pass's antenna-direction flag is read from its STEP pp_*.xml and checked: any track with antdir <= 0 is left-looking and aborts the run, because the downstream kz / steering geometry assumes a right-looking acquisition and left-looking data would train against sign-flipped physics (TrackParameters.validate_right_looking, invoked by TrackParameterCollector.collect during _extract_parameters, and again inside the geometry-field build).",
-                    "vars"  : [
-                        {"sym": r"\mathrm{antdir}_i", "desc": "antenna-direction (look-side) flag of pass i from pp_*.xml; > 0 is right-looking"},
-                        {"sym": r"i",                 "desc": "pass index, 0 = master (reference)"},
-                        {"sym": r"N_s",               "desc": "number of secondary passes (master is index 0)"},
-                    ],
-                },
-                {
-                    "title" : "DEM-phase deramping",
-                    "tex"   : r"\tilde{s}_i = s_i\cdot\exp\!\left(j\,\phi_{\mathrm{DEM},i}\right)",
-                    "note"  : "The secondary SLC is phase-rotated by the DEM-predicted phase (multiplied by exp(+j*phi_DEM)); the subsequent master x conjugate-deramped-secondary product then cancels the terrain topographic phase, leaving the residual sub-DEM elevation structure.",
-                    "vars"  : [
-                        {"sym": r"\tilde{s}_i",           "desc": "DEM-deramped secondary SLC of pass i"},
-                        {"sym": r"s_i",                   "desc": "co-registered secondary SLC value"},
-                        {"sym": r"j",                     "desc": "imaginary unit, j^2 = -1"},
-                        {"sym": r"\phi_{\mathrm{DEM},i}", "desc": "DEM phase of pass i from PyRat (radians)"},
-                    ],
-                },
-                {
-                    "title" : "Amplitude-weighted complex interferogram",
-                    "tex"   : r"\phi_i = A_i\cdot\frac{s_0\,\overline{\tilde{s}_i}}{\left|s_0\,\overline{\tilde{s}_i}\right|}, \qquad A_i = \min\!\left(|s_i|,\,A_{\max}\right)",
-                    "note"  : "Unit-phasor normalisation removes inter-pass amplitude variation while preserving coherence; the clipped secondary amplitude is reintroduced as a signal-to-noise proxy. A 1e-30 stabiliser guards the denominator in code.",
-                    "vars"  : [
-                        {"sym": r"\phi_i",                 "desc": "complex interferogram of pass i"},
-                        {"sym": r"s_0",                    "desc": "master (primary) SLC value"},
-                        {"sym": r"\overline{\tilde{s}_i}", "desc": "complex conjugate of the deramped secondary"},
-                        {"sym": r"A_i",                    "desc": "clipped secondary amplitude weight"},
-                        {"sym": r"|s_i|",                  "desc": "secondary SLC magnitude"},
-                        {"sym": r"A_{\max}",               "desc": "max_amplitude_clip = 1.25"},
-                    ],
-                },
-                {
-                    "title" : "Per-pixel geometry field",
-                    "tex"   : r"\theta_g = \arccos\!\left(\mathrm{clip}\!\left(\frac{h_0 - h_{\mathrm{ter}}}{r_g},\ -1,\ 1\right)\right), \qquad b^{\mathrm{h}}_{i} = H_i - H_0, \qquad b^{\mathrm{v}}_{i} = V_i - V_0",
-                    "note"  : "The third and final processing stage builds and saves the per-pixel geometry field (geometry_field.npz) that the physics loss later consumes. The per-range-sample look angle is taken from the reference track's sensor height above terrain over its cropped slant-range vector; the per-track horizontal and vertical baselines are the antenna-position profiles taken relative to the reference (index 0) track, so the reference baseline is zero. The build re-runs the right-looking gate and aborts if the height above terrain is non-positive or not below the nearest slant range (which would give a zero look angle and infinite kz). Only theta, r and the baselines are stored: the physics-loss vertical wavenumber kz = 4*pi*b_perp/(lambda*r*sin theta) with b_perp = b_h*cos theta + b_v*sin theta is formed later at training time (documented under Training loss).",
-                    "vars"  : [
-                        {"sym": r"\theta_g",                               "desc": "look angle at range sample g (radians), from the reference track"},
-                        {"sym": r"h_0",                                    "desc": "reference-track sensor altitude"},
-                        {"sym": r"h_{\mathrm{ter}}",                       "desc": "reference-track terrain height"},
-                        {"sym": r"r_g",                                    "desc": "slant range at sample g from the reference track's range vector (cropped to the range window)"},
-                        {"sym": r"b^{\mathrm{h}}_{i}, b^{\mathrm{v}}_{i}", "desc": "horizontal / vertical baseline of track i relative to the reference (index 0) track"},
-                        {"sym": r"H_i, V_i",                               "desc": "horizontal / vertical antenna-position profile of track i (H_0, V_0 = reference)"},
-                    ],
-                },
-            ],
-        }
-
     def _param_extraction(self) -> dict:
         return {
             "group" : "Param Extraction",
@@ -457,7 +261,7 @@ class EquationLibrary:
     def _dataset(self) -> dict:
         return {
             "group" : "Dataset",
-            "blurb" : "Reduced artifacts to PyTorch loaders: cropping, patch tiling, complex-to-real representation, augmentation, optional per-pixel geometry attachment, and fitted per-channel normalisation.",
+            "blurb" : "Reduced artifacts to PyTorch loaders: cropping, patch tiling, complex-to-real representation, augmentation, and fitted per-channel normalisation.",
             "items" : [
                 {
                     "title" : "Split coordinate transform",
@@ -582,9 +386,9 @@ class EquationLibrary:
                 {
                     "title" : "Flip augmentations",
                     "tex"   : r"\mathbf{x}'[\dots, i] = \mathbf{x}[\dots, P_W - 1 - i] \ \ (p_H = 0.5), \qquad \mathbf{x}'[\dots, j, :] = \mathbf{x}[\dots, P_H - 1 - j, :] \ \ (p_V = 0.5)",
-                    "note"  : "Horizontal and vertical flips are drawn independently and applied jointly (pre-normalisation) to the input, the target, and (when a physics loss is active) the per-pixel geometry field, preserving spatial correspondence.",
+                    "note"  : "Horizontal and vertical flips are drawn independently and applied jointly (pre-normalisation) to the input and the target, preserving spatial correspondence.",
                     "vars"  : [
-                        {"sym": r"\mathbf{x}, \mathbf{x}'", "desc": "patch before and after the flip (target and geometry alike)"},
+                        {"sym": r"\mathbf{x}, \mathbf{x}'", "desc": "patch before and after the flip (input and target alike)"},
                         {"sym": r"i",                       "desc": "range (horizontal) axis index"},
                         {"sym": r"j",                       "desc": "azimuth (vertical) axis index"},
                         {"sym": r"P_H, P_W",                "desc": "patch height and width"},
@@ -594,7 +398,7 @@ class EquationLibrary:
                 {
                     "title" : "Random 90° rotation",
                     "tex"   : r"(\mathbf{x}', \mathbf{y}') = \mathrm{rot90}^{\,k}(\mathbf{x}, \mathbf{y}), \qquad k \sim \mathcal{U}\{1, 2, 3\}",
-                    "note"  : "Joint rotation in the spatial plane, disabled by default (p_rot90 = 0) and force-skipped whenever a per-pixel geometry field is active (a warning fires if p_rot90 > 0 in that case); rotation could mix unequal azimuth and range pixel spacings.",
+                    "note"  : "Joint rotation in the spatial plane, disabled by default (p_rot90 = 0); rotation mixes the two spatial axes, which is only sound when they carry the same pixel spacing.",
                     "vars"  : [
                         {"sym": r"\mathbf{x}, \mathbf{y}", "desc": "input and GT parameter patches"},
                         {"sym": r"k",                      "desc": "number of 90° turns, uniform over {1, 2, 3}"},
@@ -604,26 +408,13 @@ class EquationLibrary:
                 {
                     "title" : "Additive Gaussian input noise",
                     "tex"   : r"\mathbf{x}' = \mathbf{x} + \varepsilon, \qquad \varepsilon \sim \mathcal{N}\!\left(0,\ \sigma_{\mathrm{noise}}^2\,\mathbf{I}\right) \ \ (p_N = 0,\ \text{off by default})",
-                    "note"  : "Applied to the already-normalised input on the train split only (so the std is in normalised units) and disabled by default (p_noise = 0); the regression target and the geometry field are never perturbed.",
+                    "note"  : "Applied to the already-normalised input on the train split only (so the std is in normalised units) and disabled by default (p_noise = 0); the regression target is never perturbed.",
                     "vars"  : [
                         {"sym": r"\mathbf{x}, \mathbf{x}'", "desc": "input patch before and after"},
                         {"sym": r"\varepsilon",             "desc": "noise tensor, same shape as the input"},
                         {"sym": r"\sigma_{\mathrm{noise}}", "desc": "noise_std = 0.01"},
                         {"sym": r"\mathbf{I}",              "desc": "identity covariance (i.i.d. noise)"},
                         {"sym": r"p_N",                     "desc": "noise probability (p_noise, default 0)"},
-                    ],
-                },
-                {
-                    "title" : "Per-pixel geometry field (kz)",
-                    "tex"   : r"b_\perp = b_h\cos\theta + b_v\sin\theta, \qquad k_z = \frac{4\pi}{\lambda}\,\frac{b_\perp}{r\,\sin\theta}\ \ (\text{height}), \qquad k_z = \frac{4\pi}{\lambda}\,\frac{b_\perp}{r}\ \ (\text{slant})",
-                    "note"  : "When a physics loss needs per-pixel vertical wavenumbers, the preprocessing geometry_field.npz is loaded, subset to the selected secondaries, and validated against the global crop. Each split region slices its own kz(az, rg, track) map, which rides through the loader as an unnormalised third tensor, is flip-augmented jointly with the input and target, and skips 90° rotation. Built only when build_geometry_field is set (driven by TrainingPipeline.physics_geometry_active: any active curriculum stage with use_coherence_resyn / use_covariance_match / use_capon_cycle); the height convention scales the denominator by sin(theta), the slant convention does not.",
-                    "vars"  : [
-                        {"sym": r"k_z",      "desc": "per-pixel vertical wavenumber, one map per track"},
-                        {"sym": r"b_\perp",  "desc": "perpendicular baseline"},
-                        {"sym": r"b_h, b_v", "desc": "horizontal and vertical baseline components"},
-                        {"sym": r"\theta",   "desc": "look angle (per range sample)"},
-                        {"sym": r"r",        "desc": "slant range (per range sample)"},
-                        {"sym": r"\lambda",  "desc": "radar wavelength"},
                     ],
                 },
                 {
@@ -684,7 +475,7 @@ class EquationLibrary:
     def _training_loss(self) -> dict:
         return {
             "group" : "Training · Loss",
-            "blurb" : "The composable multi-term objective, term by term: fifteen switchable components over curve, physics, and parameter space, plus clamping, optimal-assignment matching, slot-presence weighting, and weight calibration.",
+            "blurb" : "The composable multi-term objective, term by term: eleven switchable components over curve and parameter space, plus clamping, optimal-assignment matching, slot-presence weighting, and weight calibration.",
             "items" : [
                 {
                     "title" : "Physical parameter bounds",
@@ -766,34 +557,20 @@ class EquationLibrary:
                     ],
                 },
                 {
-                    "title" : "Tomographic forward operator (physics terms)",
-                    "tex"   : r"k_z^{(i)} = \frac{4\pi\,b_i}{\lambda\,r_0\,\sin\theta_{\ell}}\ \ (\text{height}), \quad k_z^{(i)} = \frac{4\pi\,b_i}{\lambda\,r_0}\ \ (\text{slant}), \qquad A_{i,n} = \exp\!\left(j\,k_z^{(i)}\,\xi_n\right), \qquad O_{i,j,n} = A_{i,n}\,\overline{A_{j,n}}",
-                    "note"  : "The vertical wavenumbers come from the configured geometry: baselines give k_z = 4*pi*b/(lambda*r0) under the 'slant' convention and additionally divide by sin(look) under the default 'height' convention, or explicit kz_values override them, or a per-pixel kz map (GeometryField) replaces the single geometry with per-track wavenumbers. Only three of the five physics terms - coherence re-synthesis, covariance matching, Capon cycle - use the steering matrix A and outer product O; total-power and moments operate on the curves directly. All physics terms reduce only over pixels whose GT integrated power exceeds the physics floor (1e-3) and all default off (tomo_geometry.py TomoGeometry, physical_loss.py).",
-                    "vars"  : [
-                        {"sym": r"k_z^{(i)}",     "desc": "vertical wavenumber of track i (rad/m)"},
-                        {"sym": r"b_i",           "desc": "perpendicular baseline of track i (m)"},
-                        {"sym": r"\lambda, r_0",  "desc": "wavelength and slant range (m)"},
-                        {"sym": r"\theta_{\ell}", "desc": "look angle (default 45 deg, height convention only)"},
-                        {"sym": r"A_{i,n}",       "desc": "steering matrix, track i at elevation bin n"},
-                        {"sym": r"O_{i,j,n}",     "desc": "per-bin steering outer product"},
-                        {"sym": r"\xi_n",         "desc": "elevation axis sample (m)"},
-                    ],
-                },
-                {
                     "title" : "Total-power relative error",
                     "tex"   : r"p_0 = \sum_n \hat{y}_n\,\Delta\xi, \quad t_0 = \sum_n y_n\,\Delta\xi, \qquad \ell_{\mathrm{pow}} = \left\langle \frac{|p_0 - t_0|}{t_0} \right\rangle_{t_0 > \tau}",
-                    "note"  : "Relative integrated-power error of the predicted spectrum, averaged over GT-strong pixels. Kept as a loss option though radiometric power is biased by Capon (physical_loss.py total_power).",
+                    "note"  : "Relative integrated-power error of the predicted spectrum, averaged over GT-strong pixels (curve_loss.py total_power).",
                     "vars"  : [
                         {"sym": r"\ell_{\mathrm{pow}}", "desc": "total-power relative-error term"},
                         {"sym": r"p_0, t_0",            "desc": "integrated power of predicted and GT curves"},
                         {"sym": r"\Delta\xi",           "desc": "elevation bin spacing (m)"},
-                        {"sym": r"\tau",                "desc": "physics_floor = 1e-3"},
+                        {"sym": r"\tau",                "desc": "power_floor = 1e-3"},
                     ],
                 },
                 {
                     "title" : "Profile moments",
                     "tex"   : r"\bar{z} = \frac{\sum_n P_n\,\xi_n}{\sum_n P_n}, \quad \sigma_z = \sqrt{\frac{\sum_n P_n\,\xi_n^2}{\sum_n P_n} - \bar{z}^2 + 10^{-8}}, \qquad \ell_{\mathrm{mom}} = \left\langle \frac{w_0\frac{|\Delta m_0|}{t_0} + w_1\frac{|\Delta\bar{z}|}{\Delta\xi_R} + w_2\frac{|\Delta\sigma_z|}{\Delta\xi_R}}{w_0+w_1+w_2} \right\rangle",
-                    "note"  : "Relative error of the first three profile moments - mass m0, centroid z-bar, and spread sigma_z - used as a validation-grade physics term; moment weights default (1, 1, 1) (physical_loss.py moments).",
+                    "note"  : "Relative error of the first three profile moments - mass m0, centroid z-bar, and spread sigma_z; moment weights default (1, 1, 1) (curve_loss.py MomentLoss).",
                     "vars"  : [
                         {"sym": r"\ell_{\mathrm{mom}}",                       "desc": "moments term value"},
                         {"sym": r"P_n",                                       "desc": "curve value at elevation bin n (pred or GT)"},
@@ -804,38 +581,15 @@ class EquationLibrary:
                     ],
                 },
                 {
-                    "title" : "Coherence re-synthesis",
-                    "tex"   : r"\gamma_P\!\left(k_z^{(i)}\right) = \frac{\sum_n P_n\,e^{j\,k_z^{(i)}\xi_n}\,\Delta\xi}{\sum_n P_n\,\Delta\xi}, \qquad \ell_{\mathrm{coh\text{-}r}} = \left\langle \frac{1}{N_s}\sum_i \left|\gamma_P^{(i)} - \gamma_T^{(i)}\right|^2 \right\rangle",
-                    "note"  : "Compares the mass-normalised characteristic functions (interferometric coherences) of the two profiles sampled at each track wavenumber; insensitive to absolute power, the top-ranked physics loss (physical_loss.py coherence_resynthesis).",
+                    "title" : "Set-prediction amplitude gate",
+                    "tex"   : r"g_k = \sigma(\ell_k), \qquad \hat{a}_k = g_k\,a_k + (1 - g_k)\,o_k",
+                    "note"  : "The gated set-prediction head (head = set_pred, selectable on every backbone): an existence-logit PixelMLP emits one logit per Gaussian slot, and its sigmoid blends the regressed amplitude toward a learned per-slot off level. The off level lives in normalised output space because normalised zero is not physical zero; training drives o_k toward the normalised encoding of physical amplitude zero. Pairs with hungarian param matching; mu and sigma pass through ungated (OutputHeadsMixin._set_prediction_forward).",
                     "vars"  : [
-                        {"sym": r"\ell_{\mathrm{coh\text{-}r}}", "desc": "coherence re-synthesis term value"},
-                        {"sym": r"\gamma_P, \gamma_T",           "desc": "normalised coherences of predicted and GT profiles"},
-                        {"sym": r"k_z^{(i)}",                    "desc": "vertical wavenumber of track i"},
-                        {"sym": r"N_s",                          "desc": "number of tracks"},
-                    ],
-                },
-                {
-                    "title" : "Covariance matching",
-                    "tex"   : r"\mathbf{R}[P] = \mathbf{A}\,\mathrm{diag}(P)\,\mathbf{A}^{H}\,\Delta\xi, \qquad \ell_{\mathrm{cov}} = \left\langle \frac{\left\|\mathbf{R}[P] - \mathbf{R}[T]\right\|_F^2}{\left\|\mathbf{R}[T]\right\|_F^2} \right\rangle",
-                    "note"  : "Relative Frobenius error of the synthesised covariance; the linearity of R in P lets the implementation transform only the prediction-minus-GT difference. Insensitive to absolute scale (physical_loss.py covariance_matching).",
-                    "vars"  : [
-                        {"sym": r"\ell_{\mathrm{cov}}",          "desc": "covariance matching term value"},
-                        {"sym": r"\mathbf{R}[P], \mathbf{R}[T]", "desc": "covariances synthesised from predicted and GT profiles"},
-                        {"sym": r"\mathbf{A}",                   "desc": "steering matrix exp(j kz xi)"},
-                        {"sym": r"\|\cdot\|_F",                  "desc": "Frobenius norm over the track-pair axes"},
-                    ],
-                },
-                {
-                    "title" : "Capon cycle-consistency",
-                    "tex"   : r"\hat{T}_P(\xi_n) = \frac{1}{\mathbf{a}^{H}(\xi_n)\big(\mathbf{R}[P] + \epsilon\,\bar{\sigma}\,\mathbf{I}\big)^{-1}\mathbf{a}(\xi_n)}, \quad \bar{\sigma} = \frac{\mathrm{tr}\,\mathbf{R}[P]}{N_s}, \qquad \ell_{\mathrm{cyc}} = \left\langle \frac{1}{N}\sum_n \left(\frac{\hat{T}_P(\xi_n)}{m_0^{\hat{T}}} - \frac{T(\xi_n)}{m_0^{T}}\right)^2 \right\rangle",
-                    "note"  : "The most expensive physics term: synthesise the covariance from the prediction, apply signal-adaptive diagonal loading (loading*max(sigma-bar, floor)), Hermitianise, form the Capon spectrum by one solve per pixel, and compare mass-normalised spectra (physical_loss.py capon_cycle).",
-                    "vars"  : [
-                        {"sym": r"\ell_{\mathrm{cyc}}",    "desc": "Capon cycle-consistency term value"},
-                        {"sym": r"\hat{T}_P(\xi_n)",       "desc": "Capon spectrum re-synthesised from the prediction"},
-                        {"sym": r"\bar{\sigma}",           "desc": "mean diagonal power for adaptive loading"},
-                        {"sym": r"\epsilon",               "desc": "capon_loading = 1e-2"},
-                        {"sym": r"m_0^{\hat{T}}, m_0^{T}", "desc": "integrated power normalisers"},
-                        {"sym": r"N, N_s",                 "desc": "elevation bins and number of tracks"},
+                        {"sym": r"\ell_k",    "desc": "existence logit of slot k (per pixel)"},
+                        {"sym": r"g_k",       "desc": "sigmoid existence gate in [0, 1]"},
+                        {"sym": r"a_k",       "desc": "raw regressed amplitude of slot k (normalised space)"},
+                        {"sym": r"o_k",       "desc": "learned scalar off level of slot k, initialised at 0"},
+                        {"sym": r"\hat{a}_k", "desc": "gated amplitude emitted in the 3K-channel output"},
                     ],
                 },
                 {
@@ -922,18 +676,6 @@ class EquationLibrary:
                         {"sym": r"w_p",                              "desc": "per-parameter weight (a, mu, sigma)"},
                         {"sym": r"m",                                "desc": "activity mask"},
                         {"sym": r"b, k, p, h, w",                    "desc": "batch, slot, parameter, pixel indices"},
-                    ],
-                },
-                {
-                    "title" : "Legacy parameter MSE",
-                    "tex"   : r"\tilde{\theta}_{k,p} = \frac{\theta_{k,p} - l_{k,p}}{u_{k,p} - l_{k,p}}, \qquad \ell_{\mathrm{param\text{-}legacy}} = \operatorname{mean}_{b,k,p,h,w}\left(\hat{\tilde{\theta}} - \tilde{\theta}\right)^2",
-                    "note"  : "Imitation of the pre-Hungarian objective: both prediction and GT are min-max scaled by fixed per-slot physical bounds, then compared with a plain unweighted, unmasked MSE over every slot and parameter. It requires param_matching = sorted_gt (the bounds assume fixed slot identity, Loss._validate_legacy raises otherwise) and exactly two Gaussian slots, and the bound tuples must carry six entries ordered amp1, mu1, sigma1, amp2, mu2, sigma2 with max > min (param_loss.py LegacyParamLoss). The loss-scale probe forces this term off unless it is explicitly enabled.",
-                    "vars"  : [
-                        {"sym": r"\ell_{\mathrm{param\text{-}legacy}}", "desc": "legacy parameter term value"},
-                        {"sym": r"\theta_{k,p}, \hat{\theta}_{k,p}",    "desc": "GT and predicted parameter p of slot k, physical scale"},
-                        {"sym": r"l_{k,p}, u_{k,p}",                    "desc": "legacy_bounds_min and legacy_bounds_max, six entries each"},
-                        {"sym": r"\tilde{\theta}",                      "desc": "parameter mapped into the legacy min-max space"},
-                        {"sym": r"k",                                   "desc": "slot index, exactly two slots"},
                     ],
                 },
                 {
@@ -1233,7 +975,7 @@ class EquationLibrary:
     def _inference(self) -> dict:
         return {
             "group" : "Inference",
-            "blurb" : "Patch predictions are de-normalised and physically clamped, then assembled into dense cubes (curves by weighted overlap-add, Gaussian parameters by centrality winner-take-all) and scored against the ground truth by curve, parameter, and permutation-invariant matched-Gaussian metrics, an optional reduced-Capon baseline comparison, and interferometric data-consistency checks that also diagnose the Capon elevation sign.",
+            "blurb" : "Patch predictions are de-normalised and physically clamped, then assembled into dense cubes (curves by weighted overlap-add, Gaussian parameters by centrality winner-take-all) and scored against the ground truth by curve, parameter, and permutation-invariant matched-Gaussian metrics.",
             "items" : [
                 {
                     "title" : "Prediction de-normalisation and physical clamp",
@@ -1513,74 +1255,6 @@ class EquationLibrary:
                         {"sym": r"D",                 "desc": "diagonal-mass fraction, trace over total"},
                     ],
                 },
-                {
-                    "title" : "Reduced-baseline Capon improvement",
-                    "tex"   : r"\bar{y}_{n,a,r} = \frac{y_{n,a,r}}{\max\!\left(\sum_n y_{n,a,r},\,10^{-12}\right)}\ \ (y\in\{C,\hat{C},\mathbf{r}\}), \qquad \Delta_{a,r} = \mathrm{MSE}^{\mathrm{red}}_{a,r} - \mathrm{MSE}^{\mathrm{pred}}_{a,r}",
-                    "note"  : "When the run used a strict secondary subset, a reduced Capon tomogram is re-synthesised; GT, prediction, and reduced cubes are unit-area normalised, then the per-pixel MSE improvement of the network over the reduced baseline (positive where the network wins) is reported alongside its curve, SSIM and per-elevation metrics (metrics.py reduced_comparison).",
-                    "vars"  : [
-                        {"sym": r"\bar{y}",                "desc": "unit-area-normalised profile (GT, prediction, or reduced)"},
-                        {"sym": r"C, \hat{C}, \mathbf{r}", "desc": "GT, prediction, and reduced-Capon cubes"},
-                        {"sym": r"\Delta_{a,r}",           "desc": "reduced-minus-prediction per-pixel MSE improvement"},
-                    ],
-                },
-                {
-                    "title" : "Reduced-baseline orientation check",
-                    "tex"   : r"\rho_{\mathrm{aligned}} = \frac{\langle g,\, r\rangle}{\|g\|\,\|r\| + 10^{-12}}, \qquad \rho_{\mathrm{flipped}} = \frac{\langle g,\, \mathrm{flip}(r)\rangle}{\|g\|\,\|r\| + 10^{-12}}",
-                    "note"  : "The spatial-mean unit-area elevation profiles of the GT and reduced cubes are mean-centred and correlated directly and against the reduced profile reversed in elevation; if the flipped correlation is larger the run logs a warning that the Capon elevation-sign convention (capon_phase_sign) should be verified on the server (reduced.py _report_orientation).",
-                    "vars"  : [
-                        {"sym": r"\rho_{\mathrm{aligned}}, \rho_{\mathrm{flipped}}", "desc": "correlation of GT and reduced mean profiles, aligned vs elevation-flipped"},
-                        {"sym": r"g",                                                "desc": "mean-centred, unit-area, spatial-mean GT elevation profile"},
-                        {"sym": r"r",                                                "desc": "same for the reduced-Capon cube"},
-                        {"sym": r"\mathrm{flip}",                                    "desc": "elevation-axis reversal"},
-                    ],
-                },
-                {
-                    "title" : "Track coherence synthesis",
-                    "tex"   : r"\gamma_{v,a,r} = \Delta x \sum_{n} p_{n,a,r}\,\exp\!\left(i\,k_{z,v,a,r}\,x_n\right)",
-                    "note"  : "Interferometric coherence of an elevation profile at a track, projecting the profile onto the track's kz phase ramp; kz is the per-pixel geometry field sliced to the split region and secondary subset, with the height-axis convention read from the training run's docs/trainer_config.json (data_consistency.py _load_kz, PhysicalLoss.synthesise_track).",
-                    "vars"  : [
-                        {"sym": r"\gamma_{v,a,r}", "desc": "complex coherence synthesised at track v, pixel (a, r)"},
-                        {"sym": r"k_{z,v,a,r}",    "desc": "per-pixel elevation wavenumber (kz) of track v"},
-                        {"sym": r"x_n",            "desc": "elevation-axis sample"},
-                        {"sym": r"p",              "desc": "elevation profile (predicted or GT)"},
-                        {"sym": r"\Delta x",       "desc": "elevation-axis step"},
-                    ],
-                },
-                {
-                    "title" : "Interferometric coherence-resynthesis error map",
-                    "tex"   : r"E^{\mathrm{coh}}_{a,r} = \frac{1}{V}\sum_{v=1}^{V}\left|\frac{\gamma^{\mathrm{pred}}_{v}}{\hat{p}_0} - \frac{\gamma^{\mathrm{GT}}_{v}}{p_0}\right|^2, \qquad m_{a,r} = \mathbb{1}\!\left[\textstyle\sum_n Y_{n,a,r}\,\Delta x > \phi\right]",
-                    "note"  : "Per-pixel mean over tracks of the squared difference between the power-normalised predicted and GT coherences; a pixel is valid only where the GT total power exceeds physics_floor (1e-3), and the normalising powers are floored at the same value. The map is accumulated track by track inside DataConsistency._evaluate_chunks, which calls PhysicalLoss.synthesise_track once per track and divides the summed squared error by the track count, then reduced to masked mean/median/p95 plus a per-track error breakdown and saved when cubes are kept (pipelines/backbone/inference/data_consistency.py).",
-                    "vars"  : [
-                        {"sym": r"E^{\mathrm{coh}}_{a,r}",                               "desc": "per-pixel coherence-resynthesis error"},
-                        {"sym": r"V",                                                    "desc": "number of tracks (primary + secondaries)"},
-                        {"sym": r"\gamma^{\mathrm{pred}}_{v}, \gamma^{\mathrm{GT}}_{v}", "desc": "synthesised coherences of prediction and GT at track v"},
-                        {"sym": r"\hat{p}_0, p_0",                                       "desc": r"predicted and GT total power (\sum_n Y \Delta x, floored at \phi)"},
-                        {"sym": r"\phi",                                                 "desc": "physics_floor = 1e-3"},
-                        {"sym": r"m_{a,r}",                                              "desc": "validity mask"},
-                    ],
-                },
-                {
-                    "title" : "Covariance-matching error map",
-                    "tex"   : r"E^{\mathrm{cov}}_{a,r} = \frac{\sum_{i\le j} w_{ij}\,\bigl|\gamma^{\Delta}_{ij}\bigr|^2}{\max\!\left(\sum_{i\le j} w_{ij}\,\bigl|\gamma^{\mathrm{GT}}_{ij}\bigr|^2,\ 10^{-12}\right)}, \qquad w_{ij} = \begin{cases} 1 & i = j \\ 2 & i < j \end{cases}",
-                    "note"  : "Per-pixel relative covariance error over all ordered track pairs i<=j; the prediction-minus-GT difference is synthesised once at each pair wavenumber (the covariance is linear in the profile), off-diagonal pairs are weighted double, and the denominator is the GT covariance energy floored at 1e-12; reduced to masked mean/median/p95 on the same GT-power mask (data_consistency.py, PhysicalLoss.covariance_matching_pp_map).",
-                    "vars"  : [
-                        {"sym": r"E^{\mathrm{cov}}_{a,r}",    "desc": "per-pixel covariance-matching error"},
-                        {"sym": r"\gamma^{\Delta}_{ij}",      "desc": "synthesis of the prediction-minus-GT profile at wavenumber k_{z,i} - k_{z,j}"},
-                        {"sym": r"\gamma^{\mathrm{GT}}_{ij}", "desc": "GT synthesis at the same track pair"},
-                        {"sym": r"w_{ij}",                    "desc": "pair weight; off-diagonal pairs count double"},
-                    ],
-                },
-                {
-                    "title" : "Phase agreement and Capon-sign diagnosis",
-                    "tex"   : r"r^{\mathrm{al}}_{v,s} = \frac{1}{N_v}\left|\sum_{(a,r)\in\Omega_v} m_{v,a,r}\,\overline{\hat{\gamma}^{\,s}_{v,a,r}}\right|, \qquad r^{\mathrm{fl}}_{v,s} = \frac{1}{N_v}\left|\sum_{(a,r)\in\Omega_v} m_{v,a,r}\,\hat{\gamma}^{\,s}_{v,a,r}\right|",
-                    "note"  : "Mean resultant length between the measured interferogram unit phasor and the unit coherence synthesised from the GT (and prediction) profiles, per secondary track and averaged; the flipped variant drops the conjugate. When the GT flipped-agreement mean beats the aligned one, the run logs that the Capon elevation-sign convention (capon_phase_sign) is likely inverted for the stack. Measured phasors are optionally box-multilooked (phase_multilook = 9) before unit-normalisation (data_consistency.py).",
-                    "vars"  : [
-                        {"sym": r"r^{\mathrm{al}}_{v,s}, r^{\mathrm{fl}}_{v,s}", "desc": "aligned and flipped phase-agreement resultant length, track v, source s (GT or pred)"},
-                        {"sym": r"m_{v,a,r}",                                    "desc": "measured unit interferogram phasor of secondary track v"},
-                        {"sym": r"\hat{\gamma}^{\,s}_{v,a,r}",                   "desc": "unit-normalised coherence synthesised from the source-s profile"},
-                        {"sym": r"\Omega_v, N_v",                                "desc": "valid pixels (GT-power mask and non-zero measurement) and their count"},
-                    ],
-                },
             ],
         }
 
@@ -1640,68 +1314,12 @@ class EquationLibrary:
             ],
         }
 
-    def _learned_inversion(self) -> dict:
-        return {
-            "group" : "Learned Inversion",
-            "blurb" : "The unrolled physics network (gamma_net) that inverts the forward model directly, and the gated set-prediction head that makes slot existence explicit.",
-            "items" : [
-                {
-                    "title" : "Matched-filter initialisation",
-                    "tex"   : r"\mathbf{s}^{0} = \max\!\Big(0,\ \tfrac{1}{T}\,\mathrm{Re}\!\left[\mathbf{A}^{\!H}\mathbf{y}\right]\Big)",
-                    "note"  : "The unrolled network starts from the beamforming solution: the adjoint of the per-pixel steering operator applied to the coherence measurements, averaged over tracks and clipped to nonnegative reflectivity (GammaNet.forward, TomoOperator.adjoint).",
-                    "vars"  : [
-                        {"sym": r"\mathbf{s}^{0}", "desc": "initial reflectivity profile on the elevation grid (length N)"},
-                        {"sym": r"\mathbf{y}",     "desc": "complex coherence measurements over the T tracks (per pixel)"},
-                        {"sym": r"\mathbf{A}",     "desc": "per-pixel steering operator, A_tn = exp(j kz_t z_n) dz, built from the geometry-field kz map"},
-                        {"sym": r"T",              "desc": "number of tracks"},
-                    ],
-                },
-                {
-                    "title" : "Unrolled proximal-gradient iteration",
-                    "tex"   : r"\mathbf{r}^{l} = \mathbf{s}^{l} + \alpha_l\,\frac{\mathrm{Re}\!\left[\mathbf{A}^{\!H}(\mathbf{y} - \mathbf{A}\mathbf{s}^{l})\right]}{L_{\mathrm{lip}}}, \qquad \mathbf{s}^{l+1} = \max\!\big(0,\ \mathcal{P}_l(\mathbf{r}^{l}) - \theta_l\big)",
-                    "note"  : "One layer of gamma_net: a gradient step on the data-fidelity term with a learned step size, a learned per-pixel 1D convolutional prox along the elevation axis, and a nonnegative soft-threshold with a learned threshold. Steps and thresholds are softplus-reparameterised so they stay positive; each of the L layers has its own alpha_l, theta_l and prox (GammaNet.forward, ProfileProx).",
-                    "vars"  : [
-                        {"sym": r"\mathbf{s}^{l}",   "desc": "profile estimate after layer l"},
-                        {"sym": r"\alpha_l",         "desc": "learned step size of layer l (softplus of a raw parameter)"},
-                        {"sym": r"\theta_l",         "desc": "learned soft-threshold of layer l"},
-                        {"sym": r"\mathcal{P}_l",    "desc": "learned prox of layer l: residual half-resolution bottleneck along elevation (strided window GEMM -> act -> Conv1d, linearly upsampled)"},
-                        {"sym": r"L_{\mathrm{lip}}", "desc": "Lipschitz normaliser of the gradient (next card)"},
-                    ],
-                },
-                {
-                    "title" : "Lipschitz-normalised gradient step",
-                    "tex"   : r"L_{\mathrm{lip}} = T\,N\,\mathrm{d}z^{2}",
-                    "note"  : "Bound on the spectral norm of A^H A used to normalise the gradient so step_init = 1.0 is stable for any track count, grid length or grid spacing. Without this normalisation the iteration diverges: the raw operator norm is of order T*N*dz^2 (about 230 for the default layout), far beyond a unit step.",
-                    "vars"  : [
-                        {"sym": r"T",           "desc": "number of tracks"},
-                        {"sym": r"N",           "desc": "number of elevation grid points"},
-                        {"sym": r"\mathrm{d}z", "desc": "elevation grid spacing (m)"},
-                    ],
-                },
-                {
-                    "title" : "Set-prediction amplitude gate",
-                    "tex"   : r"g_k = \sigma(\ell_k), \qquad \hat{a}_k = g_k\,a_k + (1 - g_k)\,o_k",
-                    "note"  : "The gated set-prediction head (head = set_pred, selectable on every backbone): an existence-logit PixelMLP emits one logit per Gaussian slot, and its sigmoid blends the regressed amplitude toward a learned per-slot off level. The off level lives in normalised output space because normalised zero is not physical zero; training drives o_k toward the normalised encoding of physical amplitude zero. Pairs with hungarian param matching; mu and sigma pass through ungated (OutputHeadsMixin._set_prediction_forward).",
-                    "vars"  : [
-                        {"sym": r"\ell_k",    "desc": "existence logit of slot k (per pixel)"},
-                        {"sym": r"g_k",       "desc": "sigmoid existence gate in [0, 1]"},
-                        {"sym": r"a_k",       "desc": "raw regressed amplitude of slot k (normalised space)"},
-                        {"sym": r"o_k",       "desc": "learned scalar off level of slot k, initialised at 0"},
-                        {"sym": r"\hat{a}_k", "desc": "gated amplitude emitted in the 3K-channel output"},
-                    ],
-                },
-            ],
-        }
-
     def collect(self) -> list[dict]:
         return [
-            self._signal_model(),
-            self._processing(),
             self._param_extraction(),
             self._dataset(),
             self._training_loss(),
             self._training_optim(),
-            self._learned_inversion(),
             self._inference(),
             self._tuning(),
         ]

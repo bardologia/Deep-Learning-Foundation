@@ -1,153 +1,5 @@
 class FlowLibrary:
 
-    def _processing(self) -> dict:
-        nodes = [
-            {"id": "passes", "tex": r"\mathbf{s}",            "role": "measured",     "kind": "tensor", "shape": "N_p x A_z x R_g", "desc": "co-registered SLC pass stack loaded internally by PyRat FuSARtomo",      "sample": [["0.8+0.2j", "0.6-0.4j"], ["0.5+0.5j", "0.9-0.1j"]]},
-            {"id": "s0",     "tex": r"s_0",                   "role": "measured",     "kind": "matrix", "shape": "A_z x R_g",       "desc": "master (primary) SLC, complex (PyRat RGI-SLC)",                          "sample": [["0.8+0.2j", "0.6-0.4j", "1.1+0.0j"], ["0.5+0.5j", "0.9-0.1j", "0.7+0.3j"], ["1.0+0.2j", "0.4-0.6j", "0.8+0.1j"]]},
-            {"id": "si",     "tex": r"s_i",                   "role": "measured",     "kind": "tensor", "shape": "N_s x A_z x R_g", "desc": "co-registered secondary SLC stack (PyRat INF-SLC)",                      "sample": [["0.7+0.3j", "0.5-0.3j"], ["0.6+0.4j", "0.8-0.2j"]]},
-            {"id": "phidem", "tex": r"\phi_{\mathrm{DEM},i}", "role": "measured",     "kind": "tensor", "shape": "N_s x A_z x R_g", "desc": "DEM-predicted phase per pass (rad)",                                     "sample": [["0.12", "0.31"], ["0.27", "0.44"]]},
-            {"id": "trk",    "tex": r"\mathbf{t}_i",          "role": "measured",     "kind": "tensor", "shape": "N_p x R x A_z",   "desc": "per-pass INF-TRACK position file; row 2 horizontal, row 3 vertical",     "sample": [["...h...", "...v..."]]},
-            {"id": "par",    "tex": r"\rho_i",                "role": "measured",     "kind": "set",    "shape": "N_p",             "desc": "per-pass acquisition params: r, lambda, h0, terrain, antdir (pp_*.xml)", "sample": "lambda, r, h0, terrain, antdir"},
-            {"id": "M",      "tex": r"M",                     "role": "calculated",   "kind": "scalar", "shape": "1",               "desc": "number of azimuth subsections",                                          "sample": "15"},
-            {"id": "PT",     "tex": r"(P,T)",                 "role": "calculated",   "kind": "scalar", "shape": "1",               "desc": "resolved (workers, threads-per-worker) plan",                            "sample": "(8, 2)"},
-            {"id": "Rhat",   "tex": r"\hat{\mathbf{R}}",      "role": "intermediate", "kind": "matrix", "shape": "N_p x N_p",       "desc": "Boxcar-windowed per-pixel sample covariance (PyRat-internal)",           "sample": [["1.0", "0.7"], ["0.7", "1.0"]]},
-            {"id": "Tm",     "tex": r"T_m",                   "role": "calculated",   "kind": "tensor", "shape": "H x W_m x R_g",   "desc": "Capon beamformed tomogram of subsection m",                              "sample": [["0.2", "0.9", "0.3"], ["0.1", "0.7", "0.8"], ["0.0", "0.4", "1.0"]]},
-            {"id": "DEMm",   "tex": r"D_m",                   "role": "calculated",   "kind": "matrix", "shape": "W_m x R_g",       "desc": "DEM of subsection m (PyRat byproduct)",                                  "sample": [["31.2", "30.8"], ["32.1", "31.5"]]},
-            {"id": "Tcomb",  "tex": r"T_{\mathrm{comb}}",     "role": "final",        "kind": "tensor", "shape": "H x A_z x R_g",   "desc": "combined beamformed tomogram, model reconstruction reference",           "sample": [["0.2", "0.9", "0.3"], ["0.1", "0.7", "0.8"], ["0.0", "0.4", "1.0"]]},
-            {"id": "DEM",    "tex": r"D",                     "role": "final",        "kind": "matrix", "shape": "A_z x R_g",       "desc": "full-stack concatenated DEM (m)",                                        "sample": [["31.2", "30.8"], ["32.1", "31.5"]]},
-            {"id": "stilde", "tex": r"\tilde{s}_i",           "role": "intermediate", "kind": "tensor", "shape": "N_s x A_z x R_g", "desc": "DEM-deramped secondary SLC",                                             "sample": [["0.6+0.1j", "0.5-0.1j"], ["0.7+0.2j", "0.6-0.0j"]]},
-            {"id": "cross",  "tex": r"c_i",                   "role": "intermediate", "kind": "tensor", "shape": "N_s x A_z x R_g", "desc": "raw master-secondary cross-product",                                     "sample": [["0.45+0.30j", "0.41-0.12j"], ["0.55+0.18j", "0.48-0.05j"]]},
-            {"id": "pi",     "tex": r"p_i",                   "role": "intermediate", "kind": "tensor", "shape": "N_s x A_z x R_g", "desc": "unit-magnitude interferometric phasor",                                  "sample": [["0.83+0.55j", "0.96-0.28j"], ["0.95+0.31j", "0.99-0.10j"]]},
-            {"id": "Ai",     "tex": r"A_i",                   "role": "intermediate", "kind": "tensor", "shape": "N_s x A_z x R_g", "desc": "clipped secondary amplitude weight",                                     "sample": [["0.71", "0.93"], ["1.25", "0.58"]]},
-            {"id": "phii",   "tex": r"\tilde{\phi}_i",        "role": "final",        "kind": "tensor", "shape": "N_s x A_z x R_g", "desc": "amplitude-weighted complex interferogram (network input)",               "sample": [["0.51+0.20j", "0.44-0.12j"], ["0.63+0.18j", "0.55-0.05j"]]},
-            {"id": "bv",     "tex": r"b^{\mathrm{v}}_i",      "role": "calculated",   "kind": "vector", "shape": "N_p",             "desc": "vertical baseline relative to reference pass (m)",                       "sample": ["0.00", "12.4", "-8.1", "20.7"]},
-            {"id": "bh",     "tex": r"b^{\mathrm{h}}_i",      "role": "calculated",   "kind": "vector", "shape": "N_p",             "desc": "horizontal baseline relative to reference pass (m)",                     "sample": ["0.00", "5.2", "-3.4", "9.8"]},
-            {"id": "prof",   "tex": r"\mathbf{\tau}_i",       "role": "calculated",   "kind": "tensor", "shape": "N_p x A_z",       "desc": "per-azimuth horizontal/vertical track position profiles (m)",            "sample": [["112.3", "112.5"], ["101.7", "101.9"]]},
-            {"id": "look",   "tex": r"\theta",                "role": "calculated",   "kind": "vector", "shape": "R_g",             "desc": "per-range look angle theta (rad)",                                       "sample": ["0.79", "0.80", "...", "1.02"]},
-            {"id": "brel",   "tex": r"\mathbf{\beta}_i",      "role": "calculated",   "kind": "tensor", "shape": "N_p x A_z",       "desc": "reference-relative baseline profiles, horizontal & vertical (m)",        "sample": [["0.00", "0.00"], ["5.2", "4.9"]]},
-            {"id": "geom",   "tex": r"k_z",                   "role": "final",        "kind": "tensor", "shape": "N_p x A_z x R_g", "desc": "per-pixel interferometric wavenumber k_z (rad/m) for the physics loss",  "sample": [["0.00", "0.00"], ["0.11", "0.12"]]},
-        ]
-        steps = [
-            {
-                "id": "subdivide", "title": "Azimuth subdivision and worker plan", "phase": "A - Tomogram (Capon)",
-                "note": "When the crop azimuth exceeds max_crop_azimuth_width (1000 lines) it is split into M contiguous, non-overlapping subsections; the (workers, threads) plan minimises the number of dispatch waves within a core budget B = floor(0.8 x cores) at the default 'high' effort, with threads per worker capped at 16.",
-                "inputs": [], "outputs": ["M", "PT"],
-                "lines": [
-                    [{"id": "M", "tex": r"M", "role": "calculated"}, {"tex": "="}, {"tex": r"\left\lceil W_{\mathrm{az}} / W_{\max} \right\rceil,\qquad W_{\max} = 1000"}],
-                    [{"id": "PT", "tex": r"(P,T)", "role": "calculated"}, {"tex": "="}, {"tex": r"\arg\min_{P \le B}\left\lceil M/P \right\rceil,\quad T = \min(16,\ \lfloor B/P \rfloor),\quad B = \lfloor 0.8\,C \rfloor"}],
-                ],
-            },
-            {
-                "id": "covariance", "title": "Boxcar sample covariance", "phase": "A - Tomogram (Capon)",
-                "note": "Each subsection is beamformed by an independent PyRat FuSARtomo worker; the Boxcar filter with win = [20, 10] averages the co-registered SLC pass stack over a 20x10-pixel window to estimate the per-pixel sample covariance. The averaging is internal to PyRat, this stage only sets the filter and its window.",
-                "inputs": ["passes"], "outputs": ["Rhat"],
-                "lines": [
-                    [{"id": "Rhat", "tex": r"\hat{\mathbf{R}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big\langle\,"}, {"id": "passes", "tex": r"\mathbf{s}\,\mathbf{s}^{H}", "role": "measured"}, {"tex": r"\,\big\rangle_{W_{\mathrm{box}}},\qquad W_{\mathrm{box}} = 20 \times 10"}],
-                ],
-            },
-            {
-                "id": "capon", "title": "Capon beamforming over elevation", "phase": "A - Tomogram (Capon)",
-                "note": "FuSARtomo runs the Capon (MVDR) minimum-variance estimator over the configured height range [-20, 80] m and writes each subsection's tomogram and DEM to HDF5; the steering vector a(xi) is PyRat's internal geometry model, not computed by this stage.",
-                "inputs": ["Rhat"], "outputs": ["DEMm", "Tm"],
-                "lines": [
-                    [{"id": "Tm", "tex": r"T_m(\xi)", "role": "calculated"}, {"tex": r"\;\propto\;"}, {"tex": r"\dfrac{1}{\mathbf{a}^{H}(\xi)\,"}, {"id": "Rhat", "tex": r"\hat{\mathbf{R}}^{-1}", "role": "intermediate"}, {"tex": r"\,\mathbf{a}(\xi)},\qquad \xi \in [-20,\ 80]\,\mathrm{m}"}],
-                ],
-            },
-            {
-                "id": "concat", "title": "Subsection concatenation", "phase": "A - Tomogram (Capon)",
-                "note": "The worker HDF5 files are reassembled along azimuth into the full-stack products: the 2-D DEM concatenates on axis 0 and the 3-D tomogram on axis 1, then both are saved as .npy. The combined tomogram is the model's reconstruction reference.",
-                "inputs": ["Tm", "DEMm"], "outputs": ["DEM", "Tcomb"],
-                "lines": [
-                    [{"id": "DEM", "tex": r"D", "role": "final"}, {"tex": "="}, {"tex": r"\mathrm{concat}\!\left[\,"}, {"id": "DEMm", "tex": r"D_0, \dots, D_{M-1}", "role": "calculated"}, {"tex": r"\,\right]_{\mathrm{axis}=0}"}],
-                    [{"id": "Tcomb", "tex": r"T_{\mathrm{comb}}", "role": "final"}, {"tex": "="}, {"tex": r"\mathrm{concat}\!\left[\,"}, {"id": "Tm", "tex": r"T_0, \dots, T_{M-1}", "role": "calculated"}, {"tex": r"\,\right]_{\mathrm{axis}=1}"}],
-                ],
-            },
-            {
-                "id": "slc_load", "title": "SLC loading and co-registration", "phase": "B - Interferograms",
-                "note": "The master is read as the geocoded range-Doppler SLC (RGI-SLC); each secondary is the interferometric SLC already co-registered to the master (INF-SLC), loaded together with its DEM-predicted phase (phadem).",
-                "inputs": [], "outputs": ["s0", "si", "phidem"],
-                "lines": [
-                    [{"id": "s0", "tex": r"s_0", "role": "measured"}, {"tex": "="}, {"tex": r"\mathrm{load}\big(\mathrm{master};\ \mathtt{RGI\text{-}SLC}\big)"}],
-                    [{"id": "si", "tex": r"s_i", "role": "measured"}, {"tex": "="}, {"tex": r"\mathrm{load}\big(\mathrm{sec}_i;\ \mathtt{INF\text{-}SLC}\big),\quad"}, {"id": "phidem", "tex": r"\phi_{\mathrm{DEM},i}", "role": "measured"}, {"tex": r"= \mathrm{phadem}_i"}],
-                ],
-            },
-            {
-                "id": "baselines", "title": "Track baseline extraction", "phase": "B - Interferograms",
-                "note": "Per pass, the horizontal (row 2) and vertical (row 3) track positions are read from the INF-TRACK file over the crop azimuth window; the scalar baselines are their azimuth means referenced to the reference pass, and the full per-azimuth profiles are kept to build the geometry field.",
-                "inputs": ["trk"], "outputs": ["bv", "bh", "prof"],
-                "lines": [
-                    [{"id": "bv", "tex": r"b^{\mathrm{v}}_i", "role": "calculated"}, {"tex": "="}, {"tex": r"\overline{\tau^{\mathrm{v}}_i} - \overline{\tau^{\mathrm{v}}_0},\qquad"}, {"id": "bh", "tex": r"b^{\mathrm{h}}_i", "role": "calculated"}, {"tex": "="}, {"tex": r"\overline{\tau^{\mathrm{h}}_i} - \overline{\tau^{\mathrm{h}}_0}"}],
-                    [{"id": "prof", "tex": r"\mathbf{\tau}_i", "role": "calculated"}, {"tex": "="}, {"id": "trk", "tex": r"\mathbf{t}_i", "role": "measured"}, {"tex": r"[\,2{:}4,\ \mathtt{az}_0{:}\mathtt{az}_1\,]\quad (\text{h, v rows})"}],
-                ],
-            },
-            {
-                "id": "deramp", "title": "DEM-phase deramping", "phase": "B - Interferograms",
-                "note": "Each secondary is multiplied by the DEM phasor; after the later conjugation this subtracts the DEM-predicted phase, removing terrain topography and leaving sub-resolution elevation structure.",
-                "inputs": ["si", "phidem"], "outputs": ["stilde"],
-                "lines": [
-                    [{"id": "stilde", "tex": r"\tilde{s}_i", "role": "intermediate"}, {"tex": "="}, {"id": "si", "tex": r"s_i", "role": "measured"}, {"tex": r"\cdot"}, {"tex": r"\exp\!\left(j\,"}, {"id": "phidem", "tex": r"\phi_{\mathrm{DEM},i}", "role": "measured"}, {"tex": r"\right)"}],
-                ],
-            },
-            {
-                "id": "crossprod", "title": "Master-secondary cross-product", "phase": "B - Interferograms",
-                "note": "Conjugating the deramped secondary against the master leaves the phase difference minus the DEM phase; the conjugation flips the DEM sign, so it is effectively subtracted.",
-                "inputs": ["s0", "stilde"], "outputs": ["cross"],
-                "lines": [
-                    [{"id": "cross", "tex": r"c_i", "role": "intermediate"}, {"tex": "="}, {"id": "s0", "tex": r"s_0", "role": "measured"}, {"tex": r"\cdot"}, {"id": "stilde", "tex": r"\overline{\tilde{s}_i}", "role": "intermediate"}],
-                    [{"tex": r"\arg(c_i)"}, {"tex": "="}, {"tex": r"\psi_0 - \psi_i - \phi_{\mathrm{DEM},i}"}],
-                ],
-            },
-            {
-                "id": "phasor", "title": "Unit-phasor normalisation", "phase": "B - Interferograms",
-                "note": "Dividing by the cross-product magnitude (floored at 1e-30) removes inter-pass amplitude differences while preserving coherence; null pixels collapse to zero instead of NaN.",
-                "inputs": ["cross"], "outputs": ["pi"],
-                "lines": [
-                    [{"id": "pi", "tex": r"p_i", "role": "intermediate"}, {"tex": "="}, {"tex": r"\dfrac{"}, {"id": "cross", "tex": r"c_i", "role": "intermediate"}, {"tex": r"}{\left|c_i\right| + \epsilon},\qquad \epsilon = 10^{-30}"}],
-                ],
-            },
-            {
-                "id": "clip", "title": "Amplitude clipping", "phase": "B - Interferograms",
-                "note": "The secondary amplitude is clipped at max_amplitude_clip = 1.25 so bright corner reflectors or artefacts cannot dominate the per-pass weight.",
-                "inputs": ["si"], "outputs": ["Ai"],
-                "lines": [
-                    [{"id": "Ai", "tex": r"A_i", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{clip}\!\big(\big|"}, {"id": "si", "tex": r"s_i", "role": "measured"}, {"tex": r"\big|,\ 0,\ c_{\max}\big),\qquad c_{\max} = 1.25"}],
-                ],
-            },
-            {
-                "id": "interf", "title": "Amplitude-weighted interferogram", "phase": "B - Interferograms",
-                "note": "Re-attaching the clipped amplitude as the phasor's modulus gives an interferogram whose phase is the residual (sub-DEM) elevation phase and whose magnitude is a bounded signal-strength proxy; this stack is the network input.",
-                "inputs": ["Ai", "pi"], "outputs": ["phii"],
-                "lines": [
-                    [{"id": "phii", "tex": r"\tilde{\phi}_i", "role": "final"}, {"tex": "="}, {"id": "Ai", "tex": r"A_i", "role": "intermediate"}, {"tex": r"\cdot"}, {"id": "pi", "tex": r"p_i", "role": "intermediate"}, {"tex": "="}, {"id": "Ai", "tex": r"A_i", "role": "intermediate"}, {"tex": r"\dfrac{s_0\,\overline{\tilde{s}_i}}{\left|s_0\,\overline{\tilde{s}_i}\right| + \epsilon}"}],
-                ],
-            },
-            {
-                "id": "trackgeo", "title": "Look angle and relative baselines", "phase": "C - Geometry field",
-                "note": "The look angle is recovered per range bin from the reference-pass geometry, arccos of sensor-height-above-terrain over slant range; the build aborts when that height is non-positive or reaches the nearest slant range, because clamping the ratio into [-1, 1] would otherwise silently yield a zero look angle and an infinite kz. The per-azimuth position profiles become baselines relative to the reference pass. A left-looking stack (antdir <= 0) aborts, since the kz formula assumes a right-looking geometry.",
-                "inputs": ["par", "prof"], "outputs": ["look", "brel"],
-                "lines": [
-                    [{"id": "look", "tex": r"\theta(r)", "role": "calculated"}, {"tex": "="}, {"tex": r"\arccos\!\Big(\mathrm{clip}\big(\tfrac{h_0 - \mathrm{terrain}}{r},\,-1,\,1\big)\Big),\quad r = "}, {"id": "par", "tex": r"\rho_0.r", "role": "measured"}, {"tex": r"[\mathtt{rg}_0{:}\mathtt{rg}_1]"}],
-                    [{"id": "brel", "tex": r"\mathbf{\beta}_i", "role": "calculated"}, {"tex": "="}, {"id": "prof", "tex": r"\mathbf{\tau}_i", "role": "calculated"}, {"tex": r"-\ "}, {"id": "prof", "tex": r"\mathbf{\tau}_0", "role": "calculated"}, {"tex": r"\qquad (\text{rel. to reference pass})"}],
-                ],
-            },
-            {
-                "id": "geomfield", "title": "Per-pixel wavenumber field", "phase": "C - Geometry field",
-                "note": "The perpendicular baseline projects the horizontal and vertical baselines onto the look direction, and the interferometric wavenumber (default height convention, dividing by r sin theta) is stored per (pass, azimuth, range) as the geometry field consumed by the physics loss; the reference pass has zero baseline, so its kz vanishes.",
-                "inputs": ["look", "brel", "par"], "outputs": ["geom"],
-                "lines": [
-                    [{"tex": r"b^{\perp}_i"}, {"tex": "="}, {"id": "brel", "tex": r"b^{\mathrm{h}}_i", "role": "calculated"}, {"tex": r"\cos"}, {"id": "look", "tex": r"\theta", "role": "calculated"}, {"tex": r"+\ "}, {"id": "brel", "tex": r"b^{\mathrm{v}}_i", "role": "calculated"}, {"tex": r"\sin"}, {"id": "look", "tex": r"\theta", "role": "calculated"}],
-                    [{"id": "geom", "tex": r"k_{z,i}", "role": "final"}, {"tex": "="}, {"tex": r"\dfrac{4\pi}{\lambda}\,\dfrac{b^{\perp}_i}{r\,\sin\theta}\qquad (\text{height convention})"}],
-                ],
-            },
-        ]
-        return {
-            "key"   : "processing",
-            "name"  : "Processing (Tomogram + Interferograms)",
-            "blurb" : "From the F-SAR SLC passes to the model's reference tomogram and input interferograms. Each azimuth subsection is Capon-beamformed by a PyRat FuSARtomo worker and reassembled; the co-registered secondaries are DEM-deramped and amplitude-weighted into the interferometric stack; and the track geometry becomes a per-pixel wavenumber field for the physics loss.",
-            "nodes" : nodes,
-            "steps" : steps,
-        }
-
     def _param_extraction(self) -> dict:
         nodes = [
             {"id": "T",       "tex": r"T",                         "role": "measured",     "kind": "tensor", "shape": "H x Az x R", "desc": "beamformed tomogram from processing, magnitude taken per profile", "sample": [["0.2", "0.9", "0.3"], ["0.1", "0.7", "0.8"], ["0.0", "0.4", "1.0"]]},
@@ -489,8 +341,6 @@ class FlowLibrary:
             {"id": "yhat",  "tex": r"\hat{y}",                     "role": "intermediate", "kind": "tensor", "shape": "B x N x P x P",    "desc": "reconstructed predicted elevation curve",             "sample": [["0.05", "0.71"], ["0.33", "0.88"]]},
             {"id": "y",     "tex": r"y",                           "role": "measured",     "kind": "tensor", "shape": "B x N x P x P",    "desc": "GT elevation curve (denormalised params, no_grad)",   "sample": [["0.06", "0.70"], ["0.35", "0.86"]]},
             {"id": "err",   "tex": r"e",                           "role": "intermediate", "kind": "tensor", "shape": "B x N x P x P",    "desc": "curve-space residual y-hat minus y",                  "sample": ["-0.01", "0.01", "-0.02", "..."]},
-            {"id": "Astr",  "tex": r"\mathbf{A}",                  "role": "intermediate", "kind": "matrix", "shape": "N_s x N",          "desc": "tomographic steering matrix exp(j kz xi)",            "sample": [["1+0j", "0.7+0.7j"], ["1+0j", "-0.7+0.7j"]]},
-            {"id": "Rcov",  "tex": r"\mathbf{R}[P]",               "role": "intermediate", "kind": "matrix", "shape": "N_s x N_s",        "desc": "synthesised covariance A diag(P) A^H dxi",            "sample": [["3.1", "1.2+0.4j"], ["1.2-0.4j", "2.8"]]},
             {"id": "lj",    "tex": r"\ell_j",                      "role": "calculated",   "kind": "scalar", "shape": "1",                "desc": "raw value of one enabled loss term",                  "sample": "0.0317"},
             {"id": "loss",  "tex": r"\mathcal{L}",                 "role": "calculated",   "kind": "scalar", "shape": "1",                "desc": "weight-normalised composite loss",                    "sample": "4.1e-2"},
             {"id": "gnorm", "tex": r"\lVert\mathbf{g}\rVert_2",    "role": "intermediate", "kind": "scalar", "shape": "1",                "desc": "global gradient L2 norm",                             "sample": "2.7"},
@@ -568,39 +418,12 @@ class FlowLibrary:
                 ],
             },
             {
-                "id": "physgeom", "title": "Tomographic forward operator", "phase": "Physics loss",
-                "note": "The physics terms share a Fourier forward operator. Under the default height convention the wavenumber uses the round-trip 4-pi/(lambda r0) factor divided by the look-angle sine, with the master-relative perpendicular baseline; when any physics term is active a per-pixel kz field replaces this single shared steering matrix.",
-                "inputs": [], "outputs": ["Astr"],
-                "lines": [
-                    [{"tex": r"b_\perp = h\cos\theta + v\sin\theta,\qquad k_z^{(i)} = \dfrac{4\pi\, b_\perp^{(i)}}{\lambda\, r_0\, \sin\theta}"}],
-                    [{"id": "Astr", "tex": r"A_{in}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\exp\!\big(j\,k_z^{(i)}\,\xi_n\big)"}],
-                ],
-            },
-            {
-                "id": "physmoments", "title": "Power and moment terms", "phase": "Physics loss",
-                "note": "Optional ratio-based terms compare the relative integrated power and the first three profile moments (mass, centroid, spread) with unit moment weights, reduced over pixels whose GT power exceeds the physics floor 1e-3.",
+                "id": "physmoments", "title": "Power and moment terms", "phase": "Profile statistics",
+                "note": "Optional ratio-based terms compare the relative integrated power and the first three profile moments (mass, centroid, spread) with unit moment weights, reduced over pixels whose GT power exceeds the power floor 1e-3.",
                 "inputs": ["yhat", "y"], "outputs": ["lj"],
                 "lines": [
                     [{"tex": r"m_0 = \textstyle\sum_n P_n\,\Delta\xi,\quad \bar z = \tfrac{\sum_n P_n \xi_n}{\sum_n P_n},\quad \sigma_z = \sqrt{\tfrac{\sum_n P_n \xi_n^2}{\sum_n P_n} - \bar z^2 + 10^{-8}}"}],
                     [{"id": "lj", "tex": r"\ell_{\mathrm{mom}}", "role": "calculated"}, {"tex": "="}, {"tex": r"\Big\langle \tfrac{w_0\frac{|\Delta m_0|}{m_0^T} + w_1\frac{|\Delta\bar z|}{\xi_{\max}-\xi_{\min}} + w_2\frac{|\Delta\sigma_z|}{\xi_{\max}-\xi_{\min}}}{w_0+w_1+w_2}\Big\rangle"}],
-                ],
-            },
-            {
-                "id": "physcov", "title": "Coherence and covariance matching", "phase": "Physics loss",
-                "note": "The two default physics terms (weight 0.05 each in the complete curriculum): coherence re-synthesis compares the mass-normalised characteristic functions of the two profiles; covariance matching exploits R's linearity to transform only the difference, both insensitive to absolute power.",
-                "inputs": ["yhat", "y", "Astr"], "outputs": ["Rcov", "lj"],
-                "lines": [
-                    [{"tex": r"\gamma_P(k_z^{(i)}) = \tfrac{\sum_n P_n e^{j k_z^{(i)}\xi_n}}{\sum_n P_n},\qquad \ell_{\mathrm{coh}} = \big\langle \tfrac{1}{N_s}\textstyle\sum_i |\gamma_P^{(i)} - \gamma_T^{(i)}|^2\big\rangle"}],
-                    [{"id": "Rcov", "tex": r"\mathbf{R}[P]", "role": "intermediate"}, {"tex": "="}, {"id": "Astr", "tex": r"\mathbf{A}", "role": "intermediate"}, {"tex": r"\,\mathrm{diag}(P)\,\mathbf{A}^H\Delta\xi,\quad \ell_{\mathrm{cov}} = \big\langle \tfrac{\lVert\mathbf{R}[P]-\mathbf{R}[T]\rVert_F^2}{\lVert\mathbf{R}[T]\rVert_F^2}\big\rangle"}],
-                ],
-            },
-            {
-                "id": "physcapon", "title": "Capon cycle-consistency", "phase": "Physics loss",
-                "note": "The most expensive, opt-in physics term synthesises the covariance from the predicted profile, adds signal-adaptive diagonal loading (epsilon=1e-2 times mean trace), Hermitianises, then forms the Capon spectrum by solving the loaded system and compares mass-normalised spectra.",
-                "inputs": ["Rcov", "Astr", "y"], "outputs": ["lj"],
-                "lines": [
-                    [{"tex": r"\hat{T}_P(\xi_n) = \dfrac{1}{\mathbf{a}^H(\xi_n)\big("}, {"id": "Rcov", "tex": r"\mathbf{R}[P]", "role": "intermediate"}, {"tex": r" + \epsilon\bar\sigma\mathbf{I}\big)^{-1}\mathbf{a}(\xi_n)},\quad \bar\sigma = \tfrac{1}{N_s}\mathrm{tr}\,\mathbf{R}[P]"}],
-                    [{"id": "lj", "tex": r"\ell_{\mathrm{cyc}}", "role": "calculated"}, {"tex": "="}, {"tex": r"\Big\langle \tfrac{1}{N}\textstyle\sum_n\big(\tfrac{\hat{T}_P(\xi_n)}{m_0^{\hat T}} - \tfrac{T(\xi_n)}{m_0^{T}}\big)^2\Big\rangle"}],
                 ],
             },
             {
@@ -661,7 +484,7 @@ class FlowLibrary:
         ]
         return {
             "key": "training", "name": "Training (Supervised backbone)",
-            "blurb": "One forward pass predicts all Gaussian parameters; predictions are denormalised, physically clamped and renormalised, then a weight-normalised composite over curve, parameter and optional physics terms is backpropagated through AdamW with linear warmup, cosine annealing, a two-phase loss curriculum, gradient clipping and early stopping.",
+            "blurb": "One forward pass predicts all Gaussian parameters; predictions are denormalised, physically clamped and renormalised, then a weight-normalised composite over curve and parameter terms is backpropagated through AdamW with linear warmup, cosine annealing, a two-phase loss curriculum, gradient clipping and early stopping.",
             "nodes": nodes, "steps": steps,
         }
 
@@ -743,7 +566,7 @@ class FlowLibrary:
             },
             {
                 "id": "dual_loss", "title": "Shared composite loss", "phase": "D - Loss and optimisation",
-                "note": "The dual curriculum is the backbone curriculum: the same two-phase warmup and complete stages, the same weight-normalised composite over curve, parameter and optional physics terms, and hungarian matching in both stages. The full training flow documents every term; nothing in the loss is dual-specific.",
+                "note": "The dual curriculum is the backbone curriculum: the same two-phase warmup and complete stages, the same weight-normalised composite over curve and parameter terms, and hungarian matching in both stages. The full training flow documents every term; nothing in the loss is dual-specific.",
                 "inputs": ["thn"], "outputs": ["loss"],
                 "lines": [
                     [{"id": "loss", "tex": r"\mathcal{L}", "role": "calculated"}, {"tex": "="}, {"tex": r"\dfrac{\sum_j \alpha_j\,\ell_j}{\sum_j \alpha_j},\qquad \text{matching} = \mathtt{hungarian}"}],
@@ -1154,96 +977,6 @@ class FlowLibrary:
             "nodes": nodes, "steps": steps,
         }
 
-    def _unrolled_train(self) -> dict:
-        nodes = [
-            {"id": "gt",    "tex": r"\Theta",                    "role": "measured",     "kind": "tensor", "shape": "3K x P x P", "desc": "normalised GT Gaussian parameters from the dataset patch",              "sample": [["-0.63", "0.58"], ["0.41", "-0.22"]]},
-            {"id": "kz",    "tex": r"K_z",                       "role": "measured",     "kind": "tensor", "shape": "T x P x P",  "desc": "per-pixel interferometric wavenumber map from the geometry field",      "sample": [["-0.14", "-0.05"], ["0.06", "0.15"]]},
-            {"id": "gphys", "tex": r"\Theta_{\mathrm{phys}}",    "role": "intermediate", "kind": "tensor", "shape": "3K x P x P", "desc": "denormalised physical parameters (a, mu, sigma)",                       "sample": [["0.81", "12.4", "1.9"], ["0.55", "31.8", "2.6"]]},
-            {"id": "s",     "tex": r"\mathbf{s}",                "role": "calculated",   "kind": "tensor", "shape": "N x P x P",  "desc": "power-normalised GT elevation profile: measurement source and target",  "sample": ["0.00", "0.04", "0.13", "0.05", "0.00"]},
-            {"id": "y",     "tex": r"\mathbf{y}",                "role": "calculated",   "kind": "tensor", "shape": "T x P x P",  "desc": "synthesised complex coherence per track, optional complex noise added", "sample": ["0.93-0.12j", "0.71+0.30j", "0.42+0.51j"]},
-            {"id": "s0",    "tex": r"\mathbf{s}^{0}",            "role": "intermediate", "kind": "tensor", "shape": "N x P x P",  "desc": "matched-filter (beamforming) initialisation",                           "sample": ["0.02", "0.31", "0.94", "0.38", "0.05"]},
-            {"id": "r",     "tex": r"\mathbf{r}^{l}",            "role": "intermediate", "kind": "tensor", "shape": "N x P x P",  "desc": "profile after the Lipschitz-normalised gradient step of layer l",       "sample": ["0.01", "0.28", "0.99", "0.35", "0.02"]},
-            {"id": "sl",    "tex": r"\mathbf{s}^{L}",            "role": "calculated",   "kind": "tensor", "shape": "N x P x P",  "desc": "final unrolled estimate after L prox-gradient layers",                  "sample": ["0.00", "0.05", "0.12", "0.06", "0.00"]},
-            {"id": "mask",  "tex": r"\mathbb{1}_{\mathrm{pow}}", "role": "intermediate", "kind": "tensor", "shape": "P x P",      "desc": "power mask: pixels whose integrated GT profile exceeds the floor",      "sample": ["1", "0", "1", "1"]},
-            {"id": "loss",  "tex": r"\mathcal{L}",               "role": "calculated",   "kind": "scalar", "shape": "1",          "desc": "power-masked L1/MSE curve loss over the elevation axis",                "sample": "2.4e-2"},
-            {"id": "eta",   "tex": r"\eta_{\mathrm{eff}}",       "role": "intermediate", "kind": "vector", "shape": "2",          "desc": "per-group effective LR: base x cosine x linear warmup (steps, prox)",   "sample": ["9.1e-4", "9.1e-4"]},
-            {"id": "ema",   "tex": r"\bar{\theta}",              "role": "intermediate", "kind": "vector", "shape": "|theta|",    "desc": "EMA shadow weights updated after every optimizer step",                 "sample": ["0.42", "-0.11", "..."]},
-            {"id": "best",  "tex": r"\theta^{\star}",            "role": "final",        "kind": "vector", "shape": "|theta|",    "desc": "best-validation checkpoint (the EMA weights when use_ema is on)",       "sample": ["0.41", "-0.12", "..."]},
-        ]
-        steps = [
-            {
-                "id": "unr_render", "title": "Profile rendering and power normalisation", "phase": "A - Measurement synthesis",
-                "note": "The batch GT parameters are denormalised to physical units and rendered to profiles on the elevation grid; each profile is divided by its integrated power so the inversion is scale-free. Pixels below the power floor are masked out of everything downstream.",
-                "inputs": ["gt"], "outputs": ["gphys", "s", "mask"],
-                "lines": [
-                    [{"id": "gphys", "tex": r"\Theta_{\mathrm{phys}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{denorm}\big("}, {"id": "gt", "tex": r"\Theta", "role": "measured"}, {"tex": r"\big),\qquad c_h = \sum_k a_k\,e^{-(x_h-\mu_k)^2/2\sigma_k^2}"}],
-                    [{"id": "s", "tex": r"\mathbf{s}", "role": "calculated"}, {"tex": "="}, {"tex": r"\mathbf{c}\,\big/\,\max\!\big(\textstyle\sum_h c_h\,\mathrm{d}z,\ \varepsilon\big),\qquad"}, {"id": "mask", "tex": r"\mathbb{1}_{\mathrm{pow}}", "role": "intermediate"}, {"tex": r"= \big[\textstyle\sum_h c_h\,\mathrm{d}z > \varepsilon\big]"}],
-                ],
-            },
-            {
-                "id": "unr_synth", "title": "Coherence synthesis through the exact operator", "phase": "A - Measurement synthesis",
-                "note": "The per-pixel steering operator is built from the geometry-field kz map and the elevation axis; pushing the normalised GT profile through it yields the complex coherence vector the network must invert. Optional complex Gaussian noise (measurement_noise_std) breaks the inverse-crime purity.",
-                "inputs": ["s", "kz"], "outputs": ["y"],
-                "lines": [
-                    [{"id": "y", "tex": r"y_t", "role": "calculated"}, {"tex": "="}, {"tex": r"\sum_h"}, {"id": "s", "tex": r"s_h", "role": "calculated"}, {"tex": r"\,e^{\,j\,"}, {"id": "kz", "tex": r"\kappa_{z,t}", "role": "measured"}, {"tex": r"x_h}\,\mathrm{d}z \;+\; \tfrac{\sigma_n}{\sqrt{2}}\,(\epsilon_1 + j\epsilon_2)"}],
-                ],
-            },
-            {
-                "id": "unr_init", "title": "Matched-filter initialisation", "phase": "B - Unrolled inversion",
-                "note": "gamma_net starts from the beamforming solution: the adjoint of the steering operator applied to the measurements, averaged over tracks and clipped to nonnegative reflectivity.",
-                "inputs": ["y", "kz"], "outputs": ["s0"],
-                "lines": [
-                    [{"id": "s0", "tex": r"\mathbf{s}^{0}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\max\!\Big(0,\ \tfrac{1}{T}\,\mathrm{Re}\big[\mathbf{A}^{H}"}, {"id": "y", "tex": r"\mathbf{y}", "role": "calculated"}, {"tex": r"\big]\Big)"}],
-                ],
-            },
-            {
-                "id": "unr_iter", "title": "Learned proximal-gradient layers", "phase": "B - Unrolled inversion",
-                "note": "Each of the L layers takes a gradient step on the data fidelity, normalised by the operator's Lipschitz bound T*N*dz^2 so step_init = 1 is stable, refines the profile with a learned per-pixel 1D conv prox along elevation, and applies a nonnegative soft-threshold. Steps and thresholds are softplus-reparameterised per layer.",
-                "inputs": ["s0", "y", "kz"], "outputs": ["r", "sl"],
-                "lines": [
-                    [{"id": "r", "tex": r"\mathbf{r}^{l}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathbf{s}^{l} + \alpha_l\,\frac{\mathrm{Re}\big[\mathbf{A}^{H}(\mathbf{y} - \mathbf{A}\mathbf{s}^{l})\big]}{T\,N\,\mathrm{d}z^{2}}"}],
-                    [{"id": "sl", "tex": r"\mathbf{s}^{l+1}", "role": "calculated"}, {"tex": "="}, {"tex": r"\max\!\big(0,\ \mathcal{P}_l("}, {"id": "r", "tex": r"\mathbf{r}^{l}", "role": "intermediate"}, {"tex": r") - \theta_l\big),\qquad l = 0,\dots,L-1"}],
-                ],
-            },
-            {
-                "id": "unr_loss", "title": "Power-masked curve loss", "phase": "C - Loss",
-                "note": "The reconstruction error is averaged along the elevation axis per pixel, then averaged over pixels that carry GT power; empty pixels contribute nothing. curve_loss selects L1 (default) or MSE.",
-                "inputs": ["sl", "s", "mask"], "outputs": ["loss"],
-                "lines": [
-                    [{"id": "loss", "tex": r"\mathcal{L}", "role": "calculated"}, {"tex": "="}, {"tex": r"\frac{\sum_p \mathbb{1}_{\mathrm{pow},p}\;\tfrac{1}{N}\sum_h \big|"}, {"id": "sl", "tex": r"s^{L}_{p,h}", "role": "calculated"}, {"tex": r" - "}, {"id": "s", "tex": r"s_{p,h}", "role": "calculated"}, {"tex": r"\big|}{\max\big(\sum_p \mathbb{1}_{\mathrm{pow},p},\ 1\big)}"}],
-                ],
-            },
-            {
-                "id": "unr_optim", "title": "AdamW step with warmup and cosine schedule", "phase": "D - Optimise",
-                "note": "Two parameter groups (steps + thresholds, prox convolutions) with their own LR and weight decay from GammaNetConfig.get_param_groups. Gradients are clipped to max_grad_norm; the effective LR is the cosine-annealed base scaled by the linear warmup factor while warmup is active.",
-                "inputs": ["loss"], "outputs": ["eta"],
-                "lines": [
-                    [{"id": "eta", "tex": r"\eta_{\mathrm{eff}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\eta_{\mathrm{base}}\;\cdot\;\underbrace{\big(\rho + (1-\rho)\,\tfrac{t}{T_w}\big)}_{\mathrm{warmup}}\;\cdot\;\underbrace{\tfrac{1}{2}\big(1 + \cos\pi\tfrac{e}{E}\big)}_{\mathrm{cosine}}"}],
-                ],
-            },
-            {
-                "id": "unr_ema", "title": "EMA shadow and averaged evaluation", "phase": "D - Optimise",
-                "note": "When use_ema is on, a shadow copy of the weights is blended after every optimizer step, and validation, best-checkpointing and the final test all run with the shadow weights swapped in (WeightEma.applied).",
-                "inputs": ["eta"], "outputs": ["ema"],
-                "lines": [
-                    [{"id": "ema", "tex": r"\bar{\theta}", "role": "intermediate"}, {"tex": r"\leftarrow"}, {"tex": r"\beta\,\bar{\theta} + (1-\beta)\,\theta_t,\qquad \beta = \mathrm{ema\_decay}"}],
-                ],
-            },
-            {
-                "id": "unr_ckpt", "title": "Checkpointing, early stop and test", "phase": "D - Optimise",
-                "note": "The unrolled family runs the shared BaseTrainer loop: the best validation loss checkpoints best_model.pt (the EMA weights when enabled), a resumable trainer state is written to last.pt every epoch, training stops after early_stop_patience validation rounds without improvement, the best weights are reloaded for the test pass, and the loss history plus test metrics (loss, peak MAE in metres) land in training_summary.json. No TensorBoard events are written because the run carries no writer.",
-                "inputs": ["ema", "loss"], "outputs": ["best"],
-                "lines": [
-                    [{"id": "best", "tex": r"\theta^{\star}", "role": "final"}, {"tex": "="}, {"tex": r"\arg\min_{e}\ \mathcal{L}^{\mathrm{val}}_{e},\qquad \mathrm{stop\ after}\ p\ \mathrm{epochs\ without\ improvement}"}],
-                ],
-            },
-        ]
-        return {
-            "key": "unrolled_train", "name": "Unrolled Physics (Train)",
-            "blurb": "Ground-truth Gaussian profiles are rendered, power-normalised and pushed through the exact per-pixel steering operator to synthesise coherence measurements; gamma_net inverts them with L learned proximal-gradient layers, and a power-masked curve loss is optimised by AdamW with linear warmup, cosine annealing, optional EMA weight averaging and best-epoch checkpointing.",
-            "nodes": nodes, "steps": steps,
-        }
-
     def _inference(self) -> dict:
         nodes = [
             {"id": "ckpt",     "tex": r"\theta^{\star}",             "role": "measured",     "kind": "vector", "shape": "|theta|",           "desc": "best-epoch checkpoint weights (params) with bundled x-axis; per-slot norm stats load from the run meta", "sample": ["0.31", "-0.08", "..."]},
@@ -1268,12 +1001,6 @@ class FlowLibrary:
             {"id": "elevr2",   "tex": r"R^2_{\mathrm{elev}}",        "role": "calculated",   "kind": "vector", "shape": "N",                 "desc": "per-elevation-bin R-squared",                                                                            "sample": ["0.91", "0.93", "..."]},
             {"id": "gmu",      "tex": r"\mathrm{MAE}_{\mu}",         "role": "calculated",   "kind": "scalar", "shape": "1",                 "desc": "matched Gaussian mu MAE over matched active pairs",                                                      "sample": "0.42"},
             {"id": "mf1",      "tex": r"F_1",                        "role": "calculated",   "kind": "scalar", "shape": "1",                 "desc": "matched detection F1 within mu tolerance",                                                               "sample": "0.86"},
-            {"id": "redc",     "tex": r"\mathbf{r}",                 "role": "calculated",   "kind": "tensor", "shape": "N x Az x Rg",       "desc": "reduced-subset Capon tomogram (re-synthesised)",                                                         "sample": [["0.3", "0.8"], ["0.2", "0.6"]]},
-            {"id": "dimp",     "tex": r"\Delta_{a,r}",               "role": "final",        "kind": "matrix", "shape": "Az x Rg",           "desc": "improvement map: reduced minus prediction MSE (unit-area)",                                              "sample": [["0.01", "-0.00"], ["0.02", "0.01"]]},
-            {"id": "kz",       "tex": r"k_z",                        "role": "measured",     "kind": "tensor", "shape": "T x Az x Rg",       "desc": "per-pixel interferometric wavenumber field (rad/m), T=1+N_s",                                            "sample": [["0.05", "0.06"], ["0.04", "0.05"]]},
-            {"id": "meas",     "tex": r"\tilde{\gamma}",             "role": "intermediate", "kind": "tensor", "shape": "N_s x Az x Rg",     "desc": "multilooked measured interferogram unit phasors",                                                        "sample": [["1+0j", "0.7+0.7j"], ["0+1j", "0.9-0.1j"]]},
-            {"id": "coh",      "tex": r"E_{\gamma}",                 "role": "final",        "kind": "matrix", "shape": "Az x Rg",           "desc": "per-pixel coherence-resynthesis error map (pred vs GT)",                                                 "sample": [["0.02", "0.05"], ["0.01", "0.03"]]},
-            {"id": "pha",      "tex": r"\rho_{\varphi}",             "role": "calculated",   "kind": "scalar", "shape": "1",                 "desc": "mean measured-vs-synthesised phase agreement",                                                           "sample": "0.78"},
         ]
         steps = [
             {
@@ -1389,28 +1116,10 @@ class FlowLibrary:
                     [{"id": "mf1", "tex": r"F_1", "role": "calculated"}, {"tex": "="}, {"tex": r"\dfrac{2\,\mathrm{Prec}\,\mathrm{Rec}}{\mathrm{Prec}+\mathrm{Rec}},\quad \text{hit}:\ |\Delta\mu|\le 5"}],
                 ],
             },
-            {
-                "id": "reduced", "title": "Reduced Capon re-synthesis", "phase": "Reduced baseline",
-                "note": "Enabled by default and run only when the run trained on a strict secondary subset: a classical Capon tomogram is re-synthesised from the primary plus that subset (effort high, stetools env); after an advisory orientation check the GT, prediction and reduced cubes are unit-area normalised (eps 1e-12) and the per-pixel MSE improvement of the network over the reduced baseline is mapped.",
-                "inputs": ["redc", "cube", "cubegt"], "outputs": ["dimp"],
-                "lines": [
-                    [{"tex": r"\bar y_{n,a,r} = \dfrac{y_{n,a,r}}{\max(\sum_n y_{n,a,r},\,10^{-12})}\quad (y\in\{C,\hat C,\mathbf{r}\})"}],
-                    [{"id": "dimp", "tex": r"\Delta_{a,r}", "role": "final"}, {"tex": "="}, {"tex": r"\mathrm{MSE}^{\mathrm{red}}_{a,r} - \mathrm{MSE}^{\mathrm{pred}}_{a,r}"}],
-                ],
-            },
-            {
-                "id": "consistency", "title": "Interferometric data consistency", "phase": "Data consistency",
-                "note": "Enabled by default: predicted and GT profiles are reprojected to per-track unit coherences through the per-pixel kz field over pixels whose GT power exceeds physics_floor=1e-3, giving per-pixel coherence-resynthesis and covariance-matching error maps; the phase_multilook=9 multilooked measured interferograms are then correlated against the synthesised coherence, with a conjugate-steering flipped variant as a kz sign check.",
-                "inputs": ["cube", "cubegt", "kz", "meas"], "outputs": ["coh", "pha"],
-                "lines": [
-                    [{"id": "coh", "tex": r"E_{\gamma}", "role": "final"}, {"tex": "="}, {"tex": r"\tfrac{1}{T}\textstyle\sum_{i=0}^{T-1}\Big|\tfrac{\hat\gamma_i}{\hat p_0} - \tfrac{\gamma_i}{p_0}\Big|^2,\ \ \gamma_i = \textstyle\sum_n e^{\,j k_{z,i,n} x_n} C_n\,dx"}],
-                    [{"id": "pha", "tex": r"\rho_{\varphi}", "role": "calculated"}, {"tex": "="}, {"tex": r"\Big|\tfrac{1}{|V|}\textstyle\sum_{V} \tilde\gamma\,\overline{(\hat\gamma_i/|\hat\gamma_i|)}\Big|,\quad p_0 = \max(\textstyle\sum_n C_n\,dx,\ 10^{-3})"}],
-                ],
-            },
         ]
         return {
             "key": "inference", "name": "Inference (Stitching)",
-            "blurb": "The trained run is rebuilt strictly from its saved config, then every sliding-window patch is predicted, denormalised and hard-clamped, reconstructed to an elevation spectrum, blended into dense pred and GT cubes by weighted overlap-add for curves and highest-centrality selection for parameters, and scored by the full per-pixel, curve, per-elevation, matched-parameter, reduced-Capon-baseline and interferometric-consistency suite.",
+            "blurb": "The trained run is rebuilt strictly from its saved config, then every sliding-window patch is predicted, denormalised and hard-clamped, reconstructed to an elevation spectrum, blended into dense pred and GT cubes by weighted overlap-add for curves and highest-centrality selection for parameters, and scored by the full per-pixel, curve, per-elevation and matched-parameter suite.",
             "nodes": nodes, "steps": steps,
         }
 
@@ -1719,7 +1428,7 @@ class FlowLibrary:
             {"id": "bstar",   "tex": r"B^{*}",            "role": "calculated",   "kind": "scalar", "shape": "1",               "desc": "largest power-of-two batch whose footprint stays under the budget",         "sample": "128"},
             {"id": "units",   "tex": r"\mathcal{U}",      "role": "calculated",   "kind": "set",    "shape": "N_m x N_c x N_s", "desc": "(model, loss-component, seed) work units of the benchmark grid",            "sample": ["unet__param_l1_seed0", "resunet__param_l1_seed0"]},
             {"id": "ckpt",    "tex": r"\theta^{\star}",   "role": "calculated",   "kind": "vector", "shape": "|theta|",         "desc": "best-epoch checkpoint per unit at matched width and measured batch",        "sample": ["0.30", "-0.09", "0.17"]},
-            {"id": "metrics", "tex": r"\mathbf{q}",       "role": "calculated",   "kind": "vector", "shape": "N_q",             "desc": "per-unit test-split metric vector (curve, parameter, physics)",             "sample": ["0.94", "1.72", "0.08"]},
+            {"id": "metrics", "tex": r"\mathbf{q}",       "role": "calculated",   "kind": "vector", "shape": "N_q",             "desc": "per-unit test-split metric vector (curve and parameter)",                  "sample": ["0.94", "1.72", "0.08"]},
             {"id": "agg",     "tex": r"\bar{\mathbf{q}}", "role": "calculated",   "kind": "vector", "shape": "N_q",             "desc": "per-model seed-aggregated metric mean (std kept alongside)",                "sample": ["0.94", "1.70", "0.08"]},
             {"id": "board",   "tex": r"\mathcal{S}",      "role": "final",        "kind": "vector", "shape": "N_m",             "desc": "magnitude-aware composite leaderboard score, ranked over models",           "sample": ["unet 0.88", "resunet 0.71"]},
         ]
@@ -1796,7 +1505,7 @@ class FlowLibrary:
             },
             {
                 "id": "bench_infer", "title": "Infer on the test split", "phase": "D - Train & infer",
-                "note": "Each trained unit runs the standard sliding-window inference on the held-out test split, producing the full scalar metric suite per unit: curve errors, parameter errors and physics-consistency measures.",
+                "note": "Each trained unit runs the standard sliding-window inference on the held-out test split, producing the full scalar metric suite per unit: curve errors and parameter errors.",
                 "inputs": ["ckpt"], "outputs": ["metrics"],
                 "lines": [
                     [{"id": "metrics", "tex": r"\mathbf{q}_u", "role": "calculated"}, {"tex": "="}, {"tex": r"\mathrm{Metrics}\big(f_{"}, {"id": "ckpt", "tex": r"\theta^{\star}_u", "role": "calculated"}, {"tex": r"}(\mathbf{X}_{\mathrm{test}})\big)"}],
@@ -2183,7 +1892,6 @@ class FlowLibrary:
 
     def collect(self) -> list:
         return [
-            self._processing(),
             self._param_extraction(),
             self._dataset(),
             self._training(),
@@ -2191,7 +1899,6 @@ class FlowLibrary:
             self._profile_ae_train(),
             self._image_ae_train(),
             self._jepa_train(),
-            self._unrolled_train(),
             self._inference(),
             self._profile_ae_infer(),
             self._image_ae_infer(),
