@@ -164,7 +164,7 @@ def test_generated_parameter_run_is_the_training_default(param_extraction_meta, 
     assert int(param_extraction_meta["k_max"]) == SynthesisConfig().k_max
 
 
-def test_extraction_discover_height_range_from_state(tmp_path):
+def test_extraction_discover_z_range_from_state(tmp_path):
     meta = tmp_path / "meta"
     meta.mkdir()
     (meta / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": [-20.0, 80.0]}}))
@@ -173,12 +173,12 @@ def test_extraction_discover_height_range_from_state(tmp_path):
     assert cfg.discover_z_range() == (-20.0, 80.0)
 
 
-def test_extraction_discover_height_range_override():
+def test_extraction_discover_z_range_override():
     cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), z_range=(0.0, 50.0))
     assert cfg.discover_z_range() == (0.0, 50.0)
 
 
-def test_extraction_discover_height_range_missing_raises(tmp_path):
+def test_extraction_discover_z_range_missing_raises(tmp_path):
     cfg = ExtractionConfig(processed_data_path=tmp_path)
     with pytest.raises(FileNotFoundError):
         cfg.discover_z_range()
