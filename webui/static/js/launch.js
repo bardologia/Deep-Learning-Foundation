@@ -6,7 +6,6 @@ class LaunchView extends ConfigForm {
     train_backbone:             "infer_backbone",
     train_profile_autoencoder:  "infer_profile_autoencoder",
     train_image_autoencoder:    "infer_image_autoencoder",
-    train_unrolled:             "infer_unrolled",
     train_dual:                 "infer_dual",
   };
 
@@ -98,33 +97,12 @@ class LaunchView extends ConfigForm {
   static MODEL_TAGS = { input: "input", model: "network", latent: "latent", output: "output", calc: "result" };
 
   static PROCESS_MEANINGS = {
-    pre_process: {
-      title  : "Pre-process",
-      summary: "Ingests the raw F-SAR products, beamforms the full-stack Capon tomogram, and forms the interferometric image stack.",
-      flow   : [
-        { kind: "input", glyph: "stack", label: "Raw F-SAR products", sub: "single-look complex stack" },
-        { kind: "model", glyph: "beam",  label: "Beamform", tag: "operation", sub: "Capon + interferograms" },
-        [
-          { kind: "output", glyph: "cube",  label: "Capon tomogram", sub: "full stack" },
-          { kind: "output", glyph: "stack", label: "Image stack",    sub: "primary · secondaries · interferograms" },
-        ],
-      ],
-    },
     extract_params: {
       title  : "Extract Parameters",
       summary: "Fits a per-pixel Gaussian mixture to the Capon tomogram to build the supervised profile-parameter targets.",
       flow   : [
         { kind: "input",  glyph: "cube",   label: "Capon tomogram",      sub: "reflectivity profiles" },
         { kind: "model",  glyph: "fit",    label: "Gaussian-mixture fit", tag: "operation", sub: "per pixel" },
-        { kind: "output", glyph: "params", label: "Params array",        sub: "amp, μ, σ, amp, μ, σ, …" },
-      ],
-    },
-    inject_external_params: {
-      title  : "Inject External Parameters",
-      summary: "Imports Gaussian parameter cubes fitted outside this codebase and writes them into a dataset as a normal parameter run, so a model can train against a collaborator's fit.",
-      flow   : [
-        { kind: "input",  glyph: "params", label: "External RAT cubes",  sub: "one per azimuth/range window" },
-        { kind: "model",  glyph: "fit",    label: "Reorder and stitch",  tag: "operation", sub: "onto the dataset crop" },
         { kind: "output", glyph: "params", label: "Params array",        sub: "amp, μ, σ, amp, μ, σ, …" },
       ],
     },
