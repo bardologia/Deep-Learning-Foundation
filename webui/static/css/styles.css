@@ -864,8 +864,6 @@ main { margin-left: var(--navw); }
 .btn--ghost:hover { border-color: var(--ink); }
 .btn--mini { padding: 7px 14px; font-size: 12.5px; background: var(--surface); border-color: var(--line); color: var(--ink-dim); }
 .btn--mini:hover { color: var(--ink); border-color: var(--line-strong); }
-.btn--legacy.is-on { background: var(--accent); border-color: var(--accent-deep); color: #fff; }
-.btn--legacy.is-on:hover { color: #fff; border-color: var(--accent-deep); }
 .btn--danger { color: var(--danger); border-color: rgba(185, 28, 28, 0.35); }
 .btn--danger:hover:not(:disabled) { background: rgba(185, 28, 28, 0.07); border-color: var(--danger); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }

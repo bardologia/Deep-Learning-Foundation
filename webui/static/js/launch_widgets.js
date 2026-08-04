@@ -422,28 +422,6 @@ class ExperimentBuilder {
       },
       names     : (b, model) => b.variants.warmup.map((w) => `${model}_nc-${w.label}`) },
 
-    { key: "physics",    label: "physics loss", hint: "physics components crossed with weights on top of the base config under the loss curriculum, one trial per pair plus an optional no-physics baseline",
-      at        : 2,
-      el        : "physicsEl",
-      available : (b) => b.physics.size > 0,
-      make      : (b) => b._physicsPanel(),
-      paint     : (b) => b._paintPhysics(),
-      summary   : (b, gpus) => {
-        const nComp    = b._physicsComponents().length;
-        const nWeight  = b._physicsWeights().length;
-        const baseline = b._physicsBaselineOn();
-        const total    = nComp * nWeight + (baseline ? 1 : 0);
-        return `${nComp} component${nComp === 1 ? "" : "s"} x ${nWeight} weight${nWeight === 1 ? "" : "s"}${baseline ? " + baseline" : ""} = ${total} trial${total === 1 ? "" : "s"}${b._seedsSuffix(total)}${gpus}`;
-      },
-      names     : (b, model) => {
-        const names = [];
-        if (b._physicsBaselineOn()) names.push(`${model}_phys-baseline`);
-        b._physicsComponents().forEach((component) => {
-          b._physicsWeights().forEach((weight) => names.push(`${model}_phys-${component}-w${weight}`));
-        });
-        return names;
-      } },
-
     { key: "pair",       label: "loss pairs",  hint: "one base component plus one candidate second component per weight, curriculum disabled, one trial per pair plus an optional base-only baseline",
       at        : 3,
       el        : "pairEl",
@@ -630,18 +608,10 @@ class ExperimentBuilder {
     { key: "hungarian", label: "hungarian" },
   ];
 
-  static PHYSICS_COMPONENTS = [
-    { key: "total_power",      label: "total power" },
-    { key: "moments",          label: "profile moments" },
-    { key: "coherence_resyn",  label: "coherence resyn" },
-    { key: "covariance_match", label: "covariance match" },
-    { key: "capon_cycle",      label: "capon cycle" },
-  ];
-
   static PAIR_COMPONENTS = [
     "mse_curve", "l1_curve", "huber_curve", "charbonnier_curve", "cosine_curve",
-    "total_power_relerr", "moments", "coherence_resyn", "covariance_match", "capon_cycle",
-    "param_huber", "param_mse", "param_legacy", "smoothness_tv", "param_l1",
+    "total_power_relerr", "moments",
+    "param_huber", "param_mse", "smoothness_tv", "param_l1",
   ];
 
   static STRATEGIES = [
@@ -679,7 +649,6 @@ class ExperimentBuilder {
 
     this.secondary     = new Map();
     this.patch         = new Map();
-    this.physics       = new Map();
     this.pair          = new Map();
     this.reach         = new Map();
     this.headTrials    = new Map();
@@ -689,7 +658,6 @@ class ExperimentBuilder {
     byPath.forEach((leaf) => {
       if (leaf.section === "secondary_trials")     this.secondary.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "patch_trials")         this.patch.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "physics_trials")       this.physics.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "pair_trials")          this.pair.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "reach_trials")         this.reach.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "head_trials")          this.headTrials.set(leaf.path.split(".").pop(), leaf);
@@ -702,7 +670,6 @@ class ExperimentBuilder {
     if (this.modeLeaf) this.claimed.push("trials_mode");
     this.secondary.forEach((leaf) => this.claimed.push(leaf.path));
     this.patch.forEach((leaf) => this.claimed.push(leaf.path));
-    this.physics.forEach((leaf) => this.claimed.push(leaf.path));
     this.pair.forEach((leaf) => this.claimed.push(leaf.path));
     this.reach.forEach((leaf) => this.claimed.push(leaf.path));
     this.headTrials.forEach((leaf) => this.claimed.push(leaf.path));
@@ -730,9 +697,6 @@ class ExperimentBuilder {
     this.patchEl         = null;
     this.patchSizesEl    = null;
     this.patchFlagPaints = [];
-    this.physicsEl           = null;
-    this.physicsComponentsEl = null;
-    this.physicsWeightsEl    = null;
     this.pairEl              = null;
     this.pairBaseSelect      = null;
     this.pairCandidatesEl    = null;
@@ -1119,123 +1083,6 @@ class ExperimentBuilder {
     sizes.forEach((size, index) => this.patchSizesEl.appendChild(this._patchChip(size, index, sizes)));
 
     this.patchFlagPaints.forEach((paint) => paint());
-  }
-
-  _physicsPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-patch exp-physics";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">physics loss sweep</span>`;
-
-    const baselineLeaf = this.physics.get("include_baseline");
-    if (baselineLeaf) head.appendChild(this._patchFlag(baselineLeaf, "baseline", "prepend one run of the plain base config with every physics term disabled, as the reference"));
-
-    head.appendChild(LaunchWidgetDom.mini("Add weight", () => {
-      const weights = this._physicsWeights();
-      weights.push(weights.length ? weights[weights.length - 1] : 0.05);
-      this._emitPhysicsWeights(weights);
-    }));
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "each checked component trains once per weight on top of the base config, with every other physics term disabled in both stages; the loss curriculum stays on, so the tested term joins only after the swap epoch";
-
-    const componentsHead       = document.createElement("div");
-    componentsHead.className   = "exp-presence__sub";
-    componentsHead.textContent = "components";
-
-    const components         = document.createElement("div");
-    components.className     = "exp-builder__names exp-presence__strategies";
-    this.physicsComponentsEl = components;
-
-    const weightsHead       = document.createElement("div");
-    weightsHead.className   = "exp-presence__sub";
-    weightsHead.textContent = "weights";
-
-    const weights         = document.createElement("div");
-    weights.className     = "exp-patch__sizes";
-    this.physicsWeightsEl = weights;
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(componentsHead);
-    panel.appendChild(components);
-    panel.appendChild(weightsHead);
-    panel.appendChild(weights);
-    this.physicsEl = panel;
-
-    const componentsLeaf = this.physics.get("components");
-    if (componentsLeaf) this.view.controls[componentsLeaf.path] = { leaf: componentsLeaf, reset: () => this._repaintPhysics() };
-
-    const weightsLeaf = this.physics.get("weights");
-    if (weightsLeaf) this.view.controls[weightsLeaf.path] = { leaf: weightsLeaf, reset: () => this._repaintPhysics() };
-
-    this._paintPhysics();
-    return panel;
-  }
-
-  _physicsComponents() {
-    return this._listOf(this.physics.get("components"), (value) => typeof value === "string");
-  }
-
-  _physicsWeights() {
-    return this._numbersOf(this.physics.get("weights"));
-  }
-
-  _physicsBaselineOn() {
-    const leaf = this.physics.get("include_baseline");
-    return leaf ? this.view._effective(leaf) === "True" : false;
-  }
-
-  _emitPhysicsComponents(components) {
-    const leaf = this.physics.get("components");
-    if (!leaf) return;
-
-    this.view._setValue(leaf, PythonLiteral.render(components));
-    this._repaintPhysics();
-  }
-
-  _emitPhysicsWeights(weights) {
-    const leaf = this.physics.get("weights");
-    if (!leaf) return;
-
-    const clean = weights.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
-    this.view._setValue(leaf, PythonLiteral.render(clean));
-    this._repaintPhysics();
-  }
-
-  _togglePhysicsComponent(key) {
-    const order = ExperimentBuilder.PHYSICS_COMPONENTS.map((entry) => entry.key);
-    this._toggleInCatalog(order, this._physicsComponents(), key, (components) => this._emitPhysicsComponents(components));
-  }
-
-  _paintPhysics() {
-    if (!this.physicsEl) return;
-
-    if (this.physicsComponentsEl) {
-      this.physicsComponentsEl.innerHTML = "";
-      const active = this._physicsComponents();
-      ExperimentBuilder.PHYSICS_COMPONENTS.forEach(({ key, label }) => {
-        const chip = this._toggleChip(label, active.includes(key), "Click to drop this component from the sweep", "Click to sweep this component", () => this._togglePhysicsComponent(key));
-        this.physicsComponentsEl.appendChild(chip);
-      });
-    }
-
-    if (this.physicsWeightsEl) {
-      const weights = this._physicsWeights();
-      this.physicsWeightsEl.innerHTML = "";
-      weights.forEach((weight, index) => this.physicsWeightsEl.appendChild(this._weightChip(weight, index, weights, "physics loss weight applied to the tested component", (next) => this._emitPhysicsWeights(next))));
-    }
-
-    this.patchFlagPaints.forEach((paint) => paint());
-  }
-
-  _repaintPhysics() {
-    this._paintPhysics();
-    this._paintSummary();
-    this._paintNames();
   }
 
   _pairPanel() {
@@ -4192,8 +4039,6 @@ class ConfigForm {
     this.pinsEl        = null;
     this.nomatchEl     = null;
     this.countEl       = null;
-    this.legacyMode    = false;
-    this.legacyBtn     = null;
   }
 
   _buildToolbar(cfg) {
@@ -4222,38 +4067,8 @@ class ConfigForm {
     bar.appendChild(search);
     bar.appendChild(count);
 
-    if (cfg.layout && cfg.layout.legacy) {
-      const legacy = document.createElement("button");
-      legacy.className = "btn btn--mini btn--legacy";
-      legacy.textContent = "Legacy mode";
-      legacy.title = "Swap every config to the legacy scaled-MSE setup (legacy term only, sorted_gt matching, curriculum and augmentation off) and show only its fields; pick a two-Gaussian parameters dataset";
-      legacy.addEventListener("click", () => this._toggleLegacy());
-      this.legacyBtn = legacy;
-      bar.appendChild(legacy);
-    }
-
     bar.appendChild(reset);
     return bar;
-  }
-
-  _toggleLegacy() {
-    const spec = this.config.layout.legacy;
-    this.legacyMode = !this.legacyMode;
-
-    if (this.legacyMode) {
-      Object.entries(spec.preset).forEach(([path, value]) => {
-        const leaf = this.byPath.get(path);
-        if (!leaf) return;
-        if (value !== leaf.value) this.dirty[path] = value;
-        else delete this.dirty[path];
-      });
-    } else {
-      Object.keys(spec.preset).forEach((path) => delete this.dirty[path]);
-    }
-
-    this.legacyBtn.classList.toggle("is-on", this.legacyMode);
-    Object.values(this.controls).forEach((c) => c.reset());
-    this._refresh();
   }
 
   _buildPins(pinned) {
@@ -4766,8 +4581,6 @@ class ConfigForm {
 
   _resetAll() {
     this.dirty = {};
-    this.legacyMode = false;
-    if (this.legacyBtn) this.legacyBtn.classList.remove("is-on");
     Object.values(this.controls).forEach((c) => c.reset());
     this._refresh();
   }
@@ -4841,54 +4654,33 @@ class ConfigForm {
 
   _applyVisibility() {
     const searching = Boolean(this.query);
-    const legacy    = this.legacyMode && this.config && this.config.layout && this.config.layout.legacy ? this.config.layout.legacy : null;
-    const legacySec = legacy ? new Set(legacy.sections) : null;
-    const legacyFld = legacy ? new Set(legacy.expose) : null;
-    const stacked   = searching || Boolean(legacy);
-    if (this.layoutEl) this.layoutEl.classList.toggle("is-searching", stacked);
+    if (this.layoutEl) this.layoutEl.classList.toggle("is-searching", searching);
 
-    this.states.forEach(({ leaf, row, sectionKey, pinned }) => {
-      const matchesQuery  = !searching || leaf.path.toLowerCase().includes(this.query);
-      const matchesLegacy = !legacy || pinned || sectionKey === "essentials" || legacySec.has(sectionKey) || legacyFld.has(leaf.path);
-      row.hidden = !matchesQuery || !matchesLegacy || row.dataset.gated === "1";
+    this.states.forEach(({ leaf, row }) => {
+      const matchesQuery = !searching || leaf.path.toLowerCase().includes(this.query);
+      row.hidden = !matchesQuery || row.dataset.gated === "1";
     });
 
     this.pairs.forEach((pair) => {
-      if (pair.container) pair.container.hidden = Boolean(legacy);
-      const wantOpen = !legacy && (pair.open || (searching && pair.states.some(({ row }) => !row.hidden)));
+      const wantOpen = pair.open || (searching && pair.states.some(({ row }) => !row.hidden));
       pair.body.hidden = !wantOpen;
       pair.toggle.setAttribute("aria-expanded", String(wantOpen));
       pair.toggle.classList.toggle("is-open", wantOpen);
     });
 
-    this._sweepShells(Boolean(legacy));
-
     let anyVisible = false;
     this.sections.forEach((section) => {
       const whenHidden = this._sectionHidden(section);
       const hasRows    = this.states.some(({ row, sectionKey }) => sectionKey === section.key && !row.hidden);
-      if (section.navBtn) section.navBtn.hidden = whenHidden || (Boolean(legacy) && !hasRows);
+      if (section.navBtn) section.navBtn.hidden = whenHidden;
 
       const single = this.config && this.config.layout && this.config.layout.mode === "single";
-      const show   = !whenHidden && (stacked ? hasRows : (single || section.key === this.activeSection));
+      const show   = !whenHidden && (searching ? hasRows : (single || section.key === this.activeSection));
       section.el.hidden = !show;
-      anyVisible = anyVisible || (show && (!stacked || hasRows));
+      anyVisible = anyVisible || (show && (!searching || hasRows));
     });
 
     if (this.nomatchEl) this.nomatchEl.hidden = !searching || anyVisible;
-  }
-
-  _sweepShells(on) {
-    if (!this.layoutEl) return;
-
-    this.layoutEl.querySelectorAll(".band-block, .field-group, .cfg-panel").forEach((el) => {
-      if (!on) {
-        el.style.display = "";
-        return;
-      }
-      const rows = el.querySelectorAll(".cfg-edit__row");
-      if (rows.length) el.style.display = [...rows].some((row) => !row.hidden) ? "" : "none";
-    });
   }
 
   _refreshPairs() {
