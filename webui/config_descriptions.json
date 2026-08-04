@@ -117,7 +117,7 @@
         "out_mu": "Override preset for the output Gaussian mean/height channel; default keeps the output_strategy/per_slot choice",
         "out_sigma": "Override preset for the output Gaussian width channel; default keeps the output_strategy/per_slot choice",
         "dem": "Override preset for the DEM elevation channel; default keeps the input_strategy/per_slot choice",
-        "fixed_out_bounds_min": "Lower fixed min-max bounds used when an output channel selects the fixed_bounds preset, ordered amp, mu, sigma per Gaussian slot (length 3*n_gaussians, the repo layout; the legacy loader stored h, w, a per slot, so its constants are remapped here); defaults are the legacy DataTomoSARfromRAT_spock constants and match the loss legacy_bounds_min",
+        "fixed_out_bounds_min": "Lower fixed min-max bounds used when an output channel selects the fixed_bounds preset, ordered amp, mu, sigma per Gaussian slot (length 3*n_gaussians)",
         "fixed_out_bounds_max": "Upper fixed min-max bounds used when an output channel selects the fixed_bounds preset, ordered amp, mu, sigma per Gaussian slot; each entry must exceed its fixed_out_bounds_min counterpart",
         "clamp_output": "Gates the whole output clamping stack: the clamp_floor/clamp_ceil bound on log1p decompression, the barrier clamp on non-log clampable channels, and the GaussianClamp amp/mu/sigma physical-range clamp in both the training loss and the inference wrapper; False leaves predictions fully unconstrained, default True",
         "clamp_floor": "Lower bound of the physical value used when decompressing log1p-transformed output channels (out/amp, out/sigma by default), active only when clamp_output is True, default 0.0",

@@ -4772,7 +4772,7 @@ class ProcessAnimator {
     if (ctx.roundRect) ctx.roundRect(docX, docY, docW, docH, 10); else ctx.rect(docX, docY, docW, docH);
     ctx.fill(); ctx.stroke();
     ctx.fillStyle = "rgba(53,230,208,0.12)"; ctx.fillRect(docX, docY, docW, 30);
-    this._infText("# TomoSAR Inference Report", docX + 14, docY + 20, "#e6f7f3", 14);
+    this._infText("# Inference Report", docX + 14, docY + 20, "#e6f7f3", 14);
     ctx.restore();
 
     d.sections.forEach((sec, i) => {
