@@ -18,7 +18,6 @@ from job_describer                     import JobDescriber
 from launch_layout                     import LaunchLayout
 from backbone_model_library            import BackboneModelLibrary
 from image_autoencoder_model_library   import ImageAutoencoderModelLibrary
-from physics_loss_library              import PhysicsLossLibrary
 from pipeline_library                  import PipelineLibrary
 from repomap_library                   import RepoMapLibrary
 from profile_autoencoder_model_library import ProfileAutoencoderModelLibrary
@@ -83,7 +82,6 @@ class WebUIServer:
         self.layout            = LaunchLayout()
         self.configs           = ConfigRegistry(self.paths)
         self.equations         = EquationLibrary()
-        self.physics_loss      = PhysicsLossLibrary()
         self.flows             = FlowLibrary()
         self.models            = BackboneModelLibrary()
         self.profile_ae_models = ProfileAutoencoderModelLibrary()
@@ -129,7 +127,6 @@ class WebUIServer:
             TriageRouter(self.triage),
             AutopsyRouter(self.autopsy),
             ContentLibraryRouter("/api/equations",    self.equations,    "groups"),
-            ContentLibraryRouter("/api/physics-loss", self.physics_loss),
             ContentLibraryRouter("/api/flows",        self.flows,        "flows"),
             ContentLibraryRouter("/api/pipelines",    self.pipelines,    "pipelines"),
             ContentLibraryRouter("/api/repomap",      self.repomap,      "folders"),

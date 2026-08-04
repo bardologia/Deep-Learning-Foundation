@@ -84,9 +84,6 @@ class RunLeaderboard:
         {"key": "ssim_gt_range_mean",              "label": "SSIM rg",        "direction": 1,  "default": True},
         {"key": "relative_mse_reduction",          "label": "MSE reduction",  "direction": 1,  "default": False},
         {"key": "improvement_pixel_mse_mean",      "label": "improv mean",    "direction": 1,  "default": False},
-        {"key": "physics_coherence_error_mean",    "label": "phys coh err",   "direction": -1, "default": False},
-        {"key": "physics_covariance_error_mean",   "label": "phys cov err",   "direction": -1, "default": False},
-        {"key": "physics_valid_fraction",          "label": "phys valid",     "direction": 1,  "default": False},
     )
 
     HIGHER_BETTER = ("r2", "cosine", "psnr", "ssim", "agreement", "valid_fraction", "beats", "reduction", "improvement")
@@ -101,7 +98,6 @@ class RunLeaderboard:
         RunArtifacts.BACKBONE_CONFIG,
         RunArtifacts.PROFILE_AE_CONFIG,
         RunArtifacts.IMAGE_AE_CONFIG,
-        RunArtifacts.UNROLLED_CONFIG,
         RunArtifacts.DUAL_CONFIG,
     )
 
