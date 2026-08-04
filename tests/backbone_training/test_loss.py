@@ -12,7 +12,7 @@ from pipelines.backbone.training.loss_terms import LOSS_TERMS, LossComponentCata
 from tools.monitoring.logger                import NullLogger
 from tools.monitoring.tracker               import NullTracker
 
-from tests.backbone_training._helpers import build_loss, gaussian_config, identity_normalizer, log1p_normalizer, param_tensor, spock_normalizer, valid_param_tensor, x_axis_tensor, zscore_normalizer
+from tests.backbone_training._helpers import build_loss, gaussian_config, identity_normalizer, log1p_normalizer, param_tensor, valid_param_tensor, x_axis_tensor, zscore_normalizer
 
 
 def test_loss_terms_table_is_consistent():

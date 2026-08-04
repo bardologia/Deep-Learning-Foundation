@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 import torch
 
@@ -33,11 +32,9 @@ def _build(name):
     return model, cfg
 
 
-def _image_input(interferograms):
-    block  = np.asarray(interferograms[:IN_CHANNELS, :PATCH, : 2 * PATCH])
-    mag    = np.abs(block).astype(np.float32)
-    tensor = torch.from_numpy(mag).reshape(IN_CHANNELS, PATCH, 2, PATCH).permute(2, 0, 1, 3).contiguous()
-    return tensor
+def _image_input():
+    generator = torch.Generator().manual_seed(0)
+    return torch.randn(2, IN_CHANNELS, PATCH, PATCH, generator=generator, dtype=torch.float32)
 
 
 def _finite(t):
@@ -51,13 +48,12 @@ def test_registry_entries_build(name):
     assert cfg.in_channels == IN_CHANNELS
 
 
-@pytest.mark.real_data
 @pytest.mark.parametrize("name", NAMES)
-def test_roundtrip_shape(name, interferograms):
+def test_roundtrip_shape(name):
     model, _ = _build(name)
     model.eval()
 
-    x = _image_input(interferograms)
+    x = _image_input()
     with torch.no_grad():
         x_hat, z = model.reconstruct(x)
 
@@ -68,26 +64,24 @@ def test_roundtrip_shape(name, interferograms):
     assert _finite(z)
 
 
-@pytest.mark.real_data
 @pytest.mark.parametrize("name", NAMES)
-def test_latent_dim(name, interferograms):
+def test_latent_dim(name):
     model, _ = _build(name)
     model.eval()
 
-    x = _image_input(interferograms)
+    x = _image_input()
     with torch.no_grad():
         z = model.encode(x)
 
     assert z.shape[1] == EMBEDDING_DIM
 
 
-@pytest.mark.real_data
 @pytest.mark.parametrize("name", NAMES)
-def test_encode_features_resizes(name, interferograms):
+def test_encode_features_resizes(name):
     model, _ = _build(name)
     model.eval()
 
-    x      = _image_input(interferograms)
+    x      = _image_input()
     out_hw = (PATCH, PATCH)
     with torch.no_grad():
         z = model.encode_features(x, out_hw)
@@ -97,13 +91,12 @@ def test_encode_features_resizes(name, interferograms):
     assert _finite(z)
 
 
-@pytest.mark.real_data
 @pytest.mark.parametrize("name", NAMES)
-def test_backward_finite_grads(name, interferograms):
+def test_backward_finite_grads(name):
     model, _ = _build(name)
     model.train()
 
-    x     = _image_input(interferograms)
+    x     = _image_input()
     x_hat = model(x)
     loss  = torch.nn.functional.mse_loss(x_hat, x)
     loss.backward()

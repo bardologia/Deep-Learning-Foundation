@@ -160,7 +160,7 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
 
 
 def test_model_of_strips_head_stem_loss_component_and_seed():
-    assert TrialCollector._model_of("unet-conv-K_3-hv-A__covariance_match/seed3")            == "unet"
+    assert TrialCollector._model_of("unet-conv-K_3-hv-A__moments/seed3")            == "unet"
     assert TrialCollector._model_of("resunet-multihead-K_3-hv-A__mse_curve")                 == "resunet-multihead"
     assert TrialCollector._model_of("unet-set_pred-K_5-noaug-none__param_l1/seed0")          == "unet-set_pred"
     assert TrialCollector._model_of("convnext_unet-conv-K_3-hv-AB__param_l1")                == "convnext_unet"
@@ -176,12 +176,12 @@ def test_size_match_attaches_to_every_component(tmp_path, logger_stub):
     _write_json(pipe / "size_match.json", {"unet": {"parameters": 12345, "overrides": {}}})
     _write_json(pipe / "training_results.json", [])
 
-    for component in ("param_l1", "covariance_match"):
+    for component in ("param_l1", "moments"):
         (tmp_path / "training" / f"unet__{component}").mkdir(parents=True)
 
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub).collect()
 
-    assert {record.name for record in records} == {"unet__param_l1", "unet__covariance_match"}
+    assert {record.name for record in records} == {"unet__param_l1", "unet__moments"}
     for record in records:
         assert record.size_match["parameters"] == 12345
         assert record.parameters               == 12345
