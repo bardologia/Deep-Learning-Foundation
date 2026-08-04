@@ -1,6 +1,323 @@
 {
   "folders": [
     {
+      "folder": "synthesis",
+      "title": "Synthesis",
+      "blurb": "The synthesis subsystem writes the bundled example dataset from a seed alone: smooth Gaussian-mixture parameter fields, the profiles they render, the observed cube and channel stack sampled from those profiles, and a parameter run that scores the mixture against the cube.",
+      "diagrams": [
+        {
+          "key": "synthesis-dataset",
+          "stage": "Synthesis",
+          "title": "Synthetic dataset generation",
+          "entry": "main/processing/generate_dataset.py",
+          "blurb": "Samples per-slot amplitude, mean and width fields, renders them into profiles, observes those profiles as a complex cube and a primary-plus-secondary channel stack, scores the mixture against the cube to pick a per-pixel component count, and writes the whole dataset with its layout, metadata and parameter run.",
+          "nodes": [
+            {
+              "id": "entry",
+              "label": "generate_dataset",
+              "module": "main/processing/generate_dataset.py",
+              "role": "entry",
+              "fn": "Puts the repository root on sys.path, parses a GenerateDatasetEntryConfig through ConfigCli, pins the thread environment and runs one SyntheticDatasetSession against the configured log directory. CPU only.",
+              "col": 0,
+              "reads": [],
+              "writes": [],
+              "row": 0
+            },
+            {
+              "id": "config",
+              "label": "SynthesisConfig",
+              "module": "configuration/synthesis.py",
+              "role": "config",
+              "fn": "Dataclass holding the output directory, the scene crop, the z axis, the component count, the per-slot parameter ranges, the channel labels and phase rates, the noise fractions and the seed; validate() rejects a collapsed crop, an unresolvable sigma range or a channel list that does not match the phase rates before any array is allocated.",
+              "col": 0,
+              "reads": [],
+              "writes": [],
+              "row": 1
+            },
+            {
+              "id": "pipeline",
+              "label": "SyntheticDatasetPipeline",
+              "module": "pipelines/processing/synthesis/pipeline.py",
+              "role": "orchestrator",
+              "fn": "Four stages in order: sample the parameter fields, evaluate the profiles and observations, score the mixture against the observed cube, write the dataset. Logs component occupancy and the best-K distribution as it goes; SyntheticDatasetSession wraps it with the run Logger.",
+              "col": 1,
+              "reads": [],
+              "writes": [],
+              "row": 1
+            },
+            {
+              "id": "parameters",
+              "label": "ParameterFieldBuilder",
+              "module": "pipelines/processing/synthesis/parameters.py",
+              "role": "transform",
+              "fn": "Draws one smooth amplitude, mean and width field per Gaussian slot, keeps each slot's mean inside its own band of the z axis, and zeroes the slots that fall under the empty-pixel mask or a per-slot dropout mask so pixels differ in how many components they carry.",
+              "col": 2,
+              "reads": [],
+              "writes": [],
+              "row": 0
+            },
+            {
+              "id": "fields",
+              "label": "SmoothFieldSampler + WhiteNoiseSampler",
+              "module": "pipelines/processing/synthesis/fields.py",
+              "role": "transform",
+              "fn": "The two seeded samplers every other stage draws from: Gaussian-smoothed unit noise rescaled to bounds, angles or quantile masks, and white real, complex and uniform-phase noise. Each stream is its own default_rng draw, so the scene is reproducible from the config seed alone.",
+              "col": 2,
+              "reads": [],
+              "writes": [],
+              "row": 2
+            },
+            {
+              "id": "scene",
+              "label": "ProfileBuilder + CubeBuilder + ChannelBuilder",
+              "module": "pipelines/processing/synthesis/scene.py",
+              "role": "transform",
+              "fn": "Builds the sampled z axis, accumulates the mixture into per-pixel profiles, observes them as a complex cube with uniform phase and complex noise, and renders the primary channel plus one secondary per sensitivity window with its coherence phase, the derived primary-times-conjugate products and the auxiliary field.",
+              "col": 3,
+              "reads": [],
+              "writes": [],
+              "row": 0
+            },
+            {
+              "id": "diagnostics",
+              "label": "FitDiagnosticsBuilder",
+              "module": "pipelines/processing/synthesis/diagnostics.py",
+              "role": "metric",
+              "fn": "Preprocesses the observed cube into peak-normalised profiles, accumulates the amplitude-ranked mixture one slot at a time for a per-K MSE, adds the lambda times K penalty to pick a best K per pixel, and assembles the mu-sorted parameter stack with only the retained slots left non-zero.",
+              "col": 3,
+              "reads": [],
+              "writes": [],
+              "row": 2
+            },
+            {
+              "id": "writer",
+              "label": "DatasetWriter",
+              "module": "pipelines/processing/synthesis/writer.py",
+              "role": "io",
+              "fn": "Saves the five arrays under data/, the dataset.json layout that names them, the meta/config_state.json carrying the crop and the cube z axis, and the parameter run with its parameters, fit diagnostics and self-describing extraction metadata.",
+              "col": 4,
+              "reads": [],
+              "writes": [
+                "primary.npy",
+                "secondaries.npy",
+                "derived.npy",
+                "aux_full.npy",
+                "cube_full.npy",
+                "dataset.json",
+                "config_state.json",
+                "parameters.npy",
+                "fit_diagnostics.npz",
+                "param_extraction_meta.json"
+              ],
+              "row": 1
+            }
+          ],
+          "edges": [
+            {
+              "from": "entry",
+              "to": "pipeline",
+              "label": "SynthesisConfig + Logger",
+              "kind": "control"
+            },
+            {
+              "from": "config",
+              "to": "pipeline",
+              "label": "crop, z axis, k_max, seed",
+              "kind": "data"
+            },
+            {
+              "from": "pipeline",
+              "to": "parameters",
+              "label": "stage 1: sample slots",
+              "kind": "control"
+            },
+            {
+              "from": "fields",
+              "to": "parameters",
+              "label": "smooth unit fields + masks",
+              "kind": "data"
+            },
+            {
+              "from": "pipeline",
+              "to": "scene",
+              "label": "stage 2: observe",
+              "kind": "control"
+            },
+            {
+              "from": "parameters",
+              "to": "scene",
+              "label": "amps, mus, sigmas",
+              "kind": "data"
+            },
+            {
+              "from": "fields",
+              "to": "scene",
+              "label": "phase field + white noise",
+              "kind": "data"
+            },
+            {
+              "from": "pipeline",
+              "to": "diagnostics",
+              "label": "stage 3: score",
+              "kind": "control"
+            },
+            {
+              "from": "scene",
+              "to": "diagnostics",
+              "label": "observed cube",
+              "kind": "data"
+            },
+            {
+              "from": "parameters",
+              "to": "diagnostics",
+              "label": "sampled slots",
+              "kind": "data"
+            },
+            {
+              "from": "pipeline",
+              "to": "writer",
+              "label": "stage 4: write",
+              "kind": "control"
+            },
+            {
+              "from": "scene",
+              "to": "writer",
+              "label": "channel stack + cube",
+              "kind": "data"
+            },
+            {
+              "from": "diagnostics",
+              "to": "writer",
+              "label": "parameter stack + best-K maps",
+              "kind": "data"
+            }
+          ],
+          "artifacts": [
+            {
+              "name": "primary.npy",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "Layout",
+                "Cropper",
+                "cube explorer"
+              ],
+              "fmt": "NumPy complex64 (rows, cols)",
+              "desc": "The reference channel: the z-averaged profile carrying a smooth reference phase plus complex noise.",
+              "scope": "cross"
+            },
+            {
+              "name": "secondaries.npy",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "Layout",
+                "Cropper",
+                "cube explorer"
+              ],
+              "fmt": "NumPy complex64 (n_secondaries, rows, cols)",
+              "desc": "One secondary channel per sensitivity window: the profile seen through that window, clipped against the flat mean and phased by its coherence.",
+              "scope": "cross"
+            },
+            {
+              "name": "derived.npy",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "Layout",
+                "Cropper",
+                "cube explorer"
+              ],
+              "fmt": "NumPy complex64 (n_secondaries, rows, cols)",
+              "desc": "Primary times the conjugate of each secondary; its angle is the derived phase channel the default input stack feeds the model.",
+              "scope": "cross"
+            },
+            {
+              "name": "aux_full.npy",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "Layout",
+                "Cropper"
+              ],
+              "fmt": "NumPy float32 (rows, cols)",
+              "desc": "A smooth bounded scalar field, one value per pixel, available as the optional auxiliary input channel.",
+              "scope": "cross"
+            },
+            {
+              "name": "cube_full.npy",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "FitDiagnosticsBuilder",
+                "extract_params",
+                "cube explorer",
+                "fit lab"
+              ],
+              "fmt": "NumPy complex64 (n_z, rows, cols)",
+              "desc": "The reference cube: the rendered mixture profiles given a uniform random phase plus complex noise. Every profile-space tool reads its magnitude.",
+              "scope": "cross"
+            },
+            {
+              "name": "dataset.json",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "Layout",
+                "ConfigFactory",
+                "cube explorer"
+              ],
+              "fmt": "JSON",
+              "desc": "The dataset layout: global_crop, dataset_type, cube_tag, parameter_tag, max_amplitude_clip, the channel labels and the artifact key to filename map.",
+              "scope": "cross"
+            },
+            {
+              "name": "config_state.json",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "GaussianConfig",
+                "ExtractParamsEntryConfig"
+              ],
+              "fmt": "JSON",
+              "desc": "Scene metadata under meta/: the crop bounds, the cube_config z range and bin count, and the full synthesis config that produced the dataset.",
+              "scope": "cross"
+            },
+            {
+              "name": "parameters.npy",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "Cropper",
+                "training pipelines",
+                "dataset browser"
+              ],
+              "fmt": "NumPy float32 (3 * k_max, rows, cols)",
+              "desc": "The supervised target: amplitude, mean and width per slot, mu-sorted, with the slots the best-K choice discarded left at zero.",
+              "scope": "cross"
+            },
+            {
+              "name": "fit_diagnostics.npz",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "analyze_param_extraction",
+                "compare_param_extraction_trials"
+              ],
+              "fmt": "NumPy npz",
+              "desc": "Per-K MSE and penalised MSE maps, the best-K map and the lambda that penalised them.",
+              "scope": "cross"
+            },
+            {
+              "name": "param_extraction_meta.json",
+              "producer": "DatasetWriter",
+              "consumers": [
+                "GaussianConfig",
+                "ParameterRunMeta",
+                "dataset browser"
+              ],
+              "fmt": "JSON",
+              "desc": "The self-describing parameter run: k_max, z_range, lambda, the preprocessing thresholds and the source cube. Downstream code raises if it is missing.",
+              "scope": "cross"
+            }
+          ],
+          "ncol": 5,
+          "nrow": 3
+        }
+      ]
+    },
+    {
       "folder": "param_extraction",
       "title": "Parameter Extraction",
       "blurb": "The parameter-extraction subsystem fits per-pixel multi-Gaussian height profiles to reduced cubes on the GPU and re-analyses the fitted parameter stacks into fit-quality metrics and diagnostic plots.",
