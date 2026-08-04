@@ -28,13 +28,7 @@ class ModelNoteLibrary:
         return self.NOTE_FILES
 
     def _notes_dir(self) -> Path:
-        repo_root = Path(__file__).resolve().parent.parent
-        repo_dir  = repo_root / "notes" / "models"
-        if repo_dir.is_dir():
-            return repo_dir
-
-        vault_root = repo_root.parent.parent
-        return vault_root / "notes" / "DLR-TomoSAR" / "Models"
+        return Path(__file__).resolve().parent.parent / "notes" / "models"
 
     def _strip_operational(self, markdown: str) -> str:
         out        = []
