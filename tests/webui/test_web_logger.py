@@ -67,16 +67,16 @@ def test_a_coloured_line_survives_the_log_reader_that_strips_it(coloured, capsys
 
 
 def test_the_banner_box_is_wide_enough_for_its_widest_line(plain, capsys):
-    plain.banner("Console", ["url  http://127.0.0.1:8765", "envs 2"])
+    plain.banner("Console", ["url  http://127.0.0.1:8772", "envs 2"])
     lines = _lines(capsys)
 
     bar = lines[0].split("] OK    ")[1]
 
     assert lines[0] == lines[2]
     assert set(bar) == {"="}
-    assert len(bar) == len("url  http://127.0.0.1:8765") + 4
+    assert len(bar) == len("url  http://127.0.0.1:8772") + 4
     assert lines[1].endswith("  Console")
-    assert [line.split("] INFO  ")[1] for line in lines[3:]] == ["  url  http://127.0.0.1:8765", "  envs 2"]
+    assert [line.split("] INFO  ")[1] for line in lines[3:]] == ["  url  http://127.0.0.1:8772", "  envs 2"]
 
 
 def test_a_banner_with_no_body_still_draws_its_box(plain, capsys):

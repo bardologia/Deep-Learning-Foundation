@@ -3799,7 +3799,7 @@
     {
       "folder": "shared",
       "title": "Shared Foundation",
-      "blurb": "The shared foundation layer every per-model TomoSAR pipeline plugs into: config construction and persistence, dataset and loader scaffolding, model instantiation, seed-sweep training with an overfit gate, typed inference dispatch, and reusable sweep and session orchestrators.",
+      "blurb": "The shared foundation layer every per-model pipeline plugs into: config construction and persistence, dataset and loader scaffolding, model instantiation, seed-sweep training with an overfit gate, typed inference dispatch, and reusable sweep and session orchestrators.",
       "diagrams": [
         {
           "key": "shared-config",
