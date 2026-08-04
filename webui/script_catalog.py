@@ -170,7 +170,7 @@ class ScriptCatalog:
         "export_paper_figures": {
             "title"     : "Export Paper Figures",
             "category"  : "Analysis",
-            "purpose"   : "Pack inference figures from selected runs into the publication figures directory under stable names (<run>__<figure-path>) with a JSON manifest of every source. Render in paper style first by running inference with figure_style=paper; the pack then feeds publications/neurips2027 without hand-copying.",
+            "purpose"   : "Pack inference figures from selected runs into the publication figures directory under stable names (<run>__<figure-path>) with a JSON manifest of every source. Render in paper style first by running inference with figure_style=paper; the pack then feeds a paper directory without hand-copying.",
         },
         "collect_reports": {
             "title"     : "Collect Reports",
