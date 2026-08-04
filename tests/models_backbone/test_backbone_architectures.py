@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 import torch
 
@@ -23,20 +22,15 @@ def _build(name, head: str = "conv"):
     return model, config
 
 
-def _input_window(interferograms, in_channels):
-    raw   = np.asarray(interferograms[:in_channels, :WINDOW, :WINDOW])
-    mag   = np.abs(raw).astype(np.float32)
-    mean  = mag.mean(axis=(1, 2), keepdims=True)
-    std   = mag.std(axis=(1, 2), keepdims=True) + 1e-6
-    norm  = (mag - mean) / std
-    batch = np.repeat(norm[None, ...], BATCH, axis=0)
-    return torch.from_numpy(batch).to(DEVICE)
+def _input_window(in_channels):
+    generator = torch.Generator().manual_seed(0)
+    return torch.randn(BATCH, in_channels, WINDOW, WINDOW, generator=generator, dtype=torch.float32).to(DEVICE)
 
 
 @pytest.fixture
-def make_input(interferograms):
+def make_input():
     def _factory(config):
-        return _input_window(interferograms, config.in_channels)
+        return _input_window(config.in_channels)
     return _factory
 
 

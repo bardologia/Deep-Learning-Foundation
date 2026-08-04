@@ -85,8 +85,4 @@ class Trainer(BaseTrainer):
         gt_params = batch[1].to(self.device)
         pred      = self.model(images)
 
-        if self.has_profile:
-            return self.criterion(pred, gt_params)
-
-        kz_map = batch[2].to(self.device) if len(batch) > 2 and batch[2] is not None else None
-        return self.criterion(pred, gt_params, kz_map)
+        return self.criterion(pred, gt_params)

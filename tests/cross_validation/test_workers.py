@@ -263,8 +263,7 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, monkeypa
     trainer_config = captured["trainer_config"]
     assert trainer_config.curriculum is config.curriculum
     assert trainer_config.curriculum.enabled is True
-    assert trainer_config.curriculum.complete.use_covariance_match is True
-    assert trainer_config.geometry.baselines_origin == str(config.geometry.baselines_file(test_data_dir))
+    assert trainer_config.curriculum.complete.use_param_l1 is True
     from pipelines.shared.training.run_naming import RunNaming
 
     run_tag = RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, 5, config.augmentation)
