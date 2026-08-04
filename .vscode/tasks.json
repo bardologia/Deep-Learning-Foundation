@@ -4,7 +4,7 @@
         {
             "label": "TensorBoard",
             "type": "shell",
-            "command": "tensorboard --logdir=${workspaceFolder}/logs",
+            "command": "tensorboard --logdir=logs",
             "isBackground": true,
             "presentation": {
                 "reveal": "silent",

@@ -2,11 +2,6 @@ logs/
 runs/
 datasets/
 results
-result_storage/
-test_data/
-/presentations/
-scripts/sweep_results/
-notebooks/figures/
 *.pt
 *.npy
 *.tfevents.*
@@ -16,8 +11,4 @@ __pycache__/
 node_modules/
 package-lock.json
 .pytest_cache/
-
-publications/**/build/
-publications/**/figures/
-publications/**/*.pdf
 .claude/
