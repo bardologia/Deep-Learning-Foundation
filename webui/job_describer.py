@@ -23,25 +23,11 @@ class JobDescriber:
     }
 
     SPECS = {
-        "pre_process": [
-            ("dataset",   "dataset_name",       "opt"),
-            ("windows",   "win_list",           "list"),
-            ("tracks",    "track_selection",    "text"),
-            ("pol",       "polarisation",       "text"),
-            ("",          "beamforming_method", "text"),
-        ],
         "extract_params": [
             ("datasets",  "dataset_filter",     "list", "all datasets"),
             ("K",         "fit_k_values",       "list"),
             ("lambda",    "fit_lambda_values",  "list"),
             ("modes",     "fit_modes",          "list"),
-            ("suffix",    "output_suffix",      "opt"),
-        ],
-        "inject_external_params": [
-            ("datasets",  "dataset_filter",     "list", "all datasets"),
-            ("sources",   "source_files",       "list"),
-            ("order",     "source_order",       "text"),
-            ("slots",     "k_slots",            "opt"),
             ("suffix",    "output_suffix",      "opt"),
         ],
         "train_backbone": [
@@ -80,13 +66,6 @@ class JobDescriber:
             ("run",     "run_name",               "opt"),
             ("inference after", "infer_after",    "flag"),
         ],
-        "train_unrolled": [
-            ("model",      "model_name",          "text"),
-            ("curve loss", "curve_loss",          "text"),
-            ("dataset",    "paths.dataset_path",  "opt_tail"),
-            ("epochs",     "training.epochs",     "text"),
-            ("run",        "run_name",            "opt"),
-        ],
         "infer_backbone": [
             ("root",   "runs_dir",        "opt_tail"),
             ("filter", "run_filter",      "list", "all runs"),
@@ -105,11 +84,6 @@ class JobDescriber:
             ("gpus",   "gpus",       "list"),
         ],
         "infer_image_autoencoder": [
-            ("root",   "runs_dir",   "opt_tail"),
-            ("filter", "run_filter", "list", "all runs"),
-            ("gpus",   "gpus",       "list"),
-        ],
-        "infer_unrolled": [
             ("root",   "runs_dir",   "opt_tail"),
             ("filter", "run_filter", "list", "all runs"),
             ("gpus",   "gpus",       "list"),
@@ -142,10 +116,6 @@ class JobDescriber:
             ("model",       "model_name",  "opt"),
             ("batch sizes", "batch_sizes", "list"),
         ],
-        "analyze_preprocessing": [
-            ("trials", "run_tags", "list", "all trials"),
-            ("root",   "runs_dir", "opt_tail"),
-        ],
         "analyze_param_extraction": [
             ("trials", "run_tags",   "list", "all trials"),
             ("root",   "params_dir", "opt_tail"),
@@ -153,10 +123,6 @@ class JobDescriber:
         "compare_trials": [
             ("runs", "run_tags", "list", "all runs"),
             ("root", "runs_dir", "opt_tail"),
-        ],
-        "compare_preprocessing_trials": [
-            ("trials", "run_tags", "list", "all trials"),
-            ("root",   "runs_dir", "opt_tail"),
         ],
         "compare_param_extraction_trials": [
             ("trials", "run_tags",   "list", "all trials"),

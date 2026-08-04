@@ -17,8 +17,8 @@ class StubPaths:
     def discover_interpreters(self) -> list[dict]:
         return list(INTERPRETERS)
 
-    def preferred_interpreter(self, interpreters: list[dict], script_key: str = "") -> str:
-        return f"{interpreters[0]['path']}::{script_key}"
+    def preferred_interpreter(self, interpreters: list[dict]) -> str:
+        return interpreters[0]["path"]
 
 
 class StubResolver:
@@ -77,8 +77,8 @@ def _wait_for(items: list, count: int, timeout: float = 5.0) -> list:
     return items
 
 
-def test_the_preferred_interpreter_is_chosen_per_script():
-    assert _launcher().preferred_interpreter("train_backbone") == "/envs/Dune/bin/python::train_backbone"
+def test_the_preferred_interpreter_is_the_first_discovered():
+    assert _launcher().preferred_interpreter() == "/envs/Dune/bin/python"
 
 
 def test_only_a_discovered_interpreter_is_accepted():

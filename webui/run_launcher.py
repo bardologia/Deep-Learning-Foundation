@@ -19,9 +19,9 @@ class RunLauncher:
         self.processes   = processes
         self.tensorboard = tensorboard
 
-    def preferred_interpreter(self, script_key: str = "") -> str:
+    def preferred_interpreter(self) -> str:
         interpreters = self.paths.discover_interpreters()
-        return self.paths.preferred_interpreter(interpreters, script_key)
+        return self.paths.preferred_interpreter(interpreters)
 
     def interpreter_error(self, interpreter: str) -> str:
         if any(item["path"] == interpreter for item in self.paths.discover_interpreters()):

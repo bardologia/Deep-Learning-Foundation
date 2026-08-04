@@ -28,7 +28,7 @@ class TensorboardRouter(SubRouter):
         exchange.send_json({"instances": self.tensorboard.list_instances()})
 
     def logdirs(self, exchange: HttpExchange) -> None:
-        interpreter = self.launcher.preferred_interpreter("train_backbone")
+        interpreter = self.launcher.preferred_interpreter()
         runs_root   = self.launcher.runs_root("train_backbone", interpreter)
 
         if not runs_root:
@@ -39,7 +39,7 @@ class TensorboardRouter(SubRouter):
 
     def start(self, exchange: HttpExchange) -> None:
         body        = exchange.body
-        interpreter = body.get("interpreter") or self.launcher.preferred_interpreter(body.get("script_key", "train_backbone"))
+        interpreter = body.get("interpreter") or self.launcher.preferred_interpreter()
 
         error = self.launcher.interpreter_error(interpreter)
         if error:

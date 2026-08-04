@@ -7,25 +7,15 @@ from script_config_resolver import ScriptConfigResolver
 class ScriptCatalog:
 
     META = {
-        "pre_process": {
-            "title"     : "Pre-process",
-            "category"  : "Data",
-            "purpose"   : "Ingest raw F-SAR products, beamform the tomogram, and form interferograms.",
-        },
         "extract_params": {
             "title"     : "Extract Parameters",
             "category"  : "Data",
             "purpose"   : "Fit per-pixel Gaussian mixtures to build the supervised parameter targets. Sweeps every permutation of the selected datasets, K values, lambda values, and fit modes.",
         },
-        "inject_external_params": {
-            "title"     : "Inject External Parameters",
-            "category"  : "Data",
-            "purpose"   : "Import Gaussian parameter cubes fitted outside this codebase and write them as a normal parameter run inside each selected dataset, ready to train against. Reads RAT cubes whose azimuth/range window is named in the filename, reorders their per-Gaussian channels into the amplitude/mean/sigma convention, stitches several files into one dataset crop, and refuses anything that leaves a pixel uncovered or puts a Gaussian outside the dataset height axis.",
-        },
         "train_backbone": {
             "title"     : "Train Backbone",
             "category"  : "Training",
-            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, physics-loss component and weight sweeps, loss-pair searches, secondary-track selections, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, or cumulative normalization-strategy ladders.",
+            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, loss-pair searches, secondary-track selections, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, or cumulative normalization-strategy ladders.",
         },
         "train_profile_autoencoder": {
             "title"     : "Train Profile Autoencoder",
@@ -42,15 +32,10 @@ class ScriptCatalog:
             "category"  : "Training",
             "purpose"   : "Train the JEPA predictor in latent space. Operates in three modes depending on which autoencoder runs are selected: backbone + profile autoencoder, image autoencoder + backbone, or image autoencoder + backbone + profile autoencoder. Each autoencoder is imported pretrained and either frozen or fine-tuned.",
         },
-        "train_unrolled": {
-            "title"     : "Train Unrolled",
-            "category"  : "Training",
-            "purpose"   : "Train the unrolled physics network (gamma_net): LISTA-style proximal-gradient iterations over the exact per-pixel kz steering operator, trained on coherence measurements synthesised from the ground-truth Gaussian profiles. Isolated from the backbone stack; requires the geometry field.",
-        },
         "train_dual": {
             "title"     : "Train Dual",
             "category"  : "Training",
-            "purpose"   : "Train the dual-trunk set-prediction model: the standard build routes the full reduced stack to both unet_skip trunks at a 90/10 parameter split, the large trunk feeding the per-gaussian parameter heads and the small trunk feeding the existence gate; each trunk is any backbone-zoo architecture with routable channel groups. Shares the backbone dataset, loss curriculum, and trainer. Optionally fans out trials across GPUs: every backbone experiment ladder (loss-curriculum combinations, single-stage losses, slot-presence matrices, physics-loss sweeps, loss-pair searches, secondary-track selections, patch sizes, input-channel ablations, context ladders, size-matched reach comparisons, matching grids, augmentation pairs, normalization ladders, cumulative ablations) plus the dual-specific trunk-routing assignments and budget-matched arm-ratio splits.",
+            "purpose"   : "Train the dual-trunk set-prediction model: the standard build routes the full reduced stack to both unet_skip trunks at a 90/10 parameter split, the large trunk feeding the per-gaussian parameter heads and the small trunk feeding the existence gate; each trunk is any backbone-zoo architecture with routable channel groups. Shares the backbone dataset, loss curriculum, and trainer. Optionally fans out trials across GPUs: every backbone experiment ladder (loss-curriculum combinations, single-stage losses, slot-presence matrices, loss-pair searches, secondary-track selections, patch sizes, input-channel ablations, context ladders, size-matched reach comparisons, matching grids, augmentation pairs, normalization ladders, cumulative ablations) plus the dual-specific trunk-routing assignments and budget-matched arm-ratio splits.",
         },
         "infer_backbone": {
             "title"     : "Infer Backbone",
@@ -66,11 +51,6 @@ class ScriptCatalog:
             "title"     : "Infer Image AE",
             "category"  : "Inference",
             "purpose"   : "Image-autoencoder inference: reconstruction scoring. Sweeps every run root and runs only standalone image-autoencoder runs.",
-        },
-        "infer_unrolled": {
-            "title"     : "Infer Unrolled",
-            "category"  : "Inference",
-            "purpose"   : "Unrolled physics-network inference: re-synthesises coherences from the ground-truth profiles over a split region, inverts them with the trained network, and reports error maps, metrics, and profile overlays. Sweeps every run root and runs only unrolled runs.",
         },
         "infer_dual": {
             "title"     : "Infer Dual",
@@ -90,7 +70,7 @@ class ScriptCatalog:
         "sweep_patches": {
             "title"     : "Patch-Size Sweep",
             "category"  : "Experiments",
-            "purpose"   : "Sweep the patch size per dataset: on each selected dataset (each preprocessed with its own boxcar window), train the same backbone across all patch sizes admissible at the architecture's minimum step on the traditional reduced stack, then report the best patch size per dataset.",
+            "purpose"   : "Sweep the patch size per dataset: on each selected dataset, train the same backbone across all patch sizes admissible at the architecture's minimum step, then report the best patch size per dataset.",
         },
         "tune": {
             "title"     : "Tune",
@@ -102,11 +82,6 @@ class ScriptCatalog:
             "category"  : "Experiments",
             "purpose"   : "Sweep DataLoader settings (batch size, workers, prefetch, pin-memory) per training mode and recommend the configuration that keeps the GPU fed, ending data starvation.",
         },
-        "analyze_preprocessing": {
-            "title"     : "Analyze Preprocessing",
-            "category"  : "Analysis",
-            "purpose"   : "Render the stack-overview plots (SLC amplitudes, flattened interferograms, DEM) for one or more preprocessing trials, decoupled from the tomogram/interferogram generation step.",
-        },
         "analyze_param_extraction": {
             "title"     : "Analyze Param Extraction",
             "category"  : "Analysis",
@@ -116,11 +91,6 @@ class ScriptCatalog:
             "title"     : "Compare Trials",
             "category"  : "Analysis",
             "purpose"   : "Compare inference results across multiple training runs: metrics leaderboard, side-by-side figures, and optional GIF comparison. A trial with nested seed runs enters the comparison as one entry with seed-mean metrics and sample-std annotations; figures come from a representative seed.",
-        },
-        "compare_preprocessing_trials": {
-            "title"     : "Compare Preprocessing",
-            "category"  : "Analysis",
-            "purpose"   : "Compare preprocessing trials that differ by multilook window size. Surfaces the bias-variance trade-off per window (contrast, residual speckle, spurious peaks, azimuth correlation length) as descriptive tables and plots, without forcing a single winner.",
         },
         "compare_param_extraction_trials": {
             "title"     : "Compare Param Extraction",
@@ -208,43 +178,39 @@ class ScriptCatalog:
         "train": {
             "title"    : "Train",
             "category" : "Training",
-            "purpose"  : "Train one model end to end. Pick the stage to train: the supervised backbone, the profile autoencoder, the image autoencoder, the JEPA predictor, the unrolled physics network, or the dual-trunk model.",
+            "purpose"  : "Train one model end to end. Pick the stage to train: the supervised backbone, the profile autoencoder, the image autoencoder, the JEPA predictor, or the dual-trunk model.",
             "members"  : [
                 ("train_backbone",            "Backbone"),
                 ("train_profile_autoencoder", "Profile AE"),
                 ("train_image_autoencoder",   "Image AE"),
                 ("train_jepa",                "JEPA"),
-                ("train_unrolled",            "Unrolled"),
                 ("train_dual",                "Dual"),
             ],
         },
         "infer": {
             "title"    : "Infer",
             "category" : "Inference",
-            "purpose"  : "Run inference end to end. Pick the stage to infer: the supervised backbone (and JEPA), the profile autoencoder, the image autoencoder, the unrolled physics network, or the dual-trunk model.",
+            "purpose"  : "Run inference end to end. Pick the stage to infer: the supervised backbone (and JEPA), the profile autoencoder, the image autoencoder, or the dual-trunk model.",
             "members"  : [
                 ("infer_backbone",            "Backbone"),
                 ("infer_profile_autoencoder", "Profile AE"),
                 ("infer_image_autoencoder",   "Image AE"),
-                ("infer_unrolled",            "Unrolled"),
                 ("infer_dual",                "Dual"),
             ],
         },
         "analyze": {
             "title"    : "Analyze",
             "category" : "Analysis",
-            "purpose"  : "Re-render the diagnostic artifacts for a family of trials without re-running the heavy generation step. Pick the stage to analyze: preprocessing stack overviews or Gaussian-fit parameter extraction.",
+            "purpose"  : "Re-render the diagnostic artifacts for a family of trials without re-running the heavy generation step. Pick the stage to analyze: Gaussian-fit parameter extraction.",
             "members"  : [
-                ("analyze_preprocessing",     "Preprocessing"),
                 ("analyze_param_extraction",  "Param Extraction"),
             ],
         },
         "compare": {
             "title"    : "Compare",
             "category" : "Analysis",
-            "purpose"  : "Compare a family of trials side by side. Pick the stage to compare: preprocessing windows, Gaussian-fit parameter extraction, inference results across training runs, or seed replicas of one training.",
+            "purpose"  : "Compare a family of trials side by side. Pick the stage to compare: Gaussian-fit parameter extraction, inference results across training runs, benchmark runs, or seed replicas of one training.",
             "members"  : [
-                ("compare_preprocessing_trials",    "Preprocessing"),
                 ("compare_param_extraction_trials", "Param Extraction"),
                 ("compare_trials",                  "Inference Trials"),
                 ("compare_runs",                    "Benchmark Runs"),
@@ -321,7 +287,7 @@ class ScriptCatalog:
             "language"     : "python",
             "config_class" : entry["class"] if entry else None,
             "command"      : command,
-            "preferred"    : self.paths.preferred_interpreter(self.paths.discover_interpreters(), key),
+            "preferred"    : self.paths.preferred_interpreter(self.paths.discover_interpreters()),
             "group"        : group_key,
             "group_title"  : group["title"] if group else None,
             "variant"      : label,

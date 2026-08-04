@@ -6,11 +6,7 @@ from pathlib import Path
 
 class ProjectPaths:
 
-    PRIORITY        = ["conda:dlr-cu12", "conda:Dune", "conda:nazaria"]
-    SCRIPT_PRIORITY = {
-        "generate_tomogram"       : ["conda:stetools"],
-        "generate_interferograms" : ["conda:stetools"],
-    }
+    PRIORITY = ["conda:Dune"]
 
     ENTRY_OVERRIDES = {
         "train_backbone": {
@@ -29,10 +25,6 @@ class ProjectPaths:
             "config_module" : "configuration.training.jepa",
             "config_class"  : "JepaEntryConfig",
         },
-        "train_unrolled": {
-            "config_module" : "configuration.training.unrolled",
-            "config_class"  : "UnrolledEntryConfig",
-        },
         "train_dual": {
             "config_module" : "configuration.training.dual",
             "config_class"  : "DualEntryConfig",
@@ -48,10 +40,6 @@ class ProjectPaths:
         "infer_image_autoencoder": {
             "config_module" : "configuration.inference",
             "config_class"  : "ImageAeInferenceEntryConfig",
-        },
-        "infer_unrolled": {
-            "config_module" : "configuration.inference",
-            "config_class"  : "UnrolledInferenceEntryConfig",
         },
         "infer_dual": {
             "config_module" : "configuration.inference",
@@ -80,31 +68,23 @@ class ProjectPaths:
         self.saved_runs_dir = self.logs_dir / "saved_runs"
 
     SCRIPT_DIRS = {
-        "pre_process"                     : "processing",
         "extract_params"                  : "processing",
-        "inject_external_params"          : "processing",
-        "generate_tomogram"               : "processing",
-        "generate_interferograms"         : "processing",
         "train_backbone"                  : "training",
         "train_profile_autoencoder"       : "training",
         "train_image_autoencoder"         : "training",
         "train_jepa"                      : "training",
-        "train_unrolled"                  : "training",
         "train_dual"                      : "training",
         "infer_backbone"                  : "inference",
         "infer_profile_autoencoder"       : "inference",
         "infer_image_autoencoder"         : "inference",
-        "infer_unrolled"                  : "inference",
         "infer_dual"                      : "inference",
         "benchmark"                       : "experiments",
         "cross_validate"                  : "experiments",
         "sweep_patches"                   : "experiments",
         "tune"                            : "experiments",
         "tune_dataloader"                 : "experiments",
-        "analyze_preprocessing"           : "analysis",
         "analyze_param_extraction"        : "analysis",
         "compare_trials"                  : "analysis",
-        "compare_preprocessing_trials"    : "analysis",
         "compare_param_extraction_trials" : "analysis",
         "compare_runs"                    : "analysis",
         "compare_seeds"                   : "analysis",
@@ -165,9 +145,8 @@ class ProjectPaths:
 
         return found
 
-    def preferred_interpreter(self, interpreters: list[dict], script_key: str = "") -> str:
-        priority = self.SCRIPT_PRIORITY.get(script_key, []) + self.PRIORITY
-        for wanted in priority:
+    def preferred_interpreter(self, interpreters: list[dict]) -> str:
+        for wanted in self.PRIORITY:
             for item in interpreters:
                 if item["label"] == wanted:
                     return item["path"]
