@@ -35,14 +35,14 @@ def _generate(config, logger_stub):
     return SyntheticDatasetPipeline(config, logger=logger_stub).run()
 
 
-def test_rejects_a_sigma_finer_than_the_height_bin(tmp_path):
+def test_rejects_a_sigma_finer_than_the_z_bin(tmp_path):
     config = _tiny_config(tmp_path, sigma_range=(0.01, 4.0))
 
-    with pytest.raises(ValueError, match="height bin width"):
+    with pytest.raises(ValueError, match="z bin width"):
         config.validate()
 
 
-def test_rejects_a_wavenumber_count_that_misses_a_secondary(tmp_path):
+def test_rejects_a_phase_rate_count_that_misses_a_secondary(tmp_path):
     config = _tiny_config(tmp_path, channel_phase_rates=(0.01, 0.02))
 
     with pytest.raises(ValueError, match="channel_phase_rates"):
@@ -52,7 +52,7 @@ def test_rejects_a_wavenumber_count_that_misses_a_secondary(tmp_path):
 def test_rejects_a_primary_that_is_also_a_secondary(tmp_path):
     config = _tiny_config(tmp_path, primary_label="CH01")
 
-    with pytest.raises(ValueError, match="reference pass"):
+    with pytest.raises(ValueError, match="reference channel"):
         config.validate()
 
 
@@ -68,7 +68,7 @@ def test_generated_layout_lists_every_artifact(tmp_path, logger_stub):
     assert all((config.data_directory / name).is_file() for name in layout["artifacts"].values())
 
 
-def test_generated_state_carries_crop_and_height_range(tmp_path, logger_stub):
+def test_generated_state_carries_crop_and_z_range(tmp_path, logger_stub):
     config = _tiny_config(tmp_path)
     _generate(config, logger_stub)
 
@@ -93,7 +93,7 @@ def test_generated_arrays_have_the_declared_shapes(tmp_path, logger_stub):
     assert np.load(config.parameters_directory / "parameters.npy").shape == (3 * config.k_max,) + spatial
 
 
-def test_deriveds_are_the_primary_against_each_secondary(tmp_path, logger_stub):
+def test_derived_channels_are_the_primary_against_each_secondary(tmp_path, logger_stub):
     config = _tiny_config(tmp_path)
     _generate(config, logger_stub)
 

@@ -154,9 +154,9 @@ def test_kernel_masks_freeze_parameter_groups():
     def run(amp_on, mu_on, sigma_on):
         out = kernel(
             jnp.array(amps), jnp.array(mus), jnp.array(sigs),
-            jnp.array(height), jnp.array(prof),
+            jnp.array(z_axis), jnp.array(prof),
             jnp.float32(amp_on), jnp.float32(mu_on), jnp.float32(sigma_on),
-            jnp.float32(height[0]), jnp.float32(height[-1]),
+            jnp.float32(z_axis[0]), jnp.float32(z_axis[-1]),
             jnp.float32(0.5), jnp.float32(20.0),
             50, 0.05, 0.9, 0.999,
         )
@@ -184,8 +184,8 @@ def test_kernel_masks_freeze_parameter_groups():
 def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
     rng      = np.random.default_rng(0)
     H, n_row, R = 40, 6, 4
-    height   = np.linspace(-10.0, 30.0, H, dtype=np.float32)
-    layer    = np.exp(-((height - 8.0) ** 2) / (2.0 * 3.0 ** 2)).astype(np.float32)
+    z_axis   = np.linspace(-10.0, 30.0, H, dtype=np.float32)
+    layer    = np.exp(-((z_axis - 8.0) ** 2) / (2.0 * 3.0 ** 2)).astype(np.float32)
     amps     = rng.uniform(0.5, 1.0, size=(n_row, R)).astype(np.float32)
     cube     = layer[:, None, None] * amps[None, :, :]
 
@@ -271,7 +271,7 @@ def test_parameters_finite(parameters):
 
 
 @pytest.mark.dataset
-def test_active_mu_in_physical_height_range(parameters):
+def test_active_mu_in_physical_z_axis_range(parameters):
     w    = np.array(parameters)
     amps = w[0::3]
     mus  = w[1::3]
@@ -380,7 +380,7 @@ def test_inactive_pixels_have_zero_best_k_and_nan_mse(fit_diagnostics):
 def test_stored_mse_matches_reconstruction_from_params(cube_full, parameters, fit_diagnostics):
     a0, a1, r0, r1 = 0, 40, 0, 40
     H              = cube_full.shape[0]
-    height         = _z_axis(H)
+    z_axis         = _z_axis(H)
 
     raw = np.abs(np.array(cube_full[:, a0:a1, r0:r1])).astype(np.float32)
     raw = ProfilePreprocessor.apply(raw, THRESHOLD_FACTOR, TRUNCATION_INDEX)
@@ -394,7 +394,7 @@ def test_stored_mse_matches_reconstruction_from_params(cube_full, parameters, fi
     mus  = parw[1::3].reshape(K_MAX, -1).T
     sigs = parw[2::3].reshape(K_MAX, -1).T
 
-    pred       = GaussianMixture.evaluate_batch(height, amps, mus, sigs)
+    pred       = GaussianMixture.evaluate_batch(z_axis, amps, mus, sigs)
     safe_scale = np.where(active, scale, 1.0)
     pred_norm  = pred     / safe_scale[:, None]
     prof_norm  = profiles / safe_scale[:, None]

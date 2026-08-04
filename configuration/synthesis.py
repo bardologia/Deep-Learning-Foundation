@@ -91,10 +91,10 @@ class SynthesisConfig:
             raise ValueError(f"k_max must place at least one Gaussian per pixel; got {self.k_max}.")
 
         if len(self.channel_phase_rates) != self.n_secondaries:
-            raise ValueError(f"channel_phase_rates lists {len(self.channel_phase_rates)} entries but secondary_labels lists {self.n_secondaries}; every secondary needs exactly one wavenumber.")
+            raise ValueError(f"channel_phase_rates lists {len(self.channel_phase_rates)} entries but secondary_labels lists {self.n_secondaries}; every secondary needs exactly one phase rate.")
 
         if self.primary_label in self.secondary_labels:
-            raise ValueError(f"primary_label {self.primary_label} also appears in secondary_labels {self.secondary_labels}; the reference pass is never a secondary.")
+            raise ValueError(f"primary_label {self.primary_label} also appears in secondary_labels {self.secondary_labels}; the reference channel is never a secondary.")
 
         if len(set(self.secondary_labels)) != self.n_secondaries:
             raise ValueError(f"secondary_labels contains duplicates: {self.secondary_labels}")
