@@ -1,476 +1,6 @@
 {
   "folders": [
     {
-      "folder": "preprocessing",
-      "title": "Preprocessing",
-      "blurb": "Turns raw F-SAR products into the beamformed Capon tomogram, flattened interferometric stack, per-pixel geometry field and stack-overview plots that seed the dataset and training pipelines.",
-      "diagrams": [
-        {
-          "key": "preprocessing-generation",
-          "stage": "Generation",
-          "title": "Stack Generation",
-          "entry": "main/processing/pre_process.py",
-          "blurb": "The main preprocessing run ingests raw F-SAR products through PyRat, beamforms a Capon tomogram, builds the flattened interferometric stack, derives the per-pixel geometry field, and records an artifact manifest for the dataset stage.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "pre_process.py",
-              "module": "main/processing/pre_process.py",
-              "role": "entry",
-              "fn": "Bootstraps the pinned env and builds one ProcessingConfig session per win filter, then hands them to PreProcessScheduler.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "config",
-              "label": "ProcessingConfig",
-              "module": "configuration/sar/processing_config.py",
-              "role": "config",
-              "fn": "Dataclass carrying crop, track selection, polarisation, beamforming method and run path settings.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "pipeline",
-              "label": "ProcessingPipeline",
-              "module": "pipelines/processing/generation/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Sequences the tomogram, interferometric-inputs and geometry-field stages, then triggers the run manifest write.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "registry",
-              "label": "ArtifactRegistry",
-              "module": "pipelines/processing/generation/artifacts.py",
-              "role": "io",
-              "fn": "Creates the run directory structure and resolves the canonical .npy artifact output paths by name.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "tomo_launcher",
-              "label": "TomogramLauncher",
-              "module": "tools/sar/tomogram_launcher.py",
-              "role": "io",
-              "fn": "Serialises a tomogram job spec and launches the pyrat-env subprocess (generate_tomogram.py).",
-              "col": 2,
-              "reads": [],
-              "writes": [
-                "tomogram_spec.json"
-              ],
-              "row": 0
-            },
-            {
-              "id": "inf_launcher",
-              "label": "InterferogramLauncher",
-              "module": "tools/sar/interferogram_launcher.py",
-              "role": "io",
-              "fn": "Serialises an interferogram job spec, launches the pyrat-env subprocess (generate_interferograms.py) and reads back stack shapes and pass labels.",
-              "col": 2,
-              "reads": [
-                "interferogram_result.json"
-              ],
-              "writes": [
-                "interferogram_spec.json"
-              ],
-              "row": 2
-            },
-            {
-              "id": "tomo_gen",
-              "label": "TomogramGenerator",
-              "module": "pipelines/processing/generation/tomogram.py",
-              "role": "transform",
-              "fn": "Runs in the pyrat env; dispatches PyRat Capon jobs over azimuth subsections via TomogramProcessor and concatenates them into the tomogram cube and DEM.",
-              "col": 3,
-              "reads": [
-                "tomogram_spec.json"
-              ],
-              "writes": [
-                "tomogram_full.npy",
-                "dem_full.npy"
-              ],
-              "row": 0
-            },
-            {
-              "id": "inf_gen",
-              "label": "InterferogramGenerator",
-              "module": "pipelines/processing/generation/interferogram.py",
-              "role": "transform",
-              "fn": "Runs in the pyrat env; loads primary/secondary SLCs through PyRat, flattens interferograms by DEM-phase deramping, and extracts track baselines, profiles and parameters.",
-              "col": 3,
-              "reads": [
-                "interferogram_spec.json"
-              ],
-              "writes": [
-                "primary.npy",
-                "secondaries.npy",
-                "interferograms.npy",
-                "track_parameters.json",
-                "track_profiles.npz",
-                "interferogram_result.json"
-              ],
-              "row": 2
-            },
-            {
-              "id": "geom",
-              "label": "GeometryFieldBuilder",
-              "module": "tools/sar/geometry_field.py",
-              "role": "transform",
-              "fn": "Builds the per-pixel kz geometry field for the physics loss from track parameters and per-azimuth baseline profiles.",
-              "col": 4,
-              "reads": [
-                "track_parameters.json",
-                "track_profiles.npz"
-              ],
-              "writes": [
-                "geometry_field.npz"
-              ],
-              "row": 3
-            },
-            {
-              "id": "meta",
-              "label": "MetadataManager",
-              "module": "pipelines/processing/generation/artifacts.py",
-              "role": "io",
-              "fn": "Writes the config snapshot, per-stage metadata files and the dataset.json layout manifest.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "config_state.json",
-                "meta_tomogram_full.txt",
-                "meta_inputs.txt",
-                "dataset.json"
-              ],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "entry",
-              "to": "pipeline",
-              "label": "sessions per win filter",
-              "kind": "control"
-            },
-            {
-              "from": "config",
-              "to": "pipeline",
-              "label": "crop, tracks, paths",
-              "kind": "data"
-            },
-            {
-              "from": "registry",
-              "to": "pipeline",
-              "label": "resolved .npy paths",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "tomo_launcher",
-              "label": "tomogram spec",
-              "kind": "data"
-            },
-            {
-              "from": "tomo_launcher",
-              "to": "tomo_gen",
-              "label": "via pyrat subprocess",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "inf_launcher",
-              "label": "interferogram spec",
-              "kind": "data"
-            },
-            {
-              "from": "inf_launcher",
-              "to": "inf_gen",
-              "label": "via pyrat subprocess",
-              "kind": "control"
-            },
-            {
-              "from": "inf_launcher",
-              "to": "pipeline",
-              "label": "shapes + pass_labels",
-              "kind": "data"
-            },
-            {
-              "from": "inf_gen",
-              "to": "geom",
-              "label": "track params + profiles",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "geom",
-              "label": "crop + build request",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "meta",
-              "label": "stage metadata + config",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "tomogram_full.npy",
-              "producer": "TomogramGenerator",
-              "consumers": [
-                "TomoDataset builder"
-              ],
-              "fmt": "npy",
-              "desc": "Beamformed Capon tomogram cube (height x azimuth x range) consumed by the dataset stage.",
-              "scope": "cross"
-            },
-            {
-              "name": "dem_full.npy",
-              "producer": "TomogramGenerator",
-              "consumers": [
-                "StackPlotter",
-                "TomoDataset builder"
-              ],
-              "fmt": "npy",
-              "desc": "Full-stack DEM height map over the crop.",
-              "scope": "cross"
-            },
-            {
-              "name": "primary/secondaries/interferograms.npy",
-              "producer": "InterferogramGenerator",
-              "consumers": [
-                "StackPlotter",
-                "TomoDataset builder"
-              ],
-              "fmt": "npy",
-              "desc": "Primary SLC, secondary SLC stack and DEM-flattened interferometric stack.",
-              "scope": "cross"
-            },
-            {
-              "name": "geometry_field.npz",
-              "producer": "GeometryFieldBuilder",
-              "consumers": [
-                "Trainer physics loss",
-                "TomoDataset builder"
-              ],
-              "fmt": "npz",
-              "desc": "Per-pixel kz geometry field wired into the physics loss.",
-              "scope": "cross"
-            },
-            {
-              "name": "track_parameters.json / track_profiles.npz",
-              "producer": "InterferogramGenerator",
-              "consumers": [
-                "GeometryFieldBuilder",
-                "Trainer physics loss"
-              ],
-              "fmt": "json+npz",
-              "desc": "Per-track acquisition parameters and per-azimuth baseline profiles.",
-              "scope": "cross"
-            },
-            {
-              "name": "dataset.json",
-              "producer": "MetadataManager",
-              "consumers": [
-                "StackInferencePipeline",
-                "TomoDataset builder"
-              ],
-              "fmt": "json",
-              "desc": "Stack layout manifest: artifact filenames, crop, max_amplitude_clip and pass_labels.",
-              "scope": "cross"
-            },
-            {
-              "name": "tomogram_spec.json / interferogram_spec.json",
-              "producer": "TomogramLauncher",
-              "consumers": [
-                "TomogramGenerator",
-                "InterferogramGenerator"
-              ],
-              "fmt": "json",
-              "desc": "Job spec handed to the pyrat-env subprocess.",
-              "scope": "within"
-            }
-          ],
-          "ncol": 5,
-          "nrow": 4
-        },
-        {
-          "key": "preprocessing-analysis",
-          "stage": "Analysis",
-          "title": "Stack Overview Plots",
-          "entry": "main/analysis/analyze_preprocessing.py",
-          "blurb": "A decoupled analysis pass that reads each preprocessing run's dataset.json manifest and renders SLC amplitude, interferogram amplitude/phase and DEM overview figures.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "analyze_preprocessing.py",
-              "module": "main/analysis/analyze_preprocessing.py",
-              "role": "entry",
-              "fn": "Bootstraps the env and runs PreprocessingInferenceScheduler over the selected preprocessing trials.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "config",
-              "label": "PreprocessInferenceConfig",
-              "module": "configuration/sar/processing_config.py",
-              "role": "config",
-              "fn": "Dataclass naming the runs directory and the specific run tags (or auto-discovery) to plot.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "collector",
-              "label": "StackInferenceTrialCollector",
-              "module": "pipelines/processing/generation/inference.py",
-              "role": "io",
-              "fn": "Discovers preprocessing run directories that contain a data/dataset.json manifest.",
-              "col": 1,
-              "reads": [
-                "dataset.json"
-              ],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "scheduler",
-              "label": "PreprocessingInferenceScheduler",
-              "module": "pipelines/processing/generation/inference.py",
-              "role": "orchestrator",
-              "fn": "Sequences one StackInference session per discovered trial run directory.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "stack_pipeline",
-              "label": "StackInferencePipeline",
-              "module": "pipelines/processing/generation/inference.py",
-              "role": "orchestrator",
-              "fn": "Reads a run's dataset.json layout and drives the plotter over its stack artifacts.",
-              "col": 2,
-              "reads": [
-                "dataset.json"
-              ],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "plotter",
-              "label": "StackPlotter",
-              "module": "pipelines/processing/generation/plots.py",
-              "role": "io",
-              "fn": "Memory-maps the primary/secondary SLCs, interferograms and DEM and renders amplitude, phase and height overview figures.",
-              "col": 3,
-              "reads": [
-                "primary.npy",
-                "secondaries.npy",
-                "interferograms.npy",
-                "dem_full.npy"
-              ],
-              "writes": [
-                "images/slc/*.png",
-                "images/interferograms/*.png",
-                "images/dem/dem_full.png"
-              ],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "config",
-              "to": "collector",
-              "label": "runs_dir + run_tags",
-              "kind": "data"
-            },
-            {
-              "from": "collector",
-              "to": "scheduler",
-              "label": "discovered run dir list",
-              "kind": "data"
-            },
-            {
-              "from": "entry",
-              "to": "scheduler",
-              "label": "config + launch",
-              "kind": "control"
-            },
-            {
-              "from": "scheduler",
-              "to": "stack_pipeline",
-              "label": "run_dir per trial",
-              "kind": "control"
-            },
-            {
-              "from": "stack_pipeline",
-              "to": "plotter",
-              "label": "paths + clip + labels",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "dataset.json",
-              "producer": "MetadataManager",
-              "consumers": [
-                "StackInferenceTrialCollector",
-                "StackInferencePipeline"
-              ],
-              "fmt": "json",
-              "desc": "Stack layout manifest read to discover trials and locate stack artifacts.",
-              "scope": "cross"
-            },
-            {
-              "name": "primary/secondaries/interferograms.npy",
-              "producer": "InterferogramGenerator",
-              "consumers": [
-                "StackPlotter"
-              ],
-              "fmt": "npy",
-              "desc": "SLC and interferometric stacks memory-mapped for plotting.",
-              "scope": "cross"
-            },
-            {
-              "name": "dem_full.npy",
-              "producer": "TomogramGenerator",
-              "consumers": [
-                "StackPlotter"
-              ],
-              "fmt": "npy",
-              "desc": "Full-stack DEM height map memory-mapped for plotting.",
-              "scope": "cross"
-            },
-            {
-              "name": "stack overview figures",
-              "producer": "StackPlotter",
-              "consumers": [
-                "webui repo-map gallery",
-                "user"
-              ],
-              "fmt": "png",
-              "desc": "SLC amplitude, interferogram amplitude/phase and DEM figures under the run's images/ tree.",
-              "scope": "cross"
-            }
-          ],
-          "ncol": 4,
-          "nrow": 2
-        }
-      ]
-    },
-    {
       "folder": "param_extraction",
       "title": "Parameter Extraction",
       "blurb": "The parameter-extraction subsystem fits per-pixel multi-Gaussian height profiles to reduced tomograms on the GPU and re-analyses the fitted parameter stacks into fit-quality metrics and diagnostic plots.",
@@ -980,28 +510,13 @@
               "row": 1
             },
             {
-              "id": "geom",
-              "label": "GeometryField (kz)",
-              "module": "tools/sar",
-              "role": "external",
-              "fn": "Per-pixel kz geometry field produced by preprocessing, loaded and sliced per split region when a physics loss is active.",
-              "col": 0,
-              "reads": [],
-              "writes": [
-                "meta/geometry_field.npz"
-              ],
-              "row": 2
-            },
-            {
               "id": "pipeline",
               "label": "DatasetPipeline",
               "module": "pipelines/backbone/dataset/pipeline.py",
               "role": "orchestrator",
               "fn": "Builds the train split, fits stats on it, then builds val/test with that normalizer and writes crop/patch/config metadata before returning loaders.",
               "col": 1,
-              "reads": [
-                "meta/geometry_field.npz"
-              ],
+              "reads": [],
               "writes": [],
               "row": 1
             },
@@ -1114,12 +629,6 @@
               "kind": "data"
             },
             {
-              "from": "geom",
-              "to": "pipeline",
-              "label": "GeometryField kz",
-              "kind": "data"
-            },
-            {
               "from": "pipeline",
               "to": "cropper",
               "label": "Layout + split_regions",
@@ -1189,17 +698,6 @@
               ],
               "fmt": "npy (mmap)",
               "desc": "Primary, secondaries, interferograms, parameters, DEM and full-tomogram arrays sliced per split region.",
-              "scope": "cross"
-            },
-            {
-              "name": "meta/geometry_field.npz",
-              "producer": "preprocessing pipeline",
-              "consumers": [
-                "DatasetPipeline",
-                "DataConsistencyEvaluator"
-              ],
-              "fmt": "npz",
-              "desc": "Per-pixel kz geometry field subset to the selected secondaries for the physics loss.",
               "scope": "cross"
             },
             {
@@ -1542,11 +1040,9 @@
             {
               "name": "docs/trainer_config.json",
               "producer": "TrainingRunMetadata",
-              "consumers": [
-                "DataConsistencyEvaluator"
-              ],
+              "consumers": [],
               "fmt": "json",
-              "desc": "Resolved trainer config; inference reads the height-axis convention from it.",
+              "desc": "Resolved trainer config; inference rebuilds the trained architecture from it.",
               "scope": "cross"
             },
             {
@@ -1620,7 +1116,7 @@
               "label": "InferenceConfig",
               "module": "configuration/inference.py",
               "role": "config",
-              "fn": "Selects run directory, split, checkpoint, stitching window, and toggles for cubes, reduced baseline, data consistency, plots and animations.",
+              "fn": "Selects run directory, split, checkpoint, stitching window, and toggles for cubes, plots and animations.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -1631,7 +1127,7 @@
               "label": "InferencePipeline",
               "module": "pipelines/backbone/inference/pipeline.py",
               "role": "orchestrator",
-              "fn": "Loads the run, predicts the cube, evaluates metrics/reduced/consistency, composes figures and assembles the report.",
+              "fn": "Loads the run, predicts the cube, evaluates metrics, composes figures and assembles the report.",
               "col": 1,
               "reads": [],
               "writes": [],
@@ -1689,46 +1185,17 @@
               "row": 1
             },
             {
-              "id": "reduced",
-              "label": "ReducedTomogramSynthesizer",
-              "module": "pipelines/backbone/inference/reduced.py",
-              "role": "transform",
-              "fn": "Reproduces a classical Capon tomogram from the trained secondary subset via TomogramLauncher and caches it as the baseline.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "reduced_tomogram_*.npy"
-              ],
-              "row": 2
-            },
-            {
               "id": "metrics",
               "label": "Metrics",
               "module": "pipelines/backbone/inference/metrics.py",
               "role": "metric",
-              "fn": "Computes curve, per-pixel, SSIM, per-elevation, matched-Gaussian and slot-organization metrics plus the reduced-vs-GT comparison.",
+              "fn": "Computes curve, per-pixel, SSIM, per-elevation, matched-Gaussian and slot-organization metrics.",
               "col": 4,
               "reads": [],
               "writes": [
                 "metrics.json"
               ],
               "row": 1
-            },
-            {
-              "id": "data_consistency",
-              "label": "DataConsistencyEvaluator",
-              "module": "pipelines/backbone/inference/data_consistency.py",
-              "role": "metric",
-              "fn": "Reprojects pred/GT curves to track coherences via the kz field and scores them against the measured interferogram phase.",
-              "col": 3,
-              "reads": [
-                "docs/trainer_config.json",
-                "meta/geometry_field.npz"
-              ],
-              "writes": [
-                "cubes/physics_*.npy"
-              ],
-              "row": 2
             },
             {
               "id": "figures",
@@ -1815,24 +1282,6 @@
             },
             {
               "from": "predictor",
-              "to": "reduced",
-              "label": "gt_curves",
-              "kind": "data"
-            },
-            {
-              "from": "reduced",
-              "to": "metrics",
-              "label": "reduced curves",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "data_consistency",
-              "label": "pred/GT curves",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
               "to": "figures",
               "label": "Result cubes",
               "kind": "data"
@@ -1885,16 +1334,6 @@
               "scope": "cross"
             },
             {
-              "name": "meta/geometry_field.npz",
-              "producer": "preprocessing pipeline",
-              "consumers": [
-                "DataConsistencyEvaluator"
-              ],
-              "fmt": "npz",
-              "desc": "Per-pixel kz field reused to reproject curves for interferometric consistency.",
-              "scope": "cross"
-            },
-            {
               "name": "cubes/*.npy",
               "producer": "Predictor",
               "consumers": [
@@ -1906,17 +1345,6 @@
               "scope": "within"
             },
             {
-              "name": "reduced_tomogram_*.npy",
-              "producer": "ReducedTomogramSynthesizer",
-              "consumers": [
-                "Metrics",
-                "FigureComposer"
-              ],
-              "fmt": "npy (cached)",
-              "desc": "Classical Capon reconstruction from the trained secondary subset, cached per crop/selection.",
-              "scope": "within"
-            },
-            {
               "name": "metrics.json",
               "producer": "Metrics",
               "consumers": [
@@ -1924,7 +1352,7 @@
                 "webui"
               ],
               "fmt": "json",
-              "desc": "All global metrics including reduced-comparison, data-consistency and track summaries.",
+              "desc": "All global metrics: curve, per-pixel, per-elevation, SSIM and matched-Gaussian summaries.",
               "scope": "within"
             },
             {
@@ -2385,7 +1813,7 @@
               "label": "InferencePipeline",
               "module": "pipelines/backbone/inference/pipeline.py",
               "role": "orchestrator",
-              "fn": "The backbone inference orchestrator: loads the run, predicts the cube, evaluates metrics, the reduced baseline and data consistency, composes figures and assembles the report.",
+              "fn": "The backbone inference orchestrator: loads the run, predicts the cube, evaluates metrics, composes figures and assembles the report.",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -4369,577 +3797,6 @@
       ]
     },
     {
-      "folder": "unrolled",
-      "title": "Unrolled Physics",
-      "blurb": "The isolated gamma_net family: LISTA-style unrolled inversion of the exact tomographic forward operator, trained on synthesised per-pixel coherence measurements. Shares only leaf utilities with the rest of the codebase so it can evolve independently.",
-      "diagrams": [
-        {
-          "key": "unrolled-training",
-          "stage": "Training",
-          "title": "Unrolled physics inversion training",
-          "entry": "main/training/train_unrolled.py",
-          "blurb": "Trains the gamma_net unrolled inversion network on per-pixel coherence measurements synthesised from the ground-truth Gaussian profiles through the exact kz steering operator. The pipeline reuses the backbone dataset stack with the geometry field forced on, and the trainer reuses the shared warmup, scheduler, EMA and VRAM-reservation runtime.",
-          "nodes": [
-            {
-              "id": "config",
-              "label": "UnrolledEntryConfig",
-              "module": "configuration/training/unrolled.py",
-              "role": "config",
-              "fn": "Slim entry dataclass (paths, UnrolledTrainingConfig, geometry, normalization, augmentation, curve loss and measurement-noise knobs) plus UnrolledTrainerConfig, the resolved component bundle BaseTrainer consumes.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "entry",
-              "label": "train_unrolled.py",
-              "module": "main/training/train_unrolled.py",
-              "role": "entry",
-              "fn": "Pins the GPU environment, then defers to UnrolledTrainingLauncher with ConfigCli overrides.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "factory",
-              "label": "ConfigFactory",
-              "module": "pipelines/shared/config/config_factory.py",
-              "role": "config",
-              "fn": "Duck-typed over the entry config: builds the DatasetConfig with split regions and patch tiling exactly as for backbone training.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "pipeline",
-              "label": "UnrolledTrainingLauncher / UnrolledTrainingPipeline",
-              "module": "pipelines/unrolled/training/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Resolves the entry config, creates the run directory, builds dataset, model and trainer, and persists the resolved config and model architecture.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "model",
-              "label": "get_unrolled / GammaNet",
-              "module": "models/unrolled/gamma_net.py",
-              "role": "model",
-              "fn": "LISTA-style unroll: matched-filter init, then L iterations of Lipschitz-normalised gradient step, learned 1D prox along elevation, and nonnegative soft-threshold.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "persist",
-              "label": "UnrolledModelConfigIO",
-              "module": "pipelines/shared/config/config_persistence.py",
-              "role": "io",
-              "fn": "Persists the GammaNetConfig to unrolled_model_config.json so a checkpoint reconstructs a structurally identical model.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "dataset",
-              "label": "DatasetPipeline",
-              "module": "pipelines/backbone/dataset/pipeline.py",
-              "role": "external",
-              "fn": "The backbone dataset stack with build_geometry_field=True: patches carry (input, gt params, per-pixel kz) triples.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "operator",
-              "label": "TomoOperator",
-              "module": "models/unrolled/gamma_net.py",
-              "role": "transform",
-              "fn": "Exact forward/adjoint pair built per batch from the kz map and elevation axis; reuses PhysicalLoss.synthesise_track for the forward map.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "trainer",
-              "label": "UnrolledTrainer",
-              "module": "pipelines/unrolled/training/trainer.py",
-              "role": "orchestrator",
-              "fn": "BaseTrainer subclass: synthesises normalised coherence measurements from GT profiles per batch, feeds gamma_net, and delegates epochs, early stopping, EMA, clipping, checkpointing and resume to the shared loop.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "curves",
-              "label": "GaussianCurve",
-              "module": "tools/data/gaussians.py",
-              "role": "transform",
-              "fn": "Renders the denormalised GT Gaussian parameters to power-normalised profiles on the elevation grid; these are both the measurement source and the regression target.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "runtime",
-              "label": "Warmup / Scheduler / WeightEma / VramReservation",
-              "module": "tools/training/scheduling.py",
-              "role": "transform",
-              "fn": "Shared runtime components: linear LR warmup into cosine annealing, per-step EMA shadow updates, and the pre-training VRAM parking guard.",
-              "col": 4,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "config",
-              "to": "pipeline",
-              "label": "resolved entry config",
-              "kind": "data"
-            },
-            {
-              "from": "entry",
-              "to": "pipeline",
-              "label": "ConfigCli overrides",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "factory",
-              "label": "training_dataset_config()",
-              "kind": "control"
-            },
-            {
-              "from": "factory",
-              "to": "dataset",
-              "label": "DatasetConfig + splits",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "dataset",
-              "label": "build_geometry_field=True",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "model",
-              "label": "get_unrolled(model_name)",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "persist",
-              "label": "GammaNetConfig",
-              "kind": "io"
-            },
-            {
-              "from": "pipeline",
-              "to": "trainer",
-              "label": "loaders + x_axis + normalizer",
-              "kind": "control"
-            },
-            {
-              "from": "dataset",
-              "to": "trainer",
-              "label": "(input, gt, kz) batches",
-              "kind": "data"
-            },
-            {
-              "from": "trainer",
-              "to": "curves",
-              "label": "denormalised GT params",
-              "kind": "control"
-            },
-            {
-              "from": "curves",
-              "to": "operator",
-              "label": "normalised profiles s",
-              "kind": "data"
-            },
-            {
-              "from": "operator",
-              "to": "trainer",
-              "label": "coherence y = A s (+ noise)",
-              "kind": "data"
-            },
-            {
-              "from": "trainer",
-              "to": "model",
-              "label": "y, kz map, x axis",
-              "kind": "data"
-            },
-            {
-              "from": "model",
-              "to": "operator",
-              "label": "forward/adjoint per iteration",
-              "kind": "control"
-            },
-            {
-              "from": "trainer",
-              "to": "runtime",
-              "label": "warmup step, EMA update, VRAM fill/refill",
-              "kind": "control"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "best_model.pt",
-              "producer": "UnrolledTrainer",
-              "consumers": [
-                "UnrolledTrainer"
-              ],
-              "fmt": "PyTorch state dict",
-              "desc": "Best-validation checkpoint written by the shared Checkpoint (params, x-axis, best epoch and loss); the EMA shadow when use_ema is on, reloaded before the final test pass.",
-              "scope": "within"
-            },
-            {
-              "name": "last.pt",
-              "producer": "UnrolledTrainer",
-              "consumers": [],
-              "fmt": "PyTorch checkpoint",
-              "desc": "Resumable TrainerState written every epoch: model, optimizer, EMA, schedules, early stopping, clipper and RNG.",
-              "scope": "within"
-            },
-            {
-              "name": "training_summary.json",
-              "producer": "UnrolledTrainingPipeline",
-              "consumers": [],
-              "fmt": "JSON",
-              "desc": "Per-epoch train/val loss history, best validation loss and epoch, and the final test metrics (loss, batches, peak MAE).",
-              "scope": "within"
-            },
-            {
-              "name": "unrolled_model_config.json",
-              "producer": "UnrolledModelConfigIO",
-              "consumers": [
-                "UnrolledModelConfigIO"
-              ],
-              "fmt": "JSON",
-              "desc": "Persisted GammaNetConfig for faithful checkpoint reconstruction.",
-              "scope": "within"
-            },
-            {
-              "name": "docs/resolved_entry_config.json",
-              "producer": "UnrolledTrainingPipeline",
-              "consumers": [],
-              "fmt": "JSON",
-              "desc": "The fully resolved entry configuration the run was launched with.",
-              "scope": "within"
-            }
-          ],
-          "ncol": 5,
-          "nrow": 3
-        },
-        {
-          "key": "unrolled-inference",
-          "stage": "Inference",
-          "title": "Unrolled physics inversion inference",
-          "entry": "main/inference/infer_unrolled.py",
-          "blurb": "Rebuilds gamma_net from its persisted config, re-synthesises coherence measurements from the split's ground-truth Gaussian parameters through the exact kz operator, inverts them chunk by chunk, and scores the recovered profiles with error maps, example profiles and a markdown report. The family runs its own inference stack rather than the backbone one because its input is synthesised, not read from the dataset.",
-          "nodes": [
-            {
-              "id": "cfg",
-              "label": "UnrolledInferenceConfig / UnrolledInferenceEntryConfig",
-              "module": "configuration/inference/unrolled.py",
-              "role": "config",
-              "fn": "Run directory, split, checkpoint name, device, the chunk size in cells, the optional measurement-noise override, plot and profile-cube toggles, and the runs root plus GPU list for the fan-out.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "entry",
-              "label": "infer_unrolled.py",
-              "module": "main/inference/infer_unrolled.py",
-              "role": "entry",
-              "fn": "Thin bootstrap that constructs the shared InferenceEntry with RunType.UNROLLED.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "pipeline",
-              "label": "UnrolledInferencePipeline / UnrolledInferenceMetadata",
-              "module": "pipelines/unrolled/inference/pipeline.py",
-              "role": "orchestrator",
-              "fn": "Seeds the run, creates the timestamped output tree under an unrolled subdirectory, loads the run, predicts, optionally saves the profile cube, scores metrics, picks best, median and worst example pixels, composes figures and assembles the report.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "loader",
-              "label": "UnrolledRunLoader / UnrolledRun",
-              "module": "pipelines/unrolled/inference/loader.py",
-              "role": "io",
-              "fn": "RunArtifactLoader subclass: reads the resolved entry config and training summary, rebuilds gamma_net through UnrolledModelConfigIO, crops the split's GT parameters and kz field, and restores the elevation axis and normalization stats into one UnrolledRun record.",
-              "col": 2,
-              "reads": [
-                "docs/resolved_entry_config.json",
-                "training_summary.json",
-                "meta/unrolled_model_config.json",
-                "meta/geometry_field.npz"
-              ],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "model",
-              "label": "GammaNet",
-              "module": "models/unrolled/gamma_net.py",
-              "role": "model",
-              "fn": "The reconstructed unrolled network in eval mode: matched-filter init followed by the learned proximal-gradient layers over the exact forward and adjoint operator.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "synth",
-              "label": "MeasurementSynthesiser",
-              "module": "pipelines/unrolled/synthesis.py",
-              "role": "transform",
-              "fn": "Renders the GT parameters to power-normalised profiles, pushes them through the per-pixel steering operator to complex coherences, adds the configured measurement noise, and returns the power mask alongside the target.",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "predictor",
-              "label": "UnrolledPredictor / UnrolledPrediction",
-              "module": "pipelines/unrolled/inference/predictor.py",
-              "role": "transform",
-              "fn": "Walks the split in row chunks sized by chunk_cells, synthesises measurements with a per-chunk seeded noise generator, runs the network, and accumulates per-pixel curve L1, curve MSE, peak-position error, GT and predicted peak-height maps and the validity mask.",
-              "col": 3,
-              "reads": [],
-              "writes": [
-                "profile_cube.npy"
-              ],
-              "row": 1
-            },
-            {
-              "id": "metrics",
-              "label": "UnrolledMetrics",
-              "module": "pipelines/unrolled/inference/metrics.py",
-              "role": "metric",
-              "fn": "Reduces the per-pixel maps over valid pixels to loss, curve L1 with its p50 and p90, curve MSE and RMSE, peak MAE in metres and the valid fraction, and carries the training best-validation and test losses through for reference. Raises when no pixel clears the power floor.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "metrics.json"
-              ],
-              "row": 0
-            },
-            {
-              "id": "plots",
-              "label": "UnrolledPlots",
-              "module": "pipelines/unrolled/inference/plots.py",
-              "role": "io",
-              "fn": "Renders the masked error maps, the error histogram, the GT and predicted peak-height maps and the best, median and worst example profile pairs.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "figures/*.png"
-              ],
-              "row": 1
-            },
-            {
-              "id": "report",
-              "label": "UnrolledReport",
-              "module": "pipelines/unrolled/inference/report.py",
-              "role": "io",
-              "fn": "InferenceReportBase subclass: a run summary with the iteration count and parameter count, four metric groups and six figure sections assembled into the markdown report.",
-              "col": 5,
-              "reads": [],
-              "writes": [
-                "report.md"
-              ],
-              "row": 0
-            }
-          ],
-          "edges": [
-            {
-              "from": "cfg",
-              "to": "pipeline",
-              "label": "UnrolledInferenceConfig",
-              "kind": "data"
-            },
-            {
-              "from": "entry",
-              "to": "pipeline",
-              "label": "one job per discovered run",
-              "kind": "control"
-            },
-            {
-              "from": "pipeline",
-              "to": "loader",
-              "label": "run directory + split + checkpoint",
-              "kind": "control"
-            },
-            {
-              "from": "loader",
-              "to": "model",
-              "label": "get_unrolled + state dict",
-              "kind": "control"
-            },
-            {
-              "from": "loader",
-              "to": "predictor",
-              "label": "UnrolledRun (GT params, kz, x axis)",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "synth",
-              "label": "GT params + kz chunk",
-              "kind": "control"
-            },
-            {
-              "from": "synth",
-              "to": "predictor",
-              "label": "measurements, target, power mask",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "model",
-              "label": "measurements, kz, x axis",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "metrics",
-              "label": "per-pixel error maps + mask",
-              "kind": "data"
-            },
-            {
-              "from": "predictor",
-              "to": "plots",
-              "label": "error maps + example profile pairs",
-              "kind": "data"
-            },
-            {
-              "from": "metrics",
-              "to": "report",
-              "label": "metric groups",
-              "kind": "data"
-            },
-            {
-              "from": "plots",
-              "to": "report",
-              "label": "figure paths",
-              "kind": "data"
-            },
-            {
-              "from": "loader",
-              "to": "report",
-              "label": "run summary + training summary",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "meta/unrolled_model_config.json",
-              "producer": "unrolled training",
-              "consumers": [
-                "UnrolledModelConfigIO",
-                "UnrolledRunLoader"
-              ],
-              "fmt": "json",
-              "desc": "Persisted GammaNetConfig; the loader refuses to guess an architecture without it.",
-              "scope": "cross"
-            },
-            {
-              "name": "best_model.pt",
-              "producer": "unrolled training",
-              "consumers": [
-                "UnrolledRunLoader"
-              ],
-              "fmt": "PyTorch checkpoint",
-              "desc": "Best-validation weights, the EMA shadow when use_ema was on.",
-              "scope": "cross"
-            },
-            {
-              "name": "training_summary.json",
-              "producer": "unrolled training",
-              "consumers": [
-                "UnrolledRunLoader",
-                "UnrolledMetrics"
-              ],
-              "fmt": "json",
-              "desc": "Loss history plus best-validation and test losses, reported next to the inference metrics as the training reference.",
-              "scope": "cross"
-            },
-            {
-              "name": "meta/geometry_field.npz",
-              "producer": "preprocessing pipeline",
-              "consumers": [
-                "UnrolledRunLoader"
-              ],
-              "fmt": "npz",
-              "desc": "Per-pixel kz field cropped to the split and reused to build the exact steering operator.",
-              "scope": "cross"
-            },
-            {
-              "name": "metrics.json",
-              "producer": "UnrolledMetrics",
-              "consumers": [
-                "UnrolledReport"
-              ],
-              "fmt": "json",
-              "desc": "Curve reconstruction, peak localisation, coverage and training-reference metrics for the split.",
-              "scope": "within"
-            },
-            {
-              "name": "profile_cube.npy",
-              "producer": "UnrolledPredictor",
-              "consumers": [],
-              "fmt": "npy",
-              "desc": "Full predicted profile cube, written only when save_profile_cube is on.",
-              "scope": "within"
-            },
-            {
-              "name": "figures/*.png",
-              "producer": "UnrolledPlots",
-              "consumers": [
-                "UnrolledReport"
-              ],
-              "fmt": "png",
-              "desc": "Error maps, error histogram, peak-height maps and the best, median and worst profile pairs.",
-              "scope": "within"
-            },
-            {
-              "name": "report.md",
-              "producer": "UnrolledReport",
-              "consumers": [],
-              "fmt": "markdown",
-              "desc": "Assembled unrolled inference report.",
-              "scope": "within"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 2
-        }
-      ]
-    },
-    {
       "folder": "shared",
       "title": "Shared Foundation",
       "blurb": "The shared foundation layer every per-model TomoSAR pipeline plugs into: config construction and persistence, dataset and loader scaffolding, model instantiation, seed-sweep training with an overfit gate, typed inference dispatch, and reusable sweep and session orchestrators.",
@@ -4961,19 +3818,6 @@
               "reads": [],
               "writes": [],
               "row": 1
-            },
-            {
-              "id": "dataset_json",
-              "label": "preprocessing dataset.json",
-              "module": "pipelines/processing/generation/pipeline.py",
-              "role": "external",
-              "fn": "Preprocessing layout read by the factory for the global crop and Gaussian/geometry resolution.",
-              "col": 0,
-              "reads": [
-                "dataset.json"
-              ],
-              "writes": [],
-              "row": 2
             },
             {
               "id": "factory",
@@ -5053,12 +3897,6 @@
               "to": "factory",
               "label": "BenchmarkConfig",
               "kind": "data"
-            },
-            {
-              "from": "dataset_json",
-              "to": "factory",
-              "label": "crop + Gaussian + geom",
-              "kind": "io"
             },
             {
               "from": "factory",
@@ -5846,17 +4684,6 @@
               "row": 0
             },
             {
-              "id": "session_subclass",
-              "label": "PreProcess / analysis schedulers",
-              "module": "pipelines/processing/generation/pipeline.py",
-              "role": "external",
-              "fn": "Concrete session producers for preprocessing and param-extraction that run one session at a time.",
-              "col": 2,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
               "id": "process_pool",
               "label": "ProcessPoolRunner",
               "module": "tools/orchestration/pool.py",
@@ -5902,18 +4729,6 @@
               "kind": "control"
             },
             {
-              "from": "session_scheduler",
-              "to": "session_subclass",
-              "label": "sequential run()",
-              "kind": "control"
-            },
-            {
-              "from": "session_subclass",
-              "to": "process_pool",
-              "label": "sessions + runner",
-              "kind": "control"
-            },
-            {
               "from": "process_pool",
               "to": "state_out",
               "label": "per-session output paths",
@@ -5946,17 +4761,6 @@
               ],
               "fmt": "json",
               "desc": "Fully resolved run config replayed by every spawned stage worker.",
-              "scope": "cross"
-            },
-            {
-              "name": "session outputs",
-              "producer": "session_subclass",
-              "consumers": [
-                "dataset pipeline",
-                "analysis"
-              ],
-              "fmt": "paths",
-              "desc": "Per-session output paths (e.g. preprocessing dataset, param arrays) fed downstream.",
               "scope": "cross"
             }
           ],
@@ -7103,251 +5907,6 @@
       "title": "Comparison",
       "blurb": "Three side-by-side comparison pipelines that gather multiple preprocessing, parameter-extraction or trained-model trials and render markdown leaderboards, metric tables and figure galleries.",
       "diagrams": [
-        {
-          "key": "comparison-preprocessing",
-          "stage": "Preprocessing Trial Comparison",
-          "title": "Preprocessing Window Comparison",
-          "entry": "main/analysis/compare_preprocessing_trials.py",
-          "blurb": "Compares preprocessing runs that differ only in the multilook window size, scoring each full tomogram on the sharpness / speckle / spatial-resolution bias-variance trade-off.",
-          "nodes": [
-            {
-              "id": "entry",
-              "label": "compare_preprocessing_trials.py",
-              "module": "main/analysis/compare_preprocessing_trials.py",
-              "role": "entry",
-              "fn": "Pins threads, builds the config via ConfigCli, then runs the preprocessing comparison pipeline and logs the report path.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 0
-            },
-            {
-              "id": "config",
-              "label": "PreprocessingComparisonConfig",
-              "module": "configuration/comparison.py",
-              "role": "config",
-              "fn": "Supplies runs_dir, run_tags, pixel_sample, block_size, range_chunk, workers and make_plots for the window sweep.",
-              "col": 0,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "runs",
-              "label": "Preprocessing runs",
-              "module": "pipelines/processing/",
-              "role": "external",
-              "fn": "Prior preprocessing runs, each a directory holding a tomogram and its config state.",
-              "col": 3,
-              "reads": [],
-              "writes": [
-                "tomogram_full.npy",
-                "config_state.json"
-              ],
-              "row": 0
-            },
-            {
-              "id": "pipeline",
-              "label": "PreprocessingComparisonPipeline",
-              "module": "pipelines/comparison/preprocessing_comparison.py",
-              "role": "orchestrator",
-              "fn": "Sequences collect, threaded measure, optional plot, and report over the window trials.",
-              "col": 1,
-              "reads": [],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "collector",
-              "label": "WindowTrialCollector",
-              "module": "pipelines/comparison/preprocessing_comparison.py",
-              "role": "io",
-              "fn": "Discovers preprocessing runs and reads each config_state.json to recover the multilook window into a WindowTrial.",
-              "col": 2,
-              "reads": [
-                "config_state.json"
-              ],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "metrics",
-              "label": "WindowMetrics",
-              "module": "pipelines/comparison/preprocessing_comparison.py",
-              "role": "metric",
-              "fn": "Chunks each tomogram's amplitude to measure peak-to-floor contrast, spurious peaks, residual speckle and azimuth correlation length.",
-              "col": 3,
-              "reads": [
-                "tomogram_full.npy"
-              ],
-              "writes": [],
-              "row": 1
-            },
-            {
-              "id": "spatial",
-              "label": "SpatialDispersion",
-              "module": "pipelines/comparison/spatial_stats.py",
-              "role": "transform",
-              "fn": "Computes block coefficient-of-variation, block std and FFT autocorrelation length for the speckle and blurring metrics (shared with the param comparison).",
-              "col": 3,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "plots",
-              "label": "WindowComparisonPlots",
-              "module": "pipelines/comparison/preprocessing_comparison.py",
-              "role": "io",
-              "fn": "Renders one bar chart per window-quality metric across the trials.",
-              "col": 4,
-              "reads": [],
-              "writes": [
-                "window_metric_pngs"
-              ],
-              "row": 0
-            },
-            {
-              "id": "table",
-              "label": "MetricTableRenderer",
-              "module": "pipelines/comparison/metric_table.py",
-              "role": "transform",
-              "fn": "Builds the per-window markdown metric table, bolding the best value in each column (shared with the param comparison).",
-              "col": 4,
-              "reads": [],
-              "writes": [],
-              "row": 2
-            },
-            {
-              "id": "report",
-              "label": "WindowComparisonReport",
-              "module": "pipelines/comparison/preprocessing_comparison.py",
-              "role": "io",
-              "fn": "Assembles the markdown report from the metric table, bar plots and the bias-variance reading guide.",
-              "col": 5,
-              "reads": [
-                "window_metric_pngs"
-              ],
-              "writes": [
-                "window_report.md"
-              ],
-              "row": 1
-            }
-          ],
-          "edges": [
-            {
-              "from": "entry",
-              "to": "config",
-              "label": "config via ConfigCli",
-              "kind": "control"
-            },
-            {
-              "from": "config",
-              "to": "pipeline",
-              "label": "runs_dir, block_size",
-              "kind": "data"
-            },
-            {
-              "from": "pipeline",
-              "to": "collector",
-              "label": "runs_dir + run_tags",
-              "kind": "data"
-            },
-            {
-              "from": "runs",
-              "to": "collector",
-              "label": "config_state.json",
-              "kind": "io"
-            },
-            {
-              "from": "collector",
-              "to": "metrics",
-              "label": "WindowTrial list",
-              "kind": "data"
-            },
-            {
-              "from": "runs",
-              "to": "metrics",
-              "label": "tomogram_full.npy (mmap)",
-              "kind": "io"
-            },
-            {
-              "from": "metrics",
-              "to": "spatial",
-              "label": "amplitude peak map",
-              "kind": "data"
-            },
-            {
-              "from": "metrics",
-              "to": "plots",
-              "label": "per-window metric dicts",
-              "kind": "data"
-            },
-            {
-              "from": "metrics",
-              "to": "table",
-              "label": "per-window metric dicts",
-              "kind": "data"
-            },
-            {
-              "from": "table",
-              "to": "report",
-              "label": "bold-best table rows",
-              "kind": "data"
-            },
-            {
-              "from": "plots",
-              "to": "report",
-              "label": "bar chart PNG paths",
-              "kind": "data"
-            }
-          ],
-          "artifacts": [
-            {
-              "name": "tomogram_full.npy",
-              "producer": "Preprocessing pipeline (external)",
-              "consumers": [
-                "WindowTrialCollector",
-                "WindowMetrics"
-              ],
-              "fmt": ".npy",
-              "desc": "Full complex tomogram whose amplitude drives the window-quality metrics.",
-              "scope": "cross"
-            },
-            {
-              "name": "config_state.json",
-              "producer": "Preprocessing pipeline (external)",
-              "consumers": [
-                "WindowTrialCollector"
-              ],
-              "fmt": "json",
-              "desc": "Run config; the multilook filter window is read from tomogram_config.filter_arguments.win.",
-              "scope": "cross"
-            },
-            {
-              "name": "window_metric_pngs",
-              "producer": "WindowComparisonPlots",
-              "consumers": [
-                "WindowComparisonReport"
-              ],
-              "fmt": "png",
-              "desc": "One bar chart per window-quality metric (contrast, speckle CV, spurious peaks, correlation length).",
-              "scope": "within"
-            },
-            {
-              "name": "window_report.md",
-              "producer": "WindowComparisonReport",
-              "consumers": [
-                "Repo Map web UI"
-              ],
-              "fmt": "markdown",
-              "desc": "Per-window metric table, comparison plots and the bias-variance reading guide.",
-              "scope": "within"
-            }
-          ],
-          "ncol": 6,
-          "nrow": 3
-        },
         {
           "key": "comparison-param",
           "stage": "Parameter-Extraction Trial Comparison",
