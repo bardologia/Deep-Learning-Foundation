@@ -1,5 +1,6 @@
 logs/
 runs/
+datasets/
 results
 result_storage/
 test_data/
