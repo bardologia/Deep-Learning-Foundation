@@ -11,7 +11,6 @@ from tools.data.gaussians                 import GaussianHead
 from tools.monitoring.logger              import Logger
 
 
-
 @dataclass
 class WidthRule:
     attribute : str

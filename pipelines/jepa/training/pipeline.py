@@ -24,7 +24,6 @@ from tools.runtime.reproducibility                       import Reproducibility
 from tools.runtime.run_tag                               import RunTag
 
 
-
 class TrainingPipeline:
     def __init__(self, entry_config, split_regions=None) -> None:
         self.entry   = entry_config
