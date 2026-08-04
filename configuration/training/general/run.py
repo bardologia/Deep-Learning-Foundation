@@ -52,7 +52,7 @@ class TrainingQueueConfig:
     vram_keep_free_gb : float = 1.0
 
     scale_lr_with_batch     : bool = True
-    lr_reference_batch_size : int  = 256
+    lr_reference_batch_size : int  = 64
 
     scheduler_type      : SchedulerType = SchedulerType.COSINE_ANNEALING
     scheduler_step_size : int           = 30

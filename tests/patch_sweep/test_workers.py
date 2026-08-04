@@ -60,4 +60,4 @@ def test_unit_preserves_the_configured_lr_scale_ratio(test_data_dir, params_dir,
 
     trainer_config = ConfigFactory(worker.config).training_trainer_config(logdir=tmp_path / "run")
 
-    assert trainer_config.optimizer.lr_scale == pytest.approx(2.0)
+    assert trainer_config.optimizer.lr_scale == pytest.approx(8.0)
