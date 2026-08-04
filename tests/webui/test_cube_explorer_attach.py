@@ -120,10 +120,10 @@ def test_transect_cut_geometry(tmp_path):
     explorer, cube_a, _ = _loaded(tmp_path)
 
     entry = explorer._entry(cube_a, "pred")
-    data, heights, vmin, vmax = explorer._transect_cut(entry, 0, 0, N_ROWS - 1, N_COLS - 1, "physical")
+    data, z_values, vmin, vmax = explorer._transect_cut(entry, 0, 0, N_ROWS - 1, N_COLS - 1, "physical")
 
     assert data.shape == (N_Z, max(N_ROWS, N_COLS))
-    assert heights[0] == -10.0 and heights[-1] == 30.0
+    assert z_values[0] == -10.0 and z_values[-1] == 30.0
     assert vmin == entry["vmin"] and vmax == entry["vmax"]
 
     cube = entry["cube"]

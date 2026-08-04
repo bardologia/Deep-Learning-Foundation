@@ -82,7 +82,7 @@ class SynthesisConfig:
             raise ValueError(f"global_crop {self.global_crop} must describe a positive (row, col) extent; got row_size={self.row_size} and col_size={self.col_size}.")
 
         if self.profile_length < 4:
-            raise ValueError(f"profile_length must sample the height axis with at least 4 bins; got {self.profile_length}.")
+            raise ValueError(f"profile_length must sample the z axis with at least 4 bins; got {self.profile_length}.")
 
         if self.z_range[1] <= self.z_range[0]:
             raise ValueError(f"z_range must be increasing; got {self.z_range}.")
@@ -103,10 +103,10 @@ class SynthesisConfig:
         bin_width = span / (self.profile_length - 1)
 
         if self.sigma_range[0] < bin_width:
-            raise ValueError(f"sigma_range lower bound {self.sigma_range[0]} is finer than the height bin width {bin_width:.4f}; such a component cannot be resolved on the sampled axis.")
+            raise ValueError(f"sigma_range lower bound {self.sigma_range[0]} is finer than the z bin width {bin_width:.4f}; such a component cannot be resolved on the sampled axis.")
 
         if self.sigma_range[1] > span / 2.0:
-            raise ValueError(f"sigma_range upper bound {self.sigma_range[1]} exceeds half the height span {span / 2.0}; such a component is wider than the axis it lives on.")
+            raise ValueError(f"sigma_range upper bound {self.sigma_range[1]} exceeds half the z span {span / 2.0}; such a component is wider than the axis it lives on.")
 
 
 @dataclass

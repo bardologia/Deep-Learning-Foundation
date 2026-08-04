@@ -592,8 +592,8 @@ class FitLabView {
 
       this.refs.cards.appendChild(card);
 
-      const height = series.length ? series[0].run.result.height : shown[0].result.height;
-      FitLabChart.profile(canvas, height, sample, series, this.showComponents);
+      const zAxis = series.length ? series[0].run.result.z : shown[0].result.z;
+      FitLabChart.profile(canvas, zAxis, sample, series, this.showComponents);
       if (sweep) FitLabChart.ksweep(sweep, series);
     });
   }

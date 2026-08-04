@@ -83,7 +83,7 @@ class DistributionPlotter(PlotBase):
     def _plot_parameter_distributions(self, parameters_array : np.ndarray, out_dir : Path) -> Dict[str, Path]:
         specs = [
             ("amp",   r"amplitude $A_k$",             "amp"),
-            ("mu",    r"centroid height $\mu_k$", "mu"),
+            ("mu",    r"centroid $\mu_k$", "mu"),
             ("sigma", r"spread $\sigma_k$",       "sigma"),
         ]
         saved: Dict[str, Path] = {}

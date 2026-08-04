@@ -351,7 +351,7 @@ class FitLab:
         return {
             "ok"      : True,
             "dataset" : dataset,
-            "height"  : z_axis.tolist(),
+            "z"       : z_axis.tolist(),
             "config"  : config,
             "pixels"  : entries,
         }

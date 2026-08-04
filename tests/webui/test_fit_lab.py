@@ -39,8 +39,8 @@ def _make_dataset(root: Path) -> Path:
     (dataset / "data").mkdir(parents=True)
     (dataset / "meta").mkdir()
 
-    heights = np.linspace(Z_RANGE[0], Z_RANGE[1], H, dtype=np.float32)
-    profile = np.exp(-((heights - TRUE_MU) ** 2) / (2.0 * TRUE_SIGMA ** 2)).astype(np.float32)
+    z_axis  = np.linspace(Z_RANGE[0], Z_RANGE[1], H, dtype=np.float32)
+    profile = np.exp(-((z_axis - TRUE_MU) ** 2) / (2.0 * TRUE_SIGMA ** 2)).astype(np.float32)
     cube    = np.tile(profile[:, None, None], (1, N_ROWS, N_COLS)) * np.linspace(0.5, 2.0, N_COLS, dtype=np.float32)[None, None, :]
 
     np.save(dataset / "data" / "cube_full.npy", cube.astype(np.complex64))
@@ -145,7 +145,7 @@ def test_fit_recovers_synthetic_gaussian(tmp_path):
     result = _fit(lab, {"pixels": [{"row": 3, "col": 7}, {"row": 0, "col": 0}], "config": BASE_CONFIG})
 
     assert result["ok"]
-    assert len(result["height"]) == H
+    assert len(result["z"]) == H
     assert len(result["pixels"]) == 2
 
     pixel = result["pixels"][0]

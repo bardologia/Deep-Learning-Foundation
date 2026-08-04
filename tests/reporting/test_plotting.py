@@ -327,7 +327,7 @@ def test_imshow_scene_dem_window(plotter, aux_full, small_window, tmp_path):
         y_label        = "row",
         title          = "Aux window",
         cmap           = plotter._cmap_with_bad("terrain"),
-        colorbar_label = "height",
+        colorbar_label = "z",
         path           = tmp_path / "aux.png",
     )
     assert out.exists()

@@ -407,7 +407,7 @@ class Report:
             "metrics, computed on the raw unsorted predicted slots, measure whether a consistent organization "
             "emerged anyway. μ-rank diagonality is the fraction of active predicted slots whose channel index "
             "equals their μ-rank within the pixel; slot↔GT alignment is the same against the μ-sorted GT index. "
-            f"1.0 means the model spontaneously emits slots in height order; chance is about {1.0 / n_K:.3f}.\n"
+            f"1.0 means the model spontaneously emits slots in z order; chance is about {1.0 / n_K:.3f}.\n"
         )
 
         rows = [
@@ -600,8 +600,8 @@ class Report:
                 "Analyses of the raw, unsorted predicted slots. Because Hungarian matching makes the training "
                 "loss permutation-invariant over slot index, any structure here is self-organised, not imposed. "
                 "Usage shows per-slot activation; the per-slot distributions reveal whether each slot specialises "
-                "in a height (μ), width (σ) or amplitude band; the μ-rank and matched-GT matrices show whether "
-                "the channel index tracks height order (a diagonal means the model spontaneously emits slots "
+                "in a z (μ), width (σ) or amplitude band; the μ-rank and matched-GT matrices show whether "
+                "the channel index tracks z order (a diagonal means the model spontaneously emits slots "
                 "sorted by μ). See §2.7 for the scalar summaries.\n"
             )
             self._numbered_section(out, "6b.", org_groups)
