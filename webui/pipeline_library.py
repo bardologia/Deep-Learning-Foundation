@@ -6,13 +6,6 @@ class PipelineLibrary:
     def collect(self) -> list[dict]:
         return [
             {
-                "key"    : "processing",
-                "name"   : "Processing (Tomogram + Interferograms)",
-                "script" : "pre_process",
-                "blurb"  : "Ingest raw F-SAR passes via PyRat into the Capon reference tomogram, the amplitude-weighted interferometric stack, and the per-pixel geometry field for the physics loss.",
-                "stages" : ["Capon tomogram (PyRat)", "Interferogram formation", "Track baselines & geometry field", "Artifact registry & layout"],
-            },
-            {
                 "key"    : "param",
                 "name"   : "Parameter Extraction",
                 "script" : "extract_params",
@@ -30,7 +23,7 @@ class PipelineLibrary:
                 "key"    : "training",
                 "name"   : "Training (Supervised backbone)",
                 "script" : "train_backbone",
-                "blurb"  : "Supervised backbone loop: one forward pass to per-pixel Gaussian parameters, a weight-normalised curve, parameter and optional physics loss, AdamW with warmup, cosine annealing and a two-phase loss curriculum, and best-epoch checkpointing.",
+                "blurb"  : "Supervised backbone loop: one forward pass to per-pixel Gaussian parameters, a weight-normalised curve, parameter and curve losses, AdamW with warmup, cosine annealing and a two-phase loss curriculum, and best-epoch checkpointing.",
                 "stages" : ["Curve reconstruction", "Composite loss", "AdamW step", "Schedule and curriculum", "Eval and checkpoint"],
             },
             {
@@ -58,22 +51,15 @@ class PipelineLibrary:
                 "key"    : "jepa_train",
                 "name"   : "JEPA (Latent train)",
                 "script" : "train_jepa",
-                "blurb"  : "Predict the profile autoencoder's latent embedding from the SAR input and match it to the encoder's target embedding of the GT curve, anchored by a decoder curve-reconstruction loss.",
+                "blurb"  : "Predict the profile autoencoder's latent embedding from the input stack and match it to the encoder's target embedding of the GT curve, anchored by a decoder curve-reconstruction loss.",
                 "stages" : ["Couple pretrained AE", "Predict embedding", "Target embedding", "Embedding + recon loss", "Optimise & diagnostics"],
-            },
-            {
-                "key"    : "unrolled_train",
-                "name"   : "Unrolled Physics (Train)",
-                "script" : "train_unrolled",
-                "blurb"  : "Train the gamma_net unrolled inversion: synthesise per-pixel coherence measurements from the GT Gaussian profiles through the exact kz steering operator, then learn the proximal-gradient iterations (steps, thresholds, 1D prox) that invert them back to elevation profiles.",
-                "stages" : ["Render GT profiles", "Synthesise coherence", "Unrolled inversion", "Masked curve loss", "Optimise & checkpoint"],
             },
             {
                 "key"    : "inference",
                 "name"   : "Inference",
                 "script" : "infer_backbone",
-                "blurb"  : "Sliding-window prediction, overlap-add curve stitching and centrality-selected parameter stitching, then the full metric suite, reduced-Capon and interferometric-consistency baselines, and report generation.",
-                "stages" : ["Windowed predict", "Cube stitch", "Metrics", "Reduced & consistency", "Report and figures"],
+                "blurb"  : "Sliding-window prediction, overlap-add curve stitching and centrality-selected parameter stitching, then the full metric suite and report generation.",
+                "stages" : ["Windowed predict", "Cube stitch", "Metrics", "Stratified errors", "Report and figures"],
             },
             {
                 "key"    : "profile_ae_infer",
