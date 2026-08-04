@@ -28,7 +28,7 @@ class JepaModelLibrary(ModelNoteLibrary):
                     {
                         "key": "jepa_image", "name": "Image AE + Backbone", "skip": "Image AE + Backbone",
                         "head": "Parameter L1", "params": "frozen AE + backbone", "recommended": False,
-                        "when": "Learned front-end. The frozen image-autoencoder encoder re-encodes the SAR stack before the backbone, which still regresses the Gaussian parameters directly against the supervised parameter loss; no embedding target is involved.",
+                        "when": "Learned front-end. The frozen image-autoencoder encoder re-encodes the input stack before the backbone, which still regresses the Gaussian parameters directly against the supervised parameter loss; no embedding target is involved.",
                     },
                     {
                         "key": "jepa_full", "name": "Image AE + Backbone + Profile AE", "skip": "Image AE + Backbone + Profile AE",

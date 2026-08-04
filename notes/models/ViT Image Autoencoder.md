@@ -10,12 +10,12 @@ aliases:
   - vit_ae
 family: image-autoencoder
 registry_key: vit_ae
-summary: Patch-based masked-autoencoder-style ViT image autoencoder modelling global structure across the SAR stack.
+summary: Patch-based masked-autoencoder-style ViT image autoencoder modelling global structure across the input stack.
 ---
 
 # ViT Image Autoencoder
 
-`ViTImageAutoencoder` (`models/image_autoencoder/vit.py`) is a [[Model Zoo|image autoencoder]] in the masked-autoencoder mould: it tokenises the SAR image stack into patches and relates them with a transformer encoder and decoder, modelling global structure across the stack. The trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
+`ViTImageAutoencoder` (`models/image_autoencoder/vit.py`) is a [[Model Zoo|image autoencoder]] in the masked-autoencoder mould: it tokenises the input channel stack into patches and relates them with a transformer encoder and decoder, modelling global structure across the stack. The trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
 
 ---
 
@@ -72,4 +72,4 @@ $$
 
 ## When to use
 
-When global, long-range relationships across the SAR stack carry the signal and a convolutional receptive field is too local. Patch tokenisation with full self-attention is the most expressive — and most parameter-heavy — image front-end here; the convolutional position encoding keeps it usable across varying patch sizes, unlike a fixed positional table. Prefer the [[Conv2D Image Autoencoder]] or [[ConvNeXt2D Image Autoencoder]] when the parameter budget is tight.
+When global, long-range relationships across the input stack carry the signal and a convolutional receptive field is too local. Patch tokenisation with full self-attention is the most expressive — and most parameter-heavy — image front-end here; the convolutional position encoding keeps it usable across varying patch sizes, unlike a fixed positional table. Prefer the [[Conv2D Image Autoencoder]] or [[ConvNeXt2D Image Autoencoder]] when the parameter budget is tight.

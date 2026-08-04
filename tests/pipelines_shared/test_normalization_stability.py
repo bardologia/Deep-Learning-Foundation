@@ -22,7 +22,7 @@ def _active(parameters):
     mu  = par[1::3].astype(np.float64)
     sig = par[2::3].astype(np.float64)
     m   = amp > AMP_THR
-    return amp, mu, sig
+    return amp[m], mu[m], sig[m]
 
 
 def _random_split_agreement(strat, vals, seed):
@@ -61,7 +61,7 @@ def test_mu_and_signed_channels_stay_zscore():
         assert ChannelStrategy.from_slot(slot).norm_method is NormMethod.ZSCORE
 
 
-def test_ifg_phase_uses_fixed_div_pi():
+def test_derived_phase_uses_fixed_div_pi():
     strat = ChannelStrategy.from_slot("derived/phase")
     assert strat.norm_method is NormMethod.FIXED_DIV_PI
     assert strat.apply_log1p is False

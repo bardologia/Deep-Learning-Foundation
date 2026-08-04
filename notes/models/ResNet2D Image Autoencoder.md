@@ -15,7 +15,7 @@ summary: Residual (pre-activation) image autoencoder; deeper counterpart to the 
 
 # ResNet2D Image Autoencoder
 
-`ResNet2dImageAutoencoder` (`models/image_autoencoder/resnet2d.py`) is a [[Model Zoo|image autoencoder]]: a deeper, residual counterpart to the default [[Conv2D Image Autoencoder]]. It encodes the SAR image stack into a 2D spatial embedding and reconstructs it; the trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
+`ResNet2dImageAutoencoder` (`models/image_autoencoder/resnet2d.py`) is a [[Model Zoo|image autoencoder]]: a deeper, residual counterpart to the default [[Conv2D Image Autoencoder]]. It encodes the input channel stack into a 2D spatial embedding and reconstructs it; the trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
 
 ---
 

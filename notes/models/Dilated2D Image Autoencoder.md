@@ -15,7 +15,7 @@ summary: Atrous-convolution image autoencoder keeping full input resolution in t
 
 # Dilated2D Image Autoencoder
 
-`DilatedConv2dImageAutoencoder` (`models/image_autoencoder/dilated2d.py`) is a [[Model Zoo|image autoencoder]] that grows its receptive field through atrous (dilated) convolutions instead of spatial downsampling, so the embedding keeps the full input grid size. It encodes the SAR image stack into a 2D spatial embedding and reconstructs it; the trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
+`DilatedConv2dImageAutoencoder` (`models/image_autoencoder/dilated2d.py`) is a [[Model Zoo|image autoencoder]] that grows its receptive field through atrous (dilated) convolutions instead of spatial downsampling, so the embedding keeps the full input grid size. It encodes the input channel stack into a 2D spatial embedding and reconstructs it; the trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
 
 ---
 

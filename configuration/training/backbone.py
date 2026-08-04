@@ -169,15 +169,15 @@ class HeadMatchingTrialsConfig:
 
 @dataclass
 class NormalizationTrialsConfig:
-    initial_chan_mag  : str = "zscore_log1p"
-    initial_ifg_phase : str = "min_max"
-    initial_out_amp   : str = "zscore"
-    initial_out_sigma : str = "zscore"
+    initial_chan_mag      : str = "zscore_log1p"
+    initial_derived_phase : str = "min_max"
+    initial_out_amp       : str = "zscore"
+    initial_out_sigma     : str = "zscore"
 
-    final_chan_mag  : str = "robust_iqr_log1p"
-    final_ifg_phase : str = "fixed_div_pi"
-    final_out_amp   : str = "robust_iqr_log1p"
-    final_out_sigma : str = "robust_iqr_log1p"
+    final_chan_mag      : str = "robust_iqr_log1p"
+    final_derived_phase : str = "fixed_div_pi"
+    final_out_amp       : str = "robust_iqr_log1p"
+    final_out_sigma     : str = "robust_iqr_log1p"
 
 
 @dataclass

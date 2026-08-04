@@ -106,7 +106,7 @@ where lines for $\mathbf{u}_s, \mathbf{c}_s, \mathbf{h}_s$ repeat for $s = 1, \d
 > **Pure transformer encoder**
 > UNETR uses no CNN encoder, so it carries no built-in inductive bias for local spatial structure — every layer sees the full token sequence through global self-attention.
 
-**No CNN encoder.** UNETR has no inductive bias for local spatial structure. This may be a limitation for SAR data where fine-scale texture is informative. This is an open empirical question in the project context.
+**No CNN encoder.** UNETR has no inductive bias for local spatial structure. This may be a limitation where fine-scale texture is informative. This is an open empirical question in the project context.
 
 ---
 

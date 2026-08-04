@@ -1185,7 +1185,7 @@ class FlowLibrary:
                 "note": "Parameter cubes are not blended: at each pixel the patch with the largest Hann centrality wins, overwriting the running value wherever its centrality exceeds the incumbent; inactive GT slots then have their mu and sigma set to NaN before scoring.",
                 "inputs": ["th", "win"], "outputs": ["params"],
                 "lines": [
-                    [{"id": "params", "tex": r"\hat{\Theta}", "role": "final"}, {"tex": r"[:,m] = "}, {"id": "th", "tex": r"\hat{\theta}", "role": "calculated"}, {"tex": r"[:,m],\quad m = \big\{"}, {"id": "win", "tex": r"w", "role": "intermediate"}, {"tex": r" > w^{\star}\big\},\ \ w^{\star}\!\leftarrow\! w"}],
+                    [{"id": "params", "tex": r"\hat{\Theta}", "role": "final"}, {"tex": r"[:,m] = "}, {"id": "th", "tex": r"\hat{\theta}", "role": "calculated"}, {"tex": r"[:,m],\quad m = \big\{"}, {"id": "win", "tex": r"w", "role": "intermediate"}, {"tex": r" > w^{\star}\big\},\ \ w^{\star}\!\leftarrow\! w[m]"}],
                     [{"id": "paramsgt", "tex": r"\Theta^{\mathrm{GT}}", "role": "measured"}, {"tex": r"[\mu_k,\sigma_k] = \mathrm{NaN}\ \ \text{where}\ a^{\mathrm{GT}}_k \le 10^{-3}"}],
                 ],
             },

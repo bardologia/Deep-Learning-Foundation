@@ -11,12 +11,12 @@ aliases:
   - Swin-UNet
 family: transformer
 registry_key: swin_unet
-summary: Hierarchical Swin Transformer encoder with symmetric Swin-based decoder for dense regression on SAR patches.
+summary: Hierarchical Swin Transformer encoder with symmetric Swin-based decoder for dense regression on input patches.
 ---
 
 # SwinUNet
 
-`SwinUNet` (`models/backbone/swin_unet.py`) uses a hierarchical Swin Transformer ([[SwinTransformer_Liu2021_2103.14030.pdf|Liu et al., 2021]]) as the encoder and a symmetric Swin-based decoder with patch merging/expanding, adapted for dense regression on SAR patches ([[SwinUNet_Cao2021_2105.05537.pdf|Cao et al., 2022]]).
+`SwinUNet` (`models/backbone/swin_unet.py`) uses a hierarchical Swin Transformer ([[SwinTransformer_Liu2021_2103.14030.pdf|Liu et al., 2021]]) as the encoder and a symmetric Swin-based decoder with patch merging/expanding, adapted for dense regression on input patches ([[SwinUNet_Cao2021_2105.05537.pdf|Cao et al., 2022]]).
 
 ---
 
@@ -92,7 +92,7 @@ This halves spatial resolution and doubles channels at each level (analogous to 
 
 ## Design Rationale
 
-**Global context.** For ML Template, some scattering structures span tens of pixels (building facades, roof-to-ground layover). CNN architectures with limited receptive fields struggle to model these. Swin attention within windows of configurable size provides long-range context at a cost proportional to window size rather than image size.
+**Global context.** In this task some structures span tens of pixels. CNN architectures with limited receptive fields struggle to model these. Swin attention within windows of configurable size provides long-range context at a cost proportional to window size rather than image size.
 
 > **Resolution handling.** SwinUNet uses only window-relative position bias (the `relative_position_bias_table`, sized by `window_size`), not absolute positional embeddings. The implementation never reads `image_size` in `SwinUNet.__init__`: the token grid is inferred dynamically from the patch-embedding convolution output, and arbitrary patch sizes are accommodated by per-block window padding and the `match_spatial_size` interpolation guard. The `image_size` config field is therefore documentary only and does not constrain the runtime input resolution.
 
@@ -157,7 +157,7 @@ With `embedding_dim = 80` and four stages, the per-stage dimensions are $[80, 16
 
 *Skip connections and symmetry (items 7, 10).* Decoder stages concatenate upsampled tokens with the corresponding encoder tokens along the channel axis and apply `Linear(2C, C)` (the `skip_projections`) to restore the dimension (lines 367, 428–429), as in Swin-Unet Sec. 3.6. Encoder and decoder stage depths are mirrored through `decoder_index` indexing into the shared `depths`/`num_heads` lists (lines 361–380), giving the symmetric U-shape of Fig. 1.
 
-*Accepted adaptations.* (1) Patch embedding (item 1) uses a single `Conv2d(stride=patch_size)` rather than an explicit unfold + `Linear` on the flattened $p^2\cdot\text{in\_channels}$ vector; these are mathematically equivalent for non-overlapping patches and the convolutional form is the universal reference implementation. (2) Bottleneck (item 8): the paper fixes two successive Swin blocks; the code runs `depths[-1]` blocks in the deepest encoder stage (default `2`, so equal by default) followed by a single `bottleneck_norm` `LayerNorm` (line 355), with no separate bottleneck stage. The mechanism — deepest-resolution Swin blocks at unchanged dimension/resolution — is preserved; depth is configuration-driven. (3) Padding for non-divisible $H,W$ in the Swin block (lines 158–162) and patch merging (lines 214–219), plus the `match_spatial_size` interpolation guard (imported from `models/blocks.py`), are robustness additions for arbitrary SAR patch sizes and are explicitly in scope as accepted.
+*Accepted adaptations.* (1) Patch embedding (item 1) uses a single `Conv2d(stride=patch_size)` rather than an explicit unfold + `Linear` on the flattened $p^2\cdot\text{in\_channels}$ vector; these are mathematically equivalent for non-overlapping patches and the convolutional form is the universal reference implementation. (2) Bottleneck (item 8): the paper fixes two successive Swin blocks; the code runs `depths[-1]` blocks in the deepest encoder stage (default `2`, so equal by default) followed by a single `bottleneck_norm` `LayerNorm` (line 355), with no separate bottleneck stage. The mechanism — deepest-resolution Swin blocks at unchanged dimension/resolution — is preserved; depth is configuration-driven. (3) Padding for non-divisible $H,W$ in the Swin block (lines 158–162) and patch merging (lines 214–219), plus the `match_spatial_size` interpolation guard (imported from `models/blocks.py`), are robustness additions for arbitrary patch sizes and are explicitly in scope as accepted.
 
 **Deviations.**
 

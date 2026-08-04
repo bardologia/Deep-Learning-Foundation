@@ -6,7 +6,7 @@ from configuration.dataset            import InputConfig, Representation
 from pipelines.dual.training.pipeline import TrunkChannelMap
 
 
-def test_full_stack_four_tracks_maps_trailing_ifg_block():
+def test_full_stack_four_channels_maps_the_trailing_derived_block():
     input_config = InputConfig.full_stack()
 
     assert TrunkChannelMap.resolve(input_config, in_channels=9, groups=("derived",)) == (5, 6, 7, 8)
@@ -24,7 +24,7 @@ def test_pass_group_selects_amplitudes_only():
     assert TrunkChannelMap.resolve(input_config, in_channels=9, groups=("chan",)) == (0, 1, 2, 3, 4)
 
 
-def test_primary_and_ifgs_only_maps_after_primary():
+def test_primary_and_derived_only_maps_after_primary():
     input_config = InputConfig()
 
     assert TrunkChannelMap.resolve(input_config, in_channels=5, groups=("derived",)) == (1, 2, 3, 4)
@@ -45,7 +45,7 @@ def test_dem_group_rejected():
         TrunkChannelMap.resolve(input_config, in_channels=9, groups=("aux",))
 
 
-def test_multi_channel_ifg_representation_expands_the_block():
+def test_multi_channel_derived_representation_expands_the_block():
     input_config                        = InputConfig.full_stack()
     input_config.derived_representation = Representation.MAG_ANGLE
 
