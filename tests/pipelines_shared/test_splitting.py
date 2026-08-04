@@ -10,7 +10,7 @@ from tools.monitoring.logger                         import Logger
 
 
 def _ranges(region: CropRegion) -> set[int]:
-    return set(range(region.azimuth_start, region.azimuth_end))
+    return set(range(region.row_start, region.row_end))
 
 
 def test_from_ratios_partitions_are_disjoint():
@@ -24,7 +24,7 @@ def test_from_ratios_partitions_are_disjoint():
     assert _ranges(val).isdisjoint(_ranges(test))
 
 
-def test_from_ratios_cover_full_azimuth():
+def test_from_ratios_cover_full_rows():
     crop   = CropRegion(0, 1000, 0, 500)
     splits = SplitRegions.from_ratios(crop, train_ratio=0.7, val_ratio=0.15)
 
@@ -37,9 +37,9 @@ def test_from_ratios_respects_ratios():
     crop   = CropRegion(0, 1000, 0, 500)
     splits = SplitRegions.from_ratios(crop, train_ratio=0.7, val_ratio=0.15)
 
-    assert splits.train.azimuth_size == 700
-    assert splits.val.azimuth_size   == 150
-    assert splits.test.azimuth_size  == 150
+    assert splits.train.row_size == 700
+    assert splits.val.row_size   == 150
+    assert splits.test.row_size  == 150
 
 
 def test_from_ratios_deterministic():
@@ -58,8 +58,8 @@ def test_from_ratios_share_range_extent():
     splits = SplitRegions.from_ratios(crop)
 
     for region in (splits.train, splits.val, splits.test):
-        assert region.range_start == 25
-        assert region.range_end   == 475
+        assert region.col_start == 25
+        assert region.col_end   == 475
 
 
 @pytest.mark.dataset

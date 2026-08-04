@@ -77,31 +77,31 @@ def test_occlusion_without_batches_raises():
         ChannelOcclusion(_model_wrapper(), renderer).deltas([], max_batches=0, n_channels=3)
 
 
-def _labeled_run(use_dem: bool = False) -> SimpleNamespace:
+def _labeled_run(use_aux: bool = False) -> SimpleNamespace:
     input_config = SimpleNamespace(
-        use_primary                      = True,
-        use_secondaries                  = True,
-        use_interferograms               = True,
-        use_dem                          = use_dem,
-        primary_channels_per_pass        = 1,
-        secondaries_channels_per_pass    = 1,
-        interferograms_channels_per_pass = 1,
+        use_primary                     = True,
+        use_secondaries                 = True,
+        use_derived                     = True,
+        use_aux                         = use_aux,
+        primary_channels_per_source     = 1,
+        secondaries_channels_per_source = 1,
+        derived_channels_per_source     = 1,
     )
 
-    n_channels = 1 + 2 + 2 + (1 if use_dem else 0)
+    n_channels = 1 + 2 + 2 + (1 if use_aux else 0)
 
     return SimpleNamespace(
         dataset          = SimpleNamespace(input_config=input_config),
-        secondary_labels = ["PS04", "PS06"],
+        secondary_labels = ["CH01", "CH02"],
         n_secondaries    = 2,
         in_channels      = n_channels,
     )
 
 
 def test_channel_labels_follow_the_input_stack_order():
-    labels = ChannelLabeler.build(_labeled_run(use_dem=True))
+    labels = ChannelLabeler.build(_labeled_run(use_aux=True))
 
-    assert labels == ["primary", "sec PS04", "sec PS06", "ifg PS04", "ifg PS06", "dem"]
+    assert labels == ["primary", "sec CH01", "sec CH02", "derived CH01", "derived CH02", "aux"]
 
 
 def test_channel_labels_mismatch_raises():

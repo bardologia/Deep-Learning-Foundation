@@ -151,11 +151,11 @@ def test_max_batch_worker_raises_on_probe_fail(config, monkeypatch):
 def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data_dir, params_dir, monkeypatch):
     from pipelines.benchmark.workers import TrainingWorker
 
-    config.paths.dataset_path     = test_data_dir
-    config.paths.parameters_path  = params_dir / "parameters.npy"
-    config.training.train_azimuth = (1000, 1400)
-    config.training.val_azimuth   = (1400, 1700)
-    config.training.test_azimuth  = (1700, 2000)
+    config.paths.dataset_path    = test_data_dir
+    config.paths.parameters_path = params_dir / "parameters.npy"
+    config.training.train_rows   = (1000, 1400)
+    config.training.val_rows     = (1400, 1700)
+    config.training.test_rows    = (1700, 2000)
 
     worker = TrainingWorker(config, "tag")
     FileIO.save_json({"resunet-conv": {"status": "PASS", "batch_size": 500}}, worker.run_dir / "pipeline" / "max_batch.json")

@@ -140,7 +140,7 @@ def test_physical_errors_logged_without_active_param_term():
     out  = loss(pred, param_tensor(2, 2, 6, 6, seed=1))
 
     assert set(out["components"].keys()) == {"mse_curve"}
-    assert set(out["physical"].keys())   == {"amp_mae", "mu_mae_m", "sigma_mae_m"}
+    assert set(out["physical"].keys())   == {"amp_mae", "mu_mae", "sigma_mae"}
     assert all(torch.isfinite(v).item() for v in out["physical"].values())
 
     out["total_loss"].backward()
@@ -429,7 +429,7 @@ def test_loss_on_scene_param_target(parameters):
     pred = gt.clone() + 0.05 * torch.randn_like(gt)
 
     loss = Loss(
-        x_axis       = x_axis_tensor(),
+        z_axis       = x_axis_tensor(),
         logger       = NullLogger(),
         tracker      = NullTracker(),
         gaussian_cfg = gaussian_config(n_gaussians),

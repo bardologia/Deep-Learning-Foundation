@@ -67,19 +67,19 @@ def test_mass_windows_exceeding_the_probe_window_raise():
         ErfComputation(_ConvModel(3), WINDOW, [8, 32])
 
 
-def _region_run(n_az: int, n_rg: int) -> SimpleNamespace:
-    return SimpleNamespace(split_region=SimpleNamespace(azimuth_size=n_az, range_size=n_rg))
+def _region_run(n_rows: int, n_cols: int) -> SimpleNamespace:
+    return SimpleNamespace(split_region=SimpleNamespace(row_size=n_rows, col_size=n_cols))
 
 
 def test_probe_centers_keep_the_window_margin():
     centers = ProbeWindows(_region_run(32, 20), window=8).centers(3, 2)
 
-    azs = sorted({az for az, _rg in centers})
-    rgs = sorted({rg for _az, rg in centers})
+    rows = sorted({row for row, _col in centers})
+    cols = sorted({col for _row, col in centers})
 
     assert len(centers) == 6
-    assert azs[0] >= 4 and azs[-1] <= 27
-    assert rgs[0] >= 4 and rgs[-1] <= 15
+    assert rows[0] >= 4 and rows[-1] <= 27
+    assert cols[0] >= 4 and cols[-1] <= 15
 
 
 def test_probe_centers_raise_when_the_region_is_too_small():

@@ -6,7 +6,7 @@ import numpy as np
 
 from cube_explorer import CubeExplorer
 
-from tests.webui.conftest import N_AZ, loaded_cube
+from tests.webui.conftest import N_ROWS, loaded_cube
 
 
 def _loaded_explorer(base: Path) -> tuple[CubeExplorer, str]:
@@ -51,14 +51,14 @@ def test_metric_value_at(tmp_path):
     stamp = Path(cube_id)
     r2    = np.load(stamp / "cubes" / "pixel_r2.npy")
 
-    result = explorer.metric_value_at(cube_id, "pixel_r2", az=2, rg=3)
+    result = explorer.metric_value_at(cube_id, "pixel_r2", row=2, col=3)
     assert result["ok"] and result["value"] == float(r2[2, 3])
 
-    nan_result = explorer.metric_value_at(cube_id, "pixel_r2", az=0, rg=0)
+    nan_result = explorer.metric_value_at(cube_id, "pixel_r2", row=0, col=0)
     assert nan_result["ok"] and nan_result["value"] is None
 
-    clipped = explorer.metric_value_at(cube_id, "pixel_r2", az=99, rg=-1)
-    assert clipped["ok"] and clipped["az"] == N_AZ - 1 and clipped["rg"] == 0
+    clipped = explorer.metric_value_at(cube_id, "pixel_r2", row=99, col=-1)
+    assert clipped["ok"] and clipped["row"] == N_ROWS - 1 and clipped["col"] == 0
 
     assert not explorer.metric_value_at(cube_id, "banana", 0, 0)["ok"]
 

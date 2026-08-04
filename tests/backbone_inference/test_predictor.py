@@ -20,7 +20,7 @@ from tests.conftest import SilentLogger
 
 N_GAUSSIANS = 5
 OUT_CH      = N_GAUSSIANS * 3
-N_ELEV      = 16
+N_Z         = 16
 PATCH       = 16
 
 
@@ -30,17 +30,17 @@ class _IdentityNormalizer:
         return t
 
 
-def _build_run(n_az: int, n_rg: int, in_channels: int = 4):
-    region = CropRegion(azimuth_start=0, azimuth_end=n_az, range_start=0, range_end=n_rg)
-    patch  = Patcher.build(spatial_size=(n_az, n_rg), patch_size=(PATCH, PATCH), stride=(PATCH, PATCH), use_symmetric_padding=True)
+def _build_run(n_rows: int, n_cols: int, in_channels: int = 4):
+    region = CropRegion(row_start=0, row_end=n_rows, col_start=0, col_end=n_cols)
+    patch  = Patcher.build(spatial_size=(n_rows, n_cols), patch_size=(PATCH, PATCH), stride=(PATCH, PATCH), use_symmetric_padding=True)
     grid   = patch.grid
 
     torch.manual_seed(0)
     model, _ = get_backbone("unet", in_channels=in_channels, out_channels=OUT_CH, features=[8, 16], bottleneck_factor=1)
     model.eval()
 
-    x_axis  = np.linspace(-20.0, 80.0, N_ELEV).astype(np.float32)
-    wrapper = ModelWrapper(model, "cpu", x_axis=torch.from_numpy(x_axis), amp_max=80.0, normalizer=None)
+    z_axis  = np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
+    wrapper = ModelWrapper(model, "cpu", z_axis=torch.from_numpy(z_axis), amp_max=80.0, normalizer=None)
 
     n_patches = grid.number_of_patches
     rng       = np.random.default_rng(0)
@@ -59,8 +59,8 @@ def _build_run(n_az: int, n_rg: int, in_channels: int = 4):
         model         = wrapper,
         n_gaussians   = N_GAUSSIANS,
         out_channels  = OUT_CH,
-        x_axis        = x_axis,
-        x_axis_length = N_ELEV,
+        z_axis        = z_axis,
+        x_axis_length = N_Z,
         grid          = grid,
         loader        = loader,
         dataset       = dataset,
@@ -189,7 +189,7 @@ def test_select_stitcher_raises_on_uncovered_pixels():
 
 
 def test_cpu_worker_render_floor_drops_weak_components():
-    x_axis = np.linspace(0.0, 40.0, 32).astype(np.float32)
+    z_axis = np.linspace(0.0, 40.0, 32).astype(np.float32)
 
     pred       = np.zeros((1, 6, 4, 4), dtype=np.float32)
     pred[:, 0] = 1.0
@@ -201,10 +201,10 @@ def test_cpu_worker_render_floor_drops_weak_components():
 
     gt = pred.copy()
 
-    unmasked = Predictor._cpu_worker((pred, gt, x_axis, 2, 0.0))
-    masked   = Predictor._cpu_worker((pred, gt, x_axis, 2, 1e-3))
+    unmasked = Predictor._cpu_worker((pred, gt, z_axis, 2, 0.0))
+    masked   = Predictor._cpu_worker((pred, gt, z_axis, 2, 1e-3))
 
-    idx20 = int(np.argmin(np.abs(x_axis - 20.0)))
+    idx20 = int(np.argmin(np.abs(z_axis - 20.0)))
 
     assert unmasked[0][0, idx20, 0, 0] > 1e-4
     assert masked[0][0, idx20, 0, 0] == pytest.approx(0.0, abs=1e-6)
@@ -213,14 +213,14 @@ def test_cpu_worker_render_floor_drops_weak_components():
 
 
 def test_predictor_run_inference_shapes(tmp_path):
-    run       = _build_run(n_az=16, n_rg=16)
+    run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
 
     result = predictor.run_inference()
 
     assert isinstance(result, Result)
-    assert result.pred_curves.shape == (N_ELEV, 16, 16)
-    assert result.gt_curves.shape   == (N_ELEV, 16, 16)
+    assert result.pred_curves.shape == (N_Z, 16, 16)
+    assert result.gt_curves.shape   == (N_Z, 16, 16)
     assert result.params_pred.shape == (OUT_CH, 16, 16)
     assert result.params_gt.shape   == (N_GAUSSIANS * 3, 16, 16)
     assert result.pixel_mse.shape   == (16, 16)
@@ -228,12 +228,12 @@ def test_predictor_run_inference_shapes(tmp_path):
 
 
 def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
-    run       = _build_run(n_az=16, n_rg=16)
+    run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
 
     result = predictor.run_inference()
 
-    x        = run.x_axis
+    x        = run.z_axis
     expected = 1.0 * np.exp(-((x - 20.0) ** 2) / (2.0 * 5.0 * 5.0 + 1e-8))
     centre   = result.gt_curves[:, 8, 8]
 
@@ -241,12 +241,12 @@ def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
 
 
 def test_predictor_offsets_from_region(tmp_path):
-    region = CropRegion(azimuth_start=100, azimuth_end=116, range_start=50, range_end=66)
-    run    = _build_run(n_az=16, n_rg=16)
+    region           = CropRegion(row_start=100, row_end=116, col_start=50, col_end=66)
+    run              = _build_run(n_rows=16, n_cols=16)
     run.split_region = region
 
     predictor = _make_predictor(tmp_path, run)
     result    = predictor.run_inference()
 
-    assert result.azimuth_offset == 100
-    assert result.range_offset   == 50
+    assert result.row_offset == 100
+    assert result.col_offset   == 50

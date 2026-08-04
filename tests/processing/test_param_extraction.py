@@ -31,7 +31,7 @@ from tools.monitoring.logger                         import Logger
 SCENE            = SynthesisConfig()
 K_MAX            = SCENE.k_max
 LAMBDA_K         = SCENE.lambda_k
-HEIGHT_RANGE     = tuple(SCENE.height_range)
+Z_RANGE          = tuple(SCENE.z_range)
 THRESHOLD_FACTOR = SCENE.threshold_factor
 TRUNCATION_INDEX = SCENE.truncation_index
 ACTIVITY_THRESH  = SCENE.activity_threshold
@@ -91,7 +91,7 @@ def test_plan_resolver_passes_fit_constants_and_adam_settings():
         fit_sigma_init_divisor = 2.0,
         adam_steps             = 500,
         adam_lr                = 0.05,
-        range_batch_size       = 100,
+        col_batch_size         = 100,
         gpu_pixel_batch_size   = 4096,
     )
 
@@ -105,7 +105,7 @@ def test_plan_resolver_passes_fit_constants_and_adam_settings():
     assert fit_cfg.sigma_init_divisor == 2.0
     assert plan.adam_steps            == 500
     assert plan.adam_lr               == 0.05
-    assert plan.range_batch_size      == 100
+    assert plan.col_batch_size      == 100
     assert plan.gpu_pixel_batch_size  == 4096
 
 
@@ -183,14 +183,14 @@ def test_kernel_masks_freeze_parameter_groups():
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
     rng      = np.random.default_rng(0)
-    H, Az, R = 40, 6, 4
+    H, n_row, R = 40, 6, 4
     height   = np.linspace(-10.0, 30.0, H, dtype=np.float32)
     layer    = np.exp(-((height - 8.0) ** 2) / (2.0 * 3.0 ** 2)).astype(np.float32)
-    amps     = rng.uniform(0.5, 1.0, size=(Az, R)).astype(np.float32)
-    tomo     = layer[:, None, None] * amps[None, :, :]
+    amps     = rng.uniform(0.5, 1.0, size=(n_row, R)).astype(np.float32)
+    cube     = layer[:, None, None] * amps[None, :, :]
 
-    tomo_path = tmp_path / "tomo.npy"
-    np.save(tomo_path, tomo)
+    tomo_path = tmp_path / "cube.npy"
+    np.save(tomo_path, cube)
 
     extractor = ParameterExtractor(
         logger               = logger,
@@ -202,7 +202,7 @@ def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
         prominence_frac      = 0.05,
         sigma_init_divisor   = 4.0,
         activity_threshold   = ACTIVITY_THRESH,
-        range_batch_size     = 2,
+        col_batch_size       = 2,
         adam_steps           = 40,
         adam_lr              = 0.1,
         gpu_pixel_batch_size = 64,
@@ -211,7 +211,7 @@ def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
     results = extractor.run(tomo_path, (-10.0, 30.0))
 
     assert set(results) == {("sigma", 1e-2), ("sigma", 1e-1), ("sigma_amp", 1e-2), ("sigma_amp", 1e-1)}
-    assert all(params.shape == (6, Az, R) for params, _ in results.values())
+    assert all(params.shape == (6, n_row, R) for params, _ in results.values())
 
     for mode in ("sigma", "sigma_amp"):
         lo = results[(mode, 1e-2)][1]
@@ -233,25 +233,25 @@ def logger():
 
 @pytest.fixture
 def small_metadata():
-    return {"height_range": list(HEIGHT_RANGE)}
+    return {"z_range": list(Z_RANGE)}
 
 
-def _height_axis(H):
-    return np.linspace(HEIGHT_RANGE[0], HEIGHT_RANGE[1], H, dtype=np.float32)
+def _z_axis(H):
+    return np.linspace(Z_RANGE[0], Z_RANGE[1], H, dtype=np.float32)
 
 
 @pytest.mark.dataset
 def test_parameters_layout(parameters, param_extraction_meta):
     assert param_extraction_meta["k_max"] == K_MAX
     assert parameters.shape[0]            == 3 * K_MAX
-    assert parameters.shape[1:]           == (SCENE.azimuth_size, SCENE.range_size)
+    assert parameters.shape[1:]           == (SCENE.row_size, SCENE.col_size)
 
 
 @pytest.mark.dataset
 def test_diagnostics_layout(fit_diagnostics):
-    assert fit_diagnostics["mse_per_k"].shape       == (K_MAX, SCENE.azimuth_size, SCENE.range_size)
-    assert fit_diagnostics["penalised_per_k"].shape == (K_MAX, SCENE.azimuth_size, SCENE.range_size)
-    assert fit_diagnostics["best_k_map"].shape      == (SCENE.azimuth_size, SCENE.range_size)
+    assert fit_diagnostics["mse_per_k"].shape       == (K_MAX, SCENE.row_size, SCENE.col_size)
+    assert fit_diagnostics["penalised_per_k"].shape == (K_MAX, SCENE.row_size, SCENE.col_size)
+    assert fit_diagnostics["best_k_map"].shape      == (SCENE.row_size, SCENE.col_size)
     assert float(fit_diagnostics["lambda_k"])       == pytest.approx(LAMBDA_K, rel=1e-5)
 
 
@@ -277,14 +277,14 @@ def test_active_mu_in_physical_height_range(parameters):
     mus  = w[1::3]
     act  = amps > ACTIVITY_THRESH
 
-    assert mus[act].min() >= HEIGHT_RANGE[0] - 1e-2
-    assert mus[act].max() <= HEIGHT_RANGE[1] + 1e-2
+    assert mus[act].min() >= Z_RANGE[0] - 1e-2
+    assert mus[act].max() <= Z_RANGE[1] + 1e-2
 
 
 @pytest.mark.dataset
 def test_active_sigma_within_bounds(parameters):
     H      = SCENE.profile_length
-    h_span = HEIGHT_RANGE[1] - HEIGHT_RANGE[0]
+    h_span = Z_RANGE[1] - Z_RANGE[0]
     dh     = h_span / (H - 1)
     w      = np.array(parameters)
     amps   = w[0::3]
@@ -377,12 +377,12 @@ def test_inactive_pixels_have_zero_best_k_and_nan_mse(fit_diagnostics):
 
 
 @pytest.mark.dataset
-def test_stored_mse_matches_reconstruction_from_params(tomogram_full, parameters, fit_diagnostics):
+def test_stored_mse_matches_reconstruction_from_params(cube_full, parameters, fit_diagnostics):
     a0, a1, r0, r1 = 0, 40, 0, 40
-    H              = tomogram_full.shape[0]
-    height         = _height_axis(H)
+    H              = cube_full.shape[0]
+    height         = _z_axis(H)
 
-    raw = np.abs(np.array(tomogram_full[:, a0:a1, r0:r1])).astype(np.float32)
+    raw = np.abs(np.array(cube_full[:, a0:a1, r0:r1])).astype(np.float32)
     raw = ProfilePreprocessor.apply(raw, THRESHOLD_FACTOR, TRUNCATION_INDEX)
 
     profiles = raw.transpose(2, 1, 0).reshape((r1 - r0) * (a1 - a0), H)
@@ -412,8 +412,8 @@ def test_stored_mse_matches_reconstruction_from_params(tomogram_full, parameters
 
 
 @pytest.mark.dataset
-def test_snr_estimator_runs(tomogram_full, logger):
-    win = np.array(tomogram_full[:, :32, :32])
+def test_snr_estimator_runs(cube_full, logger):
+    win = np.array(cube_full[:, :32, :32])
     snr = ContrastEstimator(logger).run(win)
 
     assert snr.shape == (32, 32)
@@ -437,11 +437,11 @@ def test_k_selection_diagnostics_runs(fit_diagnostics, logger):
 
 
 @pytest.mark.dataset
-def test_metrics_calculator_runs_on_window(tomogram_full, parameters, fit_diagnostics, small_metadata, logger, tmp_path):
+def test_metrics_calculator_runs_on_window(cube_full, parameters, fit_diagnostics, small_metadata, logger, tmp_path):
     a0, a1, r0, r1 = 0, 48, 0, 48
 
-    tomo_win  = np.array(tomogram_full[:, a0:a1, r0:r1])
-    tomo_path = tmp_path / "tomo.npy"
+    tomo_win  = np.array(cube_full[:, a0:a1, r0:r1])
+    tomo_path = tmp_path / "cube.npy"
     np.save(tomo_path, tomo_win)
 
     parw = np.ascontiguousarray(np.array(parameters[:, a0:a1, r0:r1]))
@@ -487,11 +487,11 @@ def test_activity_map_counts_active_components(parameters, logger):
 
 
 @pytest.mark.dataset
-def test_fitting_result_plotter_smoke(tomogram_full, parameters, fit_diagnostics, small_metadata, logger, tmp_path):
+def test_fitting_result_plotter_smoke(cube_full, parameters, fit_diagnostics, small_metadata, logger, tmp_path):
     a0, a1, r0, r1 = 0, 48, 0, 48
 
-    tomo_path = tmp_path / "tomo.npy"
-    np.save(tomo_path, np.array(tomogram_full[:, a0:a1, r0:r1]))
+    tomo_path = tmp_path / "cube.npy"
+    np.save(tomo_path, np.array(cube_full[:, a0:a1, r0:r1]))
 
     parw = np.ascontiguousarray(np.array(parameters[:, a0:a1, r0:r1]))
     diag = {
@@ -528,14 +528,14 @@ def test_fitting_result_plotter_smoke(tomogram_full, parameters, fit_diagnostics
 
 
 @pytest.mark.dataset
-def test_param_run_inference_pipeline_smoke(tomogram_full, parameters, fit_diagnostics, logger, tmp_path):
+def test_param_run_inference_pipeline_smoke(cube_full, parameters, fit_diagnostics, logger, tmp_path):
     a0, a1, r0, r1 = 0, 48, 0, 48
 
     run_dir = tmp_path / "params_run"
     run_dir.mkdir(parents=True)
 
-    tomo_path = tmp_path / "tomo.npy"
-    np.save(tomo_path, np.array(tomogram_full[:, a0:a1, r0:r1]))
+    tomo_path = tmp_path / "cube.npy"
+    np.save(tomo_path, np.array(cube_full[:, a0:a1, r0:r1]))
 
     np.save(run_dir / "parameters.npy", np.ascontiguousarray(np.array(parameters[:, a0:a1, r0:r1])))
     np.savez(
@@ -549,8 +549,8 @@ def test_param_run_inference_pipeline_smoke(tomogram_full, parameters, fit_diagn
     meta = {
         "parameters_npy"     : "parameters.npy",
         "diagnostics_npz"    : "fit_diagnostics.npz",
-        "source_tomogram"    : str(tomo_path),
-        "height_range"       : list(HEIGHT_RANGE),
+        "source_cube"        : str(tomo_path),
+        "z_range"            : list(Z_RANGE),
         "k_max"              : K_MAX,
         "activity_threshold" : ACTIVITY_THRESH,
         "threshold_factor"   : THRESHOLD_FACTOR,
@@ -568,11 +568,11 @@ def test_param_run_inference_pipeline_smoke(tomogram_full, parameters, fit_diagn
 @pytest.mark.slow
 @pytest.mark.dataset
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
-def test_rerun_extractor_reproduces_best_k(tomogram_full, fit_diagnostics, logger, tmp_path):
+def test_rerun_extractor_reproduces_best_k(cube_full, fit_diagnostics, logger, tmp_path):
     a0, a1, r0, r1 = 0, 16, 0, 8
 
-    tomo_path = tmp_path / "tomo.npy"
-    np.save(tomo_path, np.array(tomogram_full[:, a0:a1, r0:r1]))
+    tomo_path = tmp_path / "cube.npy"
+    np.save(tomo_path, np.array(cube_full[:, a0:a1, r0:r1]))
 
     extractor = ParameterExtractor(
         logger               = logger,
@@ -584,7 +584,7 @@ def test_rerun_extractor_reproduces_best_k(tomogram_full, fit_diagnostics, logge
         prominence_frac      = 0.05,
         sigma_init_divisor   = 4.0,
         activity_threshold   = ACTIVITY_THRESH,
-        range_batch_size     = 256,
+        col_batch_size       = 256,
         adam_steps           = 3000,
         adam_lr              = 2e-1,
         adam_b1              = 0.95,
@@ -592,7 +592,7 @@ def test_rerun_extractor_reproduces_best_k(tomogram_full, fit_diagnostics, logge
         gpu_pixel_batch_size = 8192,
         init_workers         = 4,
     )
-    out, diag = extractor.run(tomo_path, HEIGHT_RANGE)[("sigma", LAMBDA_K)]
+    out, diag = extractor.run(tomo_path, Z_RANGE)[("sigma", LAMBDA_K)]
 
     assert out.shape  == (3 * K_MAX, a1 - a0, r1 - r0)
     assert diag["best_k_map"].min() >= 0

@@ -143,10 +143,10 @@ def test_grouper_scalar_keys_filters_non_numeric():
 
 
 def test_grouper_scalar_keys_excludes_per_bin():
-    records = [_record(elev_mse=0.1, elev_mse_3=0.2)]
+    records = [_record(z_mse=0.1, z_mse_3=0.2)]
     keys    = MetricSectionGrouper.scalar_keys(records)
-    assert "elev_mse"   in keys
-    assert "elev_mse_3" not in keys
+    assert "z_mse"   in keys
+    assert "z_mse_3" not in keys
 
 
 def test_grouper_scalar_keys_sorted_unique():

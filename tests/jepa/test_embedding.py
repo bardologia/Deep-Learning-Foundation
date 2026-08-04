@@ -52,9 +52,9 @@ class _IdentityNormalizer:
 def _build_case(z_offset: float = 0.0, flip: bool = False):
     torch.manual_seed(0)
 
-    n_gaussians, n_elev, spatial, emb_dim = 2, 8, 3, 4
-    x_axis = np.linspace(-4.0, 4.0, n_elev).astype(np.float32)
-    x      = x_axis.reshape(1, 1, -1, 1, 1)
+    n_gaussians, n_z, spatial, emb_dim = 2, 8, 3, 4
+    z_axis = np.linspace(-4.0, 4.0, n_z).astype(np.float32)
+    x      = z_axis.reshape(1, 1, -1, 1, 1)
 
     gt_params           = torch.rand(2, n_gaussians * 3, spatial, spatial) + 0.1
     gt_params[:, 1::3]  = torch.rand(2, n_gaussians, spatial, spatial) * 6.0 - 3.0
@@ -65,7 +65,7 @@ def _build_case(z_offset: float = 0.0, flip: bool = False):
     gt_curves = torch.from_numpy(GaussianReconstructor.reconstruct_batch(gt_gauss, x).astype(np.float32))
 
     autoencoder                = _FakeProfileAe(emb_dim)
-    autoencoder.profile_length = n_elev
+    autoencoder.profile_length = n_z
 
     z_star = autoencoder.encode(gt_curves)
     z_out  = -z_star if flip else z_star + z_offset
@@ -80,7 +80,7 @@ def _build_case(z_offset: float = 0.0, flip: bool = False):
         loader      = [(torch.rand(2, 2, spatial, spatial), gt_params)],
         dataset     = types.SimpleNamespace(normalizer=_IdentityNormalizer()),
         n_gaussians = n_gaussians,
-        x_axis      = x_axis,
+        z_axis      = z_axis,
     )
 
     return run, gt_curves, autoencoder
@@ -90,9 +90,9 @@ def _build_layernorm_case():
     torch.manual_seed(0)
 
     n_gaussians, spatial = 2, 3
-    n_elev = PROFILE_LENGTH
-    x_axis = np.linspace(-4.0, 4.0, n_elev).astype(np.float32)
-    x      = x_axis.reshape(1, 1, -1, 1, 1)
+    n_z    = PROFILE_LENGTH
+    z_axis = np.linspace(-4.0, 4.0, n_z).astype(np.float32)
+    x      = z_axis.reshape(1, 1, -1, 1, 1)
 
     gt_params           = torch.rand(2, n_gaussians * 3, spatial, spatial) + 0.1
     gt_params[:, 1::3]  = torch.rand(2, n_gaussians, spatial, spatial) * 6.0 - 3.0
@@ -118,7 +118,7 @@ def _build_layernorm_case():
         loader      = [(torch.rand(2, 2, spatial, spatial), gt_params)],
         dataset     = types.SimpleNamespace(normalizer=_IdentityNormalizer()),
         n_gaussians = n_gaussians,
-        x_axis      = x_axis,
+        z_axis      = z_axis,
     )
 
     return run

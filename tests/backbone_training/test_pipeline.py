@@ -15,9 +15,9 @@ pytestmark = pytest.mark.usefixtures("force_cpu")
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
     input_config = InputConfig(
-        use_primary        = True, primary_representation        = Representation.MAG_ONLY,
-        use_secondaries    = True, secondaries_representation    = Representation.MAG_ONLY,
-        use_interferograms = True, interferograms_representation = Representation.ANGLE_ONLY,
+        use_primary     = True, primary_representation        = Representation.MAG_ONLY,
+        use_secondaries = True, secondaries_representation    = Representation.MAG_ONLY,
+        use_derived     = True, derived_representation = Representation.ANGLE_ONLY,
     )
 
     splits = SplitRegions(
@@ -30,7 +30,7 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
         preprocessing_run_directory = test_data_dir,
         parameters_path             = params_dir / "parameters.npy",
         split_regions               = splits,
-        secondary_labels            = ("FL01_PS04", "FL01_PS06"),
+        secondary_labels            = ("CH01", "CH02"),
         patch                       = PatchConfig(size=(8, 8), stride=(8, 8)),
         input_config                = input_config,
         batch_size                  = 2,

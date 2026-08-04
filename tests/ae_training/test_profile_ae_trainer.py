@@ -48,8 +48,8 @@ def _build_trainer(tmp_path, epochs=2):
     model, cfg = _tiny_model()
     tc         = _trainer_config(cfg, epochs=epochs)
     logger     = Logger(log_dir=str(tmp_path), name="profile_ae_trainer_test")
-    x_axis     = np.arange(PROFILE_LENGTH, dtype=np.float32)
-    return Trainer(model, cfg, x_axis, tc, str(tmp_path), logger), cfg
+    z_axis     = np.arange(PROFILE_LENGTH, dtype=np.float32)
+    return Trainer(model, cfg, z_axis, tc, str(tmp_path), logger), cfg
 
 
 def test_trainer_builds_on_cpu(tmp_path):
@@ -115,7 +115,7 @@ def test_checkpoint_saved_and_roundtrips(tmp_path):
     ckpt = torch.load(trainer.checkpoint_path, map_location="cpu", weights_only=False)
 
     assert "params" in ckpt
-    assert isinstance(ckpt["x_axis"], np.ndarray)
+    assert isinstance(ckpt["z_axis"], np.ndarray)
     assert "best_val_loss" in ckpt
 
     fresh_model, _ = _tiny_model()
@@ -131,7 +131,7 @@ def test_capture_state_contents(tmp_path):
     state = trainer.capture_state(epoch=2)
 
     assert state["epoch"] == 2
-    np.testing.assert_allclose(state["x_axis"], np.arange(PROFILE_LENGTH, dtype=np.float32))
+    np.testing.assert_allclose(state["z_axis"], np.arange(PROFILE_LENGTH, dtype=np.float32))
 
 
 def test_non_finite_loss_raises(tmp_path, monkeypatch):

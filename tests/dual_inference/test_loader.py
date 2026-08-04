@@ -39,9 +39,9 @@ def test_build_model_reconstructs_every_registry_dual_model(name, tmp_path):
 
     DualModelConfigIO.save(config, name, meta_dir)
 
-    x_axis    = np.linspace(-20.0, 80.0, 32).astype(np.float32)
+    z_axis    = np.linspace(-20.0, 80.0, 32).astype(np.float32)
     ckpt_path = tmp_path / "best_model.pt"
-    torch.save({"params": trained.state_dict(), "x_axis": x_axis, "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}, str(ckpt_path))
+    torch.save({"params": trained.state_dict(), "z_axis": z_axis, "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}, str(ckpt_path))
 
     loader  = DualRunLoader(tmp_path, logger=None)
     rebuilt = loader._build_model(name, in_channels, out_channels, WINDOW)

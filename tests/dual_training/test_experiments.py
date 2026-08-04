@@ -42,11 +42,11 @@ def _ratio_planner(trials_config=None, model_overrides=None):
 def test_dual_routing_planner_default_catalog_covers_the_seven_ordered_pairs():
     plans = dict(_planner().plan())
 
-    assert list(plans) == ["di-full-full", "di-pass-full", "di-full-pass", "di-ifg-full", "di-full-ifg", "di-pass-ifg", "di-ifg-pass"]
+    assert list(plans) == ["di-full-full", "di-pass-full", "di-full-pass", "di-derived-full", "di-full-derived", "di-pass-derived", "di-derived-pass"]
 
-    full   = ["pass", "ifg"]
-    passes = ["pass"]
-    ifg    = ["ifg"]
+    full    = ["chan", "derived"]
+    passes  = ["chan"]
+    derived = ["derived"]
 
     assert plans["di-full-full"]["params_input"]    == full
     assert plans["di-full-full"]["existence_input"] == full
@@ -54,20 +54,20 @@ def test_dual_routing_planner_default_catalog_covers_the_seven_ordered_pairs():
     assert plans["di-pass-full"]["existence_input"] == full
     assert plans["di-full-pass"]["params_input"]    == full
     assert plans["di-full-pass"]["existence_input"] == passes
-    assert plans["di-ifg-full"]["params_input"]     == ifg
-    assert plans["di-ifg-full"]["existence_input"]  == full
-    assert plans["di-full-ifg"]["params_input"]     == full
-    assert plans["di-full-ifg"]["existence_input"]  == ifg
-    assert plans["di-pass-ifg"]["params_input"]     == passes
-    assert plans["di-pass-ifg"]["existence_input"]  == ifg
-    assert plans["di-ifg-pass"]["params_input"]     == ifg
-    assert plans["di-ifg-pass"]["existence_input"]  == passes
+    assert plans["di-derived-full"]["params_input"]     == derived
+    assert plans["di-derived-full"]["existence_input"]  == full
+    assert plans["di-full-derived"]["params_input"]     == full
+    assert plans["di-full-derived"]["existence_input"]  == derived
+    assert plans["di-pass-derived"]["params_input"]     == passes
+    assert plans["di-pass-derived"]["existence_input"]  == derived
+    assert plans["di-derived-pass"]["params_input"]     == derived
+    assert plans["di-derived-pass"]["existence_input"]  == passes
 
 
 def test_dual_routing_planner_default_catalog_never_selects_the_dem():
     for _, overrides in _planner().plan():
-        assert "dem" not in overrides["params_input"]
-        assert "dem" not in overrides["existence_input"]
+        assert "aux" not in overrides["params_input"]
+        assert "aux" not in overrides["existence_input"]
 
 
 def test_dual_routing_planner_fixes_half_width_trunks_on_every_trial():
@@ -101,32 +101,32 @@ def test_dual_routing_planner_rejects_empty_trials():
 
 def test_dual_routing_planner_rejects_missing_trunk_key():
     with pytest.raises(ValueError, match="must set \\['existence'\\]"):
-        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["pass"]}}))
+        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan"]}}))
 
 
 def test_dual_routing_planner_rejects_unknown_keys():
     with pytest.raises(ValueError, match="unknown keys \\['gate'\\]"):
-        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["pass"], "existence": ["ifg"], "gate": ["ifg"]}}))
+        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan"], "existence": ["derived"], "gate": ["derived"]}}))
 
 
 def test_dual_routing_planner_rejects_unknown_groups():
     with pytest.raises(ValueError, match="unknown 'params' groups \\['phase'\\]"):
-        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["pass", "phase"], "existence": ["ifg"]}}))
+        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan", "phase"], "existence": ["derived"]}}))
 
 
 def test_dual_routing_planner_rejects_the_dem_group():
-    with pytest.raises(ValueError, match="unknown 'params' groups \\['dem'\\]"):
-        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["pass", "ifg", "dem"], "existence": ["ifg"]}}))
+    with pytest.raises(ValueError, match="unknown 'params' groups \\['aux'\\]"):
+        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan", "derived", "aux"], "existence": ["derived"]}}))
 
 
 def test_dual_routing_planner_rejects_empty_selection():
     with pytest.raises(ValueError, match="selects no channel groups for 'existence'"):
-        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["pass"], "existence": []}}))
+        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan"], "existence": []}}))
 
 
 def test_dual_routing_planner_rejects_duplicate_groups():
     with pytest.raises(ValueError, match="repeats 'params' groups"):
-        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["pass", "pass"], "existence": ["ifg"]}}))
+        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan", "chan"], "existence": ["derived"]}}))
 
 
 def test_dual_routing_planner_paths_are_entry_config_leaves():
@@ -142,8 +142,8 @@ def test_dual_trial_overrides_round_trip_through_the_cli():
 
     config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(overrides))
 
-    assert config.params_input    == ["pass", "ifg"]
-    assert config.existence_input == ["ifg"]
+    assert config.params_input    == ["chan", "derived"]
+    assert config.existence_input == ["derived"]
     assert config.model_overrides == {"params_features": PARITY_FEATURES, "existence_features": PARITY_FEATURES}
 
 
@@ -231,8 +231,8 @@ def test_dual_ratio_overrides_round_trip_through_the_cli():
     config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(overrides))
 
     assert config.model_overrides == {"params_features": TINY_LADDER, "existence_features": TINY_LADDER}
-    assert config.params_input    == ["pass", "ifg"]
-    assert config.existence_input == ["pass", "ifg"]
+    assert config.params_input    == ["chan", "derived"]
+    assert config.existence_input == ["chan", "derived"]
 
 
 def test_dual_ratio_default_catalog_holds_the_parity_budget_at_every_split():
@@ -281,10 +281,10 @@ def test_dual_scheduler_houses_runs_in_routing_dir(tmp_path):
     assert scheduler.runs_root == tmp_path / "routing"
     assert scheduler.log_dir   == tmp_path / "routing" / "batch_train_logs"
 
-    job = scheduler._job("di-full-ifg", {})
+    job = scheduler._job("di-full-derived", {})
 
     assert job.command[-2:] == ["--logdir", str(tmp_path / "routing")]
-    assert job.log_path     == tmp_path / "routing" / "batch_train_logs" / "di-full-ifg.log"
+    assert job.log_path     == tmp_path / "routing" / "batch_train_logs" / "di-full-derived.log"
 
 
 def test_dual_scheduler_plans_the_trunk_input_grid(tmp_path):
@@ -296,8 +296,8 @@ def test_dual_scheduler_plans_the_trunk_input_grid(tmp_path):
 
     plans = dict(scheduler.planner().plan())
 
-    assert list(plans) == ["di-full-full", "di-pass-full", "di-full-pass", "di-ifg-full", "di-full-ifg", "di-pass-ifg", "di-ifg-pass"]
-    assert plans["di-full-ifg"]["model_overrides"]["params_features"] == PARITY_FEATURES
+    assert list(plans) == ["di-full-full", "di-pass-full", "di-full-pass", "di-derived-full", "di-full-derived", "di-pass-derived", "di-derived-pass"]
+    assert plans["di-full-derived"]["model_overrides"]["params_features"] == PARITY_FEATURES
 
 
 def test_dual_scheduler_houses_ratio_runs_in_ratio_dir_and_plans_the_split_grid(tmp_path):

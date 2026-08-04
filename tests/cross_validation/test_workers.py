@@ -30,7 +30,7 @@ def worker_config(test_data_dir: Path, training_type: str = "backbone") -> Cross
     config                       = CrossValidationConfig(training_type=training_type)
     config.paths.dataset_path    = test_data_dir
     config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
-    config.folds                 = FoldConfig(n_folds=5, azimuth_start=1000, azimuth_end=1512)
+    config.folds                 = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
     return config
 
 
@@ -181,9 +181,9 @@ def test_training_worker_passes_planned_split_regions(test_data_dir, monkeypatch
 
     worker.run(2)
 
-    train = sorted((r.azimuth_start, r.azimuth_end) for r in captured["sr"].regions("train"))
+    train = sorted((r.row_start, r.row_end) for r in captured["sr"].regions("train"))
     assert train == [(1000, 1196), (1416, 1512)]
-    assert worker.factory.planner().plan(2).split_regions.regions("test")[0].azimuth_start == 1212
+    assert worker.factory.planner().plan(2).split_regions.regions("test")[0].row_start == 1212
 
 
 @pytest.mark.dataset

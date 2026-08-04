@@ -28,8 +28,8 @@ def make_logger(tmp_path: Path) -> Logger:
 
 def make_planner() -> FoldPlanner:
     config       = CrossValidationConfig()
-    config.folds = FoldConfig(n_folds=N_FOLDS, azimuth_start=1000, azimuth_end=2000)
-    return FoldPlanner(config, range_start=500, range_end=1000)
+    config.folds = FoldConfig(n_folds=N_FOLDS, row_start=1000, row_end=2000)
+    return FoldPlanner(config, col_start=500, col_end=1000)
 
 
 def make_records(fold_index_to_metrics: dict[int, dict], with_checkpoint: bool = True) -> list[TrialRecord]:

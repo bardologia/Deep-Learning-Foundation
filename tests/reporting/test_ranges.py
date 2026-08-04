@@ -68,8 +68,8 @@ def test_duplicate_breaks_run():
 
 
 @pytest.mark.dataset
-def test_compact_on_contiguous_pass_index(pass_labels):
-    keys = sorted(pass_labels)
+def test_compact_on_contiguous_pass_index(channel_labels):
+    keys = sorted(channel_labels)
     assert keys
 
     indices = list(range(len(keys)))

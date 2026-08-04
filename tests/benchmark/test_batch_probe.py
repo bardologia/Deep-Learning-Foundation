@@ -162,7 +162,7 @@ def test_build_trainer_returns_a_real_trainer_on_the_complete_stage(tmp_path, mo
     probe.logger   = Logger(log_dir=str(tmp_path / "logs"), name="probe", level="ERROR")
 
     trainer_config   = tiny_trainer_config(n_gaussians=2)
-    dataset_config   = SimpleNamespace(x_axis=x_axis_numpy())
+    dataset_config   = SimpleNamespace(z_axis=x_axis_numpy())
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     dataset          = SimpleNamespace(normalizer=identity_normalizer(6))
 
@@ -284,7 +284,7 @@ def test_build_context_probes_with_the_swept_loss_union(monkeypatch, tmp_path, t
     assert trainer_config.curriculum.complete.use_param_l1  is True
     assert trainer_config.curriculum.complete.use_moments   is True
     assert trainer_config.curriculum.complete.use_mse_curve is False
-    assert len(dataset_config.x_axis) == 64
+    assert len(dataset_config.z_axis) == 64
     assert dataset_config.n_gaussians == gaussian_cfg.n_default_gaussians
 
     probe.logger.close()

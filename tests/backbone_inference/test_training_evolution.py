@@ -15,11 +15,11 @@ from tests.conftest import SilentLogger
 
 def test_evolution_frame_renders_an_image():
     frames = EvolutionFrames()
-    x_axis = np.linspace(-10.0, 30.0, 24)
-    gt     = np.exp(-((x_axis - 10.0) ** 2) / 8.0)
+    z_axis = np.linspace(-10.0, 30.0, 24)
+    gt     = np.exp(-((z_axis - 10.0) ** 2) / 8.0)
     pred   = 0.5 * gt
 
-    image = frames.frame(x_axis, gt, pred, epoch=5, ylim=1.5)
+    image = frames.frame(z_axis, gt, pred, epoch=5, ylim=1.5)
 
     assert image.size[0] > 100 and image.size[1] > 100
     assert image.mode == "RGB"

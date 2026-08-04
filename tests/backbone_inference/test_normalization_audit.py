@@ -13,13 +13,13 @@ def _run(normalized_inputs: np.ndarray, n_gaussians: int = 1, amp_max: float = 2
     clamp      = SimpleNamespace(enabled=enabled, floor=0.0, ceil=200.0, amp_max=amp_max)
     stats      = SimpleNamespace(clamp=clamp)
     normalizer = SimpleNamespace(stats=stats)
-    dataset    = SimpleNamespace(dem=None, normalizer=normalizer, assemble_window=lambda inputs, dem: normalized_inputs)
+    dataset    = SimpleNamespace(aux=None, normalizer=normalizer, assemble_window=lambda inputs, aux: normalized_inputs)
 
     return SimpleNamespace(
         dataset        = dataset,
         complex_inputs = None,
         n_gaussians    = n_gaussians,
-        x_axis         = np.linspace(-20.0, 80.0, 10),
+        z_axis         = np.linspace(-20.0, 80.0, 10),
     )
 
 

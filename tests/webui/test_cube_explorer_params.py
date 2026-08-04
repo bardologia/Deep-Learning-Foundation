@@ -9,13 +9,13 @@ from cube_explorer import CubeExplorer
 
 from tools.loss.param_loss import ParamMatcher
 
-from tests.webui.conftest import N_AZ, N_ELEV, N_RG, N_SLOTS, load_cube, loaded_cube, make_cube_run, open_explorer
+from tests.webui.conftest import N_ROWS, N_Z, N_COLS, N_SLOTS, load_cube, loaded_cube, make_cube_run, open_explorer
 
 PARAM_SOURCES = ("pred", "gt")
 
 
-def _loaded_explorer(base: Path, with_params: tuple = PARAM_SOURCES, with_reduced: bool = False) -> tuple[CubeExplorer, str]:
-    return loaded_cube(base, with_params=with_params, with_reduced=with_reduced)
+def _loaded_explorer(base: Path, with_params: tuple = PARAM_SOURCES, with_full: bool = False) -> tuple[CubeExplorer, str]:
+    return loaded_cube(base, with_params=with_params, with_full=with_full)
 
 
 def test_meta_reports_param_block(tmp_path):
@@ -40,22 +40,22 @@ def test_meta_without_params_is_none(tmp_path):
 
 
 def test_meta_intensity_ranges_per_source(tmp_path):
-    explorer, _ = _loaded_explorer(tmp_path, with_reduced=True)
+    explorer, _ = _loaded_explorer(tmp_path, with_full=True)
 
     intensity = explorer.load_status()["cube"]["intensity"]
 
-    assert set(intensity) == {"pred", "gt", "reduced"}
+    assert set(intensity) == {"pred", "gt", "full"}
     assert all(np.isfinite(v) for bounds in intensity.values() for v in bounds)
 
 
 def test_curve_points_threshold_and_values(tmp_path):
-    explorer, cube_id = _loaded_explorer(tmp_path, with_reduced=True)
+    explorer, cube_id = _loaded_explorer(tmp_path, with_full=True)
 
-    raw    = np.frombuffer(explorer.points_bin(cube_id, "reduced", amp_min=0.9, max_points=100), dtype=np.float32)
+    raw    = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=0.9, max_points=100), dtype=np.float32)
     header = raw[:4]
     rows   = raw[4:].reshape(-1, 4)
 
-    heights = np.linspace(-10.0, 30.0, N_ELEV)
+    heights = np.arange(N_Z, dtype=np.float64)
 
     assert header[0] == 2 and header[1] == 2
     assert rows[0].tolist() == [3.0, 4.0, float(heights[2]), 2.0]
@@ -63,14 +63,14 @@ def test_curve_points_threshold_and_values(tmp_path):
 
 
 def test_curve_points_subsample_cap(tmp_path):
-    explorer, cube_id = _loaded_explorer(tmp_path, with_reduced=True)
+    explorer, cube_id = _loaded_explorer(tmp_path, with_full=True)
 
-    raw    = np.frombuffer(explorer.points_bin(cube_id, "reduced", amp_min=-1.0, max_points=50), dtype=np.float32)
+    raw    = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=-1.0, max_points=50), dtype=np.float32)
     header = raw[:4]
     rows   = raw[4:].reshape(-1, 4)
 
     assert header[0] == 50
-    assert header[1] == N_ELEV * N_AZ * N_RG
+    assert header[1] == N_Z * N_ROWS * N_COLS
     assert rows.shape == (50, 4)
 
 
@@ -118,7 +118,7 @@ def test_params_at_returns_slot_values(tmp_path):
 
     stamp  = Path(cube_id)
     pred   = np.load(stamp / "cubes" / "params_pred.npy")
-    result = explorer.params_at(cube_id, az=2, rg=3)
+    result = explorer.params_at(cube_id, row=2, col=3)
 
     assert result["ok"]
     assert result["n_slots"] == N_SLOTS
@@ -137,11 +137,11 @@ def test_params_at_returns_slot_values(tmp_path):
 def test_params_at_clips_indices_and_requires_params(tmp_path):
     explorer, cube_id = _loaded_explorer(tmp_path)
 
-    clipped = explorer.params_at(cube_id, az=999, rg=-4)
-    assert clipped["ok"] and clipped["az"] == N_AZ - 1 and clipped["rg"] == 0
+    clipped = explorer.params_at(cube_id, row=999, col=-4)
+    assert clipped["ok"] and clipped["row"] == N_ROWS - 1 and clipped["col"] == 0
 
     bare_explorer, bare_id = _loaded_explorer(tmp_path / "bare", with_params=())
-    assert not bare_explorer.params_at(bare_id, az=0, rg=0)["ok"]
+    assert not bare_explorer.params_at(bare_id, row=0, col=0)["ok"]
 
 
 def test_param_map_slot_clipped(tmp_path):
@@ -169,7 +169,7 @@ def test_points_bin_thresholds_and_subsamples(tmp_path):
     assert total == int(mask.sum())
     assert n_sent == total
     assert rows[:, 3].min() >= 1e-3
-    assert rows[:, 0].max() < N_AZ and rows[:, 1].max() < N_RG
+    assert rows[:, 0].max() < N_ROWS and rows[:, 1].max() < N_COLS
 
     capped = np.frombuffer(explorer.points_bin(cube_id, "pred", amp_min=1e-3, max_points=5), dtype=np.float32)
     assert int(capped[0]) == 5 and int(capped[1]) == total
@@ -181,8 +181,8 @@ def test_points_bin_thresholds_and_subsamples(tmp_path):
 def test_dem_grid_absent_without_artifact(tmp_path):
     explorer, cube_id = _loaded_explorer(tmp_path)
 
-    assert explorer.load_status()["cube"]["dem"] is False
-    assert explorer.dem_grid_bin(cube_id) is None
+    assert explorer.load_status()["cube"]["aux"] is False
+    assert explorer.aux_grid_bin(cube_id) is None
 
 
 def test_dem_grid_with_artifact(tmp_path):
@@ -191,27 +191,27 @@ def test_dem_grid_with_artifact(tmp_path):
     preproc = tmp_path / "preproc"
     layout  = json.loads((preproc / "data" / "dataset.json").read_text())
 
-    dem       = np.linspace(600.0, 700.0, N_AZ * N_RG).reshape(N_AZ, N_RG).astype(np.float32)
-    dem[2, 3] = np.nan
-    np.save(preproc / "data" / "dem.npy", dem)
-    layout["artifacts"]["dem_full"] = "dem.npy"
+    aux       = np.linspace(600.0, 700.0, N_ROWS * N_COLS).reshape(N_ROWS, N_COLS).astype(np.float32)
+    aux[2, 3] = np.nan
+    np.save(preproc / "data" / "aux.npy", aux)
+    layout["artifacts"]["aux_full"] = "aux.npy"
     (preproc / "data" / "dataset.json").write_text(json.dumps(layout))
 
     explorer, cube_ids = open_explorer(tmp_path, expected=1)
     cube_id            = cube_ids[0]
 
-    assert load_cube(explorer, cube_id)["cube"]["dem"] is True
+    assert load_cube(explorer, cube_id)["cube"]["aux"] is True
 
-    raw    = np.frombuffer(explorer.dem_grid_bin(cube_id), dtype=np.float32)
+    raw    = np.frombuffer(explorer.aux_grid_bin(cube_id), dtype=np.float32)
     header = raw[:4]
-    grid   = raw[4:].reshape(N_AZ, N_RG)
+    grid   = raw[4:].reshape(N_ROWS, N_COLS)
 
-    median = float(np.median(dem[np.isfinite(dem)]))
+    median = float(np.median(aux[np.isfinite(aux)]))
 
-    assert header[0] == N_AZ and header[1] == N_RG
+    assert header[0] == N_ROWS and header[1] == N_COLS
     assert abs(float(header[2]) - median) < 1e-3
     assert np.isnan(grid[2, 3])
-    assert np.allclose(grid[0, 0], dem[0, 0] - median, atol=1e-3)
+    assert np.allclose(grid[0, 0], aux[0, 0] - median, atol=1e-3)
 
 
 def test_params_with_nan_survive_load_and_lookup(tmp_path):
@@ -227,7 +227,7 @@ def test_params_with_nan_survive_load_and_lookup(tmp_path):
     meta = load_cube(explorer, cube_id)["cube"]["params"]
     assert all(np.isfinite(v) for bounds in meta["ranges"].values() for v in bounds)
 
-    result = explorer.params_at(cube_id, az=0, rg=0)
+    result = explorer.params_at(cube_id, row=0, col=0)
     assert result["ok"]
     assert np.isnan(result["sources"]["pred"][0]["mu"])
     assert result["sources"]["pred"][1]["active"] is False

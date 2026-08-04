@@ -167,28 +167,28 @@ def test_generated_parameter_run_is_the_training_default(param_extraction_meta, 
 def test_extraction_discover_height_range_from_state(tmp_path):
     meta = tmp_path / "meta"
     meta.mkdir()
-    (meta / "config_state.json").write_text(json.dumps({"tomogram_config": {"height_range": [-20.0, 80.0]}}))
+    (meta / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": [-20.0, 80.0]}}))
 
     cfg = ExtractionConfig(processed_data_path=tmp_path)
-    assert cfg.discover_height_range() == (-20.0, 80.0)
+    assert cfg.discover_z_range() == (-20.0, 80.0)
 
 
 def test_extraction_discover_height_range_override():
-    cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), height_range=(0.0, 50.0))
-    assert cfg.discover_height_range() == (0.0, 50.0)
+    cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), z_range=(0.0, 50.0))
+    assert cfg.discover_z_range() == (0.0, 50.0)
 
 
 def test_extraction_discover_height_range_missing_raises(tmp_path):
     cfg = ExtractionConfig(processed_data_path=tmp_path)
     with pytest.raises(FileNotFoundError):
-        cfg.discover_height_range()
+        cfg.discover_z_range()
 
 
-def test_extraction_discover_tomogram_missing_raises(tmp_path):
+def test_extraction_discover_cube_missing_raises(tmp_path):
     (tmp_path / "data").mkdir()
     cfg = ExtractionConfig(processed_data_path=tmp_path)
     with pytest.raises(FileNotFoundError):
-        cfg.discover_tomogram_path()
+        cfg.discover_cube_path()
 
 
 def test_extract_params_entry_defaults():
@@ -196,7 +196,7 @@ def test_extract_params_entry_defaults():
     assert cfg.fit_k_values      == [5]
     assert cfg.fit_lambda_values == [1e-2]
     assert cfg.parameter_workers > 0
-    assert cfg.range_batch_size > 0
+    assert cfg.col_batch_size > 0
     assert isinstance(cfg.gpu_device_ids, list)
     assert isinstance(cfg.dataset_filter, list)
 
@@ -214,7 +214,7 @@ def test_extract_params_entry_fit_constants_match_fit_config_defaults():
     assert entry.adam_steps             == ext.adam_steps
     assert entry.adam_lr                == ext.adam_lr
     assert entry.gpu_pixel_batch_size   == ext.gpu_pixel_batch_size
-    assert entry.range_batch_size       == ext.range_batch_size
+    assert entry.col_batch_size       == ext.col_batch_size
 
 
 def test_extract_params_entry_default_lists_independent():

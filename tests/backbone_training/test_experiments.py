@@ -24,7 +24,7 @@ from pipelines.backbone.training.experiments import (
 from tools.runtime.config_cli                import ConfigCli
 
 
-CANDIDATES = ["PS04", "PS06", "PS08", "PS10", "PS12", "PS14"]
+CANDIDATES = ["CH01", "CH02", "CH03", "CH04", "CH05", "CH06"]
 
 
 def test_curriculum_planner_crosses_warmup_and_complete():
@@ -168,7 +168,7 @@ def test_secondary_consecutive_blocks():
     assert len(plans) == len(CANDIDATES) - 1
 
     name, overrides = plans[0]
-    assert overrides["paths.secondary_labels"] == ("PS04", "PS06")
+    assert overrides["paths.secondary_labels"] == ("CH01", "CH02")
     assert name.startswith("sec-consecutive-t00")
 
 
@@ -178,7 +178,7 @@ def test_secondary_spaced_picks_strided_labels():
 
     plans = planner.plan()
 
-    assert plans[0][1]["paths.secondary_labels"] == ("PS04", "PS08")
+    assert plans[0][1]["paths.secondary_labels"] == ("CH01", "CH03")
 
 
 def test_secondary_uniform_produces_distinct_trials():
@@ -219,44 +219,44 @@ def test_input_planner_default_catalog_covers_the_stack_grid():
 
     plans = dict(planner.plan())
 
-    assert list(plans) == ["in-amp-allsec-noifg", "in-noamp-allsec-ifg", "in-amp-allsec-ifg", "in-amp-redsec-ifg", "in-amp-redsec-noifg", "in-noamp-redsec-ifg"]
+    assert list(plans) == ["in-amp-allsec-noderived", "in-noamp-allsec-derived", "in-amp-allsec-derived", "in-amp-redsec-derived", "in-amp-redsec-noderived", "in-noamp-redsec-derived"]
 
-    amp_all = plans["in-amp-allsec-noifg"]
+    amp_all = plans["in-amp-allsec-noderived"]
     assert amp_all["input.use_primary"]        is True
     assert amp_all["input.use_secondaries"]    is True
-    assert amp_all["input.use_interferograms"] is False
+    assert amp_all["input.use_derived"] is False
     assert amp_all["paths.secondary_labels"]   == tuple(CANDIDATES)
 
-    ifg_all = plans["in-noamp-allsec-ifg"]
-    assert ifg_all["input.use_primary"]        is False
-    assert ifg_all["input.use_secondaries"]    is False
-    assert ifg_all["input.use_interferograms"] is True
-    assert ifg_all["paths.secondary_labels"]   == tuple(CANDIDATES)
+    derived_all = plans["in-noamp-allsec-derived"]
+    assert derived_all["input.use_primary"]        is False
+    assert derived_all["input.use_secondaries"]    is False
+    assert derived_all["input.use_derived"] is True
+    assert derived_all["paths.secondary_labels"]   == tuple(CANDIDATES)
 
-    full_all = plans["in-amp-allsec-ifg"]
+    full_all = plans["in-amp-allsec-derived"]
     assert full_all["input.use_primary"]        is True
     assert full_all["input.use_secondaries"]    is True
-    assert full_all["input.use_interferograms"] is True
+    assert full_all["input.use_derived"] is True
     assert full_all["paths.secondary_labels"]   == tuple(CANDIDATES)
 
-    reduced = plans["in-amp-redsec-ifg"]
+    reduced = plans["in-amp-redsec-derived"]
     assert reduced["input.use_primary"]        is True
     assert reduced["input.use_secondaries"]    is True
-    assert reduced["input.use_interferograms"] is True
+    assert reduced["input.use_derived"] is True
 
-    amp_reduced = plans["in-amp-redsec-noifg"]
+    amp_reduced = plans["in-amp-redsec-noderived"]
     assert amp_reduced["input.use_primary"]        is True
     assert amp_reduced["input.use_secondaries"]    is True
-    assert amp_reduced["input.use_interferograms"] is False
+    assert amp_reduced["input.use_derived"] is False
 
-    ifg_reduced = plans["in-noamp-redsec-ifg"]
-    assert ifg_reduced["input.use_primary"]        is False
-    assert ifg_reduced["input.use_secondaries"]    is False
-    assert ifg_reduced["input.use_interferograms"] is True
+    derived_reduced = plans["in-noamp-redsec-derived"]
+    assert derived_reduced["input.use_primary"]        is False
+    assert derived_reduced["input.use_secondaries"]    is False
+    assert derived_reduced["input.use_derived"] is True
 
 
 def test_input_planner_scopes_tracks_per_variant():
-    trials  = {"a": {"tracks": "all", "use_interferograms": False}, "b": {"tracks": "reduced", "use_dem": True}}
+    trials  = {"a": {"tracks": "all", "use_derived": False}, "b": {"tracks": "reduced", "use_aux": True}}
     planner = InputTrialPlanner(trials, CANDIDATES)
 
     plans = dict(planner.plan())
@@ -540,22 +540,22 @@ def test_normalization_planner_default_walks_the_ladder():
 
     plans = dict(planner.plan())
 
-    assert list(plans) == ["nrm-0-initial", "nrm-1-pass_mag", "nrm-2-ifg_phase", "nrm-3-out_amp", "nrm-4-out_sigma"]
+    assert list(plans) == ["nrm-0-initial", "nrm-1-chan_mag", "nrm-2-derived_phase", "nrm-3-out_amp", "nrm-4-out_sigma"]
     assert planner.summary()["Total runs"] == 5
 
     expected = {
-        "nrm-0-initial"   : ("zscore_log1p",     "min_max",      "zscore",           "zscore"),
-        "nrm-1-pass_mag"  : ("robust_iqr_log1p", "min_max",      "zscore",           "zscore"),
-        "nrm-2-ifg_phase" : ("robust_iqr_log1p", "fixed_div_pi", "zscore",           "zscore"),
-        "nrm-3-out_amp"   : ("robust_iqr_log1p", "fixed_div_pi", "robust_iqr_log1p", "zscore"),
-        "nrm-4-out_sigma" : ("robust_iqr_log1p", "fixed_div_pi", "robust_iqr_log1p", "robust_iqr_log1p"),
+        "nrm-0-initial"       : ("zscore_log1p",     "min_max",      "zscore",           "zscore"),
+        "nrm-1-chan_mag"      : ("robust_iqr_log1p", "min_max",      "zscore",           "zscore"),
+        "nrm-2-derived_phase" : ("robust_iqr_log1p", "fixed_div_pi", "zscore",           "zscore"),
+        "nrm-3-out_amp"       : ("robust_iqr_log1p", "fixed_div_pi", "robust_iqr_log1p", "zscore"),
+        "nrm-4-out_sigma"     : ("robust_iqr_log1p", "fixed_div_pi", "robust_iqr_log1p", "robust_iqr_log1p"),
     }
-    for name, (pass_mag, ifg_phase, out_amp, out_sigma) in expected.items():
+    for name, (chan_mag, derived_phase, out_amp, out_sigma) in expected.items():
         assert plans[name] == {
-            "normalization.pass_mag"  : pass_mag,
-            "normalization.ifg_phase" : ifg_phase,
-            "normalization.out_amp"   : out_amp,
-            "normalization.out_sigma" : out_sigma,
+            "normalization.chan_mag"      : chan_mag,
+            "normalization.derived_phase" : derived_phase,
+            "normalization.out_amp"       : out_amp,
+            "normalization.out_sigma"     : out_sigma,
         }
         assert "normalization.out_mu" not in plans[name]
 
@@ -571,7 +571,7 @@ def test_normalization_planner_paths_are_entry_config_leaves():
 
 def test_normalization_planner_rejects_unknown_preset():
     with pytest.raises(ValueError, match="valid presets"):
-        NormalizationTrialPlanner(NormalizationTrialsConfig(initial_pass_mag="log_softmax"), PRESET_NAMES)
+        NormalizationTrialPlanner(NormalizationTrialsConfig(initial_chan_mag="log_softmax"), PRESET_NAMES)
 
     with pytest.raises(ValueError, match="valid presets"):
         NormalizationTrialPlanner(NormalizationTrialsConfig(final_out_sigma="per_slot"), PRESET_NAMES)
@@ -579,7 +579,7 @@ def test_normalization_planner_rejects_unknown_preset():
 
 def test_normalization_planner_rejects_noop_rung():
     with pytest.raises(ValueError, match="same configuration twice"):
-        NormalizationTrialPlanner(NormalizationTrialsConfig(final_pass_mag="zscore_log1p"), PRESET_NAMES)
+        NormalizationTrialPlanner(NormalizationTrialsConfig(final_chan_mag="zscore_log1p"), PRESET_NAMES)
 
     with pytest.raises(ValueError, match="same configuration twice"):
         NormalizationTrialPlanner(NormalizationTrialsConfig(final_out_amp="zscore"), PRESET_NAMES)
@@ -845,7 +845,7 @@ def test_ablation_catalog_default_is_the_standard_set():
         "loss_curriculum",
         "cosine_curve", "architecture_param_loss", "augmentation",
         "active_norm", "lr_per_group", "lr_warmup",
-        "out_sigma", "out_amp", "ifg_phase", "pass_mag",
+        "out_sigma", "out_amp", "derived_phase", "chan_mag",
         "output_clamp",
     ]
     assert "out_mu" not in labels
@@ -857,8 +857,8 @@ def test_ablation_catalog_standard_categories_present():
     catalog = AblationCatalog.as_dict()
 
     assert catalog["out_amp"]["degrade"]["normalization.out_amp"]      == "zscore"
-    assert catalog["pass_mag"]["degrade"]["normalization.pass_mag"]    == "zscore_log1p"
-    assert catalog["ifg_phase"]["degrade"]["normalization.ifg_phase"]  == "zscore"
+    assert catalog["chan_mag"]["degrade"]["normalization.chan_mag"]    == "zscore_log1p"
+    assert catalog["derived_phase"]["degrade"]["normalization.derived_phase"]  == "zscore"
     assert catalog["augmentation"]["degrade"]["augmentation.p_flip_h"] == 0.0
     assert "augmentation.p_noise" not in catalog["augmentation"]["enable"]
     assert "out_mu"      not in catalog
@@ -933,11 +933,11 @@ def test_input_from_labels_uses_full_stack():
 
     assert len(plans) == 6
 
-    overrides = plans["in-amp-allsec-noifg"]
-    assert overrides["input.use_interferograms"] is False
+    overrides = plans["in-amp-allsec-noderived"]
+    assert overrides["input.use_derived"] is False
     assert len(overrides["paths.secondary_labels"]) == len(planner.candidates) >= 1
 
-    assert "paths.secondary_labels" not in plans["in-amp-redsec-ifg"]
+    assert "paths.secondary_labels" not in plans["in-amp-redsec-derived"]
 
 
 def test_secondary_from_labels_loads_candidates():
@@ -1000,4 +1000,4 @@ def test_ablation_default_plan_round_trips_through_config_cli():
     assert baseline.training.warmup_enabled                      is False
     assert baseline.normalization.clamp_output                   is False
     assert baseline.normalization.out_amp                        == "zscore"
-    assert baseline.normalization.ifg_phase                      == "zscore"
+    assert baseline.normalization.derived_phase                      == "zscore"

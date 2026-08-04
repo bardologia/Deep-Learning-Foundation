@@ -8,8 +8,8 @@ from tools.data.regions import CropRegion, SplitRegions
 def test_crop_region_sizes():
     region = CropRegion(1000, 2000, 500, 1000)
 
-    assert region.azimuth_size == 1000
-    assert region.range_size   == 500
+    assert region.row_size == 1000
+    assert region.col_size   == 500
 
 
 def test_crop_region_as_tuple():
@@ -27,15 +27,15 @@ def test_crop_region_identifier_string():
 def test_crop_region_labeled_string():
     region = CropRegion(1000, 2000, 500, 1000)
 
-    assert region.as_labeled_string() == "az1000-2000_rg500-1000"
+    assert region.as_labeled_string() == "row1000-2000_col500-1000"
 
 
-def test_crop_region_rejects_bad_azimuth():
+def test_crop_region_rejects_bad_rows():
     with pytest.raises(ValueError):
         CropRegion(2000, 1000, 0, 10)
 
 
-def test_crop_region_rejects_equal_azimuth():
+def test_crop_region_rejects_equal_rows():
     with pytest.raises(ValueError):
         CropRegion(5, 5, 0, 10)
 
@@ -49,47 +49,47 @@ def test_local_slices_relative_to_global():
     glob  = CropRegion(1000, 2000, 500, 1000)
     local = CropRegion(1100, 1300, 600, 700)
 
-    az_slice, rg_slice = local.local_slices(glob)
+    row_slice, col_slice = local.local_slices(glob)
 
-    assert az_slice == slice(100, 300)
-    assert rg_slice == slice(100, 200)
+    assert row_slice == slice(100, 300)
+    assert col_slice == slice(100, 200)
 
 
 def test_local_slices_identity_when_equal():
     glob = CropRegion(0, 50, 0, 50)
-    az, rg = glob.local_slices(glob)
+    row, col = glob.local_slices(glob)
 
-    assert az == slice(0, 50)
-    assert rg == slice(0, 50)
+    assert row == slice(0, 50)
+    assert col == slice(0, 50)
 
 
-def test_subdivide_by_azimuth_covers_full_range():
+def test_subdivide_by_row_covers_full_range():
     region = CropRegion(0, 1000, 0, 100)
-    parts  = region.subdivide_by_azimuth(300)
+    parts  = region.subdivide_by_rows(300)
 
     assert len(parts) == 4
     assert parts[0].as_tuple()  == (0, 300, 0, 100)
     assert parts[-1].as_tuple() == (900, 1000, 0, 100)
-    assert sum(p.azimuth_size for p in parts) == region.azimuth_size
+    assert sum(p.row_size for p in parts) == region.row_size
 
 
 def test_subdivide_exact_multiple():
     region = CropRegion(0, 900, 0, 50)
-    parts  = region.subdivide_by_azimuth(300)
+    parts  = region.subdivide_by_rows(300)
 
     assert len(parts) == 3
-    assert all(p.azimuth_size == 300 for p in parts)
+    assert all(p.row_size == 300 for p in parts)
 
 
 def test_subdivide_wider_than_region():
     region = CropRegion(0, 200, 0, 50)
-    parts  = region.subdivide_by_azimuth(1000)
+    parts  = region.subdivide_by_rows(1000)
 
     assert len(parts) == 1
     assert parts[0].as_tuple() == (0, 200, 0, 50)
 
 
-def test_split_regions_from_ratios_partitions_azimuth():
+def test_split_regions_from_ratios_partitions_rows():
     glob   = CropRegion(0, 1000, 0, 500)
     splits = SplitRegions.from_ratios(glob, train_ratio=0.7, val_ratio=0.15)
 
@@ -102,10 +102,10 @@ def test_split_regions_from_ratios_contiguous_and_full():
     glob   = CropRegion(0, 1000, 0, 500)
     splits = SplitRegions.from_ratios(glob)
 
-    assert splits.train.azimuth_end == splits.val.azimuth_start
-    assert splits.val.azimuth_end   == splits.test.azimuth_start
-    total = splits.train.azimuth_size + splits.val.azimuth_size + splits.test.azimuth_size
-    assert total == glob.azimuth_size
+    assert splits.train.row_end == splits.val.row_start
+    assert splits.val.row_end   == splits.test.row_start
+    total = splits.train.row_size + splits.val.row_size + splits.test.row_size
+    assert total == glob.row_size
 
 
 def test_as_list_wraps_single():
@@ -151,22 +151,22 @@ def test_region_rows_list_region_indexes():
 @pytest.mark.dataset
 def test_crop_region_matches_scene_config(config_state_json, scene_config):
     crop   = config_state_json["crop"]
-    region = CropRegion(crop["azimuth_start"], crop["azimuth_end"], crop["range_start"], crop["range_end"])
+    region = CropRegion(crop["row_start"], crop["row_end"], crop["col_start"], crop["col_end"])
 
-    assert region.azimuth_size == scene_config.azimuth_size
-    assert region.range_size   == scene_config.range_size
+    assert region.row_size == scene_config.row_size
+    assert region.col_size   == scene_config.col_size
 
 
 @pytest.mark.dataset
-def test_scene_crop_local_slices_index_data(config_state_json, tomogram_full):
+def test_scene_crop_local_slices_index_data(config_state_json, cube_full):
     crop   = config_state_json["crop"]
-    glob   = CropRegion(crop["azimuth_start"], crop["azimuth_end"], crop["range_start"], crop["range_end"])
-    sub    = CropRegion(crop["azimuth_start"], crop["azimuth_start"] + 32, crop["range_start"], crop["range_start"] + 16)
+    glob   = CropRegion(crop["row_start"], crop["row_end"], crop["col_start"], crop["col_end"])
+    sub    = CropRegion(crop["row_start"], crop["row_start"] + 32, crop["col_start"], crop["col_start"] + 16)
 
-    az, rg = sub.local_slices(glob)
-    window = tomogram_full[:, az, rg]
+    row, col = sub.local_slices(glob)
+    window = cube_full[:, row, col]
 
-    assert window.shape == (tomogram_full.shape[0], 32, 16)
+    assert window.shape == (cube_full.shape[0], 32, 16)
 
 
 def test_overlaps_detects_intersection():

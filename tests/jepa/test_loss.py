@@ -11,13 +11,13 @@ from tools.data.gaussians             import GaussianCurve
 from tests.jepa.conftest import EMBEDDING_DIM, N_GAUSSIANS, SPATIAL, make_autoencoder
 
 
-def build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad"):
+def build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad"):
     provider = TargetProvider(target_kind)
     return EmbeddingLoss(
         autoencoder         = autoencoder,
         target_provider     = provider,
         embedding_cfg       = emb_cfg,
-        x_axis              = x_axis,
+        z_axis              = z_axis,
         norm_stats          = norm_stats,
         params_per_gaussian = 3,
         profile_normalizer  = profile_normalizer,
@@ -30,8 +30,8 @@ def random_inputs(requires_grad=True):
     return z_hat, gt
 
 
-def test_loss_returns_finite_scalar(autoencoder, x_axis, norm_stats, profile_normalizer, embedding_loss_cfg):
-    loss      = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, embedding_loss_cfg)
+def test_loss_returns_finite_scalar(autoencoder, z_axis, norm_stats, profile_normalizer, embedding_loss_cfg):
+    loss      = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, embedding_loss_cfg)
     z_hat, gt = random_inputs()
 
     out = loss(z_hat, gt)
@@ -42,8 +42,8 @@ def test_loss_returns_finite_scalar(autoencoder, x_axis, norm_stats, profile_nor
     assert "embedding_mse" in out["components"]
 
 
-def test_loss_gradient_flows_to_predictor(autoencoder, x_axis, norm_stats, profile_normalizer, embedding_loss_cfg):
-    loss      = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, embedding_loss_cfg)
+def test_loss_gradient_flows_to_predictor(autoencoder, z_axis, norm_stats, profile_normalizer, embedding_loss_cfg):
+    loss      = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, embedding_loss_cfg)
     z_hat, gt = random_inputs()
 
     loss(z_hat, gt)["total_loss"].backward()
@@ -52,8 +52,8 @@ def test_loss_gradient_flows_to_predictor(autoencoder, x_axis, norm_stats, profi
     assert torch.isfinite(z_hat.grad).all()
 
 
-def test_loss_does_not_flow_to_stopgrad_target(autoencoder, x_axis, norm_stats, profile_normalizer, embedding_loss_cfg):
-    loss      = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, embedding_loss_cfg, target_kind="stopgrad")
+def test_loss_does_not_flow_to_stopgrad_target(autoencoder, z_axis, norm_stats, profile_normalizer, embedding_loss_cfg):
+    loss      = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, embedding_loss_cfg, target_kind="stopgrad")
     z_hat, gt = random_inputs()
 
     loss(z_hat, gt)["total_loss"].backward()
@@ -61,16 +61,16 @@ def test_loss_does_not_flow_to_stopgrad_target(autoencoder, x_axis, norm_stats, 
     assert all(p.grad is None for p in autoencoder.encoder.parameters())
 
 
-def test_loss_zero_on_matching_embeddings(x_axis, norm_stats, profile_normalizer):
+def test_loss_zero_on_matching_embeddings(z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=True, weight_embedding_mse=1.0, use_curve_recon=False)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
 
     gt = torch.rand(2, N_GAUSSIANS * 3, SPATIAL, SPATIAL)
 
     with torch.no_grad():
         gt_phys    = norm_stats.denormalize_output(gt.float())
-        gt_curve   = GaussianCurve.reconstruct(gt_phys, x_axis, 3)
+        gt_curve   = GaussianCurve.reconstruct(gt_phys, z_axis, 3)
         gt_curve_n = profile_normalizer.normalize(gt_curve)
         z_star     = autoencoder.encoder(gt_curve_n)
 
@@ -79,15 +79,15 @@ def test_loss_zero_on_matching_embeddings(x_axis, norm_stats, profile_normalizer
     assert out["total_loss"].item() == pytest.approx(0.0, abs=1e-10)
 
 
-def test_loss_increases_with_divergence(x_axis, norm_stats, profile_normalizer):
+def test_loss_increases_with_divergence(z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=True, weight_embedding_mse=1.0, use_curve_recon=False)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
 
     gt = torch.rand(2, N_GAUSSIANS * 3, SPATIAL, SPATIAL)
 
     with torch.no_grad():
-        gt_curve   = GaussianCurve.reconstruct(gt.float(), x_axis, 3)
+        gt_curve   = GaussianCurve.reconstruct(gt.float(), z_axis, 3)
         gt_curve_n = profile_normalizer.normalize(gt_curve)
         z_star     = autoencoder.encoder(gt_curve_n)
 
@@ -97,7 +97,7 @@ def test_loss_increases_with_divergence(x_axis, norm_stats, profile_normalizer):
     assert far > near
 
 
-def test_loss_curve_recon_flows_to_decoder(x_axis, norm_stats, profile_normalizer):
+def test_loss_curve_recon_flows_to_decoder(z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(
         use_embedding_mse    = False,
@@ -106,7 +106,7 @@ def test_loss_curve_recon_flows_to_decoder(x_axis, norm_stats, profile_normalize
         weight_curve_recon   = 1.0,
         curve_kind           = "mse",
     )
-    loss      = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss      = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
     z_hat, gt = random_inputs()
 
     out = loss(z_hat, gt)
@@ -118,10 +118,10 @@ def test_loss_curve_recon_flows_to_decoder(x_axis, norm_stats, profile_normalize
     assert decoder_has_grad
 
 
-def test_loss_total_scales_components_by_weight(x_axis, norm_stats, profile_normalizer):
+def test_loss_total_scales_components_by_weight(z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=True, weight_embedding_mse=3.0, use_curve_recon=False)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
     z_hat, gt   = random_inputs(requires_grad=False)
 
     out = loss(z_hat, gt)
@@ -130,15 +130,15 @@ def test_loss_total_scales_components_by_weight(x_axis, norm_stats, profile_norm
     assert out["total_loss"].item() == pytest.approx(3.0 * raw.item(), rel=1e-6)
 
 
-def test_loss_cosine_term_zero_on_matching_embeddings(x_axis, norm_stats, profile_normalizer):
+def test_loss_cosine_term_zero_on_matching_embeddings(z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=False, use_embedding_cosine=True, weight_embedding_cosine=1.0, use_curve_recon=False)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
 
     gt = torch.rand(2, N_GAUSSIANS * 3, SPATIAL, SPATIAL)
 
     with torch.no_grad():
-        gt_curve   = GaussianCurve.reconstruct(gt.float(), x_axis, 3)
+        gt_curve   = GaussianCurve.reconstruct(gt.float(), z_axis, 3)
         gt_curve_n = profile_normalizer.normalize(gt_curve)
         z_star     = autoencoder.encoder(gt_curve_n)
 
@@ -149,15 +149,15 @@ def test_loss_cosine_term_zero_on_matching_embeddings(x_axis, norm_stats, profil
     assert loss(-z_star, gt)["total_loss"].item() > 1.0
 
 
-def test_loss_smoothl1_term_zero_on_matching_embeddings(x_axis, norm_stats, profile_normalizer):
+def test_loss_smoothl1_term_zero_on_matching_embeddings(z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=False, use_embedding_smoothl1=True, weight_embedding_smoothl1=1.0, smoothl1_beta=1.0, use_curve_recon=False)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
 
     gt = torch.rand(2, N_GAUSSIANS * 3, SPATIAL, SPATIAL)
 
     with torch.no_grad():
-        gt_curve   = GaussianCurve.reconstruct(gt.float(), x_axis, 3)
+        gt_curve   = GaussianCurve.reconstruct(gt.float(), z_axis, 3)
         gt_curve_n = profile_normalizer.normalize(gt_curve)
         z_star     = autoencoder.encoder(gt_curve_n)
 
@@ -169,10 +169,10 @@ def test_loss_smoothl1_term_zero_on_matching_embeddings(x_axis, norm_stats, prof
 
 
 @pytest.mark.parametrize("kind", ["l1", "huber", "charbonnier"])
-def test_loss_curve_recon_kinds_compute_finite_terms(kind, x_axis, norm_stats, profile_normalizer):
+def test_loss_curve_recon_kinds_compute_finite_terms(kind, z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=False, use_curve_recon=True, weight_curve_recon=1.0, curve_kind=kind)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
     z_hat, gt   = random_inputs()
 
     out = loss(z_hat, gt)
@@ -185,10 +185,10 @@ def test_loss_curve_recon_kinds_compute_finite_terms(kind, x_axis, norm_stats, p
     assert torch.isfinite(z_hat.grad).all()
 
 
-def test_loss_unknown_curve_kind_raises(x_axis, norm_stats, profile_normalizer):
+def test_loss_unknown_curve_kind_raises(z_axis, norm_stats, profile_normalizer):
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=False, use_curve_recon=True, curve_kind="bogus")
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
     z_hat, gt   = random_inputs(requires_grad=False)
 
     with pytest.raises(ValueError):

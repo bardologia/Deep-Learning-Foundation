@@ -14,7 +14,7 @@ def pipeline_config(tmp_path: Path, test_data_dir: Path, training_type: str = "b
     config                    = CrossValidationConfig(training_type=training_type)
     config.paths.log_base_dir = tmp_path
     config.paths.dataset_path = test_data_dir
-    config.folds              = FoldConfig(n_folds=5, azimuth_start=1000, azimuth_end=1512)
+    config.folds              = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
     config.run_tag            = "rt"
     return config
 

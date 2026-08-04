@@ -127,7 +127,7 @@ def test_load_json_reads_scene_config_state(meta_dir):
     loaded = FileIO.load_json(meta_dir / "config_state.json")
 
     assert "crop" in loaded
-    assert loaded["crop"]["azimuth_start"] == 1000
+    assert loaded["crop"]["row_start"] == 1000
 
 
 @pytest.mark.dataset

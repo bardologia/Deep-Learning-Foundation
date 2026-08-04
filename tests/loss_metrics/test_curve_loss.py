@@ -129,8 +129,8 @@ def test_outputs_are_scalars():
 
 
 @pytest.mark.dataset
-def test_curve_losses_on_scene_tomogram(tomogram_full):
-    win = np.abs(np.asarray(tomogram_full[:16, :8, :8])).astype(np.float64)
+def test_curve_losses_on_scene_cube(cube_full):
+    win = np.abs(np.asarray(cube_full[:16, :8, :8])).astype(np.float64)
     cur = torch.from_numpy(win)[None]
 
     pred = cur * 1.05

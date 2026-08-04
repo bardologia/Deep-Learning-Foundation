@@ -14,11 +14,11 @@ from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagree
 from tests.conftest import SilentLogger
 
 
-N_ELEV, N_AZ, N_RG = 4, 3, 2
+N_Z, N_ROWS, N_COLS = 4, 3, 2
 
 
 def _params(*slots: tuple) -> np.ndarray:
-    cube = np.zeros((len(slots) * 3, N_AZ, N_RG), dtype=np.float32)
+    cube = np.zeros((len(slots) * 3, N_ROWS, N_COLS), dtype=np.float32)
 
     for k, (amp, mu, sigma) in enumerate(slots):
         cube[3 * k, :, :]     = amp
@@ -40,7 +40,7 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
     np.save(cubes_dir / "params_gt.npy",   (params_gt if params_gt is not None else params_pred).astype(np.float32))
     np.save(cubes_dir / "pixel_mse.npy",   pred_curves.mean(axis=0).astype(np.float32) + 0.1)
 
-    (out_dir / "metrics.json").write_text(json.dumps({"curve_mse_gt": 1.0, "split_region": [0, N_AZ, 0, N_RG]}), encoding="utf-8")
+    (out_dir / "metrics.json").write_text(json.dumps({"curve_mse_gt": 1.0, "split_region": [0, N_ROWS, 0, N_COLS]}), encoding="utf-8")
     (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
 
     return run_dir
@@ -73,7 +73,7 @@ def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
 
 def test_identical_seeds_give_zero_disagreement(tmp_path):
     group  = tmp_path / "group"
-    curves = np.ones((N_ELEV, N_AZ, N_RG))
+    curves = np.ones((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
     runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
 
@@ -92,8 +92,8 @@ def test_identical_seeds_give_zero_disagreement(tmp_path):
 
 def test_known_offsets_give_the_sample_std(tmp_path):
     group    = tmp_path / "group"
-    curves_a = np.zeros((N_ELEV, N_AZ, N_RG))
-    curves_b = np.zeros((N_ELEV, N_AZ, N_RG))
+    curves_a = np.zeros((N_Z, N_ROWS, N_COLS))
+    curves_b = np.zeros((N_Z, N_ROWS, N_COLS))
 
     curves_b[0, 0, 0] = 2.0
 
@@ -110,7 +110,7 @@ def test_known_offsets_give_the_sample_std(tmp_path):
     mu      = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
     sigma   = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_sigma.npy")
 
-    assert profile[0, 0] == pytest.approx(math.sqrt(2.0) / N_ELEV)
+    assert profile[0, 0] == pytest.approx(math.sqrt(2.0) / N_Z)
     assert profile[1, 1] == pytest.approx(0.0)
     assert np.allclose(amp,   math.sqrt(2.0))
     assert np.allclose(mu,    math.sqrt(8.0))
@@ -120,7 +120,7 @@ def test_known_offsets_give_the_sample_std(tmp_path):
 def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
     group = tmp_path / "group"
 
-    curves   = np.zeros((N_ELEV, N_AZ, N_RG))
+    curves   = np.zeros((N_Z, N_ROWS, N_COLS))
     active   = _params((1.0, 5.0, 2.0))
     inactive = _params((0.0, 99.0, 99.0))
 
@@ -140,7 +140,7 @@ def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
 
 def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
     group  = tmp_path / "group"
-    curves = np.ones((N_ELEV, N_AZ, N_RG))
+    curves = np.ones((N_Z, N_ROWS, N_COLS))
 
     gt       = _params((1.0, 10.0, 3.0), (2.0, 40.0, 4.0))
     straight = _params((1.0, 10.0, 3.0), (2.0, 40.0, 4.0))
@@ -162,7 +162,7 @@ def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
 
 def test_missing_cubes_raise(tmp_path):
     group = tmp_path / "group"
-    runs  = [_seed_run(group, f"seed{i}", np.zeros((N_ELEV, N_AZ, N_RG)), _params((1.0, 5.0, 2.0))) for i in range(2)]
+    runs  = [_seed_run(group, f"seed{i}", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0))) for i in range(2)]
 
     (runs[1] / "inference" / "stamp" / "cubes" / "params_pred.npy").unlink()
 
@@ -172,10 +172,10 @@ def test_missing_cubes_raise(tmp_path):
 
 def test_shape_mismatch_raises(tmp_path):
     group = tmp_path / "group"
-    run_a = _seed_run(group, "seed0", np.zeros((N_ELEV, N_AZ, N_RG)), _params((1.0, 5.0, 2.0)))
-    run_b = _seed_run(group, "seed1", np.zeros((N_ELEV, N_AZ + 1, N_RG)), _params((1.0, 5.0, 2.0)))
+    run_a = _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
+    run_b = _seed_run(group, "seed1", np.zeros((N_Z, N_ROWS + 1, N_COLS)), _params((1.0, 5.0, 2.0)))
 
-    np.save(run_b / "inference" / "stamp" / "cubes" / "params_pred.npy", np.zeros((3, N_AZ + 1, N_RG), dtype=np.float32))
+    np.save(run_b / "inference" / "stamp" / "cubes" / "params_pred.npy", np.zeros((3, N_ROWS + 1, N_COLS), dtype=np.float32))
 
     with pytest.raises(ValueError):
         _maps(group, [run_a, run_b]).run()
@@ -185,8 +185,8 @@ def test_comparison_writes_maps_figures_and_report_section(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"
-    _seed_run(group, "seed0", np.zeros((N_ELEV, N_AZ, N_RG)), _params((1.0, 5.0, 2.0)))
-    _seed_run(group, "seed1", np.ones((N_ELEV, N_AZ, N_RG)),  _params((2.0, 6.0, 3.0)))
+    _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
+    _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))
 
     reports = SeedComparison(_config(group, compute_disagreement=True)).run()
 
@@ -212,8 +212,8 @@ def test_comparison_skips_disagreement_when_disabled(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"
-    _seed_run(group, "seed0", np.zeros((N_ELEV, N_AZ, N_RG)), _params((1.0, 5.0, 2.0)))
-    _seed_run(group, "seed1", np.ones((N_ELEV, N_AZ, N_RG)),  _params((2.0, 6.0, 3.0)))
+    _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
+    _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))
 
     reports = SeedComparison(_config(group, compute_disagreement=False)).run()
 

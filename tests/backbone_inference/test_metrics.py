@@ -8,10 +8,10 @@ from tools.loss.param_loss                import ParamMatcher
 
 
 N_GAUSSIANS = 5
-N_ELEV      = 24
+N_Z         = 24
 
 
-def _x_axis(n: int = N_ELEV) -> np.ndarray:
+def _x_axis(n: int = N_Z) -> np.ndarray:
     return np.linspace(-20.0, 80.0, n).astype(np.float32)
 
 
@@ -27,22 +27,22 @@ def _make_result(pred_curves, gt_curves, params_pred=None, params_gt=None) -> Re
         pixel_cosine       = pixel_maps["cos"],
         pixel_peak_err_idx = pixel_maps["peak"].astype(np.int32),
         cube_directory     = None,
-        azimuth_offset     = 0,
-        range_offset       = 0,
+        row_offset         = 0,
+        col_offset         = 0,
         params_pred        = params_pred,
         params_gt          = params_gt,
     )
 
 
-def _curves_from_params(params, x_axis, n_gaussians) -> np.ndarray:
+def _curves_from_params(params, z_axis, n_gaussians) -> np.ndarray:
     C, H, W = params.shape
-    curve   = np.zeros((x_axis.size, H, W), dtype=np.float32)
+    curve   = np.zeros((z_axis.size, H, W), dtype=np.float32)
 
     for k in range(n_gaussians):
         a   = np.maximum(params[3 * k], 0.0)[None]
         mu  = params[3 * k + 1][None]
         sig = params[3 * k + 2][None]
-        x   = x_axis.reshape(-1, 1, 1)
+        x   = z_axis.reshape(-1, 1, 1)
         curve += a * np.exp(-((x - mu) ** 2) / (2.0 * sig * sig + 1e-8))
 
     return curve.astype(np.float32)
@@ -50,7 +50,7 @@ def _curves_from_params(params, x_axis, n_gaussians) -> np.ndarray:
 
 def test_curve_pixel_metrics_identical_is_perfect():
     rng   = np.random.default_rng(0)
-    curve = rng.random((N_ELEV, 6, 7)).astype(np.float32) + 0.1
+    curve = rng.random((N_Z, 6, 7)).astype(np.float32) + 0.1
 
     out = Metrics.curve_pixel_metrics(curve, curve)
 
@@ -63,7 +63,7 @@ def test_curve_pixel_metrics_identical_is_perfect():
 
 def test_curve_pixel_metrics_more_noise_is_worse():
     rng   = np.random.default_rng(1)
-    ref   = rng.random((N_ELEV, 5, 5)).astype(np.float32) + 0.5
+    ref   = rng.random((N_Z, 5, 5)).astype(np.float32) + 0.5
     small = ref + 0.01 * rng.standard_normal(ref.shape).astype(np.float32)
     large = ref + 0.50 * rng.standard_normal(ref.shape).astype(np.float32)
 
@@ -107,7 +107,7 @@ def test_curve_pixel_metrics_cosine_orthogonal():
 
 def test_curve_scalar_metrics_identical():
     rng   = np.random.default_rng(2)
-    curve = rng.random((N_ELEV, 4, 4)).astype(np.float32) + 0.2
+    curve = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.2
     m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS)
 
     scal = m._curve_scalar_metrics(curve, curve, suffix="gt")
@@ -121,7 +121,7 @@ def test_curve_scalar_metrics_identical():
 
 def test_curve_scalar_metrics_rmse_is_sqrt_mse():
     rng  = np.random.default_rng(3)
-    ref  = rng.random((N_ELEV, 3, 3)).astype(np.float32)
+    ref  = rng.random((N_Z, 3, 3)).astype(np.float32)
     pred = ref + 0.1 * rng.standard_normal(ref.shape).astype(np.float32)
     m    = Metrics(_make_result(pred, ref), _x_axis(), N_GAUSSIANS)
 
@@ -196,16 +196,16 @@ def test_flat_to_yx_roundtrip():
     assert list(yx[3]) == [2, 6]
 
 
-def test_elev_metrics_identical_perfect():
+def test_z_metrics_identical_perfect():
     rng   = np.random.default_rng(5)
-    curve = rng.random((N_ELEV, 4, 4)).astype(np.float32) + 0.3
+    curve = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.3
     m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS)
 
-    elev = m._elev_metrics(curve, curve, suffix="gt")
+    z = m._z_metrics(curve, curve, suffix="gt")
 
-    assert np.allclose(elev["elev_mae_gt"],  0.0, atol=1e-6)
-    assert np.allclose(elev["elev_rmse_gt"], 0.0, atol=1e-6)
-    assert np.allclose(elev["elev_r2_gt"],   1.0, atol=1e-5)
+    assert np.allclose(z["z_mae_gt"],  0.0, atol=1e-6)
+    assert np.allclose(z["z_rmse_gt"], 0.0, atol=1e-6)
+    assert np.allclose(z["z_r2_gt"],   1.0, atol=1e-5)
 
 
 def test_active_count_stats_identical_perfect_agreement():
@@ -216,7 +216,7 @@ def test_active_count_stats_identical_perfect_agreement():
     params[3] = 1.0
     params[6] = 0.0
 
-    res = _make_result(np.zeros((N_ELEV, H, W), np.float32), np.zeros((N_ELEV, H, W), np.float32), params_pred=params.copy(), params_gt=params.copy())
+    res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=params.copy(), params_gt=params.copy())
     out = Metrics(res, _x_axis(), N_GAUSSIANS)._active_count_stats()
 
     assert out["count_exact_frac"]      == pytest.approx(1.0)
@@ -242,7 +242,7 @@ def test_active_count_stats_per_slot_pred_is_permutation_invariant():
     order = [2, 0, 1, 3, 4]
     pred  = _reorder_groups(gt, order)
 
-    out = Metrics(_make_result(np.zeros((N_ELEV, H, W), np.float32), np.zeros((N_ELEV, H, W), np.float32), params_pred=pred, params_gt=gt), _x_axis(), N_GAUSSIANS)._active_count_stats()
+    out = Metrics(_make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt), _x_axis(), N_GAUSSIANS)._active_count_stats()
 
     for k in range(N_GAUSSIANS):
         assert out[f"slot_{k}_active_pred_frac"] == pytest.approx(out[f"slot_{k}_active_gt_frac"])
@@ -258,7 +258,7 @@ def test_active_count_stats_undercount_when_pred_drops_slot():
     pred    = gt.copy()
     pred[3] = 0.0
 
-    res = _make_result(np.zeros((N_ELEV, H, W), np.float32), np.zeros((N_ELEV, H, W), np.float32), params_pred=pred, params_gt=gt)
+    res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
     out = Metrics(res, _x_axis(), N_GAUSSIANS)._active_count_stats()
 
     assert out["count_under_frac"]       == pytest.approx(1.0)
@@ -286,7 +286,7 @@ def test_param_population_stats_active_inactive_global_means():
     pred[0, :, :2] += 0.5
     pred[1, :, :2] += 1.0
 
-    res = _make_result(np.zeros((N_ELEV, H, W), np.float32), np.zeros((N_ELEV, H, W), np.float32), params_pred=pred, params_gt=gt)
+    res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
     out = Metrics(res, _x_axis(), N_GAUSSIANS)._param_population_stats()
 
     assert out["slot_0_amp_active_gt_mean"]   == pytest.approx(2.0)
@@ -325,7 +325,7 @@ def test_param_population_stats_on_nan_masked_ground_truth():
         gt[3 * k + 1][inactive] = np.nan
         gt[3 * k + 2][inactive] = np.nan
 
-    res = _make_result(np.zeros((N_ELEV, H, W), np.float32), np.zeros((N_ELEV, H, W), np.float32), params_pred=pred, params_gt=gt)
+    res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
     out = Metrics(res, _x_axis(), N_GAUSSIANS)._param_population_stats()
 
     assert out["slot_0_mu_active_gt_mean"]  == pytest.approx(10.0)
@@ -348,7 +348,7 @@ def test_param_population_stats_pred_is_permutation_invariant():
     order = [2, 0, 1, 3, 4]
     pred  = _reorder_groups(gt, order)
 
-    res = _make_result(np.zeros((N_ELEV, H, W), np.float32), np.zeros((N_ELEV, H, W), np.float32), params_pred=pred, params_gt=gt)
+    res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
     out = Metrics(res, _x_axis(), N_GAUSSIANS)._param_population_stats()
 
     for k in range(3):
@@ -357,7 +357,7 @@ def test_param_population_stats_pred_is_permutation_invariant():
 
 
 def _matched(pred, gt, n_gaussians=N_GAUSSIANS, tol=5.0):
-    res = _make_result(np.zeros((N_ELEV, *pred.shape[1:]), np.float32), np.zeros((N_ELEV, *pred.shape[1:]), np.float32), params_pred=pred, params_gt=gt)
+    res = _make_result(np.zeros((N_Z, *pred.shape[1:]), np.float32), np.zeros((N_Z, *pred.shape[1:]), np.float32), params_pred=pred, params_gt=gt)
     return Metrics(res, _x_axis(), n_gaussians)._matched_gaussian_metrics(match_tol=tol)
 
 
@@ -442,13 +442,13 @@ def test_matched_amp_error_over_matched_pairs():
 
 @pytest.mark.dataset
 def test_metrics_identical_scene_parameter_window_is_perfect(parameters):
-    params = np.asarray(parameters[:, :16, :16], dtype=np.float32)
-    x_axis = _x_axis(40)
+    params      = np.asarray(parameters[:, :16, :16], dtype=np.float32)
+    z_axis      = _x_axis(40)
     n_gaussians = params.shape[0] // 3
-    curve  = _curves_from_params(params, x_axis, n_gaussians)
+    curve       = _curves_from_params(params, z_axis, n_gaussians)
 
     res = _make_result(curve, curve, params_pred=params.copy(), params_gt=params.copy())
-    m   = Metrics(res, x_axis, n_gaussians)
+    m   = Metrics(res, z_axis, n_gaussians)
 
     metrics = m.compute(param_space=True)
 
@@ -459,17 +459,17 @@ def test_metrics_identical_scene_parameter_window_is_perfect(parameters):
 
 @pytest.mark.dataset
 def test_metrics_perturbed_scene_window_is_worse(parameters):
-    rng    = np.random.default_rng(11)
-    params = np.asarray(parameters[:, :16, :16], dtype=np.float32)
-    x_axis = _x_axis(40)
+    rng         = np.random.default_rng(11)
+    params      = np.asarray(parameters[:, :16, :16], dtype=np.float32)
+    z_axis      = _x_axis(40)
     n_gaussians = params.shape[0] // 3
-    gt     = _curves_from_params(params, x_axis, n_gaussians)
+    gt          = _curves_from_params(params, z_axis, n_gaussians)
 
     pred_small = gt + 0.001 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
     pred_large = gt + 0.200 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
 
-    m_small = Metrics(_make_result(pred_small, gt), x_axis, n_gaussians)
-    m_large = Metrics(_make_result(pred_large, gt), x_axis, n_gaussians)
+    m_small = Metrics(_make_result(pred_small, gt), z_axis, n_gaussians)
+    m_large = Metrics(_make_result(pred_large, gt), z_axis, n_gaussians)
 
     s = m_small.compute(param_space=False)
     l = m_large.compute(param_space=False)
@@ -480,7 +480,7 @@ def test_metrics_perturbed_scene_window_is_worse(parameters):
 
 def test_label_quality_perfect_fit_gives_r2_one():
     rng    = np.random.default_rng(0)
-    curves = rng.uniform(0.5, 2.0, size=(N_ELEV, 4, 3)).astype(np.float32)
+    curves = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
     result = _make_result(curves, curves)
 
     r2_map, stats = Metrics(result, _x_axis(), N_GAUSSIANS).label_quality(curves.copy())
@@ -493,7 +493,7 @@ def test_label_quality_perfect_fit_gives_r2_one():
 
 def test_label_quality_noisier_labels_score_lower():
     rng   = np.random.default_rng(1)
-    raw   = rng.uniform(0.5, 2.0, size=(N_ELEV, 4, 3)).astype(np.float32)
+    raw   = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
     clean = raw + rng.normal(0.0, 0.01, size=raw.shape).astype(np.float32)
     noisy = raw + rng.normal(0.0, 0.60, size=raw.shape).astype(np.float32)
 
@@ -504,8 +504,8 @@ def test_label_quality_noisier_labels_score_lower():
 
 
 def test_label_quality_shape_mismatch_raises():
-    curves = np.ones((N_ELEV, 4, 3), dtype=np.float32)
+    curves = np.ones((N_Z, 4, 3), dtype=np.float32)
     result = _make_result(curves, curves)
 
     with pytest.raises(ValueError):
-        Metrics(result, _x_axis(), N_GAUSSIANS).label_quality(np.ones((N_ELEV, 5, 3), dtype=np.float32))
+        Metrics(result, _x_axis(), N_GAUSSIANS).label_quality(np.ones((N_Z, 5, 3), dtype=np.float32))

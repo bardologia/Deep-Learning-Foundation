@@ -139,7 +139,7 @@ def test_wrap_model_returns_model_wrapper_with_curve_output():
     loader                    = JepaRunLoader.__new__(JepaRunLoader)
     loader.profile_normalizer = normalizer
 
-    wrapper = loader._wrap_model(module, device="cpu", norm_stats=None, x_axis=None, amp_max=None)
+    wrapper = loader._wrap_model(module, device="cpu", norm_stats=None, z_axis=None, amp_max=None)
 
     assert isinstance(wrapper, ModelWrapper)
 
@@ -152,13 +152,13 @@ def test_wrap_model_returns_model_wrapper_with_curve_output():
 
 def test_load_checkpoint_round_trip_numpy_x_axis(tmp_path):
     module = build_inference_module()
-    x_axis = np.linspace(-4.0, 4.0, PROFILE_LENGTH).astype(np.float32)
+    z_axis = np.linspace(-4.0, 4.0, PROFILE_LENGTH).astype(np.float32)
 
     ckpt = {
         "epoch"         : 7,
         "best_val_loss" : 0.123,
         "best_epoch"    : 5,
-        "x_axis"        : x_axis,
+        "z_axis"        : z_axis,
         "params"        : module.state_dict(),
     }
     path = tmp_path / "best_model.pt"
@@ -167,7 +167,7 @@ def test_load_checkpoint_round_trip_numpy_x_axis(tmp_path):
     loader             = JepaRunLoader.__new__(JepaRunLoader)
     loaded, axis, meta = RunLoader._load_checkpoint(loader, path, "cpu")
 
-    assert np.allclose(axis, x_axis)
+    assert np.allclose(axis, z_axis)
     assert axis.dtype            == np.float32
     assert meta["epoch"]         == 7
     assert meta["best_epoch"]    == 5
@@ -176,13 +176,13 @@ def test_load_checkpoint_round_trip_numpy_x_axis(tmp_path):
 
 def test_load_checkpoint_accepts_tensor_x_axis(tmp_path):
     module = build_inference_module()
-    x_axis = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
+    z_axis = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
 
     ckpt = {
         "epoch"         : 1,
         "best_val_loss" : 1.0,
         "best_epoch"    : 1,
-        "x_axis"        : x_axis,
+        "z_axis"        : z_axis,
         "params"        : module.state_dict(),
     }
     path = tmp_path / "best_model.pt"
@@ -192,10 +192,10 @@ def test_load_checkpoint_accepts_tensor_x_axis(tmp_path):
     _, axis, _ = RunLoader._load_checkpoint(loader, path, "cpu")
 
     assert axis.dtype == np.float32
-    assert np.allclose(axis, x_axis.numpy())
+    assert np.allclose(axis, z_axis.numpy())
 
 
-def build_fake_run(model_fn, n_gaussians, n_elev, spatial):
+def build_fake_run(model_fn, n_gaussians, n_z, spatial):
     grid = GridInfo(
         n_v          = 1,
         n_h          = 1,
@@ -210,19 +210,19 @@ def build_fake_run(model_fn, n_gaussians, n_elev, spatial):
 
     gt     = torch.rand(1, n_gaussians * 3, spatial, spatial)
     loader = [(torch.rand(1, 2, spatial, spatial), gt)]
-    x_axis = np.linspace(-4.0, 4.0, n_elev).astype(np.float32)
+    z_axis = np.linspace(-4.0, 4.0, n_z).astype(np.float32)
 
     class FakeNormalizer:
         def denormalize_output(self, tensor):
             return tensor
 
     dataset = types.SimpleNamespace(normalizer=FakeNormalizer())
-    region  = types.SimpleNamespace(azimuth_start=0, range_start=0)
+    region  = types.SimpleNamespace(row_start=0, col_start=0)
 
     return types.SimpleNamespace(
         n_gaussians   = n_gaussians,
-        x_axis        = x_axis,
-        x_axis_length = n_elev,
+        z_axis        = z_axis,
+        x_axis_length = n_z,
         loader        = loader,
         model         = model_fn,
         dataset       = dataset,
@@ -233,14 +233,14 @@ def build_fake_run(model_fn, n_gaussians, n_elev, spatial):
 
 def test_jepa_curve_predictor_produces_curve_cubes(tmp_path):
     n_gaussians = 2
-    n_elev      = 6
+    n_z         = 6
     spatial     = 4
 
     def model_fn(images):
         batch = images.shape[0]
-        return np.random.rand(batch, n_elev, spatial, spatial).astype(np.float32)
+        return np.random.rand(batch, n_z, spatial, spatial).astype(np.float32)
 
-    run  = build_fake_run(model_fn, n_gaussians, n_elev, spatial)
+    run  = build_fake_run(model_fn, n_gaussians, n_z, spatial)
     meta = types.SimpleNamespace(cube_dir=tmp_path)
 
     predictor = JepaCurvePredictor(
@@ -254,18 +254,18 @@ def test_jepa_curve_predictor_produces_curve_cubes(tmp_path):
 
     result = predictor.run_inference()
 
-    assert result.pred_curves.shape == (n_elev, spatial, spatial)
-    assert result.gt_curves.shape   == (n_elev, spatial, spatial)
+    assert result.pred_curves.shape == (n_z, spatial, spatial)
+    assert result.gt_curves.shape   == (n_z, spatial, spatial)
     assert result.pixel_mse.shape   == (spatial, spatial)
     assert np.isfinite(result.pixel_mse).all()
 
 
 def test_jepa_curve_predictor_zero_error_on_identical_output(tmp_path):
     n_gaussians = 2
-    n_elev      = 6
+    n_z         = 6
     spatial     = 4
 
-    x = np.linspace(-4.0, 4.0, n_elev).astype(np.float32).reshape(1, 1, -1, 1, 1)
+    x = np.linspace(-4.0, 4.0, n_z).astype(np.float32).reshape(1, 1, -1, 1, 1)
 
     captured = {}
 
@@ -292,13 +292,13 @@ def test_jepa_curve_predictor_zero_error_on_identical_output(tmp_path):
 
     fake_run = types.SimpleNamespace(
         n_gaussians   = n_gaussians,
-        x_axis        = np.linspace(-4.0, 4.0, n_elev).astype(np.float32),
-        x_axis_length = n_elev,
+        z_axis        = np.linspace(-4.0, 4.0, n_z).astype(np.float32),
+        x_axis_length = n_z,
         loader        = loader,
         model         = model_fn,
         dataset       = types.SimpleNamespace(normalizer=FakeNormalizer()),
         grid          = grid,
-        split_region  = types.SimpleNamespace(azimuth_start=0, range_start=0),
+        split_region  = types.SimpleNamespace(row_start=0, col_start=0),
     )
 
     predictor = JepaCurvePredictor(

@@ -79,12 +79,12 @@ def test_orchestration_produces_checkpoint_and_metadata(tmp_path):
 
     run_meta = TrainingRunMetadata(pipe.trainer_config, "profile_ae", tmp_path, "profile_ae_test")
     model    = pipe._build_model(PROFILE_LENGTH, cfg)
-    x_axis   = np.linspace(0.0, 1.0, PROFILE_LENGTH, dtype=np.float32)
+    z_axis   = np.linspace(0.0, 1.0, PROFILE_LENGTH, dtype=np.float32)
 
     pipe._save_metadata(run_meta, _profile_config(tmp_path), PROFILE_LENGTH)
 
     loader            = _loader()
-    results, run_dir  = pipe._train(run_meta, run_meta.logger, model, x_axis, loader, loader, loader)
+    results, run_dir  = pipe._train(run_meta, run_meta.logger, model, z_axis, loader, loader, loader)
 
     train_losses, val_losses, best = results
 
@@ -104,10 +104,10 @@ def test_saved_checkpoint_is_loadable(tmp_path):
 
     run_meta = TrainingRunMetadata(pipe.trainer_config, "profile_ae", tmp_path, "profile_ae_test")
     model    = pipe._build_model(PROFILE_LENGTH, cfg)
-    x_axis   = np.linspace(0.0, 1.0, PROFILE_LENGTH, dtype=np.float32)
+    z_axis   = np.linspace(0.0, 1.0, PROFILE_LENGTH, dtype=np.float32)
 
     loader            = _loader()
-    _results, run_dir = pipe._train(run_meta, run_meta.logger, model, x_axis, loader, loader, loader)
+    _results, run_dir = pipe._train(run_meta, run_meta.logger, model, z_axis, loader, loader, loader)
 
     ckpt = torch.load(Path(run_dir) / "best_model.pt", map_location="cpu", weights_only=False)
 
@@ -152,9 +152,9 @@ def test_overfit_check_gate_trains_and_reports(tmp_path):
     pipe.entry.overfit_check = OverfitCheckConfig(enabled=True, n_examples=2, max_steps=4, steps_per_epoch=2, pass_loss_ratio=1.0)
 
     run_meta = TrainingRunMetadata(pipe.trainer_config, "profile_ae", tmp_path, "profile_ae_overfit_check")
-    x_axis   = np.linspace(0.0, 1.0, PROFILE_LENGTH, dtype=np.float32)
+    z_axis   = np.linspace(0.0, 1.0, PROFILE_LENGTH, dtype=np.float32)
 
-    pipe._run_overfit_check(run_meta, run_meta.logger, PROFILE_LENGTH, x_axis, {"train": _CurveDataset()})
+    pipe._run_overfit_check(run_meta, run_meta.logger, PROFILE_LENGTH, z_axis, {"train": _CurveDataset()})
 
     report_path = run_meta.run_directory / "meta" / "overfit_report.json"
     report      = json.loads(report_path.read_text())

@@ -21,7 +21,7 @@ def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
     ic = InputConfig(
         use_primary=True,        primary_representation=Representation.MAG_ONLY,
         use_secondaries=True,    secondaries_representation=Representation.MAG_ONLY,
-        use_interferograms=True, interferograms_representation=Representation.ANGLE_ONLY,
+        use_derived=True, derived_representation=Representation.ANGLE_ONLY,
     )
 
     splits = SplitRegions(
@@ -34,7 +34,7 @@ def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
         preprocessing_run_directory = test_data_dir,
         parameters_path             = params_dir / "parameters.npy",
         split_regions               = splits,
-        secondary_labels            = ("FL01_PS04", "FL01_PS06"),
+        secondary_labels            = ("CH01", "CH02"),
         patch                       = PatchConfig(size=(8, 8), stride=(8, 8)),
         input_config                = ic,
         batch_size                  = 2,
@@ -107,7 +107,7 @@ def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, pa
     trimmed.input_config = InputConfig(
         use_primary=False,
         use_secondaries=False,
-        use_interferograms=True, interferograms_representation=Representation.ANGLE_ONLY,
+        use_derived=True, derived_representation=Representation.ANGLE_ONLY,
     )
 
     full_datasets    = DatasetPipeline(full,    tmp_path / "full",    logger=_logger(tmp_path, "bb_full"),    seed=0).run()[3]
@@ -116,8 +116,8 @@ def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, pa
     full_train    = full_datasets["train"]
     trimmed_train = trimmed_datasets["train"]
 
-    assert (full_train.n_primary, full_train.n_secondaries, full_train.n_interferograms)          == (1, 2, 2)
-    assert (trimmed_train.n_primary, trimmed_train.n_secondaries, trimmed_train.n_interferograms) == (0, 0, 2)
+    assert (full_train.n_primary, full_train.n_secondaries, full_train.n_derived)          == (1, 2, 2)
+    assert (trimmed_train.n_primary, trimmed_train.n_secondaries, trimmed_train.n_derived) == (0, 0, 2)
 
     assert full_train.inputs.shape[0]    == 5
     assert trimmed_train.inputs.shape[0] == 2
@@ -156,10 +156,10 @@ def test_profile_pipeline_runs_and_returns_normalizer(test_data_dir, params_dir,
 
     pipeline = ProfileDatasetPipeline(config, tmp_path, logger=_logger(tmp_path, "prof_pipe"), seed=0)
 
-    (train_loader, val_loader, test_loader), datasets, x_axis, x_len, normalizer = pipeline.run()
+    (train_loader, val_loader, test_loader), datasets, z_axis, z_len, normalizer = pipeline.run()
 
-    assert x_len == SynthesisConfig().profile_length
-    assert x_axis.shape == (SynthesisConfig().profile_length,)
+    assert z_len == SynthesisConfig().profile_length
+    assert z_axis.shape == (SynthesisConfig().profile_length,)
     assert (tmp_path / "meta" / "profile_normalization_stats.json").is_file()
     assert np.isfinite(normalizer.loc)
     assert normalizer.scale >= normalizer.SCALE_FLOOR

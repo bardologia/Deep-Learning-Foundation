@@ -16,7 +16,7 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
     ic = InputConfig(
         use_primary=True,        primary_representation=Representation.MAG_ONLY,
         use_secondaries=True,    secondaries_representation=Representation.MAG_ONLY,
-        use_interferograms=True, interferograms_representation=Representation.ANGLE_ONLY,
+        use_derived=True, derived_representation=Representation.ANGLE_ONLY,
     )
 
     splits = SplitRegions(
@@ -29,7 +29,7 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
         preprocessing_run_directory = test_data_dir,
         parameters_path             = params_dir / "parameters.npy",
         split_regions               = splits,
-        secondary_labels            = ("FL01_PS04", "FL01_PS06"),
+        secondary_labels            = ("CH01", "CH02"),
         patch                       = PatchConfig(size=(8, 8), stride=(8, 8)),
         input_config                = ic,
         batch_size                  = 2,
@@ -49,18 +49,18 @@ def test_backbone_preparation_returns_loaders_axis_and_datasets(test_data_dir, p
 
     prep = BackboneDatasetPreparation(dataset_config, trainer_config, tmp_path, logger, seed=0)
 
-    loaders, datasets, x_axis, x_len = prep.run()
+    loaders, datasets, z_axis, z_len = prep.run()
 
     assert len(loaders) == 3
     assert set(datasets.keys()) == {"train", "val", "test"}
 
-    assert x_len == scene_config.profile_length
-    assert x_axis.shape == (scene_config.profile_length,)
-    assert np.isclose(x_axis[0],  gaussian.x_min)
-    assert np.isclose(x_axis[-1], gaussian.x_max)
+    assert z_len == scene_config.profile_length
+    assert z_axis.shape == (scene_config.profile_length,)
+    assert np.isclose(z_axis[0],  gaussian.x_min)
+    assert np.isclose(z_axis[-1], gaussian.x_max)
 
     assert dataset_config.n_gaussians == gaussian.n_default_gaussians
-    assert dataset_config.x_axis is x_axis
+    assert dataset_config.z_axis is z_axis
 
 
 @pytest.mark.dataset

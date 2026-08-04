@@ -130,18 +130,18 @@ def param_extraction_meta(params_dir) -> dict:
 
 
 @pytest.fixture(scope="session")
-def pass_labels(dataset_json) -> list:
-    return dataset_json["pass_labels"]
+def channel_labels(dataset_json) -> list:
+    return dataset_json["channel_labels"]
 
 
 @pytest.fixture(scope="session")
-def tomogram_full(data_dir) -> np.ndarray:
-    return np.load(data_dir / "tomogram_full.npy", mmap_mode="r")
+def cube_full(data_dir) -> np.ndarray:
+    return np.load(data_dir / "cube_full.npy", mmap_mode="r")
 
 
 @pytest.fixture(scope="session")
-def dem_full(data_dir) -> np.ndarray:
-    return np.load(data_dir / "dem_full.npy", mmap_mode="r")
+def aux_full(data_dir) -> np.ndarray:
+    return np.load(data_dir / "aux_full.npy", mmap_mode="r")
 
 
 @pytest.fixture(scope="session")
@@ -155,8 +155,8 @@ def secondaries(data_dir) -> np.ndarray:
 
 
 @pytest.fixture(scope="session")
-def interferograms(data_dir) -> np.ndarray:
-    return np.load(data_dir / "interferograms.npy", mmap_mode="r")
+def derived(data_dir) -> np.ndarray:
+    return np.load(data_dir / "derived.npy", mmap_mode="r")
 
 
 @pytest.fixture(scope="session")

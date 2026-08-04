@@ -25,7 +25,7 @@ def make_logger(tmp_path: Path) -> Logger:
 def stage_config(tmp_path: Path, resume: bool = False) -> CrossValidationConfig:
     config                    = CrossValidationConfig()
     config.paths.log_base_dir = tmp_path
-    config.folds              = FoldConfig(n_folds=5, azimuth_start=1000, azimuth_end=1512)
+    config.folds              = FoldConfig(n_folds=5, row_start=1000, row_end=1512)
     config.resume             = resume
     config.inference_splits   = ["val", "test"]
     config.seeds              = []
@@ -44,7 +44,7 @@ def fold_names(config: CrossValidationConfig) -> list[str]:
 
 
 def make_planner(config: CrossValidationConfig) -> FoldPlanner:
-    return FoldPlanner(config, range_start=500, range_end=1000)
+    return FoldPlanner(config, col_start=500, col_end=1000)
 
 
 def mark_complete(directory: Path) -> None:

@@ -28,9 +28,9 @@ def make_planner(tmp_path: Path, datasets: list[str], maximum: tuple[int, int] =
 
 
 def synthetic_loss(unit) -> float:
-    azimuth_opt, range_opt = OPTIMA[unit.dataset]
-    azimuth,     range_len = unit.patch_size
-    return 0.1 + 0.02 * ((azimuth - azimuth_opt) / 32) ** 2 + 0.02 * ((range_len - range_opt) / 32) ** 2
+    row_opt, col_opt = OPTIMA[unit.dataset]
+    row,     col_len = unit.patch_size
+    return 0.1 + 0.02 * ((row - row_opt) / 32) ** 2 + 0.02 * ((col_len - col_opt) / 32) ** 2
 
 
 def populate_runs(root: Path, planner: PatchSweepPlanner, drop_metrics: set[str] = frozenset()) -> None:
@@ -102,8 +102,8 @@ def test_report_ranks_the_synthetic_optimum_on_both_axes(tmp_path, logger):
 
     assert payload["datasets"]["w20_10"]["best_patch_size"] == [24, 16]
     assert payload["datasets"]["w20_20"]["best_patch_size"] == [16, 8]
-    assert payload["azimuth_sizes"]                         == [8, 16, 24, 32]
-    assert payload["range_sizes"]                           == [8, 16]
+    assert payload["row_sizes"]                         == [8, 16, 24, 32]
+    assert payload["col_sizes"]                           == [8, 16]
     assert payload["datasets"]["w20_10"]["dataset_path"]    == str(tmp_path / "datasets" / "w20_10")
 
 

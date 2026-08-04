@@ -95,7 +95,7 @@ def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all
     loss_cfg   = loss_cfg if loss_cfg is not None else LossConfig(use_param_l1=True, weight_param_l1=1.0)
 
     return Loss(
-        x_axis         = x_axis_tensor(length),
+        z_axis         = x_axis_tensor(length),
         logger         = NullLogger(),
         tracker        = NullTracker(),
         gaussian_cfg   = gaussian_config(n_gaussians),

@@ -23,14 +23,14 @@ from tools.data.regions                        import CropRegion
 pytestmark = [pytest.mark.dataset, pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
 
 N_GAUSSIANS      = SynthesisConfig().k_max
-SECONDARY_LABELS = ("FL01_PS04", "FL01_PS06")
+SECONDARY_LABELS = ("CH01", "CH02")
 
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
     input_config = InputConfig(
-        use_primary        = True, primary_representation        = Representation.MAG_ONLY,
-        use_secondaries    = True, secondaries_representation    = Representation.MAG_ONLY,
-        use_interferograms = True, interferograms_representation = Representation.ANGLE_ONLY,
+        use_primary     = True, primary_representation        = Representation.MAG_ONLY,
+        use_secondaries = True, secondaries_representation    = Representation.MAG_ONLY,
+        use_derived     = True, derived_representation = Representation.ANGLE_ONLY,
     )
 
     splits = SplitRegions(
@@ -73,7 +73,7 @@ def _model_config():
 
     config.params_features     = [8, 16]
     config.existence_features  = [8]
-    config.existence_input     = ("ifg",)
+    config.existence_input     = ("derived",)
     config.params_overrides    = {"bottleneck_factor": 1, "dropout": 0.0}
     config.existence_overrides = {"bottleneck_factor": 1, "dropout": 0.0}
 
@@ -142,15 +142,15 @@ def test_dual_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_path):
 
 def test_dual_training_rejects_a_dem_bearing_input_stack(test_data_dir, params_dir, tmp_path):
     dataset_config                      = _dataset_config(test_data_dir, params_dir)
-    dataset_config.input_config.use_dem = True
+    dataset_config.input_config.use_aux = True
 
-    with pytest.raises(ValueError, match="never uses the DEM"):
+    with pytest.raises(ValueError, match="never uses the Aux"):
         DualTrainingPipeline(
             trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path),
             dataset_config = dataset_config,
             backbone_name  = "dual_resunet",
             model_config   = _model_config(),
             seed           = 0,
-            run_name       = "e2e_dual_dem",
+            run_name       = "e2e_dual_aux",
             overfit_check  = OverfitCheckConfig(enabled=False),
         )

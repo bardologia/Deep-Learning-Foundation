@@ -59,11 +59,11 @@ def test_normalize_dtype_is_float32_numpy():
 @pytest.mark.slow
 def test_fit_real_profiles_finite_and_roundtrip(parameters, tmp_path):
     params = [np.ascontiguousarray(np.asarray(parameters[:, :40, :40]))]
-    x_axis = np.linspace(0.0, 1.0, 150, dtype=np.float32)
+    z_axis = np.linspace(0.0, 1.0, 150, dtype=np.float32)
     logger = Logger(log_dir=str(tmp_path / "logs"), name="prof_norm", level="ERROR")
 
     ds = ProfileDataset(
-        param_arrays=params, x_axis=x_axis, n_gaussians=params[0].shape[0] // 3, split_name="train",
+        param_arrays=params, z_axis=z_axis, n_gaussians=params[0].shape[0] // 3, split_name="train",
         amp_zero_thr=1e-3, keep_empty_frac=0.05, pixel_subsample=1.0, seed=0, logger=logger,
     )
 

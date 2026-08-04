@@ -11,7 +11,7 @@ from pipelines.backbone.inference.probes                     import PredictionCu
 from types import SimpleNamespace
 
 
-H, W, N_ELEV = 8, 8, 10
+H, W, N_Z = 8, 8, 10
 
 
 def _model(images):
@@ -28,7 +28,7 @@ def _model(images):
 def _batches():
     rng      = np.random.default_rng(0)
     images   = torch.from_numpy(rng.uniform(0.4, 1.0, size=(2, 3, H, W))).float()
-    renderer = PredictionCurves(1, np.linspace(-5.0, 15.0, N_ELEV))
+    renderer = PredictionCurves(1, np.linspace(-5.0, 15.0, N_Z))
 
     gt_curves = renderer.render(_model(images))
     return [(images, gt_curves)], renderer
@@ -75,14 +75,14 @@ def test_drop_curve_evaluates_each_distinct_subset_once():
     assert rows[2]["mse_std"] is None
 
 
-def test_track_channels_map_secondaries_and_interferograms():
+def test_track_channels_map_secondaries_and_deriveds():
     input_config = SimpleNamespace(
-        use_primary                      = True,
-        use_secondaries                  = True,
-        use_interferograms               = True,
-        primary_channels_per_pass        = 1,
-        secondaries_channels_per_pass    = 1,
-        interferograms_channels_per_pass = 1,
+        use_primary                     = True,
+        use_secondaries                 = True,
+        use_derived                     = True,
+        primary_channels_per_source     = 1,
+        secondaries_channels_per_source = 1,
+        derived_channels_per_source     = 1,
     )
     run = SimpleNamespace(dataset=SimpleNamespace(input_config=input_config), n_secondaries=2)
 
@@ -93,12 +93,12 @@ def test_track_channels_map_secondaries_and_interferograms():
 
 def test_track_channels_without_tracks_raise():
     input_config = SimpleNamespace(
-        use_primary                      = True,
-        use_secondaries                  = False,
-        use_interferograms               = False,
-        primary_channels_per_pass        = 1,
-        secondaries_channels_per_pass    = 1,
-        interferograms_channels_per_pass = 1,
+        use_primary                     = True,
+        use_secondaries                 = False,
+        use_derived                     = False,
+        primary_channels_per_source     = 1,
+        secondaries_channels_per_source = 1,
+        derived_channels_per_source     = 1,
     )
     run = SimpleNamespace(dataset=SimpleNamespace(input_config=input_config), n_secondaries=0)
 

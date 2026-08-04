@@ -15,10 +15,10 @@ from web_logger import WebLogger
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
 
-H, AZ, RG    = 24, 12, 10
-HEIGHT_RANGE = (-10.0, 30.0)
-TRUE_MU      = 5.0
-TRUE_SIGMA   = 3.0
+H, N_ROWS, N_COLS    = 24, 12, 10
+Z_RANGE    = (-10.0, 30.0)
+TRUE_MU    = 5.0
+TRUE_SIGMA = 3.0
 
 BASE_CONFIG = {
     "k_max"              : 2,
@@ -39,14 +39,14 @@ def _make_dataset(root: Path) -> Path:
     (dataset / "data").mkdir(parents=True)
     (dataset / "meta").mkdir()
 
-    heights = np.linspace(HEIGHT_RANGE[0], HEIGHT_RANGE[1], H, dtype=np.float32)
+    heights = np.linspace(Z_RANGE[0], Z_RANGE[1], H, dtype=np.float32)
     profile = np.exp(-((heights - TRUE_MU) ** 2) / (2.0 * TRUE_SIGMA ** 2)).astype(np.float32)
-    cube    = np.tile(profile[:, None, None], (1, AZ, RG)) * np.linspace(0.5, 2.0, RG, dtype=np.float32)[None, None, :]
+    cube    = np.tile(profile[:, None, None], (1, N_ROWS, N_COLS)) * np.linspace(0.5, 2.0, N_COLS, dtype=np.float32)[None, None, :]
 
-    np.save(dataset / "data" / "tomogram_full.npy", cube.astype(np.complex64))
-    np.save(dataset / "data" / "primary.npy", np.ones((AZ, RG), dtype=np.complex64))
+    np.save(dataset / "data" / "cube_full.npy", cube.astype(np.complex64))
+    np.save(dataset / "data" / "primary.npy", np.ones((N_ROWS, N_COLS), dtype=np.complex64))
 
-    state = {"tomogram_config": {"height_range": list(HEIGHT_RANGE)}}
+    state = {"cube_config": {"z_range": list(Z_RANGE)}}
     (dataset / "meta" / "config_state.json").write_text(json.dumps(state), encoding="utf-8")
 
     return dataset
@@ -93,17 +93,17 @@ def test_load_meta_and_maps(tmp_path):
     _load(lab, dataset)
 
     meta = lab.load_status()["meta"]
-    assert meta["h"] == H and meta["az"] == AZ and meta["rg"] == RG
-    assert meta["height_range"] == list(HEIGHT_RANGE)
+    assert meta["h"] == H and meta["row"] == N_ROWS and meta["col"] == N_COLS
+    assert meta["z_range"] == list(Z_RANGE)
 
-    for src in ("slc", "peak"):
+    for src in ("primary", "peak"):
         png = lab.map_png(src)
         assert png.startswith(b"\x89PNG")
-        assert struct.unpack(">II", png[16:24]) == (AZ, RG)
+        assert struct.unpack(">II", png[16:24]) == (N_ROWS, N_COLS)
     assert lab.map_png("nope") is None
 
 
-def test_load_error_on_missing_tomogram(tmp_path):
+def test_load_error_on_missing_cube(tmp_path):
     lab = FitLab(WebLogger())
     assert lab.start_load(str(tmp_path))["ok"]
 
@@ -113,26 +113,26 @@ def test_load_error_on_missing_tomogram(tmp_path):
 
     status = lab.load_status()
     assert status["state"] == "error"
-    assert "tomogram_full.npy" in status["error"]
+    assert "cube_full.npy" in status["error"]
 
 
 def test_fit_request_validation(tmp_path):
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 
-    assert "no dataset" in lab.start_fit({"pixels": [{"az": 0, "rg": 0}], "config": BASE_CONFIG})["error"]
+    assert "no dataset" in lab.start_fit({"pixels": [{"row": 0, "col": 0}], "config": BASE_CONFIG})["error"]
 
     _load(lab, dataset)
 
     assert "non-empty" in lab.start_fit({"pixels": [], "config": BASE_CONFIG})["error"]
-    assert "outside"   in lab.start_fit({"pixels": [{"az": AZ, "rg": 0}], "config": BASE_CONFIG})["error"]
-    assert "missing"   in lab.start_fit({"pixels": [{"az": 0, "rg": 0}], "config": {"k_max": 2}})["error"]
-    assert "mode"      in lab.start_fit({"pixels": [{"az": 0, "rg": 0}], "config": {**BASE_CONFIG, "mode": "nope"}})["error"]
-    assert "mode"      in lab.start_fit({"pixels": [{"az": 0, "rg": 0}], "config": {**BASE_CONFIG, "mode": ""}})["error"]
-    assert "mode"      in lab.start_fit({"pixels": [{"az": 0, "rg": 0}], "config": {**BASE_CONFIG, "mode": "sigma_sigma"}})["error"]
-    assert "k_max"     in lab.start_fit({"pixels": [{"az": 0, "rg": 0}], "config": {**BASE_CONFIG, "k_max": 99}})["error"]
+    assert "outside"   in lab.start_fit({"pixels": [{"row": N_ROWS, "col": 0}], "config": BASE_CONFIG})["error"]
+    assert "missing"   in lab.start_fit({"pixels": [{"row": 0, "col": 0}], "config": {"k_max": 2}})["error"]
+    assert "mode"      in lab.start_fit({"pixels": [{"row": 0, "col": 0}], "config": {**BASE_CONFIG, "mode": "nope"}})["error"]
+    assert "mode"      in lab.start_fit({"pixels": [{"row": 0, "col": 0}], "config": {**BASE_CONFIG, "mode": ""}})["error"]
+    assert "mode"      in lab.start_fit({"pixels": [{"row": 0, "col": 0}], "config": {**BASE_CONFIG, "mode": "sigma_sigma"}})["error"]
+    assert "k_max"     in lab.start_fit({"pixels": [{"row": 0, "col": 0}], "config": {**BASE_CONFIG, "k_max": 99}})["error"]
 
-    too_many = [{"az": 0, "rg": i % RG} for i in range(FitLab.MAX_PIXELS + 1)] + [{"az": 1, "rg": i % RG} for i in range(RG)]
+    too_many = [{"row": 0, "col": i % N_COLS} for i in range(FitLab.MAX_PIXELS + 1)] + [{"row": 1, "col": i % N_COLS} for i in range(N_COLS)]
     assert "at most" in lab.start_fit({"pixels": too_many, "config": BASE_CONFIG})["error"]
 
 
@@ -142,7 +142,7 @@ def test_fit_recovers_synthetic_gaussian(tmp_path):
     lab     = FitLab(WebLogger())
 
     _load(lab, dataset)
-    result = _fit(lab, {"pixels": [{"az": 3, "rg": 7}, {"az": 0, "rg": 0}], "config": BASE_CONFIG})
+    result = _fit(lab, {"pixels": [{"row": 3, "col": 7}, {"row": 0, "col": 0}], "config": BASE_CONFIG})
 
     assert result["ok"]
     assert len(result["height"]) == H
@@ -171,8 +171,8 @@ def test_fit_modes_share_kernel(tmp_path):
     lab     = FitLab(WebLogger())
 
     _load(lab, dataset)
-    sigma_only = _fit(lab, {"pixels": [{"az": 3, "rg": 7}], "config": BASE_CONFIG})
-    all_free   = _fit(lab, {"pixels": [{"az": 3, "rg": 7}], "config": {**BASE_CONFIG, "mode": "sigma_amp_mu"}})
+    sigma_only = _fit(lab, {"pixels": [{"row": 3, "col": 7}], "config": BASE_CONFIG})
+    all_free   = _fit(lab, {"pixels": [{"row": 3, "col": 7}], "config": {**BASE_CONFIG, "mode": "sigma_amp_mu"}})
 
     assert sigma_only["config"]["mode"] == "sigma"
     assert all_free["config"]["mode"]   == "sigma_amp_mu"
@@ -188,11 +188,11 @@ def test_fit_composition_freezes_sigma(tmp_path):
     lab     = FitLab(WebLogger())
 
     _load(lab, dataset)
-    result = _fit(lab, {"pixels": [{"az": 3, "rg": 7}], "config": {**BASE_CONFIG, "mode": "amp_mu"}})
+    result = _fit(lab, {"pixels": [{"row": 3, "col": 7}], "config": {**BASE_CONFIG, "mode": "amp_mu"}})
 
     assert result["config"]["mode"] == "amp_mu"
 
-    h_span     = HEIGHT_RANGE[1] - HEIGHT_RANGE[0]
+    h_span     = Z_RANGE[1] - Z_RANGE[0]
     dh         = h_span / (H - 1)
     sigma_base = max(2.0 * dh, h_span / (8.0 * BASE_CONFIG["k_max"]))
     sigma_init = float(np.clip(sigma_base / BASE_CONFIG["sigma_init_divisor"], dh, h_span / 2.0))
