@@ -121,19 +121,10 @@ class Report:
             table.add_row(label, Report._fmt(gt_val), Report._fmt(pred_val), desc)
         return "\n".join(table.render())
 
-    @staticmethod
-    def _padded_column(payload: Dict[str, Any], key: str, n_tracks: int) -> list:
-        values = payload[key]
-        if len(values) != n_tracks:
-            raise ValueError(f"Track payload column '{key}' has {len(values)} entries but the run lists {n_tracks} tracks; the persisted track metadata is inconsistent.")
-        return values
-
     _PER_SLICE_PREFIXES = (
         "ssim_gt_elev_",   "ssim_gt_range_",   "ssim_gt_azimuth_",
         "ssim_norm_elev_", "ssim_norm_range_", "ssim_norm_azimuth_",
-        "ssim_red_elev_",  "ssim_red_range_",  "ssim_red_azimuth_",
         "elev_mae_gt_",  "elev_rmse_gt_",  "elev_r2_gt_",  "elev_ce_gt_",
-        "elev_mae_red_", "elev_rmse_red_", "elev_r2_red_", "elev_ce_red_",
     )
 
     @classmethod
@@ -271,11 +262,7 @@ class Report:
         out += self._build_param_population_headline()
         out += self._build_matched_headline()
         out += self._build_slot_organization_headline()
-        out += self._build_tracks_table()
-        out += self._build_track_positions_table()
         out += self._build_jepa_headline()
-        out += self._build_reduced_headline()
-        out += self._build_data_consistency_headline()
 
         return out
 
@@ -435,70 +422,6 @@ class Report:
 
         return out
 
-    def _build_tracks_table(self) -> List[str]:
-        tracks = self.global_metrics.get("tracks")
-        if not isinstance(tracks, dict):
-            return []
-
-        out = [f"\n### {self._next_subsection()} Tracks used in this run\n"]
-        out.append(
-            f"Baselines relative to the reference pass `{tracks['reference']}` over azimuth window "
-            f"{tracks['azimuth_window']}; absolute values are the resa-frame windowed means.\n"
-        )
-
-        labels   = tracks["labels"]
-        n_tracks = len(labels)
-
-        table = MarkdownTable(("Pass", "Horizontal [m]", "Vertical [m]", "H std [m]", "V std [m]", "H absolute [m]", "V absolute [m]"))
-        for row in zip(
-            labels,
-            self._padded_column(tracks, "horizontal",          n_tracks),
-            self._padded_column(tracks, "vertical",            n_tracks),
-            self._padded_column(tracks, "horizontal_std",      n_tracks),
-            self._padded_column(tracks, "vertical_std",        n_tracks),
-            self._padded_column(tracks, "horizontal_absolute", n_tracks),
-            self._padded_column(tracks, "vertical_absolute",   n_tracks),
-        ):
-            table.add_row(row[0], *(self._fmt(value) for value in row[1:]))
-
-        out.append("\n".join(table.render()))
-        out.append("")
-
-        return out
-
-    def _build_track_positions_table(self) -> List[str]:
-        positions = self.global_metrics.get("track_positions")
-        if not isinstance(positions, dict):
-            return []
-
-        out = [f"\n### {self._next_subsection()} Track positions and temporal deviation\n"]
-        out.append(
-            f"Absolute mean positions in the resa track frame over {positions['n_samples']} azimuth samples "
-            f"starting at index {positions['azimuth_start']}. Spans are peak-to-peak excursions per component; "
-            f"the planar deviation is the distance of each sample from the per-pass mean position in the "
-            f"horizontal-vertical plane, summarising how much the pass drifted over time.\n"
-        )
-
-        labels   = positions["labels"]
-        n_tracks = len(labels)
-
-        table = MarkdownTable(("Pass", "H mean [m]", "V mean [m]", "H span [m]", "V span [m]", "Planar dev RMS [m]", "Planar dev max [m]"))
-        for row in zip(
-            labels,
-            self._padded_column(positions, "horizontal_mean", n_tracks),
-            self._padded_column(positions, "vertical_mean",   n_tracks),
-            self._padded_column(positions, "horizontal_span", n_tracks),
-            self._padded_column(positions, "vertical_span",   n_tracks),
-            self._padded_column(positions, "deviation_rms",   n_tracks),
-            self._padded_column(positions, "deviation_max",   n_tracks),
-        ):
-            table.add_row(row[0], *(self._fmt(value) for value in row[1:]))
-
-        out.append("\n".join(table.render()))
-        out.append("")
-
-        return out
-
     def _build_jepa_headline(self) -> List[str]:
         gm = self.global_metrics
         if "jepa_embedding_mse" not in gm:
@@ -522,85 +445,12 @@ class Report:
 
         return out
 
-    def _build_reduced_headline(self) -> List[str]:
-        gm = self.global_metrics
-        if "improvement_pixel_mse_mean" not in gm:
-            return []
-
-        out = [f"\n### {self._next_subsection()} NN improvement over the classical baseline\n"]
-        out.append(
-            "The reduced tomogram is a classical Capon reconstruction from the primary plus the exact "
-            "secondary subset this run was trained on, processed identically to the ground-truth full-stack "
-            "tomogram (same pyrat `fusartomo`, height range, filter and stack). It is what tomography yields "
-            "without the network. Reduced-vs-GT and improvement quantities are computed on per-elevation-profile "
-            "unit-area-normalised cubes, so they measure elevation-distribution agreement independent of absolute "
-            "Capon power calibration.\n"
-        )
-        out.append(self._three_col_table([
-            ("Reduced MSE mean",       gm["reduced_pixel_mse_norm_mean"],  "Per-pixel reduced-vs-GT MSE (classical baseline)"),
-            ("Pred MSE mean",          gm["pred_pixel_mse_norm_mean"],     "Per-pixel pred-vs-GT MSE (neural network)"),
-            ("Improvement mean",       gm["improvement_pixel_mse_mean"],   "MSE(reduced) − MSE(pred), higher is better"),
-            ("Improvement median",     gm["improvement_pixel_mse_median"], "Median per-pixel improvement"),
-            ("Relative MSE reduction", gm["relative_mse_reduction"],       "1 − MSE(pred)/MSE(reduced)"),
-            ("Pixels where NN wins",   gm["fraction_pred_beats_reduced"],  "Fraction with pred MSE < reduced MSE"),
-        ], header=("Metric", "Value", "Description")))
-        out.append("")
-
-        out.append("**Reduced vs GT** (classical baseline, unit-area profiles)\n")
-        out.append(self._three_col_table([
-            ("Curve MSE",         gm["curve_mse_red"],         "Mean squared error over all (elev, az, rg)"),
-            ("Overall R2",        gm["overall_r2_red"],        "Global coefficient of determination"),
-            ("SSIM elev mean",    gm["ssim_red_elev_mean"],    "Intensity-at-elevation-bin planes"),
-            ("SSIM range mean",   gm["ssim_red_range_mean"],   "Cross-sectional planes"),
-            ("SSIM azimuth mean", gm["ssim_red_azimuth_mean"], "Cross-sectional planes"),
-        ], header=("Metric", "Reduced vs GT", "Description")))
-        out.append("")
-
-        return out
-
-    def _build_data_consistency_headline(self) -> List[str]:
-        gm = self.global_metrics
-        if "physics_coherence_error_mean" not in gm:
-            return []
-
-        out = [f"\n### {self._next_subsection()} Interferometric data consistency\n"]
-        out.append(
-            "The predicted and GT elevation profiles are reprojected to normalised track coherences and "
-            "pair covariances through the per-pixel kz geometry field — the same steering machinery the "
-            "physics loss trains on. Phase agreement compares the multilooked measured interferogram phase "
-            "against the coherence phase synthesised from the curves; the flipped column uses the conjugate "
-            "steering and should stay below the aligned one when the kz sign convention is correct.\n"
-        )
-        out.append(self._three_col_table([
-            ("Coherence error mean",       gm["physics_coherence_error_mean"],   "Mean |Δγ|² over tracks, pred vs GT, power-masked"),
-            ("Coherence error p95",        gm["physics_coherence_error_p95"],    "95th percentile of the per-pixel error"),
-            ("Covariance error mean",      gm["physics_covariance_error_mean"],  "Relative pair-covariance mismatch, pred vs GT"),
-            ("Valid fraction",             gm["physics_valid_fraction"],         "Pixels above the physics power floor"),
-            ("Phase agreement GT",         gm["phase_agreement_gt_mean"],        "Measured phase vs GT-synthesised coherence"),
-            ("Phase agreement GT flipped", gm["phase_agreement_gt_flipped_mean"],"Same with conjugate steering (kz sign check)"),
-            ("Phase agreement pred",       gm["phase_agreement_pred_mean"],      "Measured phase vs pred-synthesised coherence"),
-        ], header=("Metric", "Value", "Description")))
-        out.append("")
-
-        return out
-
-    _IMPROVEMENT_KEYS = frozenset({
-        "improvement_pixel_mse_mean", "improvement_pixel_mse_median",
-        "fraction_pred_beats_reduced", "relative_mse_reduction",
-        "pred_pixel_mse_norm_mean", "reduced_pixel_mse_norm_mean",
-    })
-
-    _METRIC_SKIP_KEYS = ("tracks", "track_positions", "split", "split_region")
+    _METRIC_SKIP_KEYS = ("split", "split_region")
 
     _SLOT_ORGANIZATION_KEYS = frozenset({"slot_usage_entropy", "slot_mu_rank_diag", "slot_gt_alignment"})
 
-    @staticmethod
-    def _is_reduced_key(k: str) -> bool:
-        return ("_red" in k) or k.startswith("reduced_") or k.startswith("ssim_red") or ("predn" in k)
-
     _METRIC_TAXONOMY = (
         ("3.1 Dataset statistics",                               lambda k: k in Report._DATASET_KEYS or k.endswith("_status")),
-        ("3.11 Interferometric data consistency",                lambda k: k.startswith(("physics_", "phase_agreement_"))),
         ("3.12 JEPA embedding diagnostics",                      lambda k: k.startswith("jepa_")),
         ("3.13 Label quality (GT fit vs raw tomogram)",          lambda k: k.startswith("label_")),
         ("3.14 Normalization & clamp health",                    lambda k: k.startswith(("norm_in_", "clamp_"))),
@@ -612,10 +462,6 @@ class Report:
         ("3.9c Slot internal organization (emergent)",           lambda k: k in Report._SLOT_ORGANIZATION_KEYS),
         ("3.9b Per-slot parameter statistics by activity",       lambda k: k.startswith("slot_") and ("_amp_" in k or "_mu_" in k or "_sig_" in k)),
         ("3.9 Slot occupancy & active count",                    lambda k: k.startswith(("active_frac", "active_count", "count_")) or (k.startswith("slot_") and "_active_" in k)),
-        ("3.8 NN improvement over baseline",                     lambda k: k in Report._IMPROVEMENT_KEYS),
-        ("3.7 SSIM summaries (reduced vs GT)",                   lambda k: k.startswith("ssim_red")),
-        ("3.6 Per-pixel (reduced vs GT)",                        lambda k: Report._is_reduced_key(k) and k.startswith("pixel_")),
-        ("3.5 Curve-level (reduced vs GT)",                      lambda k: Report._is_reduced_key(k)),
         ("3.3 Per-pixel (GT)",                                   lambda k: k.startswith("pixel_")),
         ("3.4b SSIM summaries (normalised)",                     lambda k: k.startswith("ssim_norm")),
         ("3.4 SSIM summaries (denorm)",                          lambda k: k.startswith("ssim_")),
@@ -674,20 +520,17 @@ class Report:
         gp  = self.gif_paths
         out = []
 
-        track_groups = [(key, title) for key, title in (
-            ("track_geometry",  "Baseline geometry of the passes used"),
-            ("track_profiles",  "Per-azimuth baseline profiles"),
-            ("track_flight_3d", "3D flight tracks with temporal deviation envelopes"),
-            ("input_channels",  "Pass amplitudes and interferogram phases over the inference region"),
+        input_groups = [(key, title) for key, title in (
+            ("input_channels", "Pass amplitudes and interferogram phases over the inference region"),
         ) if fp.get(key)]
 
-        if track_groups:
-            out.append("\n## 3b. Passes and interferograms used\n")
+        if input_groups:
+            out.append("\n## 3b. Model inputs\n")
             out.append(
                 "The model inputs for this run: the primary, the selected secondary passes and "
                 "their interferograms against the primary.\n"
             )
-            self._numbered_section(out, "3b.", track_groups)
+            self._numbered_section(out, "3b.", input_groups)
 
         profile_groups = (
             ("profiles_best",   "4.1 Best-fit profiles (lowest MSE)"),
@@ -700,9 +543,7 @@ class Report:
                 "Each panel overlays the GT profile (black solid), "
                 "prediction (red dashed) and individual Gaussian components. "
                 "The shaded area shows the signed residual (pred \u2212 gt). "
-                "The raw full-stack tomogram that the GT Gaussians are fit to is drawn as a grey reference. "
-                "When a reduced baseline is available, its classical-Capon profile is overlaid "
-                "(green dotted, rescaled to the GT peak) so the network's gain in elevation shape is visible.\n"
+                "The raw full-stack tomogram that the GT Gaussians are fit to is drawn as a grey reference.\n"
             )
             self._section(out, profile_groups)
 
@@ -807,91 +648,16 @@ class Report:
             )
             out += self.assets.images("elev_metric_curves", fp["elev_metric_curves"])
 
-        out += self._build_reduced_figures()
-        out += self._build_data_consistency_figures()
 
         if gp:
-            out.append("\n## 10. Animations\n")
+            out.append("\n## 9. Animations\n")
             out.append(
                 "Each GIF walks through one axis of the stitched test cube. "
                 "The colour scale is fixed across frames.\n"
             )
             for n, (name, path) in enumerate(sorted(gp.items()), start=1):
-                out.append(f"\n### 10.{n} `{name}`\n")
+                out.append(f"\n### 9.{n} `{name}`\n")
                 out += self.assets.image(name, path)
-
-        return out
-
-    def _build_reduced_figures(self) -> List[str]:
-        fp = self.figure_paths
-
-        keys = (
-            "improvement_map", "reduced_pixel_mse_map",
-            "slices_range_reduced", "slices_azimuth_reduced", "slices_elev_reduced",
-            "ssim_range_reduced", "ssim_azimuth_reduced", "ssim_elev_reduced",
-            "elev_metric_curves_reduced",
-        )
-        if not any(fp.get(k) for k in keys):
-            return []
-
-        out = ["\n## 9. Classical baseline (reduced Capon) vs ground truth\n"]
-        out.append(
-            "The reduced tomogram is a classical Capon reconstruction from the primary plus the exact "
-            "secondary subset this run was trained on — what tomography yields without the network. "
-            "Reduced and GT cubes are unit-area-normalised per elevation profile before comparison, so "
-            "panels and metrics measure elevation-distribution agreement. Read the network's gain by "
-            "contrasting these errors with the pred-vs-GT figures in sections 5, 7 and 8.\n"
-        )
-
-        self._section(out, (
-            ("improvement_map",       "9.1 Per-pixel NN improvement map (MSE reduced − MSE pred)"),
-            ("reduced_pixel_mse_map", "9.2 Per-pixel reduced-vs-GT MSE map"),
-        ))
-
-        slice_groups = [(key, title) for key, title in (
-            ("slices_range_reduced",   "Range cuts (GT, reduced, error)"),
-            ("slices_azimuth_reduced", "Azimuth cuts (GT, reduced, error)"),
-            ("slices_elev_reduced",    "Elevation cuts (GT, reduced, error)"),
-        ) if fp.get(key)]
-
-        if slice_groups:
-            out.append("\n### 9.3 Reduced tomogram slices\n")
-            self._numbered_section(out, "9.3.", slice_groups)
-
-        self._section(out, (
-            ("ssim_range_reduced",   "9.4 Reduced SSIM along range axis"),
-            ("ssim_azimuth_reduced", "9.5 Reduced SSIM along azimuth axis"),
-            ("ssim_elev_reduced",    "9.6 Reduced SSIM along elevation axis"),
-        ))
-
-        if fp.get("elev_metric_curves_reduced"):
-            out.append("\n### 9.7 Reduced per-elevation-bin metrics (MAE, RMSE, R², cross-entropy)\n")
-            out += self.assets.images("elev_metric_curves_reduced", fp["elev_metric_curves_reduced"])
-
-        return out
-
-    def _build_data_consistency_figures(self) -> List[str]:
-        fp = self.figure_paths
-
-        keys = ("coherence_error_map", "covariance_error_map", "phase_agreement")
-        if not any(fp.get(k) for k in keys):
-            return []
-
-        out = ["\n## 9b. Interferometric data consistency\n"]
-        out.append(
-            "Predicted and GT profiles are reprojected to track coherences and pair covariances through the "
-            "per-pixel kz geometry field, and the measured multilooked interferogram phase is compared against "
-            "the coherence phase synthesised from the curves. In the phase-agreement panels, the aligned bars "
-            "should dominate the flipped ones; the reverse indicates an inverted kz sign convention "
-            "(capon_phase_sign) for the stack.\n"
-        )
-
-        self._section(out, (
-            ("coherence_error_map",  "9b.1 Per-pixel coherence-resynthesis error (pred vs GT)"),
-            ("covariance_error_map", "9b.2 Per-pixel covariance-matching error (pred vs GT)"),
-            ("phase_agreement",      "9b.3 Measured-interferogram phase agreement per secondary pass"),
-            ("physics_spectroscopy", "9b.4 Residual spectroscopy: error and phase spread by mean |kz|"),
-        ))
 
         return out
 

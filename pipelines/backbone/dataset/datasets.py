@@ -28,7 +28,6 @@ class PatchDataset(Dataset):
         n_gaussians      : int                        = 1,
         augmenter        : Optional[SpatialAugmenter] = None,
         dem              : Optional[np.ndarray]       = None,
-        kz_field         : Optional[np.ndarray]       = None,
     ) -> None:
 
         self.inputs        = inputs
@@ -41,7 +40,6 @@ class PatchDataset(Dataset):
         self.n_gaussians   = n_gaussians
         self.augmenter     = augmenter
         self.dem           = dem
-        self.kz_field      = kz_field
         self.input_layers  = int(inputs.shape[0])
 
         self.n_primary        = n_primary
@@ -139,22 +137,14 @@ class PatchDataset(Dataset):
         gt_patch  = self.grid.extract(self.gt_parameters, idx)
         gt_params = self._build_output_tensor(gt_patch)
 
-        kz_patch = self.grid.extract(self.kz_field, idx) if self.kz_field is not None else None
-
         if self.augmenter is not None and self.split_name == "train":
-            if kz_patch is not None:
-                input_tensor, gt_params, kz_patch = self.augmenter(input_tensor, gt_params, kz_patch)
-            else:
-                input_tensor, gt_params = self.augmenter(input_tensor, gt_params)
+            input_tensor, gt_params = self.augmenter(input_tensor, gt_params)
 
         input_tensor = self._normalize_input_tensor(input_tensor)
         gt_params    = self._normalize_gt_params(gt_params)
 
         if self.augmenter is not None and self.split_name == "train":
             input_tensor = self.augmenter.add_noise(input_tensor)
-
-        if kz_patch is not None:
-            return input_tensor, gt_params, np.ascontiguousarray(kz_patch)
 
         return input_tensor, gt_params
 

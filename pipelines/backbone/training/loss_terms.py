@@ -16,12 +16,8 @@ LOSS_TERMS = (
     LossTerm("cosine_curve",       "use_cosine_curve",       "weight_cosine_curve",       "denorm"),
     LossTerm("total_power_relerr", "use_total_power",        "weight_total_power",        "denorm"),
     LossTerm("moments",            "use_moments",            "weight_moments",            "denorm"),
-    LossTerm("coherence_resyn",    "use_coherence_resyn",    "weight_coherence_resyn",    "denorm"),
-    LossTerm("covariance_match",   "use_covariance_match",   "weight_covariance_match",   "denorm"),
-    LossTerm("capon_cycle",        "use_capon_cycle",        "weight_capon_cycle",        "denorm"),
     LossTerm("param_huber",        "use_param_huber",        "weight_param_huber",        "norm"),
     LossTerm("param_mse",          "use_param_mse",          "weight_param_mse",          "norm"),
-    LossTerm("param_legacy",       "use_param_legacy",       "weight_param_legacy",       "denorm"),
     LossTerm("smoothness_tv",      "use_smoothness_tv",      "weight_smoothness_tv",      "norm"),
     LossTerm("param_l1",           "use_param_l1",           "weight_param_l1",           "norm"),
 )

@@ -13,7 +13,7 @@ from configuration.training                    import BackboneEntryConfig, Curri
 from configuration.training.general.loss       import ParamMatching
 from models                                    import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
 from pipelines.backbone.inference.pipeline     import InferencePipeline
-from pipelines.backbone.training.experiments   import AblationTrialPlanner, AugmentationTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, NormalizationTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, PhysicsLossTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
+from pipelines.backbone.training.experiments   import AblationTrialPlanner, AugmentationTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, NormalizationTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
 from pipelines.backbone.training.pipeline      import TrainingPipeline
 from pipelines.shared.config.config_factory    import ConfigFactory
 from pipelines.shared.model.model_builder      import ModelBuilder
@@ -57,7 +57,6 @@ class SingleTrainRunner(BaseSingleTrainRunner):
     def _pipeline(self, logdir) -> TrainingPipeline:
         trainer_config            = self.factory.training_trainer_config(logdir=logdir)
         trainer_config.curriculum = self.config.curriculum
-        trainer_config.geometry   = self.config.geometry.resolved(self.config.paths.dataset_path, secondary_labels=self.factory._secondary_labels())
 
         dataset_config              = self.factory.training_dataset_config()
         dataset_config.input_config = self.config.input
@@ -116,13 +115,12 @@ class SingleTrainRunner(BaseSingleTrainRunner):
 
 class TrainScheduler:
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "physics_trials", "pair_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "normalization_trials", "ablation_features", "ablation_include_full", "infer_at_end", "gpus", "gpus_file", "poll_interval_s")
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "normalization_trials", "ablation_features", "ablation_include_full", "infer_at_end", "gpus", "gpus_file", "poll_interval_s")
 
     MODE_SUBDIRS = {
         "curriculum"    : "curriculum",
         "warmup"        : "warmup",
         "presence"      : "presence",
-        "physics"       : "physics",
         "pair"          : "pair",
         "secondary"     : "secondary",
         "patch"         : "patch",
@@ -165,16 +163,14 @@ class TrainScheduler:
             return WarmupTrialPlanner(self.config.warmup_losses)
         if mode == "presence":
             return SlotPresenceTrialPlanner(self.config.presence_trials)
-        if mode == "physics":
-            return PhysicsLossTrialPlanner(self.config.physics_trials)
         if mode == "pair":
             return PairLossTrialPlanner(self.config.pair_trials)
         if mode == "secondary":
-            return SecondaryTrialPlanner.from_dataset(self.config.secondary_trials, self.config.geometry, self.config.paths.dataset_path)
+            return SecondaryTrialPlanner.from_labels(self.config.secondary_trials, self.config.paths.secondary_labels)
         if mode == "patch":
             return PatchSizeTrialPlanner(self.config.patch_trials)
         if mode == "input":
-            return InputTrialPlanner.from_dataset(self.config.input_trials, self.config.geometry, self.config.paths.dataset_path)
+            return InputTrialPlanner.from_labels(self.config.input_trials, self.config.paths.secondary_labels)
         if mode == "context":
             return ContextTrialPlanner(self.config.context_trials, tuple(BACKBONE_CONFIG_REGISTRY))
         if mode == "reach":

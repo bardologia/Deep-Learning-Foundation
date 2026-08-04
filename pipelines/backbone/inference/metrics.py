@@ -16,17 +16,7 @@ from tools.data.preprocessing        import ProfileNormalizer
 from tools.loss.param_loss           import ParamMatcher
 from tools.metrics.gaussian_matching import GaussianMatcher
 from tools.metrics.slot_organization import SlotOrganization
-from tools.metrics.scoring           import R2, RelativeImprovement
-
-
-@dataclass
-class ReducedComparison:
-    reduced_curves : np.ndarray
-    gt_norm        : np.ndarray
-    reduced_norm   : np.ndarray
-    err_reduced    : np.ndarray
-    improvement    : np.ndarray
-    metrics        : Dict[str, float]
+from tools.metrics.scoring           import R2
 
 
 @dataclass
@@ -44,17 +34,15 @@ class Result:
     azimuth_offset     : int
     range_offset       : int
 
-    params_pred      : Optional[np.ndarray]        = None
-    params_gt        : Optional[np.ndarray]        = None
-    reduced          : Optional[ReducedComparison] = None
-    data_consistency : Optional[object]            = None
-    label_r2         : Optional[np.ndarray]        = None
-    flip_consistency : Optional[np.ndarray]        = None
-    stratified       : Optional[dict]              = None
-    failure_mode_map : Optional[np.ndarray]        = None
-    miss_by_sep      : Optional[list]              = None
-    presence_rows    : Optional[list]              = None
-    param_assignment : Optional[np.ndarray]        = None
+    params_pred      : Optional[np.ndarray] = None
+    params_gt        : Optional[np.ndarray] = None
+    label_r2         : Optional[np.ndarray] = None
+    flip_consistency : Optional[np.ndarray] = None
+    stratified       : Optional[dict]       = None
+    failure_mode_map : Optional[np.ndarray] = None
+    miss_by_sep      : Optional[list]       = None
+    presence_rows    : Optional[list]       = None
+    param_assignment : Optional[np.ndarray] = None
 
     def assignment(self, n_gaussians: int) -> np.ndarray:
         if self.param_assignment is None:
@@ -547,53 +535,6 @@ class Metrics:
             metrics.update(self._slot_organization_stats())
 
         return metrics
-
-    def reduced_comparison(
-        self,
-        reduced_curves : np.ndarray,
-        *,
-        elev_indices   : Optional[np.ndarray] = None,
-        range_indices  : Optional[np.ndarray] = None,
-        az_indices     : Optional[np.ndarray] = None,
-    ) -> ReducedComparison:
-
-        gt_n   = ProfileNormalizer.unit_area(self.result.gt_curves)
-        pred_n = ProfileNormalizer.unit_area(self.result.pred_curves)
-        red_n  = ProfileNormalizer.unit_area(reduced_curves)
-
-        out: Dict[str, float] = {}
-        out.update(self._curve_scalar_metrics(red_n, gt_n, suffix="red"))
-        out.update(self._slice_ssim(red_n, gt_n, elev_indices, range_indices, az_indices, prefix="red"))
-        out.update(self._expand_elev(red_n, gt_n, suffix="red"))
-
-        err_pred    = self.curve_pixel_metrics(pred_n, gt_n)["mse"]
-        err_reduced = self.curve_pixel_metrics(red_n,  gt_n)["mse"]
-        improvement = (err_reduced - err_pred).astype(np.float32)
-
-        out.update(self._expand_pixel_stats((
-            ("pixel_mse_red",   err_reduced),
-            ("pixel_mse_predn", err_pred),
-        )))
-
-        finite           = np.isfinite(improvement)
-        pred_mse_mean    = float(np.nanmean(err_pred))
-        reduced_mse_mean = float(np.nanmean(err_reduced))
-
-        out["pred_pixel_mse_norm_mean"]     = pred_mse_mean
-        out["reduced_pixel_mse_norm_mean"]  = reduced_mse_mean
-        out["improvement_pixel_mse_mean"]   = float(np.nanmean(improvement))
-        out["improvement_pixel_mse_median"] = float(np.nanmedian(improvement))
-        out["fraction_pred_beats_reduced"]  = float(np.mean(err_pred[finite] < err_reduced[finite])) if finite.any() else float("nan")
-        out["relative_mse_reduction"]       = RelativeImprovement.fraction(reduced_mse_mean, pred_mse_mean, higher_is_better=False)
-
-        return ReducedComparison(
-            reduced_curves = reduced_curves,
-            gt_norm        = gt_n,
-            reduced_norm   = red_n,
-            err_reduced    = err_reduced,
-            improvement    = improvement,
-            metrics        = out,
-        )
 
     def label_quality(self, full_curves: np.ndarray) -> Tuple[np.ndarray, Dict[str, float]]:
         gt   = np.asarray(self.result.gt_curves, dtype=np.float64)

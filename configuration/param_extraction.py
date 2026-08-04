@@ -70,7 +70,6 @@ class FitSettings:
 @dataclass
 class ExtractionConfig:
     processed_data_path : Path
-    pyrat_directory     : Path                          = field(default_factory=lambda: Path("/ste/rnd/User/vice_vi/pyrat"))
     output_prefix       : str                           = "params"
     output_suffix       : Optional[str]                 = None
     height_range        : Optional[Tuple[float, float]] = None
@@ -148,9 +147,8 @@ class ExtractionConfig:
 
 @dataclass
 class ExtractParamsEntryConfig:
-    dataset_base_path : Path = Path("/ste/rnd/User/vice_vi/Dataset")
+    dataset_base_path : Path = Path("datasets")
     dataset_filter    : list = field(default_factory=list)
-    pyrat_directory   : Path = Path("/ste/rnd/User/vice_vi/pyrat")
 
     output_prefix : str          = "params"
     output_suffix : str | None   = None
@@ -176,7 +174,7 @@ class ExtractParamsEntryConfig:
 
 @dataclass
 class ParamExtractionInferenceConfig:
-    params_dir : Path = Path("/ste/rnd/User/vice_vi/Dataset")
+    params_dir : Path = Path("datasets")
     run_tags   : list = field(default_factory=list)
 
     make_plots : bool = True
@@ -184,7 +182,7 @@ class ParamExtractionInferenceConfig:
 
 @dataclass
 class InjectExternalParamsEntryConfig:
-    dataset_base_path : Path = Path("/ste/rnd/User/vice_vi/Dataset")
+    dataset_base_path : Path = Path("datasets")
     dataset_filter    : list = field(default_factory=list)
 
     source_files   : list = field(default_factory=list)

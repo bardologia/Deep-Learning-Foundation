@@ -35,4 +35,4 @@ class DataLoaderTuningEntryConfig:
     synthetic_length  : int = 96
 
     paths      : RunPathsConfig = field(default_factory=RunPathsConfig)
-    output_dir : Path           = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/dataloader_tuning")
+    output_dir : Path           = Path("runs/dataloader_tuning")

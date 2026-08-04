@@ -71,7 +71,7 @@ class Trainer(BaseTrainer):
             target_provider = TargetProvider(self.config.target_provider)
             return EmbeddingLoss(self.model.profile_autoencoder, target_provider, self.config.embedding_loss, self.x_axis, self.norm_stats, self.gaussian_cfg.params_per_gaussian, self.profile_normalizer)
 
-        return ParameterLoss(self.x_axis, self.logger, self.tracker, self.gaussian_cfg, self.config.param_loss, norm_stats=self.norm_stats, geometry_cfg=self.config.geometry, log_all_losses=self.config.training.log_all_losses)
+        return ParameterLoss(self.x_axis, self.logger, self.tracker, self.gaussian_cfg, self.config.param_loss, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses)
 
     def _set_train_mode(self):
         self.model.backbone.train()

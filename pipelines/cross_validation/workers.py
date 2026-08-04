@@ -126,7 +126,6 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         trainer_config            = self.factory.training_trainer_config(logdir=self.run_dir / "folds")
         trainer_config.curriculum = self.config.curriculum
-        trainer_config.geometry   = self.config.geometry.resolved(self.config.paths.dataset_path, secondary_labels=self.factory._secondary_labels())
 
         dataset_config               = self.factory.training_dataset_config()
         dataset_config.split_regions = split_regions
@@ -169,7 +168,6 @@ class FoldTrainingWorker(CrossValidationWorker):
             target_provider            = jepa.target_provider,
             embedding_loss             = jepa.embedding_loss,
             param_loss                 = jepa.param_loss,
-            geometry                   = cv.geometry,
             paths                      = cv.paths,
             training                   = cv.training,
             normalization              = cv.normalization,
@@ -196,7 +194,6 @@ class FoldTrainingWorker(CrossValidationWorker):
             ae_model_name   = ae.ae_model_name,
             model_overrides = cv.model_overrides,
             ae_loss         = ae.ae_loss,
-            geometry        = cv.geometry,
             paths           = cv.paths,
             training        = cv.training,
         )

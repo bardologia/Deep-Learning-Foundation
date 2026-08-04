@@ -6,9 +6,8 @@ from pathlib     import Path
 from configuration.training.general.run         import TrainingPathsConfig, TrainingQueueConfig, standard_seeds
 from configuration.dataset                      import AugmentationConfig, InputConfig
 from configuration.inference.general            import InferenceConfig
-from configuration.sar.geometry_config          import GeometryConfig
 from configuration.normalization.general        import NormalizationConfig
-from configuration.training.backbone            import HeadMatchingTrialsConfig, NormalizationTrialsConfig, PairTrialsConfig, PatchTrialsConfig, PhysicsTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig, _default_augmentation_trials, _default_complete_losses, _default_context_trials, _default_inference, _default_input_trials, _default_presence_trials, _default_warmup_losses, default_curriculum
+from configuration.training.backbone            import HeadMatchingTrialsConfig, NormalizationTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig, _default_augmentation_trials, _default_complete_losses, _default_context_trials, _default_inference, _default_input_trials, _default_presence_trials, _default_warmup_losses, default_curriculum
 from configuration.training.general.ablation    import AblationCatalog
 from configuration.training.general.loss        import LossCurriculumConfig
 from configuration.training.general.runtime     import OverfitCheckConfig
@@ -84,7 +83,7 @@ class DualEntryConfig:
     gpu             : int        = 0
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=standard_seeds)
-    logdir          : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/dual")
+    logdir          : Path       = Path("runs/dual")
     model_overrides : dict       = field(default_factory=dict)
 
     params_backbone     : str       = "unet_skip"
@@ -98,7 +97,6 @@ class DualEntryConfig:
     training      : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
     pretrain      : PretrainConfig       = field(default_factory=PretrainConfig)
     curriculum    : LossCurriculumConfig = field(default_factory=dual_curriculum)
-    geometry      : GeometryConfig       = field(default_factory=GeometryConfig)
     input         : InputConfig          = field(default_factory=InputConfig.full_stack)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
@@ -120,7 +118,6 @@ class DualEntryConfig:
     warmup_losses        : dict                      = field(default_factory=_default_warmup_losses)
     complete_losses      : dict                      = field(default_factory=_default_complete_losses)
     presence_trials      : dict                      = field(default_factory=_default_presence_trials)
-    physics_trials       : PhysicsTrialsConfig       = field(default_factory=PhysicsTrialsConfig)
     pair_trials          : PairTrialsConfig          = field(default_factory=PairTrialsConfig)
     secondary_trials     : SecondaryTrialsConfig     = field(default_factory=SecondaryTrialsConfig)
     patch_trials         : PatchTrialsConfig         = field(default_factory=PatchTrialsConfig)

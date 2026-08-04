@@ -89,34 +89,6 @@ class ParamMatcher:
         raise ValueError(f"Unknown matching method: {method!r}. Expected {ParamMatcher.HUNGARIAN!r} or {ParamMatcher.SORTED_GT!r}.")
 
 
-class LegacyParamLoss:
-    LEGACY_GAUSSIANS = 2
-    BOUND_ENTRIES    = 6
-
-    @staticmethod
-    def _scale(phys: torch.Tensor, bounds_min: tuple, bounds_max: tuple) -> torch.Tensor:
-        if len(bounds_min) != LegacyParamLoss.BOUND_ENTRIES or len(bounds_max) != LegacyParamLoss.BOUND_ENTRIES:
-            raise ValueError(f"legacy bounds need exactly {LegacyParamLoss.BOUND_ENTRIES} entries ordered amp1, mu1, sigma1, amp2, mu2, sigma2; got {len(bounds_min)} min and {len(bounds_max)} max entries.")
-
-        lo = torch.tensor(bounds_min, dtype=phys.dtype, device=phys.device).reshape(1, 2, 3, 1, 1)
-        hi = torch.tensor(bounds_max, dtype=phys.dtype, device=phys.device).reshape(1, 2, 3, 1, 1)
-
-        if not torch.all(hi > lo).item():
-            raise ValueError(f"legacy bounds require max > min per entry; got min {tuple(bounds_min)} and max {tuple(bounds_max)}.")
-
-        return (phys - lo) / (hi - lo)
-
-    @staticmethod
-    def mse(pred_phys: torch.Tensor, gt_phys: torch.Tensor, bounds_min: tuple, bounds_max: tuple) -> torch.Tensor:
-        if pred_phys.shape[1] != LegacyParamLoss.LEGACY_GAUSSIANS:
-            raise ValueError(f"LegacyParamLoss.mse computes MSE in the two-Gaussian legacy target space; got {pred_phys.shape[1]} Gaussian slots.")
-
-        pred = LegacyParamLoss._scale(pred_phys, bounds_min, bounds_max)
-        gt   = LegacyParamLoss._scale(gt_phys, bounds_min, bounds_max)
-
-        return ((pred - gt) ** 2).mean()
-
-
 class ParamLoss:
     DENOM_FLOOR = 1e-6
     FRAC_CLAMP  = 1e-3

@@ -6,8 +6,7 @@ from configuration.benchmark            import BenchmarkConfig
 from configuration.dataset             import DatasetConfig, InputConfig, OutputConfig, PatchConfig, SplitRegions
 from configuration.inference           import InferenceConfig
 from configuration.training            import default_curriculum, EarlyStoppingConfig, GradientClipperConfig, MemoryConfig, OptimizerConfig, SchedulerConfig, WarmupConfig, IOConfig, TrainingLoopConfig, BackboneTrainerConfig
-from configuration.sar.gaussian_config import GaussianConfig
-from configuration.sar.geometry_config import GeometryConfig
+from configuration.dataset.gaussian import GaussianConfig
 from tools.data.io                     import FileIO
 from tools.data.regions                import CropRegion
 
@@ -70,7 +69,6 @@ class ConfigFactory:
         training = self.config.training
         return {
             "gaussian"         : self.gaussian_config(),
-            "geometry"         : GeometryConfig().resolved(self.config.paths.dataset_path, secondary_labels=self._secondary_labels()),
             "gradient_clipper" : GradientClipperConfig(clip_mode=training.clip_mode.value, max_grad_norm=training.max_grad_norm, adaptive_window=training.clip_adaptive_window, adaptive_percentile=training.clip_adaptive_percentile, adaptive_mean_std_k=training.clip_adaptive_mean_std_k),
             "io"               : IOConfig(logdir=str(logdir)),
         }
@@ -121,7 +119,6 @@ class ConfigFactory:
             save_cubes         = inference.save_cubes,
             save_plots         = inference.save_plots,
             save_animations    = inference.save_animations,
-            compute_reduced    = inference.compute_reduced,
             n_best_profiles    = inference.n_best_profiles,
             n_worst_profiles   = inference.n_worst_profiles,
             n_random_profiles  = inference.n_random_profiles,

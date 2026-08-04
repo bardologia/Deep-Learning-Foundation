@@ -40,11 +40,6 @@ class LossConfig:
     use_param_mse    : bool  = False
     weight_param_mse : float = 0.0
 
-    use_param_legacy    : bool  = False
-    weight_param_legacy : float = 1.0
-    legacy_bounds_min   : tuple = (1e-05, -15.0, 0.01, 1e-05, 1.0, 1.0)
-    legacy_bounds_max   : tuple = (10.0, 5.0, 5.0, 10.0, 40.0, 20.0)
-
     param_weights : tuple = (1.0, 1.0, 1.0)
 
     param_matching : ParamMatching = ParamMatching.HUNGARIAN
@@ -68,17 +63,7 @@ class LossConfig:
     weight_moments  : float = 0.0
     moments_weights : tuple = (1.0, 1.0, 1.0)
 
-    use_coherence_resyn    : bool  = False
-    weight_coherence_resyn : float = 0.0
-
-    use_covariance_match    : bool  = False
-    weight_covariance_match : float = 0.0
-
-    use_capon_cycle    : bool  = False
-    weight_capon_cycle : float = 0.0
-    capon_loading      : float = 1e-2
-
-    physics_floor : float = 1e-3
+    power_floor : float = 1e-3
 
 
 @dataclass

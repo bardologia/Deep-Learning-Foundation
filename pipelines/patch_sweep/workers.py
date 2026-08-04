@@ -32,7 +32,6 @@ class SweepTrainingWorker(WorkerBase):
 
         trainer_config            = factory.training_trainer_config(logdir=self.run_dir / "training")
         trainer_config.curriculum = self.config.curriculum
-        trainer_config.geometry   = self.config.geometry.resolved(self.config.paths.dataset_path, secondary_labels=factory._secondary_labels())
 
         dataset_config              = factory.training_dataset_config()
         dataset_config.input_config = self.config.input

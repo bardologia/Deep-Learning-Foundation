@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class IOConfig:
-    logdir : str = "/ste/rnd/User/vice_vi/DLR-TomoSAR/runs"
+    logdir : str = "runs"
     writer = None
 
 

@@ -12,7 +12,6 @@ from models                                  import BACKBONE_CONFIG_REGISTRY, ge
 from pipelines.shared.model.model_builder    import ModelBuilder
 from pipelines.backbone.dataset.pipeline     import DatasetPipeline
 from pipelines.backbone.training.loss_terms  import LossComponentCatalog
-from pipelines.backbone.training.pipeline    import TrainingPipeline
 from pipelines.backbone.training.trainer     import Trainer
 from pipelines.shared.config.config_factory  import ConfigFactory
 from tools.data.gaussians                    import GaussianAxis, GaussianHead
@@ -49,13 +48,12 @@ class MaxBatchProbe:
         trainer_config = factory.training_trainer_config(logdir=self.work_dir)
 
         dataset_config.input_config = self.config.input
-        trainer_config.geometry     = self.config.geometry.resolved(self.config.paths.dataset_path, secondary_labels=factory._secondary_labels())
         trainer_config.curriculum   = LossComponentCatalog.combined_curriculum(self.config.sweep_loss_components, base=self.config.loss)
 
         gaussian_cfg               = trainer_config.gaussian
         dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
 
-        dataset_pipeline = DatasetPipeline(config=dataset_config, training_run_directory=self.work_dir, logger=self.logger, seed=self.seed, height_axis_convention=trainer_config.geometry.height_axis_convention, build_geometry_field=TrainingPipeline.physics_geometry_active(trainer_config))
+        dataset_pipeline = DatasetPipeline(config=dataset_config, training_run_directory=self.work_dir, logger=self.logger, seed=self.seed)
 
         profile_length        = dataset_pipeline.layout.profile_length
         dataset_config.x_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)

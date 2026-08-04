@@ -7,7 +7,6 @@ import numpy as np
 from tools.data.io           import FileIO
 from tools.data.regions      import CropRegion
 from tools.monitoring.logger import Logger
-from tools.baselines         import SecondarySelection
 
 
 class Layout:
@@ -52,6 +51,20 @@ class Layout:
             return None
 
         if not self.pass_labels:
-            raise ValueError("Dataset records no pass labels in dataset.json; baseline extraction must succeed during pre-processing before secondaries can be selected by label.")
+            raise ValueError("Dataset records no pass labels in dataset.json; the dataset must list its pass labels before secondaries can be selected by label.")
 
-        return SecondarySelection.indices(self.pass_labels, secondary_labels)
+        primary     = self.pass_labels[0]
+        secondaries = list(self.pass_labels[1:])
+        requested   = [str(label) for label in secondary_labels]
+
+        if primary in requested:
+            raise ValueError(f"Pass {primary} is the reference and is always included; remove it from secondary_labels")
+
+        unknown = [label for label in requested if label not in secondaries]
+        if unknown:
+            raise ValueError(f"Unknown secondary labels {unknown}; secondaries are {secondaries}")
+
+        if len(set(requested)) != len(requested):
+            raise ValueError(f"secondary_labels contains duplicates: {requested}")
+
+        return [secondaries.index(label) for label in requested]

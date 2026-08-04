@@ -5,7 +5,7 @@ from pathlib     import Path
 
 from configuration.cross_validation    import CrossValidationConfig
 from configuration.inference           import InferenceConfig
-from configuration.sar.gaussian_config import GaussianConfig
+from configuration.dataset.gaussian import GaussianConfig
 from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.training.seed_sweep   import SeedSet
 from tools.data.regions import CropRegion, SplitRegions

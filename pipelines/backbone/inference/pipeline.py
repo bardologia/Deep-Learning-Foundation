@@ -7,7 +7,6 @@ from typing      import Dict, List, Type
 import numpy as np
 
 from configuration.inference                         import InferenceConfig
-from pipelines.backbone.inference.data_consistency   import DataConsistencyEvaluator
 from pipelines.backbone.inference.figures            import FigureComposer
 from pipelines.backbone.inference.flip_consistency   import FlipConsistencyEvaluator
 from pipelines.backbone.inference.normalization_audit import NormalizationAudit
@@ -16,7 +15,6 @@ from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.backbone.inference.metrics            import Metrics
 from pipelines.backbone.inference.plots              import Plotter
 from pipelines.backbone.inference.predictor          import Predictor
-from pipelines.backbone.inference.reduced            import ReducedTomogramSynthesizer
 from pipelines.backbone.inference.failure_modes      import FailureModes
 from pipelines.backbone.inference.presence_calibration import PresenceCalibration
 from pipelines.backbone.inference.report             import Report, ReportPayloadBuilder
@@ -121,12 +119,6 @@ class InferencePipeline:
         global_metrics["split"]        = run.split_name
         global_metrics["split_region"] = list(run.split_region.as_tuple())
 
-        if run.track_baselines is not None:
-            global_metrics["tracks"] = run.track_baselines.to_payload()
-
-        if run.track_profiles is not None:
-            global_metrics["track_positions"] = run.track_profiles.position_summary()
-
         Metrics.write_json(global_metrics, meta.metrics_path)
         return global_metrics
 
@@ -138,60 +130,6 @@ class InferencePipeline:
 
         global_metrics.update(evaluator.run())
         Metrics.write_json(global_metrics, meta.metrics_path)
-
-    def _synthesize_reduced(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, x_axis_np: np.ndarray, global_metrics: dict, indices: dict, logger: Logger) -> None:
-        if not cfg.compute_reduced:
-            logger.section("[Inference: Reduced Capon Baseline skipped]")
-            logger.subsection("compute_reduced is disabled; the NN-vs-reduced-vs-GT comparison is absent from metrics, figures, and report.")
-            global_metrics["reduced_status"] = "skipped: compute_reduced disabled"
-            Metrics.write_json(global_metrics, meta.metrics_path)
-            return
-
-        if run.secondary_labels is None:
-            logger.section("[Inference: Reduced Capon Baseline skipped]")
-            logger.subsection("Run uses the full secondary stack; the reduced tomogram would equal the ground-truth tomogram, so no baseline comparison exists.")
-            global_metrics["reduced_status"] = "skipped: full secondary stack"
-            Metrics.write_json(global_metrics, meta.metrics_path)
-            return
-
-        synth     = ReducedTomogramSynthesizer(run, meta, cfg, logger)
-        synthesis = synth.run(result.gt_curves)
-
-        comparison = Metrics(result, x_axis_np, run.n_gaussians).reduced_comparison(
-            synthesis.curves,
-            elev_indices  = indices["all_elev_idx"],
-            range_indices = indices["all_range_idx"],
-            az_indices    = indices["all_az_idx"],
-        )
-
-        result.reduced = comparison
-        global_metrics["reduced_status"] = "computed"
-        global_metrics.update(synthesis.orientation)
-        global_metrics.update(comparison.metrics)
-        Metrics.write_json(global_metrics, meta.metrics_path)
-
-        logger.subsection(f"Reduced baseline merged : relative MSE reduction = {comparison.metrics['relative_mse_reduction']:.4f}, NN beats reduced on {comparison.metrics['fraction_pred_beats_reduced'] * 100.0:.1f}% of pixels")
-
-    def _evaluate_data_consistency(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, x_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
-        if not cfg.compute_data_consistency:
-            logger.section("[Inference: Data Consistency skipped]")
-            logger.subsection("compute_data_consistency is disabled; interferometric-consistency metrics are absent from metrics, figures, and report.")
-            global_metrics["data_consistency_status"] = "skipped: compute_data_consistency disabled"
-            Metrics.write_json(global_metrics, meta.metrics_path)
-            return
-
-        evaluator   = DataConsistencyEvaluator(run, cfg, logger)
-        consistency = evaluator.run(result.pred_curves, result.gt_curves, x_axis_np)
-
-        result.data_consistency = consistency
-        global_metrics["data_consistency_status"] = "computed"
-        global_metrics.update(consistency.metrics)
-        Metrics.write_json(global_metrics, meta.metrics_path)
-
-        if cfg.save_cubes:
-            np.save(meta.cube_dir / "physics_coherence_error.npy",  consistency.coherence_error_map)
-            np.save(meta.cube_dir / "physics_covariance_error.npy", consistency.covariance_error_map)
-            np.save(meta.cube_dir / "physics_valid_mask.npy",       consistency.valid_mask)
 
     def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, x_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
         r2_map, stats = Metrics(result, x_axis_np, run.n_gaussians).label_quality(run.full_curves)
@@ -368,8 +306,6 @@ class InferencePipeline:
         logger.subsection(f"Global metrics written : {meta.metrics_path}")
 
         self._evaluate_embeddings(meta, run, global_metrics, logger)
-        self._synthesize_reduced(cfg, meta, run, result, x_axis_np, global_metrics, indices, logger)
-        self._evaluate_data_consistency(cfg, meta, run, result, x_axis_np, global_metrics, logger)
         self._evaluate_label_quality(cfg, meta, run, result, x_axis_np, global_metrics, logger)
         self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)
         self._stratify_errors(cfg, meta, run, result, global_metrics, logger)

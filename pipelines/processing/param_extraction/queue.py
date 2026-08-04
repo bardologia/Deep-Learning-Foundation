@@ -52,7 +52,6 @@ class ExtractionPlanResolver:
 
         return ExtractionConfig(
             processed_data_path = processed_data_path,
-            pyrat_directory     = self.entry_config.pyrat_directory,
 
             output_prefix = self.entry_config.output_prefix,
             output_suffix = self.entry_config.output_suffix,

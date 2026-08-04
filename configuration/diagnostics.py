@@ -80,7 +80,7 @@ class WeightXrayConfig:
 
 @dataclass
 class WeightXrayEntryConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     checkpoint_filename : str = "best_model.pt"
@@ -142,7 +142,7 @@ class TensorboardExportConfig:
 
 @dataclass
 class TensorboardExportEntryConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     tensorboard_dirname : str = "tensorboard"
@@ -173,10 +173,10 @@ class ReportCollectionConfig:
 
 @dataclass
 class ReportCollectionEntryConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
-    collector_dir : Path = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/results/collected_reports")
+    collector_dir : Path = Path("results/collected_reports")
 
     inference_dirname : str  = "inference"
     report_filename   : str  = "report.md"
@@ -196,7 +196,7 @@ class ReportCollectionEntryConfig:
 
 @dataclass
 class ReceptiveFieldConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -214,7 +214,7 @@ class ReceptiveFieldConfig:
 
 @dataclass
 class ActivationXrayConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -238,7 +238,7 @@ class ActivationXrayConfig:
 
 @dataclass
 class InputAttributionConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -260,7 +260,7 @@ class InputAttributionConfig:
 
 @dataclass
 class AttentionCaptureConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -276,7 +276,7 @@ class AttentionCaptureConfig:
 
 @dataclass
 class LayerProbeConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -297,13 +297,13 @@ class LayerProbeConfig:
 
 @dataclass
 class CkaConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str  = "test"
     device          : str  = "cpu"
     checkpoint_name : str  = "best_model.pt"
-    output_dir      : Path = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/results/cka")
+    output_dir      : Path = Path("results/cka")
 
     batch_size        : int = 4
     max_batches       : int = 4
@@ -316,7 +316,7 @@ class CkaConfig:
 
 @dataclass
 class LossLandscapeConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -336,7 +336,7 @@ class LossLandscapeConfig:
 
 @dataclass
 class RobustnessConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -356,7 +356,7 @@ class RobustnessConfig:
 
 @dataclass
 class TrainingEvolutionConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     split           : str = "test"
@@ -374,7 +374,7 @@ class TrainingEvolutionConfig:
 
 @dataclass
 class PaperFigurePackConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
     inference_subdir : str = ""
@@ -384,4 +384,4 @@ class PaperFigurePackConfig:
 
     patterns : List[str] = field(default_factory=lambda: ["pixel_maps/*", "param_scatter/*", "stratified/*", "profiles/*", "data_consistency/*"])
 
-    output_dir : Path = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/publications/neurips2027/figures")
+    output_dir : Path = Path("results/paper_figures")

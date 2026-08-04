@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib     import Path
 
 from configuration.benchmark                       import BenchmarkConfig
-from configuration.sar.gaussian_config             import GaussianConfig
+from configuration.dataset.gaussian             import GaussianConfig
 from pipelines.backbone.training.loss_terms        import LossComponentCatalog
 from pipelines.benchmark.results                   import BenchmarkSeedCollector
 from pipelines.shared.comparison.comparison_report import ComparisonReport

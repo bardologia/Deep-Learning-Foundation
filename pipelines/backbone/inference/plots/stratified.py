@@ -13,7 +13,6 @@ class StratifiedErrorPlotter(PlotTools):
     COVARIATE_LABELS = {
         "gt_active_count"   : "GT active Gaussian count",
         "primary_amplitude" : "Primary SLC amplitude",
-        "coherence"         : "Mean coherence across secondaries",
         "dem_slope"         : "DEM slope magnitude [m/px]",
         "label_r2"          : "Label fit R²",
     }

@@ -37,16 +37,6 @@ class InferenceConfig:
     cube_dtype      : str  = "float32"
     render_amp_floor : float = 0.0
 
-    compute_reduced      : bool           = True
-    reduced_effort       : str            = "high"
-    reduced_cache_subdir : str            = "data"
-    reduced_env_name     : str            = "stetools"
-    reduced_pyrat_dir    : Optional[Path] = None
-
-    compute_data_consistency : bool  = True
-    physics_floor            : float = 1e-3
-    phase_multilook          : int   = 9
-
     compute_flip_consistency : bool  = False
     compute_stratified       : bool  = True
 
