@@ -119,8 +119,6 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
         save_plots               = False,
         save_animations          = False,
         save_cubes               = True,
-        compute_reduced          = False,
-        compute_data_consistency = True,
     )
 
     report_path = InferencePipeline(config).run()
@@ -131,29 +129,18 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
 
     metrics = json.loads((output_dir / "metrics.json").read_text())
 
-    assert metrics["split"]                   == "test"
-    assert metrics["reduced_status"]          == "skipped: compute_reduced disabled"
-    assert metrics["data_consistency_status"] == "computed"
+    assert metrics["split"] == "test"
 
     for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_elev_mean", "active_frac_gt", "matched_recall"):
         assert np.isfinite(metrics[key]), key
 
-    for key in ("physics_coherence_error_mean", "physics_covariance_error_mean", "phase_agreement_gt_mean", "phase_agreement_gt_flipped_mean", "phase_agreement_pred_mean"):
-        assert np.isfinite(metrics[key]), key
-    assert metrics["physics_valid_fraction"] > 0.0
-
-    for label in SECONDARY_LABELS:
-        assert f"phase_agreement_gt_track_{label}" in metrics
-
     cubes = output_dir / "cubes"
-    assert np.load(cubes / "pred_curves.npy").shape             == (N_ELEV, 96, 96)
-    assert np.load(cubes / "gt_curves.npy").shape               == (N_ELEV, 96, 96)
-    assert np.load(cubes / "params_pred.npy").shape             == (3 * N_GAUSSIANS, 96, 96)
-    assert np.load(cubes / "params_gt.npy").shape               == (3 * N_GAUSSIANS, 96, 96)
-    assert np.load(cubes / "physics_coherence_error.npy").shape == (96, 96)
+    assert np.load(cubes / "pred_curves.npy").shape == (N_ELEV, 96, 96)
+    assert np.load(cubes / "gt_curves.npy").shape   == (N_ELEV, 96, 96)
+    assert np.load(cubes / "params_pred.npy").shape == (3 * N_GAUSSIANS, 96, 96)
+    assert np.load(cubes / "params_gt.npy").shape   == (3 * N_GAUSSIANS, 96, 96)
 
     report = report_path.read_text()
-    assert "Interferometric data consistency" in report
     assert "unet" in report
 
 

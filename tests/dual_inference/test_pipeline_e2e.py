@@ -119,8 +119,6 @@ def test_dual_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_path):
         save_plots               = False,
         save_animations          = False,
         save_cubes               = True,
-        compute_reduced          = False,
-        compute_data_consistency = True,
     )
 
     report_path = InferencePipeline(config, components=DUAL_INFERENCE_COMPONENTS).run()
