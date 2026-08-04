@@ -1,8 +1,8 @@
 {
   "sections": {
     "param_extraction": "The stage that fits parametric z profiles to focused cubes, producing the per-pixel Gaussian-mixture ground truth the backbone learns to predict. It runs constrained optimization over each preprocessed cube and recomputes fit metrics and diagnostic plots for existing trials. The configs here control optimizer iteration caps and fit hyperparameters, the single-run extraction driver, the batch entry point that sweeps datasets and hyperparameter grids, and the inference config that regenerates metrics and summaries.",
-    "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed SAR channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
-    "dataset": "The stage that assembles trainable examples from a preprocessed SAR run, feeding both the backbone and the profile autoencoder. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of image-patch and per-pixel profile datasets.",
+    "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed input channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
+    "dataset": "The stage that assembles trainable examples from a preprocessed dataset run, feeding both the backbone and the profile autoencoder. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack channels and Aux form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of image-patch and per-pixel profile datasets.",
     "architectures": "The stage that defines the neural network families used across the codebase, from image-space backbones to autoencoders. Each config specifies one model variant's layer geometry, output-head structure, and per-group optimizer settings. The configs here cover U-Net and transformer backbones predicting per-pixel Gaussian-mixture parameters, the 2D image autoencoders reconstructing the input stack, and the per-pixel profile autoencoders reconstructing vertical reflectivity curves.",
     "training": "The stage that optimizes the models, spanning the backbone, image autoencoder, JEPA, and profile-autoencoder training loops. It binds architecture, loss, optimization, scheduling, and runtime sub-configs into one resolved run and manages queuing, sweeps, and pre-training safeguards. The configs here control loss term weighting and curricula, optimizer, scheduler, warmup, early-stopping and gradient-clipping policy, batch-size and dataloader preflight probes, filesystem layout, VRAM reservation and resource monitoring, and the per-model-family trainer and entry configs.",
     "inference": "The stage that runs trained checkpoints over data splits to produce reconstructions, physics evaluations, and reports. It drives sliding-window prediction for backbone and JEPA models and reconstruction scoring for the two autoencoder families, scheduling one worker per run across a GPU pool. The configs here control the per-run inference drivers, their output subdirectory and filename layouts, and the batch entry points that queue inference across all discovered runs.",
@@ -147,7 +147,7 @@
       }
     },
     "dataset/general/dataset::InputConfig": {
-      "summary": "Selects which SAR stack channels and Aux feed the network input and their per-channel channel encoding",
+      "summary": "Selects which stack channels and Aux feed the network input and their per-channel channel encoding",
       "fields": {
         "use_primary": "include the primary reference channel in the input stack",
         "primary_representation": "channel encoding of the primary channel: real_imag, mag_real_imag, mag_angle, mag_ri_angle, angle_only, or mag_only",
@@ -186,7 +186,7 @@
       }
     },
     "dataset/general/dataset::DatasetConfig": {
-      "summary": "Assembles the patch dataset and dataloaders from a preprocessed SAR run for backbone training and inference",
+      "summary": "Assembles the patch dataset and dataloaders from a preprocessed dataset run for backbone training and inference",
       "fields": {
         "preprocessing_run_directory": "path to the preprocessed run directory whose stack, parameters, and metadata the Layout loads from",
         "split_regions": "SplitRegions of train/val/test CropRegion(s) partitioning the scene spatially before patching",
@@ -930,11 +930,11 @@
       "summary": "Initial and final per-channel normalization strategies for the cumulative ladder switching pass amplitude, then derived phase, then output amp, then output sigma from initial to final (out_mu untouched)",
       "fields": {
         "initial_chan_mag": "Starting normalization preset for the pass amplitude channels, used until the first ladder rung switches them to the final strategy",
-        "initial_ifg_phase": "Starting normalization preset for the derived phase channels, used until the second ladder rung switches them to the final strategy",
+        "initial_derived_phase": "Starting normalization preset for the derived phase channels, used until the second ladder rung switches them to the final strategy",
         "initial_out_amp": "Starting normalization preset for the output Gaussian amplitude parameters, used until the third ladder rung switches them to the final strategy",
         "initial_out_sigma": "Starting normalization preset for the output Gaussian sigma parameters, used until the fourth ladder rung switches them to the final strategy",
         "final_chan_mag": "Final normalization preset the pass amplitude channels switch to on rung one and keep for every later rung",
-        "final_ifg_phase": "Final normalization preset the derived phase channels switch to on rung two and keep for every later rung",
+        "final_derived_phase": "Final normalization preset the derived phase channels switch to on rung two and keep for every later rung",
         "final_out_amp": "Final normalization preset the output Gaussian amplitude parameters switch to on rung three and keep on rung four",
         "final_out_sigma": "Final normalization preset the output Gaussian sigma parameters switch to on rung four"
       }
@@ -1228,7 +1228,7 @@
         "clip_adaptive_window": "number of recent step norms kept to compute the adaptive clip threshold",
         "clip_adaptive_percentile": "percentile of the recent-norm window used as the clip bound when clip_mode is adaptive_percentile",
         "clip_adaptive_mean_std_k": "std-dev multiplier k in mean + k*std used as the clip bound when clip_mode is adaptive_mean_std",
-        "patch_size": "z and width in pixels of training patches cropped from the SAR stack, (H, W) may be rectangular for fully-convolutional backbones",
+        "patch_size": "z and width in pixels of training patches cropped from the input stack, (H, W) may be rectangular for fully-convolutional backbones",
         "patch_stride": "per-axis (vertical, horizontal) pixel stride between overlapping extracted patches",
         "use_symmetric_padding": "pad scene borders with symmetric (mirror) padding instead of zero (constant) padding so edge patches stay fully covered",
         "train_rows": "row line range (start, end) assigned to the training split, paired with the dataset's full range extent",
@@ -1388,7 +1388,7 @@
       "fields": {
         "run_name": "Optional suffix appended to the canonical run name; every run directory is named model_head_matching_loss with this label (or a timestamp) appended",
         "resume": "Reuse this run directory when it already holds a completed run (complete.json marker stamped only at successful completion), rerunning inference only if it is missing; an unfinished run directory is deleted and restarted from scratch. Lets interrupted trials sweeps and seed sweeps continue without retraining finished units (distinct from training.resume, which continues one run mid-training from its last.pt and suppresses the delete)",
-        "backbone_name": "Registry key of the backbone architecture that predicts Gaussian parameters or profile embeddings from the input SAR patch, default resunet",
+        "backbone_name": "Registry key of the backbone architecture that predicts Gaussian parameters or profile embeddings from the input patch, default resunet",
         "backbone_head": "Output head built on the selected backbone (conv, multihead, per_gaussian, or set_pred); stored in the model config and restored at inference",
         "gpu": "Single GPU device index on which the run executes",
         "gpus": "GPU pool across which the seeds of a multi-seed run are fanned out, one training job per seed launched in parallel",
@@ -1720,7 +1720,7 @@
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every model in the sweep",
         "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output, run only when training_type is backbone or jepa",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-model comparison report",
-        "input": "InputConfig sub-config selecting the SAR channel stack fed to each model, defaults to the full stack (primary+secondaries+derived, Aux off)",
+        "input": "InputConfig sub-config selecting the input channel stack fed to each model, defaults to the full stack (primary+secondaries+derived, Aux off)",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
         "loss": "LossConfig base loss-term weights (the curriculum's complete stage) that each swept loss component is layered onto",

@@ -2988,7 +2988,7 @@ class ProcessAnimator {
       const pace = this._lrPace, NQ = pace.length - 1;
       const q = Math.min(1, (ts - 15) / 8.0) * pace[NQ];
       let qlo = 0, qhi = NQ;
-      while (qlo < qhi) { const m = (qlo + qhi) >> 1; if (pace < q) qlo = m + 1; else qhi = m; }
+      while (qlo < qhi) { const m = (qlo + qhi) >> 1; if (pace[m] < q) qlo = m + 1; else qhi = m; }
       const st = (qlo / NQ) * (TOT - 1);
       const ep = Math.floor(st / d.SPE);
       const X = pxS(st), Y = pyL(d.lrAt(st));

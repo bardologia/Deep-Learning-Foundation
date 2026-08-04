@@ -21,7 +21,7 @@ class ProbeWindows:
         self.run    = run
         self.window = int(window)
 
-    def centers(self, n_rows: int, n_cols: int) -> list[tuple[int, int]]:
+    def centers(self, n_row_probes: int, n_col_probes: int) -> list[tuple[int, int]]:
         half   = self.window // 2
         n_rows = self.run.split_region.row_size
         n_cols = self.run.split_region.col_size
@@ -29,10 +29,10 @@ class ProbeWindows:
         if n_rows < self.window or n_cols < self.window:
             raise ValueError(f"Split region {n_rows}x{n_cols} is smaller than the {self.window}px probe window; choose a smaller window or a larger split")
 
-        az_centers = np.linspace(half, n_rows - half - 1, n_rows).round().astype(int)
-        rg_centers = np.linspace(half, n_cols - half - 1, n_cols).round().astype(int)
+        row_centers = np.linspace(half, n_rows - half - 1, n_row_probes).round().astype(int)
+        col_centers = np.linspace(half, n_cols - half - 1, n_col_probes).round().astype(int)
 
-        return [(int(row), int(col)) for row in az_centers for col in rg_centers]
+        return [(int(row), int(col)) for row in row_centers for col in col_centers]
 
     def assemble(self, centers: list[tuple[int, int]]) -> torch.Tensor:
         half    = self.window // 2

@@ -16,7 +16,7 @@ group: jepa-ae
 
 # JEPA Image AE + Backbone + Profile AE
 
-The full coupling: a pretrained image autoencoder encodes the SAR stack into the backbone, the backbone predicts a profile-autoencoder embedding, and the profile autoencoder supplies both the target embedding and the decoder for curve reconstruction. Both autoencoders are imported from finished runs and are never trained from scratch here.
+The full coupling: a pretrained image autoencoder encodes the input stack into the backbone, the backbone predicts a profile-autoencoder embedding, and the profile autoencoder supplies both the target embedding and the decoder for curve reconstruction. Both autoencoders are imported from finished runs and are never trained from scratch here.
 
 This is the two-front-end configuration of the unified JEPA pipeline (`python -m main.training.train_jepa`): it is selected by pointing both `JepaEntryConfig.image_autoencoder_run` and `profile_autoencoder_run` at finished runs. The full mechanics live in [[JEPA Profile-Embedding]].
 

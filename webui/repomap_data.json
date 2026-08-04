@@ -2689,7 +2689,7 @@
     {
       "folder": "image_autoencoder",
       "title": "Image Autoencoder",
-      "blurb": "A 2D convolutional autoencoder that reconstructs multi-channel SAR input patches to learn a latent input embedding; its trained checkpoint feeds JEPA as an image-embedding front-end, while a standalone inference path scores reconstruction quality per run.",
+      "blurb": "A 2D convolutional autoencoder that reconstructs multi-channel input patches to learn a latent input embedding; its trained checkpoint feeds JEPA as an image-embedding front-end, while a standalone inference path scores reconstruction quality per run.",
       "diagrams": [
         {
           "key": "imageae-dataset",
@@ -2717,7 +2717,7 @@
               "label": "DatasetPipeline (backbone)",
               "module": "pipelines/backbone/dataset/pipeline.py",
               "role": "external",
-              "fn": "External backbone dataset pipeline that crops, patches and normalizes the SAR stack and builds the DataLoaders via shared Loader.build (documented in the backbone map).",
+              "fn": "External backbone dataset pipeline that crops, patches and normalizes the input stack and builds the DataLoaders via shared Loader.build (documented in the backbone map).",
               "col": 1,
               "reads": [],
               "writes": [

@@ -14,7 +14,7 @@ summary: Baseline encoder-decoder with concatenative skip connections; reference
 
 # UNet
 
-`UNet` (`models/backbone/unet.py`) is the baseline encoder-decoder architecture implementing the original U-Net design ([[UNet_Ronneberger2015_1505.04597.pdf|Ronneberger et al., 2015]]) adapted for dense regression on SAR data patches.
+`UNet` (`models/backbone/unet.py`) is the baseline encoder-decoder architecture implementing the original U-Net design ([[UNet_Ronneberger2015_1505.04597.pdf|Ronneberger et al., 2015]]) adapted for dense regression on input patches.
 
 ---
 

@@ -10,12 +10,12 @@ aliases:
   - conv2d_ae
 family: image-autoencoder
 registry_key: conv2d_ae
-summary: Default plain-convolutional image autoencoder for the SAR stack, pretraining the JEPA image front-end.
+summary: Default plain-convolutional image autoencoder for the input stack, pretraining the JEPA image front-end.
 ---
 
 # Conv2D Image Autoencoder
 
-`Conv2dImageAutoencoder` (`models/image_autoencoder/conv2d.py`) is the [[Model Zoo|image autoencoder]]. Unlike the profile autoencoders, it learns the latent space of the *input* domain: it encodes the SAR image stack into a 2D spatial embedding and reconstructs it. The trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
+`Conv2dImageAutoencoder` (`models/image_autoencoder/conv2d.py`) is the [[Model Zoo|image autoencoder]]. Unlike the profile autoencoders, it learns the latent space of the *input* domain: it encodes the input channel stack into a 2D spatial embedding and reconstructs it. The trained encoder is reused as the pretrained image front-end of the [[JEPA Profile-Embedding|JEPA]] predictor.
 
 ---
 

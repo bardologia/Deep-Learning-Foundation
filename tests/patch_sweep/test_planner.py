@@ -71,10 +71,10 @@ def test_minimum_must_be_admissible_on_the_row_axis(tmp_path):
         planner.patch_sizes()
 
 
-def test_minimum_must_be_admissible_on_the_range_axis(tmp_path):
+def test_minimum_must_be_admissible_on_the_col_axis(tmp_path):
     planner = make_planner(tmp_path, ["w20_10"], minimum=(0, 20))
 
-    with pytest.raises(ValueError, match="range=20 is not a multiple"):
+    with pytest.raises(ValueError, match="col=20 is not a multiple"):
         planner.patch_sizes()
 
 
