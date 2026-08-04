@@ -32,12 +32,12 @@ class ImageAutoencoderModelLibrary(ModelDefaultsLibrary):
         return [
             {
                 "family" : "Image autoencoder",
-                "blurb"  : "Compress the SAR image stack into a 2D spatial embedding and reconstruct it. The encoder later serves as the JEPA image front-end.",
+                "blurb"  : "Compress the input channel stack into a 2D spatial embedding and reconstruct it. The encoder later serves as the JEPA image front-end.",
                 "models" : [
                     {
                         "key": "conv2d_ae", "name": "Conv2D Image Autoencoder", "skip": "2D conv encoder/decoder",
                         "head": "Conv to 2D embedding", "params": "~48.4K", "recommended": True,
-                        "when": "The default image autoencoder. A small 2D convolutional encoder downsamples the SAR image stack to a spatial embedding and a mirrored decoder reconstructs it; the encoder is reused as the pretrained JEPA image front-end.",
+                        "when": "The default image autoencoder. A small 2D convolutional encoder downsamples the input channel stack to a spatial embedding and a mirrored decoder reconstructs it; the encoder is reused as the pretrained JEPA image front-end.",
                     },
                     {
                         "key": "resnet2d_ae", "name": "ResNet2D Image Autoencoder", "skip": "Residual 2D conv",

@@ -4284,7 +4284,7 @@ class ProcessAnimator {
       ctx.restore();
     }
 
-    if (ts < 2.5) this._cap("The test split is one continuous SAR scene  ·  336 × 146 pixels");
+    if (ts < 2.5) this._cap("The test split is one continuous scene  ·  336 × 146 pixels");
     else if (ts < 6.0) this._cap("Reflective padding rings the scene so edge patches never invent data");
     else if (ts < 12.0) this._cap("A 64 × 64 window strides by 32  ·  neighbours overlap 50% in both axes");
     else this._cap("40 overlapping patches  ·  n_v 4 × n_h 10  ·  fed in order, shuffle = False");
