@@ -203,7 +203,7 @@ def test_summary_reports_the_seed_axis_and_both_grids(tmp_path):
     assert summary["Row sizes"] == [8, 16]
     assert summary["Col sizes"]   == [8, 16]
     assert summary["Units"]         == 8
-    assert summary["Seeds"]         == [0, 1, 2, 3, 4]
+    assert summary["Seeds"]         == [0, 1]
 
 
 def test_unit_lookup_is_loud_for_unknown_names(tmp_path):
