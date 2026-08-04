@@ -1274,7 +1274,7 @@ class ProcessAnimator {
       const atW = w - ax - 44;
       const arts = [
         { n: "primary", d: "1 reference channel (CH00)", c: "#35e6d0" },
-        { n: "secondaries", d: "selected aligned passes", c: "rgba(178,204,210,0.95)" },
+        { n: "secondaries", d: "selected aligned channels", c: "rgba(178,204,210,0.95)" },
         { n: "derived", d: "selected complex derived", c: "#ffcf6b" },
         { n: "parameters", d: "GMM targets · param pipeline", c: "#7cff9b" },
         { n: "aux_full", d: "optional channel · off here", c: "rgba(178,204,210,0.95)" },
@@ -1677,8 +1677,8 @@ class ProcessAnimator {
       }
 
       if (ts < 2.2) caption = "Fetching one sample slices a 9-layer window out of the memory-mapped stack";
-      else if (ts < 4.2) caption = "Primary pass  ·  its magnitude becomes channel 0";
-      else if (ts < 7.0) caption = "Secondary passes  ·  one magnitude channel per pass";
+      else if (ts < 4.2) caption = "Primary channel  ·  its magnitude becomes channel 0";
+      else if (ts < 7.0) caption = "Secondary channels  ·  one magnitude channel each";
       else if (ts < 10.0) caption = "Derived  ·  one phase channel each";
       else if (ts < 12.0) caption = "1 + 4 + 4 = 9 channels written into a single tensor";
       else caption = "Targets repeat (a, mu, sigma) for each Gaussian  ->  3K layers of 64 x 64";
@@ -3569,7 +3569,7 @@ class ProcessAnimator {
     else if (ts < 7.0) this._cap("torch.argsort + gather along the gaussian axis  ·  gt in mu-ascending order, every pixel, every batch");
     else if (ts < 9.6) this._cap("Param loss is slot-by-slot  ·  pred slot k is always graded against the k-th lowest component");
     else if (ts < 13) this._cap("gt amp = 0 gates the slot: mu and sigma drop out of the loss  ·  the a term IS still graded, pulling pred a -> 0");
-    else this._cap("The fixed target order induces ordered predictions  ·  each output channel specialises in one height layer");
+    else this._cap("The fixed target order induces ordered predictions  ·  each output channel specialises in one z band");
   }
 
   _trReg(ts, d) {
@@ -4452,7 +4452,7 @@ class ProcessAnimator {
     this._infText("pred", pad.l + 8, h - 24, "#35e6d0", 12);
     this._infText("GT", pad.l + 64, h - 24, "#ffcf6b", 12);
 
-    if (ts < 9.0) this._cap("Each slot's a, µ, σ reconstructs an z curve via the Gaussian mixture");
+    if (ts < 9.0) this._cap("Each slot's a, µ, σ reconstructs a curve along z via the Gaussian mixture");
     else if (ts < 14.0) this._cap("Per pixel: MSE, MAE, R², cosine, peak-index error between pred and GT curves");
     else this._cap("Every pixel of every patch is scored in parallel across the CPU pool");
   }
@@ -4755,7 +4755,7 @@ class ProcessAnimator {
     }
 
     if (ts < 3.0) this._cap("Global suite on the stitched cubes: R², RMSE, PSNR, MAE");
-    else if (ts < 6.0) this._cap("SSIM is measured across z, range and row slices");
+    else if (ts < 6.0) this._cap("SSIM is measured across z, col and row slices");
     else if (ts < 9.0) this._cap("µ-ordering rate and permutation consensus test whether slot roles stayed stable");
     else this._cap("~30 metric groups in total  ·  all written to metrics.json");
   }
