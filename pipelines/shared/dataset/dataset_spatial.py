@@ -31,7 +31,7 @@ class Layout:
             "Rows"          : self.global_crop.row_size,
             "Cols"          : self.global_crop.col_size,
             "Cube Tag"      : self.cube_tag,
-            "Pass Labels"   : ", ".join(self.channel_labels) if self.channel_labels else "unavailable",
+            "Channel Labels": ", ".join(self.channel_labels) if self.channel_labels else "unavailable",
             "Parameters"    : self.parameters_path,
         })
 
@@ -51,14 +51,14 @@ class Layout:
             return None
 
         if not self.channel_labels:
-            raise ValueError("Dataset records no pass labels in dataset.json; the dataset must list its pass labels before secondaries can be selected by label.")
+            raise ValueError("Dataset records no channel labels in dataset.json; the dataset must list its channel labels before secondaries can be selected by label.")
 
         primary     = self.channel_labels[0]
         secondaries = list(self.channel_labels[1:])
         requested   = [str(label) for label in secondary_labels]
 
         if primary in requested:
-            raise ValueError(f"Pass {primary} is the reference and is always included; remove it from secondary_labels")
+            raise ValueError(f"Channel {primary} is the reference and is always included; remove it from secondary_labels")
 
         unknown = [label for label in requested if label not in secondaries]
         if unknown:

@@ -33,7 +33,7 @@ class SyntheticDatasetPipeline:
             "Z Range"          : config.z_range,
             "Components"       : config.k_max,
             "Parameter Run"    : config.params_run_name,
-            "Pass Labels"      : ", ".join(config.channel_labels),
+            "Channel Labels"   : ", ".join(config.channel_labels),
             "Seed"             : config.seed,
         }, title="Synthesis")
 
