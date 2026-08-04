@@ -1566,7 +1566,7 @@ window.FLOW_SKETCHES = {
   },
 
   iaei_channel: {
-    tip: "Averaging the squared residual over patches and space, per channel, shows which passes reconstruct worst.",
+    tip: "Averaging the squared residual over patches and space, per channel, shows which channels reconstruct worst.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="116" x2="214" y2="116"/>
       <rect x="40" y="76" width="18" height="40" class="skl-pop f-cal"/>
