@@ -115,12 +115,12 @@ class BackboneModelLibrary(ModelDefaultsLibrary):
                     {
                         "key": "unet_skip", "name": "UNet Skip", "skip": "Skip + residual",
                         "head": "Single 1x1 conv", "params": "~32.4M", "recommended": True,
-                        "when": "Continuity with results trained before 2026-06-04. Pre-correction ResUNet (residual blocks, MaxPool downsampling); the archived checkpoint and benchmark-winning results correspond to this architecture.",
+                        "when": "Continuity with checkpoints from the pre-correction ResUNet (residual blocks, MaxPool downsampling); keep it when older runs must stay loadable.",
                     },
                     {
                         "key": "attention_unet", "name": "Attention UNet", "skip": "Attention-gated concat",
                         "head": "Single 1x1 conv", "params": "~32.4M", "recommended": False,
-                        "when": "Spatially heterogeneous scenes (mixed urban and vegetated). Gates suppress irrelevant skip features per region.",
+                        "when": "Spatially heterogeneous scenes with region-dependent structure. Gates suppress irrelevant skip features per region.",
                     },
                     {
                         "key": "unetplusplus", "name": "UNet++", "skip": "Nested dense skips",

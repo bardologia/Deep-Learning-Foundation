@@ -320,7 +320,7 @@
     {
       "folder": "param_extraction",
       "title": "Parameter Extraction",
-      "blurb": "The parameter-extraction subsystem fits per-pixel multi-Gaussian height profiles to reduced cubes on the GPU and re-analyses the fitted parameter stacks into fit-quality metrics and diagnostic plots.",
+      "blurb": "The parameter-extraction subsystem fits per-pixel multi-Gaussian profiles along z to reduced cubes on the GPU and re-analyses the fitted parameter stacks into fit-quality metrics and diagnostic plots.",
       "diagrams": [
         {
           "key": "param-extraction",
@@ -345,7 +345,7 @@
               "label": "ExtractParamsEntryConfig",
               "module": "configuration/param_extraction.py",
               "role": "config",
-              "fn": "Dataclass holding the dataset base path, sweep lists (fit_k_values, fit_lambda_values, fit_modes), height range and Adam/batch knobs for each extraction run.",
+              "fn": "Dataclass holding the dataset base path, sweep lists (fit_k_values, fit_lambda_values, fit_modes), z range and Adam/batch knobs for each extraction run.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -356,7 +356,7 @@
               "label": "cube_full.npy",
               "module": "pipelines/processing",
               "role": "external",
-              "fn": "Full cube cube (H x n_row x n_col) produced by the cube-generation pipeline, discovered from each dataset's data/ directory.",
+              "fn": "Full cube (H x n_row x n_col) produced by the cube-generation pipeline, discovered from each dataset's data/ directory.",
               "col": 1,
               "reads": [],
               "writes": [
@@ -380,7 +380,7 @@
               "label": "ParamExtractionPipeline",
               "module": "pipelines/processing/param_extraction/pipeline.py",
               "role": "orchestrator",
-              "fn": "Per-group orchestrator that discovers the cube and height range, drives one shared fit for all modes and lambdas, mu-sorts each returned Gaussian stack via ParameterExtractor, and saves every permutation through IO.",
+              "fn": "Per-group orchestrator that discovers the cube and z range, drives one shared fit for all modes and lambdas, mu-sorts each returned Gaussian stack via ParameterExtractor, and saves every permutation through IO.",
               "col": 2,
               "reads": [],
               "writes": [],
@@ -517,7 +517,7 @@
               "consumers": [
                 "sigma_fit"
               ],
-              "fmt": "npy - cube cube (H, n_row, n_col)",
+              "fmt": "npy - cube (H, n_row, n_col)",
               "desc": "Reduced cube whose per-pixel amplitude profiles are fitted; mmap-loaded range-batch by range-batch.",
               "scope": "cross"
             },
@@ -764,7 +764,7 @@
                 "io"
               ],
               "fmt": "json - k_max, lambda_k, z_range, thresholds, source_cube",
-              "desc": "Drives trial discovery and supplies k_max, thresholds, height range and the cube path for recompute.",
+              "desc": "Drives trial discovery and supplies k_max, thresholds, z range and the cube path for recompute.",
               "scope": "cross"
             },
             {
@@ -773,7 +773,7 @@
               "consumers": [
                 "metrics"
               ],
-              "fmt": "npy - cube cube (H, n_row, n_col)",
+              "fmt": "npy - cube (H, n_row, n_col)",
               "desc": "Source cube reloaded to compute per-pixel R2 and peak-to-floor contrast against the fits.",
               "scope": "cross"
             },
@@ -4441,7 +4441,7 @@
                 "ds_pipeline"
               ],
               "fmt": "npy",
-              "desc": "Full-resolution cube cube whose first axis sets profile_length.",
+              "desc": "Full-resolution cube whose first axis sets profile_length.",
               "scope": "cross"
             },
             {
@@ -6298,7 +6298,7 @@
               "label": "ParamMetrics",
               "module": "pipelines/comparison/param_extraction_comparison.py",
               "role": "metric",
-              "fn": "Loads each trial's parameters, summary and diagnostics to compute R2, BIC, coverage, active/collapsed slots, mu separation and dominant-height coherence.",
+              "fn": "Loads each trial's parameters, summary and diagnostics to compute R2, BIC, coverage, active/collapsed slots, mu separation and dominant-z agreement.",
               "col": 3,
               "reads": [
                 "parameters.npy",
@@ -6413,7 +6413,7 @@
             {
               "from": "metrics",
               "to": "spatial",
-              "label": "dominant-height map",
+              "label": "dominant-z map",
               "kind": "data"
             },
             {
@@ -6503,7 +6503,7 @@
                 "ParamMetrics"
               ],
               "fmt": ".npy",
-              "desc": "Read only for its height-bin count, which sets n_data in the BIC computation.",
+              "desc": "Read only for its z-bin count, which sets n_data in the BIC computation.",
               "scope": "cross"
             },
             {
