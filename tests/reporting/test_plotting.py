@@ -220,8 +220,8 @@ def test_binned_median_sparse_bins_nan():
 def test_imshow_figure_returns_figure(plotter, small_field):
     fig = plotter._imshow_figure(
         small_field,
-        x_label = "range",
-        y_label = "azimuth",
+        x_label = "col",
+        y_label = "row",
         title   = "field",
         cmap    = "viridis",
     )
@@ -232,14 +232,14 @@ def test_imshow_figure_returns_figure(plotter, small_field):
 def test_imshow_figure_axis_labels(plotter, small_field):
     fig = plotter._imshow_figure(
         small_field,
-        x_label = "range [m]",
-        y_label = "azimuth [m]",
+        x_label = "col",
+        y_label = "row",
         title   = "Field Title",
         cmap    = "viridis",
     )
     ax = fig.axes[0]
-    assert ax.get_xlabel() == "range [m]"
-    assert ax.get_ylabel() == "azimuth [m]"
+    assert ax.get_xlabel() == "col"
+    assert ax.get_ylabel() == "row"
     assert ax.get_title()  == "Field Title"
     plt.close(fig)
 
@@ -319,16 +319,16 @@ def test_imshow_figure_saved_dpi(plotter, small_field, tmp_path):
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_imshow_scene_dem_window(plotter, dem_full, small_window, tmp_path):
-    window = np.asarray(dem_full[small_window], dtype=np.float32)
+def test_imshow_scene_dem_window(plotter, aux_full, small_window, tmp_path):
+    window = np.asarray(aux_full[small_window], dtype=np.float32)
     out    = plotter._imshow_figure(
         window,
-        x_label        = "range",
-        y_label        = "azimuth",
-        title          = "DEM window",
+        x_label        = "col",
+        y_label        = "row",
+        title          = "Aux window",
         cmap           = plotter._cmap_with_bad("terrain"),
-        colorbar_label = "height [m]",
-        path           = tmp_path / "dem.png",
+        colorbar_label = "height",
+        path           = tmp_path / "aux.png",
     )
     assert out.exists()
     assert out.stat().st_size > 0
@@ -342,8 +342,8 @@ def test_imshow_scene_parameter_window_with_clim(plotter, parameters, small_wind
 
     out = plotter._imshow_figure(
         window,
-        x_label = "range",
-        y_label = "azimuth",
+        x_label = "col",
+        y_label = "row",
         title   = "param 0",
         cmap    = "viridis",
         vmin    = lo,
@@ -355,8 +355,8 @@ def test_imshow_scene_parameter_window_with_clim(plotter, parameters, small_wind
 
 
 @pytest.mark.dataset
-def test_shared_clim_scene_tomogram_intensity(tomogram_full, small_window):
-    layer = np.abs(np.asarray(tomogram_full[0][small_window]))
+def test_shared_clim_scene_cube_intensity(cube_full, small_window):
+    layer = np.abs(np.asarray(cube_full[0][small_window]))
     lo, hi = PlotBase._shared_clim(layer, q_low=5.0, q_high=95.0)
     assert lo <= hi
     assert np.isfinite(lo) and np.isfinite(hi)

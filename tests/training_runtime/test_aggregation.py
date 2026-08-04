@@ -82,7 +82,7 @@ def test_tensor_values_accumulate_without_immediate_conversion():
 
 def test_physical_channel_reduces_independently():
     agg = MetricAggregator()
-    agg.add(_loss_dict({}, {}, physical={"mu_mae_m": torch.tensor(2.0)}))
-    agg.add(_loss_dict({}, {}, physical={"mu_mae_m": torch.tensor(4.0)}))
+    agg.add(_loss_dict({}, {}, physical={"mu_mae": torch.tensor(2.0)}))
+    agg.add(_loss_dict({}, {}, physical={"mu_mae": torch.tensor(4.0)}))
 
-    assert agg.reduce_physical()["mu_mae_m"] == pytest.approx(3.0)
+    assert agg.reduce_physical()["mu_mae"] == pytest.approx(3.0)

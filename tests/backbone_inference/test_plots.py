@@ -13,8 +13,8 @@ from tools.metrics.gaussian_matching             import GaussianMatcher
 
 
 N_GAUSSIANS = 2
-N_ELEV      = 16
-H = W       = 8
+N_Z         = 16
+H           = W       = 8
 
 
 def _assert_files(paths):
@@ -34,19 +34,19 @@ def _params(n_gaussians=N_GAUSSIANS, h=H, w=W):
     return params
 
 
-def _curves(params, x_axis, n_gaussians=N_GAUSSIANS):
-    curve = np.zeros((x_axis.size, params.shape[1], params.shape[2]), dtype=np.float32)
+def _curves(params, z_axis, n_gaussians=N_GAUSSIANS):
+    curve = np.zeros((z_axis.size, params.shape[1], params.shape[2]), dtype=np.float32)
     for k in range(n_gaussians):
         a   = np.maximum(params[3 * k], 0.0)[None]
         mu  = params[3 * k + 1][None]
         sig = params[3 * k + 2][None]
-        x   = x_axis.reshape(-1, 1, 1)
+        x   = z_axis.reshape(-1, 1, 1)
         curve += a * np.exp(-((x - mu) ** 2) / (2.0 * sig * sig + 1e-8))
     return curve.astype(np.float32)
 
 
 def _x_axis():
-    return np.linspace(-20.0, 80.0, N_ELEV).astype(np.float32)
+    return np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
 
 
 def test_ploter_composes_subplotters():
@@ -107,7 +107,7 @@ def test_param_plotter_error_maps(tmp_path):
 
     paths = plotter.plot_param_error_maps(
         params_pred=params + 0.5, params_gt=params, n_gaussians=N_GAUSSIANS,
-        out_dir=tmp_path, az_offset=0, rg_offset=0,
+        out_dir=tmp_path, row_offset=0, col_offset=0,
     )
     _assert_files(paths)
 
@@ -150,7 +150,7 @@ def test_param_plotter_matches_slots_once_per_cube(tmp_path, monkeypatch):
 
     plotter.plot_param_error_maps(
         params_pred=other[: N_GAUSSIANS * 3], params_gt=params[: N_GAUSSIANS * 3], n_gaussians=N_GAUSSIANS,
-        out_dir=tmp_path / "maps", az_offset=0, rg_offset=0,
+        out_dir=tmp_path / "maps", row_offset=0, col_offset=0,
     )
 
     assert len(calls) == 2
@@ -167,15 +167,15 @@ def test_slot_plotter_active_count_map(tmp_path):
     plotter = SlotPlotter()
     paths   = plotter.plot_active_count_map(
         params_pred=params, params_gt=params, n_gaussians=N_GAUSSIANS,
-        out_dir=tmp_path, az_offset=0, rg_offset=0,
+        out_dir=tmp_path, row_offset=0, col_offset=0,
     )
     _assert_files(paths)
 
 
 def test_slice_plotter_profiles(tmp_path):
-    x_axis = _x_axis()
+    z_axis = _x_axis()
     params = _params()
-    gt     = _curves(params, x_axis)
+    gt     = _curves(params, z_axis)
     pred   = gt + 0.01
 
     pm = {
@@ -187,9 +187,9 @@ def test_slice_plotter_profiles(tmp_path):
 
     plotter = SlicePlotter()
     paths   = plotter.plot_profiles(
-        pred_curves=pred, gt_curves=gt, params_pred=params, x_axis=x_axis,
+        pred_curves=pred, gt_curves=gt, params_pred=params, z_axis=z_axis,
         pixels=np.array([[1, 1], [2, 3]]), tag="best", out_dir=tmp_path,
-        n_gaussians=N_GAUSSIANS, pixel_metrics=pm, az_offset=0, rg_offset=0,
+        n_gaussians=N_GAUSSIANS, pixel_metrics=pm, row_offset=0, col_offset=0,
     )
     _assert_files(paths)
 
@@ -200,49 +200,49 @@ def test_slice_plotter_pixel_metric_map_log(tmp_path):
 
     path = plotter.plot_pixel_metric_map(
         metric_map=metric, title="t", label="MSE", out_path=tmp_path / "m.png",
-        az_offset=0, rg_offset=0, log=True,
+        row_offset=0, col_offset=0, log=True,
     )
     assert path.is_file() and path.stat().st_size > 0
 
 
-def test_slice_plotter_tomogram_slice_range_and_azimuth(tmp_path):
-    x_axis = _x_axis()
+def test_slice_plotter_cube_slice_col_and_row(tmp_path):
+    z_axis = _x_axis()
     params = _params()
-    gt     = _curves(params, x_axis)
+    gt     = _curves(params, z_axis)
     pred   = gt + 0.02
 
     plotter = SlicePlotter()
 
-    for axis in ("range", "azimuth"):
-        paths = plotter.plot_tomogram_slice(
-            pred_cube=pred, gt_cube=gt, axis=axis, index=2, x_axis=x_axis,
-            out_dir=tmp_path, stem=f"slice_{axis}", az_offset=0, rg_offset=0, ssim_value=0.9,
+    for axis in ("col", "row"):
+        paths = plotter.plot_cube_slice(
+            pred_cube=pred, gt_cube=gt, axis=axis, index=2, z_axis=z_axis,
+            out_dir=tmp_path, stem=f"slice_{axis}", row_offset=0, col_offset=0, ssim_value=0.9,
         )
         _assert_files(paths)
 
 
-def test_slice_plotter_tomogram_slice_bad_axis_raises(tmp_path):
-    x_axis  = _x_axis()
-    gt      = _curves(_params(), x_axis)
+def test_slice_plotter_cube_slice_bad_axis_raises(tmp_path):
+    z_axis  = _x_axis()
+    gt      = _curves(_params(), z_axis)
     plotter = SlicePlotter()
 
     with pytest.raises(ValueError, match="axis must be"):
-        plotter.plot_tomogram_slice(
-            pred_cube=gt, gt_cube=gt, axis="elevation", index=0, x_axis=x_axis,
-            out_dir=tmp_path, stem="bad", az_offset=0, rg_offset=0,
+        plotter.plot_cube_slice(
+            pred_cube=gt, gt_cube=gt, axis="z", index=0, z_axis=z_axis,
+            out_dir=tmp_path, stem="bad", row_offset=0, col_offset=0,
         )
 
 
-def test_slice_plotter_elevation_intensity_slice(tmp_path):
-    x_axis = _x_axis()
+def test_slice_plotter_z_intensity_slice(tmp_path):
+    z_axis = _x_axis()
     params = _params()
-    gt     = _curves(params, x_axis)
+    gt     = _curves(params, z_axis)
     pred   = gt + 0.02
 
     plotter = SlicePlotter()
-    paths   = plotter.plot_elevation_intensity_slice(
-        pred_cube=pred, gt_cube=gt, elev_idx=4, x_axis=x_axis,
-        out_dir=tmp_path, stem="elev", az_offset=0, rg_offset=0, ssim_value=0.8,
+    paths   = plotter.plot_z_intensity_slice(
+        pred_cube=pred, gt_cube=gt, z_idx=4, z_axis=z_axis,
+        out_dir=tmp_path, stem="z", row_offset=0, col_offset=0, ssim_value=0.8,
     )
     _assert_files(paths)
 
@@ -263,7 +263,7 @@ def test_slice_plotter_input_channels(tmp_path):
 
     paths = plotter.plot_input_channels(
         complex_inputs=inputs, n_secondaries=n_sec, labels=["A", "B"],
-        out_dir=tmp_path, az_offset=0, rg_offset=0,
+        out_dir=tmp_path, row_offset=0, col_offset=0,
     )
     _assert_files(paths)
 
@@ -276,23 +276,23 @@ def _ssim_metrics(axis, n, prefix="gt"):
 
 def test_slice_plotter_ssim_curves(tmp_path):
     plotter = SlicePlotter()
-    gm      = _ssim_metrics("range", W)
+    gm      = _ssim_metrics("col", W)
 
     path = plotter.plot_ssim_curves(
-        global_metrics=gm, axis="range", out_path=tmp_path / "ssim.png",
+        global_metrics=gm, axis="col", out_path=tmp_path / "ssim.png",
         n_slices=W, slice_indices=np.arange(W),
     )
     assert path.is_file() and path.stat().st_size > 0
 
 
-def test_slice_plotter_elev_metric_curves(tmp_path):
-    x_axis = _x_axis()
+def test_slice_plotter_z_metric_curves(tmp_path):
+    z_axis = _x_axis()
     gm     = {}
-    for key in ("elev_mae", "elev_rmse", "elev_r2", "elev_ce"):
-        for i in range(N_ELEV):
+    for key in ("z_mae", "z_rmse", "z_r2", "z_ce"):
+        for i in range(N_Z):
             gm[f"{key}_gt_{i}"] = 0.1 + 0.001 * i
         gm[f"{key}_gt_mean"] = 0.2
 
     plotter = SlicePlotter()
-    paths   = plotter.plot_elev_metric_curves(gm, tmp_path, N_ELEV, x_axis)
+    paths   = plotter.plot_z_metric_curves(gm, tmp_path, N_Z, z_axis)
     _assert_files(paths)

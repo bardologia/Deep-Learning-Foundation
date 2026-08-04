@@ -43,7 +43,7 @@ def test_sampler_collects_active_values_per_param():
 
     hists = sampler.histograms()
 
-    assert set(hists.keys()) == {"amp", "mu_m", "sigma_m"}
+    assert set(hists.keys()) == {"amp", "mu", "sigma"}
     assert all(isinstance(v, np.ndarray) for v in hists.values())
     assert all(v.size == 2 * 2 * 5 * 5 for v in hists.values())
 
@@ -114,7 +114,7 @@ def test_loss_feeds_active_sampler():
 
     sampler.begin(1e-3)
     loss(pred, gt)
-    assert set(sampler.histograms().keys()) == {"amp", "mu_m", "sigma_m"}
+    assert set(sampler.histograms().keys()) == {"amp", "mu", "sigma"}
 
 
 def _set_gaussian(tgt, sample, h, w, slot, amp, mu, sigma):

@@ -88,7 +88,7 @@ def test_grouped_score_dampens_correlated_metrics():
 
 
 def test_group_breakdown_drops_empty_groups():
-    groups  = [("Curve error", ["curve_rmse_gt"]), ("Gain vs Capon", ["relative_mse_reduction"])]
+    groups  = [("Curve error", ["curve_rmse_gt"]), ("Gain vs reference", ["relative_mse_reduction"])]
     metrics = [(key, key) for _, keys in groups for key in keys]
     trials  = [("a", {"curve_rmse_gt": 0.1}), ("b", {"curve_rmse_gt": 0.2})]
     result  = _compute(metrics, trials)
@@ -98,7 +98,7 @@ def test_group_breakdown_drops_empty_groups():
 
 
 def test_relative_mse_reduction_higher_ranks_first():
-    metrics = [("relative_mse_reduction", "vs Capon")]
+    metrics = [("relative_mse_reduction", "vs reference")]
     result  = _compute(metrics, [("a", {"relative_mse_reduction": 0.4}), ("b", {"relative_mse_reduction": 0.1})])
 
     assert result.order()[0] == "a"

@@ -109,14 +109,14 @@ def make_trainer_shim(target_kind="stopgrad", trainable=True):
     mode   = CouplingMode("finetune" if trainable else "frozen", "profile autoencoder")
     mode.apply(module.profile_autoencoder)
 
-    x_axis = torch.linspace(-4.0, 4.0, module.profile_autoencoder.config.profile_length)
+    z_axis = torch.linspace(-4.0, 4.0, module.profile_autoencoder.config.profile_length)
 
     norm_stats         = IdentityNormStats()
     profile_normalizer = ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0))
     emb_cfg            = EmbeddingLossConfig(use_embedding_mse=True, weight_embedding_mse=1.0, use_curve_recon=False)
 
     provider  = TargetProvider(target_kind)
-    criterion = EmbeddingLoss(module.profile_autoencoder, provider, emb_cfg, x_axis, norm_stats, 3, profile_normalizer)
+    criterion = EmbeddingLoss(module.profile_autoencoder, provider, emb_cfg, z_axis, norm_stats, 3, profile_normalizer)
 
     trainer              = Trainer.__new__(Trainer)
     trainer.model        = module
@@ -182,7 +182,7 @@ def test_checkpoint_state_dict_round_trip(tmp_path):
     module = build_module()
     images = torch.randn(2, 2, SPATIAL, SPATIAL)
 
-    state = {"epoch": 1, "params": module.state_dict(), "x_axis": torch.linspace(-4, 4, 8).numpy()}
+    state = {"epoch": 1, "params": module.state_dict(), "z_axis": torch.linspace(-4, 4, 8).numpy()}
     path  = tmp_path / "best_model.pt"
     torch.save(state, path)
 

@@ -284,9 +284,9 @@ def test_normalization_scheduler_plans_the_cumulative_ladder(tmp_path):
 
     plans = dict(scheduler.planner().plan())
 
-    assert list(plans) == ["nrm-0-initial", "nrm-1-pass_mag", "nrm-2-ifg_phase", "nrm-3-out_amp", "nrm-4-out_sigma"]
-    assert plans["nrm-0-initial"]["normalization.pass_mag"]    == "zscore_log1p"
-    assert plans["nrm-1-pass_mag"]["normalization.pass_mag"]   == "robust_iqr_log1p"
+    assert list(plans) == ["nrm-0-initial", "nrm-1-chan_mag", "nrm-2-derived_phase", "nrm-3-out_amp", "nrm-4-out_sigma"]
+    assert plans["nrm-0-initial"]["normalization.chan_mag"]    == "zscore_log1p"
+    assert plans["nrm-1-chan_mag"]["normalization.chan_mag"]   == "robust_iqr_log1p"
     assert plans["nrm-3-out_amp"]["normalization.out_amp"]     == "robust_iqr_log1p"
     assert plans["nrm-3-out_amp"]["normalization.out_sigma"]   == "zscore"
     assert plans["nrm-4-out_sigma"]["normalization.out_sigma"] == "robust_iqr_log1p"

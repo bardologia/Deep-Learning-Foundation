@@ -20,8 +20,8 @@ def _params(slots: list[tuple[float, float, float]], H_: int = H, W_: int = W) -
     return cube
 
 
-def _mode_name(mode_map: np.ndarray, az: int = 0, rg: int = 0) -> str:
-    return FailureModes.MODES[int(mode_map[az, rg])]
+def _mode_name(mode_map: np.ndarray, row: int = 0, col: int = 0) -> str:
+    return FailureModes.MODES[int(mode_map[row, col])]
 
 
 def test_perfect_prediction_is_ok_everywhere():
@@ -36,7 +36,7 @@ def test_perfect_prediction_is_ok_everywhere():
     assert scalars["failure_frac_ok"]        == pytest.approx(1.0)
 
 
-def test_missing_scatterer_is_flagged():
+def test_missing_component_is_flagged():
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = _params([(1.0, 10.0, 3.0), (0.0, 0.0, 0.0)])
 
@@ -46,7 +46,7 @@ def test_missing_scatterer_is_flagged():
     assert scalars["failure_miss_rate"] == pytest.approx(0.5)
 
 
-def test_hallucinated_scatterer_is_flagged():
+def test_hallucinated_component_is_flagged():
     gt   = _params([(1.0, 10.0, 3.0), (0.0, 0.0, 0.0)])
     pred = _params([(1.0, 10.0, 3.0), (2.0, 60.0, 4.0)])
 
@@ -97,7 +97,7 @@ def test_far_prediction_counts_as_miss_plus_hallucination():
     assert scalars["failure_halluc_rate"] == pytest.approx(1.0)
 
 
-def test_miss_by_separation_rises_for_close_scatterers():
+def test_miss_by_separation_rises_for_close_components():
     H_, W_ = 40, 30
     gt   = np.zeros((6, H_, W_))
     pred = np.zeros((6, H_, W_))

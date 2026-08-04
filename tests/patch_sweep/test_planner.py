@@ -58,16 +58,16 @@ def test_explicit_step_overrides_the_architecture(tmp_path):
 def test_sizes_run_from_one_step_to_maximum_per_axis(tmp_path):
     planner = make_planner(tmp_path, ["w20_10"], maximum=(128, 64))
 
-    azimuth_sizes, range_sizes = planner.patch_sizes()
+    row_sizes, col_sizes = planner.patch_sizes()
 
-    assert azimuth_sizes == [8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128]
-    assert range_sizes   == [8, 16, 24, 32, 40, 48, 56, 64]
+    assert row_sizes == [8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128]
+    assert col_sizes   == [8, 16, 24, 32, 40, 48, 56, 64]
 
 
-def test_minimum_must_be_admissible_on_the_azimuth_axis(tmp_path):
+def test_minimum_must_be_admissible_on_the_row_axis(tmp_path):
     planner = make_planner(tmp_path, ["w20_10"], minimum=(20, 0))
 
-    with pytest.raises(ValueError, match="azimuth=20 is not a multiple"):
+    with pytest.raises(ValueError, match="row=20 is not a multiple"):
         planner.patch_sizes()
 
 
@@ -200,8 +200,8 @@ def test_summary_reports_the_seed_axis_and_both_grids(tmp_path):
     summary = planner.summary()
 
     assert summary["Datasets"]      == ["w20_10", "w20_20"]
-    assert summary["Azimuth sizes"] == [8, 16]
-    assert summary["Range sizes"]   == [8, 16]
+    assert summary["Row sizes"] == [8, 16]
+    assert summary["Col sizes"]   == [8, 16]
     assert summary["Units"]         == 8
     assert summary["Seeds"]         == [0, 1, 2, 3, 4]
 

@@ -11,17 +11,17 @@ from tools.data.regions                     import CropRegion
 
 
 def _factory(test_data_dir, params_dir, **overrides) -> ConfigFactory:
-    cfg = BenchmarkConfig()
+    cfg                        = BenchmarkConfig()
     cfg.paths.dataset_path     = test_data_dir
     cfg.paths.parameters_path  = params_dir / "parameters.npy"
-    cfg.paths.secondary_labels = ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+    cfg.paths.secondary_labels = ("CH01", "CH02", "CH03", "CH04")
 
-    cfg.training.train_azimuth = (1000, 1400)
-    cfg.training.val_azimuth   = (1400, 1700)
-    cfg.training.test_azimuth  = (1700, 2000)
-    cfg.training.patch_size    = (32, 32)
-    cfg.training.patch_stride  = (16, 16)
-    cfg.training.batch_size    = 8
+    cfg.training.train_rows   = (1000, 1400)
+    cfg.training.val_rows     = (1400, 1700)
+    cfg.training.test_rows    = (1700, 2000)
+    cfg.training.patch_size   = (32, 32)
+    cfg.training.patch_stride = (16, 16)
+    cfg.training.batch_size   = 8
 
     for k, v in overrides.items():
         setattr(cfg, k, v)
@@ -42,7 +42,7 @@ def test_global_crop_matches_dataset_json(test_data_dir, params_dir, dataset_jso
 def test_secondary_labels_propagate_as_tuple(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
 
-    assert factory._secondary_labels() == ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+    assert factory._secondary_labels() == ("CH01", "CH02", "CH03", "CH04")
 
 
 @pytest.mark.dataset
@@ -60,7 +60,7 @@ def test_benchmark_input_config_representations(test_data_dir, params_dir):
 
     assert ic.use_primary        and ic.primary_representation        is Representation.MAG_ONLY
     assert ic.use_secondaries    and ic.secondaries_representation    is Representation.MAG_ONLY
-    assert ic.use_interferograms and ic.interferograms_representation is Representation.ANGLE_ONLY
+    assert ic.use_derived and ic.derived_representation is Representation.ANGLE_ONLY
 
 
 @pytest.mark.dataset
@@ -70,12 +70,12 @@ def test_training_dataset_config_split_regions_share_global_range(test_data_dir,
     cfg     = factory.training_dataset_config()
 
     for split in (cfg.split_regions.train, cfg.split_regions.val, cfg.split_regions.test):
-        assert split.range_start == crop.range_start
-        assert split.range_end   == crop.range_end
+        assert split.col_start == crop.col_start
+        assert split.col_end   == crop.col_end
 
-    assert cfg.split_regions.train.as_tuple() == (1000, 1400, crop.range_start, crop.range_end)
-    assert cfg.split_regions.val.as_tuple()   == (1400, 1700, crop.range_start, crop.range_end)
-    assert cfg.split_regions.test.as_tuple()  == (1700, 2000, crop.range_start, crop.range_end)
+    assert cfg.split_regions.train.as_tuple() == (1000, 1400, crop.col_start, crop.col_end)
+    assert cfg.split_regions.val.as_tuple()   == (1400, 1700, crop.col_start, crop.col_end)
+    assert cfg.split_regions.test.as_tuple()  == (1700, 2000, crop.col_start, crop.col_end)
 
 
 @pytest.mark.dataset
@@ -85,7 +85,7 @@ def test_training_dataset_config_paths_and_patch(test_data_dir, params_dir):
 
     assert cfg.preprocessing_run_directory == test_data_dir
     assert cfg.parameters_path             == params_dir / "parameters.npy"
-    assert cfg.secondary_labels            == ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+    assert cfg.secondary_labels            == ("CH01", "CH02", "CH03", "CH04")
     assert cfg.patch.size                  == (32, 32)
     assert cfg.patch.stride                == (16, 16)
     assert cfg.batch_size                  == 8

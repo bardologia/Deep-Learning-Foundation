@@ -8,7 +8,7 @@ import torch
 
 from configuration.inference                         import InferenceConfig
 from models                                          import BACKBONE_CONFIG_REGISTRY, BACKBONE_MODEL_REGISTRY, get_backbone
-from pipelines.backbone.inference.loader             import AbsentTomogram, RunLoader
+from pipelines.backbone.inference.loader             import AbsentCube, RunLoader
 from pipelines.backbone.inference.model_wrapper      import ModelWrapper
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.config.config_persistence      import BackboneModelConfigIO
@@ -16,14 +16,14 @@ from pipelines.shared.config.config_persistence      import BackboneModelConfigI
 from tests.models_backbone._helpers import SMALL_OVERRIDES, WINDOW
 
 
-def _write_fake_checkpoint(path: Path, x_axis: np.ndarray) -> dict:
+def _write_fake_checkpoint(path: Path, z_axis: np.ndarray) -> dict:
     state = {
         "weight" : torch.zeros(2, 2),
         "bias"   : torch.zeros(2),
     }
     ckpt = {
         "params"        : state,
-        "x_axis"        : x_axis,
+        "z_axis"        : z_axis,
         "epoch"         : 7,
         "best_val_loss" : 0.125,
         "best_epoch"    : 5,
@@ -33,16 +33,16 @@ def _write_fake_checkpoint(path: Path, x_axis: np.ndarray) -> dict:
 
 
 def test_load_checkpoint_numpy_x_axis(tmp_path):
-    x_axis    = np.linspace(-20.0, 80.0, 32).astype(np.float32)
+    z_axis    = np.linspace(-20.0, 80.0, 32).astype(np.float32)
     ckpt_path = tmp_path / "best_model.pt"
-    _write_fake_checkpoint(ckpt_path, x_axis)
+    _write_fake_checkpoint(ckpt_path, z_axis)
 
     loader = RunLoader.__new__(RunLoader)
     ckpt, loaded_axis, meta = loader._load_checkpoint(ckpt_path, "cpu")
 
     assert isinstance(loaded_axis, np.ndarray)
     assert loaded_axis.dtype == np.float32
-    assert np.allclose(loaded_axis, x_axis)
+    assert np.allclose(loaded_axis, z_axis)
     assert meta["epoch"]         == 7
     assert meta["best_epoch"]    == 5
     assert meta["best_val_loss"] == pytest.approx(0.125)
@@ -50,9 +50,9 @@ def test_load_checkpoint_numpy_x_axis(tmp_path):
 
 
 def test_load_checkpoint_torch_tensor_x_axis(tmp_path):
-    x_axis    = torch.linspace(-20.0, 80.0, 16)
+    z_axis    = torch.linspace(-20.0, 80.0, 16)
     ckpt_path = tmp_path / "ckpt.pt"
-    _write_fake_checkpoint(ckpt_path, x_axis)
+    _write_fake_checkpoint(ckpt_path, z_axis)
 
     loader = RunLoader.__new__(RunLoader)
     _, loaded_axis, meta = loader._load_checkpoint(ckpt_path, "cpu")
@@ -60,15 +60,15 @@ def test_load_checkpoint_torch_tensor_x_axis(tmp_path):
     assert isinstance(loaded_axis, np.ndarray)
     assert loaded_axis.dtype == np.float32
     assert loaded_axis.size  == 16
-    assert np.allclose(loaded_axis, x_axis.numpy())
+    assert np.allclose(loaded_axis, z_axis.numpy())
 
 
 def test_load_checkpoint_uses_weights_only_false(tmp_path):
-    x_axis    = np.arange(8, dtype=np.float32)
+    z_axis    = np.arange(8, dtype=np.float32)
     ckpt_path = tmp_path / "obj.pt"
     ckpt      = {
         "params"        : {"w": torch.ones(1)},
-        "x_axis"        : x_axis,
+        "z_axis"        : z_axis,
         "epoch"         : 0,
         "best_val_loss" : 1.0,
         "best_epoch"    : 0,
@@ -100,7 +100,7 @@ def test_model_wrapper_denormalize_passthrough_without_clamp():
         def forward(self, x):
             return x
 
-    wrapper = ModelWrapper(_Echo(), "cpu", x_axis=None, amp_max=None, normalizer=None)
+    wrapper = ModelWrapper(_Echo(), "cpu", z_axis=None, amp_max=None, normalizer=None)
     t       = torch.arange(6.0).reshape(1, 6, 1, 1)
 
     assert torch.allclose(wrapper.denormalize_output(t), t)
@@ -144,9 +144,9 @@ def test_build_model_reconstructs_every_registry_backbone(name, tmp_path):
 
     BackboneModelConfigIO.save(config, name, meta_dir)
 
-    x_axis    = np.linspace(-20.0, 80.0, 32).astype(np.float32)
+    z_axis    = np.linspace(-20.0, 80.0, 32).astype(np.float32)
     ckpt_path = tmp_path / "best_model.pt"
-    torch.save({"params": trained.state_dict(), "x_axis": x_axis, "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}, str(ckpt_path))
+    torch.save({"params": trained.state_dict(), "z_axis": z_axis, "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}, str(ckpt_path))
 
     loader  = RunLoader(tmp_path, logger=None)
     rebuilt = loader._build_model(name, in_channels, out_channels, (WINDOW, WINDOW))
@@ -189,15 +189,15 @@ def test_out_channels_inconsistent_with_n_gaussians_raises(tmp_path):
         loader._validate_out_channels(24, 5)
 
 
-def test_absent_tomogram_refuses_every_use(tmp_path):
-    absent = AbsentTomogram(tmp_path)
+def test_absent_cube_refuses_every_use(tmp_path):
+    absent = AbsentCube(tmp_path)
 
-    with pytest.raises(ValueError, match="load_tomogram=False"):
+    with pytest.raises(ValueError, match="load_cube=False"):
         _ = absent.shape
 
-    with pytest.raises(ValueError, match="load_tomogram=False"):
+    with pytest.raises(ValueError, match="load_cube=False"):
         _ = absent[0]
 
-    with pytest.raises(ValueError, match="load_tomogram=False"):
+    with pytest.raises(ValueError, match="load_cube=False"):
         np.asarray(absent)
 

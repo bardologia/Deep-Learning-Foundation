@@ -6,7 +6,7 @@ import numpy as np
 
 from cube_explorer import CubeExplorer
 
-from tests.webui.conftest import N_AZ, N_ELEV, N_RG, load_cube, make_preproc, make_stamp, open_explorer
+from tests.webui.conftest import N_ROWS, N_Z, N_COLS, load_cube, make_preproc, make_stamp, open_explorer
 
 
 def _make_run(base: Path, preproc: Path, name: str, seed: int, x_min: float = -10.0) -> Path:
@@ -40,15 +40,15 @@ def test_attach_adds_predb_and_diff(tmp_path):
     pred_a = np.load(Path(cube_a) / "cubes" / "pred_curves.npy")
     pred_b = np.load(Path(cube_b) / "cubes" / "pred_curves.npy")
 
-    profiles = explorer.profiles(cube_a, az=2, rg=3)
+    profiles = explorer.profiles(cube_a, row=2, col=3)
     assert set(profiles["sources"]) == {"pred", "predb", "diff", "gt"}
 
     expected_diff = (pred_a - pred_b)[:, 2, 3]
-    order = np.argsort(np.linspace(-10.0, 30.0, N_ELEV))
+    order         = np.argsort(np.linspace(-10.0, 30.0, N_Z))
     assert np.allclose(profiles["sources"]["diff"]["values"], expected_diff[order])
 
-    assert explorer.slice_png(cube_a, "predb", "range", az=0, rg=0)[:4] == b"\x89PNG"
-    assert explorer.slice_png(cube_a, "diff",  "range", az=0, rg=0)[:4] == b"\x89PNG"
+    assert explorer.slice_png(cube_a, "predb", "col", row=0, col=0)[:4] == b"\x89PNG"
+    assert explorer.slice_png(cube_a, "diff",  "col", row=0, col=0)[:4] == b"\x89PNG"
     assert explorer.plane_png(cube_a, "diff", frac=0.5, space="normalized")[:4] == b"\x89PNG"
 
 
@@ -70,7 +70,7 @@ def test_detach_removes_comparison(tmp_path):
     assert result["ok"]
     assert result["cube"]["sources"] == ["pred", "gt"]
     assert result["cube"]["attached"] is None
-    assert explorer.slice_png(cube_a, "predb", "range", az=0, rg=0) is None
+    assert explorer.slice_png(cube_a, "predb", "col", row=0, col=0) is None
 
 
 def test_attach_rejects_self_and_unknown(tmp_path):
@@ -90,26 +90,26 @@ def test_attach_rejects_mismatched_axis(tmp_path):
     load_cube(explorer, str(stamp_a))
 
     result = explorer.attach_second(str(stamp_a), str(stamp_c))
-    assert not result["ok"] and "elevation axis" in result["error"]
+    assert not result["ok"] and "z axis" in result["error"]
 
 
 def test_ssim_covers_predb(tmp_path):
     explorer, cube_a, cube_b = _loaded(tmp_path)
     explorer.attach_second(cube_a, cube_b)
 
-    result = explorer.slice_ssim(cube_a, az=2, rg=2)
+    result = explorer.slice_ssim(cube_a, row=2, col=2)
     assert result["ok"]
-    assert "predb" in result["range"]
-    assert "diff" not in result["range"]
+    assert "predb" in result["col"]
+    assert "diff" not in result["col"]
 
 
 def test_transect_png_samples_line(tmp_path):
     explorer, cube_a, _ = _loaded(tmp_path)
 
-    png = explorer.transect_png(cube_a, "pred", az0=0, rg0=0, az1=N_AZ - 1, rg1=N_RG - 1)
+    png = explorer.transect_png(cube_a, "pred", row0=0, col0=0, row1=N_ROWS - 1, col1=N_COLS - 1)
     assert png and png[:4] == b"\x89PNG"
 
-    normalized = explorer.transect_png(cube_a, "pred", az0=2, rg0=1, az1=2, rg1=4, space="normalized")
+    normalized = explorer.transect_png(cube_a, "pred", row0=2, col0=1, row1=2, col1=4, space="normalized")
     assert normalized and normalized[:4] == b"\x89PNG"
 
     assert explorer.transect_png(cube_a, "banana", 0, 0, 1, 1) is None
@@ -120,9 +120,9 @@ def test_transect_cut_geometry(tmp_path):
     explorer, cube_a, _ = _loaded(tmp_path)
 
     entry = explorer._entry(cube_a, "pred")
-    data, heights, vmin, vmax = explorer._transect_cut(entry, 0, 0, N_AZ - 1, N_RG - 1, "physical")
+    data, heights, vmin, vmax = explorer._transect_cut(entry, 0, 0, N_ROWS - 1, N_COLS - 1, "physical")
 
-    assert data.shape == (N_ELEV, max(N_AZ, N_RG))
+    assert data.shape == (N_Z, max(N_ROWS, N_COLS))
     assert heights[0] == -10.0 and heights[-1] == 30.0
     assert vmin == entry["vmin"] and vmax == entry["vmax"]
 
@@ -133,11 +133,11 @@ def test_transect_cut_geometry(tmp_path):
 def test_save_transect_writes_figures(tmp_path):
     explorer, cube_a, _ = _loaded(tmp_path)
 
-    result = explorer.save_transect(cube_a, az0=0, rg0=0, az1=4, rg1=5)
+    result = explorer.save_transect(cube_a, row0=0, col0=0, row1=4, col1=5)
     assert result["ok"], result
 
     out_dir = Path(result["dir"])
-    assert result["rel"] == "figures/cube_transects/az0000_rg0000_to_az0004_rg0005"
+    assert result["rel"] == "figures/cube_transects/row0000_col0000_to_row0004_col0005"
 
     expected = {f"transect_{source}_physical.png" for source in ("pred", "gt")}
     assert set(result["files"]) == expected
@@ -155,10 +155,10 @@ def test_save_slices_includes_comparison_sources(tmp_path):
     explorer, cube_a, cube_b = _loaded(tmp_path)
     explorer.attach_second(cube_a, cube_b)
 
-    result = explorer.save_slices(cube_a, az=1, rg=1)
+    result = explorer.save_slices(cube_a, row=1, col=1)
     assert result["ok"]
 
-    expected = {f"{axis}_{source}_physical.png" for source in ("pred", "predb", "diff", "gt") for axis in ("range", "azimuth")}
+    expected = {f"{axis}_{source}_physical.png" for source in ("pred", "predb", "diff", "gt") for axis in ("col", "row")}
     assert set(result["files"]) == expected
 
 
@@ -173,6 +173,6 @@ def test_cmap_selection_and_diverging_override(tmp_path):
     assert explorer._entry_cmap(pred, "banana") == "jet"
     assert explorer._entry_cmap(diff, "viridis") == "coolwarm"
 
-    assert explorer.slice_png(cube_a, "pred", "range", az=0, rg=0, cmap="viridis")[:4] == b"\x89PNG"
+    assert explorer.slice_png(cube_a, "pred", "col", row=0, col=0, cmap="viridis")[:4] == b"\x89PNG"
     assert explorer.plane_png(cube_a, "pred", frac=0.5, cmap="gray")[:4] == b"\x89PNG"
     assert explorer.transect_png(cube_a, "pred", 0, 0, 2, 2, cmap="inferno")[:4] == b"\x89PNG"

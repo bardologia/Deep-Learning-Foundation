@@ -22,21 +22,21 @@ def _identity_normalizer(n_inputs: int, n_outputs: int) -> Normalizer:
     return Normalizer(Stats(input_stats=_identity_channel_stats(n_inputs), output_stats=_identity_channel_stats(n_outputs)))
 
 
-def _backbone_dataset(interferograms, parameters, split_name="train", n_ifg=3):
-    ifg     = np.ascontiguousarray(np.asarray(interferograms[:n_ifg, :24, :24]))
-    primary = ifg[:1]
-    inputs  = np.concatenate([primary, ifg], axis=0)
+def _backbone_dataset(derived, parameters, split_name="train", n_derived=3):
+    derived = np.ascontiguousarray(np.asarray(derived[:n_derived, :24, :24]))
+    primary = derived[:1]
+    inputs  = np.concatenate([primary, derived], axis=0)
     params  = np.ascontiguousarray(np.asarray(parameters[:, :24, :24]))
 
     patcher = Patcher.build(spatial_size=(24, 24), patch_size=(8, 8), stride=(8, 8))
     ic      = InputConfig(use_primary=True, primary_representation=Representation.MAG_ONLY,
                           use_secondaries=False,
-                          use_interferograms=True, interferograms_representation=Representation.ANGLE_ONLY)
+                          use_derived=True, derived_representation=Representation.ANGLE_ONLY)
 
     ds = PatchDataset(
         inputs=inputs, gt_parameters=params, grid=patcher,
         input_config=ic, output_config=OutputConfig(), split_name=split_name,
-        n_secondaries=0, n_interferograms=n_ifg, n_gaussians=params.shape[0] // 3,
+        n_secondaries=0, n_derived=n_derived, n_gaussians=params.shape[0] // 3,
     )
     ds.normalizer = _identity_normalizer(ds.input_channels, ds.gt_channels)
 
@@ -44,16 +44,16 @@ def _backbone_dataset(interferograms, parameters, split_name="train", n_ifg=3):
 
 
 @pytest.mark.dataset
-def test_patchdataset_len_matches_grid(interferograms, parameters):
-    ds, patcher = _backbone_dataset(interferograms, parameters)
+def test_patchdataset_len_matches_grid(derived, parameters):
+    ds, patcher = _backbone_dataset(derived, parameters)
 
     assert len(ds) == patcher.grid.number_of_patches
     assert len(ds) == 9
 
 
 @pytest.mark.dataset
-def test_patchdataset_sample_shapes_and_dtypes(interferograms, parameters):
-    ds, _ = _backbone_dataset(interferograms, parameters)
+def test_patchdataset_sample_shapes_and_dtypes(derived, parameters):
+    ds, _ = _backbone_dataset(derived, parameters)
 
     x, y = ds[0]
 
@@ -64,8 +64,8 @@ def test_patchdataset_sample_shapes_and_dtypes(interferograms, parameters):
 
 
 @pytest.mark.dataset
-def test_patchdataset_channel_counts(interferograms, parameters):
-    ds, _ = _backbone_dataset(interferograms, parameters)
+def test_patchdataset_channel_counts(derived, parameters):
+    ds, _ = _backbone_dataset(derived, parameters)
 
     assert ds.input_channels == 4
     assert ds.gt_channels    == parameters.shape[0]
@@ -73,8 +73,8 @@ def test_patchdataset_channel_counts(interferograms, parameters):
 
 
 @pytest.mark.dataset
-def test_patchdataset_no_nan_in_any_sample(interferograms, parameters):
-    ds, _ = _backbone_dataset(interferograms, parameters)
+def test_patchdataset_no_nan_in_any_sample(derived, parameters):
+    ds, _ = _backbone_dataset(derived, parameters)
 
     for idx in range(len(ds)):
         x, y = ds[idx]
@@ -83,8 +83,8 @@ def test_patchdataset_no_nan_in_any_sample(interferograms, parameters):
 
 
 @pytest.mark.dataset
-def test_patchdataset_angle_channels_in_pi_range(interferograms, parameters):
-    ds, _ = _backbone_dataset(interferograms, parameters)
+def test_patchdataset_angle_channels_in_pi_range(derived, parameters):
+    ds, _ = _backbone_dataset(derived, parameters)
 
     x, _ = ds[0]
 
@@ -92,9 +92,9 @@ def test_patchdataset_angle_channels_in_pi_range(interferograms, parameters):
 
 
 @pytest.mark.dataset
-def test_patchdataset_layer_mismatch_raises(interferograms, parameters):
-    ifg     = np.ascontiguousarray(np.asarray(interferograms[:3, :16, :16]))
-    inputs  = np.concatenate([ifg[:1], ifg], axis=0)
+def test_patchdataset_layer_mismatch_raises(derived, parameters):
+    derived = np.ascontiguousarray(np.asarray(derived[:3, :16, :16]))
+    inputs  = np.concatenate([derived[:1], derived], axis=0)
     params  = np.ascontiguousarray(np.asarray(parameters[:, :16, :16]))
     patcher = Patcher.build(spatial_size=(16, 16), patch_size=(8, 8), stride=(8, 8))
 
@@ -102,55 +102,55 @@ def test_patchdataset_layer_mismatch_raises(interferograms, parameters):
         PatchDataset(
             inputs=inputs, gt_parameters=params, grid=patcher,
             input_config=InputConfig(), output_config=OutputConfig(), split_name="train",
-            n_secondaries=0, n_interferograms=99, n_gaussians=params.shape[0] // 3,
+            n_secondaries=0, n_derived=99, n_gaussians=params.shape[0] // 3,
         )
 
 
 @pytest.mark.dataset
-def test_patchdataset_use_dem_without_dem_raises(interferograms, parameters):
-    ifg     = np.ascontiguousarray(np.asarray(interferograms[:3, :16, :16]))
-    inputs  = np.concatenate([ifg[:1], ifg], axis=0)
+def test_patchdataset_use_dem_without_dem_raises(derived, parameters):
+    derived = np.ascontiguousarray(np.asarray(derived[:3, :16, :16]))
+    inputs  = np.concatenate([derived[:1], derived], axis=0)
     params  = np.ascontiguousarray(np.asarray(parameters[:, :16, :16]))
     patcher = Patcher.build(spatial_size=(16, 16), patch_size=(8, 8), stride=(8, 8))
-    ic      = InputConfig(use_dem=True)
+    ic      = InputConfig(use_aux=True)
 
-    with pytest.raises(ValueError, match="DEM"):
+    with pytest.raises(ValueError, match="Aux"):
         PatchDataset(
             inputs=inputs, gt_parameters=params, grid=patcher,
             input_config=ic, output_config=OutputConfig(), split_name="train",
-            n_secondaries=0, n_interferograms=3, n_gaussians=params.shape[0] // 3,
+            n_secondaries=0, n_derived=3, n_gaussians=params.shape[0] // 3,
         )
 
 
 @pytest.mark.dataset
-def test_patchdataset_dem_fills_last_channel(interferograms, parameters):
-    ifg     = np.ascontiguousarray(np.asarray(interferograms[:3, :24, :24]))
-    inputs  = np.concatenate([ifg[:1], ifg], axis=0)
+def test_patchdataset_dem_fills_last_channel(derived, parameters):
+    derived = np.ascontiguousarray(np.asarray(derived[:3, :24, :24]))
+    inputs  = np.concatenate([derived[:1], derived], axis=0)
     params  = np.ascontiguousarray(np.asarray(parameters[:, :24, :24]))
-    dem     = np.random.default_rng(1).standard_normal((24, 24)).astype(np.float32)
+    aux     = np.random.default_rng(1).standard_normal((24, 24)).astype(np.float32)
     patcher = Patcher.build(spatial_size=(24, 24), patch_size=(8, 8), stride=(8, 8))
     ic      = InputConfig(use_primary=True, primary_representation=Representation.MAG_ONLY,
                           use_secondaries=False,
-                          use_interferograms=True, interferograms_representation=Representation.ANGLE_ONLY,
-                          use_dem=True)
+                          use_derived=True, derived_representation=Representation.ANGLE_ONLY,
+                          use_aux=True)
 
     ds = PatchDataset(
         inputs=inputs, gt_parameters=params, grid=patcher,
         input_config=ic, output_config=OutputConfig(), split_name="val",
-        n_secondaries=0, n_interferograms=3, n_gaussians=params.shape[0] // 3, dem=dem,
+        n_secondaries=0, n_derived=3, n_gaussians=params.shape[0] // 3, aux=aux,
     )
     ds.normalizer = _identity_normalizer(ds.input_channels, ds.gt_channels)
 
     x, _ = ds[0]
 
     assert x.shape == (5, 8, 8)
-    np.testing.assert_array_equal(x[-1], patcher.extract(dem, 0))
+    np.testing.assert_array_equal(x[-1], patcher.extract(aux, 0))
 
 
 @pytest.mark.dataset
-def test_multiregion_dataset_concatenates_parts(interferograms, parameters):
-    part_a, _ = _backbone_dataset(interferograms, parameters)
-    part_b, _ = _backbone_dataset(interferograms, parameters)
+def test_multiregion_dataset_concatenates_parts(derived, parameters):
+    part_a, _ = _backbone_dataset(derived, parameters)
+    part_b, _ = _backbone_dataset(derived, parameters)
 
     multi = MultiRegionDataset([part_a, part_b])
 
@@ -164,8 +164,8 @@ def test_multiregion_dataset_concatenates_parts(interferograms, parameters):
 
 
 @pytest.mark.dataset
-def test_multiregion_index_out_of_range_raises(interferograms, parameters):
-    part, _ = _backbone_dataset(interferograms, parameters)
+def test_multiregion_index_out_of_range_raises(derived, parameters):
+    part, _ = _backbone_dataset(derived, parameters)
     multi   = MultiRegionDataset([part])
 
     with pytest.raises(IndexError):
@@ -174,13 +174,13 @@ def test_multiregion_index_out_of_range_raises(interferograms, parameters):
 
 def _profile_dataset(parameters, tmp_path, **kw):
     params = [np.ascontiguousarray(np.asarray(parameters[:, :40, :40]))]
-    x_axis = np.linspace(0.0, 1.0, 150, dtype=np.float32)
+    z_axis = np.linspace(0.0, 1.0, 150, dtype=np.float32)
     logger = Logger(log_dir=str(tmp_path / "logs"), name="prof_ds", level="ERROR")
 
     defaults = dict(n_gaussians=params[0].shape[0] // 3, split_name="train", amp_zero_thr=1e-3, keep_empty_frac=0.05, pixel_subsample=1.0, seed=0)
     defaults.update(kw)
 
-    return ProfileDataset(param_arrays=params, x_axis=x_axis, logger=logger, **defaults)
+    return ProfileDataset(param_arrays=params, z_axis=z_axis, logger=logger, **defaults)
 
 
 @pytest.mark.dataset

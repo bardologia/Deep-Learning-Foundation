@@ -45,10 +45,10 @@ def test_benchmark_input_config_uses_expected_representations(bare_factory):
 
     assert input_config.use_primary        is True
     assert input_config.use_secondaries    is True
-    assert input_config.use_interferograms is True
+    assert input_config.use_derived is True
     assert input_config.primary_representation        == Representation.MAG_ONLY
     assert input_config.secondaries_representation    == Representation.MAG_ONLY
-    assert input_config.interferograms_representation == Representation.ANGLE_ONLY
+    assert input_config.derived_representation == Representation.ANGLE_ONLY
 
 
 @pytest.mark.dataset
@@ -65,12 +65,12 @@ def test_training_dataset_config_uses_global_crop_range(factory, dataset_json):
     crop           = dataset_json["global_crop"]
 
     train = dataset_config.split_regions.train
-    assert train.range_start == crop[2]
-    assert train.range_end   == crop[3]
+    assert train.col_start == crop[2]
+    assert train.col_end   == crop[3]
 
 
 @pytest.mark.dataset
-def test_training_dataset_config_azimuth_from_training(factory):
+def test_training_dataset_config_rows_from_training(factory):
     training       = factory.config.training
     dataset_config = factory.training_dataset_config()
 
@@ -78,9 +78,9 @@ def test_training_dataset_config_azimuth_from_training(factory):
     val   = dataset_config.split_regions.val
     test  = dataset_config.split_regions.test
 
-    assert (train.azimuth_start, train.azimuth_end) == tuple(training.train_azimuth)
-    assert (val.azimuth_start,   val.azimuth_end)   == tuple(training.val_azimuth)
-    assert (test.azimuth_start,  test.azimuth_end)  == tuple(training.test_azimuth)
+    assert (train.row_start, train.row_end) == tuple(training.train_rows)
+    assert (val.row_start,   val.row_end)   == tuple(training.val_rows)
+    assert (test.row_start,  test.row_end)  == tuple(training.test_rows)
 
 
 @pytest.mark.dataset

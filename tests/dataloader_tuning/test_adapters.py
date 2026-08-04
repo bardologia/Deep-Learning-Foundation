@@ -44,9 +44,9 @@ def test_synthetic_dataset_length_and_curve_shape():
 def test_synthetic_dataset_x_axis_is_linspace_zero_to_one():
     dataset = SyntheticCurveDataset(n_samples=4, profile_length=16, seed=0)
 
-    assert dataset.x_axis.shape == (16,)
-    assert dataset.x_axis[0]    == pytest.approx(0.0)
-    assert dataset.x_axis[-1]   == pytest.approx(1.0)
+    assert dataset.z_axis.shape == (16,)
+    assert dataset.z_axis[0]    == pytest.approx(0.0)
+    assert dataset.z_axis[-1]   == pytest.approx(1.0)
 
 
 def test_synthetic_dataset_uses_gaussian_mixture_synthesis():
@@ -56,7 +56,7 @@ def test_synthetic_dataset_uses_gaussian_mixture_synthesis():
     amplitudes = rng.uniform(0.2, 1.0, size=(1, 3)).astype(np.float32)
     means      = rng.uniform(0.2, 0.8, size=(1, 3)).astype(np.float32)
     sigmas     = rng.uniform(0.02, 0.08, size=(1, 3)).astype(np.float32)
-    expected   = GaussianMixture.evaluate_batch(dataset.x_axis, amplitudes, means, sigmas)[0]
+    expected   = GaussianMixture.evaluate_batch(dataset.z_axis, amplitudes, means, sigmas)[0]
 
     assert np.allclose(dataset[0], expected)
 

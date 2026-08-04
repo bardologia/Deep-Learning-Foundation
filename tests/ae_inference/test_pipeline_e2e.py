@@ -31,9 +31,9 @@ def _entry_config(test_data_dir, params_dir, tmp_path) -> ImageAeEntryConfig:
     entry.training.validation_frequency = 1
     entry.training.batch_size           = 8
     entry.training.num_workers          = 0
-    entry.training.train_azimuth        = (1000, 1320)
-    entry.training.val_azimuth          = (1320, 1416)
-    entry.training.test_azimuth         = (1416, 1512)
+    entry.training.train_rows           = (1000, 1320)
+    entry.training.val_rows             = (1320, 1416)
+    entry.training.test_rows            = (1416, 1512)
     entry.training.patch_size           = (64, 64)
     entry.training.patch_stride         = (64, 64)
 
@@ -48,17 +48,17 @@ def test_build_dataset_config_reads_n_gaussians(tmp_path):
         "preprocessing_run_directory" : str(tmp_path),
         "parameters_path"             : str(tmp_path / "parameters.npy"),
         "split_regions"               : {
-            "train" : {"azimuth_start": 0, "azimuth_end": 10, "range_start": 0, "range_end": 10},
-            "val"   : {"azimuth_start": 10, "azimuth_end": 20, "range_start": 0, "range_end": 10},
-            "test"  : {"azimuth_start": 20, "azimuth_end": 30, "range_start": 0, "range_end": 10},
+            "train" : {"row_start": 0, "row_end": 10, "col_start": 0, "col_end": 10},
+            "val"   : {"row_start": 10, "row_end": 20, "col_start": 0, "col_end": 10},
+            "test"  : {"row_start": 20, "row_end": 30, "col_start": 0, "col_end": 10},
         },
         "patch"            : {"size": [8, 8], "stride": [8, 8], "use_symmetric_padding": True},
         "secondary_labels" : None,
         "input_config"     : {
             "use_primary": True,  "primary_representation": "mag_only",
             "use_secondaries": False, "secondaries_representation": "mag_only",
-            "use_interferograms": False, "interferograms_representation": "angle_only",
-            "use_dem": False,
+            "use_derived": False, "derived_representation": "angle_only",
+            "use_aux": False,
         },
         "output_config" : {
             "use_amplitude": True, "use_mu": True, "use_sigma": True,
@@ -122,9 +122,9 @@ def _profile_entry_config(test_data_dir, params_dir, tmp_path) -> ProfileAeEntry
     entry.training.batch_size           = 256
     entry.training.num_workers          = 0
     entry.training.scale_lr_with_batch  = False
-    entry.training.train_azimuth        = (1000, 1320)
-    entry.training.val_azimuth          = (1320, 1416)
-    entry.training.test_azimuth         = (1416, 1512)
+    entry.training.train_rows           = (1000, 1320)
+    entry.training.val_rows             = (1320, 1416)
+    entry.training.test_rows            = (1416, 1512)
 
     entry.pixel_subsample = 0.005
     entry.model_overrides = {"hidden_dim": 64, "depth": 2, "embedding_dim": 8}

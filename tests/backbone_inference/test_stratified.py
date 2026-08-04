@@ -11,12 +11,12 @@ from pipelines.backbone.inference.stratified import StratifiedErrors
 H, W = 40, 30
 
 
-def _run(params_gt=None, complex_inputs=None, dem=None, n_secondaries: int = 0, n_gaussians: int = 2) -> SimpleNamespace:
+def _run(params_gt=None, complex_inputs=None, aux=None, n_secondaries: int = 0, n_gaussians: int = 2) -> SimpleNamespace:
     return SimpleNamespace(
         complex_inputs = complex_inputs,
         n_secondaries  = n_secondaries,
         n_gaussians    = n_gaussians,
-        dataset        = SimpleNamespace(dem=dem),
+        dataset        = SimpleNamespace(aux=aux),
     )
 
 
@@ -76,13 +76,13 @@ def test_no_covariates_raises():
 def test_amplitude_and_dem_covariates_appear():
     rng    = np.random.default_rng(1)
     inputs = rng.normal(size=(3, H, W)) + 1j * rng.normal(size=(3, H, W))
-    dem    = np.cumsum(rng.uniform(0.0, 1.0, size=(H, W)), axis=0)
+    aux    = np.cumsum(rng.uniform(0.0, 1.0, size=(H, W)), axis=0)
     err    = rng.uniform(0.1, 1.0, size=(H, W))
 
-    strat      = StratifiedErrors(_run(complex_inputs=inputs, dem=dem, n_secondaries=2), _result(err))
+    strat      = StratifiedErrors(_run(complex_inputs=inputs, aux=aux, n_secondaries=2), _result(err))
     covariates = strat.covariates()
 
-    assert set(covariates) == {"primary_amplitude", "dem_slope"}
+    assert set(covariates) == {"primary_amplitude", "aux_gradient"}
     assert covariates["primary_amplitude"][0].shape == (H, W)
 
 

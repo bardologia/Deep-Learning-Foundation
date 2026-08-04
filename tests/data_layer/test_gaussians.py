@@ -225,7 +225,7 @@ def test_evaluate_slice_on_scene_parameters(parameters, param_extraction_meta):
 @pytest.mark.dataset
 def test_evaluate_pixel_on_scene_parameters(parameters, param_extraction_meta):
     k_max  = param_extraction_meta["k_max"]
-    h_min, h_max = param_extraction_meta["height_range"]
+    h_min, h_max = param_extraction_meta["z_range"]
     h      = np.linspace(h_min, h_max, 100)
     params = np.asarray(parameters[:, 0, 0]).astype(np.float32)
 

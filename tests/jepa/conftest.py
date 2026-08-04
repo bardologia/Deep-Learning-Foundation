@@ -53,7 +53,7 @@ def norm_stats():
 
 
 @pytest.fixture
-def x_axis():
+def z_axis():
     return torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
 
 

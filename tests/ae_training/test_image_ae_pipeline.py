@@ -72,12 +72,12 @@ def test_orchestration_produces_checkpoint_and_metadata(tmp_path):
 
     run_meta = TrainingRunMetadata(pipe.trainer_config, "image_ae", tmp_path, "image_ae_test")
     model    = pipe._build_model(IN_CHANNELS, cfg)
-    x_axis   = np.arange(PATCH, dtype=np.float32)
+    z_axis   = np.arange(PATCH, dtype=np.float32)
 
     pipe._save_metadata(run_meta, IN_CHANNELS, PATCH)
 
     loader            = _loader()
-    results, run_dir  = pipe._train(run_meta, run_meta.logger, model, x_axis, loader, loader, loader)
+    results, run_dir  = pipe._train(run_meta, run_meta.logger, model, z_axis, loader, loader, loader)
 
     train_losses, val_losses, best = results
 
@@ -97,10 +97,10 @@ def test_saved_checkpoint_is_loadable(tmp_path):
 
     run_meta = TrainingRunMetadata(pipe.trainer_config, "image_ae", tmp_path, "image_ae_test")
     model    = pipe._build_model(IN_CHANNELS, cfg)
-    x_axis   = np.arange(PATCH, dtype=np.float32)
+    z_axis   = np.arange(PATCH, dtype=np.float32)
 
     loader            = _loader()
-    _results, run_dir = pipe._train(run_meta, run_meta.logger, model, x_axis, loader, loader, loader)
+    _results, run_dir = pipe._train(run_meta, run_meta.logger, model, z_axis, loader, loader, loader)
 
     ckpt = torch.load(Path(run_dir) / "best_model.pt", map_location="cpu", weights_only=False)
 

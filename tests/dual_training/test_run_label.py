@@ -40,9 +40,9 @@ def test_label_names_both_trunks_when_they_differ(monkeypatch):
 
 
 def test_label_follows_the_selected_inputs(monkeypatch):
-    runner = _runner(monkeypatch, params_input=("ifg",), existence_input=("pass", "ifg"))
+    runner = _runner(monkeypatch, params_input=("derived",), existence_input=("chan", "derived"))
 
-    assert "-ifg.full-" in runner.label
+    assert "-derived.full-" in runner.label
 
 
 def test_label_keeps_the_loss_tag_last(monkeypatch):

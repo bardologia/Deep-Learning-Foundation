@@ -16,7 +16,7 @@ from pipelines.backbone.inference.probes import PredictionCurves
 from tests.conftest import SilentLogger
 
 
-N_AZ, N_RG, PH, PW, N_ELEV = 20, 16, 8, 8, 12
+N_ROWS, N_COLS, PH, PW, N_Z = 20, 16, 8, 8, 12
 
 
 class _BareModel(torch.nn.Module):
@@ -44,35 +44,35 @@ def _probe() -> ModelProbe:
     probe = ModelProbe(SilentLogger())
 
     rng            = np.random.default_rng(0)
-    complex_inputs = (rng.uniform(0.5, 1.0, size=(2, N_AZ, N_RG)) + 1j * rng.uniform(0.0, 0.2, size=(2, N_AZ, N_RG))).astype(np.complex64)
-    gt_params      = np.zeros((3, N_AZ, N_RG), dtype=np.float32)
+    complex_inputs = (rng.uniform(0.5, 1.0, size=(2, N_ROWS, N_COLS)) + 1j * rng.uniform(0.0, 0.2, size=(2, N_ROWS, N_COLS))).astype(np.complex64)
+    gt_params      = np.zeros((3, N_ROWS, N_COLS), dtype=np.float32)
 
     gt_params[0] = 1.5
     gt_params[1] = 20.0
     gt_params[2] = 4.0
 
     dataset = SimpleNamespace(
-        dem             = None,
+        aux             = None,
         gt_parameters   = gt_params,
-        assemble_window = lambda window, dem: np.abs(window).astype(np.float32),
+        assemble_window = lambda window, aux: np.abs(window).astype(np.float32),
     )
 
     run = SimpleNamespace(
         model          = _Wrapper(),
         dataset        = dataset,
         complex_inputs = complex_inputs,
-        full_curves    = np.ones((N_ELEV, N_AZ, N_RG), dtype=np.float32),
-        x_axis         = np.linspace(-10.0, 40.0, N_ELEV).astype(np.float32),
+        full_curves    = np.ones((N_Z, N_ROWS, N_COLS), dtype=np.float32),
+        z_axis         = np.linspace(-10.0, 40.0, N_Z).astype(np.float32),
         n_gaussians    = 1,
-        split_region   = SimpleNamespace(azimuth_size=N_AZ, range_size=N_RG, azimuth_start=0, range_start=0),
+        split_region   = SimpleNamespace(row_size=N_ROWS, col_size=N_COLS, row_start=0, col_start=0),
     )
 
     probe.loaded = {
         "run"      : run,
-        "labels"   : ["primary", "sec PS04"],
+        "labels"   : ["primary", "sec CH01"],
         "layers"   : ["conv"],
         "types"    : {"conv": "Conv2d"},
-        "renderer" : PredictionCurves(1, run.x_axis),
+        "renderer" : PredictionCurves(1, run.z_axis),
         "patch"    : (PH, PW),
         "device"   : "cpu",
     }
@@ -82,19 +82,19 @@ def _probe() -> ModelProbe:
 
 
 def test_predict_returns_slots_curves_and_references():
-    result = _probe().predict({"az": 10, "rg": 8})
+    result = _probe().predict({"row": 10, "col": 8})
 
     assert result["ok"] is True
     assert len(result["slots"])     == 1
     assert result["slots"][0]["active"] is True
-    assert len(result["curve"])     == N_ELEV
-    assert len(result["gt_curve"])  == N_ELEV
+    assert len(result["curve"])     == N_Z
+    assert len(result["gt_curve"])  == N_Z
     assert result["gt_slots"][0]["mu"] == pytest.approx(20.0)
-    assert len(result["raw_curve"]) == N_ELEV
+    assert len(result["raw_curve"]) == N_Z
 
 
 def test_predict_outside_region_fails():
-    result = _probe().predict({"az": 99, "rg": 0})
+    result = _probe().predict({"row": 99, "col": 0})
 
     assert result["ok"] is False
     assert "outside" in result["error"]
@@ -103,15 +103,15 @@ def test_predict_outside_region_fails():
 def test_predict_without_loaded_model_fails():
     probe = ModelProbe(SilentLogger())
 
-    assert probe.predict({"az": 0, "rg": 0})["ok"]     is False
-    assert probe.attribution({"az": 0, "rg": 0})["ok"] is False
+    assert probe.predict({"row": 0, "col": 0})["ok"]     is False
+    assert probe.attribution({"row": 0, "col": 0})["ok"] is False
 
 
 def test_attribution_concentrates_on_the_used_channel():
-    result = _probe().attribution({"az": 10, "rg": 8})
+    result = _probe().attribution({"row": 10, "col": 8})
 
     assert result["ok"]       is True
-    assert result["channels"] == ["primary", "sec PS04"]
+    assert result["channels"] == ["primary", "sec CH01"]
     assert result["center"]   == [4, 4]
     assert result["patch"]    == [PH, PW]
 
@@ -125,7 +125,7 @@ def test_attribution_concentrates_on_the_used_channel():
 
 
 def test_attribution_marks_dead_families_instead_of_failing():
-    result = _probe().attribution({"az": 10, "rg": 8})
+    result = _probe().attribution({"row": 10, "col": 8})
 
     families = {payload["family"]: payload for payload in result["families"]}
 
@@ -137,8 +137,8 @@ def test_attribution_marks_dead_families_instead_of_failing():
 def test_whatif_drop_of_used_channel_shifts_the_prediction():
     probe = _probe()
 
-    dropped   = probe.whatif({"az": 10, "rg": 8, "perturbation": {"kind": "drop_channel", "channel": 0}})
-    untouched = probe.whatif({"az": 10, "rg": 8, "perturbation": {"kind": "drop_channel", "channel": 1}})
+    dropped   = probe.whatif({"row": 10, "col": 8, "perturbation": {"kind": "drop_channel", "channel": 0}})
+    untouched = probe.whatif({"row": 10, "col": 8, "perturbation": {"kind": "drop_channel", "channel": 1}})
 
     assert dropped["ok"] and untouched["ok"]
     assert dropped["delta_mse"]   > 1e-6
@@ -146,7 +146,7 @@ def test_whatif_drop_of_used_channel_shifts_the_prediction():
 
 
 def test_whatif_unknown_perturbation_fails():
-    result = _probe().whatif({"az": 10, "rg": 8, "perturbation": {"kind": "warp"}})
+    result = _probe().whatif({"row": 10, "col": 8, "perturbation": {"kind": "warp"}})
 
     assert result["ok"] is False
     assert "unknown perturbation" in result["error"]

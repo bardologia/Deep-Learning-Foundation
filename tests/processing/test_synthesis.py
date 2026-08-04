@@ -43,14 +43,14 @@ def test_rejects_a_sigma_finer_than_the_height_bin(tmp_path):
 
 
 def test_rejects_a_wavenumber_count_that_misses_a_secondary(tmp_path):
-    config = _tiny_config(tmp_path, pass_wavenumbers=(0.01, 0.02))
+    config = _tiny_config(tmp_path, channel_phase_rates=(0.01, 0.02))
 
-    with pytest.raises(ValueError, match="pass_wavenumbers"):
+    with pytest.raises(ValueError, match="channel_phase_rates"):
         config.validate()
 
 
 def test_rejects_a_primary_that_is_also_a_secondary(tmp_path):
-    config = _tiny_config(tmp_path, primary_label="FL01_PS04")
+    config = _tiny_config(tmp_path, primary_label="CH01")
 
     with pytest.raises(ValueError, match="reference pass"):
         config.validate()
@@ -63,7 +63,7 @@ def test_generated_layout_lists_every_artifact(tmp_path, logger_stub):
     layout = json.loads((config.data_directory / "dataset.json").read_text())
 
     assert layout["global_crop"] == list(config.global_crop)
-    assert layout["pass_labels"] == config.pass_labels
+    assert layout["channel_labels"] == config.channel_labels
     assert set(layout["artifacts"]) == set(DatasetWriter.ARTIFACTS)
     assert all((config.data_directory / name).is_file() for name in layout["artifacts"].values())
 
@@ -74,34 +74,34 @@ def test_generated_state_carries_crop_and_height_range(tmp_path, logger_stub):
 
     state = json.loads((config.metadata_directory / "config_state.json").read_text())
 
-    assert state["crop"]["azimuth_start"] == config.global_crop[0]
-    assert state["crop"]["range_end"]     == config.global_crop[3]
-    assert state["tomogram_config"]["height_range"] == list(config.height_range)
+    assert state["crop"]["row_start"] == config.global_crop[0]
+    assert state["crop"]["col_end"]     == config.global_crop[3]
+    assert state["cube_config"]["z_range"] == list(config.z_range)
 
 
 def test_generated_arrays_have_the_declared_shapes(tmp_path, logger_stub):
     config = _tiny_config(tmp_path)
     _generate(config, logger_stub)
 
-    spatial = (config.azimuth_size, config.range_size)
+    spatial = (config.row_size, config.col_size)
 
     assert np.load(config.data_directory / "primary.npy").shape        == spatial
-    assert np.load(config.data_directory / "dem_full.npy").shape       == spatial
+    assert np.load(config.data_directory / "aux_full.npy").shape       == spatial
     assert np.load(config.data_directory / "secondaries.npy").shape    == (config.n_secondaries,) + spatial
-    assert np.load(config.data_directory / "interferograms.npy").shape == (config.n_secondaries,) + spatial
-    assert np.load(config.data_directory / "tomogram_full.npy").shape  == (config.profile_length,) + spatial
+    assert np.load(config.data_directory / "derived.npy").shape == (config.n_secondaries,) + spatial
+    assert np.load(config.data_directory / "cube_full.npy").shape  == (config.profile_length,) + spatial
     assert np.load(config.parameters_directory / "parameters.npy").shape == (3 * config.k_max,) + spatial
 
 
-def test_interferograms_are_the_primary_against_each_secondary(tmp_path, logger_stub):
+def test_deriveds_are_the_primary_against_each_secondary(tmp_path, logger_stub):
     config = _tiny_config(tmp_path)
     _generate(config, logger_stub)
 
-    primary        = np.load(config.data_directory / "primary.npy")
-    secondaries    = np.load(config.data_directory / "secondaries.npy")
-    interferograms = np.load(config.data_directory / "interferograms.npy")
+    primary     = np.load(config.data_directory / "primary.npy")
+    secondaries = np.load(config.data_directory / "secondaries.npy")
+    derived     = np.load(config.data_directory / "derived.npy")
 
-    assert np.allclose(interferograms, primary[None, :, :] * np.conj(secondaries), rtol=1e-5, atol=1e-7)
+    assert np.allclose(derived, primary[None, :, :] * np.conj(secondaries), rtol=1e-5, atol=1e-7)
 
 
 def test_secondary_response_tracks_the_component_depth(tmp_path, logger_stub):
@@ -128,7 +128,7 @@ def test_generation_is_reproducible_from_the_seed(tmp_path, logger_stub):
     _generate(first,  logger_stub)
     _generate(second, logger_stub)
 
-    for name in ("tomogram_full.npy", "primary.npy", "secondaries.npy", "interferograms.npy", "dem_full.npy"):
+    for name in ("cube_full.npy", "primary.npy", "secondaries.npy", "derived.npy", "aux_full.npy"):
         assert np.array_equal(np.load(first.data_directory / name), np.load(second.data_directory / name))
 
     assert np.array_equal(np.load(first.parameters_directory / "parameters.npy"), np.load(second.parameters_directory / "parameters.npy"))
@@ -149,8 +149,8 @@ def test_layout_reads_the_generated_dataset(test_data_dir, params_dir, logger_st
 
     assert layout.global_crop.as_tuple() == tuple(scene_config.global_crop)
     assert layout.profile_length         == scene_config.profile_length
-    assert layout.pass_labels            == scene_config.pass_labels
-    assert layout.secondary_indices(("FL01_PS06", "FL01_PS26")) == [1, 3]
+    assert layout.channel_labels            == scene_config.channel_labels
+    assert layout.secondary_indices(("CH02", "CH04")) == [1, 3]
 
 
 @pytest.mark.dataset
@@ -169,9 +169,9 @@ def test_default_training_configuration_builds_all_three_splits(test_data_dir, p
 
     prep = BackboneDatasetPreparation(dataset_config, trainer_config, tmp_path, logger, seed=0)
 
-    (train_loader, val_loader, test_loader), datasets, x_axis, x_len = prep.run()
+    (train_loader, val_loader, test_loader), datasets, z_axis, z_len = prep.run()
 
-    assert x_len == scene_config.profile_length
+    assert z_len == scene_config.profile_length
     assert all(len(datasets[split]) > 0 for split in ("train", "val", "test"))
 
     inputs, targets = next(iter(train_loader))

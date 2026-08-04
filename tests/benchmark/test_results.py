@@ -75,7 +75,7 @@ def test_collector_reads_checkpoint_with_weights_only_false(tmp_path, logger_stu
     checkpoint = {
         "epoch"         : 9,
         "params"        : {},
-        "x_axis"        : np.zeros(4, dtype=np.float32),
+        "z_axis"        : np.zeros(4, dtype=np.float32),
         "best_val_loss" : 0.123,
         "best_epoch"    : 7,
     }
@@ -117,7 +117,7 @@ def test_collector_attaches_inference_metrics_and_media(tmp_path, logger_stub):
     (inference_dir / "animations").mkdir(parents=True)
     _write_json(inference_dir / "metrics.json", {"curve_rmse_gt": 0.5})
     (inference_dir / "figures" / "profiles_1.png").write_bytes(b"x")
-    (inference_dir / "animations" / "elev.gif").write_bytes(b"x")
+    (inference_dir / "animations" / "z.gif").write_bytes(b"x")
     (inference_dir / "report.md").write_text("ok", encoding="utf-8")
 
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub).collect()
@@ -126,7 +126,7 @@ def test_collector_attaches_inference_metrics_and_media(tmp_path, logger_stub):
     assert record.has_inference
     assert record.metrics["curve_rmse_gt"] == 0.5
     assert [p.name for p in record.figures]    == ["profiles_1.png"]
-    assert [p.name for p in record.animations] == ["elev.gif"]
+    assert [p.name for p in record.animations] == ["z.gif"]
     assert record.report_path is not None
 
 

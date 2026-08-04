@@ -214,7 +214,7 @@ def test_checkpoint_save_restore_round_trip(tmp_path):
     saved = torch.load(tmp_path / "best_model.pt", map_location="cpu", weights_only=False)
 
     assert "params"        in saved
-    assert "x_axis"        in saved
+    assert "z_axis"        in saved
     assert "best_val_loss" in saved
 
     fresh_model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)

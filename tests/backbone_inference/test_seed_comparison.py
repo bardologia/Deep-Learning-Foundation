@@ -124,8 +124,8 @@ def test_report_markdown_has_per_seed_columns_stamps_and_links(tmp_path):
 def test_report_excludes_per_slice_metrics_from_the_tables(tmp_path):
     group = tmp_path / "group"
     runs  = [
-        _seed_run(group, "seed0", {"curve_mse_gt": 1.0, "ssim_gt_elev_3": 0.9}),
-        _seed_run(group, "seed1", {"curve_mse_gt": 3.0, "ssim_gt_elev_3": 0.8}),
+        _seed_run(group, "seed0", {"curve_mse_gt": 1.0, "ssim_gt_z_3": 0.9}),
+        _seed_run(group, "seed1", {"curve_mse_gt": 3.0, "ssim_gt_z_3": 0.8}),
     ]
 
     report_path = _report(group, runs).run()
@@ -133,8 +133,8 @@ def test_report_excludes_per_slice_metrics_from_the_tables(tmp_path):
     payload = json.loads((group / "inference" / "stamp" / "metrics.json").read_text(encoding="utf-8"))
     text    = report_path.read_text(encoding="utf-8")
 
-    assert payload["mean"]["ssim_gt_elev_3"] == pytest.approx(0.85)
-    assert "ssim_gt_elev_3" not in text
+    assert payload["mean"]["ssim_gt_z_3"] == pytest.approx(0.85)
+    assert "ssim_gt_z_3" not in text
 
 
 def _config(runs_dir: Path, group_tags: list[str], inference_subdir: str = "", output_subdir: str = "") -> SimpleNamespace:

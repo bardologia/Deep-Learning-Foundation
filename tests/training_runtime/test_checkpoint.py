@@ -18,7 +18,7 @@ class StubTrainer:
         return {
             "epoch"  : epoch,
             "params" : self.model.state_dict(),
-            "x_axis" : torch.linspace(0, 1, 5),
+            "z_axis" : torch.linspace(0, 1, 5),
         }
 
 
@@ -127,7 +127,7 @@ class NumpyAxisTrainer(StubTrainer):
         return {
             "epoch"  : epoch,
             "params" : self.model.state_dict(),
-            "x_axis" : torch.linspace(0, 1, 5).numpy(),
+            "z_axis" : torch.linspace(0, 1, 5).numpy(),
         }
 
 
@@ -140,7 +140,7 @@ def test_restore_best_with_numpy_axis_like_real_trainer(tmp_path, logger, tracke
     ckpt.restore_best(model, device="cpu")
 
     restored = torch.load(str(tmp_path / "best.pt"), map_location="cpu", weights_only=False)
-    assert isinstance(restored["x_axis"], np.ndarray)
+    assert isinstance(restored["z_axis"], np.ndarray)
 
 
 def test_reset_baseline_clears_state(tmp_path, logger, tracker):

@@ -36,9 +36,9 @@ def _real_batch():
     return (2, 3, 3)
 
 
-def _profile_input(tomogram_full, dims):
+def _profile_input(cube_full, dims):
     B, H, W = dims
-    block   = np.asarray(tomogram_full[:PROFILE_LENGTH, :H, : B * W])
+    block   = np.asarray(cube_full[:PROFILE_LENGTH, :H, : B * W])
     mag     = np.abs(block).astype(np.float32)
     tensor  = torch.from_numpy(mag).reshape(PROFILE_LENGTH, H, B, W).permute(2, 0, 1, 3).contiguous()
     return tensor
@@ -57,12 +57,12 @@ def test_registry_entries_build(name):
 
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", NAMES)
-def test_roundtrip_shape(name, tomogram_full):
+def test_roundtrip_shape(name, cube_full):
     model, cfg = _build(name)
     model.eval()
 
     dims = _real_batch()
-    x    = _profile_input(tomogram_full, dims)
+    x    = _profile_input(cube_full, dims)
 
     with torch.no_grad():
         x_hat, z = model.reconstruct(x)
@@ -76,11 +76,11 @@ def test_roundtrip_shape(name, tomogram_full):
 
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", NAMES)
-def test_latent_dim(name, tomogram_full):
+def test_latent_dim(name, cube_full):
     model, _ = _build(name)
     model.eval()
 
-    x = _profile_input(tomogram_full, _real_batch())
+    x = _profile_input(cube_full, _real_batch())
     with torch.no_grad():
         z = model.encode(x)
 
@@ -89,11 +89,11 @@ def test_latent_dim(name, tomogram_full):
 
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", NAMES)
-def test_backward_finite_grads(name, tomogram_full):
+def test_backward_finite_grads(name, cube_full):
     model, _ = _build(name)
     model.train()
 
-    x     = _profile_input(tomogram_full, _real_batch())
+    x     = _profile_input(cube_full, _real_batch())
     x_hat = model(x)
     loss  = torch.nn.functional.mse_loss(x_hat, x)
     loss.backward()

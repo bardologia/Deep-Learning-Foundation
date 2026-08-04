@@ -267,9 +267,9 @@ def test_table_axes_fall_back_to_ancestor_names(tmp_path):
 
 def test_columns_include_ssim_components():
     keys = [c["key"] for c in RunLeaderboard.COLUMNS]
-    assert "ssim_gt_azimuth_mean" in keys
-    assert "ssim_gt_elev_mean" in keys
-    assert "ssim_gt_range_mean" in keys
+    assert "ssim_gt_row_mean" in keys
+    assert "ssim_gt_z_mean" in keys
+    assert "ssim_gt_col_mean" in keys
 
 
 def test_trials_aggregates_seeds(tmp_path):
@@ -414,10 +414,10 @@ def test_table_sorted_by_mtime_desc(tmp_path):
 
 
 def test_axes_parse_dual_input_token():
-    axes = RunAxes.parse("dual_resunet-set_pred-hungarian-K_2-hv-A-full.ifg-param_l1_1_20260726_120000")
+    axes = RunAxes.parse("dual_resunet-set_pred-hungarian-K_2-hv-A-full.derived-param_l1_1_20260726_120000")
 
     assert axes["model"]  == "dual_resunet"
-    assert axes["inputs"] == "full.ifg"
+    assert axes["inputs"] == "full.derived"
     assert axes["loss"]   == "param_l1_1"
     assert axes["losses"] == [{"name": "param_l1", "weight": 1.0}]
 
@@ -428,7 +428,7 @@ def test_axes_parse_trunk_aware_dual_model_token():
     assert axes["model"]  == "dual_unet_skip"
     assert axes["inputs"] == "full.full"
 
-    mixed = RunAxes.parse("dual_unet_skip.local_cnn-set_pred-hungarian-K_2-hv-A-full.ifg-param_l1_1_20260727_120000")
+    mixed = RunAxes.parse("dual_unet_skip.local_cnn-set_pred-hungarian-K_2-hv-A-full.derived-param_l1_1_20260727_120000")
 
     assert mixed["model"] == "dual_unet_skip.local_cnn"
 

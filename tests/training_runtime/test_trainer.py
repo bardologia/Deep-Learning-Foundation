@@ -62,16 +62,16 @@ def test_update_optimizer_sets_lrs_and_logs(tracker):
 
 
 def test_capture_state_contains_model_and_axis():
-    model = torch.nn.Linear(3, 1)
-    shim  = TrainerShim()
+    model       = torch.nn.Linear(3, 1)
+    shim        = TrainerShim()
     shim.model  = model
-    shim.x_axis = torch.linspace(0, 1, 4)
+    shim.z_axis = torch.linspace(0, 1, 4)
 
     state = BaseTrainer.capture_state(shim, epoch=7)
 
     assert state["epoch"] == 7
     assert set(state["params"].keys()) == set(model.state_dict().keys())
-    assert state["x_axis"].shape == (4,)
+    assert state["z_axis"].shape == (4,)
 
 
 def test_clear_cuda_cache_runs_on_cpu():

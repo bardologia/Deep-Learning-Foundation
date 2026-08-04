@@ -64,7 +64,7 @@ def test_orientation_lower_tokens():
 
 def test_orientation_higher_tokens():
     assert MetricOrientation.direction("r2_curve") == "higher"
-    assert MetricOrientation.direction("ssim_elevation") == "higher"
+    assert MetricOrientation.direction("ssim_z") == "higher"
     assert MetricOrientation.higher_is_better("matched_f1") is True
     assert MetricOrientation.direction("count_acc_gt3")   == "higher"
     assert MetricOrientation.direction("count_acc_pred3") == "higher"
@@ -117,8 +117,8 @@ def test_relative_improvement_percent_string():
 
 
 @pytest.mark.dataset
-def test_r2_on_scene_tomogram_self_is_one(tomogram_full):
-    win  = np.abs(np.asarray(tomogram_full[:16, :8, :8])).astype(np.float64)
+def test_r2_on_scene_cube_self_is_one(cube_full):
+    win  = np.abs(np.asarray(cube_full[:16, :8, :8])).astype(np.float64)
     pred = win.copy()
     out  = R2.pixel_map(pred, win, axis=0)
     assert np.allclose(out, 1.0, atol=1e-5)

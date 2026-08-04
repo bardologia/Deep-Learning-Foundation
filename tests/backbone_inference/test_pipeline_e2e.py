@@ -24,8 +24,8 @@ from tests.conftest import SilentLogger
 
 
 N_GAUSSIANS      = SynthesisConfig().k_max
-N_ELEV           = SynthesisConfig().profile_length
-SECONDARY_LABELS = ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+N_Z              = SynthesisConfig().profile_length
+SECONDARY_LABELS = ("CH01", "CH02", "CH03", "CH04")
 
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
@@ -33,9 +33,9 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
         preprocessing_run_directory = test_data_dir,
         parameters_path             = params_dir / "parameters.npy",
         split_regions               = SplitRegions(
-            train = CropRegion(azimuth_start=1000, azimuth_end=1096, range_start=500, range_end=596),
-            val   = CropRegion(azimuth_start=1100, azimuth_end=1196, range_start=500, range_end=596),
-            test  = CropRegion(azimuth_start=1200, azimuth_end=1296, range_start=500, range_end=596),
+            train = CropRegion(row_start=1000, row_end=1096, col_start=500, col_end=596),
+            val   = CropRegion(row_start=1100, row_end=1196, col_start=500, col_end=596),
+            test  = CropRegion(row_start=1200, row_end=1296, col_start=500, col_end=596),
         ),
         secondary_labels = SECONDARY_LABELS,
         patch            = PatchConfig(size=(64, 64), stride=(32, 32), use_symmetric_padding=True),
@@ -81,9 +81,9 @@ def _persist_model(run_dir, meta_dir, in_channels: int) -> None:
     torch.manual_seed(0)
     model, _ = get_backbone("unet", config=config, in_channels=in_channels, out_channels=3 * N_GAUSSIANS)
 
-    x_axis = np.linspace(-20.0, 80.0, N_ELEV).astype(np.float32)
+    z_axis = np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
     torch.save(
-        {"params": model.state_dict(), "x_axis": x_axis, "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1},
+        {"params": model.state_dict(), "z_axis": z_axis, "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1},
         run_dir / "best_model.pt",
     )
 
@@ -98,7 +98,7 @@ def _build_run_directory(tmp_path, test_data_dir, params_dir):
 
     MetadataWriter(run_dir, logger=SilentLogger()).save_dataset_configuration(dataset_config)
     FileIO.save_json({"model_name": "unet", "in_channels": in_channels, "out_channels": 3 * N_GAUSSIANS, "n_gaussians": N_GAUSSIANS}, meta_dir / "run_summary.json")
-    FileIO.save_json({"geometry": {"height_axis_convention": "height"}}, run_dir / "docs" / "trainer_config.json")
+    FileIO.save_json({"geometry": {"z_axis_convention": "height"}}, run_dir / "docs" / "trainer_config.json")
 
     _persist_stats(meta_dir, in_channels)
     _persist_model(run_dir, meta_dir, in_channels)
@@ -133,12 +133,12 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
 
     assert metrics["split"] == "test"
 
-    for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_elev_mean", "active_frac_gt", "matched_recall"):
+    for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_z_mean", "active_frac_gt", "matched_recall"):
         assert np.isfinite(metrics[key]), key
 
     cubes = output_dir / "cubes"
-    assert np.load(cubes / "pred_curves.npy").shape == (N_ELEV, 96, 96)
-    assert np.load(cubes / "gt_curves.npy").shape   == (N_ELEV, 96, 96)
+    assert np.load(cubes / "pred_curves.npy").shape == (N_Z, 96, 96)
+    assert np.load(cubes / "gt_curves.npy").shape   == (N_Z, 96, 96)
     assert np.load(cubes / "params_pred.npy").shape == (3 * N_GAUSSIANS, 96, 96)
     assert np.load(cubes / "params_gt.npy").shape   == (3 * N_GAUSSIANS, 96, 96)
 

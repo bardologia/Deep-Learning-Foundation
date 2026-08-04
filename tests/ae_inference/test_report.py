@@ -38,7 +38,7 @@ def _profile_run():
     return SimpleNamespace(
         ae_name                     = "mlp_ae",
         embedding_dim               = 16,
-        x_axis                      = np.linspace(0.0, 1.0, 40, dtype=np.float32),
+        z_axis                      = np.linspace(0.0, 1.0, 40, dtype=np.float32),
         split_name                  = "test",
         split_regions               = [_region()],
         checkpoint_meta             = {"best_epoch": 3, "best_val_loss": 0.2},

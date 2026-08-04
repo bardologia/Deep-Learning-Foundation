@@ -8,8 +8,8 @@ from configuration.normalization.general      import ChannelStats, ChannelStrate
 from pipelines.backbone.dataset.normalizer    import Normalizer
 from pipelines.backbone.dataset.stats         import Stats
 
-ROBUST_LOG1P_SLOTS = ["pass/mag", "ifg/mag", "out/amp", "out/sigma"]
-ZSCORE_SLOTS       = ["out/mu", "pass/phase", "pass/raw_re_im", "ifg/raw_re_im", "dem/elevation"]
+ROBUST_LOG1P_SLOTS = ["chan/mag", "derived/mag", "out/amp", "out/sigma"]
+ZSCORE_SLOTS       = ["out/mu", "chan/phase", "chan/raw_re_im", "derived/raw_re_im", "aux/value"]
 
 AMP_THR       = 1e-2
 SCALE_FLOOR   = 1e-8
@@ -22,7 +22,7 @@ def _active(parameters):
     mu  = par[1::3].astype(np.float64)
     sig = par[2::3].astype(np.float64)
     m   = amp > AMP_THR
-    return amp[m], mu[m], sig[m]
+    return amp, mu, sig
 
 
 def _random_split_agreement(strat, vals, seed):
@@ -62,7 +62,7 @@ def test_mu_and_signed_channels_stay_zscore():
 
 
 def test_ifg_phase_uses_fixed_div_pi():
-    strat = ChannelStrategy.from_slot("ifg/phase")
+    strat = ChannelStrategy.from_slot("derived/phase")
     assert strat.norm_method is NormMethod.FIXED_DIV_PI
     assert strat.apply_log1p is False
 
@@ -82,11 +82,11 @@ def test_output_stats_reproducible_across_random_halves(parameters, role):
 
 
 @pytest.mark.dataset
-def test_input_magnitude_stats_reproducible_across_random_halves(primary, secondaries, interferograms):
-    pass_mag = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
-    ifg_mag  = np.abs(np.asarray(interferograms)).ravel().astype(np.float64)
+def test_input_magnitude_stats_reproducible_across_random_halves(primary, secondaries, derived):
+    chan_mag    = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
+    derived_mag = np.abs(np.asarray(derived)).ravel().astype(np.float64)
 
-    for slot, vals in [("pass/mag", pass_mag), ("ifg/mag", ifg_mag)]:
+    for slot, vals in [("chan/mag", chan_mag), ("derived/mag", derived_mag)]:
         strat = ChannelStrategy.from_slot(slot)
         loc_rel, scale_rel = _random_split_agreement(strat, vals, seed=0)
         assert loc_rel   < REL_AGREE_TOL
@@ -94,13 +94,13 @@ def test_input_magnitude_stats_reproducible_across_random_halves(primary, second
 
 
 @pytest.mark.dataset
-def test_configured_robust_scales_are_nondegenerate_on_scene(parameters, primary, secondaries, interferograms, dem_full):
+def test_configured_robust_scales_are_nondegenerate_on_scene(parameters, primary, secondaries, derived, aux_full):
     amp, _, sig = _active(parameters)
-    pass_mag    = np.abs(np.asarray(primary)).ravel().astype(np.float64)
-    ifg_mag     = np.abs(np.asarray(interferograms)).ravel().astype(np.float64)
-    dem         = np.asarray(dem_full).ravel().astype(np.float64)
+    chan_mag    = np.abs(np.asarray(primary)).ravel().astype(np.float64)
+    derived_mag = np.abs(np.asarray(derived)).ravel().astype(np.float64)
+    aux         = np.asarray(aux_full).ravel().astype(np.float64)
 
-    pools = {"out/amp": amp, "out/sigma": sig, "pass/mag": pass_mag, "ifg/mag": ifg_mag, "dem/elevation": dem}
+    pools = {"out/amp": amp, "out/sigma": sig, "chan/mag": chan_mag, "derived/mag": derived_mag, "aux/value": aux}
 
     for slot, vals in pools.items():
         _, scale = ChannelStrategy.from_slot(slot).fit(vals)
@@ -125,15 +125,15 @@ def test_output_normalizer_round_trip_is_exact(parameters):
 
 
 @pytest.mark.dataset
-def test_input_normalizer_round_trip_is_exact(primary, interferograms, secondaries):
-    pass_mag = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
-    ifg_mag  = np.abs(np.asarray(interferograms)).ravel().astype(np.float64)
-    stats    = _channel_stats(["pass/mag", "ifg/mag"], [pass_mag, ifg_mag])
+def test_input_normalizer_round_trip_is_exact(primary, derived, secondaries):
+    chan_mag    = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
+    derived_mag = np.abs(np.asarray(derived)).ravel().astype(np.float64)
+    stats       = _channel_stats(["chan/mag", "derived/mag"], [chan_mag, derived_mag])
 
     norm = Normalizer(Stats(input_stats=stats))
 
     p = np.abs(np.asarray(primary)[:64, :64]).astype(np.float32)
-    i = np.abs(np.asarray(interferograms)[0, :64, :64]).astype(np.float32)
+    i = np.abs(np.asarray(derived)[0, :64, :64]).astype(np.float32)
     t = torch.from_numpy(np.stack([p, i])).unsqueeze(0)
 
     n = norm.normalize_input(t)

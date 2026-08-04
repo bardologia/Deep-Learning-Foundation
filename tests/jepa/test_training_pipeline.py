@@ -52,7 +52,7 @@ def test_overfit_gate_backbone_config_carries_entry_head(tmp_path, monkeypatch):
     def fake_sanitized_trainer_config(self, trainer_config):
         return SimpleNamespace(param_loss=SimpleNamespace(use_active_normalization=True))
 
-    def fake_build_module(self, datasets, x_len, x_axis, logger, backbone_config=None):
+    def fake_build_module(self, datasets, z_len, z_axis, logger, backbone_config=None):
         captured["config"] = backbone_config
         raise _GateStop()
 
@@ -85,7 +85,7 @@ def _axis_pipeline(tmp_path):
     autoencoder, _  = get_profile_autoencoder("mlp_ae", config)
     checkpoint_path = tmp_path / "best_model.pt"
 
-    torch.save({"params": autoencoder.state_dict(), "x_axis": np.linspace(0.0, 1.0, 8, dtype=np.float32)}, checkpoint_path)
+    torch.save({"params": autoencoder.state_dict(), "z_axis": np.linspace(0.0, 1.0, 8, dtype=np.float32)}, checkpoint_path)
 
     pipe                 = TrainingPipeline.__new__(TrainingPipeline)
     pipe.ae_model_name   = "mlp_ae"
@@ -97,14 +97,14 @@ def _axis_pipeline(tmp_path):
 def test_load_profile_autoencoder_rejects_axis_range_mismatch(tmp_path):
     pipe = _axis_pipeline(tmp_path)
 
-    with pytest.raises(ValueError, match="elevation axis"):
+    with pytest.raises(ValueError, match="z axis"):
         pipe._load_profile_autoencoder(np.linspace(0.0, 2.0, 8, dtype=np.float32))
 
 
 def test_load_profile_autoencoder_rejects_axis_length_mismatch(tmp_path):
     pipe = _axis_pipeline(tmp_path)
 
-    with pytest.raises(ValueError, match="elevation axis"):
+    with pytest.raises(ValueError, match="z axis"):
         pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 16, dtype=np.float32))
 
 

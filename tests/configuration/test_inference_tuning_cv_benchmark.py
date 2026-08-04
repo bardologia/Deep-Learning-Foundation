@@ -88,7 +88,7 @@ def test_inference_config_profile_counts_positive():
 def test_backbone_inference_entry_config_holds_inference():
     cfg = BackboneInferenceEntryConfig()
     assert isinstance(cfg.inference, InferenceConfig)
-    assert cfg.inference.gif_axes == ["elevation", "range", "azimuth"]
+    assert cfg.inference.gif_axes == ["z", "col", "row"]
     assert isinstance(cfg.run_filter, list)
     assert cfg.runs_dir == "runs"
 
@@ -130,7 +130,7 @@ def test_tuning_entry_ae_loss_default_factory():
 def test_fold_config_defaults():
     cfg = FoldConfig()
     assert cfg.n_folds > 0
-    assert cfg.azimuth_end > cfg.azimuth_start
+    assert cfg.row_end > cfg.row_start
 
 
 def test_cross_validation_config_subconfigs():
@@ -158,8 +158,8 @@ def test_training_queue_config_axis_tuples():
     assert cfg.epochs > 0
     assert cfg.batch_size > 0
     assert len(cfg.patch_size) == 2
-    assert len(cfg.train_azimuth) == 2
-    assert cfg.train_azimuth[1] > cfg.train_azimuth[0]
+    assert len(cfg.train_rows) == 2
+    assert cfg.train_rows[1] > cfg.train_rows[0]
 
 
 def test_size_match_locked_params_tuple():

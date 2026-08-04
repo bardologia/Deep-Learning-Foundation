@@ -18,7 +18,7 @@ def _zscore_stats() -> Stats:
     input_stats = ChannelStats(
         loc        = [1.0, -2.0, 0.0],
         scale      = [3.0, 0.5, 2.0],
-        names      = ["pass/phase", "pass/phase", "ifg/phase"],
+        names      = ["chan/phase", "chan/phase", "derived/phase"],
         strategies = [ChannelStrategy(NormMethod.ZSCORE)] * 3,
         clampable  = [False] * 3,
     )
@@ -30,7 +30,7 @@ def _log1p_stats() -> Stats:
     input_stats = ChannelStats(
         loc        = [0.5, 1.2],
         scale      = [0.8, 1.5],
-        names      = ["pass/mag", "ifg/mag"],
+        names      = ["chan/mag", "derived/mag"],
         strategies = [ChannelStrategy(NormMethod.ZSCORE, apply_log1p=True)] * 2,
         clampable  = [False] * 2,
     )
@@ -188,28 +188,28 @@ def test_output_denormalization_torch_and_numpy_agree():
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_fit_real_window_stats_finite_and_roundtrip(data_dir, interferograms, parameters, tmp_path):
-    ifg     = np.ascontiguousarray(np.asarray(interferograms[:4, :24, :24]))
-    primary = ifg[:1]
-    inputs  = np.concatenate([primary, ifg], axis=0)
+def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameters, tmp_path):
+    derived = np.ascontiguousarray(np.asarray(derived[:4, :24, :24]))
+    primary = derived[:1]
+    inputs  = np.concatenate([primary, derived], axis=0)
     params  = np.ascontiguousarray(np.asarray(parameters[:, :24, :24]))
 
     patcher = Patcher.build(spatial_size=(24, 24), patch_size=(8, 8), stride=(8, 8))
     ic      = InputConfig(use_primary=True, primary_representation=Representation.MAG_ONLY,
                           use_secondaries=False,
-                          use_interferograms=True, interferograms_representation=Representation.ANGLE_ONLY)
+                          use_derived=True, derived_representation=Representation.ANGLE_ONLY)
     oc      = OutputConfig()
 
     ds = PatchDataset(
         inputs=inputs, gt_parameters=params, grid=patcher,
         input_config=ic, output_config=oc, split_name="train",
-        n_secondaries=0, n_interferograms=4, n_gaussians=params.shape[0] // 3,
+        n_secondaries=0, n_derived=4, n_gaussians=params.shape[0] // 3,
     )
 
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_real", level="ERROR")
     stats  = StatsComputer.compute(
         dataset=ds, logger=logger, input_config=ic, output_config=oc,
-        n_secondaries=0, n_interferograms=4, n_gaussians=params.shape[0] // 3,
+        n_secondaries=0, n_derived=4, n_gaussians=params.shape[0] // 3,
     )
     logger.close()
 

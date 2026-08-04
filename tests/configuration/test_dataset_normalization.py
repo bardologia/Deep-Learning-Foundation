@@ -28,15 +28,15 @@ from tests.configuration._helpers        import make_split_regions
 
 def test_input_config_defaults_channel_counts():
     cfg = InputConfig()
-    assert cfg.primary_channels_per_pass        >= 0
-    assert cfg.secondaries_channels_per_pass    == 0
-    assert cfg.interferograms_channels_per_pass >= 0
+    assert cfg.primary_channels_per_source        >= 0
+    assert cfg.secondaries_channels_per_source    == 0
+    assert cfg.derived_channels_per_source >= 0
 
 
 def test_input_config_total_channels_consistent():
-    cfg   = InputConfig(use_primary=True, use_secondaries=True, use_interferograms=True, use_dem=True)
-    total = cfg.total_channels(n_secondaries=4, n_interferograms=4)
-    keys  = cfg.channel_group_keys(n_secondaries=4, n_interferograms=4)
+    cfg   = InputConfig(use_primary=True, use_secondaries=True, use_derived=True, use_aux=True)
+    total = cfg.total_channels(n_secondaries=4, n_derived=4)
+    keys  = cfg.channel_group_keys(n_secondaries=4, n_derived=4)
     assert total == len(keys)
 
 
@@ -47,9 +47,9 @@ def test_input_config_round_trips_through_dict():
 
 
 def test_input_config_dem_adds_one_channel():
-    base = InputConfig(use_dem=False)
-    dem  = InputConfig(use_dem=True)
-    assert dem.total_channels(0, 0) == base.total_channels(0, 0) + 1
+    base = InputConfig(use_aux=False)
+    aux  = InputConfig(use_aux=True)
+    assert aux.total_channels(0, 0) == base.total_channels(0, 0) + 1
 
 
 def test_output_config_role_names_and_params():
@@ -89,13 +89,13 @@ def test_normalization_config_per_slot_matches_slot_defaults():
     cfg = NormalizationConfig()
     assert cfg.input_strategy                == "per_slot"
     assert cfg.output_strategy               == "per_slot"
-    assert cfg.strategy("input", "pass/mag") == _SLOT_STRATEGIES["pass/mag"]
+    assert cfg.strategy("input", "chan/mag") == _SLOT_STRATEGIES["chan/mag"]
     assert cfg.strategy("output", "out/amp") == _SLOT_STRATEGIES["out/amp"]
 
 
 def test_normalization_config_named_preset_overrides_every_slot():
     cfg = NormalizationConfig(input_strategy="zscore", output_strategy="zscore")
-    assert cfg.strategy("input", "pass/mag").norm_method is NormMethod.ZSCORE
+    assert cfg.strategy("input", "chan/mag").norm_method is NormMethod.ZSCORE
     assert cfg.strategy("output", "out/amp").norm_method is NormMethod.ZSCORE
 
 
@@ -104,7 +104,7 @@ def test_normalization_config_per_channel_override_wins_over_global():
 
     assert cfg.strategy("output", "out/amp").norm_method is NormMethod.ZSCORE
     assert cfg.strategy("output", "out/sigma")           == _SLOT_STRATEGIES["out/sigma"]
-    assert cfg.strategy("input", "pass/mag")             == _SLOT_STRATEGIES["pass/mag"]
+    assert cfg.strategy("input", "chan/mag")             == _SLOT_STRATEGIES["chan/mag"]
 
 
 def test_normalization_config_attaches_bounds_to_fixed_bounds_strategy():
@@ -173,7 +173,7 @@ def test_dataset_config_requires_run_dir_and_split():
 
 def test_dataset_config_secondary_labels_default():
     cfg = DatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions())
-    assert cfg.secondary_labels == ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+    assert cfg.secondary_labels == ("CH01", "CH02", "CH03", "CH04")
 
 
 def test_profile_augmentation_defaults():

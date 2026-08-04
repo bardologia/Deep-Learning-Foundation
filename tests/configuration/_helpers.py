@@ -7,14 +7,14 @@ from configuration.dataset.gaussian import GaussianConfig
 
 
 def make_crop() -> CropRegion:
-    return CropRegion(azimuth_start=1000, azimuth_end=2000, range_start=500, range_end=1000)
+    return CropRegion(row_start=1000, row_end=2000, col_start=500, col_end=1000)
 
 
 def make_split_regions() -> SplitRegions:
     return SplitRegions(
-        train = CropRegion(azimuth_start=1000, azimuth_end=1300, range_start=500, range_end=1000),
-        val   = CropRegion(azimuth_start=1300, azimuth_end=1450, range_start=500, range_end=1000),
-        test  = CropRegion(azimuth_start=1450, azimuth_end=1600, range_start=500, range_end=1000),
+        train = CropRegion(row_start=1000, row_end=1300, col_start=500, col_end=1000),
+        val   = CropRegion(row_start=1300, row_end=1450, col_start=500, col_end=1000),
+        test  = CropRegion(row_start=1450, row_end=1600, col_start=500, col_end=1000),
     )
 
 

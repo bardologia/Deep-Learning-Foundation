@@ -35,7 +35,7 @@ def _curves(params):
 def _pred_curves(gt_params, noise, seed=0):
     torch.manual_seed(seed)
     p = gt_params + noise * torch.randn_like(gt_params)
-    p = GaussianClamp.apply(p, x_axis=_axis(), amp_max=AMP_MAX, ppg=PPG, leaky_slope=0.01)
+    p = GaussianClamp.apply(p, z_axis=_axis(), amp_max=AMP_MAX, ppg=PPG, leaky_slope=0.01)
     p = p.clone().requires_grad_(True)
     return p, _curves(p)
 

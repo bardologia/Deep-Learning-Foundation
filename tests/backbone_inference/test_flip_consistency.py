@@ -11,7 +11,7 @@ from pipelines.backbone.inference.flip_consistency import FlipConsistencyEvaluat
 from tests.conftest import SilentLogger
 
 
-H, W, N_ELEV = 8, 6, 10
+H, W, N_Z = 8, 6, 10
 
 
 def _equivariant_model(images: torch.Tensor) -> np.ndarray:
@@ -45,7 +45,7 @@ def _run(model) -> SimpleNamespace:
     return SimpleNamespace(
         model       = model,
         n_gaussians = 1,
-        x_axis      = np.linspace(-5.0, 15.0, N_ELEV).astype(np.float32),
+        z_axis      = np.linspace(-5.0, 15.0, N_Z).astype(np.float32),
         grid        = grid,
         loader      = [(images, None)],
     )
