@@ -560,7 +560,7 @@
               "label": "SpatialAugmenter",
               "module": "pipelines/backbone/dataset/augmentation.py",
               "role": "transform",
-              "fn": "Applies random flips, rot90 and normalized-space noise to train patches, keeping the kz field co-transformed.",
+              "fn": "Applies random flips, rot90 and normalized-space noise to train patches.",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -758,7 +758,7 @@
           "stage": "Training",
           "title": "Backbone training loop and curriculum losses",
           "entry": "main/training/train_backbone.py",
-          "blurb": "Sequences dataset construction, model build, an overfit sanity gate and optional loss-scale probe, then runs the training loop under a curriculum of curve, parameter and physics losses, persisting the best checkpoint, configs and model docs.",
+          "blurb": "Sequences dataset construction, model build, an overfit sanity gate and optional loss-scale probe, then runs the training loop under a curriculum of curve and parameter losses, persisting the best checkpoint, configs and model docs.",
           "nodes": [
             {
               "id": "entry",
@@ -787,7 +787,7 @@
               "label": "TrainingLauncher / TrainScheduler / SingleTrainRunner",
               "module": "pipelines/backbone/training/launcher.py",
               "role": "orchestrator",
-              "fn": "Routes to a single seeded run or fans out curriculum/warmup/presence/physics/pair/secondary/patch/input/ablation trial planners across GPUs.",
+              "fn": "Routes to a single seeded run or fans out curriculum/warmup/presence/pair/secondary/patch/input/ablation trial planners across GPUs.",
               "col": 1,
               "reads": [],
               "writes": [
@@ -852,7 +852,7 @@
               "label": "Loss (loss_terms catalog)",
               "module": "pipelines/backbone/training/loss.py",
               "role": "transform",
-              "fn": "Reconstructs Gaussian curves and computes the weighted sum of curve, parameter, TV and physics terms declared in loss_terms.py, plus occupancy diagnostics.",
+              "fn": "Reconstructs Gaussian curves and computes the weighted sum of curve, parameter and TV terms declared in loss_terms.py, plus occupancy diagnostics.",
               "col": 4,
               "reads": [],
               "writes": [],
