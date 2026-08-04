@@ -107,7 +107,7 @@ def test_run_skips_size_match_and_maxbatch_for_autoencoder(tmp_path, monkeypatch
 
 
 def test_run_rejects_unsupported_training_type(tmp_path):
-    pipeline = BenchmarkPipeline(_config(tmp_path, training_type="unrolled"), entry_script=ENTRY)
+    pipeline = BenchmarkPipeline(_config(tmp_path, training_type="nonexistent_type"), entry_script=ENTRY)
 
-    with pytest.raises(SystemExit, match="unrolled"):
+    with pytest.raises(SystemExit, match="nonexistent_type"):
         pipeline.run()

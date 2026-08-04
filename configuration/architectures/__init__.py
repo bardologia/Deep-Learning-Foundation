@@ -20,9 +20,6 @@ from configuration.architectures.backbone import (
     LocalCNNConfig,
     NAFNetConfig,
 )
-from configuration.architectures.unrolled import (
-    GammaNetConfig,
-)
 from configuration.architectures.dual import (
     DualResUNetConfig,
 )

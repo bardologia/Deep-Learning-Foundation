@@ -465,13 +465,6 @@
       "num_parameters": 3598105
     }
   },
-  "unrolled": {
-    "gamma_net": {
-      "signature": "f9c7d294f7449ea4b5ee628a23e73dfd05a6cf7d9299afe14a165dd675182883",
-      "num_keys": 34,
-      "num_parameters": 1432
-    }
-  },
   "dual": {
     "dual_resunet": {
       "signature": "29542bb0d72f16067dfcff801fa4c524bd39fb4b9de5ca90edfc5e36fe7bc7b9",
