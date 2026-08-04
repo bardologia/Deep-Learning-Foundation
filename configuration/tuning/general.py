@@ -44,7 +44,7 @@ class TuningEntryConfig:
     paths  : RunPathsConfig = field(default_factory=lambda: RunPathsConfig(log_base_dir=Path("runs/tuning")))
     tuning : TuningConfig   = field(default_factory=TuningConfig)
 
-    gpus        : list[int]  = field(default_factory=lambda: [0, 1, 2, 3])
+    gpus        : list[int]  = field(default_factory=lambda: [0])
     gpus_file   : str        = ""
     heads       : list[str]  = field(default_factory=lambda: ["conv"])
     skip_models : list[str]  = field(default_factory=list)
