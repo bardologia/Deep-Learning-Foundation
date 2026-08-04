@@ -50,9 +50,9 @@ def test_the_earliest_matching_marker_wins(browser, tmp_path):
 
 def test_the_catalog_lists_datasets_with_their_parameter_runs(browser, tmp_path):
     datasets = tmp_path / "datasets"
-    (datasets / "fl01" / "params" / "k5_l02").mkdir(parents=True)
-    (datasets / "fl01" / "params" / "k2_l02").mkdir(parents=True)
-    (datasets / "fl02").mkdir()
+    (datasets / "ds01" / "params" / "k5_l02").mkdir(parents=True)
+    (datasets / "ds01" / "params" / "k2_l02").mkdir(parents=True)
+    (datasets / "ds02").mkdir()
     (datasets / ".hidden").mkdir()
     (datasets / "readme.md").write_text("x")
 
@@ -60,9 +60,9 @@ def test_the_catalog_lists_datasets_with_their_parameter_runs(browser, tmp_path)
     items   = {entry["name"]: entry for entry in payload["items"]}
 
     assert payload["error"] == ""
-    assert sorted(items)    == ["fl01", "fl02"]
-    assert [entry["name"] for entry in items["fl01"]["params"]] == ["k2_l02", "k5_l02"]
-    assert items["fl02"]["params"] == []
+    assert sorted(items)    == ["ds01", "ds02"]
+    assert [entry["name"] for entry in items["ds01"]["params"]] == ["k2_l02", "k5_l02"]
+    assert items["ds02"]["params"] == []
 
 
 def test_the_catalog_orders_runs_by_recency_and_labels_the_stage(browser, tmp_path):

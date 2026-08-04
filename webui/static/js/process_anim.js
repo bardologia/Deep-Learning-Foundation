@@ -3567,7 +3567,7 @@ class ProcessAnimator {
     if (ts < 2.2) this._cap("ParamMatcher  ·  strategy = sort_gt_by_mu  ·  gt gaussians arrive in arbitrary slot order");
     else if (ts < 4.5) this._cap("sort key = mu where amp > 1e-3, else inf  ·  inactive slots sink to the end");
     else if (ts < 7.0) this._cap("torch.argsort + gather along the gaussian axis  ·  gt in mu-ascending order, every pixel, every batch");
-    else if (ts < 9.6) this._cap("Param loss is slot-by-slot  ·  pred slot k is always graded against the k-th lowest scatterer");
+    else if (ts < 9.6) this._cap("Param loss is slot-by-slot  ·  pred slot k is always graded against the k-th lowest component");
     else if (ts < 13) this._cap("gt amp = 0 gates the slot: mu and sigma drop out of the loss  ·  the a term IS still graded, pulling pred a -> 0");
     else this._cap("The fixed target order induces ordered predictions  ·  each output channel specialises in one height layer");
   }

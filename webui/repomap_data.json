@@ -5998,7 +5998,7 @@
               "label": "SpatialDispersion",
               "module": "pipelines/comparison/spatial_stats.py",
               "role": "transform",
-              "fn": "Returns the block std of the dominant-scatterer height map used for the spatial-coherence metric (shared with the preprocessing comparison).",
+              "fn": "Returns the block std of the dominant-component z map used for the spatial-coherence metric (shared with the preprocessing comparison).",
               "col": 3,
               "reads": [],
               "writes": [],

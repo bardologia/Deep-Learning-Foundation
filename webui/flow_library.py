@@ -402,7 +402,7 @@ class FlowLibrary:
             },
             {
                 "id": "fitstats", "title": "Fit normalisation statistics", "phase": "Normalization",
-                "note": "Statistics are fitted on the train split only, per slot, in float64 over up to 1e6 sampled values. Heavy-tailed magnitude channels (SLC/derived magnitude, output amplitude and sigma) use the median and IQR of their log1p values (robust-IQR-log1p); Gaussian-like channels (normalised re/im, SLC phase, output mu, Aux z) use the mean and standard deviation (z-score); derived phase is mapped by a fixed division by pi. Every fitted scale is floored at 1e-8, and output roles are fitted over active pixels only (amplitude > 1e-3).",
+                "note": "Statistics are fitted on the train split only, per slot, in float64 over up to 1e6 sampled values. Heavy-tailed magnitude channels (amplitude and derived magnitude, output amplitude and sigma) use the median and IQR of their log1p values (robust-IQR-log1p); Gaussian-like channels (normalised re/im, channel phase, output mu, aux z) use the mean and standard deviation (z-score); derived phase is mapped by a fixed division by pi. Every fitted scale is floored at 1e-8, and output roles are fitted over active pixels only (amplitude > 1e-3).",
                 "inputs": ["xgeo", "gkeys"], "outputs": ["stats"],
                 "lines": [
                     [{"tex": r"f(x_c) = \log\!\big(1 + \max(x_c,0)\big)\ \ \text{(log1p slots)},\ \ \text{else } x_c"}],
@@ -1449,7 +1449,7 @@ class FlowLibrary:
             },
             {
                 "id": "iaei_denorm", "title": "Denormalise to physical units", "phase": "B - Reconstruct",
-                "note": "Input and reconstruction are inverted with the same input stats: scale, shift, and for log1p slots (SLC and derived magnitudes) apply expm1 after clamping the argument to [log1p(floor), log1p(ceil)] with floor 0 and ceil 1000, so error is measured in physical backscatter units.",
+                "note": "Input and reconstruction are inverted with the same input stats: scale, shift, and for log1p slots (amplitude and derived magnitudes) apply expm1 after clamping the argument to [log1p(floor), log1p(ceil)] with floor 0 and ceil 1000, so error is measured in physical intensity units.",
                 "inputs": ["xn", "xrecn", "stats"], "outputs": ["gt", "pred"],
                 "lines": [
                     [{"id": "gt", "tex": r"\mathbf{x}", "role": "calculated"}, {"tex": "="}, {"tex": r"\mathrm{denorm}\!\big("}, {"id": "xn", "tex": r"\hat{\mathbf{x}}", "role": "measured"}, {"tex": r"\big),\quad \mathrm{denorm}(u)_c = \mathrm{expm1}\!\big(\operatorname{clip}(u_c s_c + \mu_c,\ 0,\ \log 1001)\big)\ \ (\mathrm{log1p})"}],
@@ -1648,7 +1648,7 @@ class FlowLibrary:
 
     def _cross_validate(self) -> dict:
         nodes = [
-            {"id": "cv_extent",     "tex": r"\Omega_{\mathrm{row}}", "role": "measured",     "kind": "set",    "shape": "(row0, row1)", "desc": "fold row window in absolute SLC lines",               "sample": "(1000, 16000)"},
+            {"id": "cv_extent",     "tex": r"\Omega_{\mathrm{row}}", "role": "measured",     "kind": "set",    "shape": "(row0, row1)", "desc": "fold row window in absolute dataset rows",               "sample": "(1000, 16000)"},
             {"id": "cv_guard",      "tex": r"g",                    "role": "measured",     "kind": "scalar", "shape": "1",          "desc": "guard-band width between folds (row lines, even)",    "sample": "64"},
             {"id": "cv_blocks",     "tex": r"B_k",                  "role": "calculated",   "kind": "set",    "shape": "K x 2",      "desc": "K equal-width contiguous row blocks",                 "sample": [["1000", "2500"], ["2500", "4000"]]},
             {"id": "cv_region",     "tex": r"R_k",                  "role": "calculated",   "kind": "set",    "shape": "n_row x n_col",  "desc": "guard-trimmed block region (row slice x full range)", "sample": "[2532, 3968) x [0, 3000)"},
