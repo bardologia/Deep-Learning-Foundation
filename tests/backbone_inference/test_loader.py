@@ -201,9 +201,3 @@ def test_absent_tomogram_refuses_every_use(tmp_path):
     with pytest.raises(ValueError, match="load_tomogram=False"):
         np.asarray(absent)
 
-
-def test_full_run_load_skips_without_run_dir():
-    candidate = Path("/ste/rnd/User/vice_vi")
-    if candidate.is_dir():
-        pytest.skip("server run directory present; full RunLoader.load covered elsewhere")
-    pytest.skip("no real trained run directory available locally; RunLoader.load requires meta/ + checkpoint + preprocessing run")
