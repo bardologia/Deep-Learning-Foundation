@@ -9,7 +9,6 @@ from configuration.dataset                            import AugmentationConfig
 from configuration.normalization.general              import NormalizationConfig
 from configuration.architectures.image_autoencoder    import ImageAutoencoderBaseConfig
 from configuration.inference.general                  import InferenceConfig
-from configuration.sar.geometry_config                import GeometryConfig
 from configuration.training.general.loss              import LossConfig, ParamMatching
 from configuration.training.general.optimization      import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
 from configuration.training.general.runtime           import IOConfig, MemoryConfig, OverfitCheckConfig, ResourceConfig, TrainingLoopConfig
@@ -68,7 +67,6 @@ class JepaTrainerConfig(SharedSubConfigInheritance):
 
     param_loss : LossConfig = field(default_factory=default_param_loss)
 
-    geometry         : GeometryConfig        = field(default_factory=GeometryConfig)
     early_stopping   : EarlyStoppingConfig   = field(default_factory=EarlyStoppingConfig)
     warmup           : WarmupConfig          = field(default_factory=WarmupConfig)
     scheduler        : SchedulerConfig       = field(default_factory=SchedulerConfig)
@@ -88,7 +86,6 @@ class JepaDefaults:
             save_cubes      = True,
             cpu_workers     = 16,
             gif_axes        = ["elevation", "range", "azimuth"],
-            compute_reduced = False,
         )
 
 
@@ -104,17 +101,17 @@ class JepaEntryConfig:
     poll_interval_s : float      = 5.0
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=standard_seeds)
-    logdir          : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/jepa")
+    logdir          : Path       = Path("runs/jepa")
     model_overrides : dict       = field(default_factory=dict)
 
-    profile_autoencoder_logdir : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/profile_autoencoder")
+    profile_autoencoder_logdir : Path       = Path("runs/profile_autoencoder")
     profile_autoencoder_run    : str | None = None
     profile_autoencoder_mode   : str        = "frozen"
     target_provider            : str        = "stopgrad"
     ae_finetune_lr             : float      = 3e-5
     ae_finetune_wd             : float      = 1e-4
 
-    image_autoencoder_logdir : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/image_autoencoder")
+    image_autoencoder_logdir : Path       = Path("runs/image_autoencoder")
     image_autoencoder_run    : str | None = None
     image_autoencoder_mode   : str        = "frozen"
     image_ae_finetune_lr     : float      = 3e-5
@@ -122,7 +119,6 @@ class JepaEntryConfig:
 
     embedding_loss : EmbeddingLossConfig = field(default_factory=EmbeddingLossConfig)
     param_loss     : LossConfig          = field(default_factory=default_param_loss)
-    geometry       : GeometryConfig      = field(default_factory=GeometryConfig)
 
     paths         : TrainingPathsConfig = field(default_factory=TrainingPathsConfig)
     training      : TrainingQueueConfig = field(default_factory=TrainingQueueConfig)

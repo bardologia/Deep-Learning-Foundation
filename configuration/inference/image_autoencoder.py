@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib     import Path
 from typing      import List, Optional
 
-_RUNS_ROOT = "/ste/rnd/User/vice_vi/DLR-TomoSAR/runs"
+_RUNS_ROOT = "runs"
 
 
 @dataclass

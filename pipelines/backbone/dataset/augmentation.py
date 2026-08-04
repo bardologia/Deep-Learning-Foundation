@@ -6,13 +6,11 @@ from configuration.dataset import AugmentationConfig
 
 
 class SpatialAugmenter:
-    def __init__(self, config: AugmentationConfig, logger, seed: int = 0, rot90_inactive: bool = False):
+    def __init__(self, config: AugmentationConfig, logger, seed: int = 0):
         self.config = config
         self.logger = logger
         self.seed   = int(seed)
         self._rng   = np.random.default_rng(self.seed)
-
-        rot90 = f"{self.config.p_rot90} (inactive: skipped while a per-pixel geometry field is active)" if rot90_inactive else self.config.p_rot90
 
         self.logger.section("[Data Augmentation]")
         self.logger.kv_table(
@@ -20,7 +18,7 @@ class SpatialAugmenter:
                 "Applies to"      : "train split only",
                 "Flip Horizontal" : self.config.p_flip_h,
                 "Flip Vertical"   : self.config.p_flip_v,
-                "Rotate 90°"      : rot90,
+                "Rotate 90°"      : self.config.p_rot90,
                 "Noise"           : f"std={self.config.noise_std} (normalized units) p={self.config.p_noise}",
             },
             title="Augmentation Config",
@@ -62,18 +60,13 @@ class SpatialAugmenter:
         self.seed = int(seed)
         self._rng = np.random.default_rng(self.seed)
 
-    def __call__(self, input_tensor: np.ndarray, gt_params: np.ndarray, geometry: np.ndarray | None = None):
-        tensors = [input_tensor, gt_params] if geometry is None else [input_tensor, gt_params, geometry]
+    def __call__(self, input_tensor: np.ndarray, gt_params: np.ndarray):
+        tensors = [input_tensor, gt_params]
 
         tensors = self._flip_horizontal(tensors)
         tensors = self._flip_vertical(tensors)
-
-        if geometry is None:
-            tensors = self._rotate90(tensors)
+        tensors = self._rotate90(tensors)
 
         tensors = [np.ascontiguousarray(tensor) for tensor in tensors]
 
-        if geometry is None:
-            return tensors[0], tensors[1]
-
-        return tensors[0], tensors[1], tensors[2]
+        return tensors[0], tensors[1]

@@ -4,7 +4,7 @@ import gc
 from dataclasses import dataclass, field
 
 from configuration.benchmark              import BenchmarkConfig
-from configuration.sar.gaussian_config    import GaussianConfig
+from configuration.dataset.gaussian    import GaussianConfig
 from models                               import BACKBONE_CONFIG_REGISTRY, get_backbone
 from pipelines.shared.model.model_builder import ModelBuilder
 from tools.data.gaussians                 import GaussianHead

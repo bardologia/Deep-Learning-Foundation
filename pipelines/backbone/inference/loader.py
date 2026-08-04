@@ -19,7 +19,6 @@ from pipelines.backbone.dataset.spatial         import GridInfo
 from pipelines.backbone.inference.model_wrapper import ModelWrapper
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO
 from pipelines.shared.inference.run_artifacts   import RunArtifactLoader
-from tools.baselines                            import TrackBaselines, TrackProfiles
 
 
 class AbsentTomogram:
@@ -60,8 +59,6 @@ class Run:
     loader           : DataLoader
     checkpoint_meta  : dict
     full_curves      : np.ndarray | AbsentTomogram
-    track_baselines  : TrackBaselines
-    track_profiles   : TrackProfiles
     complex_inputs   : np.ndarray | None = None
     n_secondaries    : int               = 0
     secondary_labels : list | None       = None
@@ -102,25 +99,6 @@ class RunLoader(RunArtifactLoader):
             x_axis              = torch.from_numpy(x_axis),
             amp_max             = amp_max,
         )
-
-    def _load_track_info(self, dataset_config: DatasetConfig) -> Tuple[TrackBaselines, TrackProfiles]:
-        dataset_dir = Path(dataset_config.preprocessing_run_directory)
-        labels      = dataset_config.secondary_labels
-
-        baselines_path = dataset_dir / "meta" / TrackBaselines.FILENAME
-        profiles_path  = TrackProfiles.profiles_file(dataset_dir)
-
-        if not baselines_path.is_file():
-            raise FileNotFoundError(f"Track baselines file is required for inference but was not found: {baselines_path}")
-        if not profiles_path.is_file():
-            raise FileNotFoundError(f"Track profiles file is required for inference but was not found: {profiles_path}")
-
-        baselines = TrackBaselines.load(baselines_path).subset(labels)
-        profiles  = TrackProfiles.load(profiles_path).subset(labels)
-
-        self.logger.kv_table(baselines.describe(), title="Tracks Used in This Run")
-
-        return baselines, profiles
 
     def load(
         self,
@@ -171,8 +149,6 @@ class RunLoader(RunArtifactLoader):
             load_tomogram  = load_tomogram,
         )
 
-        track_baselines, track_profiles = self._load_track_info(dataset_config)
-
         loader = DataLoader(
             dataset,
             batch_size  = dataset_config.batch_size,
@@ -219,6 +195,4 @@ class RunLoader(RunArtifactLoader):
             n_secondaries    = arrays["n_secondaries"],
             secondary_labels = arrays["secondary_labels"],
             full_curves      = arrays["tomogram"] if load_tomogram else AbsentTomogram(self.run_directory),
-            track_baselines  = track_baselines,
-            track_profiles   = track_profiles,
         )

@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 
 from tools.loss.param_loss import ParamMatcher
-from tools.sar.coherence   import CoherenceEstimator
 
 
 class StratifiedErrors:
@@ -11,10 +10,9 @@ class StratifiedErrors:
     N_BINS        = 12
     MIN_BIN_COUNT = 30
 
-    def __init__(self, run, result, coherence_window: tuple[int, int] = (7, 7)) -> None:
-        self.loaded           = run
-        self.result           = result
-        self.coherence_window = coherence_window
+    def __init__(self, run, result) -> None:
+        self.loaded = run
+        self.result = result
 
     def _gt_active_count(self) -> np.ndarray:
         params = np.asarray(self.result.params_gt, dtype=np.float64)
@@ -22,23 +20,6 @@ class StratifiedErrors:
         amps   = np.stack([params[3 * k] for k in range(n_k)])
 
         return ParamMatcher.is_active(amps).sum(axis=0).astype(np.float64)
-
-    def _mean_coherence(self) -> np.ndarray | None:
-        inputs = self.loaded.complex_inputs
-        n_sec  = self.loaded.n_secondaries
-
-        if inputs is None or n_sec == 0:
-            return None
-
-        estimator = CoherenceEstimator(self.coherence_window)
-        primary   = inputs[0]
-
-        total = np.zeros(primary.shape, dtype=np.float64)
-        for s in range(n_sec):
-            magnitude, _phase = estimator.estimate(primary, inputs[1 + s])
-            total += magnitude
-
-        return total / n_sec
 
     def covariates(self) -> dict[str, tuple[np.ndarray, bool]]:
         out = {}
@@ -48,10 +29,6 @@ class StratifiedErrors:
 
         if self.loaded.complex_inputs is not None:
             out["primary_amplitude"] = (np.abs(self.loaded.complex_inputs[0]).astype(np.float64), False)
-
-        coherence = self._mean_coherence()
-        if coherence is not None:
-            out["coherence"] = (coherence, False)
 
         dem = self.loaded.dataset.dem
         if dem is not None:

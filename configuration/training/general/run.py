@@ -6,8 +6,8 @@ from pathlib     import Path
 from configuration.training.general.optimization import ClipMode, SchedulerType, WarmupMode
 
 
-DEFAULT_DATASET_DIR = Path("/ste/rnd/User/vice_vi/Dataset/17sartom-traun_L_az1000-16000_rg500-4000_w26_12_hv_1_20260714_195834")
-DEFAULT_PARAMS_RUN  = "params_k2_lam0_sig4_sigma_mu_amp"
+DEFAULT_DATASET_DIR = Path("datasets/synthetic_small")
+DEFAULT_PARAMS_RUN  = "params_k2"
 
 
 def standard_seeds() -> list[int]:
@@ -23,7 +23,7 @@ class TrainingPathsConfig:
 
 @dataclass
 class RunPathsConfig(TrainingPathsConfig):
-    log_base_dir : Path = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/benchmark")
+    log_base_dir : Path = Path("runs/benchmark")
 
 
 @dataclass

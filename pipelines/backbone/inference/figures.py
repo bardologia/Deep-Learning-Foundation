@@ -29,30 +29,6 @@ class FigureComposer:
         self.logger  = logger
         self.cfg     = cfg
 
-    def _compose_tracks(self, run, figure_paths: Dict[str, List[Path]]) -> None:
-        track_plotter = self.plotter.track
-        meta          = self.meta
-        logger        = self.logger
-
-        figure_paths["track_geometry"] = [track_plotter.plot_track_geometry(
-            baselines = run.track_baselines,
-            out_path  = meta.figures_dir / "tracks" / "track_geometry.png",
-        )]
-        logger.subsection(f"Track geometry : {meta.figures_dir / 'tracks'}")
-
-        figure_paths["track_profiles"] = track_plotter.plot_track_profiles(
-            profiles      = run.track_profiles,
-            out_dir       = meta.figures_dir / "tracks",
-            split_azimuth = (run.split_region.azimuth_start, run.split_region.azimuth_end),
-        )
-        logger.subsection(f"Track profiles : {len(figure_paths['track_profiles'])} figures in {meta.figures_dir / 'tracks'}")
-
-        figure_paths["track_flight_3d"] = [track_plotter.plot_track_flight_3d(
-            profiles = run.track_profiles,
-            out_path = meta.figures_dir / "tracks" / "flight_tracks_3d.png",
-        )]
-        logger.subsection(f"Flight tracks 3D : {meta.figures_dir / 'tracks' / 'flight_tracks_3d.png'}")
-
     def _compose_input_channels(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
         slice_plotter = self.plotter.slice
         meta          = self.meta
@@ -66,7 +42,6 @@ class FigureComposer:
                 out_dir        = meta.figures_dir / "input_channels",
                 az_offset      = result.azimuth_offset,
                 rg_offset      = result.range_offset,
-                primary_label  = run.track_baselines.reference,
             )
             logger.subsection(f"Input channels : {len(figure_paths['input_channels'])} figures in {meta.figures_dir / 'input_channels'}")
 
@@ -91,8 +66,6 @@ class FigureComposer:
             seed     = cfg.profile_seed,
         )
 
-        reduced_curves_for_plot = result.reduced.reduced_curves if result.reduced is not None else None
-
         for tag, pixels in (("best", selected["best"]), ("worst", selected["worst"]), ("random", selected["random"])):
             figure_paths[f"profiles_{tag}"] = slice_plotter.plot_profiles(
                 pred_curves    = result.pred_curves,
@@ -106,7 +79,6 @@ class FigureComposer:
                 pixel_metrics  = pixel_metrics_for_plot,
                 az_offset      = result.azimuth_offset,
                 rg_offset      = result.range_offset,
-                reduced_curves = reduced_curves_for_plot,
                 full_curves    = run.full_curves,
             )
 
@@ -448,150 +420,6 @@ class FigureComposer:
                 series_label   = series_label,
             )]
 
-    def _compose_reduced(
-        self,
-        result         : Result,
-        run,
-        global_metrics : dict,
-        x_axis_np      : np.ndarray,
-        indices        : dict,
-        figure_paths   : Dict[str, List[Path]],
-    ) -> None:
-
-        slice_plotter = self.plotter.slice
-        meta          = self.meta
-        logger        = self.logger
-        reduced       = result.reduced
-
-        gt_n   = reduced.gt_norm
-        red_n  = reduced.reduced_norm
-        full_n = ProfileNormalizer.unit_area(run.full_curves)
-
-        _N_elev, _az, _rg = red_n.shape
-
-        reduced_dir = meta.figures_dir / "reduced"
-
-        figure_paths["improvement_map"] = [slice_plotter.plot_pixel_metric_map(
-            metric_map = reduced.improvement,
-            title      = "NN improvement over classical baseline (per-pixel ΔMSE, unit-area profiles)",
-            label      = "MSE(reduced) − MSE(pred)",
-            out_path   = reduced_dir / "improvement_map.png",
-            az_offset  = result.azimuth_offset,
-            rg_offset  = result.range_offset,
-            cmap       = "RdBu_r",
-            q_low      = 2.0,
-            q_high     = 98.0,
-        )]
-
-        figure_paths["reduced_pixel_mse_map"] = [slice_plotter.plot_pixel_metric_map(
-            metric_map = reduced.err_reduced,
-            title      = "Per-pixel reduced-vs-GT MSE (unit-area profiles, log scale)",
-            label      = "MSE",
-            out_path   = reduced_dir / "reduced_mse_map.png",
-            az_offset  = result.azimuth_offset,
-            rg_offset  = result.range_offset,
-            cmap       = self.cfg.cmap_error,
-            log        = True,
-        )]
-
-        self._slice_set(
-            pred_cube      = red_n,
-            gt_cube        = gt_n,
-            full_cube      = full_n,
-            result         = result,
-            x_axis_np      = x_axis_np,
-            indices        = indices,
-            global_metrics = global_metrics,
-            ssim_prefix    = "red",
-            out_dir        = reduced_dir / "slices",
-            stem_prefix    = "reduced_",
-            group_suffix   = "_reduced",
-            ref_title      = "GT (unit-area)",
-            pred_title     = "Reduced (Capon, unit-area)",
-            err_title      = "|Reduced − GT|",
-            full_title     = "Full tomogram (unit-area)",
-            figure_paths   = figure_paths,
-        )
-
-        self._ssim_curves_set(
-            global_metrics = global_metrics,
-            indices        = indices,
-            shape          = red_n.shape,
-            offsets        = {"range": result.range_offset, "azimuth": result.azimuth_offset},
-            ssim_prefix    = "red",
-            group_suffix   = "_reduced",
-            series_label   = "reduced × GT (unit-area)",
-            out_dir        = reduced_dir / "ssim",
-            figure_paths   = figure_paths,
-        )
-
-        figure_paths["elev_metric_curves_reduced"] = slice_plotter.plot_elev_metric_curves(
-            global_metrics = global_metrics,
-            out_dir        = reduced_dir / "elev_metrics",
-            n_elev         = _N_elev,
-            x_axis         = x_axis_np,
-            suffix         = "red",
-            series_label   = "reduced × GT (unit-area)",
-        )
-
-        logger.subsection(f"Reduced baseline figures written to {reduced_dir}")
-
-    def _compose_data_consistency(self, result: Result, figure_paths: Dict[str, List[Path]]) -> None:
-        slice_plotter = self.plotter.slice
-        track_plotter = self.plotter.track
-        meta          = self.meta
-        consistency   = result.data_consistency
-
-        physics_dir = meta.figures_dir / "data_consistency"
-
-        figure_paths["coherence_error_map"] = [slice_plotter.plot_pixel_metric_map(
-            metric_map = consistency.coherence_error_map,
-            title      = "Per-pixel coherence-resynthesis error (pred vs GT, log scale)",
-            label      = "mean |Δγ|² over tracks",
-            out_path   = physics_dir / "coherence_error_map.png",
-            az_offset  = result.azimuth_offset,
-            rg_offset  = result.range_offset,
-            cmap       = self.cfg.cmap_error,
-            log        = True,
-        )]
-
-        figure_paths["covariance_error_map"] = [slice_plotter.plot_pixel_metric_map(
-            metric_map = consistency.covariance_error_map,
-            title      = "Per-pixel covariance-matching error (pred vs GT, log scale)",
-            label      = "relative covariance error",
-            out_path   = physics_dir / "covariance_error_map.png",
-            az_offset  = result.azimuth_offset,
-            rg_offset  = result.range_offset,
-            cmap       = self.cfg.cmap_error,
-            log        = True,
-        )]
-
-        secondaries = consistency.track_labels[1:]
-        metrics     = consistency.metrics
-        agreement   = []
-
-        for source in ("gt", "pred"):
-            aligned = [metrics[f"phase_agreement_{source}_track_{label}"]         for label in secondaries]
-            flipped = [metrics[f"phase_agreement_{source}_flipped_track_{label}"] for label in secondaries]
-
-            agreement.append(track_plotter.plot_phase_agreement(
-                labels   = secondaries,
-                aligned  = aligned,
-                flipped  = flipped,
-                source   = source,
-                out_path = physics_dir / f"phase_agreement_{source}.png",
-            ))
-
-        figure_paths["phase_agreement"] = agreement
-
-        if consistency.track_rows:
-            figure_paths["physics_spectroscopy"] = [
-                track_plotter.plot_residual_spectroscopy(consistency.track_rows, physics_dir / "residual_vs_kz.png"),
-                track_plotter.plot_phase_spread_spectrum(consistency.track_rows, physics_dir / "phase_spread_vs_kz.png"),
-            ]
-
-        self.logger.subsection(f"Data-consistency figures : {physics_dir}")
-
     def compose(
         self,
         result         : Result,
@@ -604,7 +432,6 @@ class FigureComposer:
 
         figure_paths: Dict[str, List[Path]] = {}
 
-        self._compose_tracks(run, figure_paths)
         self._compose_input_channels(result, run, figure_paths)
         self._compose_profiles(result, run, x_axis_np, param_space, figure_paths)
         self._compose_pixel_maps(result, figure_paths)
@@ -615,16 +442,6 @@ class FigureComposer:
 
         self._compose_slices(result, run, global_metrics, x_axis_np, indices, figure_paths)
         self._compose_ssim(result, global_metrics, x_axis_np, indices, figure_paths)
-
-        if result.reduced is not None:
-            self._compose_reduced(result, run, global_metrics, x_axis_np, indices, figure_paths)
-        else:
-            self.logger.subsection("Reduced-baseline figures skipped: no reduced comparison was computed for this run.")
-
-        if result.data_consistency is not None:
-            self._compose_data_consistency(result, figure_paths)
-        else:
-            self.logger.subsection("Data-consistency figures skipped: no interferometric-consistency evaluation was computed for this run.")
 
         return figure_paths
 

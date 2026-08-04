@@ -35,7 +35,7 @@ class CondaEnv:
                 return candidate
 
         searched = ", ".join(str(candidate) for candidate in candidates)
-        raise FileNotFoundError(f"Conda environment '{env_name}' interpreter not found (searched: {searched}); it is required to run pyrat for the reduced tomogram.")
+        raise FileNotFoundError(f"Conda environment '{env_name}' interpreter not found (searched: {searched}); it is required to dispatch the job.")
 
 
 class CondaJobDispatcher:

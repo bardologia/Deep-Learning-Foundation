@@ -4,14 +4,12 @@ import torch
 
 from pipelines.backbone.training.loss_terms import LOSS_TERMS
 from tools.data.gaussians                   import GaussianClamp, GaussianCurve
-from tools.loss.curve_loss                  import CurveLoss
-from tools.loss.param_loss                  import LegacyParamLoss, ParamLoss, ParamMatcher
-from tools.loss.physical_loss               import PhysicalLoss
-from tools.sar.tomo_geometry                import TomoGeometry
+from tools.loss.curve_loss                  import CurveLoss, MomentLoss
+from tools.loss.param_loss                  import ParamLoss, ParamMatcher
 
 
 class Loss:
-    def __init__(self, x_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, geometry_cfg, log_all_losses=False, sampler=None, slot_vitals=None):
+    def __init__(self, x_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, log_all_losses=False, sampler=None, slot_vitals=None):
         self.x_axis          = x_axis
         self.logger          = logger
         self.tracker         = tracker
@@ -19,16 +17,13 @@ class Loss:
         self.reconstruct     = self.reconstruct_gaussians
         self.loss_cfg        = loss_cfg
         self.norm_stats      = norm_stats
-        self.geometry_cfg    = geometry_cfg
         self.sampler         = sampler
         self.slot_vitals     = slot_vitals
-        self.geometry        = TomoGeometry(self.geometry_cfg, x_axis)
         self.dx              = float(x_axis[1] - x_axis[0])
         self.log_all_losses  = log_all_losses
         self.loss_generation = 0
 
         cfg = self.loss_cfg
-        self._validate_legacy(cfg)
 
         self.logger.section("[Loss Function]")
         self.logger.kv_table({
@@ -36,7 +31,6 @@ class Loss:
             "Log all losses" : self.log_all_losses,
             "Param matching" : cfg.param_matching.value,
         })
-        self.logger.kv_table(self.geometry.describe(), title="Tomographic Geometry (scene-constant fallback; a per-pixel kz map supplied by the dataset supersedes it)")
 
         self.log_active_terms(cfg, title="Active Terms")
         self.log_slot_presence_config(cfg, title="Slot-Presence Loss Config")
@@ -44,7 +38,7 @@ class Loss:
     @property
     def slot_presence_active(self) -> bool:
         cfg = self.loss_cfg
-        return bool(cfg.presence_balance or cfg.use_active_normalization or cfg.amp_focal_gamma > 0.0 or cfg.use_param_legacy or self.log_all_losses)
+        return bool(cfg.presence_balance or cfg.use_active_normalization or cfg.amp_focal_gamma > 0.0 or self.log_all_losses)
 
     def log_active_terms(self, cfg, title: str) -> None:
         active     = [(term.name, float(getattr(cfg, term.weight_key))) for term in LOSS_TERMS if getattr(cfg, term.use_flag)]
@@ -71,8 +65,6 @@ class Loss:
         }, title=title)
 
     def set_curriculum(self, complete_cfg, context: str = "curriculum swap") -> None:
-        self._validate_legacy(complete_cfg)
-
         self.loss_cfg       = complete_cfg
         self.loss_generation += 1
 
@@ -82,10 +74,6 @@ class Loss:
         self.logger.subsection(f"Param matching ({context}): {complete_cfg.param_matching.value}")
         self.log_active_terms(complete_cfg, title=f"Active Terms ({context})")
         self.log_slot_presence_config(complete_cfg, title=f"Slot-Presence Loss Config ({context})")
-
-    def _validate_legacy(self, cfg) -> None:
-        if cfg.use_param_legacy and cfg.param_matching.value != ParamMatcher.SORTED_GT:
-            raise ValueError(f"use_param_legacy requires param_matching={ParamMatcher.SORTED_GT!r}; the legacy per-slot bounds assume fixed slot identity and {cfg.param_matching.value!r} reassigns prediction slots per pixel.")
 
     def reconstruct_gaussians(self, params: torch.Tensor) -> torch.Tensor:
         return GaussianCurve.reconstruct(params, self.x_axis, self.gaussian_cfg.params_per_gaussian)
@@ -120,11 +108,6 @@ class Loss:
             return ParamLoss.mse(pred, gt, elem_w, cfg.use_active_normalization), {}
 
         raise ValueError(f"Unknown param_term kind: {kind!r}. Expected 'l1', 'huber', or 'mse'.")
-
-    def _param_legacy(self, matched):
-        _pred, pred_phys, _gt, gt_phys = matched
-        cfg = self.loss_cfg
-        return LegacyParamLoss.mse(pred_phys, gt_phys, cfg.legacy_bounds_min, cfg.legacy_bounds_max)
 
     @torch.no_grad()
     def _physical_errors(self, matched) -> dict:
@@ -191,18 +174,9 @@ class Loss:
         _, _, _, pred_curves, exp_curves = self._prepare(pred_output, gt_params)
         return pred_curves, exp_curves
 
-    def _term_computes(self, cfg, diff, pred_curves, exp_curves, pred_params_norm, matched, kz_map) -> dict:
+    def _term_computes(self, cfg, diff, pred_curves, exp_curves, pred_params_norm, matched) -> dict:
         lc = CurveLoss
-        pc = PhysicalLoss
-
-        if kz_map is not None:
-            coherence_resyn  = lambda: pc.coherence_resynthesis_pp(pred_curves, exp_curves, kz_map, self.x_axis, self.dx, cfg.physics_floor)
-            covariance_match = lambda: pc.covariance_matching_pp(pred_curves, exp_curves, kz_map, self.x_axis, self.dx, cfg.physics_floor)
-            capon_cycle      = lambda: pc.capon_cycle_pp(pred_curves, exp_curves, kz_map, self.x_axis, self.dx, cfg.capon_loading, cfg.physics_floor)
-        else:
-            coherence_resyn  = lambda: pc.coherence_resynthesis(pred_curves, exp_curves, self.geometry.steering, self.dx, cfg.physics_floor)
-            covariance_match = lambda: pc.covariance_matching(pred_curves, exp_curves, self.geometry.outer, self.dx, cfg.physics_floor)
-            capon_cycle      = lambda: pc.capon_cycle(pred_curves, exp_curves, self.geometry.steering, self.geometry.outer, self.dx, cfg.capon_loading, cfg.physics_floor)
+        mc = MomentLoss
 
         return {
             "mse_curve"          : lambda: lc.mse_diff(diff),
@@ -210,11 +184,8 @@ class Loss:
             "huber_curve"        : lambda: lc.huber_diff(diff, cfg.huber_delta),
             "charbonnier_curve"  : lambda: lc.charbonnier_diff(diff, cfg.charbonnier_eps),
             "cosine_curve"       : lambda: lc.cosine(pred_curves, exp_curves, axis=1),
-            "total_power_relerr" : lambda: pc.total_power(pred_curves, exp_curves, self.dx, cfg.physics_floor),
-            "moments"            : lambda: pc.moments(pred_curves, exp_curves, self.x_axis, self.dx, cfg.physics_floor, cfg.moments_weights),
-            "coherence_resyn"    : coherence_resyn,
-            "covariance_match"   : covariance_match,
-            "capon_cycle"        : capon_cycle,
+            "total_power_relerr" : lambda: mc.total_power(pred_curves, exp_curves, self.dx, cfg.power_floor),
+            "moments"            : lambda: mc.moments(pred_curves, exp_curves, self.x_axis, self.dx, cfg.power_floor, cfg.moments_weights),
             "param_huber"        : lambda: self._param_term(matched, "huber")[0],
             "param_mse"          : lambda: self._param_term(matched, "mse")[0],
             "smoothness_tv"      : lambda: ParamLoss.tv(pred_params_norm),
@@ -261,7 +232,7 @@ class Loss:
 
         return out
 
-    def __call__(self, pred_output, gt_params, kz_map=None):
+    def __call__(self, pred_output, gt_params):
         cfg = self.loss_cfg
 
         pred_params_norm, pred_params_phys, gt_phys, pred_curves, exp_curves = self._prepare(pred_output, gt_params)
@@ -275,13 +246,10 @@ class Loss:
         if self.slot_vitals is not None and self.slot_vitals.active:
             self.slot_vitals.observe(pred_params_phys)
 
-        if kz_map is not None:
-            kz_map = kz_map.to(device=pred_curves.device, dtype=pred_curves.dtype)
-
         needs_diff = self.log_all_losses or cfg.use_mse_curve or cfg.use_l1_curve or cfg.use_huber_curve or cfg.use_charbonnier_curve
         diff       = (pred_curves - exp_curves) if needs_diff else None
 
-        computes = self._term_computes(cfg, diff, pred_curves, exp_curves, pred_params_norm, matched, kz_map)
+        computes = self._term_computes(cfg, diff, pred_curves, exp_curves, pred_params_norm, matched)
 
         components : dict = {}
         monitor    : dict = {}
@@ -300,14 +268,6 @@ class Loss:
                 elif self.log_all_losses:
                     with torch.no_grad():
                         val, per_param_l1 = self._param_term(matched, "l1")
-                else:
-                    continue
-            elif term.name == "param_legacy":
-                if is_used:
-                    val = self._param_legacy(matched)
-                elif self.log_all_losses and matched[0].shape[1] == LegacyParamLoss.LEGACY_GAUSSIANS:
-                    with torch.no_grad():
-                        val = self._param_legacy(matched)
                 else:
                     continue
             else:

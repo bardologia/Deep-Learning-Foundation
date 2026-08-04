@@ -74,7 +74,6 @@ class TrainingPipeline:
             param_loss                     = entry_config.param_loss,
         )
         self.trainer_config.inherit_shared_from(base)
-        self.trainer_config.geometry = entry_config.geometry.resolved(entry_config.paths.dataset_path, secondary_labels=self.factory._secondary_labels())
 
         self.dataset_config = self.factory.training_dataset_config()
         if split_regions is not None:
@@ -91,15 +90,8 @@ class TrainingPipeline:
             raise FileNotFoundError(f"{label} autoencoder run '{run}' not found under {logdir}")
         return directory
 
-    def _physics_geometry_active(self) -> bool:
-        if self.autoencoder_cfg is not None:
-            return False
-
-        cfg = self.trainer_config.param_loss
-        return cfg.use_coherence_resyn or cfg.use_covariance_match or cfg.use_capon_cycle
-
     def _prepare_datasets(self, run_directory, logger, seed):
-        return BackboneDatasetPreparation(self.dataset_config, self.trainer_config, run_directory, logger, seed, build_geometry_field=self._physics_geometry_active(), height_axis_convention=self.trainer_config.geometry.height_axis_convention).run()
+        return BackboneDatasetPreparation(self.dataset_config, self.trainer_config, run_directory, logger, seed).run()
 
     def _gaussian_out_channels(self) -> int:
         g = self.trainer_config.gaussian

@@ -47,12 +47,6 @@ class TrainingPipeline:
 
         self.dataset_config.n_gaussians = trainer_config.gaussian.n_default_gaussians
 
-    @staticmethod
-    def physics_geometry_active(trainer_config) -> bool:
-        flags = ("use_coherence_resyn", "use_covariance_match", "use_capon_cycle")
-
-        return any(getattr(cfg, flag) for cfg in trainer_config.curriculum.active_stages() for flag in flags)
-
     def _build_dataset_pipeline(self, run_directory: Path, logger) -> DatasetPipeline:
         gaussian_cfg = self.trainer_config.gaussian
 
@@ -61,8 +55,6 @@ class TrainingPipeline:
             training_run_directory = Path(run_directory),
             logger                 = logger,
             seed                   = self.seed,
-            height_axis_convention = self.trainer_config.geometry.height_axis_convention,
-            build_geometry_field   = self.physics_geometry_active(self.trainer_config),
         )
 
         self.dataset_config.x_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, dataset_pipeline.layout.profile_length)

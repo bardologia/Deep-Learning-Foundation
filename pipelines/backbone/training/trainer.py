@@ -117,7 +117,7 @@ class Trainer(BaseTrainer):
         stage = "curriculum.warmup" if self.curriculum.enabled else "curriculum.complete (curriculum disabled)"
         self.logger.subsection(f"Loss built from {stage}")
 
-        return Loss(self.x_axis, self.logger, self.tracker, self.gaussian_cfg, self.initial_loss_cfg, norm_stats=self.norm_stats, geometry_cfg=self.config.geometry, log_all_losses=self.config.training.log_all_losses, sampler=self.param_sampler, slot_vitals=self.slot_vitals)
+        return Loss(self.x_axis, self.logger, self.tracker, self.gaussian_cfg, self.initial_loss_cfg, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses, sampler=self.param_sampler, slot_vitals=self.slot_vitals)
 
     def _warn_nonfinite(self, tensor: torch.Tensor, name: str) -> None:
         if torch.isnan(tensor).any() or torch.isinf(tensor).any():
@@ -126,7 +126,6 @@ class Trainer(BaseTrainer):
     def _compute_loss(self, batch) -> dict:
         images    = batch[0].to(self.device)
         gt_params = batch[1].to(self.device) if len(batch) > 1 and batch[1] is not None else None
-        kz_map    = batch[2].to(self.device) if len(batch) > 2 and batch[2] is not None else None
 
         if self.tracker.debug:
             self._warn_nonfinite(images, "input images")
@@ -140,7 +139,7 @@ class Trainer(BaseTrainer):
         if self.tracker.active and torch.is_tensor(pred_params) and pred_params.requires_grad:
             pred_params.register_hook(self.slot_vitals.observe_gradient)
 
-        return self.criterion(pred_params, gt_params, kz_map)
+        return self.criterion(pred_params, gt_params)
 
     def _before_training(self, train_loader: DataLoader) -> None:
         self.docs.emit(train_loader, self.device)
@@ -204,7 +203,6 @@ class Trainer(BaseTrainer):
             probe_cfg    = probe_config,
             loss_cfg     = self.initial_loss_cfg,
             gaussian_cfg = self.gaussian_cfg,
-            geometry_cfg = self.config.geometry,
             norm_stats   = self.norm_stats,
             logger       = self.logger,
         )

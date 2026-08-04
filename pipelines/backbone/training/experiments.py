@@ -7,7 +7,6 @@ import numpy as np
 from models                                 import get_backbone
 from pipelines.backbone.training.loss_terms import LOSS_TERMS
 from pipelines.shared.model.model_builder   import ModelBuilder
-from tools.baselines                        import TrackBaselines
 
 
 class TrialPlanner:
@@ -103,74 +102,6 @@ class SlotPresenceTrialPlanner:
         for trial_label, spec in self.presence_trials.items():
             run_name = f"pr-{trial_label}"
             plans.append((run_name, self._overrides(spec)))
-
-        return plans
-
-
-class PhysicsLossTrialPlanner:
-
-    COMPONENTS = ("total_power", "moments", "coherence_resyn", "covariance_match", "capon_cycle")
-
-    def __init__(self, trials) -> None:
-        self.trials = trials
-
-        self._validate()
-
-    def _validate(self) -> None:
-        if not self.trials.components:
-            raise ValueError("physics_trials.components must list at least one physics loss component")
-
-        unknown = [component for component in self.trials.components if component not in self.COMPONENTS]
-        if unknown:
-            raise ValueError(f"Unknown physics_trials.components {unknown}; allowed components are {self.COMPONENTS}")
-
-        duplicates = sorted({component for component in self.trials.components if self.trials.components.count(component) > 1})
-        if duplicates:
-            raise ValueError(f"physics_trials.components must be unique, duplicated: {duplicates}")
-
-        if not self.trials.weights:
-            raise ValueError("physics_trials.weights must list at least one weight to test")
-
-        if any(weight <= 0 for weight in self.trials.weights):
-            raise ValueError(f"physics_trials.weights must all be positive, got {self.trials.weights}")
-
-        if len(set(self.trials.weights)) != len(self.trials.weights):
-            raise ValueError(f"physics_trials.weights must be unique, got {self.trials.weights}")
-
-    def summary(self) -> dict:
-        n_grid   = len(self.trials.components) * len(self.trials.weights)
-        n_extras = 1 if self.trials.include_baseline else 0
-
-        return {
-            "Components" : list(self.trials.components),
-            "Weights"    : list(self.trials.weights),
-            "Baseline"   : self.trials.include_baseline,
-            "Total runs" : n_grid + n_extras,
-        }
-
-    def _neutral_overrides(self) -> dict:
-        overrides = {"curriculum.enabled": True, "curriculum.inherit": False}
-
-        for stage in ("warmup", "complete"):
-            for component in self.COMPONENTS:
-                overrides[f"curriculum.{stage}.use_{component}"]    = False
-                overrides[f"curriculum.{stage}.weight_{component}"] = 0.0
-
-        return overrides
-
-    def plan(self) -> list[tuple[str, dict]]:
-        plans = []
-
-        if self.trials.include_baseline:
-            plans.append(("phys-baseline", self._neutral_overrides()))
-
-        for component in self.trials.components:
-            for weight in self.trials.weights:
-                run_name  = f"phys-{component}-w{weight:g}"
-                overrides = self._neutral_overrides()
-                overrides[f"curriculum.complete.use_{component}"]    = True
-                overrides[f"curriculum.complete.weight_{component}"] = weight
-                plans.append((run_name, overrides))
 
         return plans
 
@@ -543,13 +474,11 @@ class InputTrialPlanner:
         self._validate()
 
     @classmethod
-    def from_dataset(cls, input_trials: dict, geometry, dataset_path: str | Path) -> "InputTrialPlanner":
-        path = geometry.baselines_file(dataset_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Input trials need the baselines table to enumerate all tracks, but {path} does not exist")
+    def from_labels(cls, input_trials: dict, labels) -> "InputTrialPlanner":
+        if not labels:
+            raise ValueError("Input trials need at least one secondary label to enumerate track scopes")
 
-        table = TrackBaselines.load(path)
-        return cls(input_trials, list(table.labels[1:]))
+        return cls(input_trials, list(labels))
 
     def _validate(self) -> None:
         if not self.input_trials:
@@ -743,13 +672,11 @@ class SecondaryTrialPlanner:
         self._validate()
 
     @classmethod
-    def from_dataset(cls, trials, geometry, dataset_path: str | Path) -> "SecondaryTrialPlanner":
-        path = geometry.baselines_file(dataset_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Secondary trials need the baselines table, but {path} does not exist")
+    def from_labels(cls, trials, labels) -> "SecondaryTrialPlanner":
+        if not labels:
+            raise ValueError("Secondary trials need at least one secondary label to sample from")
 
-        table = TrackBaselines.load(path)
-        return cls(trials, list(table.labels[1:]))
+        return cls(trials, list(labels))
 
     def _validate(self) -> None:
         t = self.trials

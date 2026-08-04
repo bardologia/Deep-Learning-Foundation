@@ -16,11 +16,11 @@ def _default_param_loss():
 
 @dataclass
 class JepaTuneConfig:
-    profile_autoencoder_logdir : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/profile_autoencoder")
+    profile_autoencoder_logdir : Path       = Path("runs/profile_autoencoder")
     profile_autoencoder_run    : str | None = None
     profile_autoencoder_mode   : str        = "frozen"
 
-    image_autoencoder_logdir : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/image_autoencoder")
+    image_autoencoder_logdir : Path       = Path("runs/image_autoencoder")
     image_autoencoder_run    : str | None = None
     image_autoencoder_mode   : str        = "frozen"
 

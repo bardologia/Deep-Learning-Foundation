@@ -94,7 +94,6 @@ class BenchmarkWorker(WorkerBase):
             target_provider            = jepa.target_provider,
             embedding_loss             = jepa.embedding_loss,
             param_loss                 = jepa.param_loss,
-            geometry                   = self.config.geometry,
             paths                      = self.config.paths,
             training                   = self.config.training,
             normalization              = self.config.normalization,
@@ -150,7 +149,6 @@ class TrainingWorker(BenchmarkWorker):
             self.config.training.batch_size = measured_batch
 
         trainer_config          = self.factory.training_trainer_config(logdir=stage_dir)
-        trainer_config.geometry = self.config.geometry.resolved(self.config.paths.dataset_path, secondary_labels=self.factory._secondary_labels())
         self._apply_loss_component(trainer_config, loss_component)
 
         dataset_config              = self.factory.training_dataset_config()

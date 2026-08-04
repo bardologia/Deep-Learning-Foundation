@@ -6,7 +6,6 @@ from pathlib     import Path
 from configuration.dataset.profile_autoencoder       import ProfileAugmentationConfig
 from configuration.training.general.run              import TrainingPathsConfig, TrainingQueueConfig, standard_seeds
 from configuration.architectures.profile_autoencoder import ProfileAutoencoderBaseConfig, MlpAutoencoderConfig
-from configuration.sar.geometry_config               import GeometryConfig
 from configuration.training.general.optimization     import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
 from configuration.training.general.runtime          import IOConfig, MemoryConfig, OverfitCheckConfig, ResourceConfig, TrainingLoopConfig
 from configuration.training.general.pretraining      import PretrainConfig
@@ -25,7 +24,6 @@ class ProfileAeTrainerConfig(SharedSubConfigInheritance):
     gaussian         : object
     autoencoder      : ProfileAutoencoderBaseConfig = field(default_factory=MlpAutoencoderConfig)
     ae_loss          : ProfileAeLossConfig          = field(default_factory=ProfileAeLossConfig)
-    geometry         : GeometryConfig               = field(default_factory=GeometryConfig)
     early_stopping   : EarlyStoppingConfig          = field(default_factory=EarlyStoppingConfig)
     warmup           : WarmupConfig                 = field(default_factory=WarmupConfig)
     scheduler        : SchedulerConfig              = field(default_factory=SchedulerConfig)
@@ -47,7 +45,7 @@ class ProfileAeEntryConfig:
     poll_interval_s : float      = 5.0
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=standard_seeds)
-    logdir          : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/profile_autoencoder")
+    logdir          : Path       = Path("runs/profile_autoencoder")
 
     pixel_subsample : float = 1.0
     keep_empty_frac : float = 0.05
@@ -57,7 +55,6 @@ class ProfileAeEntryConfig:
     ae_model_name   : str                 = "mlp_ae"
     model_overrides : dict                = field(default_factory=dict)
     ae_loss         : ProfileAeLossConfig = field(default_factory=ProfileAeLossConfig)
-    geometry        : GeometryConfig      = field(default_factory=GeometryConfig)
 
     paths         : TrainingPathsConfig = field(default_factory=TrainingPathsConfig)
     training      : TrainingQueueConfig = field(default_factory=lambda: TrainingQueueConfig(batch_size=1024, num_workers=32, prefetch_factor=2))

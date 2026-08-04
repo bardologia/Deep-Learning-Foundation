@@ -10,7 +10,7 @@ from configuration.training.general.run import RunPathsConfig
 
 @dataclass
 class TrialComparisonConfig:
-    runs_dir : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    runs_dir : Path      = Path("runs/backbone")
     run_tags : List[str] = field(default_factory=list)
 
     compare_images : bool           = True
@@ -21,7 +21,7 @@ class TrialComparisonConfig:
 
 @dataclass
 class PreprocessingComparisonConfig:
-    runs_dir : Path      = Path("/ste/rnd/User/vice_vi/Dataset")
+    runs_dir : Path      = Path("datasets")
     run_tags : List[str] = field(default_factory=list)
 
     pixel_sample : int = 200000
@@ -35,7 +35,7 @@ class PreprocessingComparisonConfig:
 
 @dataclass
 class SeedComparisonConfig:
-    runs_dir   : Path      = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs")
+    runs_dir   : Path      = Path("runs")
     group_tags : List[str] = field(default_factory=list)
 
     inference_subdir : str = ""
@@ -64,7 +64,7 @@ class ComparisonEntryConfig:
 
 @dataclass
 class ParamExtractionComparisonConfig:
-    params_dir : Path      = Path("/ste/rnd/User/vice_vi/Dataset")
+    params_dir : Path      = Path("datasets")
     run_tags   : List[str] = field(default_factory=list)
 
     pixel_sample : int = 200000

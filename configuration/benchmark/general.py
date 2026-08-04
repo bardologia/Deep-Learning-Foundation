@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from configuration.benchmark.jepa               import JepaBenchConfig
 from configuration.dataset                      import AugmentationConfig, InputConfig
 from configuration.normalization.general        import NormalizationConfig
-from configuration.sar.geometry_config          import GeometryConfig
 from configuration.training.backbone            import default_curriculum
 from configuration.training.general.loss        import LossConfig
 from configuration.training.general.pretraining import PretrainConfig
@@ -46,7 +45,6 @@ class InferenceQueueConfig:
     save_cubes      : bool = False
     stitch_window   : str  = "hann"
 
-    compute_reduced: bool = True
 
     n_best_profiles   : int = 12
     n_worst_profiles  : int = 12
@@ -86,7 +84,6 @@ class BenchmarkConfig:
     comparison : ComparisonReportConfig = field(default_factory=ComparisonReportConfig)
 
     input         : InputConfig         = field(default_factory=InputConfig.full_stack)
-    geometry      : GeometryConfig      = field(default_factory=GeometryConfig)
     normalization : NormalizationConfig = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig  = field(default_factory=AugmentationConfig)
     loss          : LossConfig          = field(default_factory=_default_base_loss)

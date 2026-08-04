@@ -45,8 +45,7 @@ class AblationCatalog:
         ("p_flip_v", 0.5),
     )
 
-    PHYSICS_WEIGHT = 0.05
-    COSINE_WEIGHT  = 0.05
+    COSINE_WEIGHT = 0.05
 
     LOSS_TERMS = (
         ("smoothness_tv", "use_smoothness_tv", "weight_smoothness_tv", 1e-4),
@@ -96,7 +95,7 @@ class AblationCatalog:
     def _schedule_features(cls) -> list[dict]:
         return [
             {
-                "label"   : "physics_curriculum",
+                "label"   : "loss_curriculum",
                 "group"   : "schedule",
                 "enable"  : {"curriculum.enabled": True, "curriculum.swap_epoch": cls.CURRICULUM_SWAP_EPOCH},
                 "degrade" : {"curriculum.enabled": False},
@@ -112,25 +111,6 @@ class AblationCatalog:
                 "group"   : "optimizer",
                 "enable"  : {"model_overrides": {key: lr                  for key, lr in cls.GROUP_LR_DEFAULTS}},
                 "degrade" : {"model_overrides": {key: cls.SINGLE_GROUP_LR for key, _  in cls.GROUP_LR_DEFAULTS}},
-            },
-        ]
-
-    @classmethod
-    def _physics_features(cls) -> list[dict]:
-        complete = cls.COMPLETE_PREFIX
-
-        return [
-            {
-                "label"   : "coherence_resyn",
-                "group"   : "physics",
-                "enable"  : {f"{complete}use_coherence_resyn": True,  f"{complete}weight_coherence_resyn": cls.PHYSICS_WEIGHT},
-                "degrade" : {f"{complete}use_coherence_resyn": False, f"{complete}weight_coherence_resyn": 0.0},
-            },
-            {
-                "label"   : "covariance_match",
-                "group"   : "physics",
-                "enable"  : {f"{complete}use_covariance_match": True,  f"{complete}weight_covariance_match": cls.PHYSICS_WEIGHT},
-                "degrade" : {f"{complete}use_covariance_match": False, f"{complete}weight_covariance_match": 0.0},
             },
         ]
 
@@ -217,7 +197,6 @@ class AblationCatalog:
             + cls._normalization_features()
             + cls._augmentation_features()
             + cls._schedule_features()
-            + cls._physics_features()
             + cls._loss_component_features()
             + cls._slot_features()
             + cls._architecture_features()
@@ -229,7 +208,7 @@ class AblationCatalog:
         return {feature["label"]: feature for feature in cls.features()}
 
     DEFAULT_ORDER = (
-        "covariance_match", "physics_curriculum", "coherence_resyn",
+        "loss_curriculum",
         "cosine_curve", "architecture_param_loss", "augmentation",
         "active_norm", "lr_per_group", "lr_warmup",
         "out_sigma", "out_amp", "ifg_phase", "pass_mag",

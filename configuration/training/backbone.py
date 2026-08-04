@@ -6,8 +6,7 @@ from pathlib     import Path
 from configuration.training.general.run          import TrainingPathsConfig, TrainingQueueConfig, standard_seeds
 from configuration.dataset                       import AugmentationConfig, InputConfig
 from configuration.inference.general             import InferenceConfig
-from configuration.sar.gaussian_config           import GaussianConfig
-from configuration.sar.geometry_config           import GeometryConfig
+from configuration.dataset.gaussian           import GaussianConfig
 from configuration.normalization.general         import NormalizationConfig
 from configuration.training.general.ablation     import AblationCatalog
 from configuration.training.general.loss         import LossConfig, LossCurriculumConfig
@@ -23,8 +22,6 @@ def default_curriculum() -> LossCurriculumConfig:
         param_matching           = AblationCatalog.PARAM_MATCH_FULL,
         use_active_normalization = True,
         presence_balance         = False,
-        use_cosine_curve         = True,
-        weight_cosine_curve      = AblationCatalog.COSINE_WEIGHT,
     )
 
     complete = LossConfig(
@@ -32,13 +29,9 @@ def default_curriculum() -> LossCurriculumConfig:
         weight_param_l1          = 1.0,
         param_matching           = AblationCatalog.PARAM_MATCH_FULL,
         use_active_normalization = True,
-        presence_balance         = False,
+        presence_balance         = True,
         use_cosine_curve         = True,
         weight_cosine_curve      = AblationCatalog.COSINE_WEIGHT,
-        use_coherence_resyn      = True,
-        weight_coherence_resyn   = AblationCatalog.PHYSICS_WEIGHT,
-        use_covariance_match     = True,
-        weight_covariance_match  = AblationCatalog.PHYSICS_WEIGHT,
     )
 
     return LossCurriculumConfig(
@@ -55,7 +48,6 @@ def _default_inference() -> InferenceConfig:
         save_cubes      = True,
         cpu_workers     = 16,
         gif_axes        = ["elevation", "range", "azimuth"],
-        compute_reduced = False,
     )
 
 
@@ -137,18 +129,11 @@ class PatchTrialsConfig:
 
 
 @dataclass
-class PhysicsTrialsConfig:
-    components       : list[str]   = field(default_factory=lambda: ["coherence_resyn", "covariance_match"])
-    weights          : list[float] = field(default_factory=lambda: [0.01, AblationCatalog.PHYSICS_WEIGHT, 0.25])
-    include_baseline : bool        = True
-
-
-@dataclass
 class PairTrialsConfig:
     base_component   : str         = "param_l1"
     base_weight      : float       = 1.0
-    components       : list[str]   = field(default_factory=lambda: ["cosine_curve", "coherence_resyn", "covariance_match"])
-    weights          : list[float] = field(default_factory=lambda: [0.01, AblationCatalog.PHYSICS_WEIGHT, 0.25])
+    components       : list[str]   = field(default_factory=lambda: ["cosine_curve", "total_power", "moments"])
+    weights          : list[float] = field(default_factory=lambda: [0.01, 0.05, 0.25])
     include_baseline : bool        = True
 
 
@@ -205,7 +190,6 @@ class LossScaleProbeConfig:
 @dataclass
 class BackboneTrainerConfig:
     gaussian         : GaussianConfig
-    geometry         : GeometryConfig        = field(default_factory=GeometryConfig)
     early_stopping   : EarlyStoppingConfig   = field(default_factory=EarlyStoppingConfig)
     warmup           : WarmupConfig          = field(default_factory=WarmupConfig)
     scheduler        : SchedulerConfig       = field(default_factory=SchedulerConfig)
@@ -227,14 +211,13 @@ class BackboneEntryConfig:
     gpu             : int        = 0
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=standard_seeds)
-    logdir          : Path       = Path("/ste/rnd/User/vice_vi/DLR-TomoSAR/runs/backbone")
+    logdir          : Path       = Path("runs/backbone")
     model_overrides : dict       = field(default_factory=dict)
 
     paths         : TrainingPathsConfig  = field(default_factory=TrainingPathsConfig)
     training      : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
     pretrain      : PretrainConfig       = field(default_factory=PretrainConfig)
     curriculum    : LossCurriculumConfig = field(default_factory=default_curriculum)
-    geometry      : GeometryConfig       = field(default_factory=GeometryConfig)
     input         : InputConfig          = field(default_factory=InputConfig.full_stack)
     normalization : NormalizationConfig  = field(default_factory=NormalizationConfig)
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
@@ -256,7 +239,6 @@ class BackboneEntryConfig:
     warmup_losses        : dict                      = field(default_factory=_default_warmup_losses)
     complete_losses      : dict                      = field(default_factory=_default_complete_losses)
     presence_trials      : dict                      = field(default_factory=_default_presence_trials)
-    physics_trials       : PhysicsTrialsConfig       = field(default_factory=PhysicsTrialsConfig)
     pair_trials          : PairTrialsConfig          = field(default_factory=PairTrialsConfig)
     secondary_trials     : SecondaryTrialsConfig     = field(default_factory=SecondaryTrialsConfig)
     patch_trials         : PatchTrialsConfig         = field(default_factory=PatchTrialsConfig)

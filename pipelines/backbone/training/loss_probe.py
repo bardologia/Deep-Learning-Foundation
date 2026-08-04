@@ -14,13 +14,9 @@ from tools.monitoring.tracker               import NullTracker
 
 
 class LossScaleProbe:
-
-    DEFAULT_OFF = ("use_param_legacy",)
-
-    def __init__(self, probe_cfg, loss_cfg, gaussian_cfg, geometry_cfg, norm_stats=None, logger=None):
+    def __init__(self, probe_cfg, loss_cfg, gaussian_cfg, norm_stats=None, logger=None):
         self.probe_cfg    = probe_cfg
         self.gaussian_cfg = gaussian_cfg
-        self.geometry_cfg = geometry_cfg
         self.norm_stats   = norm_stats
         self.logger       = logger
         self.loss_cfg     = copy.deepcopy(loss_cfg)
@@ -32,8 +28,7 @@ class LossScaleProbe:
 
         for term in LOSS_TERMS:
             override = probe_cfg.enabled_losses.get(term.use_flag)
-            default  = term.use_flag not in self.DEFAULT_OFF
-            setattr(self.loss_cfg, term.use_flag, override if override is not None else default)
+            setattr(self.loss_cfg, term.use_flag, override if override is not None else True)
 
         for term in LOSS_TERMS:
             if getattr(self.loss_cfg, term.use_flag):
@@ -47,7 +42,6 @@ class LossScaleProbe:
             gaussian_cfg = self.gaussian_cfg,
             loss_cfg     = self.loss_cfg,
             norm_stats   = self.norm_stats,
-            geometry_cfg = self.geometry_cfg,
         )
 
     def _collect(self, criterion, train_loader, model, device) -> dict[str, list[float]]:
@@ -61,8 +55,7 @@ class LossScaleProbe:
 
                 inputs  = batch[0].to(device)
                 targets = batch[1].to(device)
-                kz_map  = batch[2].to(device) if len(batch) > 2 and batch[2] is not None else None
-                result  = criterion(model(inputs), targets, kz_map)
+                result  = criterion(model(inputs), targets)
 
                 for name, val in result["components"].items():
                     if "/" not in name:
@@ -151,7 +144,7 @@ class LossScaleProbe:
         criterion = self._build_criterion(x_axis)
 
         self.logger.section("[Loss Scale Probe]")
-        self.logger.subsection(f"Averaging over {self.probe_cfg.n_batches} batches; all enabled term weights forced to 1.0 (use_param_legacy forced off unless explicitly enabled).")
+        self.logger.subsection(f"Averaging over {self.probe_cfg.n_batches} batches; all enabled term weights forced to 1.0.")
         self.logger.subsection("Raw values are shaped by the initial-stage loss config (matching, active normalization, presence balance, amp_zero_thr).")
 
         accum = self._collect(criterion, train_loader, model, device)

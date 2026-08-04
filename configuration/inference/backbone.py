@@ -6,7 +6,7 @@ from typing      import List
 
 from configuration.inference.general import InferenceConfig
 
-_RUNS_ROOT = "/ste/rnd/User/vice_vi/DLR-TomoSAR/runs"
+_RUNS_ROOT = "runs"
 
 
 @dataclass

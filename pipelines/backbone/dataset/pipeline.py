@@ -3,11 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing  import Optional, Tuple
 
-import numpy as np
 from torch.utils.data import DataLoader
 
 from configuration.dataset                      import DatasetConfig
-from tools.data.regions                         import CropRegion
 from pipelines.backbone.dataset.augmentation    import SpatialAugmenter
 from pipelines.backbone.dataset.datasets        import MultiRegionDataset, PatchDataset
 from pipelines.shared.dataset.loaders           import Loader
@@ -18,15 +16,13 @@ from pipelines.backbone.dataset.metadata_writer import MetadataWriter
 from pipelines.shared.dataset.dataset_spatial   import Layout
 from tools.data.gaussians                       import GaussianAxis
 from tools.monitoring.logger                    import Logger
-from tools.sar                                  import GeometryField
 
 
 class DatasetPipeline:
-    def __init__(self, config : DatasetConfig, training_run_directory : Path, logger : Logger | None = None, seed : int = 0, height_axis_convention : str = "height", build_geometry_field : bool = False) -> None:
+    def __init__(self, config : DatasetConfig, training_run_directory : Path, logger : Logger | None = None, seed : int = 0) -> None:
         self.config                 = config
         self.training_run_directory = Path(training_run_directory)
         self.seed                   = int(seed)
-        self.height_axis_convention = height_axis_convention
 
         log_dir = self.training_run_directory / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -37,11 +33,7 @@ class DatasetPipeline:
         self.layout          = Layout(config.preprocessing_run_directory,  logger=self.logger, parameters_path=config.parameters_path)
         self.cropper         = Cropper(self.layout, config.split_regions,  logger=self.logger, secondary_labels=config.secondary_labels, input_config=config.input_config)
         self.metadata_writer = MetadataWriter(self.training_run_directory, logger=self.logger)
-        self.geometry_field  = self._load_geometry_field() if build_geometry_field else None
-        self.augmenter       = SpatialAugmenter(config.augmentation,       logger=self.logger, seed=self.seed, rot90_inactive=self.geometry_field is not None)
-
-        if self.geometry_field is not None and config.augmentation.p_rot90 > 0.0:
-            self.logger.warning("augmentation.p_rot90 > 0 has no effect: 90-degree rotations are skipped while a per-pixel geometry field is active.")
+        self.augmenter       = SpatialAugmenter(config.augmentation,       logger=self.logger, seed=self.seed)
 
         if config.patch.size[0] != config.patch.size[1] and config.augmentation.p_rot90 > 0.0:
             raise ValueError(f"augmentation.p_rot90 > 0 is incompatible with a rectangular patch {tuple(config.patch.size)}: a 90-degree rotation swaps the patch axes and the rotated patch no longer matches the batch shape. Disable rot90 or use a square patch.")
@@ -69,30 +61,6 @@ class DatasetPipeline:
     @property
     def profile_length(self) -> int:
         return self.layout.profile_length
-
-    def _load_geometry_field(self) -> GeometryField:
-        path = Path(self.config.preprocessing_run_directory) / "meta" / GeometryField.FILENAME
-
-        if not path.is_file():
-            raise FileNotFoundError(f"A per-pixel physics-geometry loss term is active but {path} is missing; this dataset predates automatic geometry-field generation, re-run preprocessing for it.")
-
-        field = GeometryField.load(path).subset(self.config.secondary_labels)
-        field.validate_extent(self.layout.global_crop)
-
-        self.logger.section("[Per-Pixel Geometry Field Loaded]")
-        self.logger.kv_table(field.describe(), title="Geometry Field")
-        self.logger.subsection(f"Height-axis convention : {self.height_axis_convention}")
-
-        return field
-
-    def _region_kz_field(self, region: CropRegion) -> Optional[np.ndarray]:
-        if self.geometry_field is None:
-            return None
-
-        azimuth_slice, range_slice = region.local_slices(self.layout.global_crop)
-        region_field               = self.geometry_field.slice(azimuth_slice, range_slice)
-
-        return region_field.kz(self.height_axis_convention).astype(np.float32)
 
     def _build_dataset(self, split_name : str, normalizer : Optional[Normalizer] = None):
         regions  = self.config.split_regions.regions(split_name)
@@ -124,7 +92,6 @@ class DatasetPipeline:
                 n_gaussians      = self.config.n_gaussians,
                 augmenter        = self.augmenter,
                 dem              = arrays["dem"] if self.config.input_config.use_dem else None,
-                kz_field         = self._region_kz_field(region),
             )
 
             parts.append(part)
@@ -198,20 +165,18 @@ class DatasetPipeline:
 
 
 class BackboneDatasetPreparation:
-    def __init__(self, dataset_config, trainer_config, run_directory, logger, seed, build_geometry_field: bool = False, height_axis_convention: str = "height") -> None:
-        self.dataset_config         = dataset_config
-        self.trainer_config         = trainer_config
-        self.run_directory          = Path(run_directory)
-        self.logger                 = logger
-        self.seed                   = seed
-        self.build_geometry_field   = build_geometry_field
-        self.height_axis_convention = height_axis_convention
+    def __init__(self, dataset_config, trainer_config, run_directory, logger, seed) -> None:
+        self.dataset_config = dataset_config
+        self.trainer_config = trainer_config
+        self.run_directory  = Path(run_directory)
+        self.logger         = logger
+        self.seed           = seed
 
     def run(self):
         gaussian_cfg                    = self.trainer_config.gaussian
         self.dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
 
-        dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_directory, logger=self.logger, seed=self.seed, height_axis_convention=self.height_axis_convention, build_geometry_field=self.build_geometry_field)
+        dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_directory, logger=self.logger, seed=self.seed)
         x_len            = dataset_pipeline.profile_length
         x_axis           = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, x_len)
 
