@@ -284,10 +284,10 @@ def test_active_norm_rescales_by_active_fraction():
     assert t_norm.item() > t_mean.item()
 
 
-@pytest.mark.real_data
-def test_param_loss_on_real_parameters(parameters):
+@pytest.mark.dataset
+def test_param_loss_on_scene_parameters(parameters):
     win = np.asarray(parameters[:, :8, :8]).astype(np.float64)
-    t   = torch.from_numpy(win).reshape(5, 3, 8, 8)[None]
+    t   = torch.from_numpy(win).reshape(win.shape[0] // 3, 3, 8, 8)[None]
 
     pred = t.clone()
     pred[:, :, 0] += 0.02

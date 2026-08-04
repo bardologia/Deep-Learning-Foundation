@@ -74,6 +74,6 @@ class TrainingQueueConfig:
     patch_stride          : tuple[int, int] = (32, 16)
     use_symmetric_padding : bool            = True
 
-    train_azimuth : tuple[int, int] = (1000, 13000)
-    val_azimuth   : tuple[int, int] = (13064, 14500)
-    test_azimuth  : tuple[int, int] = (14564, 16000)
+    train_azimuth : tuple[int, int] = (1000, 1358)
+    val_azimuth   : tuple[int, int] = (1358, 1434)
+    test_azimuth  : tuple[int, int] = (1434, 1512)

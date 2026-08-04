@@ -210,8 +210,8 @@ def test_gaussian_curve_matches_mixture_batch():
     assert np.allclose(batch[0], curve, atol=1e-4)
 
 
-@pytest.mark.real_data
-def test_evaluate_slice_on_real_parameters(parameters, param_extraction_meta):
+@pytest.mark.dataset
+def test_evaluate_slice_on_scene_parameters(parameters, param_extraction_meta):
     k_max  = param_extraction_meta["k_max"]
     params = np.asarray(parameters[:, :16, :16]).astype(np.float32)
 
@@ -222,8 +222,8 @@ def test_evaluate_slice_on_real_parameters(parameters, param_extraction_meta):
     assert np.all(out >= 0.0)
 
 
-@pytest.mark.real_data
-def test_evaluate_pixel_on_real_parameters(parameters, param_extraction_meta):
+@pytest.mark.dataset
+def test_evaluate_pixel_on_scene_parameters(parameters, param_extraction_meta):
     k_max  = param_extraction_meta["k_max"]
     h_min, h_max = param_extraction_meta["height_range"]
     h      = np.linspace(h_min, h_max, 100)
@@ -237,6 +237,6 @@ def test_evaluate_pixel_on_real_parameters(parameters, param_extraction_meta):
     assert np.all(np.isfinite(total))
 
 
-@pytest.mark.real_data
-def test_real_parameters_channel_count(parameters, param_extraction_meta):
+@pytest.mark.dataset
+def test_scene_parameters_channel_count(parameters, param_extraction_meta):
     assert parameters.shape[0] == param_extraction_meta["k_max"] * 3

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from configuration.inference.image_autoencoder        import ImageAeInferenceConfig
+from configuration.synthesis                          import SynthesisConfig
 from configuration.inference.profile_autoencoder      import ProfileAeInferenceConfig
 from configuration.training                           import ImageAeEntryConfig
 from configuration.training.profile_autoencoder       import ProfileAeEntryConfig
@@ -17,7 +18,7 @@ from pipelines.profile_autoencoder.inference.pipeline import ProfileAeInferenceP
 from pipelines.profile_autoencoder.training.pipeline  import TrainingPipeline as ProfileTrainingPipeline
 
 
-pytestmark = [pytest.mark.real_data, pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
+pytestmark = [pytest.mark.dataset, pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
 
 
 def _entry_config(test_data_dir, params_dir, tmp_path) -> ImageAeEntryConfig:
@@ -30,9 +31,9 @@ def _entry_config(test_data_dir, params_dir, tmp_path) -> ImageAeEntryConfig:
     entry.training.validation_frequency = 1
     entry.training.batch_size           = 8
     entry.training.num_workers          = 0
-    entry.training.train_azimuth        = (1000, 1400)
-    entry.training.val_azimuth          = (1400, 1500)
-    entry.training.test_azimuth         = (1500, 1600)
+    entry.training.train_azimuth        = (1000, 1320)
+    entry.training.val_azimuth          = (1320, 1416)
+    entry.training.test_azimuth         = (1416, 1512)
     entry.training.patch_size           = (64, 64)
     entry.training.patch_stride         = (64, 64)
 
@@ -83,7 +84,7 @@ def test_image_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_pat
     assert (run_directory / "meta" / "dataset_creation_config.json").is_file()
 
     payload = json.loads((run_directory / "meta" / "dataset_creation_config.json").read_text())
-    assert payload["n_gaussians"] == 5
+    assert payload["n_gaussians"] == SynthesisConfig().k_max
 
     config = ImageAeInferenceConfig(
         run_directory = run_directory,
@@ -121,9 +122,9 @@ def _profile_entry_config(test_data_dir, params_dir, tmp_path) -> ProfileAeEntry
     entry.training.batch_size           = 256
     entry.training.num_workers          = 0
     entry.training.scale_lr_with_batch  = False
-    entry.training.train_azimuth        = (1000, 1400)
-    entry.training.val_azimuth          = (1400, 1500)
-    entry.training.test_azimuth         = (1500, 1600)
+    entry.training.train_azimuth        = (1000, 1320)
+    entry.training.val_azimuth          = (1320, 1416)
+    entry.training.test_azimuth         = (1416, 1512)
 
     entry.pixel_subsample = 0.005
     entry.model_overrides = {"hidden_dim": 64, "depth": 2, "embedding_dim": 8}
@@ -155,7 +156,7 @@ def test_profile_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_p
 
     metrics = json.loads((output_dir / "metrics.json").read_text())
     assert metrics["split"] == "test"
-    assert metrics["split_regions"] == [[1500, 1600, 500, 1000]]
+    assert metrics["split_regions"] == [[1416, 1512, 500, 820]]
     assert np.isfinite(metrics["mse_mean"])
     assert np.isfinite(metrics["mse_mean_normalized"])
 

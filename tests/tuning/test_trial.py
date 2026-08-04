@@ -7,8 +7,13 @@ import pytest
 
 import pipelines.tuning.trial as trial_mod
 
-from pipelines.tuning.trial  import TrialTrainer, TrialProfileAeTrainer, TrialImageAeTrainer, TrialJepaTrainer
-from pipelines.tuning.tuners import AeTuner, JepaTuner
+from pipelines.tuning.trial             import TrialTrainer, TrialProfileAeTrainer, TrialImageAeTrainer, TrialJepaTrainer
+from pipelines.tuning.tuners            import AeTuner, JepaTuner
+from configuration.training.general.run import DEFAULT_PARAMS_RUN
+from configuration.synthesis            import SynthesisConfig
+
+
+SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
 
 
 def test_trial_callback_reports_intermediate_value():
@@ -258,11 +263,11 @@ class FakeJepaEntry:
 
         self.training     = FakeJepaTraining()
         self.param_loss   = LossConfig(use_param_l1=True)
-        self.paths        = TrainingPathsConfig(dataset_path=test_data_dir, parameters_path=test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy")
+        self.paths        = TrainingPathsConfig(dataset_path=test_data_dir, parameters_path=test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy")
         self.augmentation = AugmentationConfig()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_jepa_tuner_objective_sets_model_overrides(fake_logger, tune_cfg, tmp_path, monkeypatch, test_data_dir):
     captured = {}
 
@@ -289,13 +294,13 @@ def test_jepa_tuner_objective_sets_model_overrides(fake_logger, tune_cfg, tmp_pa
 
     entry = captured["entry"]
     assert entry.backbone_name == "vit"
-    assert entry.run_name      == "vit-conv-hungarian-K_5-hv-none-param_l1_0.1_trial_0000"
+    assert entry.run_name      == f"vit-conv-hungarian-{SCENE_K_TAG}-hv-none-param_l1_0.1_trial_0000"
     assert set(entry.model_overrides.keys()) == {"depth", "hidden_dim"}
     assert entry.model_overrides["depth"]      in [2, 4, 8]
     assert entry.model_overrides["hidden_dim"] in [64, 128]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_jepa_tuner_space_uses_arch_params_only(fake_logger, tune_cfg, tmp_path, test_data_dir):
     tuner = JepaTuner(
         model_name       = "vit",

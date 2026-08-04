@@ -62,8 +62,8 @@ def test_from_ratios_share_range_extent():
         assert region.range_end   == 475
 
 
-@pytest.mark.real_data
-def test_parameter_cropper_loads_disjoint_pixel_counts(test_data_dir, params_dir, tmp_path):
+@pytest.mark.dataset
+def test_parameter_cropper_loads_disjoint_pixel_counts(test_data_dir, params_dir, parameters, scene_config, tmp_path):
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_real", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
 
@@ -79,13 +79,13 @@ def test_parameter_cropper_loads_disjoint_pixel_counts(test_data_dir, params_dir
     val   = cropper.load_split("val")
     test  = cropper.load_split("test")
 
-    assert train[0].shape == (15, 60, 60)
-    assert val[0].shape   == (15, 20, 60)
-    assert test[0].shape  == (15, 20, 60)
-    assert cropper.profile_length() == 150
+    assert train[0].shape == (parameters.shape[0], 60, 60)
+    assert val[0].shape   == (parameters.shape[0], 20, 60)
+    assert test[0].shape  == (parameters.shape[0], 20, 60)
+    assert cropper.profile_length() == scene_config.profile_length
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_parameter_cropper_regions_load_distinct_data(test_data_dir, params_dir, tmp_path):
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_real2", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
@@ -104,7 +104,7 @@ def test_parameter_cropper_regions_load_distinct_data(test_data_dir, params_dir,
     assert not np.array_equal(train, val)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_parameter_cropper_rejects_overlapping_splits(test_data_dir, params_dir, tmp_path):
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_overlap", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")

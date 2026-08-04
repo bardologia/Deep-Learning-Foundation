@@ -208,8 +208,8 @@ def test_grouper_section_order_follows_definition():
     assert idx("SSIM") < idx("Matched Gaussian")
 
 
-@pytest.mark.real_data
-def test_report_assembly_with_real_metadata(param_extraction_meta, baselines_json, tmp_path):
+@pytest.mark.dataset
+def test_report_assembly_with_scene_metadata(param_extraction_meta, tmp_path):
     assets = ReportAssets(base=tmp_path, timestamp="2026-01-01 00:00:00")
 
     fig = tmp_path / "figs" / "overview.png"
@@ -220,7 +220,7 @@ def test_report_assembly_with_real_metadata(param_extraction_meta, baselines_jso
     lines += [""]
     lines += assets.image("Overview", fig)
 
-    records = [SimpleNamespace(metrics={k: v for k, v in baselines_json.items() if isinstance(v, (int, float))})]
+    records = [SimpleNamespace(metrics={k: v for k, v in param_extraction_meta.items() if isinstance(v, (int, float))})]
     keys    = MetricSectionGrouper.scalar_keys(records)
     for title, section_keys in MetricSectionGrouper().group(keys):
         lines += [f"## {title}", ""]

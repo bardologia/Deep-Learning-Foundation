@@ -289,8 +289,8 @@ def test_doc_save_roundtrip_equals_render(tmp_path):
     assert out.read_text(encoding="utf-8") == doc.render()
 
 
-@pytest.mark.real_data
-def test_kv_table_with_real_extraction_meta(param_extraction_meta):
+@pytest.mark.dataset
+def test_kv_table_with_scene_extraction_meta(param_extraction_meta):
     scalars = {k: v for k, v in param_extraction_meta.items() if isinstance(v, (str, int, float))}
     doc     = MarkdownDoc("Extraction")
     doc.kv_table(scalars)
@@ -300,10 +300,10 @@ def test_kv_table_with_real_extraction_meta(param_extraction_meta):
         assert f"`{key}`" in text
 
 
-@pytest.mark.real_data
-def test_table_render_real_baselines(baselines_json):
+@pytest.mark.dataset
+def test_table_render_extraction_meta(param_extraction_meta):
     table = MarkdownTable(["Key", "Value"])
-    for k, v in list(baselines_json.items())[:6]:
+    for k, v in list(param_extraction_meta.items())[:6]:
         table.add_row(str(k), ScalarFormatter.format_scalar(v) if not isinstance(v, (dict, list)) else "...")
     lines = table.render()
     assert all(line.count("|") == 3 for line in lines)

@@ -8,8 +8,12 @@ from pipelines.benchmark.workers import (
     BenchmarkWorker,
     MaxBatchWorker,
 )
-from configuration.benchmark     import BenchmarkConfig
-from tools.data.io               import FileIO
+from configuration.benchmark import BenchmarkConfig
+from tools.data.io           import FileIO
+from configuration.synthesis import SynthesisConfig
+
+
+SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
 
 
 @pytest.fixture
@@ -19,7 +23,7 @@ def config(tmp_path):
     return config
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_run_name_encodes_model_head_matching_gaussians_aug_presence_component_and_seed(config, test_data_dir, params_dir):
     from pipelines.shared.training.run_naming import RunNaming
 
@@ -27,13 +31,13 @@ def test_run_name_encodes_model_head_matching_gaussians_aug_presence_component_a
     config.paths.parameters_path = params_dir / "parameters.npy"
 
     worker = BenchmarkWorker(config, "tag")
-    tag    = RunNaming.benchmark_unit("unet", None, config.loss, 5, config.augmentation)
+    tag    = RunNaming.benchmark_unit("unet", None, config.loss, SynthesisConfig().k_max, config.augmentation)
 
     assert worker._run_name("unet", None, None)       == tag
     assert worker._run_name("unet", None, 5)          == f"{tag}/seed5"
-    assert worker._run_name("unet", "param_l1", None) == "unet-conv-hungarian-K_5-hv-A__param_l1"
-    assert worker._run_name("unet", "param_l1", 5)    == "unet-conv-hungarian-K_5-hv-A__param_l1/seed5"
-    assert tag.startswith("unet-conv-hungarian-K_5-hv-A-param_l1_1")
+    assert worker._run_name("unet", "param_l1", None) == f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1"
+    assert worker._run_name("unet", "param_l1", 5)    == f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed5"
+    assert tag.startswith(f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB-param_l1_1")
 
 
 def test_size_overrides_empty_without_file(config):
@@ -143,7 +147,7 @@ def test_max_batch_worker_raises_on_probe_fail(config, monkeypatch):
         worker.run("unet")
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data_dir, params_dir, monkeypatch):
     from pipelines.benchmark.workers import TrainingWorker
 

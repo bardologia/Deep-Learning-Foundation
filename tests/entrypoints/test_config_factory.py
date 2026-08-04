@@ -10,13 +10,14 @@ from configuration.inference                import InferenceConfig
 from configuration.training                 import BackboneTrainerConfig
 from pipelines.shared.config.config_factory import ConfigFactory
 from tools.data.regions                     import CropRegion
+from configuration.training.general.run     import DEFAULT_PARAMS_RUN
 
 
 @pytest.fixture
 def factory(test_data_dir):
     config                       = BenchmarkConfig()
     config.paths.dataset_path    = str(test_data_dir)
-    config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
+    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     return ConfigFactory(config)
 
 
@@ -50,7 +51,7 @@ def test_benchmark_input_config_uses_expected_representations(bare_factory):
     assert input_config.interferograms_representation == Representation.ANGLE_ONLY
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_global_crop_reads_dataset_json(factory, dataset_json):
     crop = factory.global_crop()
 
@@ -58,7 +59,7 @@ def test_global_crop_reads_dataset_json(factory, dataset_json):
     assert list(crop.as_tuple()) == dataset_json["global_crop"]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_dataset_config_uses_global_crop_range(factory, dataset_json):
     dataset_config = factory.training_dataset_config()
     crop           = dataset_json["global_crop"]
@@ -68,7 +69,7 @@ def test_training_dataset_config_uses_global_crop_range(factory, dataset_json):
     assert train.range_end   == crop[3]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_dataset_config_azimuth_from_training(factory):
     training       = factory.config.training
     dataset_config = factory.training_dataset_config()
@@ -82,7 +83,7 @@ def test_training_dataset_config_azimuth_from_training(factory):
     assert (test.azimuth_start,  test.azimuth_end)  == tuple(training.test_azimuth)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_dataset_config_propagates_loader_settings(factory):
     training       = factory.config.training
     dataset_config = factory.training_dataset_config()
@@ -94,7 +95,7 @@ def test_training_dataset_config_propagates_loader_settings(factory):
     assert dataset_config.pin_memory      is True
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_dataset_config_propagates_patch_padding(factory):
     factory.config.training.use_symmetric_padding = False
 
@@ -126,7 +127,7 @@ def test_inference_config_propagates_inference_fields(bare_factory, tmp_path):
     assert config.gif_axes        == list(inference.gif_axes)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_logdir(factory, tmp_path):
     trainer_config = factory.training_trainer_config(tmp_path / "logdir")
 
@@ -134,7 +135,7 @@ def test_training_trainer_config_logdir(factory, tmp_path):
     assert trainer_config.io.logdir == str(tmp_path / "logdir")
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_epochs_propagate(factory, tmp_path):
     training       = factory.config.training
     trainer_config = factory.training_trainer_config(tmp_path / "logdir")
@@ -142,7 +143,7 @@ def test_training_trainer_config_epochs_propagate(factory, tmp_path):
     assert trainer_config.training.epochs == training.epochs
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_warmup_propagates(factory, tmp_path):
     training                = factory.config.training
     training.warmup_enabled = False
@@ -154,7 +155,7 @@ def test_training_trainer_config_warmup_propagates(factory, tmp_path):
     assert trainer_config.warmup.warmup_steps   == 42
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_abort_flag_propagates(factory, tmp_path):
     factory.config.training.abort_on_nonfinite_loss = False
 
@@ -163,7 +164,7 @@ def test_training_trainer_config_abort_flag_propagates(factory, tmp_path):
     assert trainer_config.training.abort_on_nonfinite_loss is False
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_snapshot_cadence_propagates(factory, tmp_path):
     factory.config.training.snapshot_every_n_epochs = 5
 
@@ -172,7 +173,7 @@ def test_training_trainer_config_snapshot_cadence_propagates(factory, tmp_path):
     assert trainer_config.training.snapshot_every_n_epochs == 5
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_lr_scale_with_batch(factory, tmp_path):
     training = factory.config.training
     training.scale_lr_with_batch = True
@@ -183,7 +184,7 @@ def test_training_trainer_config_lr_scale_with_batch(factory, tmp_path):
     assert trainer_config.optimizer.lr_scale == pytest.approx(expected)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_lr_scale_disabled(factory, tmp_path):
     factory.config.training.scale_lr_with_batch = False
 

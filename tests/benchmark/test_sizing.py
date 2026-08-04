@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from pipelines.benchmark.sizing import DegeneracyAuditor, SizeMatcher, SizeMatchResult, WidthRule, WidthScaler
-from configuration.benchmark    import BenchmarkConfig
+from pipelines.benchmark.sizing         import DegeneracyAuditor, SizeMatcher, SizeMatchResult, WidthRule, WidthScaler
+from configuration.benchmark            import BenchmarkConfig
+from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
 LOCKED = ("embedding_dim", "embedding_dims")
@@ -96,7 +97,7 @@ def test_width_scaler_scaled_config_applies_overrides(scaler):
 def _config(dataset_path) -> BenchmarkConfig:
     config                       = BenchmarkConfig()
     config.paths.dataset_path    = dataset_path
-    config.paths.parameters_path = dataset_path / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
+    config.paths.parameters_path = dataset_path / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     return config
 
 
@@ -108,7 +109,7 @@ def test_size_matcher_rejects_in_channels_drift(logger_stub):
         SizeMatcher(config=config, logger=logger_stub)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_size_matcher_reference_count_matches_default_unet(test_data_dir, logger_stub):
     config  = _config(test_data_dir)
     matcher = SizeMatcher(config=config, logger=logger_stub)
@@ -119,7 +120,7 @@ def test_size_matcher_reference_count_matches_default_unet(test_data_dir, logger
     assert count == matcher._count_at("unet", 1.0)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_size_matcher_matches_resunet_within_tolerance(test_data_dir, logger_stub):
     config  = _config(test_data_dir)
@@ -135,7 +136,7 @@ def test_size_matcher_matches_resunet_within_tolerance(test_data_dir, logger_stu
     assert abs(result.deviation_pct) <= 100.0 * config.size_match.tolerance + 1e-6
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_size_matcher_history_records_each_iteration(test_data_dir, logger_stub):
     config  = _config(test_data_dir)

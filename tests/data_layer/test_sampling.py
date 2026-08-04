@@ -65,8 +65,8 @@ def test_equal_total_and_max_returns_full_arange():
     assert np.array_equal(idx, np.arange(50))
 
 
-@pytest.mark.real_data
-def test_sample_real_secondary_pixels(secondaries):
+@pytest.mark.dataset
+def test_sample_scene_secondary_pixels(secondaries):
     window  = np.asarray(secondaries[0, :64, :64])
     flat    = window.reshape(-1)
     idx     = Sampler.deterministic_indices(flat.shape[0], 100, seed=42)

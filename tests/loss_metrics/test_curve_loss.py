@@ -128,8 +128,8 @@ def test_outputs_are_scalars():
         assert out.ndim == 0
 
 
-@pytest.mark.real_data
-def test_curve_losses_on_real_tomogram(tomogram_full):
+@pytest.mark.dataset
+def test_curve_losses_on_scene_tomogram(tomogram_full):
     win = np.abs(np.asarray(tomogram_full[:16, :8, :8])).astype(np.float64)
     cur = torch.from_numpy(win)[None]
 

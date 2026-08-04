@@ -148,17 +148,17 @@ def test_region_rows_list_region_indexes():
     assert train_labels == ["train[0]", "train[1]"]
 
 
-@pytest.mark.real_data
-def test_crop_region_matches_real_config(config_state_json):
+@pytest.mark.dataset
+def test_crop_region_matches_scene_config(config_state_json, scene_config):
     crop   = config_state_json["crop"]
     region = CropRegion(crop["azimuth_start"], crop["azimuth_end"], crop["range_start"], crop["range_end"])
 
-    assert region.azimuth_size == 1000
-    assert region.range_size   == 500
+    assert region.azimuth_size == scene_config.azimuth_size
+    assert region.range_size   == scene_config.range_size
 
 
-@pytest.mark.real_data
-def test_real_crop_local_slices_index_data(config_state_json, tomogram_full):
+@pytest.mark.dataset
+def test_scene_crop_local_slices_index_data(config_state_json, tomogram_full):
     crop   = config_state_json["crop"]
     glob   = CropRegion(crop["azimuth_start"], crop["azimuth_end"], crop["range_start"], crop["range_end"])
     sub    = CropRegion(crop["azimuth_start"], crop["azimuth_start"] + 32, crop["range_start"], crop["range_start"] + 16)

@@ -13,7 +13,8 @@ from pipelines.benchmark.batch_probe         import MaxBatchProbe
 from tools.monitoring.logger                 import Logger
 from tools.training.pretraining.batch_finder import TrainStepMemoryProbe
 
-from tests.backbone_training._helpers import identity_normalizer, tiny_model, tiny_trainer_config, x_axis_numpy
+from tests.backbone_training._helpers   import identity_normalizer, tiny_model, tiny_trainer_config, x_axis_numpy
+from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
 GPU = pytest.mark.skipif(not torch.cuda.is_available(), reason="batch probe memory measurement requires CUDA")
@@ -250,12 +251,12 @@ def test_run_records_the_measured_context(monkeypatch, tmp_path):
     assert captured["context_gb"] == 0.75
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_build_context_probes_with_the_swept_loss_union(monkeypatch, tmp_path, test_data_dir):
     config                       = BenchmarkConfig()
     config.paths.log_base_dir    = tmp_path
     config.paths.dataset_path    = str(test_data_dir)
-    config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
+    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     config.sweep_loss_components = ["param_l1", "moments"]
 
     probe          = _bare_probe(ceiling=1)

@@ -55,7 +55,7 @@ def test_registry_entries_build(name):
     assert cfg.profile_length == PROFILE_LENGTH
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", NAMES)
 def test_roundtrip_shape(name, tomogram_full):
     model, cfg = _build(name)
@@ -74,7 +74,7 @@ def test_roundtrip_shape(name, tomogram_full):
     assert _finite(z)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", NAMES)
 def test_latent_dim(name, tomogram_full):
     model, _ = _build(name)
@@ -87,7 +87,7 @@ def test_latent_dim(name, tomogram_full):
     assert z.shape[1] == EMBEDDING_DIM
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", NAMES)
 def test_backward_finite_grads(name, tomogram_full):
     model, _ = _build(name)

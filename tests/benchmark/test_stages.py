@@ -13,9 +13,14 @@ from pipelines.benchmark.stages import (
     SizeMatchStage,
     TrainingStage,
 )
-from configuration.benchmark    import BenchmarkConfig
-from tools.data.io              import FileIO
-from tools.orchestration        import QueuedInferenceStage, QueuedTrainingStage
+from configuration.benchmark            import BenchmarkConfig
+from tools.data.io                      import FileIO
+from tools.orchestration                import QueuedInferenceStage, QueuedTrainingStage
+from configuration.training.general.run import DEFAULT_PARAMS_RUN
+from configuration.synthesis            import SynthesisConfig
+
+
+SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
 
 
 @pytest.fixture
@@ -29,7 +34,7 @@ def config(tmp_path):
 @pytest.fixture
 def data_config(config, test_data_dir):
     config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
+    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     return config
 
 
@@ -102,13 +107,13 @@ def test_sizematch_reference_record_is_zero_deviation(config, logger_stub):
     assert record["iterations"]    == 0
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_sizematch_run_emits_reference_and_matched(monkeypatch, logger_stub, test_data_dir, tmp_path):
     config                       = BenchmarkConfig()
     config.paths.log_base_dir    = tmp_path
     config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
+    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     config.resume                = False
     config.skip_models           = []
 
@@ -149,7 +154,7 @@ def test_sizematch_load_cached_returns_when_complete(config, logger_stub):
     assert set(cached) == {"unet", "resunet"}
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_and_inference_stages_subclass_queued_bases(data_config, logger_stub):
     train = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
     infer = InferenceStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
@@ -210,12 +215,12 @@ def test_sweep_components_collapse_for_non_backbone(config):
     assert SeedExpandedStage.components(config) == [None]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_seed_sweep_job_uses_base_model_and_seed(data_config, logger_stub):
     data_config.seeds = [7]
     stage = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
 
-    unit = "unet-conv-hungarian-K_5-hv-A__param_l1"
+    unit = f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1"
     assert stage.items == [f"{unit}/seed7"]
 
     job = stage._job(f"{unit}/seed7")
@@ -225,12 +230,12 @@ def test_training_seed_sweep_job_uses_base_model_and_seed(data_config, logger_st
     assert job.log_path == stage.stage_dir / f"{unit}/seed7" / "worker.log"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_seed_sweep_matches_training_run_names(data_config, logger_stub):
     data_config.seeds = [3, 4]
     stage = InferenceStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
 
-    unit = "unet-conv-hungarian-K_5-hv-A__param_l1"
+    unit = f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1"
     assert stage.items == [f"{unit}/seed3", f"{unit}/seed4"]
 
     job = stage._job(f"{unit}/seed4")
@@ -239,8 +244,8 @@ def test_inference_seed_sweep_matches_training_run_names(data_config, logger_stu
     assert job.command[job.command.index("--worker") + 1] == "infer"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_unit_base_names_model_head_stem_and_component(data_config):
     unit = SeedExpandedStage.unit_base(data_config, "resunet-set_pred", "mse_curve")
 
-    assert unit == "resunet-set_pred-hungarian-K_5-hv-A__mse_curve"
+    assert unit == f"resunet-set_pred-hungarian-{SCENE_K_TAG}-hv-AB__mse_curve"

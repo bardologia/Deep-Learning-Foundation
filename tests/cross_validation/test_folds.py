@@ -219,8 +219,8 @@ def test_zero_guard_reproduces_block_aligned_regions():
     assert (test_region.azimuth_start, test_region.azimuth_end) == planner.blocks[0]
 
 
-def test_default_guard_is_64():
-    assert FoldConfig().guard == 64
+def test_default_guard_matches_the_scene_fold_blocks():
+    assert FoldConfig().guard == 16
 
 
 def test_rejects_odd_or_negative_guard():
@@ -276,14 +276,14 @@ def test_split_regions_helpers_consistent_with_plan():
     assert isinstance(plan.split_regions, SplitRegions)
 
 
-def factory_config(test_data_dir: Path, n_folds: int = 5, azimuth_start: int = 1000, azimuth_end: int = 2000) -> CrossValidationConfig:
+def factory_config(test_data_dir: Path, n_folds: int = 5, azimuth_start: int = 1000, azimuth_end: int = 1512) -> CrossValidationConfig:
     config                    = CrossValidationConfig()
     config.paths.dataset_path = test_data_dir
     config.folds              = FoldConfig(n_folds=n_folds, azimuth_start=azimuth_start, azimuth_end=azimuth_end)
     return config
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_factory_planner_reads_global_crop_range(test_data_dir):
     factory = FoldConfigFactory(factory_config(test_data_dir))
     planner = factory.planner()
@@ -293,14 +293,14 @@ def test_factory_planner_reads_global_crop_range(test_data_dir):
     assert planner.range_end   == crop.range_end
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_factory_planner_is_cached(test_data_dir):
     factory = FoldConfigFactory(factory_config(test_data_dir))
 
     assert factory.planner() is factory.planner()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_factory_planner_rejects_window_outside_global_crop(test_data_dir):
     factory = FoldConfigFactory(factory_config(test_data_dir, azimuth_start=500))
 
@@ -308,7 +308,7 @@ def test_factory_planner_rejects_window_outside_global_crop(test_data_dir):
         factory.planner()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_factory_fold_inference_config_sets_split_and_subdir(test_data_dir):
     factory   = FoldConfigFactory(factory_config(test_data_dir))
     run_dir   = Path("/tmp/cv_run/folds/fold_0")

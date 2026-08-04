@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -13,12 +14,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-_TEST_DATA = _REPO_ROOT / "test_data"
-_DATA      = _TEST_DATA / "data"
-_META      = _TEST_DATA / "meta"
-_PARAMS    = _TEST_DATA / "params" / "params_k5_lam0.01_sig4_sigma"
+from configuration.synthesis import SynthesisConfig
 
-_HAS_DATA = _TEST_DATA.is_dir() and (_DATA / "dataset.json").is_file()
+_SCENE_CONFIG = SynthesisConfig()
 
 
 class SilentProgress:
@@ -66,13 +64,8 @@ class SilentLogger:
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "real_data: test depends on the transferred real SAR data under test_data/")
+    config.addinivalue_line("markers", "dataset: test runs against the generated synthetic dataset scene")
     config.addinivalue_line("markers", "slow: heavier test (full-frame numerics, many model forwards)")
-
-
-def _require_data():
-    if not _HAS_DATA:
-        pytest.skip("real data not present under test_data/")
 
 
 @pytest.fixture
@@ -91,27 +84,34 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
-def test_data_dir() -> Path:
-    _require_data()
-    return _TEST_DATA
+def scene_config() -> SynthesisConfig:
+    return _SCENE_CONFIG
 
 
 @pytest.fixture(scope="session")
-def data_dir() -> Path:
-    _require_data()
-    return _DATA
+def test_data_dir(tmp_path_factory) -> Path:
+    from pipelines.processing.synthesis.pipeline import SyntheticDatasetPipeline
+
+    config = dataclasses.replace(_SCENE_CONFIG, output_directory=tmp_path_factory.mktemp("synthetic_scene") / "synthetic_small")
+
+    SyntheticDatasetPipeline(config, logger=SilentLogger()).run()
+
+    return config.output_directory
 
 
 @pytest.fixture(scope="session")
-def meta_dir() -> Path:
-    _require_data()
-    return _META
+def data_dir(test_data_dir) -> Path:
+    return test_data_dir / "data"
 
 
 @pytest.fixture(scope="session")
-def params_dir() -> Path:
-    _require_data()
-    return _PARAMS
+def meta_dir(test_data_dir) -> Path:
+    return test_data_dir / "meta"
+
+
+@pytest.fixture(scope="session")
+def params_dir(test_data_dir) -> Path:
+    return test_data_dir / "params" / _SCENE_CONFIG.params_run_name
 
 
 @pytest.fixture(scope="session")
@@ -122,11 +122,6 @@ def dataset_json(data_dir) -> dict:
 @pytest.fixture(scope="session")
 def config_state_json(meta_dir) -> dict:
     return json.loads((meta_dir / "config_state.json").read_text())
-
-
-@pytest.fixture(scope="session")
-def baselines_json(meta_dir) -> dict:
-    return json.loads((meta_dir / "baselines.json").read_text())
 
 
 @pytest.fixture(scope="session")
@@ -172,12 +167,6 @@ def parameters(params_dir) -> np.ndarray:
 @pytest.fixture(scope="session")
 def fit_diagnostics(params_dir) -> dict:
     npz = np.load(params_dir / "fit_diagnostics.npz")
-    return {k: npz[k] for k in npz.files}
-
-
-@pytest.fixture(scope="session")
-def track_profiles(data_dir) -> dict:
-    npz = np.load(data_dir / "track_profiles.npz", allow_pickle=True)
     return {k: npz[k] for k in npz.files}
 
 

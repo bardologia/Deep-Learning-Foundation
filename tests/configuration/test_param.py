@@ -13,6 +13,8 @@ from configuration.param_extraction import (
     ExtractionConfig,
     ExtractParamsEntryConfig,
 )
+from configuration.synthesis            import SynthesisConfig
+from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
 def test_fit_config_defaults_sane():
@@ -153,19 +155,13 @@ def test_extraction_config_output_directory_layout():
     assert cfg.output_directory.name        == cfg.output_subdir_name
 
 
-@pytest.mark.real_data
-def test_extraction_config_matches_param_extraction_meta_suffix(param_extraction_meta, params_dir):
-    fit_config = FitConfig(
-        k_max              = param_extraction_meta["k_max"],
-        lambda_k           = param_extraction_meta["lambda_k"],
-        sigma_init_divisor = param_extraction_meta["sigma_init_divisor"],
-        fit_sigma          = param_extraction_meta["fit_sigma"],
-        fit_amplitude      = param_extraction_meta["fit_amplitude"],
-        fit_mean           = param_extraction_meta["fit_mean"],
-    )
-    cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), fit_settings=FitSettings(fit_config=fit_config))
+@pytest.mark.dataset
+def test_generated_parameter_run_is_the_training_default(param_extraction_meta, params_dir):
+    cfg = ExtractionConfig(processed_data_path=Path("/tmp/run"), output_suffix=params_dir.name.removeprefix("params_"))
 
-    assert cfg.output_subdir_name == params_dir.name
+    assert cfg.output_subdir_name              == params_dir.name
+    assert params_dir.name                     == DEFAULT_PARAMS_RUN
+    assert int(param_extraction_meta["k_max"]) == SynthesisConfig().k_max
 
 
 def test_extraction_discover_height_range_from_state(tmp_path):

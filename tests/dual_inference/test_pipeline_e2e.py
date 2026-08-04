@@ -15,13 +15,14 @@ from pipelines.backbone.inference.pipeline     import InferencePipeline
 from pipelines.dual.inference.pipeline         import DUAL_INFERENCE_COMPONENTS
 from pipelines.dual.training.pipeline          import DualTrainingPipeline
 from pipelines.shared.inference.run_classifier import RunClassifier, RunType
+from configuration.synthesis                   import SynthesisConfig
 from tools.data.regions                        import CropRegion
 
 
 
-pytestmark = [pytest.mark.real_data, pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
+pytestmark = [pytest.mark.dataset, pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
 
-N_GAUSSIANS      = 5
+N_GAUSSIANS      = SynthesisConfig().k_max
 SECONDARY_LABELS = ("FL01_PS04", "FL01_PS06")
 
 

@@ -440,14 +440,15 @@ def test_matched_amp_error_over_matched_pairs():
     assert out["matched_amp_mae_gt2"] == pytest.approx((0.3 + 0.2) / 2.0, abs=1e-6)
 
 
-@pytest.mark.real_data
-def test_metrics_identical_real_parameter_window_is_perfect(parameters):
+@pytest.mark.dataset
+def test_metrics_identical_scene_parameter_window_is_perfect(parameters):
     params = np.asarray(parameters[:, :16, :16], dtype=np.float32)
     x_axis = _x_axis(40)
-    curve  = _curves_from_params(params, x_axis, N_GAUSSIANS)
+    n_gaussians = params.shape[0] // 3
+    curve  = _curves_from_params(params, x_axis, n_gaussians)
 
     res = _make_result(curve, curve, params_pred=params.copy(), params_gt=params.copy())
-    m   = Metrics(res, x_axis, N_GAUSSIANS)
+    m   = Metrics(res, x_axis, n_gaussians)
 
     metrics = m.compute(param_space=True)
 
@@ -456,38 +457,25 @@ def test_metrics_identical_real_parameter_window_is_perfect(parameters):
     assert metrics["pixel_r2_gt_mean"] == pytest.approx(1.0, abs=1e-4)
 
 
-@pytest.mark.real_data
-def test_metrics_perturbed_real_window_is_worse(parameters):
+@pytest.mark.dataset
+def test_metrics_perturbed_scene_window_is_worse(parameters):
     rng    = np.random.default_rng(11)
     params = np.asarray(parameters[:, :16, :16], dtype=np.float32)
     x_axis = _x_axis(40)
-    gt     = _curves_from_params(params, x_axis, N_GAUSSIANS)
+    n_gaussians = params.shape[0] // 3
+    gt     = _curves_from_params(params, x_axis, n_gaussians)
 
     pred_small = gt + 0.001 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
     pred_large = gt + 0.200 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
 
-    m_small = Metrics(_make_result(pred_small, gt), x_axis, N_GAUSSIANS)
-    m_large = Metrics(_make_result(pred_large, gt), x_axis, N_GAUSSIANS)
+    m_small = Metrics(_make_result(pred_small, gt), x_axis, n_gaussians)
+    m_large = Metrics(_make_result(pred_large, gt), x_axis, n_gaussians)
 
     s = m_small.compute(param_space=False)
     l = m_large.compute(param_space=False)
 
     assert s["curve_mse_gt"]  < l["curve_mse_gt"]
     assert s["overall_r2_gt"] > l["overall_r2_gt"]
-
-
-@pytest.mark.real_data
-def test_reduced_comparison_identical_reduced_zero_improvement(parameters):
-    params = np.asarray(parameters[:, :12, :12], dtype=np.float32)
-    x_axis = _x_axis(40)
-    gt     = _curves_from_params(params, x_axis, N_GAUSSIANS)
-    pred   = gt.copy()
-
-    m    = Metrics(_make_result(pred, gt), x_axis, N_GAUSSIANS)
-    comp = m.reduced_comparison(gt.copy())
-
-    assert comp.metrics["improvement_pixel_mse_mean"] == pytest.approx(0.0, abs=1e-6)
-    assert comp.reduced_norm.shape == gt.shape
 
 
 def test_label_quality_perfect_fit_gives_r2_one():

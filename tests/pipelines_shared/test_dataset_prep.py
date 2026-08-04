@@ -39,9 +39,9 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
     )
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
-def test_backbone_preparation_returns_loaders_axis_and_datasets(test_data_dir, params_dir, tmp_path):
+def test_backbone_preparation_returns_loaders_axis_and_datasets(test_data_dir, params_dir, scene_config, tmp_path):
     dataset_config = _dataset_config(test_data_dir, params_dir)
     gaussian       = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy")
     trainer_config = SimpleNamespace(gaussian=gaussian)
@@ -54,8 +54,8 @@ def test_backbone_preparation_returns_loaders_axis_and_datasets(test_data_dir, p
     assert len(loaders) == 3
     assert set(datasets.keys()) == {"train", "val", "test"}
 
-    assert x_len == 150
-    assert x_axis.shape == (150,)
+    assert x_len == scene_config.profile_length
+    assert x_axis.shape == (scene_config.profile_length,)
     assert np.isclose(x_axis[0],  gaussian.x_min)
     assert np.isclose(x_axis[-1], gaussian.x_max)
 
@@ -63,7 +63,7 @@ def test_backbone_preparation_returns_loaders_axis_and_datasets(test_data_dir, p
     assert dataset_config.x_axis is x_axis
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_preparation_loader_batches_consistent(test_data_dir, params_dir, tmp_path):
     dataset_config = _dataset_config(test_data_dir, params_dir)

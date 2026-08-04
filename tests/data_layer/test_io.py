@@ -122,16 +122,16 @@ def test_save_text_metadata_creates_parent(tmp_path):
     assert path.is_file()
 
 
-@pytest.mark.real_data
-def test_load_json_reads_real_config_state(meta_dir):
+@pytest.mark.dataset
+def test_load_json_reads_scene_config_state(meta_dir):
     loaded = FileIO.load_json(meta_dir / "config_state.json")
 
     assert "crop" in loaded
     assert loaded["crop"]["azimuth_start"] == 1000
 
 
-@pytest.mark.real_data
-def test_save_json_roundtrip_real_dataset(dataset_json, tmp_path):
+@pytest.mark.dataset
+def test_save_json_roundtrip_scene_layout(dataset_json, tmp_path):
     path = tmp_path / "dataset_copy.json"
     FileIO.save_json(dataset_json, path)
 

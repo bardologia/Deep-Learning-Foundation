@@ -102,7 +102,7 @@ def _default_context_trials() -> list:
 
 def _default_reach_rungs() -> list:
     return [
-        {"label" : "cnn33", "backbone" : "local_cnn", "features" : [479] * 8, "dropout" : 0.15, "trunk_wd" : 1e-4},
+        {"label" : "cnn33", "backbone" : "local_cnn", "features" : [478] * 8, "dropout" : 0.15, "trunk_wd" : 1e-4},
         {"label" : "unet",  "backbone" : "unet",      "dropout" : 0.15},
     ]
 

@@ -67,9 +67,9 @@ def test_duplicate_breaks_run():
     assert RangeFormatter.compact([1, 1, 2]) == "1, 1-2"
 
 
-@pytest.mark.real_data
-def test_compact_on_contiguous_track_index(track_profiles):
-    keys = sorted(track_profiles.keys())
+@pytest.mark.dataset
+def test_compact_on_contiguous_pass_index(pass_labels):
+    keys = sorted(pass_labels)
     assert keys
 
     indices = list(range(len(keys)))
