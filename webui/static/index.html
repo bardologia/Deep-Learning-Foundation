@@ -605,23 +605,23 @@
         <div class="cube-z">
           <div class="cube-z__bar">
             <div class="cube-sweep__controls">
-              <button type="button" class="cube-sweep__play" id="cube-range-play">Play</button>
+              <button type="button" class="cube-sweep__play" id="cube-col-play">Play</button>
               <div class="cube-jump" role="group" aria-label="Set a range bin">
                 <span class="cube-jump__cell">
-                  <label for="cube-range-input">bin</label>
-                  <input type="number" id="cube-range-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
-                  <span class="cube-jump__range" id="cube-range-range"></span>
+                  <label for="cube-col-input">bin</label>
+                  <input type="number" id="cube-col-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
+                  <span class="cube-jump__range" id="cube-col-range"></span>
                 </span>
               </div>
             </div>
-            <span class="cube-z__at" id="cube-range-at">Play the sweep, or scroll a panel to move through range.</span>
+            <span class="cube-z__at" id="cube-col-at">Play the sweep, or scroll a panel to move through range.</span>
             <div class="cube-spaces" role="group" aria-label="Value space">
               <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
             </div>
           </div>
-          <div class="cube-z__track"><i class="cube-z__fill" id="cube-range-fill"></i></div>
-          <div class="cube-z__grid cube-z__grid--strip" id="cube-range-grid">
+          <div class="cube-z__track"><i class="cube-z__fill" id="cube-col-fill"></i></div>
+          <div class="cube-z__grid cube-z__grid--strip" id="cube-col-grid">
             <figure class="cube-eplane" data-source="pred"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span></div></figure>
             <figure class="cube-eplane" data-source="predb"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span></div></figure>
             <figure class="cube-eplane" data-source="diff"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span></div></figure>
