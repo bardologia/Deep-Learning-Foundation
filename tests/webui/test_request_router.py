@@ -16,8 +16,8 @@ from routers.static_router      import StaticRouter
 from routers.system_router      import SystemRouter
 from routers.tensorboard_router import TensorboardRouter
 
-ROUTE_COUNT   = 107
-SECTION_COUNT = 34
+ROUTE_COUNT   = 106
+SECTION_COUNT = 33
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -43,7 +43,6 @@ RESOLUTIONS = [
     ("GET",  "/api/backbones/unet/note",           BackboneRouter),
     ("GET",  "/api/jepa-variants/jepa_vit/note",   ModelLibraryRouter),
     ("GET",  "/api/configs",                       ContentLibraryRouter),
-    ("GET",  "/api/physics-loss",                  ContentLibraryRouter),
     ("GET",  "/api/project",                       CatalogRouter),
     ("GET",  "/api/scripts/train_backbone",        CatalogRouter),
     ("GET",  "/api/scripts/train_backbone/config", CatalogRouter),
@@ -112,7 +111,6 @@ def build_routers() -> list:
         TriageRouter(None),
         AutopsyRouter(None),
         ContentLibraryRouter("/api/equations",    None, "groups"),
-        ContentLibraryRouter("/api/physics-loss", None),
         ContentLibraryRouter("/api/flows",        None, "flows"),
         ContentLibraryRouter("/api/pipelines",    None, "pipelines"),
         ContentLibraryRouter("/api/repomap",      None, "folders"),

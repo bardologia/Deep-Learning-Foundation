@@ -198,7 +198,6 @@ class App {
     this.flowView = new window.FlowView(document.getElementById("flowx"));
     this._initModelMode();
 
-    this.physicsLossView = new window.PhysicsLossView(document.getElementById("phys"));
 
     this.pipelineFlow = new window.PipelineFlow(document.getElementById("flow"));
     this.pipelineFlow.load();
@@ -465,7 +464,6 @@ class App {
     }
     if (route === "ablation") this.ablationView.enter();
     if (route === "saved") this.savedRunsView.enter();
-    if (route === "physics") this.physicsLossView.load();
     if (route === "model" && document.querySelector("#model-mode .model-mode__btn.is-active")?.dataset.mode === "walkthrough") this.flowView.load();
     if (route === "repomap") this.repoMap.enter();
     if (route === "tensorboard") this.tensorboardView.enter();
