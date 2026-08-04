@@ -186,7 +186,7 @@ def test_output_denormalization_torch_and_numpy_agree():
     np.testing.assert_allclose(out_np, out_torch.numpy(), rtol=1e-5)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_fit_real_window_stats_finite_and_roundtrip(data_dir, interferograms, parameters, tmp_path):
     ifg     = np.ascontiguousarray(np.asarray(interferograms[:4, :24, :24]))
@@ -203,13 +203,13 @@ def test_fit_real_window_stats_finite_and_roundtrip(data_dir, interferograms, pa
     ds = PatchDataset(
         inputs=inputs, gt_parameters=params, grid=patcher,
         input_config=ic, output_config=oc, split_name="train",
-        n_secondaries=0, n_interferograms=4, n_gaussians=5,
+        n_secondaries=0, n_interferograms=4, n_gaussians=params.shape[0] // 3,
     )
 
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_real", level="ERROR")
     stats  = StatsComputer.compute(
         dataset=ds, logger=logger, input_config=ic, output_config=oc,
-        n_secondaries=0, n_interferograms=4, n_gaussians=5,
+        n_secondaries=0, n_interferograms=4, n_gaussians=params.shape[0] // 3,
     )
     logger.close()
 
@@ -239,8 +239,8 @@ def test_fixed_bounds_output_stats_resolve_per_slot():
     pools = {"out/amp": np.array([1.0]), "out/mu": np.array([1.0]), "out/sigma": np.array([1.0])}
     stats = StatsComputer._fit_output(logger=None, role_pools=pools, output_config=_fixed_bounds_output_config(), n_gaussians=2)
 
-    assert stats.loc == pytest.approx([1e-05, -15.0, 0.01, 1e-05, 1.0, 1.0])
-    assert stats.scale == pytest.approx([10.0 - 1e-05, 20.0, 4.99, 10.0 - 1e-05, 39.0, 19.0])
+    assert stats.loc == pytest.approx([1e-05, -20.0, 0.01, 1e-05, -20.0, 0.01])
+    assert stats.scale == pytest.approx([10.0 - 1e-05, 100.0, 49.99, 10.0 - 1e-05, 100.0, 49.99])
     assert [strat.norm_method for strat in stats.strategies] == [NormMethod.FIXED_BOUNDS] * 6
     assert stats.clampable == [True, False, True, True, False, True]
 
@@ -260,8 +260,8 @@ def test_fixed_bounds_normalization_matches_the_legacy_formula():
     phys = torch.tensor([2.0, -5.0, 1.5, 4.0, 20.0, 10.0]).reshape(1, 6, 1, 1)
     out  = norm.normalize_output(phys)
 
-    mins = torch.tensor([1e-05, -15.0, 0.01, 1e-05, 1.0, 1.0]).reshape(1, 6, 1, 1)
-    maxs = torch.tensor([10.0, 5.0, 5.0, 10.0, 40.0, 20.0]).reshape(1, 6, 1, 1)
+    mins = torch.tensor([1e-05, -20.0, 0.01, 1e-05, -20.0, 0.01]).reshape(1, 6, 1, 1)
+    maxs = torch.tensor([10.0, 80.0, 50.0, 10.0, 80.0, 50.0]).reshape(1, 6, 1, 1)
     torch.testing.assert_close(out, (phys - mins) / (maxs - mins))
 
     back = norm.denormalize_output(out)

@@ -9,13 +9,14 @@ from configuration.benchmark                import BenchmarkConfig
 from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.config.run_metadata   import TrainingRunMetadata
 from tools.monitoring.logger                import Logger
+from configuration.training.general.run     import DEFAULT_PARAMS_RUN
 
 
 @pytest.fixture
 def trainer_config(test_data_dir, tmp_path):
     config                       = BenchmarkConfig()
     config.paths.dataset_path    = str(test_data_dir)
-    config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
+    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     return ConfigFactory(config).training_trainer_config(tmp_path / "seed_logdir")
 
 
@@ -31,12 +32,12 @@ def metadata(trainer_config, tmp_path):
     meta.close()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_run_directory_uses_run_name(metadata, tmp_path):
     assert metadata.run_directory == tmp_path / "runs" / "unit_run"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_subdirectories_created(metadata):
     assert metadata.run_directory.is_dir()
     assert metadata.tensorboard_dir.is_dir()
@@ -45,20 +46,20 @@ def test_subdirectories_created(metadata):
     assert metadata.metadata_directory.is_dir()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_subdirectories_nested_under_run_directory(metadata):
     assert metadata.tensorboard_dir.parent    == metadata.run_directory
     assert metadata.docs_directory.parent     == metadata.run_directory
     assert metadata.metadata_directory.parent == metadata.run_directory
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_writer_attached_to_trainer_io(metadata, trainer_config):
     assert trainer_config.io.writer is metadata.writer
     assert trainer_config.io.logdir == str(metadata.run_directory)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_default_run_name_includes_model(trainer_config, tmp_path):
     meta = TrainingRunMetadata(
         trainer_config = trainer_config,
@@ -71,7 +72,7 @@ def test_default_run_name_includes_model(trainer_config, tmp_path):
         meta.close()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_save_trainer_config_serializes_without_writer(metadata):
     out_path = metadata.save_trainer_config()
 
@@ -80,7 +81,7 @@ def test_save_trainer_config_serializes_without_writer(metadata):
     assert payload["io"]["writer"] is None
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_save_run_summary_payload(metadata):
     out_path = metadata.save_run_summary(
         model_name    = "resunet",
@@ -98,7 +99,7 @@ def test_save_run_summary_payload(metadata):
     assert payload["run_directory"] == str(metadata.run_directory)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_context_manager_closes_writer(trainer_config, tmp_path):
     with TrainingRunMetadata(trainer_config, "resunet", tmp_path / "runs", run_name="ctx") as meta:
         meta.writer.add_scalar("probe/value", 1.0, 0)
@@ -111,12 +112,12 @@ def test_context_manager_closes_writer(trainer_config, tmp_path):
     assert events[0].stat().st_size > 0
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_owns_logger_when_none_passed(metadata):
     assert metadata._owns_logger is True
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_does_not_own_external_logger(trainer_config, tmp_path):
     logger = Logger(log_dir=str(tmp_path / "ext_logs"), name="external")
     try:

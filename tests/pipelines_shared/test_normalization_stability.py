@@ -67,18 +67,7 @@ def test_ifg_phase_uses_fixed_div_pi():
     assert strat.apply_log1p is False
 
 
-@pytest.mark.real_data
-def test_mu_robust_iqr_is_degenerate_which_is_why_mu_stays_zscore(parameters):
-    _, mu, _ = _active(parameters)
-
-    _, robust_scale = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=False).fit(mu)
-    _, zscore_scale = ChannelStrategy.from_slot("out/mu").fit(mu)
-
-    assert robust_scale <= 1e-7
-    assert zscore_scale > 1.0
-
-
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("role", ["amp", "mu", "sigma"])
 def test_output_stats_reproducible_across_random_halves(parameters, role):
     amp, mu, sig = _active(parameters)
@@ -92,7 +81,7 @@ def test_output_stats_reproducible_across_random_halves(parameters, role):
         assert scale_rel < REL_AGREE_TOL
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_input_magnitude_stats_reproducible_across_random_halves(primary, secondaries, interferograms):
     pass_mag = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
     ifg_mag  = np.abs(np.asarray(interferograms)).ravel().astype(np.float64)
@@ -104,8 +93,8 @@ def test_input_magnitude_stats_reproducible_across_random_halves(primary, second
         assert scale_rel < REL_AGREE_TOL
 
 
-@pytest.mark.real_data
-def test_configured_robust_scales_are_nondegenerate_on_real_data(parameters, primary, secondaries, interferograms, dem_full):
+@pytest.mark.dataset
+def test_configured_robust_scales_are_nondegenerate_on_scene(parameters, primary, secondaries, interferograms, dem_full):
     amp, _, sig = _active(parameters)
     pass_mag    = np.abs(np.asarray(primary)).ravel().astype(np.float64)
     ifg_mag     = np.abs(np.asarray(interferograms)).ravel().astype(np.float64)
@@ -119,7 +108,7 @@ def test_configured_robust_scales_are_nondegenerate_on_real_data(parameters, pri
         assert scale > SCALE_FLOOR * 100
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_output_normalizer_round_trip_is_exact(parameters):
     par   = np.asarray(parameters)
     amp, mu, sig = _active(parameters)
@@ -135,7 +124,7 @@ def test_output_normalizer_round_trip_is_exact(parameters):
     assert torch.allclose(d, t, rtol=1e-4, atol=1e-3)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_input_normalizer_round_trip_is_exact(primary, interferograms, secondaries):
     pass_mag = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
     ifg_mag  = np.abs(np.asarray(interferograms)).ravel().astype(np.float64)

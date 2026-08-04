@@ -57,8 +57,8 @@ def _curve(name, pc, target):
 
 def _gt5(parameters):
     gt         = _gt_params(parameters)
-    b, _, h, w = gt.shape
-    return gt.reshape(b, 5, PPG, h, w)
+    b, c, h, w = gt.shape
+    return gt.reshape(b, c // PPG, PPG, h, w)
 
 
 def _weights(gt5):
@@ -86,7 +86,7 @@ def _param(name, p, gt5, weights):
     raise ValueError(name)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_forward_finite_nonnegative(parameters, name):
     gt     = _gt_params(parameters)
@@ -100,7 +100,7 @@ def test_curve_term_forward_finite_nonnegative(parameters, name):
     assert float(val.detach()) >= -1e-9
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ZERO_AT_IDENTITY)
 def test_curve_term_zero_when_prediction_equals_target(parameters, name):
     gt     = _gt_params(parameters)
@@ -111,7 +111,7 @@ def test_curve_term_zero_when_prediction_equals_target(parameters, name):
     assert float(val) == pytest.approx(0.0, abs=1e-5)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_charbonnier_floors_at_eps_at_identity(parameters):
     gt     = _gt_params(parameters)
     target = _curves(gt)
@@ -121,7 +121,7 @@ def test_charbonnier_floors_at_eps_at_identity(parameters):
     assert float(val) == pytest.approx(CHARB_E, rel=1e-3)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_monotonic_in_error(parameters, name):
     gt     = _gt_params(parameters)
@@ -135,7 +135,7 @@ def test_curve_term_monotonic_in_error(parameters, name):
     assert vals[0] < vals[1] < vals[2]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_gradient_finite_and_nonzero(parameters, name):
     gt     = _gt_params(parameters)
@@ -159,7 +159,7 @@ def test_curve_term_finite_on_zero_curves(name):
     assert not torch.isnan(val)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_deterministic(parameters, name):
     gt     = _gt_params(parameters)
@@ -172,7 +172,7 @@ def test_curve_term_deterministic(parameters, name):
     assert a == b
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_cosine_is_bounded(parameters):
     gt     = _gt_params(parameters)
     target = _curves(gt)
@@ -181,7 +181,7 @@ def test_cosine_is_bounded(parameters):
     assert 0.0 <= float(CL.cosine(pc, target, 1).detach()) <= 2.0
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", PARAM_ALL)
 def test_param_term_forward_finite_nonnegative(parameters, name):
     gt5 = _gt5(parameters)
@@ -195,7 +195,7 @@ def test_param_term_forward_finite_nonnegative(parameters, name):
     assert float(val.detach()) >= 0.0
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", ["param_l1", "param_huber", "param_mse"])
 def test_param_term_zero_when_prediction_equals_target(parameters, name):
     gt5 = _gt5(parameters)
@@ -206,7 +206,7 @@ def test_param_term_zero_when_prediction_equals_target(parameters, name):
     assert float(val) == pytest.approx(0.0, abs=1e-6)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_tv_zero_on_spatially_constant_map(parameters):
     gt5      = _gt5(parameters)
     constant = torch.ones_like(gt5) * gt5.mean()
@@ -214,7 +214,7 @@ def test_tv_zero_on_spatially_constant_map(parameters):
     assert float(PL.tv(constant)) == pytest.approx(0.0, abs=1e-6)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", PARAM_ALL)
 def test_param_term_monotonic_in_error(parameters, name):
     gt5 = _gt5(parameters)
@@ -228,7 +228,7 @@ def test_param_term_monotonic_in_error(parameters, name):
     assert vals[0] < vals[1] < vals[2]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.parametrize("name", PARAM_ALL)
 def test_param_term_gradient_finite_and_nonzero(parameters, name):
     gt5 = _gt5(parameters)
@@ -242,7 +242,7 @@ def test_param_term_gradient_finite_and_nonzero(parameters, name):
     assert float(p.grad.norm()) > 0.0
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_param_l1_returns_per_parameter_breakdown(parameters):
     gt5 = _gt5(parameters)
     w   = _weights(gt5)

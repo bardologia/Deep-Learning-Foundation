@@ -29,7 +29,7 @@ def apply_unit(worker: SweepTrainingWorker, unit_name: str) -> None:
     worker._apply_unit(unit)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_unit_reroots_the_dataset_and_parameters(test_data_dir, params_dir, tmp_path):
     worker = make_worker(test_data_dir, params_dir, tmp_path)
     apply_unit(worker, f"{test_data_dir.name}-p016x016")
@@ -38,7 +38,7 @@ def test_unit_reroots_the_dataset_and_parameters(test_data_dir, params_dir, tmp_
     assert worker.config.paths.parameters_path == params_dir / "parameters.npy"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_small_patch_unit_keeps_the_lr_scale_at_one(test_data_dir, params_dir, tmp_path):
     worker    = make_worker(test_data_dir, params_dir, tmp_path)
     training  = worker.config.training
@@ -53,7 +53,7 @@ def test_small_patch_unit_keeps_the_lr_scale_at_one(test_data_dir, params_dir, t
     assert trainer_config.optimizer.lr_scale == pytest.approx(1.0)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_unit_preserves_the_configured_lr_scale_ratio(test_data_dir, params_dir, tmp_path):
     worker = make_worker(test_data_dir, params_dir, tmp_path, batch_size=512)
     apply_unit(worker, f"{test_data_dir.name}-p016x016")

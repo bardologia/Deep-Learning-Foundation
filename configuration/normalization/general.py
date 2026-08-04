@@ -176,8 +176,8 @@ class NormalizationConfig:
     out_sigma  : str = "default"
     dem        : str = "default"
 
-    fixed_out_bounds_min : tuple = (1e-05, -15.0, 0.01, 1e-05, 1.0, 1.0)
-    fixed_out_bounds_max : tuple = (10.0, 5.0, 5.0, 10.0, 40.0, 20.0)
+    fixed_out_bounds_min : tuple = (1e-05, -20.0, 0.01, 1e-05, -20.0, 0.01)
+    fixed_out_bounds_max : tuple = (10.0, 80.0, 50.0, 10.0, 80.0, 50.0)
 
     clamp_output            : bool  = True
     clamp_floor             : float = 0.0

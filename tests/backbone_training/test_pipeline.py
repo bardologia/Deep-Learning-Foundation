@@ -56,7 +56,7 @@ def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfi
     return config
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_dir, tmp_path):
     dataset_config = _dataset_config(test_data_dir, params_dir)
@@ -81,7 +81,7 @@ def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_
     assert val_losses is not None
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
     dataset_config = _dataset_config(test_data_dir, params_dir)
@@ -105,7 +105,7 @@ def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
     assert len(written) > 0
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_overfit_check_gates_and_reports(test_data_dir, params_dir, tmp_path):
     import json
@@ -151,7 +151,7 @@ def test_training_pipeline_overfit_check_gates_and_reports(test_data_dir, params
     assert len(train_losses) == 1
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, params_dir, tmp_path):
     from configuration.training import OverfitCheckConfig
 

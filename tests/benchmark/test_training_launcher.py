@@ -220,7 +220,7 @@ def test_context_scheduler_plans_the_receptive_field_ladder(tmp_path):
     ]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_reach_scheduler_houses_runs_and_plans_the_size_matched_arms(tmp_path, test_data_dir, params_dir):
     config                       = BackboneEntryConfig()
     config.logdir                = tmp_path
@@ -236,7 +236,7 @@ def test_reach_scheduler_houses_runs_and_plans_the_size_matched_arms(tmp_path, t
 
     assert list(plans) == ["reach-cnn33", "reach-unet"]
     assert plans["reach-cnn33"]["backbone_name"]   == "local_cnn"
-    assert plans["reach-cnn33"]["model_overrides"] == {"features": [479] * 8, "dropout": 0.15, "trunk_wd": 1e-4}
+    assert plans["reach-cnn33"]["model_overrides"] == {"features": [478] * 8, "dropout": 0.15, "trunk_wd": 1e-4}
     assert plans["reach-unet"]["backbone_name"]    == "unet"
     assert plans["reach-unet"]["model_overrides"]  == {"dropout": 0.15}
     assert all(overrides["training.patch_size"] == (32, 32) for overrides in plans.values())

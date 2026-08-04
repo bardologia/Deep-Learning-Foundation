@@ -139,8 +139,8 @@ def test_compress_monotonic():
     assert np.all(np.diff(out) > 0)
 
 
-@pytest.mark.real_data
-def test_compress_real_magnitude_window(secondaries):
+@pytest.mark.dataset
+def test_compress_scene_magnitude_window(secondaries):
     mag        = np.abs(np.asarray(secondaries[0, :32, :32])).astype(np.float64)
     compressed = Log1pTransform.compress(mag)
 

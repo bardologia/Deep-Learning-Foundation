@@ -419,8 +419,8 @@ def test_param_weights_length_mismatch_raises():
         loss(pred, gt)
 
 
-@pytest.mark.real_data
-def test_loss_on_real_tomogram_param_target(parameters):
+@pytest.mark.dataset
+def test_loss_on_scene_param_target(parameters):
     win         = np.asarray(parameters[:15, :8, :8]).astype(np.float32)
     n_channels  = win.shape[0]
     n_gaussians = n_channels // 3

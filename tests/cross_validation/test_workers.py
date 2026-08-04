@@ -15,9 +15,11 @@ from pipelines.cross_validation.workers import (
     FoldInferenceWorker,
     FoldTrainingWorker,
 )
-from tools.data.io           import FileIO
-from tools.data.regions      import SplitRegions
-from tools.monitoring.logger import Logger
+from tools.data.io                      import FileIO
+from tools.data.regions                 import SplitRegions
+from tools.monitoring.logger            import Logger
+from configuration.synthesis            import SynthesisConfig
+from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
 def make_logger(tmp_path: Path) -> Logger:
@@ -27,8 +29,8 @@ def make_logger(tmp_path: Path) -> Logger:
 def worker_config(test_data_dir: Path, training_type: str = "backbone") -> CrossValidationConfig:
     config                       = CrossValidationConfig(training_type=training_type)
     config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
-    config.folds                 = FoldConfig(n_folds=5, azimuth_start=1000, azimuth_end=2000)
+    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
+    config.folds                 = FoldConfig(n_folds=5, azimuth_start=1000, azimuth_end=1512)
     return config
 
 
@@ -142,7 +144,7 @@ def test_collector_multiple_splits_independent(tmp_path):
     assert by_split["test"][0].metrics == {"curve_rmse_gt": 2.0}
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_cross_validation_worker_fold_name(test_data_dir):
     worker = CrossValidationWorker(worker_config(test_data_dir), run_tag="rt")
 
@@ -150,7 +152,7 @@ def test_cross_validation_worker_fold_name(test_data_dir):
     assert worker.fold_name(4) == "fold_4"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_worker_dispatches_to_backbone(test_data_dir, monkeypatch):
     worker = FoldTrainingWorker(worker_config(test_data_dir, "backbone"), run_tag="rt")
 
@@ -170,7 +172,7 @@ def test_training_worker_dispatches_to_backbone(test_data_dir, monkeypatch):
     assert isinstance(captured["regions"], SplitRegions)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_worker_passes_planned_split_regions(test_data_dir, monkeypatch):
     worker = FoldTrainingWorker(worker_config(test_data_dir, "backbone"), run_tag="rt")
 
@@ -180,11 +182,11 @@ def test_training_worker_passes_planned_split_regions(test_data_dir, monkeypatch
     worker.run(2)
 
     train = sorted((r.azimuth_start, r.azimuth_end) for r in captured["sr"].regions("train"))
-    assert train == [(1000, 1368), (1832, 2000)]
-    assert worker.factory.planner().plan(2).split_regions.regions("test")[0].azimuth_start == 1432
+    assert train == [(1000, 1196), (1416, 1512)]
+    assert worker.factory.planner().plan(2).split_regions.regions("test")[0].azimuth_start == 1212
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_worker_dispatch_routes_by_type(test_data_dir, monkeypatch):
     seen = {}
 
@@ -202,7 +204,7 @@ def test_training_worker_dispatch_routes_by_type(test_data_dir, monkeypatch):
     assert seen["kind"] == "ae"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_worker_rejects_unknown_type(test_data_dir):
     config               = worker_config(test_data_dir)
     config.training_type = "bogus"
@@ -213,7 +215,7 @@ def test_training_worker_rejects_unknown_type(test_data_dir):
         worker.run(0)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_worker_builds_run_directory(test_data_dir, monkeypatch):
     worker = FoldInferenceWorker(worker_config(test_data_dir), run_tag="rt")
 
@@ -241,7 +243,7 @@ def test_inference_worker_builds_run_directory(test_data_dir, monkeypatch):
     assert captured["config"].output_subdir == "test"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, monkeypatch):
     config = worker_config(test_data_dir, "backbone")
     worker = FoldTrainingWorker(config, run_tag="rt")
@@ -266,5 +268,5 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, monkeypa
     assert trainer_config.curriculum.complete.use_param_l1 is True
     from pipelines.shared.training.run_naming import RunNaming
 
-    run_tag = RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, 5, config.augmentation)
+    run_tag = RunNaming.training_tag(config.backbone_name, config.backbone_head, config.curriculum, SynthesisConfig().k_max, config.augmentation)
     assert captured["run_name"] == f"{run_tag}_fold_1/seed7"

@@ -317,9 +317,9 @@ def test_imshow_figure_saved_dpi(plotter, small_field, tmp_path):
     assert round(dpi[0]) == PlotBase.save_dpi
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
-def test_imshow_real_dem_window(plotter, dem_full, small_window, tmp_path):
+def test_imshow_scene_dem_window(plotter, dem_full, small_window, tmp_path):
     window = np.asarray(dem_full[small_window], dtype=np.float32)
     out    = plotter._imshow_figure(
         window,
@@ -334,9 +334,9 @@ def test_imshow_real_dem_window(plotter, dem_full, small_window, tmp_path):
     assert out.stat().st_size > 0
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
-def test_imshow_real_parameter_window_with_clim(plotter, parameters, small_window, tmp_path):
+def test_imshow_scene_parameter_window_with_clim(plotter, parameters, small_window, tmp_path):
     window = np.asarray(parameters[0][small_window], dtype=np.float32)
     lo, hi = plotter._shared_clim(window, q_low=2.0, q_high=98.0)
 
@@ -354,8 +354,8 @@ def test_imshow_real_parameter_window_with_clim(plotter, parameters, small_windo
     assert out.stat().st_size > 0
 
 
-@pytest.mark.real_data
-def test_shared_clim_real_tomogram_intensity(tomogram_full, small_window):
+@pytest.mark.dataset
+def test_shared_clim_scene_tomogram_intensity(tomogram_full, small_window):
     layer = np.abs(np.asarray(tomogram_full[0][small_window]))
     lo, hi = PlotBase._shared_clim(layer, q_low=5.0, q_high=95.0)
     assert lo <= hi

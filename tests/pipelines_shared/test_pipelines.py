@@ -5,6 +5,8 @@ import pytest
 import torch
 
 from configuration.dataset                          import DatasetConfig, InputConfig, PatchConfig, ProfileDatasetConfig, Representation, SplitRegions
+from configuration.dataset.gaussian                 import GaussianConfig
+from configuration.synthesis                        import SynthesisConfig
 from pipelines.backbone.dataset.pipeline            import DatasetPipeline
 from pipelines.profile_autoencoder.dataset.pipeline import ProfileDatasetPipeline
 from tools.data.regions                             import CropRegion
@@ -39,11 +41,11 @@ def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
         num_workers                 = 0,
         prefetch_factor             = 8,
         shuffle_train               = True,
-        n_gaussians                 = 5,
+        n_gaussians                 = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy").n_default_gaussians,
     )
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_writes_metadata_and_stats(test_data_dir, params_dir, tmp_path):
     config   = _backbone_config(test_data_dir, params_dir)
@@ -58,12 +60,12 @@ def test_backbone_pipeline_writes_metadata_and_stats(test_data_dir, params_dir, 
     assert (meta / "crop.json").is_file()
     assert (meta / "patch.json").is_file()
 
-    assert pipeline.profile_length == 150
+    assert pipeline.profile_length == SynthesisConfig().profile_length
     assert datasets["train"].normalizer is not None
     assert len(train_loader) >= 1
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_train_order_reproducible(test_data_dir, params_dir, tmp_path):
     torch.use_deterministic_algorithms(False)
@@ -81,7 +83,7 @@ def test_backbone_pipeline_train_order_reproducible(test_data_dir, params_dir, t
     np.testing.assert_allclose(a, b, atol=1e-5)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_rectangular_patches_yield_rectangular_batches(test_data_dir, params_dir, tmp_path):
     config       = _backbone_config(test_data_dir, params_dir)
@@ -96,7 +98,7 @@ def test_backbone_pipeline_rectangular_patches_yield_rectangular_batches(test_da
     assert tuple(y.shape[-2:]) == (8, 16)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, params_dir, tmp_path):
     full    = _backbone_config(test_data_dir, params_dir)
@@ -124,7 +126,7 @@ def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, pa
     np.testing.assert_array_equal(trimmed_train.inputs, full_train.inputs[3:])
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_backbone_pipeline_rejects_rot90_with_rectangular_patch(test_data_dir, params_dir, tmp_path):
     config                      = _backbone_config(test_data_dir, params_dir)
     config.patch                = PatchConfig(size=(8, 16), stride=(4, 8))
@@ -134,7 +136,7 @@ def test_backbone_pipeline_rejects_rot90_with_rectangular_patch(test_data_dir, p
         DatasetPipeline(config, tmp_path, logger=_logger(tmp_path, "bb_rot90"), seed=0)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_profile_pipeline_runs_and_returns_normalizer(test_data_dir, params_dir, tmp_path):
     config = ProfileDatasetConfig(
@@ -145,7 +147,7 @@ def test_profile_pipeline_runs_and_returns_normalizer(test_data_dir, params_dir,
             val   = CropRegion(1040, 1060, 500, 540),
             test  = CropRegion(1060, 1080, 500, 540),
         ),
-        n_gaussians       = 5,
+        n_gaussians       = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy").n_default_gaussians,
         batch_size        = 16,
         num_workers       = 0,
         prefetch_factor   = 2,
@@ -156,19 +158,19 @@ def test_profile_pipeline_runs_and_returns_normalizer(test_data_dir, params_dir,
 
     (train_loader, val_loader, test_loader), datasets, x_axis, x_len, normalizer = pipeline.run()
 
-    assert x_len == 150
-    assert x_axis.shape == (150,)
+    assert x_len == SynthesisConfig().profile_length
+    assert x_axis.shape == (SynthesisConfig().profile_length,)
     assert (tmp_path / "meta" / "profile_normalization_stats.json").is_file()
     assert np.isfinite(normalizer.loc)
     assert normalizer.scale >= normalizer.SCALE_FLOOR
 
     batch = next(iter(train_loader))
-    assert batch.shape[1] == 150
+    assert batch.shape[1] == SynthesisConfig().profile_length
     assert len(val_loader)  >= 1
     assert len(test_loader) >= 1
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_profile_pipeline_train_order_reproducible(test_data_dir, params_dir, tmp_path):
     def _first_batch(run_dir):
@@ -180,7 +182,7 @@ def test_profile_pipeline_train_order_reproducible(test_data_dir, params_dir, tm
                 val   = CropRegion(1040, 1060, 500, 540),
                 test  = CropRegion(1060, 1080, 500, 540),
             ),
-            n_gaussians       = 5,
+            n_gaussians       = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy").n_default_gaussians,
             batch_size        = 16,
             num_workers       = 0,
             prefetch_factor   = 2,

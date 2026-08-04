@@ -98,7 +98,7 @@ def test_convert_into_interleaves_multiple_passes():
     assert np.allclose(out[1::2], data.imag)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_real_imag_reconstructs_complex(secondaries):
     data = np.asarray(secondaries[0, :16, :16]).astype(np.complex64)
     out  = _convert_single_pass(Representation.REAL_IMAG, data)
@@ -107,16 +107,16 @@ def test_real_imag_reconstructs_complex(secondaries):
     assert np.allclose(reconstructed, data, atol=1e-4)
 
 
-@pytest.mark.real_data
-def test_mag_only_matches_abs_on_real_data(interferograms):
+@pytest.mark.dataset
+def test_mag_only_matches_abs_on_scene_passes(interferograms):
     data = np.asarray(interferograms[0, :16, :16]).astype(np.complex64)
     out  = _convert_single_pass(Representation.MAG_ONLY, data)
 
     assert np.allclose(out[0], np.abs(data), atol=1e-4)
 
 
-@pytest.mark.real_data
-def test_mag_real_imag_norm_on_real_data(interferograms):
+@pytest.mark.dataset
+def test_mag_real_imag_norm_on_scene_passes(interferograms):
     data = np.asarray(interferograms[0, :16, :16]).astype(np.complex64)
     out  = _convert_single_pass(Representation.MAG_REAL_IMAG, data)
 

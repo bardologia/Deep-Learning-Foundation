@@ -18,11 +18,13 @@ from pipelines.shared.config.config_persistence import BackboneModelConfigIO
 from tools.data.io                              import FileIO
 from tools.data.regions                         import CropRegion
 
+from configuration.synthesis import SynthesisConfig
+
 from tests.conftest import SilentLogger
 
 
-N_GAUSSIANS      = 5
-N_ELEV           = 150
+N_GAUSSIANS      = SynthesisConfig().k_max
+N_ELEV           = SynthesisConfig().profile_length
 SECONDARY_LABELS = ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
 
 
@@ -104,7 +106,7 @@ def _build_run_directory(tmp_path, test_data_dir, params_dir):
     return run_dir
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
     run_dir = _build_run_directory(tmp_path, test_data_dir, params_dir)

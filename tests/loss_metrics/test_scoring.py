@@ -116,19 +116,19 @@ def test_relative_improvement_percent_string():
     assert RelativeImprovement.percent(0.0, 1.0, empty="-") == "-"
 
 
-@pytest.mark.real_data
-def test_r2_on_real_tomogram_self_is_one(tomogram_full):
+@pytest.mark.dataset
+def test_r2_on_scene_tomogram_self_is_one(tomogram_full):
     win  = np.abs(np.asarray(tomogram_full[:16, :8, :8])).astype(np.float64)
     pred = win.copy()
     out  = R2.pixel_map(pred, win, axis=0)
     assert np.allclose(out, 1.0, atol=1e-5)
 
 
-@pytest.mark.real_data
-def test_relative_improvement_on_real_baselines(baselines_json):
-    leaf = _first_numeric(baselines_json)
+@pytest.mark.dataset
+def test_relative_improvement_on_extraction_meta(param_extraction_meta):
+    leaf = _first_numeric(param_extraction_meta)
     if leaf is None:
-        pytest.skip("no numeric baseline scalar found")
+        pytest.skip("no numeric scalar found in the parameter run metadata")
     frac = RelativeImprovement.fraction(leaf, leaf * 0.9, higher_is_better=False)
     assert math.isclose(abs(frac), 0.1, rel_tol=1e-6)
 

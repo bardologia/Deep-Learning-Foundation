@@ -104,8 +104,8 @@ def test_normalizer_axis_argument():
     assert np.isclose(out.sum(axis=1)[0], 1.0)
 
 
-@pytest.mark.real_data
-def test_normalizer_on_real_tomogram_column(tomogram_full):
+@pytest.mark.dataset
+def test_normalizer_on_scene_tomogram_column(tomogram_full):
     column = np.abs(np.asarray(tomogram_full[:, 0, 0])).astype(np.float32)[:, None]
     out    = ProfileNormalizer.unit_area(column)
 
@@ -114,8 +114,8 @@ def test_normalizer_on_real_tomogram_column(tomogram_full):
     assert np.all(out >= 0.0)
 
 
-@pytest.mark.real_data
-def test_preprocess_on_real_profile_truncates(tomogram_full):
+@pytest.mark.dataset
+def test_preprocess_on_scene_profile_truncates(tomogram_full):
     profile = np.abs(np.asarray(tomogram_full[:, 0, 0])).astype(np.float32)[:, None]
     trunc   = profile.shape[0] // 2
     out     = ProfilePreprocessor.apply(profile, threshold_factor=0.0, truncation_index=trunc)

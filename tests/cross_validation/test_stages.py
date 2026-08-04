@@ -5,16 +5,17 @@ from pathlib import Path
 import pytest
 
 import pipelines.cross_validation.stages as stages_module
-from configuration.cross_validation     import CrossValidationConfig, FoldConfig
-from pipelines.cross_validation.folds   import FoldPlanner, FoldRunNaming
-from pipelines.cross_validation.stages  import (
+from configuration.cross_validation    import CrossValidationConfig, FoldConfig
+from pipelines.cross_validation.folds  import FoldPlanner, FoldRunNaming
+from pipelines.cross_validation.stages import (
     CrossValidationReportStage,
     FoldInferenceStage,
     FoldTrainingStage,
 )
 from pipelines.cross_validation.workers import FoldTrainingWorker
-from tools.monitoring.logger  import Logger
-from tools.runtime.completion import CompletionMarker
+from tools.monitoring.logger            import Logger
+from tools.runtime.completion           import CompletionMarker
+from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
 def make_logger(tmp_path: Path) -> Logger:
@@ -24,7 +25,7 @@ def make_logger(tmp_path: Path) -> Logger:
 def stage_config(tmp_path: Path, resume: bool = False) -> CrossValidationConfig:
     config                    = CrossValidationConfig()
     config.paths.log_base_dir = tmp_path
-    config.folds              = FoldConfig(n_folds=5, azimuth_start=1000, azimuth_end=2000)
+    config.folds              = FoldConfig(n_folds=5, azimuth_start=1000, azimuth_end=1512)
     config.resume             = resume
     config.inference_splits   = ["val", "test"]
     config.seeds              = []
@@ -34,7 +35,7 @@ def stage_config(tmp_path: Path, resume: bool = False) -> CrossValidationConfig:
 def data_config(tmp_path: Path, test_data_dir: Path, resume: bool = False) -> CrossValidationConfig:
     config                       = stage_config(tmp_path, resume)
     config.paths.dataset_path    = test_data_dir
-    config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
+    config.paths.parameters_path = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
     return config
 
 
@@ -66,7 +67,7 @@ def install_fake_queue(stage, status: str = "DONE") -> dict:
     return captured
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_builds_one_item_per_fold(tmp_path, test_data_dir):
     config = data_config(tmp_path, test_data_dir)
     stage  = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_logger(tmp_path))
@@ -75,7 +76,7 @@ def test_training_stage_builds_one_item_per_fold(tmp_path, test_data_dir):
     assert [name.split("_fold_")[-1] for name in stage.items] == [str(index) for index in range(5)]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_items_carry_the_training_tag_the_worker_trains_into(tmp_path, test_data_dir):
     config = data_config(tmp_path, test_data_dir)
     stage  = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_logger(tmp_path))
@@ -86,7 +87,7 @@ def test_training_stage_items_carry_the_training_tag_the_worker_trains_into(tmp_
     assert stage.items[3].startswith(f"{config.backbone_name}-{config.backbone_head}-")
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_job_carries_fold_index(tmp_path, test_data_dir):
     config = data_config(tmp_path, test_data_dir)
     stage  = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_logger(tmp_path))
@@ -98,7 +99,7 @@ def test_training_stage_job_carries_fold_index(tmp_path, test_data_dir):
     assert "--seed" not in job.command
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_seed_sweep_expands_fold_by_seed(tmp_path, test_data_dir):
     config       = data_config(tmp_path, test_data_dir)
     config.seeds = [1, 2]
@@ -114,7 +115,7 @@ def test_training_stage_seed_sweep_expands_fold_by_seed(tmp_path, test_data_dir)
     assert job.log_path == stage.stage_dir / item / stage.worker_logname
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_subdir_and_results_path(tmp_path, test_data_dir):
     stage = FoldTrainingStage(config=data_config(tmp_path, test_data_dir), entry_script=Path("e.py"), run_tag="rt", logger=make_logger(tmp_path))
 
@@ -123,7 +124,7 @@ def test_training_stage_subdir_and_results_path(tmp_path, test_data_dir):
     assert stage.results_path.parent.name  == "pipeline"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_run_executes_all_folds(tmp_path, test_data_dir):
     config   = data_config(tmp_path, test_data_dir)
     stage    = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_logger(tmp_path))
@@ -137,7 +138,7 @@ def test_training_stage_run_executes_all_folds(tmp_path, test_data_dir):
     assert stage.results_path.exists()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_job_command_carries_fold_flag(tmp_path, test_data_dir):
     stage    = FoldTrainingStage(config=data_config(tmp_path, test_data_dir), entry_script=Path("e.py"), run_tag="rt", logger=make_logger(tmp_path))
     captured = install_fake_queue(stage)
@@ -149,7 +150,7 @@ def test_training_stage_job_command_carries_fold_flag(tmp_path, test_data_dir):
     assert command[command.index("--fold") + 1] == "3"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_stage_reuses_completion_written_under_worker_naming(tmp_path, test_data_dir):
     config       = data_config(tmp_path, test_data_dir, resume=True)
     config.seeds = [1, 2]
@@ -169,7 +170,7 @@ def test_training_stage_reuses_completion_written_under_worker_naming(tmp_path, 
     assert (worker.run_dir / "folds" / trained).is_dir()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_stage_one_job_per_fold_split_with_completed_training(tmp_path, test_data_dir):
     config  = data_config(tmp_path, test_data_dir)
     planner = make_planner(config)
@@ -189,7 +190,7 @@ def test_inference_stage_one_job_per_fold_split_with_completed_training(tmp_path
     assert statuses[f"{names[2]}:test"] == "SKIPPED"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_stage_sees_completion_written_under_worker_naming(tmp_path, test_data_dir):
     config  = data_config(tmp_path, test_data_dir)
     planner = make_planner(config)
@@ -208,7 +209,7 @@ def test_inference_stage_sees_completion_written_under_worker_naming(tmp_path, t
     assert statuses[f"{trained}:test"] == "DONE"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_stage_skips_folds_without_completed_training(tmp_path, test_data_dir):
     config  = data_config(tmp_path, test_data_dir)
     planner = make_planner(config)
@@ -226,7 +227,7 @@ def test_inference_stage_skips_folds_without_completed_training(tmp_path, test_d
     assert len(results)             == 5 * 2
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_stage_reuses_existing_inference_on_resume(tmp_path, test_data_dir):
     config  = data_config(tmp_path, test_data_dir, resume=True)
     planner = make_planner(config)
@@ -248,7 +249,7 @@ def test_inference_stage_reuses_existing_inference_on_resume(tmp_path, test_data
     assert statuses[f"{name}:test"] == "DONE"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_stage_purges_unfinished_split_on_resume(tmp_path, test_data_dir):
     config  = data_config(tmp_path, test_data_dir, resume=True)
     planner = make_planner(config)
@@ -269,7 +270,7 @@ def test_inference_stage_purges_unfinished_split_on_resume(tmp_path, test_data_d
     assert not unfinished.exists()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_stage_job_command_carries_split(tmp_path, test_data_dir):
     config  = data_config(tmp_path, test_data_dir)
     planner = make_planner(config)

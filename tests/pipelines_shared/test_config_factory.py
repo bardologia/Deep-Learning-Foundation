@@ -29,7 +29,7 @@ def _factory(test_data_dir, params_dir, **overrides) -> ConfigFactory:
     return ConfigFactory(cfg)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_global_crop_matches_dataset_json(test_data_dir, params_dir, dataset_json):
     factory = _factory(test_data_dir, params_dir)
     crop    = factory.global_crop()
@@ -38,14 +38,14 @@ def test_global_crop_matches_dataset_json(test_data_dir, params_dir, dataset_jso
     assert list(crop.as_tuple()) == dataset_json["global_crop"]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_secondary_labels_propagate_as_tuple(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
 
     assert factory._secondary_labels() == ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_empty_secondary_labels_become_none(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
     factory.config.paths.secondary_labels = ()
@@ -53,7 +53,7 @@ def test_empty_secondary_labels_become_none(test_data_dir, params_dir):
     assert factory._secondary_labels() is None
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_benchmark_input_config_representations(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
     ic      = factory.benchmark_input_config()
@@ -63,7 +63,7 @@ def test_benchmark_input_config_representations(test_data_dir, params_dir):
     assert ic.use_interferograms and ic.interferograms_representation is Representation.ANGLE_ONLY
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_dataset_config_split_regions_share_global_range(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
     crop    = factory.global_crop()
@@ -78,7 +78,7 @@ def test_training_dataset_config_split_regions_share_global_range(test_data_dir,
     assert cfg.split_regions.test.as_tuple()  == (1700, 2000, crop.range_start, crop.range_end)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_dataset_config_paths_and_patch(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
     cfg     = factory.training_dataset_config()
@@ -92,7 +92,7 @@ def test_training_dataset_config_paths_and_patch(test_data_dir, params_dir):
     assert cfg.shuffle_train is True
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_config_propagates_queue_settings(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
     factory.config.inference.split           = "test"
@@ -107,7 +107,7 @@ def test_inference_config_propagates_queue_settings(test_data_dir, params_dir):
     assert cfg.gif_axes        == list(factory.config.inference.gif_axes)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_trainer_config_adopts_vram_reservation(test_data_dir, params_dir):
     factory = _factory(test_data_dir, params_dir)
     factory.config.training.reserve_vram      = True
