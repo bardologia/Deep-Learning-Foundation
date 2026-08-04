@@ -1491,7 +1491,7 @@ class FlowLibrary:
             },
             {
                 "id": "iaei_channel", "title": "Per-channel error", "phase": "C - Metrics",
-                "note": "Averaging the squared residual over patches and both spatial axes but not the channel axis gives a per-input-channel MSE, isolating which passes or derived reconstruct worst.",
+                "note": "Averaging the squared residual over patches and both spatial axes but not the channel axis gives a per-input-channel MSE, isolating which amplitude or derived channels reconstruct worst.",
                 "inputs": ["err"], "outputs": ["cmse"],
                 "lines": [
                     [{"id": "cmse", "tex": r"m_c", "role": "calculated"}, {"tex": "="}, {"tex": r"\big\langle e_c^2 \big\rangle_{(p,\,i,\,j)},\qquad c = 1,\dots,C_{\mathrm{in}}"}],

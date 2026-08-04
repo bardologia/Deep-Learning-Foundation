@@ -51,7 +51,7 @@ class LaunchLayout:
     MULTI_INT     = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
 
     MULTI_TRUNK_INPUT = {"kind": "multi", "empty": "select at least one channel group", "choices": [
-        {"value": "chan", "label": "Passes (amplitudes)"},
+        {"value": "chan", "label": "Channels (amplitudes)"},
         {"value": "derived",  "label": "Derived"},
     ]}
 

@@ -281,7 +281,7 @@ class EquationLibrary:
                         {"sym": r"\mathbf{X}",   "desc": "stacked complex input array"},
                         {"sym": r"\mathbf{s}_0", "desc": "primary channel"},
                         {"sym": r"S",            "desc": "secondary channels, shape (N_s, n_row, n_col)"},
-                        {"sym": r"I",            "desc": "derived passes, shape (N_i, n_row, n_col)"},
+                        {"sym": r"I",            "desc": "derived channels, shape (N_i, n_row, n_col)"},
                         {"sym": r"N_s, N_i",     "desc": "number of secondary and derived channels"},
                     ],
                 },
@@ -341,7 +341,7 @@ class EquationLibrary:
                         {"sym": r"\mathrm{ch}_{c_{\mathrm{idx}}}", "desc": "decomposed channel array (e.g. magnitude)"},
                         {"sym": r"k",                              "desc": "output channel index"},
                         {"sym": r"c",                              "desc": "channels per source for the selected mode (1 to 4)"},
-                        {"sym": r"P",                              "desc": "number of passes in the source"},
+                        {"sym": r"P",                              "desc": "number of channels in the source"},
                     ],
                 },
                 {

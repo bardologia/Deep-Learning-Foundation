@@ -86,11 +86,11 @@ def test_mag_ri_angle_four_channels():
     assert np.isclose(out[3, 0], np.angle(3.0 + 4.0j))
 
 
-def test_convert_into_interleaves_multiple_passes():
+def test_convert_into_interleaves_multiple_sources():
     rep    = Representation.REAL_IMAG
-    passes = 3
+    sources = 3
     data   = np.array([1.0 + 1.0j, 2.0 + 2.0j, 3.0 + 3.0j], dtype=np.complex64)
-    out    = np.zeros((rep.channels_per_source * passes,), dtype=np.float32)
+    out    = np.zeros((rep.channels_per_source * sources,), dtype=np.float32)
 
     rep.convert_into(out, data)
 
