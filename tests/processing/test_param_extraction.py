@@ -141,8 +141,8 @@ def test_kernel_masks_freeze_parameter_groups():
     from pipelines.processing.param_extraction.sigma.kernels import SigmaAdamKernel
 
     H      = 60
-    height = np.linspace(-10.0, 30.0, H, dtype=np.float32)
-    target = np.exp(-((height - 5.0) ** 2) / (2.0 * 4.0 ** 2)).astype(np.float32)
+    z_axis = np.linspace(-10.0, 30.0, H, dtype=np.float32)
+    target = np.exp(-((z_axis - 5.0) ** 2) / (2.0 * 4.0 ** 2)).astype(np.float32)
     prof   = np.tile(target[None, :], (4, 1))
 
     amps = np.full((4, 1), 0.6, dtype=np.float32)

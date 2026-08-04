@@ -88,7 +88,7 @@ class ExampleFitPlotter(PlotBase):
                 ax.plot(z_axis, comp, color=comp_colors[k], lw=0.9, alpha=0.85, label=f"$g_{{{k + 1}}}$")
 
         ax.set_title(f"Example fit — {k_label}\naz={row},  col={col},  $R^2={r2_val:.3f}$", fontsize=10)
-        ax.set_xlabel(r"height $h$")
+        ax.set_xlabel(r"$z$")
         ax.set_ylabel(r"intensity")
         ax.grid(True, which="major", lw=0.25, alpha=0.40)
         ax.legend(fontsize=8, framealpha=0.90, ncol=2)
@@ -104,7 +104,7 @@ class ExampleFitPlotter(PlotBase):
         ax.fill_between(z_axis, residual, 0.0, where=residual < 0,  color="#d62728", alpha=0.25, zorder=2)
 
         ax.set_title(f"Fit residual — row={row},  col={col},  $R^2={r2_val:.3f}$", fontsize=10)
-        ax.set_xlabel(r"height $h$")
+        ax.set_xlabel(r"$z$")
         ax.set_ylabel(r"$\varepsilon = \mathrm{data} - \mathrm{fit}$")
         ax.grid(True, which="major", lw=0.25, alpha=0.40)
         fig.tight_layout()

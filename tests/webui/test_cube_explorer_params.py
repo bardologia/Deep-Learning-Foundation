@@ -55,11 +55,11 @@ def test_curve_points_threshold_and_values(tmp_path):
     header = raw[:4]
     rows   = raw[4:].reshape(-1, 4)
 
-    heights = np.arange(N_Z, dtype=np.float64)
+    z_values = np.arange(N_Z, dtype=np.float64)
 
     assert header[0] == 2 and header[1] == 2
-    assert rows[0].tolist() == [3.0, 4.0, float(heights[2]), 2.0]
-    assert rows[1].tolist() == [5.0, 1.0, float(heights[4]), 1.0]
+    assert rows[0].tolist() == [3.0, 4.0, float(z_values[2]), 2.0]
+    assert rows[1].tolist() == [5.0, 1.0, float(z_values[4]), 1.0]
 
 
 def test_curve_points_subsample_cap(tmp_path):

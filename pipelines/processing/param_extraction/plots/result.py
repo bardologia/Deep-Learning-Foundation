@@ -99,12 +99,12 @@ class FittingResultPlotter(PlotBase):
             cmap="plasma",
         ))
 
-        self.logger.subsection("Plotting height-centroid (μ) spatial maps")
+        self.logger.subsection("Plotting z-centroid (mu) spatial maps")
         mu_keys   = [f"mu_{k}"    for k in range(self.n_gaussians)]
         mu_titles = [rf"$\mu_{{{k + 1}}}$  centroid  (inactive pixels masked)" for k in range(self.n_gaussians)]
         saved.update(self.spatial_plotter._plot_spatial_maps(
             metrics_dict, mu_keys, mu_titles,
-            r"Gaussian centroid height maps",
+            r"Gaussian centroid z maps",
             r"$\mu_k$",
             dirs["colormaps"] / "mu_maps",
             cmap="RdYlGn",

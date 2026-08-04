@@ -209,7 +209,7 @@ class ParamComparisonPlots(PlotBase):
         ("bic_median",                  "BIC (lower better)",          "Complexity-penalised fit"),
         ("r2_median",                   "R² median",                   "Variance explained"),
         ("collapsed_slot_fraction",     "Collapsed slot fraction",     "Slot collapse"),
-        ("mu_dominant_stability_error", "Dominant-height block std (m)", "Spatial coherence"),
+        ("mu_dominant_stability_error", "Dominant-z block std", "Spatial coherence"),
         ("active_slot_mean",            "Mean active slots",           "Slot usage"),
     ]
 
@@ -315,7 +315,7 @@ class ParamComparisonReport(ComparisonReportBase):
             if len(group) < 2:
                 continue
 
-            intro = f"Ranking the K={order} variants on complexity-penalised fit (BIC), variance explained, spatial coherence of the dominant height, and selection decisiveness. R² alone is not used for selection because it grows with free parameters."
+            intro = f"Ranking the K={order} variants on complexity-penalised fit (BIC), variance explained, spatial coherence of the dominant component position, and selection decisiveness. R² alone is not used for selection because it grows with free parameters."
             lines += self._rank_section("Trial", f"K={order} leaderboard", intro, self.RANK_METRICS, group)
 
         return lines
@@ -323,7 +323,7 @@ class ParamComparisonReport(ComparisonReportBase):
     def _notes(self) -> list[str]:
         return [
             "## Notes\n",
-            "BIC penalises the extra free parameters a larger K spends, so it is comparable within a fixed K family but is reported, not used, across K. Collapsed slot fraction and slot separation expose Gaussian-slot collapse: a high collapsed fraction with small separation means the extra slots are fitting noise rather than distinct components. Spatial coherence (block standard deviation of the dominant component height) is low when fitted parameters vary smoothly across neighbouring pixels and high when the fit is locking onto speckle.\n",
+            "BIC penalises the extra free parameters a larger K spends, so it is comparable within a fixed K family but is reported, not used, across K. Collapsed slot fraction and slot separation expose Gaussian-slot collapse: a high collapsed fraction with small separation means the extra slots are fitting noise rather than distinct components. Spatial coherence (block standard deviation of the dominant component position along z) is low when fitted parameters vary smoothly across neighbouring pixels and high when the fit is locking onto speckle.\n",
         ]
 
     def _write_overview(self, trials: list[ParamTrial]) -> Path:

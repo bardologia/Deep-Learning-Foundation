@@ -31,12 +31,12 @@ class SliceFigureArchiver(PlotBase):
         "full"    : "Reference (raw)",
     }
 
-    def render(self, data: np.ndarray, heights: np.ndarray, vmin: float, vmax: float, source: str, axis: str, row: int, col: int, space: str, path: Path, cmap: str = "jet", label: str | None = None) -> Path:
+    def render(self, data: np.ndarray, z_values: np.ndarray, vmin: float, vmax: float, source: str, axis: str, row: int, col: int, space: str, path: Path, cmap: str = "jet", label: str | None = None) -> Path:
         x_label   = "row index" if axis == "col" else "col index"
         title_pos = f"col = {col}" if axis == "col" else f"row = {row}"
         y_label   = "z bin" if source == "full" else "z"
         cbar      = "intensity (per-column normalised)" if space == "normalized" else "intensity"
-        extent    = [0, int(data.shape[1]), float(heights[0]), float(heights[-1])]
+        extent    = [0, int(data.shape[1]), float(z_values[0]), float(z_values[-1])]
         title     = f"{self.LABELS[source]} — {title_pos}" if label is None else f"{label} — {self.LABELS[source]} — {title_pos}"
 
         previous = PlotBase.style
@@ -59,9 +59,9 @@ class SliceFigureArchiver(PlotBase):
         finally:
             PlotBase.use_style(previous)
 
-    def render_transect(self, data: np.ndarray, heights: np.ndarray, vmin: float, vmax: float, source: str, start: tuple, end: tuple, space: str, path: Path, cmap: str = "jet") -> Path:
+    def render_transect(self, data: np.ndarray, z_values: np.ndarray, vmin: float, vmax: float, source: str, start: tuple, end: tuple, space: str, path: Path, cmap: str = "jet") -> Path:
         cbar   = "intensity (per-column normalised)" if space == "normalized" else "intensity"
-        extent = [0, int(data.shape[1]), float(heights[0]), float(heights[-1])]
+        extent = [0, int(data.shape[1]), float(z_values[0]), float(z_values[-1])]
 
         previous = PlotBase.style
         PlotBase.use_style("paper")
@@ -251,9 +251,9 @@ class CubeExplorer:
         sources = {}
         for source, entry in entries.items():
             order   = np.argsort(entry["z_axis"])
-            heights = np.asarray(entry["z_axis"])[order]
+            z_values = np.asarray(entry["z_axis"])[order]
             values  = entry["cube"][:, row, col][order]
-            sources[source] = {"heights": heights.tolist(), "values": values.astype(float).tolist()}
+            sources[source] = {"z_values": z_values.tolist(), "values": values.astype(float).tolist()}
 
         return {"ok": True, "row": row, "col": col, "sources": sources}
 
@@ -315,7 +315,7 @@ class CubeExplorer:
         row = int(np.clip(row, 0, n_rows - 1))
         col = int(np.clip(col, 0, n_cols - 1))
 
-        data, heights, vmin, vmax = self._cut(entry, axis, row, col, space)
+        data, z_values, vmin, vmax = self._cut(entry, axis, row, col, space)
 
         buf = io.BytesIO()
         plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, format="png")
@@ -685,7 +685,7 @@ class CubeExplorer:
         if entry is None:
             return None
 
-        data, heights, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
+        data, z_values, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
 
         buf = io.BytesIO()
         plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, format="png")
@@ -716,8 +716,8 @@ class CubeExplorer:
         files = []
         for source in meta["sources"]:
             entry = entries[source]
-            data, heights, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
-            saved = self.archiver.render_transect(data, heights, vmin, vmax, source, (row0, col0), (row1, col1), space, out_dir / f"transect_{source}_{space}.png", cmap=self._entry_cmap(entry, cmap))
+            data, z_values, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
+            saved = self.archiver.render_transect(data, z_values, vmin, vmax, source, (row0, col0), (row1, col1), space, out_dir / f"transect_{source}_{space}.png", cmap=self._entry_cmap(entry, cmap))
             files.append(saved.name)
 
         self.logger.ok(f"saved {len(files)} transect figures to {out_dir}")
@@ -741,8 +741,8 @@ class CubeExplorer:
         data, vmin, vmax = cls._normalize_cut(entry, data, space)
 
         order   = np.argsort(entry["z_axis"])
-        heights = np.asarray(entry["z_axis"], dtype=np.float64)[order]
-        return data[order], heights, float(vmin), float(vmax)
+        z_values = np.asarray(entry["z_axis"], dtype=np.float64)[order]
+        return data[order], z_values, float(vmin), float(vmax)
 
     def save_slices(self, cube_id: str, row: int, col: int, space: str = "physical", cmap: str = "jet") -> dict:
         with self.lock:
@@ -767,8 +767,8 @@ class CubeExplorer:
         files = []
         for source in meta["sources"]:
             for axis in ("col", "row"):
-                data, heights, vmin, vmax = self._cut(entries[source], axis, row, col, space)
-                saved = self.archiver.render(data, heights, vmin, vmax, source, axis, row, col, space, out_dir / f"{axis}_{source}_{space}.png", cmap=self._entry_cmap(entries[source], cmap))
+                data, z_values, vmin, vmax = self._cut(entries[source], axis, row, col, space)
+                saved = self.archiver.render(data, z_values, vmin, vmax, source, axis, row, col, space, out_dir / f"{axis}_{source}_{space}.png", cmap=self._entry_cmap(entries[source], cmap))
                 files.append(saved.name)
 
         self.logger.ok(f"saved {len(files)} slice figures to {out_dir}")
@@ -782,8 +782,8 @@ class CubeExplorer:
         data, vmin, vmax = cls._normalize_cut(entry, data, space)
 
         order   = np.argsort(entry["z_axis"])
-        heights = np.asarray(entry["z_axis"], dtype=np.float64)[order]
-        return data[order], heights, float(vmin), float(vmax)
+        z_values = np.asarray(entry["z_axis"], dtype=np.float64)[order]
+        return data[order], z_values, float(vmin), float(vmax)
 
     @staticmethod
     def _normalize_cut(entry: dict, data: np.ndarray, space: str) -> tuple[np.ndarray, float, float]:
@@ -1169,7 +1169,7 @@ class SliceCollector:
         if entry is None:
             return None
 
-        data, heights, lo, hi = self._cut(entry, axis, row, col, space)
+        data, z_values, lo, hi = self._cut(entry, axis, row, col, space)
         if space == "physical" and vmin is not None and vmax is not None and vmax > vmin:
             lo, hi = float(vmin), float(vmax)
 
@@ -1226,11 +1226,11 @@ class SliceCollector:
 
                             row_i = int(np.clip(row, 0, context["n_rows"] - 1))
                             col_i = int(np.clip(col, 0, context["n_cols"] - 1))
-                            data, heights, vmin, vmax = self._cut(entry, axis, row_i, col_i, space)
+                            data, z_values, vmin, vmax = self._cut(entry, axis, row_i, col_i, space)
                             if clim is not None:
                                 vmin, vmax = clim
 
-                            saved = self.cubes.archiver.render(data, heights, vmin, vmax, source, axis, row_i, col_i, space, cut_dir / f"{label}.png", cmap=CubeExplorer._entry_cmap(entry, cmap), label=label)
+                            saved = self.cubes.archiver.render(data, z_values, vmin, vmax, source, axis, row_i, col_i, space, cut_dir / f"{label}.png", cmap=CubeExplorer._entry_cmap(entry, cmap), label=label)
                             files.append(str(saved.relative_to(out_dir)))
 
         if not files:
@@ -1321,8 +1321,8 @@ class SliceCollector:
         data, vmin, vmax = CubeExplorer._normalize_cut(entry, data, space)
 
         order   = np.argsort(entry["z_axis"])
-        heights = np.asarray(entry["z_axis"], dtype=np.float64)[order]
-        return data[order], heights, float(vmin), float(vmax)
+        z_values = np.asarray(entry["z_axis"], dtype=np.float64)[order]
+        return data[order], z_values, float(vmin), float(vmax)
 
     def _context(self, cube_id: str) -> dict | None:
         stamp_dir = self.cubes._stamp_dir(cube_id)

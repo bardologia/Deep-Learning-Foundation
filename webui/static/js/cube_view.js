@@ -201,8 +201,8 @@ class CubeSweep {
 
   _atText(frac) {
     if (this.axis === "z") {
-      const height = this.host.meta.x_min + frac * (this.host.meta.x_max - this.host.meta.x_min);
-      return `z ≈ ${this.host._fmt(height)} · bin ${this.idx + 1} / ${this.steps} · scroll or play to sweep`;
+      const zValue = this.host.meta.x_min + frac * (this.host.meta.x_max - this.host.meta.x_min);
+      return `z ≈ ${this.host._fmt(zValue)} · bin ${this.idx + 1} / ${this.steps} · scroll or play to sweep`;
     }
     return `${this.axis} index ${this.idx} · bin ${this.idx + 1} / ${this.steps} · scroll or play to sweep`;
   }
@@ -2290,7 +2290,7 @@ class CubeView {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    const heights = series.heights;
+    const zValues = series.z_values;
     const values = this._scaledValues(series);
     const n = values.length;
     if (n < 2) return;
@@ -2298,8 +2298,8 @@ class CubeView {
     const padL = 8, padR = 8, padT = 16, padB = 8;
     const innerW = w - padL - padR;
     const innerH = h - padT - padB;
-    const hMin = heights[0];
-    const hMax = heights[n - 1];
+    const hMin = zValues[0];
+    const hMax = zValues[n - 1];
     const span = hMax - hMin || 1;
     const vMax = shared || Math.max(...values) || 1;
 
@@ -2317,9 +2317,9 @@ class CubeView {
     }
 
     ctx.beginPath();
-    ctx.moveTo(xAt(0), yAt(heights[0]));
-    for (let i = 0; i < n; i++) ctx.lineTo(xAt(values[i]), yAt(heights[i]));
-    ctx.lineTo(xAt(0), yAt(heights[n - 1]));
+    ctx.moveTo(xAt(0), yAt(zValues[0]));
+    for (let i = 0; i < n; i++) ctx.lineTo(xAt(values[i]), yAt(zValues[i]));
+    ctx.lineTo(xAt(0), yAt(zValues[n - 1]));
     ctx.closePath();
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = this.colors[panel.source] || "#555";
@@ -2328,8 +2328,8 @@ class CubeView {
 
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
-      if (i === 0) ctx.moveTo(xAt(values[i]), yAt(heights[i]));
-      else ctx.lineTo(xAt(values[i]), yAt(heights[i]));
+      if (i === 0) ctx.moveTo(xAt(values[i]), yAt(zValues[i]));
+      else ctx.lineTo(xAt(values[i]), yAt(zValues[i]));
     }
     ctx.strokeStyle = this.colors[panel.source] || "#555";
     ctx.lineWidth = 1.6;
@@ -2338,7 +2338,7 @@ class CubeView {
     let peak = 0;
     for (let i = 1; i < n; i++) if (values[i] > values[peak]) peak = i;
     ctx.beginPath();
-    ctx.arc(xAt(values[peak]), yAt(heights[peak]), 2.6, 0, Math.PI * 2);
+    ctx.arc(xAt(values[peak]), yAt(zValues[peak]), 2.6, 0, Math.PI * 2);
     ctx.fillStyle = this.colors[panel.source] || "#555";
     ctx.fill();
 
@@ -2348,7 +2348,7 @@ class CubeView {
     ctx.fillText(this._fmt(hMax), padL + 2, padT - 5);
     ctx.fillText(this._fmt(hMin), padL + 2, h - padB - 3);
     ctx.textAlign = "right";
-    ctx.fillText(`peak ${this._fmt(values[peak])} @ ${this._fmt(heights[peak])}`, w - 4, padT - 5);
+    ctx.fillText(`peak ${this._fmt(values[peak])} @ ${this._fmt(zValues[peak])}`, w - 4, padT - 5);
   }
 
   _scaledValues(series) {
@@ -2357,7 +2357,7 @@ class CubeView {
 
     let area = 0;
     for (let i = 1; i < values.length; i++) {
-      const dh = Math.abs(series.heights[i] - series.heights[i - 1]);
+      const dh = Math.abs(series.z_values[i] - series.z_values[i - 1]);
       area += 0.5 * (values[i] + values[i - 1]) * dh;
     }
 
