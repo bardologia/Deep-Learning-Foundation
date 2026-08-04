@@ -8,9 +8,9 @@ import jax.numpy as jnp
 
 class SigmaScan:
     @staticmethod
-    def per_pixel_loss(amps, mus, sigmas, height_axis, profile):
+    def per_pixel_loss(amps, mus, sigmas, z_axis, profile):
         safe_s2 = 2.0 * jnp.maximum(sigmas, 1e-6) ** 2
-        diff    = height_axis[None, :] - mus[:, None]
+        diff    = z_axis[None, :] - mus[:, None]
         expon   = jnp.clip(-(diff ** 2) / safe_s2[:, None], -100.0, 0.0)
         pred    = (amps[:, None] * jnp.exp(expon)).sum(axis=0)
         mse     = jnp.mean((pred - profile) ** 2)
@@ -21,22 +21,22 @@ class SigmaScan:
     def adam_scan(
         batched_vg  ,
         batched_loss,
-        amps_init    : jnp.ndarray,
-        mus_init     : jnp.ndarray,
-        sigmas_init  : jnp.ndarray,
-        height_axis  : jnp.ndarray,
-        profiles     : jnp.ndarray,
-        amp_mask     : jnp.ndarray,
-        mu_mask      : jnp.ndarray,
-        sigma_mask   : jnp.ndarray,
-        mu_lower     : jnp.ndarray,
-        mu_upper     : jnp.ndarray,
-        sigma_lower  : jnp.ndarray,
-        sigma_upper  : jnp.ndarray,
-        n_steps      : int,
-        lr           : float,
-        b1           : float,
-        b2           : float,
+        amps_init   : jnp.ndarray,
+        mus_init    : jnp.ndarray,
+        sigmas_init : jnp.ndarray,
+        z_axis      : jnp.ndarray,
+        profiles    : jnp.ndarray,
+        amp_mask    : jnp.ndarray,
+        mu_mask     : jnp.ndarray,
+        sigma_mask  : jnp.ndarray,
+        mu_lower    : jnp.ndarray,
+        mu_upper    : jnp.ndarray,
+        sigma_lower : jnp.ndarray,
+        sigma_upper : jnp.ndarray,
+        n_steps     : int,
+        lr          : float,
+        b1          : float,
+        b2          : float,
     ) -> tuple:
         b1_         = jnp.float32(b1)
         b2_         = jnp.float32(b2)
@@ -65,7 +65,7 @@ class SigmaScan:
 
         def _step(carry, t):
             a_, u_, s_, m_a_, v_a_, m_u_, v_u_, m_s_, v_s_ = carry
-            _, (g_a, g_u, g_s) = batched_vg(a_, u_, s_, height_axis, profiles)
+            _, (g_a, g_u, g_s) = batched_vg(a_, u_, s_, z_axis, profiles)
 
             g_a = g_a * amp_mask_
             g_u = g_u * mu_mask_
@@ -84,7 +84,7 @@ class SigmaScan:
 
         carry0                 = (a, u, s, m_a, v_a, m_u, v_u, m_s, v_s)
         (a_f, u_f, s_f, *_), _ = jax.lax.scan(_step, carry0, jnp.arange(n_steps))
-        mse_f                  = batched_loss(a_f, u_f, s_f, height_axis, profiles)
+        mse_f                  = batched_loss(a_f, u_f, s_f, z_axis, profiles)
 
         return a_f, u_f, s_f, mse_f
 
@@ -102,7 +102,7 @@ class SigmaAdamKernel:
             amps_init   : jnp.ndarray,
             mus_init    : jnp.ndarray,
             sigmas_init : jnp.ndarray,
-            height_axis : jnp.ndarray,
+            z_axis      : jnp.ndarray,
             profiles    : jnp.ndarray,
             amp_mask    : jnp.ndarray,
             mu_mask     : jnp.ndarray,
@@ -116,17 +116,17 @@ class SigmaAdamKernel:
             b1          : float = 0.9,
             b2          : float = 0.999,
         ) -> tuple:
-            return SigmaScan.adam_scan(batched_vg, batched_loss, amps_init, mus_init, sigmas_init, height_axis, profiles, amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper, n_steps, lr, b1, b2)
+            return SigmaScan.adam_scan(batched_vg, batched_loss, amps_init, mus_init, sigmas_init, z_axis, profiles, amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper, n_steps, lr, b1, b2)
         return _run
 
     def __call__(
         self,
-        amps_init, mus_init, sigmas_init, height_axis, profiles,
+        amps_init, mus_init, sigmas_init, z_axis, profiles,
         amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
         n_steps=2000, lr=1e-2, b1=0.9, b2=0.999,
     ):
         return self._run(
-            amps_init, mus_init, sigmas_init, height_axis, profiles,
+            amps_init, mus_init, sigmas_init, z_axis, profiles,
             amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
             n_steps, lr, b1, b2,
         )
@@ -145,7 +145,7 @@ class PmapSigmaAdamKernel:
             amps_init   : jnp.ndarray,
             mus_init    : jnp.ndarray,
             sigmas_init : jnp.ndarray,
-            height_axis : jnp.ndarray,
+            z_axis      : jnp.ndarray,
             profiles    : jnp.ndarray,
             amp_mask    : jnp.ndarray,
             mu_mask     : jnp.ndarray,
@@ -159,7 +159,7 @@ class PmapSigmaAdamKernel:
             b1          : float = 0.9,
             b2          : float = 0.999,
         ) -> tuple:
-            return SigmaScan.adam_scan(batched_vg, batched_loss, amps_init, mus_init, sigmas_init, height_axis, profiles, amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper, n_steps, lr, b1, b2)
+            return SigmaScan.adam_scan(batched_vg, batched_loss, amps_init, mus_init, sigmas_init, z_axis, profiles, amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper, n_steps, lr, b1, b2)
 
         return jax.pmap(
             _run_on_device,
@@ -170,7 +170,7 @@ class PmapSigmaAdamKernel:
 
     def __call__(
         self,
-        amps_init, mus_init, sigmas_init, height_axis, profiles,
+        amps_init, mus_init, sigmas_init, z_axis, profiles,
         amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
         n_steps=2000, lr=1e-2, b1=0.9, b2=0.999,
     ):
@@ -194,7 +194,7 @@ class PmapSigmaAdamKernel:
             amps_init  .reshape(D, shard, K),
             mus_init   .reshape(D, shard, K),
             sigmas_init.reshape(D, shard, K),
-            height_axis,
+            z_axis,
             profiles   .reshape(D, shard, H),
             amp_mask,
             mu_mask,

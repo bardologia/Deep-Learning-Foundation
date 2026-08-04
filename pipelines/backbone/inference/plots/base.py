@@ -34,8 +34,8 @@ class PlotTools(PlotBase):
         self._apply_style()
 
     @staticmethod
-    def _gaussian_components(params: np.ndarray, x_axis: np.ndarray, n_gaussians: int) -> List[np.ndarray]:
-        return GaussianReconstructor.components(params, x_axis, n_gaussians)
+    def _gaussian_components(params: np.ndarray, z_axis: np.ndarray, n_gaussians: int) -> List[np.ndarray]:
+        return GaussianReconstructor.components(params, z_axis, n_gaussians)
 
     def _intensity_scale(self, reference: np.ndarray) -> float:
         if not self.normalize:

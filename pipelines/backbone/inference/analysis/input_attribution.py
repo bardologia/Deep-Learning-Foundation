@@ -21,21 +21,21 @@ class ChannelLabeler:
         labels       = []
 
         if input_config.use_primary:
-            per_pass = input_config.primary_channels_per_pass
-            labels  += ["primary"] if per_pass == 1 else [f"primary[{j}]" for j in range(per_pass)]
+            per_source = input_config.primary_channels_per_source
+            labels  += ["primary"] if per_source == 1 else [f"primary[{j}]" for j in range(per_source)]
 
         if input_config.use_secondaries:
-            per_pass = input_config.secondaries_channels_per_pass
+            per_source = input_config.secondaries_channels_per_source
             for track in run.secondary_labels or [f"S{i}" for i in range(run.n_secondaries)]:
-                labels += [f"sec {track}"] if per_pass == 1 else [f"sec {track}[{j}]" for j in range(per_pass)]
+                labels += [f"sec {track}"] if per_source == 1 else [f"sec {track}[{j}]" for j in range(per_source)]
 
-        if input_config.use_interferograms:
-            per_pass = input_config.interferograms_channels_per_pass
+        if input_config.use_derived:
+            per_source = input_config.derived_channels_per_source
             for track in run.secondary_labels or [f"S{i}" for i in range(run.n_secondaries)]:
-                labels += [f"ifg {track}"] if per_pass == 1 else [f"ifg {track}[{j}]" for j in range(per_pass)]
+                labels += [f"derived {track}"] if per_source == 1 else [f"derived {track}[{j}]" for j in range(per_source)]
 
-        if input_config.use_dem:
-            labels += ["dem"]
+        if input_config.use_aux:
+            labels += ["aux"]
 
         if len(labels) != run.in_channels:
             raise ValueError(f"Derived {len(labels)} channel labels but the run has {run.in_channels} input channels; the input configuration does not match the label derivation")
@@ -51,25 +51,25 @@ class TrackChannels:
         offset       = 0
 
         if input_config.use_primary:
-            offset += input_config.primary_channels_per_pass
+            offset += input_config.primary_channels_per_source
 
         n_tracks  = run.n_secondaries
         per_track = [[] for _ in range(n_tracks)]
 
         if input_config.use_secondaries:
-            per_pass = input_config.secondaries_channels_per_pass
+            per_source = input_config.secondaries_channels_per_source
             for track in range(n_tracks):
-                per_track[track] += list(range(offset + track * per_pass, offset + (track + 1) * per_pass))
-            offset += n_tracks * per_pass
+                per_track[track] += list(range(offset + track * per_source, offset + (track + 1) * per_source))
+            offset += n_tracks * per_source
 
-        if input_config.use_interferograms:
-            per_pass = input_config.interferograms_channels_per_pass
+        if input_config.use_derived:
+            per_source = input_config.derived_channels_per_source
             for track in range(n_tracks):
-                per_track[track] += list(range(offset + track * per_pass, offset + (track + 1) * per_pass))
-            offset += n_tracks * per_pass
+                per_track[track] += list(range(offset + track * per_source, offset + (track + 1) * per_source))
+            offset += n_tracks * per_source
 
         if not any(per_track):
-            raise ValueError("The input configuration holds neither secondaries nor interferograms; there is no track channel to drop")
+            raise ValueError("The input configuration holds neither secondaries nor derived; there is no track channel to drop")
 
         return per_track
 
@@ -165,7 +165,7 @@ class InputAttributionRun(AnalysisRun):
 
     def _gradient_importance(self, run) -> dict[str, np.ndarray]:
         probes  = ProbeWindows(run, self.config.window)
-        centers = probes.centers(self.config.n_azimuth_probes, self.config.n_range_probes)
+        centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
 
         return GradientAttribution(run.model.module, self.config.window).channel_importance(windows)
@@ -174,7 +174,7 @@ class InputAttributionRun(AnalysisRun):
         if not self.config.occlude:
             return None
 
-        renderer = PredictionCurves(run.n_gaussians, run.x_axis, self.config.render_amp_floor)
+        renderer = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
         return ChannelOcclusion(run.model, renderer).deltas(run.loader, self.config.max_batches, run.in_channels)
 
     def _render_figures(self, labels: list[str], importance: dict[str, np.ndarray], occlusion: np.ndarray | None) -> dict[str, Path]:
@@ -202,9 +202,9 @@ class InputAttributionRun(AnalysisRun):
     def _write_report(self, run, labels: list[str], importance: dict[str, np.ndarray], occlusion: np.ndarray | None, figures: dict[str, Path]) -> Path:
         doc = MarkdownDoc(title=f"Input attribution: {run.backbone_name}")
         doc.paragraph(
-            f"Gradient attribution on {self.config.n_azimuth_probes * self.config.n_range_probes} probe windows of the '{self.config.split}' split: "
+            f"Gradient attribution on {self.config.n_row_probes * self.config.n_col_probes} probe windows of the '{self.config.split}' split: "
             "the share of |∂ output / ∂ input| falling on each input channel, per output family. "
-            "Occlusion, when computed, is the mean shift of the predicted profile when one channel is zeroed in normalized units, which puts it at that channel's normalization location: the median of the log1p values for the amplitude channels, zero phase for the interferogram phase channels, the mean only for z-scored channels."
+            "Occlusion, when computed, is the mean shift of the predicted profile when one channel is zeroed in normalized units, which puts it at that channel's normalization location: the median of the log1p values for the amplitude channels, zero phase for the derived phase channels, the mean only for z-scored channels."
         )
 
         header = ("Channel", "amp", "mu", "sigma") + (("occlusion MSE",) if occlusion is not None else ())

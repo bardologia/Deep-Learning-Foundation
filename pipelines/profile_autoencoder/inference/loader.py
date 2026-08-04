@@ -25,7 +25,7 @@ class ProfileAeRun:
     model                       : object
     ae_name                     : str
     embedding_dim               : int
-    x_axis                      : np.ndarray
+    z_axis                      : np.ndarray
     normalizer                  : ProfileNormalizer
     dataset                     : ProfileDataset
     loader                      : DataLoader
@@ -55,12 +55,12 @@ class ProfileAeRunLoader:
         cropper = ParameterCropper(layout, dataset_config.split_regions, logger=self.logger)
 
         param_arrays = cropper.load_split(config.split)
-        x_len        = cropper.profile_length()
-        x_axis       = GaussianAxis.build(dataset_config.x_min, dataset_config.x_max, x_len)
+        z_len        = cropper.profile_length()
+        z_axis       = GaussianAxis.build(dataset_config.x_min, dataset_config.x_max, z_len)
 
         dataset = ProfileDataset(
             param_arrays    = param_arrays,
-            x_axis          = x_axis,
+            z_axis          = z_axis,
             n_gaussians     = dataset_config.n_gaussians,
             split_name      = config.split,
             amp_zero_thr    = dataset_config.amp_zero_thr,
@@ -72,11 +72,11 @@ class ProfileAeRunLoader:
             logger          = self.logger,
         )
 
-        return dataset, x_axis, x_len
+        return dataset, z_axis, z_len
 
-    def _build_model(self, x_len: int, device: str):
+    def _build_model(self, z_len: int, device: str):
         ae_cfg, ae_name       = ProfileAutoencoderConfigIO.load(self.meta_directory)
-        ae_cfg.profile_length = x_len
+        ae_cfg.profile_length = z_len
 
         model, _ = get_profile_autoencoder(ae_name, ae_cfg)
 
@@ -87,7 +87,7 @@ class ProfileAeRunLoader:
             raise FileNotFoundError(f"Checkpoint not found for inference: {ckpt_path}")
 
         ckpt   = torch.load(str(ckpt_path), map_location=device, weights_only=False)
-        x_axis = np.asarray(ckpt["x_axis"], dtype=np.float32)
+        z_axis = np.asarray(ckpt["z_axis"], dtype=np.float32)
 
         meta = {
             "epoch"         : int(ckpt["epoch"]),
@@ -95,7 +95,7 @@ class ProfileAeRunLoader:
             "best_epoch"    : int(ckpt["best_epoch"]),
         }
 
-        return ckpt, x_axis, meta
+        return ckpt, z_axis, meta
 
     def load(self, *, config: ProfileAeInferenceConfig, device: str) -> ProfileAeRun:
         self.logger.section("[Profile AE Inference: Load Run]")
@@ -106,12 +106,12 @@ class ProfileAeRunLoader:
         dataset_config = ProfileDatasetConfigIO.load(self.meta_directory)
         normalizer     = ProfileNormalizer(ProfileStats.load(self.meta_directory, self.logger))
 
-        dataset, x_axis, x_len = self._build_dataset(config, dataset_config, normalizer)
+        dataset, z_axis, z_len = self._build_dataset(config, dataset_config, normalizer)
 
-        if x_len != int(summary["x_axis_length"]):
-            raise ValueError(f"Profile length mismatch: dataset gives {x_len} bins but the run was trained on {summary['x_axis_length']}. The persisted dataset no longer matches the training dataset.")
+        if z_len != int(summary["x_axis_length"]):
+            raise ValueError(f"Profile length mismatch: dataset gives {z_len} bins but the run was trained on {summary['x_axis_length']}. The persisted dataset no longer matches the training dataset.")
 
-        model, ae_name = self._build_model(x_len, device)
+        model, ae_name = self._build_model(z_len, device)
         ckpt_path      = self.run_directory / config.checkpoint_name
 
         ckpt, ckpt_x_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
@@ -119,8 +119,8 @@ class ProfileAeRunLoader:
         model.load_state_dict(ckpt["params"])
         model.eval()
 
-        if ckpt_x_axis.shape[0] != x_axis.shape[0]:
-            raise ValueError(f"Checkpoint x-axis length {ckpt_x_axis.shape[0]} does not match dataset profile length {x_axis.shape[0]}.")
+        if ckpt_x_axis.shape[0] != z_axis.shape[0]:
+            raise ValueError(f"Checkpoint x-axis length {ckpt_x_axis.shape[0]} does not match dataset profile length {z_axis.shape[0]}.")
 
         batch_size = config.batch_size if config.batch_size is not None else len(dataset)
         loader     = DataLoader(
@@ -138,7 +138,7 @@ class ProfileAeRunLoader:
         self.logger.kv_table({
             "Checkpoint"     : ckpt_path,
             "Embedding dim"  : embedding_dim,
-            "Profile length" : x_len,
+            "Profile length" : z_len,
             "Curves"         : len(dataset),
             "Split"          : config.split,
         })
@@ -147,7 +147,7 @@ class ProfileAeRunLoader:
             model                       = model,
             ae_name                     = ae_name,
             embedding_dim               = embedding_dim,
-            x_axis                      = x_axis,
+            z_axis                      = z_axis,
             normalizer                  = normalizer,
             dataset                     = dataset,
             loader                      = loader,

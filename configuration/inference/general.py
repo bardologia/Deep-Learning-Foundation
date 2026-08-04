@@ -45,11 +45,11 @@ class InferenceConfig:
     n_random_profiles : int = 12
     profile_seed      : int = 0
 
-    n_range_slices     : int = 5
-    n_azimuth_slices   : int = 5
-    n_elevation_slices : int = 5
+    n_col_slices : int = 5
+    n_row_slices : int = 5
+    n_z_slices   : int = 5
 
-    gif_axes       : List[str] = field(default_factory=lambda: ["elevation"])
+    gif_axes       : List[str] = field(default_factory=lambda: ["z"])
     gif_fps        : int       = 12
     gif_max_frames : int       = 150
     gif_dpi        : int       = 110

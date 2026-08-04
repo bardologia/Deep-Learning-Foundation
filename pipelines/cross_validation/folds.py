@@ -21,34 +21,34 @@ class FoldPlan:
 
 
 class FoldPlanner:
-    def __init__(self, config: CrossValidationConfig, range_start: int, range_end: int) -> None:
+    def __init__(self, config: CrossValidationConfig, col_start: int, col_end: int) -> None:
         folds = config.folds
 
         if folds.n_folds < 3:
             raise ValueError(f"n_folds must be >= 3 so that train, val, and test stay disjoint; got {folds.n_folds}")
 
         if folds.guard < 0 or folds.guard % 2 != 0:
-            raise ValueError(f"folds.guard={folds.guard} must be a non-negative even number of azimuth lines")
+            raise ValueError(f"folds.guard={folds.guard} must be a non-negative even number of row lines")
 
-        self.n_folds       = folds.n_folds
-        self.guard         = folds.guard
-        self.azimuth_start = folds.azimuth_start
-        self.azimuth_end   = folds.azimuth_end
-        self.range_start   = range_start
-        self.range_end     = range_end
-        self.blocks        = self._partition(folds.azimuth_start, folds.azimuth_end, folds.n_folds)
+        self.n_folds   = folds.n_folds
+        self.guard     = folds.guard
+        self.row_start = folds.row_start
+        self.row_end   = folds.row_end
+        self.col_start = col_start
+        self.col_end   = col_end
+        self.blocks    = self._partition(folds.row_start, folds.row_end, folds.n_folds)
 
         smallest_block = min(end - start for start, end in self.blocks)
         if smallest_block <= self.guard:
-            raise ValueError(f"folds.guard={self.guard} consumes the smallest fold block ({smallest_block} azimuth lines); reduce guard or n_folds")
+            raise ValueError(f"folds.guard={self.guard} consumes the smallest fold block ({smallest_block} row lines); reduce guard or n_folds")
 
-    def _partition(self, azimuth_start: int, azimuth_end: int, n_folds: int) -> list[tuple[int, int]]:
-        total = azimuth_end - azimuth_start
+    def _partition(self, row_start: int, row_end: int, n_folds: int) -> list[tuple[int, int]]:
+        total = row_end - row_start
         if total < n_folds:
-            raise ValueError(f"Azimuth extent {total} is smaller than n_folds {n_folds}")
+            raise ValueError(f"Row extent {total} is smaller than n_folds {n_folds}")
 
         size   = total // n_folds
-        bounds = [azimuth_start + index * size for index in range(n_folds)] + [azimuth_end]
+        bounds = [row_start + index * size for index in range(n_folds)] + [row_end]
 
         return [(bounds[index], bounds[index + 1]) for index in range(n_folds)]
 
@@ -70,18 +70,18 @@ class FoldPlanner:
 
     def _run_region(self, run: tuple[int, int]) -> CropRegion:
         first_block, last_block = run
-        azimuth_start, azimuth_end = self._trim(self.blocks[first_block][0], self.blocks[last_block][1])
-        return CropRegion(azimuth_start, azimuth_end, self.range_start, self.range_end)
+        row_start, row_end = self._trim(self.blocks[first_block][0], self.blocks[last_block][1])
+        return CropRegion(row_start, row_end, self.col_start, self.col_end)
 
     def _block_region(self, block_index: int) -> CropRegion:
-        azimuth_start, azimuth_end = self._trim(*self.blocks[block_index])
-        return CropRegion(azimuth_start, azimuth_end, self.range_start, self.range_end)
+        row_start, row_end = self._trim(*self.blocks[block_index])
+        return CropRegion(row_start, row_end, self.col_start, self.col_end)
 
-    def _trim(self, azimuth_start: int, azimuth_end: int) -> tuple[int, int]:
-        margin        = self.guard // 2
-        azimuth_start = azimuth_start + margin if azimuth_start > self.azimuth_start else azimuth_start
-        azimuth_end   = azimuth_end - margin   if azimuth_end   < self.azimuth_end   else azimuth_end
-        return azimuth_start, azimuth_end
+    def _trim(self, row_start: int, row_end: int) -> tuple[int, int]:
+        margin    = self.guard // 2
+        row_start = row_start + margin if row_start > self.row_start else row_start
+        row_end   = row_end - margin   if row_end   < self.row_end   else row_end
+        return row_start, row_end
 
     def plan(self, fold_index: int) -> FoldPlan:
         if not 0 <= fold_index < self.n_folds:
@@ -180,10 +180,10 @@ class FoldConfigFactory(ConfigFactory):
             crop  = self.global_crop()
             folds = self.config.folds
 
-            if folds.azimuth_start < crop.azimuth_start or folds.azimuth_end > crop.azimuth_end:
-                raise ValueError(f"Fold azimuth window [{folds.azimuth_start}, {folds.azimuth_end}) must lie within the dataset global crop azimuth extent [{crop.azimuth_start}, {crop.azimuth_end})")
+            if folds.row_start < crop.row_start or folds.row_end > crop.row_end:
+                raise ValueError(f"Fold row window [{folds.row_start}, {folds.row_end}) must lie within the dataset global crop row extent [{crop.row_start}, {crop.row_end})")
 
-            self._planner = FoldPlanner(self.config, range_start=crop.range_start, range_end=crop.range_end)
+            self._planner = FoldPlanner(self.config, col_start=crop.col_start, col_end=crop.col_end)
         return self._planner
 
     def fold_inference_config(self, run_directory: Path, split: str) -> InferenceConfig:

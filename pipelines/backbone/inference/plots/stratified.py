@@ -12,8 +12,8 @@ class StratifiedErrorPlotter(PlotTools):
 
     COVARIATE_LABELS = {
         "gt_active_count"   : "GT active Gaussian count",
-        "primary_amplitude" : "Primary SLC amplitude",
-        "dem_slope"         : "DEM slope magnitude [m/px]",
+        "primary_amplitude" : "Primary channel amplitude",
+        "aux_gradient"      : "Aux slope magnitude [per px]",
         "label_r2"          : "Label fit R²",
     }
 
@@ -40,15 +40,15 @@ class StratifiedErrorPlotter(PlotTools):
 
         return self._save(fig, out_path)
 
-    def plot_failure_mode_map(self, mode_map, mode_names: tuple, out_path: Path, az_offset: int, rg_offset: int) -> Path:
+    def plot_failure_mode_map(self, mode_map, mode_names: tuple, out_path: Path, row_offset: int, col_offset: int) -> Path:
         H, W   = mode_map.shape
-        extent = [rg_offset, rg_offset + W, az_offset + H, az_offset]
+        extent = [col_offset, col_offset + W, row_offset + H, row_offset]
         legend = ", ".join(f"{index}={name}" for index, name in enumerate(mode_names))
 
         return self._imshow_figure(
             mode_map.astype(np.int64),
-            x_label        = "Range [px]",
-            y_label        = "Azimuth [px]",
+            x_label        = "Col [px]",
+            y_label        = "Row [px]",
             title          = "Dominant failure mode per pixel",
             cmap           = None,
             extent         = extent,
@@ -68,7 +68,7 @@ class StratifiedErrorPlotter(PlotTools):
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
         ax.plot(amps, precisions, marker="o", color="#009E73", linewidth=1.4)
         ax.set_xlabel("Predicted amplitude (bin mean)")
-        ax.set_ylabel("Matched to a GT scatterer [%]")
+        ax.set_ylabel("Matched to a GT component [%]")
         ax.set_title("Presence reliability: precision by predicted amplitude")
         ax.set_ylim(0.0, 102.0)
         ax.grid(True, alpha=0.3)
@@ -84,9 +84,9 @@ class StratifiedErrorPlotter(PlotTools):
 
         fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH))
         ax.plot(centers, rates, marker="o", color="#D55E00", linewidth=1.4)
-        ax.set_xlabel("Minimum GT scatterer separation [m]")
-        ax.set_ylabel("Pixels with a missed scatterer [%]")
-        ax.set_title("Miss rate by ground-truth scatterer separation")
+        ax.set_xlabel("Minimum GT component separation")
+        ax.set_ylabel("Pixels with a missed component [%]")
+        ax.set_title("Miss rate by ground-truth component separation")
         ax.set_ylim(bottom=0.0)
         ax.grid(True, alpha=0.3)
         fig.tight_layout()

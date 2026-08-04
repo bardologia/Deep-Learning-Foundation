@@ -13,8 +13,8 @@ class DualResUNetConfig:
     head                : str       = "set_pred"
     params_backbone     : str       = "unet_skip"
     existence_backbone  : str       = "unet_skip"
-    params_input        : tuple     = ("pass", "ifg")
-    existence_input     : tuple     = ("pass", "ifg")
+    params_input        : tuple     = ("chan", "derived")
+    existence_input     : tuple     = ("chan", "derived")
     params_channels     : tuple     = (0, 1, 2, 3, 4, 5, 6, 7, 8)
     existence_channels  : tuple     = (0, 1, 2, 3, 4, 5, 6, 7, 8)
     params_features     : list[int] = field(default_factory=lambda: [64, 128, 248, 472])

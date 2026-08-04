@@ -30,9 +30,9 @@ class Result:
     pixel_cosine       : np.ndarray
     pixel_peak_err_idx : np.ndarray
 
-    cube_directory     : Path
-    azimuth_offset     : int
-    range_offset       : int
+    cube_directory : Path
+    row_offset     : int
+    col_offset     : int
 
     params_pred      : Optional[np.ndarray] = None
     params_gt        : Optional[np.ndarray] = None
@@ -55,14 +55,14 @@ class Metrics:
     def __init__(
         self,
         result      : Result,
-        x_axis      : np.ndarray,
+        z_axis      : np.ndarray,
         n_gaussians : int,
     ) -> None:
 
         self.result      = result
-        self.x_axis      = x_axis
+        self.z_axis      = z_axis
         self.n_gaussians = n_gaussians
-        self.x_step      = float(x_axis[1] - x_axis[0])
+        self.x_step      = float(z_axis[1] - z_axis[0])
         self.num_workers = min(os.cpu_count() or 1, 16)
         self._aligned    = None
 
@@ -178,13 +178,13 @@ class Metrics:
 
         return out
 
-    def _slice_ssim(self, pred : np.ndarray, ref : np.ndarray, elev_indices : Optional[np.ndarray], range_indices : Optional[np.ndarray], az_indices : Optional[np.ndarray], prefix : str) -> Dict[str, float]:
+    def _slice_ssim(self, pred : np.ndarray, ref : np.ndarray, z_indices : Optional[np.ndarray], col_indices : Optional[np.ndarray], row_indices : Optional[np.ndarray], prefix : str) -> Dict[str, float]:
         out   : Dict[str, float]                = {}
         specs : list[tuple[str, str, int, int]] = []
 
-        self._enqueue_specs(specs, prefix, elev_indices,  axis=0, label="elev")
-        self._enqueue_specs(specs, prefix, range_indices, axis=2, label="range")
-        self._enqueue_specs(specs, prefix, az_indices,    axis=1, label="azimuth")
+        self._enqueue_specs(specs, prefix, z_indices,  axis=0, label="z")
+        self._enqueue_specs(specs, prefix, col_indices, axis=2, label="col")
+        self._enqueue_specs(specs, prefix, row_indices,    axis=1, label="row")
 
         if not specs:
             return out
@@ -250,16 +250,16 @@ class Metrics:
 
         return key, value
 
-    def _expand_elev(self, pred: np.ndarray, gt: np.ndarray, suffix: str) -> Dict[str, float]:
+    def _expand_z(self, pred: np.ndarray, gt: np.ndarray, suffix: str) -> Dict[str, float]:
         out: Dict[str, float] = {}
 
-        for metric_name, arr in self._elev_metrics(pred, gt, suffix=suffix).items():
+        for metric_name, arr in self._z_metrics(pred, gt, suffix=suffix).items():
             out.update({f"{metric_name}_{i}": float(v) for i, v in enumerate(arr)})
             out[f"{metric_name}_mean"] = float(np.nanmean(arr))
 
         return out
 
-    def _elev_metrics(self, pred: np.ndarray, gt: np.ndarray, suffix: str = "gt") -> Dict[str, np.ndarray]:
+    def _z_metrics(self, pred: np.ndarray, gt: np.ndarray, suffix: str = "gt") -> Dict[str, np.ndarray]:
         P = pred.reshape(pred.shape[0], -1)
         G = gt  .reshape(gt  .shape[0], -1)
 
@@ -276,10 +276,10 @@ class Metrics:
         ce_gt  = -(gt_prob * log_pp).mean(axis=1, dtype=np.float64)
 
         return {
-            f"elev_mae_{suffix}"  : mae_gt,
-            f"elev_rmse_{suffix}" : rmse_gt,
-            f"elev_r2_{suffix}"   : r2_gt,
-            f"elev_ce_{suffix}"   : ce_gt,
+            f"z_mae_{suffix}"  : mae_gt,
+            f"z_rmse_{suffix}" : rmse_gt,
+            f"z_r2_{suffix}"   : r2_gt,
+            f"z_ce_{suffix}"   : ce_gt,
         }
 
     def _param_assignment(self) -> np.ndarray:
@@ -487,15 +487,15 @@ class Metrics:
 
         return out
 
-    def compute(self, *, elev_indices  : Optional[np.ndarray] = None, range_indices : Optional[np.ndarray] = None, az_indices : Optional[np.ndarray] = None, param_space : bool = True, match_tol : float = 5.0) -> Dict[str, float]:
+    def compute(self, *, z_indices  : Optional[np.ndarray] = None, col_indices : Optional[np.ndarray] = None, row_indices : Optional[np.ndarray] = None, param_space : bool = True, match_tol : float = 5.0) -> Dict[str, float]:
         pred = self.result.pred_curves
         gt   = self.result.gt_curves
 
         metrics: Dict[str, float] = {
             "n_pixels"    : int(self.result.pixel_mse.size),
-            "n_elevation" : int(pred.shape[0]),
-            "x_axis_min"  : float(self.x_axis.min()),
-            "x_axis_max"  : float(self.x_axis.max()),
+            "n_z"         : int(pred.shape[0]),
+            "x_axis_min"  : float(self.z_axis.min()),
+            "x_axis_max"  : float(self.z_axis.max()),
             "x_axis_step" : self.x_step,
 
             "gt_mean"     : float(gt.mean(dtype=np.float64)),
@@ -520,13 +520,13 @@ class Metrics:
         metrics["pixel_peak_err_units_median_gt"] = float(np.median(self.result.pixel_peak_err_idx))          * self.x_step
         metrics["pixel_peak_err_units_p95_gt"]    = float(np.percentile(self.result.pixel_peak_err_idx, 95))  * self.x_step
 
-        metrics.update(self._slice_ssim(pred, gt, elev_indices, range_indices, az_indices, prefix="gt"))
+        metrics.update(self._slice_ssim(pred, gt, z_indices, col_indices, row_indices, prefix="gt"))
 
         pred_norm = ProfileNormalizer.unit_area(pred)
         gt_norm   = ProfileNormalizer.unit_area(gt)
-        metrics.update(self._slice_ssim(pred_norm, gt_norm, elev_indices, range_indices, az_indices, prefix="norm"))
+        metrics.update(self._slice_ssim(pred_norm, gt_norm, z_indices, col_indices, row_indices, prefix="norm"))
 
-        metrics.update(self._expand_elev(pred, gt, suffix="gt"))
+        metrics.update(self._expand_z(pred, gt, suffix="gt"))
 
         if param_space:
             metrics.update(self._active_count_stats())
@@ -541,13 +541,13 @@ class Metrics:
         full = np.asarray(full_curves,           dtype=np.float64)
 
         if gt.shape != full.shape:
-            raise ValueError(f"GT curves {gt.shape} and raw tomogram {full.shape} disagree in shape; the label-quality map needs both on the same region and elevation axis")
+            raise ValueError(f"GT curves {gt.shape} and raw cube {full.shape} disagree in shape; the label-quality map needs both on the same region and z axis")
 
         r2_map = R2.pixel_map(gt, full, axis=0)
         finite = r2_map[np.isfinite(r2_map)]
 
         if not finite.size:
-            raise ValueError("Label-quality R² map holds no finite value; the GT curves or the raw tomogram are degenerate on this region")
+            raise ValueError("Label-quality R² map holds no finite value; the GT curves or the raw cube are degenerate on this region")
 
         stats = {
             "label_r2_mean"            : float(finite.mean()),

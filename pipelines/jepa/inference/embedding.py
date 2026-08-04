@@ -55,7 +55,7 @@ class JepaEmbeddingEvaluator:
         }
 
     def _accumulate(self) -> Dict[str, float]:
-        x    = np.asarray(self._run.x_axis, dtype=np.float32).reshape(1, 1, -1, 1, 1)
+        x    = np.asarray(self._run.z_axis, dtype=np.float32).reshape(1, 1, -1, 1, 1)
         sums = {}
 
         with torch.no_grad():

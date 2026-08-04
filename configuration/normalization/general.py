@@ -120,21 +120,21 @@ class Presets:
 
 
 _SLOT_STRATEGIES: dict[str, ChannelStrategy] = {
-    "pass/mag"        : Presets.ROBUST_IQR_LOG1P,
-    "pass/raw_re_im"  : Presets.ZSCORE,
-    "pass/norm_re_im" : Presets.ZSCORE,
-    "pass/phase"      : Presets.ZSCORE,
+    "chan/mag"        : Presets.ROBUST_IQR_LOG1P,
+    "chan/raw_re_im"  : Presets.ZSCORE,
+    "chan/norm_re_im" : Presets.ZSCORE,
+    "chan/phase"      : Presets.ZSCORE,
 
-    "ifg/mag"         : Presets.ROBUST_IQR_LOG1P,
-    "ifg/raw_re_im"   : Presets.ZSCORE,
-    "ifg/norm_re_im"  : Presets.ZSCORE,
-    "ifg/phase"       : Presets.FIXED_DIV_PI,
+    "derived/mag"         : Presets.ROBUST_IQR_LOG1P,
+    "derived/raw_re_im"   : Presets.ZSCORE,
+    "derived/norm_re_im"  : Presets.ZSCORE,
+    "derived/phase"       : Presets.FIXED_DIV_PI,
 
     "out/amp"         : Presets.ROBUST_IQR_LOG1P,
     "out/mu"          : Presets.ZSCORE,
     "out/sigma"       : Presets.ROBUST_IQR_LOG1P,
 
-    "dem/elevation"   : Presets.ZSCORE,
+    "aux/value"   : Presets.ZSCORE,
 }
 
 
@@ -167,14 +167,14 @@ class NormalizationConfig:
     input_strategy  : str = "per_slot"
     output_strategy : str = "per_slot"
 
-    pass_mag   : str = "default"
-    pass_phase : str = "default"
-    ifg_mag    : str = "default"
-    ifg_phase  : str = "default"
-    out_amp    : str = "default"
-    out_mu     : str = "default"
-    out_sigma  : str = "default"
-    dem        : str = "default"
+    chan_mag      : str = "default"
+    channel_phase : str = "default"
+    derived_mag   : str = "default"
+    derived_phase : str = "default"
+    out_amp       : str = "default"
+    out_mu        : str = "default"
+    out_sigma     : str = "default"
+    aux           : str = "default"
 
     fixed_out_bounds_min : tuple = (1e-05, -20.0, 0.01, 1e-05, -20.0, 0.01)
     fixed_out_bounds_max : tuple = (10.0, 80.0, 50.0, 10.0, 80.0, 50.0)
@@ -187,14 +187,14 @@ class NormalizationConfig:
     amp_max                 : float = 200.0
 
     SLOT_FIELDS = {
-        "pass/mag"      : "pass_mag",
-        "pass/phase"    : "pass_phase",
-        "ifg/mag"       : "ifg_mag",
-        "ifg/phase"     : "ifg_phase",
+        "chan/mag"      : "chan_mag",
+        "chan/phase"    : "channel_phase",
+        "derived/mag"   : "derived_mag",
+        "derived/phase" : "derived_phase",
         "out/amp"       : "out_amp",
         "out/mu"        : "out_mu",
         "out/sigma"     : "out_sigma",
-        "dem/elevation" : "dem",
+        "aux/value"     : "aux",
     }
 
     def strategy(self, which: str, slot_key: str) -> ChannelStrategy:

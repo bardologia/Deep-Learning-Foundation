@@ -6,10 +6,10 @@ from pipelines.autoencoder_common.inference.metrics import AeMetricsBase
 
 
 class ProfileAeMetrics(AeMetricsBase):
-    def __init__(self, result, x_axis: np.ndarray, amp_zero_thr: float) -> None:
+    def __init__(self, result, z_axis: np.ndarray, amp_zero_thr: float) -> None:
         super().__init__(result)
 
-        self.x_axis       = np.asarray(x_axis, dtype=np.float64)
+        self.z_axis       = np.asarray(z_axis, dtype=np.float64)
         self.amp_zero_thr = amp_zero_thr
         self.active       = self.gt.max(axis=1) > self.amp_zero_thr
 
@@ -55,13 +55,13 @@ class ProfileAeMetrics(AeMetricsBase):
         gt   = self.gt[self.active]
         pred = self.pred[self.active]
 
-        power_gt   = np.trapezoid(gt,   self.x_axis, axis=1)
-        power_pred = np.trapezoid(pred, self.x_axis, axis=1)
+        power_gt   = np.trapezoid(gt,   self.z_axis, axis=1)
+        power_pred = np.trapezoid(pred, self.z_axis, axis=1)
 
         rel = np.abs(power_pred - power_gt) / (np.abs(power_gt) + self.EPS)
 
-        peak_gt   = self.x_axis[np.argmax(gt,   axis=1)]
-        peak_pred = self.x_axis[np.argmax(pred, axis=1)]
+        peak_gt   = self.z_axis[np.argmax(gt,   axis=1)]
+        peak_pred = self.z_axis[np.argmax(pred, axis=1)]
 
         amp_gt   = np.max(gt,   axis=1)
         amp_pred = np.max(pred, axis=1)

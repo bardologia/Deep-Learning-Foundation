@@ -28,13 +28,13 @@ class ParamRunInferencePipeline:
     def _load(self) -> tuple:
         meta = self.parameter_io.load_metadata(self.run_dir / self.META_FILENAME)
 
-        parameters    = self.parameter_io.load_params(self.run_dir / meta["parameters_npy"])
-        diagnostics   = self.parameter_io.load_diagnostics(self.run_dir / meta["diagnostics_npz"])
-        tomogram_path = Path(meta["source_tomogram"])
+        parameters  = self.parameter_io.load_params(self.run_dir / meta["parameters_npy"])
+        diagnostics = self.parameter_io.load_diagnostics(self.run_dir / meta["diagnostics_npz"])
+        cube_path   = Path(meta["source_cube"])
 
-        return meta, parameters, diagnostics, tomogram_path
+        return meta, parameters, diagnostics, cube_path
 
-    def _metrics(self, parameters, meta: dict, diagnostics: dict, tomogram_path: Path) -> dict:
+    def _metrics(self, parameters, meta: dict, diagnostics: dict, cube_path: Path) -> dict:
         calculator = FittingMetricsCalculator(
             n_gaussians      = int(meta["k_max"]),
             logger           = self.logger,
@@ -43,7 +43,7 @@ class ParamRunInferencePipeline:
             amp_threshold    = float(meta["activity_threshold"]),
         )
 
-        return calculator.run(parameters, meta, tomogram_path, diagnostics)
+        return calculator.run(parameters, meta, cube_path, diagnostics)
 
     def _summary(self, metrics_dict: dict) -> Path:
         payload = {
@@ -58,7 +58,7 @@ class ParamRunInferencePipeline:
         self.logger.subsection(f"-> Metrics summary written: {summary_path}")
         return summary_path
 
-    def _plots(self, parameters, meta: dict, metrics_dict: dict, tomogram_path: Path) -> dict[str, Path]:
+    def _plots(self, parameters, meta: dict, metrics_dict: dict, cube_path: Path) -> dict[str, Path]:
         if not self.make_plots:
             return {}
 
@@ -71,14 +71,14 @@ class ParamRunInferencePipeline:
             amp_threshold    = float(meta["activity_threshold"]),
         )
 
-        return plotter.run(parameters, metrics_dict, meta, tomogram_path)
+        return plotter.run(parameters, metrics_dict, meta, cube_path)
 
     def run(self) -> dict[str, Path]:
-        meta, parameters, diagnostics, tomogram_path = self._load()
+        meta, parameters, diagnostics, cube_path = self._load()
 
-        metrics_dict = self._metrics(parameters, meta, diagnostics, tomogram_path)
+        metrics_dict = self._metrics(parameters, meta, diagnostics, cube_path)
         summary_path = self._summary(metrics_dict)
-        plot_paths   = self._plots(parameters, meta, metrics_dict, tomogram_path)
+        plot_paths   = self._plots(parameters, meta, metrics_dict, cube_path)
 
         del parameters, diagnostics
         gc.collect()

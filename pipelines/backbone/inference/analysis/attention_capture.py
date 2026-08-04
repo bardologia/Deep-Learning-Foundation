@@ -132,8 +132,8 @@ class AttentionCapturePlots(PlotBase):
     def gate_map(self, gate: np.ndarray, name: str, path: Path) -> Path:
         return self._imshow_figure(
             gate,
-            x_label        = "Range [px, gate scale]",
-            y_label        = "Azimuth [px, gate scale]",
+            x_label        = "Col [px, gate scale]",
+            y_label        = "Row [px, gate scale]",
             title          = f"Attention gate: {name}",
             cmap           = self._cmap_with_bad("viridis"),
             vmin           = 0.0,

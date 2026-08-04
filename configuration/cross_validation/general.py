@@ -18,10 +18,10 @@ from configuration.training.general.run                 import RunPathsConfig, T
 
 @dataclass
 class FoldConfig:
-    n_folds       : int = 10
-    azimuth_start : int = 1000
-    azimuth_end   : int = 1512
-    guard         : int = 16
+    n_folds   : int = 10
+    row_start : int = 1000
+    row_end   : int = 1512
+    guard     : int = 16
 
 
 @dataclass

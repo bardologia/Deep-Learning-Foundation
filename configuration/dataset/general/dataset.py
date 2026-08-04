@@ -19,83 +19,83 @@ class InputConfig:
     use_secondaries            : bool           = False
     secondaries_representation : Representation = Representation.MAG_ONLY
  
-    use_interferograms            : bool           = True
-    interferograms_representation : Representation = Representation.ANGLE_ONLY
+    use_derived            : bool           = True
+    derived_representation : Representation = Representation.ANGLE_ONLY
 
-    use_dem                       : bool           = False
+    use_aux                       : bool           = False
 
     @classmethod
     def full_stack(cls) -> "InputConfig":
         return cls(
-            use_primary        = True,  primary_representation        = Representation.MAG_ONLY,
-            use_secondaries    = True,  secondaries_representation    = Representation.MAG_ONLY,
-            use_interferograms = True,  interferograms_representation = Representation.ANGLE_ONLY,
+            use_primary     = True,  primary_representation        = Representation.MAG_ONLY,
+            use_secondaries = True,  secondaries_representation    = Representation.MAG_ONLY,
+            use_derived     = True,  derived_representation = Representation.ANGLE_ONLY,
         )
 
     @property
-    def primary_channels_per_pass(self) -> int:
-        return self.primary_representation.channels_per_pass if self.use_primary else 0
+    def primary_channels_per_source(self) -> int:
+        return self.primary_representation.channels_per_source if self.use_primary else 0
 
     @property
-    def secondaries_channels_per_pass(self) -> int:
-        return self.secondaries_representation.channels_per_pass if self.use_secondaries else 0
+    def secondaries_channels_per_source(self) -> int:
+        return self.secondaries_representation.channels_per_source if self.use_secondaries else 0
 
     @property
-    def interferograms_channels_per_pass(self) -> int:
-        return self.interferograms_representation.channels_per_pass if self.use_interferograms else 0
+    def derived_channels_per_source(self) -> int:
+        return self.derived_representation.channels_per_source if self.use_derived else 0
 
-    def total_channels(self, n_secondaries: int, n_interferograms: int) -> int:
-        n  = self.primary_channels_per_pass
-        n += n_secondaries    * self.secondaries_channels_per_pass
-        n += n_interferograms * self.interferograms_channels_per_pass
-        if self.use_dem:
+    def total_channels(self, n_secondaries: int, n_derived: int) -> int:
+        n  = self.primary_channels_per_source
+        n += n_secondaries    * self.secondaries_channels_per_source
+        n += n_derived * self.derived_channels_per_source
+        if self.use_aux:
             n += 1
         return n
 
-    def channel_group_keys(self, n_secondaries: int, n_interferograms: int) -> list[str]:
+    def channel_group_keys(self, n_secondaries: int, n_derived: int) -> list[str]:
         keys: list[str] = []
 
         if self.use_primary:
             slot_kinds = self.primary_representation.slot_kinds
             cpp        = len(slot_kinds)
-            keys.extend(f"pass/{slot_kinds[i % cpp]}" for i in range(1 * cpp))
+            keys.extend(f"chan/{slot_kinds[i % cpp]}" for i in range(1 * cpp))
 
         if self.use_secondaries:
             slot_kinds = self.secondaries_representation.slot_kinds
             cpp        = len(slot_kinds)
-            keys.extend(f"pass/{slot_kinds[i % cpp]}" for i in range(n_secondaries * cpp))
+            keys.extend(f"chan/{slot_kinds[i % cpp]}" for i in range(n_secondaries * cpp))
 
-        if self.use_interferograms:
-            slot_kinds = self.interferograms_representation.slot_kinds
+        if self.use_derived:
+            slot_kinds = self.derived_representation.slot_kinds
             cpp        = len(slot_kinds)
-            keys.extend(f"ifg/{slot_kinds[i % cpp]}" for i in range(n_interferograms * cpp))
+            keys.extend(f"derived/{slot_kinds[i % cpp]}" for i in range(n_derived * cpp))
 
-        if self.use_dem:
-            keys.append("dem/elevation")
+        if self.use_aux:
+            keys.append("aux/value")
 
         return keys
 
     def as_dict(self) -> dict:
         return {
-            "use_primary"                   : self.use_primary,
-            "primary_representation"        : self.primary_representation.value,
-            "use_secondaries"               : self.use_secondaries,
-            "secondaries_representation"    : self.secondaries_representation.value,
-            "use_interferograms"            : self.use_interferograms,
-            "interferograms_representation" : self.interferograms_representation.value,
-            "use_dem"                       : self.use_dem,
+            "use_primary"                : self.use_primary,
+            "primary_representation"     : self.primary_representation.value,
+            "use_secondaries"            : self.use_secondaries,
+            "secondaries_representation" : self.secondaries_representation.value,
+            "use_derived"                : self.use_derived,
+            "derived_representation"     : self.derived_representation.value,
+            "use_aux"                    : self.use_aux,
         }
 
     @classmethod
     def from_dict(cls, payload: dict) -> "InputConfig":
         return cls(
-            use_primary                   = bool(payload["use_primary"]),
-            primary_representation        = Representation(payload["primary_representation"]),
-            use_secondaries               = bool(payload["use_secondaries"]),
-            secondaries_representation    = Representation(payload["secondaries_representation"]),
-            use_interferograms            = bool(payload["use_interferograms"]),
-            interferograms_representation = Representation(payload["interferograms_representation"]),
-            use_dem                       = bool(payload["use_dem"]),
+            use_primary                = bool(payload["use_primary"]),
+            primary_representation     = Representation(payload["primary_representation"]),
+            use_secondaries            = bool(payload["use_secondaries"]),
+            secondaries_representation = Representation(payload["secondaries_representation"]),
+            use_derived                = bool(payload["use_derived"]),
+            derived_representation     = Representation(payload["derived_representation"]),
+            use_aux                    = bool(payload["use_aux"]),
         )
 
       
@@ -188,7 +188,7 @@ class DatasetConfig:
     preprocessing_run_directory : Path
     split_regions               : SplitRegions
     parameters_path             : Optional[Path]            = None
-    secondary_labels            : Optional[Tuple[str, ...]] = ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+    secondary_labels            : Optional[Tuple[str, ...]] = ("CH01", "CH02", "CH03", "CH04")
     patch                       : PatchConfig               = field(default_factory=PatchConfig)
     input_config                : InputConfig               = field(default_factory=InputConfig)
     output_config               : OutputConfig              = field(default_factory=OutputConfig)
@@ -200,6 +200,6 @@ class DatasetConfig:
     prefetch_factor : int                  = 8
     shuffle_train   : bool                 = True
     pin_memory      : bool                 = True
-    x_axis          : Optional[np.ndarray] = field(default=None, repr=False)
+    z_axis          : Optional[np.ndarray] = field(default=None, repr=False)
     n_gaussians     : int                  = 1
 

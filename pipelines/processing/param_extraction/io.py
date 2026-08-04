@@ -34,15 +34,15 @@ class ExtractionMetadataManager:
         self.config = config
         self.logger = logger
 
-    def save_run_metadata(self, npy_path: Path, diagnostics_path: Path, tomogram_path: Path, height_range: tuple) -> Path:
+    def save_run_metadata(self, npy_path: Path, diagnostics_path: Path, cube_path: Path, z_range: tuple) -> Path:
         meta_path = self.config.output_directory / ParameterRunMeta.FILENAME
         ext       = self.config.fit_settings
 
         payload = {
             "timestamp"            : datetime.now().isoformat(timespec="seconds"),
             "processed_data_path"  : str(self.config.processed_data_path),
-            "source_tomogram"      : str(tomogram_path),
-            "height_range"         : list(height_range),
+            "source_cube"          : str(cube_path),
+            "z_range"              : list(z_range),
             "output_directory"     : str(self.config.output_directory),
             "output_prefix"        : self.config.output_prefix,
             "output_suffix"        : self.config.output_suffix_value,
@@ -59,7 +59,7 @@ class ExtractionMetadataManager:
             "adam_lr"              : self.config.adam_lr,
             "adam_b1"              : self.config.adam_b1,
             "adam_b2"              : self.config.adam_b2,
-            "range_batch_size"     : self.config.range_batch_size,
+            "col_batch_size"       : self.config.col_batch_size,
             "gpu_pixel_batch_size" : self.config.gpu_pixel_batch_size,
             "fit_sigma"            : ext.fit_config.fit_sigma,
             "fit_amplitude"        : ext.fit_config.fit_amplitude,

@@ -60,7 +60,7 @@ class ProfileStatsComputer:
         selected = dataset.index[indices]
 
         return GaussianMixture.evaluate_batch(
-            dataset.x_axis,
+            dataset.z_axis,
             dataset.amps[selected],
             dataset.mus[selected],
             dataset.sigs[selected],

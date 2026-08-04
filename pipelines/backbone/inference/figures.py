@@ -40,12 +40,12 @@ class FigureComposer:
                 n_secondaries  = run.n_secondaries,
                 labels         = run.secondary_labels,
                 out_dir        = meta.figures_dir / "input_channels",
-                az_offset      = result.azimuth_offset,
-                rg_offset      = result.range_offset,
+                row_offset     = result.row_offset,
+                col_offset     = result.col_offset,
             )
             logger.subsection(f"Input channels : {len(figure_paths['input_channels'])} figures in {meta.figures_dir / 'input_channels'}")
 
-    def _compose_profiles(self, result: Result, run, x_axis_np: np.ndarray, param_space: bool, figure_paths: Dict[str, List[Path]]) -> None:
+    def _compose_profiles(self, result: Result, run, z_axis_np: np.ndarray, param_space: bool, figure_paths: Dict[str, List[Path]]) -> None:
         slice_plotter = self.plotter.slice
         meta          = self.meta
         logger        = self.logger
@@ -68,18 +68,18 @@ class FigureComposer:
 
         for tag, pixels in (("best", selected["best"]), ("worst", selected["worst"]), ("random", selected["random"])):
             figure_paths[f"profiles_{tag}"] = slice_plotter.plot_profiles(
-                pred_curves    = result.pred_curves,
-                gt_curves      = result.gt_curves,
-                params_pred    = (result.params_pred if param_space else None),
-                x_axis         = x_axis_np,
-                pixels         = pixels,
-                tag            = tag,
-                out_dir        = meta.figures_dir / "profiles",
-                n_gaussians    = run.n_gaussians,
-                pixel_metrics  = pixel_metrics_for_plot,
-                az_offset      = result.azimuth_offset,
-                rg_offset      = result.range_offset,
-                full_curves    = run.full_curves,
+                pred_curves   = result.pred_curves,
+                gt_curves     = result.gt_curves,
+                params_pred   = (result.params_pred if param_space else None),
+                z_axis        = z_axis_np,
+                pixels        = pixels,
+                tag           = tag,
+                out_dir       = meta.figures_dir / "profiles",
+                n_gaussians   = run.n_gaussians,
+                pixel_metrics = pixel_metrics_for_plot,
+                row_offset    = result.row_offset,
+                col_offset    = result.col_offset,
+                full_curves   = run.full_curves,
             )
 
             logger.subsection(f"Profiles ({tag:<6}) : {len(figure_paths[f'profiles_{tag}'])} figures in {meta.figures_dir / 'profiles'}")
@@ -97,7 +97,7 @@ class FigureComposer:
         ]
 
         if result.label_r2 is not None:
-            pixel_map_specs.append(("label_r2_map", "label_r2", result.label_r2, "Label fit R² (GT curves vs raw tomogram)", "R²", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}))
+            pixel_map_specs.append(("label_r2_map", "label_r2", result.label_r2, "Label fit R² (GT curves vs raw cube)", "R²", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}))
 
         if result.flip_consistency is not None:
             pixel_map_specs.append(("flip_consistency_map", "flip_consistency", result.flip_consistency, "Flip-equivariance disagreement (curve MSE)", "MSE", {"cmap": cfg.cmap_error, "log": True}))
@@ -115,8 +115,8 @@ class FigureComposer:
                 result.failure_mode_map,
                 mode_names = FailureModes.MODES,
                 out_path   = meta.figures_dir / "pixel_maps" / "failure_mode.png",
-                az_offset  = result.azimuth_offset,
-                rg_offset  = result.range_offset,
+                row_offset = result.row_offset,
+                col_offset = result.col_offset,
             )]
 
         if result.miss_by_sep:
@@ -137,8 +137,8 @@ class FigureComposer:
                 title      = title,
                 label      = label,
                 out_path   = meta.figures_dir / "pixel_maps" / f"{fname}.png",
-                az_offset  = result.azimuth_offset,
-                rg_offset  = result.range_offset,
+                row_offset = result.row_offset,
+                col_offset = result.col_offset,
                 **extra,
             )]
 
@@ -183,8 +183,8 @@ class FigureComposer:
             params_gt   = result.params_gt  [: run.n_gaussians * 3],
             n_gaussians = run.n_gaussians,
             out_dir     = meta.figures_dir / "param_error_maps",
-            az_offset   = result.azimuth_offset,
-            rg_offset   = result.range_offset,
+            row_offset  = result.row_offset,
+            col_offset  = result.col_offset,
             assignment  = assignment,
         )
 
@@ -201,8 +201,8 @@ class FigureComposer:
             params_gt   = result.params_gt  [: run.n_gaussians * 3],
             n_gaussians = run.n_gaussians,
             out_dir     = meta.figures_dir / "slots",
-            az_offset   = result.azimuth_offset,
-            rg_offset   = result.range_offset,
+            row_offset  = result.row_offset,
+            col_offset  = result.col_offset,
         )
 
         logger.subsection(f"Param plots : distributions, scatter, error maps, error histograms, active-count map written to {meta.figures_dir}")
@@ -226,7 +226,7 @@ class FigureComposer:
 
         logger.subsection(f"Slot organization : usage, per-slot distributions, μ-rank and GT-assignment matrices written to {out_dir}")
 
-    def _compose_slices(self, result: Result, run, global_metrics: dict, x_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
+    def _compose_slices(self, result: Result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
         meta   = self.meta
         logger = self.logger
         cfg    = self.cfg
@@ -236,7 +236,7 @@ class FigureComposer:
             gt_cube        = result.gt_curves,
             full_cube      = run.full_curves,
             result         = result,
-            x_axis_np      = x_axis_np,
+            z_axis_np      = z_axis_np,
             indices        = indices,
             global_metrics = global_metrics,
             ssim_prefix    = "gt",
@@ -246,7 +246,7 @@ class FigureComposer:
             ref_title      = "GT (Gaussian)",
             pred_title     = "Prediction",
             err_title      = "|Pred − GT|",
-            full_title     = "Full tomogram (raw)",
+            full_title     = "Full cube (raw)",
             figure_paths   = figure_paths,
         )
 
@@ -259,7 +259,7 @@ class FigureComposer:
             gt_cube        = gt_norm,
             full_cube      = full_norm,
             result         = result,
-            x_axis_np      = x_axis_np,
+            z_axis_np      = z_axis_np,
             indices        = indices,
             global_metrics = global_metrics,
             ssim_prefix    = "norm",
@@ -269,11 +269,11 @@ class FigureComposer:
             ref_title      = "GT (unit-area)",
             pred_title     = "Prediction (unit-area)",
             err_title      = "|Pred − GT|",
-            full_title     = "Full tomogram (unit-area)",
+            full_title     = "Full cube (unit-area)",
             figure_paths   = figure_paths,
         )
 
-        logger.subsection(f"Slices written : range={cfg.n_range_slices} azimuth={cfg.n_azimuth_slices} elev={cfg.n_elevation_slices} (denorm + unit-area, gt/pred/error each)")
+        logger.subsection(f"Slices written : range={cfg.n_col_slices} row={cfg.n_row_slices} z={cfg.n_z_slices} (denorm + unit-area, gt/pred/error each)")
 
     def _slice_set(
         self,
@@ -281,7 +281,7 @@ class FigureComposer:
         gt_cube        : np.ndarray,
         full_cube,
         result         : Result,
-        x_axis_np      : np.ndarray,
+        z_axis_np      : np.ndarray,
         indices        : dict,
         global_metrics : dict,
         ssim_prefix    : str,
@@ -295,30 +295,30 @@ class FigureComposer:
         figure_paths   : Dict[str, List[Path]],
     ) -> None:
 
-        slice_plotter   = self.plotter.slice
-        slice_range_idx = indices["slice_range_idx"]
-        slice_az_idx    = indices["slice_az_idx"]
-        slice_elev_idx  = indices["slice_elev_idx"]
+        slice_plotter = self.plotter.slice
+        slice_col_idx = indices["slice_col_idx"]
+        slice_row_idx = indices["slice_row_idx"]
+        slice_z_idx   = indices["slice_z_idx"]
 
-        figure_paths[f"slices_range{group_suffix}"]   = []
-        figure_paths[f"slices_azimuth{group_suffix}"] = []
-        figure_paths[f"slices_elev{group_suffix}"]    = []
+        figure_paths[f"slices_col{group_suffix}"]   = []
+        figure_paths[f"slices_row{group_suffix}"] = []
+        figure_paths[f"slices_z{group_suffix}"]    = []
 
         for axis, indices_arr, stem_fn, group in (
-            ("range",   slice_range_idx, lambda i: f"{stem_prefix}range_{int(i) + result.range_offset}",     f"slices_range{group_suffix}"),
-            ("azimuth", slice_az_idx,    lambda i: f"{stem_prefix}azimuth_{int(i) + result.azimuth_offset}", f"slices_azimuth{group_suffix}"),
+            ("col", slice_col_idx, lambda i: f"{stem_prefix}col_{int(i) + result.col_offset}",     f"slices_col{group_suffix}"),
+            ("row", slice_row_idx,    lambda i: f"{stem_prefix}row_{int(i) + result.row_offset}", f"slices_row{group_suffix}"),
         ):
             for i in indices_arr:
-                figure_paths[group] += slice_plotter.plot_tomogram_slice(
+                figure_paths[group] += slice_plotter.plot_cube_slice(
                     pred_cube  = pred_cube,
                     gt_cube    = gt_cube,
                     axis       = axis,
                     index      = int(i),
-                    x_axis     = x_axis_np,
+                    z_axis     = z_axis_np,
                     out_dir    = out_dir,
                     stem       = stem_fn(i),
-                    az_offset  = result.azimuth_offset,
-                    rg_offset  = result.range_offset,
+                    row_offset = result.row_offset,
+                    col_offset = result.col_offset,
                     ssim_value = global_metrics[f"ssim_{ssim_prefix}_{axis}_{int(i)}"],
                     ref_title  = ref_title,
                     pred_title = pred_title,
@@ -327,17 +327,17 @@ class FigureComposer:
                     full_title = full_title,
                 )
 
-        for i in slice_elev_idx:
-            figure_paths[f"slices_elev{group_suffix}"] += slice_plotter.plot_elevation_intensity_slice(
+        for i in slice_z_idx:
+            figure_paths[f"slices_z{group_suffix}"] += slice_plotter.plot_z_intensity_slice(
                 pred_cube  = pred_cube,
                 gt_cube    = gt_cube,
-                elev_idx   = int(i),
-                x_axis     = x_axis_np,
+                z_idx      = int(i),
+                z_axis     = z_axis_np,
                 out_dir    = out_dir,
-                stem       = f"{stem_prefix}elev_idx_{int(i)}",
-                az_offset  = result.azimuth_offset,
-                rg_offset  = result.range_offset,
-                ssim_value = global_metrics[f"ssim_{ssim_prefix}_elev_{int(i)}"],
+                stem       = f"{stem_prefix}z_idx_{int(i)}",
+                row_offset = result.row_offset,
+                col_offset = result.col_offset,
+                ssim_value = global_metrics[f"ssim_{ssim_prefix}_z_{int(i)}"],
                 ref_title  = ref_title,
                 pred_title = pred_title,
                 err_title  = err_title,
@@ -345,13 +345,13 @@ class FigureComposer:
                 full_title = full_title,
             )
 
-    def _compose_ssim(self, result: Result, global_metrics: dict, x_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
+    def _compose_ssim(self, result: Result, global_metrics: dict, z_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
         slice_plotter = self.plotter.slice
         meta          = self.meta
         logger        = self.logger
 
-        _N_elev, _az, _rg = result.pred_curves.shape
-        offsets           = {"range": result.range_offset, "azimuth": result.azimuth_offset}
+        _N_z, _row, _col = result.pred_curves.shape
+        offsets           = {"col": result.col_offset, "row": result.row_offset}
 
         self._ssim_curves_set(
             global_metrics = global_metrics,
@@ -377,16 +377,16 @@ class FigureComposer:
             figure_paths   = figure_paths,
         )
 
-        logger.subsection(f"SSIM plots : range, azimuth, elev (denorm + unit-area) written to {meta.figures_dir}\n")
+        logger.subsection(f"SSIM plots : range, row, z (denorm + unit-area) written to {meta.figures_dir}\n")
 
-        figure_paths["elev_metric_curves"] = slice_plotter.plot_elev_metric_curves(
+        figure_paths["z_metric_curves"] = slice_plotter.plot_z_metric_curves(
             global_metrics = global_metrics,
-            out_dir        = meta.figures_dir / "elev_metrics",
-            n_elev         = _N_elev,
-            x_axis         = x_axis_np,
+            out_dir        = meta.figures_dir / "z_metrics",
+            n_z            = _N_z,
+            z_axis         = z_axis_np,
         )
 
-        logger.subsection(f"Elev metric curves (MAE, RMSE, R², CE) written to {meta.figures_dir / 'elev_metrics'}\n")
+        logger.subsection(f"Z metric curves (MAE, RMSE, R², CE) written to {meta.figures_dir / 'z_metrics'}\n")
 
     def _ssim_curves_set(
         self,
@@ -402,12 +402,12 @@ class FigureComposer:
     ) -> None:
 
         slice_plotter     = self.plotter.slice
-        _N_elev, _az, _rg = shape
+        _N_z, _row, _col = shape
 
         for axis, n_slices, indices_arr, offset in (
-            ("range",   _rg,     indices["all_range_idx"], offsets["range"]),
-            ("azimuth", _az,     indices["all_az_idx"],    offsets["azimuth"]),
-            ("elev",    _N_elev, indices["all_elev_idx"],  0),
+            ("col", _col,     indices["all_col_idx"], offsets["col"]),
+            ("row", _row,     indices["all_row_idx"],    offsets["row"]),
+            ("z",   _N_z, indices["all_z_idx"],  0),
         ):
             figure_paths[f"ssim_{axis}{group_suffix}"] = [slice_plotter.plot_ssim_curves(
                 global_metrics = global_metrics,
@@ -425,7 +425,7 @@ class FigureComposer:
         result         : Result,
         run,
         global_metrics : dict,
-        x_axis_np      : np.ndarray,
+        z_axis_np      : np.ndarray,
         indices        : dict,
         param_space    : bool = True,
     ) -> Dict[str, List[Path]]:
@@ -433,19 +433,19 @@ class FigureComposer:
         figure_paths: Dict[str, List[Path]] = {}
 
         self._compose_input_channels(result, run, figure_paths)
-        self._compose_profiles(result, run, x_axis_np, param_space, figure_paths)
+        self._compose_profiles(result, run, z_axis_np, param_space, figure_paths)
         self._compose_pixel_maps(result, figure_paths)
 
         if param_space:
             self._compose_param_plots(result, run, figure_paths)
             self._compose_slot_organization(result, run, figure_paths)
 
-        self._compose_slices(result, run, global_metrics, x_axis_np, indices, figure_paths)
-        self._compose_ssim(result, global_metrics, x_axis_np, indices, figure_paths)
+        self._compose_slices(result, run, global_metrics, z_axis_np, indices, figure_paths)
+        self._compose_ssim(result, global_metrics, z_axis_np, indices, figure_paths)
 
         return figure_paths
 
-    def animate(self, result: Result, run, x_axis_np: np.ndarray) -> Dict[str, Path]:
+    def animate(self, result: Result, run, z_axis_np: np.ndarray) -> Dict[str, Path]:
         cfg    = self.cfg
         meta   = self.meta
         logger = self.logger
@@ -464,14 +464,14 @@ class FigureComposer:
         for axis in cfg.gif_axes:
             logger.subsection(f"Generating walk GIF along {axis} axis")
             gif_paths[f"walk_{axis}"] = animator.walk_gif(
-                pred_cube    = result.pred_curves,
-                gt_cube      = result.gt_curves,
-                axis         = axis,
-                out_path     = meta.animations_dir / f"walk_{axis}.gif",
-                x_axis       = x_axis_np,
-                az_offset    = result.azimuth_offset,
-                rg_offset    = result.range_offset,
-                full_cube    = run.full_curves,
+                pred_cube  = result.pred_curves,
+                gt_cube    = result.gt_curves,
+                axis       = axis,
+                out_path   = meta.animations_dir / f"walk_{axis}.gif",
+                z_axis     = z_axis_np,
+                row_offset = result.row_offset,
+                col_offset = result.col_offset,
+                full_cube  = run.full_curves,
             )
 
         logger.subsection("")

@@ -85,7 +85,7 @@ class JepaDefaults:
             run_directory   = Path("."),
             save_cubes      = True,
             cpu_workers     = 16,
-            gif_axes        = ["elevation", "range", "azimuth"],
+            gif_axes        = ["z", "col", "row"],
         )
 
 

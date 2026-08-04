@@ -48,8 +48,8 @@ class DatasetPipeline:
                 "Training Run"       : str(self.training_run_directory),
                 "Primary"            : f"use={ic.use_primary} rep={ic.primary_representation.value}",
                 "Secondaries"        : f"use={ic.use_secondaries} rep={ic.secondaries_representation.value}",
-                "Interferograms"     : f"use={ic.use_interferograms} rep={ic.interferograms_representation.value}",
-                "DEM"                : f"use={ic.use_dem}",
+                "Derived"            : f"use={ic.use_derived} rep={ic.derived_representation.value}",
+                "Aux"                : f"use={ic.use_aux}",
                 "Output Parameters"  : ",".join(oc.role_names),
                 "Patch Size"         : config.patch.size,
                 "Patch Stride"       : config.patch.stride,
@@ -69,7 +69,7 @@ class DatasetPipeline:
 
         for region in regions:
             arrays  = self.cropper.load_split(region)
-            spatial = (region.azimuth_size, region.range_size)
+            spatial = (region.row_size, region.col_size)
 
             patcher = Patcher.build(
                 spatial_size          = spatial,
@@ -79,19 +79,19 @@ class DatasetPipeline:
             )
 
             part = PatchDataset(
-                inputs           = arrays["inputs"],
-                gt_parameters    = arrays["parameters"],
-                grid             = patcher,
-                input_config     = self.config.input_config,
-                output_config    = self.config.output_config,
-                split_name       = split_name,
-                n_secondaries    = arrays["n_secondaries"],
-                n_interferograms = arrays["n_interferograms"],
-                n_primary        = arrays["n_primary"],
-                normalizer       = normalizer,
-                n_gaussians      = self.config.n_gaussians,
-                augmenter        = self.augmenter,
-                dem              = arrays["dem"] if self.config.input_config.use_dem else None,
+                inputs        = arrays["inputs"],
+                gt_parameters = arrays["parameters"],
+                grid          = patcher,
+                input_config  = self.config.input_config,
+                output_config = self.config.output_config,
+                split_name    = split_name,
+                n_secondaries = arrays["n_secondaries"],
+                n_derived     = arrays["n_derived"],
+                n_primary     = arrays["n_primary"],
+                normalizer    = normalizer,
+                n_gaussians   = self.config.n_gaussians,
+                augmenter     = self.augmenter,
+                aux           = arrays["aux"] if self.config.input_config.use_aux else None,
             )
 
             parts.append(part)
@@ -114,14 +114,14 @@ class DatasetPipeline:
         train_ds, train_patcher = self._build_dataset("train")
 
         norm_stats = StatsComputer.compute(
-            dataset          = train_ds,
-            logger           = self.logger,
-            input_config     = self.config.input_config,
-            output_config    = self.config.output_config,
-            n_secondaries    = train_ds.n_secondaries,
-            n_interferograms = train_ds.n_interferograms,
-            n_gaussians      = self.config.n_gaussians,
-            normalization    = self.config.normalization,
+            dataset       = train_ds,
+            logger        = self.logger,
+            input_config  = self.config.input_config,
+            output_config = self.config.output_config,
+            n_secondaries = train_ds.n_secondaries,
+            n_derived     = train_ds.n_derived,
+            n_gaussians   = self.config.n_gaussians,
+            normalization = self.config.normalization,
         )
 
         norm_stats.save(self.training_run_directory / "meta")
@@ -177,11 +177,11 @@ class BackboneDatasetPreparation:
         self.dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
 
         dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_directory, logger=self.logger, seed=self.seed)
-        x_len            = dataset_pipeline.profile_length
-        x_axis           = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, x_len)
+        z_len            = dataset_pipeline.profile_length
+        z_axis           = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, z_len)
 
-        self.dataset_config.x_axis = x_axis
+        self.dataset_config.z_axis = z_axis
 
         train_loader, val_loader, test_loader, datasets = dataset_pipeline.run()
 
-        return (train_loader, val_loader, test_loader), datasets, x_axis, x_len
+        return (train_loader, val_loader, test_loader), datasets, z_axis, z_len

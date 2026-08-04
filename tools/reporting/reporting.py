@@ -54,21 +54,21 @@ class MetricSectionGrouper:
     PER_BIN_PATTERN = re.compile(r"_\d+$")
 
     METRIC_SECTIONS = [
-        ("Dataset Statistics",           re.compile(r"^(n_pixels|n_elevation|x_axis_|gt_|pred_)")),
-        ("Curve-Level",                  re.compile(r"^(curve_|overall_r2|psnr_)")),
-        ("SSIM",                         re.compile(r"^ssim_")),
-        ("Per-Pixel MSE and MAE",        re.compile(r"^pixel_(mse|mae)_")),
-        ("Per-Pixel R² and Cosine",      re.compile(r"^pixel_(r2|cosine)_")),
-        ("Peak Location Error",          re.compile(r"^pixel_peak_")),
-        ("Per-Elevation-Bin Aggregates", re.compile(r"^elev_")),
-        ("Slot Occupancy",               re.compile(r"^slot_")),
+        ("Dataset Statistics",                       re.compile(r"^(n_pixels|n_z|x_axis_|gt_|pred_)")),
+        ("Curve-Level",                              re.compile(r"^(curve_|overall_r2|psnr_)")),
+        ("SSIM",                                     re.compile(r"^ssim_")),
+        ("Per-Pixel MSE and MAE",                    re.compile(r"^pixel_(mse|mae)_")),
+        ("Per-Pixel R² and Cosine",                  re.compile(r"^pixel_(r2|cosine)_")),
+        ("Peak Location Error",                      re.compile(r"^pixel_peak_")),
+        ("Per-Z-Bin Aggregates",                     re.compile(r"^z_")),
+        ("Slot Occupancy",                           re.compile(r"^slot_")),
         ("Matched Gaussian (Permutation-Invariant)", re.compile(r"^matched_")),
-        ("Label Quality",                re.compile(r"^label_")),
-        ("Normalization Health",         re.compile(r"^(norm_in_|clamp_)")),
-        ("Flip Consistency",             re.compile(r"^flip_")),
-        ("Stratified Errors",            re.compile(r"^strat")),
-        ("Failure Modes",                re.compile(r"^failure_")),
-        ("Presence Calibration",         re.compile(r"^presence_")),
+        ("Label Quality",                            re.compile(r"^label_")),
+        ("Normalization Health",                     re.compile(r"^(norm_in_|clamp_)")),
+        ("Flip Consistency",                         re.compile(r"^flip_")),
+        ("Stratified Errors",                        re.compile(r"^strat")),
+        ("Failure Modes",                            re.compile(r"^failure_")),
+        ("Presence Calibration",                     re.compile(r"^presence_")),
     ]
 
     LEFTOVER_TITLE = "Other Metrics"

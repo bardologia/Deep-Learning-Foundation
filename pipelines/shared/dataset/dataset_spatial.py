@@ -19,26 +19,26 @@ class Layout:
         layout_path = self.data_directory / "dataset.json"
         payload     = FileIO.load_json(layout_path)
 
-        self.global_crop  : CropRegion  = CropRegion(*payload["global_crop"])
-        self.tomogram_tag : str         = payload["tomogram_tag"]
-        self.artifacts    : dict        = payload["artifacts"]
-        self.pass_labels  : list | None = payload["pass_labels"]
+        self.global_crop    : CropRegion  = CropRegion(*payload["global_crop"])
+        self.cube_tag       : str         = payload["cube_tag"]
+        self.artifacts      : dict        = payload["artifacts"]
+        self.channel_labels : list | None = payload["channel_labels"]
 
         self.logger.section("[Layout Loaded]")
         self.logger.kv_table({
-            "Run Directory"   : self.run_directory,
-            "Global Crop"     : self.global_crop.as_tuple(),
-            "Azimuth (lines)" : self.global_crop.azimuth_size,
-            "Range (samples)" : self.global_crop.range_size,
-            "Tomogram Tag"    : self.tomogram_tag,
-            "Pass Labels"     : ", ".join(self.pass_labels) if self.pass_labels else "unavailable",
-            "Parameters"      : self.parameters_path,
+            "Run Directory" : self.run_directory,
+            "Global Crop"   : self.global_crop.as_tuple(),
+            "Rows"          : self.global_crop.row_size,
+            "Cols"          : self.global_crop.col_size,
+            "Cube Tag"      : self.cube_tag,
+            "Pass Labels"   : ", ".join(self.channel_labels) if self.channel_labels else "unavailable",
+            "Parameters"    : self.parameters_path,
         })
 
     @property
     def profile_length(self) -> int:
-        tomogram = np.load(str(self.artifact_path("tomogram_full")), mmap_mode="r", allow_pickle=False)
-        return int(tomogram.shape[0])
+        cube = np.load(str(self.artifact_path("cube_full")), mmap_mode="r", allow_pickle=False)
+        return int(cube.shape[0])
 
     def artifact_path(self, artifact_key: str) -> Path:
         if artifact_key == "parameters":
@@ -50,11 +50,11 @@ class Layout:
         if secondary_labels is None:
             return None
 
-        if not self.pass_labels:
+        if not self.channel_labels:
             raise ValueError("Dataset records no pass labels in dataset.json; the dataset must list its pass labels before secondaries can be selected by label.")
 
-        primary     = self.pass_labels[0]
-        secondaries = list(self.pass_labels[1:])
+        primary     = self.channel_labels[0]
+        secondaries = list(self.channel_labels[1:])
         requested   = [str(label) for label in secondary_labels]
 
         if primary in requested:

@@ -50,7 +50,7 @@ class SyntheticCurveDataset(Dataset):
     def __init__(self, n_samples: int, profile_length: int, seed: int) -> None:
         self.n_samples      = int(n_samples)
         self.profile_length = int(profile_length)
-        self.x_axis         = np.linspace(0.0, 1.0, self.profile_length, dtype=np.float32)
+        self.z_axis         = np.linspace(0.0, 1.0, self.profile_length, dtype=np.float32)
         self.rng_seed       = int(seed)
 
     def __len__(self) -> int:
@@ -63,7 +63,7 @@ class SyntheticCurveDataset(Dataset):
         means      = rng.uniform(0.2, 0.8, size=(1, 3)).astype(np.float32)
         sigmas     = rng.uniform(0.02, 0.08, size=(1, 3)).astype(np.float32)
 
-        curve = GaussianMixture.evaluate_batch(self.x_axis, amplitudes, means, sigmas)[0]
+        curve = GaussianMixture.evaluate_batch(self.z_axis, amplitudes, means, sigmas)[0]
 
         return curve.astype(np.float32)
 
@@ -156,7 +156,7 @@ class ImageFeedAdapter:
         dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, logger=self.logger, seed=self.config.seed)
         profile_length   = dataset_pipeline.profile_length
 
-        dataset_config.x_axis = GaussianAxis.build(gaussian_config.x_min, gaussian_config.x_max, profile_length)
+        dataset_config.z_axis = GaussianAxis.build(gaussian_config.x_min, gaussian_config.x_max, profile_length)
 
         _train_loader, _val_loader, _test_loader, datasets = dataset_pipeline.run()
 
@@ -249,7 +249,7 @@ class BackboneFeedAdapter:
         dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, logger=self.logger, seed=self.config.seed)
         profile_length   = dataset_pipeline.profile_length
 
-        dataset_config.x_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)
+        dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)
 
         _train_loader, _val_loader, _test_loader, datasets = dataset_pipeline.run()
 

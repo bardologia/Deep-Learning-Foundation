@@ -152,7 +152,7 @@ class SweepCollector:
 
 class SweepPlots(PlotBase):
     save_dpi    = 300
-    AXIS_LABELS = ("azimuth", "range")
+    AXIS_LABELS = ("row", "col")
 
     def __init__(self, out_dir: Path) -> None:
         self.out_dir = out_dir
@@ -193,11 +193,11 @@ class SweepPlots(PlotBase):
 
         return self._save(fig, self.out_dir / "curves" / f"{dataset}.png")
 
-    def heatmap(self, dataset: str, records: list[SweepRecord], azimuths: list[int], ranges: list[int]) -> Path:
-        grid = np.full((len(azimuths), len(ranges)), np.nan, dtype=np.float64)
+    def heatmap(self, dataset: str, records: list[SweepRecord], rows: list[int], ranges: list[int]) -> Path:
+        grid = np.full((len(rows), len(ranges)), np.nan, dtype=np.float64)
         for record in records:
             if record.complete:
-                grid[azimuths.index(record.unit.patch_size[0]), ranges.index(record.unit.patch_size[1])] = record.test_loss
+                grid[rows.index(record.unit.patch_size[0]), ranges.index(record.unit.patch_size[1])] = record.test_loss
 
         fig, ax = plt.subplots(figsize=(5.2, 3.6))
 
@@ -210,30 +210,30 @@ class SweepPlots(PlotBase):
 
         ax.set_xticks(range(len(ranges)))
         ax.set_xticklabels(ranges)
-        ax.set_yticks(range(len(azimuths)))
-        ax.set_yticklabels(azimuths)
-        ax.set_xlabel("range patch length (px)")
-        ax.set_ylabel("azimuth patch length (px)")
+        ax.set_yticks(range(len(rows)))
+        ax.set_yticklabels(rows)
+        ax.set_xlabel("col patch length (px)")
+        ax.set_ylabel("row patch length (px)")
         ax.set_title(dataset)
 
         return self._save(fig, self.out_dir / "heatmaps" / f"{dataset}.png")
 
     def dataset_figure(self, dataset: str, records: list[SweepRecord]) -> Path:
-        azimuths = self._axis_values(records, 0)
-        ranges   = self._axis_values(records, 1)
+        rows   = self._axis_values(records, 0)
+        ranges = self._axis_values(records, 1)
 
-        if len(azimuths) > 1 and len(ranges) > 1:
-            return self.heatmap(dataset, records, azimuths, ranges)
+        if len(rows) > 1 and len(ranges) > 1:
+            return self.heatmap(dataset, records, rows, ranges)
 
-        return self.curve(dataset, records, axis=0 if len(azimuths) > 1 else 1)
+        return self.curve(dataset, records, axis=0 if len(rows) > 1 else 1)
 
     def best_versus_datasets(self, best: dict[str, tuple[int, int]]) -> Path:
         names = list(best)
 
         fig, ax = plt.subplots(figsize=(5.2, 3.6))
 
-        ax.plot(range(len(names)), [best[name][0] for name in names], marker="o", linestyle="none", color="#B03052", label="azimuth")
-        ax.plot(range(len(names)), [best[name][1] for name in names], marker="s", linestyle="none", color="#787880", label="range")
+        ax.plot(range(len(names)), [best[name][0] for name in names], marker="o", linestyle="none", color="#B03052", label="row")
+        ax.plot(range(len(names)), [best[name][1] for name in names], marker="s", linestyle="none", color="#787880", label="col")
 
         ax.set_xticks(range(len(names)))
         ax.set_xticklabels(names, rotation=20, ha="right", fontsize=7)
@@ -293,13 +293,13 @@ class PatchSweepReport:
                 } for record in group],
             }
 
-        azimuth_sizes, range_sizes = self.planner.patch_sizes()
+        row_sizes, col_sizes = self.planner.patch_sizes()
 
         return {
-            "patch_step"    : self.planner.patch_step(),
-            "azimuth_sizes" : azimuth_sizes,
-            "range_sizes"   : range_sizes,
-            "datasets"      : per_dataset,
+            "patch_step" : self.planner.patch_step(),
+            "row_sizes"  : row_sizes,
+            "col_sizes"  : col_sizes,
+            "datasets"   : per_dataset,
         }
 
     def _write_json(self, groups: dict[str, list[SweepRecord]]) -> Path:
@@ -326,7 +326,7 @@ class PatchSweepReport:
         return f"{patch_size[0]}x{patch_size[1]}"
 
     def _summary_table(self, groups: dict[str, list[SweepRecord]]) -> MarkdownTable:
-        table = MarkdownTable(["Dataset", "Best patch (az x rg, px)", "Test loss at best"], align=["left", "right", "right"])
+        table = MarkdownTable(["Dataset", "Best patch (row x col, px)", "Test loss at best"], align=["left", "right", "right"])
 
         for dataset, group in groups.items():
             best = self._best(group)
@@ -352,7 +352,7 @@ class PatchSweepReport:
         return rendered if std is None else f"{rendered} ± {ScalarFormatter.format_scalar(std)}"
 
     def _group_table(self, group: list[SweepRecord], best: SweepRecord | None) -> MarkdownTable:
-        table = MarkdownTable(["Patch (az x rg, px)", "Stride", "Batch", "Seeds scored", "Test loss", "Best val loss", "Best epoch", "Status"], align=["right"] * 8)
+        table = MarkdownTable(["Patch (row x col, px)", "Stride", "Batch", "Seeds scored", "Test loss", "Best val loss", "Best epoch", "Status"], align=["right"] * 8)
 
         for record in group:
             label = self._patch_label(record.unit.patch_size)
@@ -372,17 +372,17 @@ class PatchSweepReport:
 
     def _write_markdown(self, groups: dict[str, list[SweepRecord]], figure_paths: list[Path], best_plot: Path | None) -> Path:
         config                     = self.planner.config
-        azimuth_sizes, range_sizes = self.planner.patch_sizes()
+        row_sizes, col_sizes = self.planner.patch_sizes()
         doc                        = MarkdownDoc("Patch-size sweep")
 
-        doc.paragraph("Best patch lengths per dataset: the same backbone is trained across every admissible combination of azimuth and range patch lengths on each selected dataset, all on the traditional reduced stack. The datasets differ by the boxcar window used in preprocessing, so the sweep shows how the best receptive field follows the filter footprint along each axis.")
+        doc.paragraph("Best patch lengths per dataset: the same backbone is trained across every admissible combination of row and col patch lengths on each selected dataset, all on the traditional reduced stack. The datasets differ by the boxcar window used in preprocessing, so the sweep shows how the best receptive field follows the filter footprint along each axis.")
         doc.kv_table({
             "Backbone"       : f"{config.backbone_name}-{config.backbone_head}",
             "Datasets"       : ", ".join(groups),
             "Secondaries"    : ", ".join(config.paths.secondary_labels),
             "Patch step"     : self.planner.patch_step(),
-            "Azimuth sizes"  : azimuth_sizes,
-            "Range sizes"    : range_sizes,
+            "Row sizes"      : row_sizes,
+            "Col sizes"      : col_sizes,
             "Seeds"          : config.seeds or [config.seed],
             "Ranking metric" : "seed-mean test avg_loss at the restored best-validation checkpoint",
         })

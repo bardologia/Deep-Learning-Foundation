@@ -21,12 +21,12 @@ from pipelines.shared.config.config_persistence import BackboneModelConfigIO
 from pipelines.shared.inference.run_artifacts   import RunArtifactLoader
 
 
-class AbsentTomogram:
+class AbsentCube:
     def __init__(self, run_directory: Path) -> None:
         self.run_directory = run_directory
 
     def _refuse(self, usage: str) -> None:
-        raise ValueError(f"Run '{self.run_directory}' was loaded with load_tomogram=False, so the raw tomogram was never read; {usage} needs it. Reload the run with load_tomogram=True.")
+        raise ValueError(f"Run '{self.run_directory}' was loaded with load_cube=False, so the raw cube was never read; {usage} needs it. Reload the run with load_cube=True.")
 
     def __getattr__(self, name: str):
         if name.startswith("__"):
@@ -47,7 +47,7 @@ class Run:
     backbone_name    : str
     in_channels      : int
     out_channels     : int
-    x_axis           : np.ndarray
+    z_axis           : np.ndarray
     x_axis_length    : int
     n_gaussians      : int
     dataset_config   : DatasetConfig
@@ -58,7 +58,7 @@ class Run:
     dataset          : PatchDataset
     loader           : DataLoader
     checkpoint_meta  : dict
-    full_curves      : np.ndarray | AbsentTomogram
+    full_curves      : np.ndarray | AbsentCube
     complex_inputs   : np.ndarray | None = None
     n_secondaries    : int               = 0
     secondary_labels : list | None       = None
@@ -90,13 +90,13 @@ class RunLoader(RunArtifactLoader):
 
         return model
 
-    def _wrap_model(self, model, device: str, norm_stats: Stats, x_axis: np.ndarray, amp_max: float | None) -> ModelWrapper:
+    def _wrap_model(self, model, device: str, norm_stats: Stats, z_axis: np.ndarray, amp_max: float | None) -> ModelWrapper:
         return ModelWrapper(
             model               = model,
             device              = device,
             params_per_gaussian = self.PARAMS_PER_GAUSSIAN,
             normalizer          = Normalizer(norm_stats),
-            x_axis              = torch.from_numpy(x_axis),
+            z_axis              = torch.from_numpy(z_axis),
             amp_max             = amp_max,
         )
 
@@ -108,7 +108,7 @@ class RunLoader(RunArtifactLoader):
         num_workers     : int,
         device          : str,
         checkpoint_name : str,
-        load_tomogram   : bool = True,
+        load_cube       : bool = True,
     ) -> Run:
 
         self.logger.section("[Inference: Load Run]")
@@ -133,20 +133,20 @@ class RunLoader(RunArtifactLoader):
         model     = self._build_model(backbone_name, in_channels, out_channels, dataset_config.patch.size)
         model     = model.to(device)
 
-        ckpt, x_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
+        ckpt, z_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
         model.load_state_dict(ckpt["params"])
 
         model.eval()
         norm_stats = Stats.load(self.run_directory / "meta", self.logger)
-        model      = self._wrap_model(model, device, norm_stats, x_axis, norm_stats.clamp.amp_max if norm_stats.clamp.enabled else None)
+        model      = self._wrap_model(model, device, norm_stats, z_axis, norm_stats.clamp.amp_max if norm_stats.clamp.enabled else None)
 
         dataset, grid, region, global_crop, arrays = self._build_dataset(
             dataset_config = dataset_config,
             split_name     = split,
-            x_axis         = x_axis,
+            z_axis         = z_axis,
             n_gaussians    = n_gaussians,
             norm_stats     = norm_stats,
-            load_tomogram  = load_tomogram,
+            load_cube      = load_cube,
         )
 
         loader = DataLoader(
@@ -170,9 +170,9 @@ class RunLoader(RunArtifactLoader):
         self.logger.section(f"[Split]         : '{split}'")
         self.logger.kv_table({
             "Patches":       grid.grid.number_of_patches,
-            "Azimuth size":  region.azimuth_size,
-            "Range size":    region.range_size,
-            "X-axis length": x_axis.size,
+            "Row size":  region.row_size,
+            "Col size":    region.col_size,
+            "X-axis length": z_axis.size,
         })
 
         return Run(
@@ -180,8 +180,8 @@ class RunLoader(RunArtifactLoader):
             backbone_name    = backbone_name,
             in_channels      = in_channels,
             out_channels     = out_channels,
-            x_axis           = x_axis,
-            x_axis_length    = int(x_axis.size),
+            z_axis           = z_axis,
+            x_axis_length    = int(z_axis.size),
             n_gaussians      = n_gaussians,
             dataset_config   = dataset_config,
             split_name       = split,
@@ -194,5 +194,5 @@ class RunLoader(RunArtifactLoader):
             complex_inputs   = arrays["inputs"],
             n_secondaries    = arrays["n_secondaries"],
             secondary_labels = arrays["secondary_labels"],
-            full_curves      = arrays["tomogram"] if load_tomogram else AbsentTomogram(self.run_directory),
+            full_curves      = arrays["cube"] if load_cube else AbsentCube(self.run_directory),
         )

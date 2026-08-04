@@ -49,7 +49,7 @@ def _default_inference() -> InferenceConfig:
         run_directory   = Path("."),
         save_cubes      = True,
         cpu_workers     = 16,
-        gif_axes        = ["elevation", "range", "azimuth"],
+        gif_axes        = ["z", "col", "row"],
     )
 
 
@@ -113,12 +113,12 @@ def _default_augmentation_trials() -> dict:
 
 def _default_input_trials() -> dict:
     return {
-        "amp-allsec-noifg"  : {"tracks": "all",     "use_primary": True,  "use_secondaries": True,  "use_interferograms": False},
-        "noamp-allsec-ifg"  : {"tracks": "all",     "use_primary": False, "use_secondaries": False, "use_interferograms": True},
-        "amp-allsec-ifg"    : {"tracks": "all",     "use_primary": True,  "use_secondaries": True,  "use_interferograms": True},
-        "amp-redsec-ifg"    : {"tracks": "reduced", "use_primary": True,  "use_secondaries": True,  "use_interferograms": True},
-        "amp-redsec-noifg"  : {"tracks": "reduced", "use_primary": True,  "use_secondaries": True,  "use_interferograms": False},
-        "noamp-redsec-ifg"  : {"tracks": "reduced", "use_primary": False, "use_secondaries": False, "use_interferograms": True},
+        "amp-allsec-noderived"  : {"tracks": "all",     "use_primary": True,  "use_secondaries": True,  "use_derived": False},
+        "noamp-allsec-derived"  : {"tracks": "all",     "use_primary": False, "use_secondaries": False, "use_derived": True},
+        "amp-allsec-derived"    : {"tracks": "all",     "use_primary": True,  "use_secondaries": True,  "use_derived": True},
+        "amp-redsec-derived"    : {"tracks": "reduced", "use_primary": True,  "use_secondaries": True,  "use_derived": True},
+        "amp-redsec-noderived"  : {"tracks": "reduced", "use_primary": True,  "use_secondaries": True,  "use_derived": False},
+        "noamp-redsec-derived"  : {"tracks": "reduced", "use_primary": False, "use_secondaries": False, "use_derived": True},
     }
 
 
@@ -169,12 +169,12 @@ class HeadMatchingTrialsConfig:
 
 @dataclass
 class NormalizationTrialsConfig:
-    initial_pass_mag  : str = "zscore_log1p"
+    initial_chan_mag  : str = "zscore_log1p"
     initial_ifg_phase : str = "min_max"
     initial_out_amp   : str = "zscore"
     initial_out_sigma : str = "zscore"
 
-    final_pass_mag  : str = "robust_iqr_log1p"
+    final_chan_mag  : str = "robust_iqr_log1p"
     final_ifg_phase : str = "fixed_div_pi"
     final_out_amp   : str = "robust_iqr_log1p"
     final_out_sigma : str = "robust_iqr_log1p"

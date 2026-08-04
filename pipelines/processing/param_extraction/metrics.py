@@ -14,10 +14,10 @@ from tools.monitoring.logger  import Logger
 
 
 class ContrastEstimator:
-    def __init__(self, logger : Logger, floor_fraction : float = 0.25, range_chunk : int = 512) -> None:
+    def __init__(self, logger : Logger, floor_fraction : float = 0.25, col_chunk : int = 512) -> None:
         self.logger         = logger
         self.floor_fraction = floor_fraction
-        self.range_chunk    = range_chunk
+        self.col_chunk      = col_chunk
 
     @staticmethod
     def contrast_from_amplitude(amp : np.ndarray, floor_fraction : float) -> Tuple[np.ndarray, np.ndarray]:
@@ -37,13 +37,13 @@ class ContrastEstimator:
 
         return contrast
 
-    def run(self, tomogram : np.ndarray) -> np.ndarray:
-        H, Az, R    = tomogram.shape
-        contrast_db = np.full((Az, R), np.nan, dtype=np.float32)
+    def run(self, cube : np.ndarray) -> np.ndarray:
+        H, n_row, n_col    = cube.shape
+        contrast_db = np.full((n_row, n_col), np.nan, dtype=np.float32)
 
-        for r_start in range(0, R, self.range_chunk):
-            r_end = min(r_start + self.range_chunk, R)
-            amp   = np.abs(tomogram[:, :, r_start:r_end]).astype(np.float32, copy=False)
+        for r_start in range(0, n_col, self.col_chunk):
+            r_end = min(r_start + self.col_chunk, n_col)
+            amp   = np.abs(cube[:, :, r_start:r_end]).astype(np.float32, copy=False)
 
             contrast_db[:, r_start:r_end] = self.chunk_contrast(amp)
 
@@ -141,36 +141,36 @@ class KSelectionDiagnostics:
 
 
 class FittingMetricsCalculator:
-    def __init__(self, n_gaussians : int, logger : Logger, threshold_factor : float, truncation_index : int, amp_threshold : float = 1e-3, range_chunk : int = 128) -> None:
+    def __init__(self, n_gaussians : int, logger : Logger, threshold_factor : float, truncation_index : int, amp_threshold : float = 1e-3, col_chunk : int = 128) -> None:
         self.n_gaussians      = n_gaussians
         self.logger           = logger
         self.threshold_factor = threshold_factor
         self.truncation_index = truncation_index
         self.amp_threshold    = amp_threshold
-        self.range_chunk      = range_chunk
+        self.col_chunk        = col_chunk
 
-        self.contrast_estimator = ContrastEstimator(logger=logger, range_chunk=range_chunk)
+        self.contrast_estimator = ContrastEstimator(logger=logger, col_chunk=col_chunk)
         self.k_diagnostics      = KSelectionDiagnostics(k_max=n_gaussians, logger=logger)
 
     @staticmethod
-    def _open_tomogram(tomogram_path: Path) -> np.ndarray:
-        return np.load(str(tomogram_path), mmap_mode="r", allow_pickle=False)
+    def _open_cube(cube_path: Path) -> np.ndarray:
+        return np.load(str(cube_path), mmap_mode="r", allow_pickle=False)
 
     @staticmethod
-    def _build_height_axis(height_range: Tuple[float, float], n_elev: int) -> np.ndarray:
-        return np.linspace(float(height_range[0]), float(height_range[1]), n_elev, dtype=np.float32)
+    def _build_z_axis(z_range: Tuple[float, float], n_z: int) -> np.ndarray:
+        return np.linspace(float(z_range[0]), float(z_range[1]), n_z, dtype=np.float32)
 
     def _reconstruct_slice(self, parameters_array : np.ndarray, h_val : float) -> np.ndarray:
         return GaussianMixture.evaluate_slice(parameters_array, h_val, self.n_gaussians)
 
-    def _contrast_and_r2_maps(self, tomogram : np.ndarray, parameters_array : np.ndarray, height_axis : np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        H, Az, R    = tomogram.shape
-        contrast_db = np.full ((Az, R), np.nan, dtype=np.float32)
-        r2_map      = np.empty((Az, R),         dtype=np.float32)
+    def _contrast_and_r2_maps(self, cube : np.ndarray, parameters_array : np.ndarray, z_axis : np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        H, n_row, n_col    = cube.shape
+        contrast_db = np.full ((n_row, n_col), np.nan, dtype=np.float32)
+        r2_map      = np.empty((n_row, n_col),         dtype=np.float32)
 
-        for r_start in range(0, R, self.range_chunk):
-            r_end = min(r_start + self.range_chunk, R)
-            amp   = np.abs(tomogram[:, :, r_start:r_end]).astype(np.float32, copy=False)
+        for r_start in range(0, n_col, self.col_chunk):
+            r_end = min(r_start + self.col_chunk, n_col)
+            amp   = np.abs(cube[:, :, r_start:r_end]).astype(np.float32, copy=False)
 
             contrast_db[:, r_start:r_end] = self.contrast_estimator.chunk_contrast(amp)
 
@@ -179,7 +179,7 @@ class FittingMetricsCalculator:
             params    = parameters_array[:, :, r_start:r_end]
 
             for j in range(H):
-                pred[j] = self._reconstruct_slice(params, float(height_axis[j]))
+                pred[j] = self._reconstruct_slice(params, float(z_axis[j]))
 
             r2_map[:, r_start:r_end] = R2.pixel_map(pred, reference, axis=0)
 
@@ -290,23 +290,23 @@ class FittingMetricsCalculator:
 
         return summary
 
-    def run(self, parameters_array : np.ndarray, metadata : dict, tomogram_path : Path, diagnostics : Optional[dict] = None) -> dict:
+    def run(self, parameters_array : np.ndarray, metadata : dict, cube_path : Path, diagnostics : Optional[dict] = None) -> dict:
         self.logger.section("[Fitting Metrics Calculation]")
 
-        self.logger.subsection(f"Loading tomogram : {Path(tomogram_path).name}")
-        tomogram     = self._open_tomogram(Path(tomogram_path))
-        height_range = tuple(metadata["height_range"])
-        height_axis  = self._build_height_axis(height_range, tomogram.shape[0])
+        self.logger.subsection(f"Loading cube : {Path(cube_path).name}")
+        cube    = self._open_cube(Path(cube_path))
+        z_range = tuple(metadata["z_range"])
+        z_axis  = self._build_z_axis(z_range, cube.shape[0])
 
-        self.logger.subsection(f"Tomogram shape  : {tomogram.shape}")
-        self.logger.subsection(f"Height range    : [{height_range[0]:.1f}, {height_range[1]:.1f}] m")
+        self.logger.subsection(f"Cube shape  : {cube.shape}")
+        self.logger.subsection(f"Z range       : [{z_range[0]:.1f}, {z_range[1]:.1f}] m")
 
         self.logger.subsection("Computing per-pixel peak-to-floor contrast map (peak over lowest-quartile profile amplitude, uncalibrated proxy)")
         self.logger.subsection(f"Applying fitter preprocessing for R² (threshold_factor={self.threshold_factor}, truncation_index={self.truncation_index})")
-        self.logger.subsection(f"Computing per-pixel R² map against thresholded/truncated profile (memory-mapped, range chunks of {self.range_chunk} bins, float32)")
-        snr_db_map, r2_map = self._contrast_and_r2_maps(tomogram, parameters_array, height_axis)
+        self.logger.subsection(f"Computing per-pixel R² map against thresholded/truncated profile (memory-mapped, range chunks of {self.col_chunk} bins, float32)")
+        snr_db_map, r2_map = self._contrast_and_r2_maps(cube, parameters_array, z_axis)
 
-        del tomogram
+        del cube
         gc.collect()
 
         self.logger.subsection("Computing activity and spatial parameter maps")
@@ -337,7 +337,7 @@ class FittingMetricsCalculator:
             "r2_map"         : r2_map,
             "activity_map"   : activity_map,
             "snr_db_map"     : snr_db_map,
-            "height_axis"    : height_axis,
+            "z_axis"         : z_axis,
             "global_summary" : summary,
             "snr_summary"    : snr_summary,
             "per_k_summary"  : k_summary,

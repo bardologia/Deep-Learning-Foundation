@@ -17,7 +17,7 @@ class ParameterCropper:
         split_regions.validate_disjoint()
 
         self.logger.section("[ParameterCropper Initialized]")
-        self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Azimuth (lines)", "Range (samples)"])
+        self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Rows", "Cols"])
 
     def profile_length(self) -> int:
         return self.layout.profile_length
@@ -28,8 +28,8 @@ class ParameterCropper:
 
         arrays = []
         for region in regions:
-            az_slice, rg_slice = region.local_slices(self.layout.global_crop)
-            arrays.append(np.ascontiguousarray(parameters[..., az_slice, rg_slice]))
+            row_slice, col_slice = region.local_slices(self.layout.global_crop)
+            arrays.append(np.ascontiguousarray(parameters[..., row_slice, col_slice]))
 
         total_pixels = sum(int(a.shape[-2] * a.shape[-1]) for a in arrays)
 

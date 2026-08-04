@@ -101,22 +101,22 @@ class FittingResultPlotter(PlotBase):
 
         self.logger.subsection("Plotting height-centroid (μ) spatial maps")
         mu_keys   = [f"mu_{k}"    for k in range(self.n_gaussians)]
-        mu_titles = [rf"$\mu_{{{k + 1}}}$  centroid [m]  (inactive pixels masked)" for k in range(self.n_gaussians)]
+        mu_titles = [rf"$\mu_{{{k + 1}}}$  centroid  (inactive pixels masked)" for k in range(self.n_gaussians)]
         saved.update(self.spatial_plotter._plot_spatial_maps(
             metrics_dict, mu_keys, mu_titles,
             r"Gaussian centroid height maps",
-            r"$\mu_k$ [m]",
+            r"$\mu_k$",
             dirs["colormaps"] / "mu_maps",
             cmap="RdYlGn",
         ))
 
         self.logger.subsection("Plotting sigma spatial maps")
         sig_keys   = [f"sigma_{k}" for k in range(self.n_gaussians)]
-        sig_titles = [rf"$\sigma_{{{k + 1}}}$  spread [m]  (inactive pixels masked)" for k in range(self.n_gaussians)]
+        sig_titles = [rf"$\sigma_{{{k + 1}}}$  spread  (inactive pixels masked)" for k in range(self.n_gaussians)]
         saved.update(self.spatial_plotter._plot_spatial_maps(
             metrics_dict, sig_keys, sig_titles,
             r"Gaussian spread maps",
-            r"$\sigma_k$ [m]",
+            r"$\sigma_k$",
             dirs["colormaps"] / "sigma_maps",
             cmap="viridis",
         ))
@@ -124,11 +124,11 @@ class FittingResultPlotter(PlotBase):
         if self.n_gaussians >= 2:
             self.logger.subsection("Plotting μ-separation maps")
             sep_keys   = [f"mu_sep_{k}_{k + 1}" for k in range(self.n_gaussians - 1)]
-            sep_titles = [rf"$|\mu_{{{k + 2}}} - \mu_{{{k + 1}}}|$  [m]  (both active)" for k in range(self.n_gaussians - 1)]
+            sep_titles = [rf"$|\mu_{{{k + 2}}} - \mu_{{{k + 1}}}|$   (both active)" for k in range(self.n_gaussians - 1)]
             saved.update(self.spatial_plotter._plot_spatial_maps(
                 metrics_dict, sep_keys, sep_titles,
                 r"Adjacent centroid separation maps",
-                "separation [m]",
+                "separation",
                 dirs["colormaps"] / "mu_separation_maps",
                 cmap="magma",
             ))
@@ -194,12 +194,12 @@ class FittingResultPlotter(PlotBase):
 
         return saved
 
-    def _run_example_fits(self, parameters_array : np.ndarray, metrics_dict : dict, r2_map : np.ndarray, height_axis : np.ndarray, tomogram_path : Path, dirs : Dict[str, Path]) -> Dict[str, Path]:
+    def _run_example_fits(self, parameters_array : np.ndarray, metrics_dict : dict, r2_map : np.ndarray, z_axis : np.ndarray, cube_path : Path, dirs : Dict[str, Path]) -> Dict[str, Path]:
         if "best_k_map" not in metrics_dict:
             self.logger.warning("Example fit plots skipped: best_k_map unavailable")
             return {}
 
-        fits = self.example_fit_plotter.run(parameters_array, metrics_dict["best_k_map"], r2_map, height_axis, tomogram_path, dirs["example_fits"])
+        fits = self.example_fit_plotter.run(parameters_array, metrics_dict["best_k_map"], r2_map, z_axis, cube_path, dirs["example_fits"])
 
         saved : Dict[str, Path] = {}
         for key, path in fits.items():
@@ -207,14 +207,14 @@ class FittingResultPlotter(PlotBase):
 
         return saved
 
-    def run(self, parameters_array : np.ndarray, metrics_dict : dict, metadata : dict, tomogram_path : Path) -> Dict[str, Path]:
+    def run(self, parameters_array : np.ndarray, metrics_dict : dict, metadata : dict, cube_path : Path) -> Dict[str, Path]:
         self.logger.section("[Fitting Result Plots]")
         self._apply_style()
         dirs = self._setup_output_dirs()
 
         r2_map       = metrics_dict["r2_map"]
         activity_map = metrics_dict["activity_map"]
-        height_axis  = metrics_dict["height_axis"]
+        z_axis       = metrics_dict["z_axis"]
         summary      = metrics_dict["global_summary"]
 
         saved : Dict[str, Path] = {}
@@ -222,7 +222,7 @@ class FittingResultPlotter(PlotBase):
         saved.update(self._run_spatial_maps(metrics_dict, r2_map, activity_map, dirs))
         saved.update(self._run_distributions(parameters_array, r2_map, summary, dirs))
         saved.update(self._run_metrics_and_snr(metrics_dict, r2_map, summary, dirs))
-        saved.update(self._run_example_fits(parameters_array, metrics_dict, r2_map, height_axis, tomogram_path, dirs))
+        saved.update(self._run_example_fits(parameters_array, metrics_dict, r2_map, z_axis, cube_path, dirs))
 
         self.logger.subsection(f"Saved {len(saved)} figures -> {self._images_dir}")
         return saved

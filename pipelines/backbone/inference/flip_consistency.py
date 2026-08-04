@@ -9,13 +9,13 @@ from pipelines.backbone.inference.probes    import PredictionCurves
 
 class FlipConsistencyEvaluator:
 
-    FLIP_AXES = {"azimuth": 2, "range": 3}
+    FLIP_AXES = {"row": 2, "col": 3}
 
     def __init__(self, run, logger, *, window_kind: str, render_amp_floor: float = 0.0) -> None:
         self.loaded      = run
         self.logger      = logger
         self.window_kind = window_kind
-        self.renderer    = PredictionCurves(run.n_gaussians, run.x_axis, render_amp_floor)
+        self.renderer    = PredictionCurves(run.n_gaussians, run.z_axis, render_amp_floor)
 
     def _curves(self, params: np.ndarray) -> np.ndarray:
         return self.renderer.render(params)

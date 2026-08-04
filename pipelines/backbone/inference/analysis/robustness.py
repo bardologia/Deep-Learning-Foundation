@@ -113,7 +113,7 @@ class RobustnessRun(AnalysisRun):
         PlotBase.use_style(self.config.figure_style)
 
         run      = self._load_run()
-        renderer = PredictionCurves(run.n_gaussians, run.x_axis, self.config.render_amp_floor)
+        renderer = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
         batches  = self._batches(run, renderer)
         core     = RobustnessCore(run.model, renderer, seed=self.config.seed)
 
@@ -123,7 +123,7 @@ class RobustnessRun(AnalysisRun):
         plots   = RobustnessPlots()
         figures = {
             "noise" : plots.severity_curve([row["sigma"] for row in noise_rows], [row["mse"] for row in noise_rows], "Added input noise sigma (normalized units)", "Degradation under input noise", self.output_dir / "noise.png"),
-            "drop"  : plots.severity_curve([row["dropped"] for row in drop_rows], [row["mse"] for row in drop_rows], "Tracks dropped (secondary + interferogram zeroed)", "Degradation under track dropout", self.output_dir / "drop.png"),
+            "drop"  : plots.severity_curve([row["dropped"] for row in drop_rows], [row["mse"] for row in drop_rows], "Tracks dropped (secondary + derived zeroed)", "Degradation under track dropout", self.output_dir / "drop.png"),
         }
 
         payload = {"backbone": run.backbone_name, "split": self.config.split, "noise": noise_rows, "drop": drop_rows}
@@ -132,8 +132,8 @@ class RobustnessRun(AnalysisRun):
         doc = MarkdownDoc(title=f"Robustness: {run.backbone_name}")
         doc.paragraph(
             f"Curve-MSE degradation on {self.config.max_batches} '{self.config.split}' batches under two controlled stresses: "
-            "gaussian noise added to the normalized inputs, and whole tracks zeroed (their secondary and interferogram channels), "
-            f"averaged over up to {self.config.draws_per_count} random track subsets per count, capped at the number of distinct subsets that exist; counts with a single possible subset report no spread."
+            "gaussian noise added to the normalized inputs, and whole tracks zeroed (their secondary and derived channels), "
+            f"averaged over up to {self.config.draws_per_count} random channel subsets per count, capped at the number of distinct subsets that exist; counts with a single possible subset report no spread."
         )
 
         noise_table = MarkdownTable(("Noise sigma", "Curve MSE"))

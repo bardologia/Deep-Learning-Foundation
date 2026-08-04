@@ -97,13 +97,13 @@ class PatchSweepPlanner:
         return list(range(start, grid.maximum[axis] + 1, step))
 
     def patch_sizes(self) -> tuple[list[int], list[int]]:
-        azimuth_sizes = self._axis_sizes(0, "azimuth")
-        range_sizes   = self._axis_sizes(1, "range")
+        row_sizes = self._axis_sizes(0, "row")
+        col_sizes = self._axis_sizes(1, "col")
 
-        if len(azimuth_sizes) * len(range_sizes) < 2:
-            raise ValueError(f"The grid azimuth {azimuth_sizes} x range {range_sizes} yields {len(azimuth_sizes) * len(range_sizes)} patch size; a sweep needs at least 2")
+        if len(row_sizes) * len(col_sizes) < 2:
+            raise ValueError(f"The grid row {row_sizes} x range {col_sizes} yields {len(row_sizes) * len(col_sizes)} patch size; a sweep needs at least 2")
 
-        return azimuth_sizes, range_sizes
+        return row_sizes, col_sizes
 
     def _pixel_rescaled(self, base: int, patch_size: tuple[int, int]) -> int:
         if not self.config.patch.constant_pixel_budget:
@@ -122,27 +122,27 @@ class PatchSweepPlanner:
         return by_name[name]
 
     def summary(self) -> dict:
-        azimuth_sizes, range_sizes = self.patch_sizes()
+        row_sizes, col_sizes = self.patch_sizes()
 
         return {
-            "Datasets"      : [dataset.name for dataset in self.datasets],
-            "Patch step"    : self.patch_step(),
-            "Azimuth sizes" : azimuth_sizes,
-            "Range sizes"   : range_sizes,
-            "Units"         : len(self.datasets) * len(azimuth_sizes) * len(range_sizes),
-            "Seeds"         : list(self.config.seeds) or [self.config.seed],
+            "Datasets"   : [dataset.name for dataset in self.datasets],
+            "Patch step" : self.patch_step(),
+            "Row sizes"  : row_sizes,
+            "Col sizes"  : col_sizes,
+            "Units"      : len(self.datasets) * len(row_sizes) * len(col_sizes),
+            "Seeds"      : list(self.config.seeds) or [self.config.seed],
         }
 
     def units(self) -> list[SweepUnit]:
         stride_ratio               = self.config.patch.stride_ratio
-        azimuth_sizes, range_sizes = self.patch_sizes()
+        row_sizes, col_sizes = self.patch_sizes()
         template                   = self.parameters_template()
 
         plans = []
         for dataset in self.datasets:
-            for azimuth in azimuth_sizes:
-                for range_size in range_sizes:
-                    size = (azimuth, range_size)
+            for row in row_sizes:
+                for col_size in col_sizes:
+                    size = (row, col_size)
                     plans.append(SweepUnit(
                         dataset_path            = dataset,
                         parameters_path         = dataset / template,

@@ -83,8 +83,8 @@ class DistributionPlotter(PlotBase):
     def _plot_parameter_distributions(self, parameters_array : np.ndarray, out_dir : Path) -> Dict[str, Path]:
         specs = [
             ("amp",   r"amplitude $A_k$",             "amp"),
-            ("mu",    r"centroid height $\mu_k$ [m]", "mu"),
-            ("sigma", r"spread $\sigma_k$ [m]",       "sigma"),
+            ("mu",    r"centroid height $\mu_k$", "mu"),
+            ("sigma", r"spread $\sigma_k$",       "sigma"),
         ]
         saved: Dict[str, Path] = {}
 
@@ -154,9 +154,9 @@ class DistributionPlotter(PlotBase):
         log_amps = np.log10(np.maximum(amps, 1e-12))
 
         pairs = [
-            ("joint_mu_sigma",  mus,  sigs,     r"$\mu$ [m]",    r"$\sigma$ [m]"),
-            ("joint_mu_amp",    mus,  log_amps, r"$\mu$ [m]",    r"$\log_{10} A$"),
-            ("joint_sigma_amp", sigs, log_amps, r"$\sigma$ [m]", r"$\log_{10} A$"),
+            ("joint_mu_sigma",  mus,  sigs,     r"$\mu$",    r"$\sigma$"),
+            ("joint_mu_amp",    mus,  log_amps, r"$\mu$",    r"$\log_{10} A$"),
+            ("joint_sigma_amp", sigs, log_amps, r"$\sigma$", r"$\log_{10} A$"),
         ]
 
         saved : Dict[str, Path] = {}

@@ -58,10 +58,10 @@ class JepaRunLoader(RunLoader):
 
         return JepaModule(backbone, profile_autoencoder=profile_autoencoder, image_autoencoder=image_autoencoder)
 
-    def _wrap_model(self, model, device: str, norm_stats, x_axis, amp_max: float) -> ModelWrapper:
+    def _wrap_model(self, model, device: str, norm_stats, z_axis, amp_max: float) -> ModelWrapper:
         adapter = JepaInferenceModel(model, self.profile_normalizer).to(device)
         adapter.eval()
-        return ModelWrapper(model=adapter, device=device, params_per_gaussian=3, normalizer=None, x_axis=None, amp_max=None)
+        return ModelWrapper(model=adapter, device=device, params_per_gaussian=3, normalizer=None, z_axis=None, amp_max=None)
 
 
 class JepaParamRunLoader(RunLoader):

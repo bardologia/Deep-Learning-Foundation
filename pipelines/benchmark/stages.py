@@ -138,8 +138,8 @@ class MaxBatchStage(ExperimentStage):
         self.logger.info(f"Report written to: {self.report_path}")
 
     def _log_summary(self, records: dict) -> None:
-        passed = [m for m in records if records[m]["status"] == "PASS"]
-        failed = [m for m in records if records[m]["status"] != "PASS"]
+        passed = [m for m in records if records["status"] == "PASS"]
+        failed = [m for m in records if records["status"] != "PASS"]
 
         self.logger.subsection("Max batch summary")
         self.logger.kv_table({

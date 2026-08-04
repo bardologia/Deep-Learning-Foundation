@@ -63,13 +63,13 @@ class StatsComputer:
         budget = {g: max(64, max_vals_per_group // (len(channels) * len(parts))) for g, channels in group_channels.items()}
 
         for part in parts:
-            inputs     = part.inputs
-            ifg_offset = part.n_primary + part.n_secondaries
+            inputs         = part.inputs
+            derived_offset = part.n_primary + part.n_secondaries
 
             sections = [
-                (input_config.use_primary,        inputs[:part.n_primary],           input_config.primary_representation,        "pass"),
-                (input_config.use_secondaries,    inputs[part.n_primary:ifg_offset], input_config.secondaries_representation,    "pass"),
-                (input_config.use_interferograms, inputs[ifg_offset:],               input_config.interferograms_representation, "ifg"),
+                (input_config.use_primary,     inputs[:part.n_primary],           input_config.primary_representation,        "chan"),
+                (input_config.use_secondaries, inputs[part.n_primary:derived_offset], input_config.secondaries_representation,    "chan"),
+                (input_config.use_derived,     inputs[derived_offset:],               input_config.derived_representation, "derived"),
             ]
 
             for enabled, layers, representation, prefix in sections:
@@ -91,9 +91,9 @@ class StatsComputer:
                         if key in needs_data:
                             collected[key].append(np.asarray(values[:budget[key]], dtype=np.float64))
 
-            if input_config.use_dem and "dem/elevation" in needs_data:
-                dem_flat = np.asarray(part.dem, dtype=np.float64).ravel()
-                collected["dem/elevation"].append(StatsComputer._sample_flat(dem_flat, budget["dem/elevation"], rng))
+            if input_config.use_aux and "aux/value" in needs_data:
+                aux_flat = np.asarray(part.aux, dtype=np.float64).ravel()
+                collected["aux/value"].append(StatsComputer._sample_flat(aux_flat, budget["aux/value"], rng))
 
         empty = [g for g, v in collected.items() if not v]
         if empty:
@@ -145,7 +145,7 @@ class StatsComputer:
         logger             : Logger,
         input_config       : InputConfig,
         n_secondaries      : int,
-        n_interferograms   : int,
+        n_derived          : int,
         normalization      : NormalizationConfig = None,
         max_vals_per_group : int = 1_000_000,
     ) -> Stats:
@@ -153,13 +153,13 @@ class StatsComputer:
         normalization = normalization if normalization is not None else NormalizationConfig()
         parts         = StatsComputer._parts(dataset)
 
-        group_keys  = input_config.channel_group_keys(n_secondaries, n_interferograms)
+        group_keys  = input_config.channel_group_keys(n_secondaries, n_derived)
         in_channels = int(parts[0].input_channels)
         if len(group_keys) != in_channels:
             raise ValueError(f"Group key count ({len(group_keys)}) does not match the dataset input channels ({in_channels}).")
 
         slot_overrides = {slot: getattr(normalization, field_name) for slot, field_name in NormalizationConfig.SLOT_FIELDS.items() if getattr(normalization, field_name) != "default"}
-        strategy_label = f"{normalization.input_strategy} (per slot-kind, grouped across passes/ifgs)"
+        strategy_label = f"{normalization.input_strategy} (per slot-kind, grouped across channels)"
         if slot_overrides:
             strategy_label += "  |  per-slot overrides win: " + ", ".join(f"{slot}={preset}" for slot, preset in slot_overrides.items())
 
@@ -322,24 +322,24 @@ class StatsComputer:
     @staticmethod
     def compute(
         dataset,
-        logger           : Logger,
-        input_config     : InputConfig,
-        output_config    : "OutputConfig",
-        n_secondaries    : int,
-        n_interferograms : int,
-        n_gaussians      : int,
-        normalization    : NormalizationConfig = None,
+        logger        : Logger,
+        input_config  : InputConfig,
+        output_config : "OutputConfig",
+        n_secondaries : int,
+        n_derived     : int,
+        n_gaussians   : int,
+        normalization : NormalizationConfig = None,
     ) -> Stats:
 
         normalization = normalization if normalization is not None else NormalizationConfig()
 
         input_only = StatsComputer.compute_input_stats(
-            dataset          = dataset,
-            logger           = logger,
-            input_config     = input_config,
-            n_secondaries    = n_secondaries,
-            n_interferograms = n_interferograms,
-            normalization    = normalization,
+            dataset       = dataset,
+            logger        = logger,
+            input_config  = input_config,
+            n_secondaries = n_secondaries,
+            n_derived     = n_derived,
+            normalization = normalization,
         )
 
         output_only = StatsComputer.compute_output_stats(

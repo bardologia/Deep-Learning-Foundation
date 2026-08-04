@@ -108,18 +108,18 @@ class ParamMetrics:
     COLLAPSE_RATE = 0.01
 
     def __init__(self, pixel_sample: int, block_size: int, logger: Logger) -> None:
-        self.pixel_sample  = pixel_sample
-        self.block_size    = block_size
-        self.logger        = logger
-        self._height_cache = {}
+        self.pixel_sample = pixel_sample
+        self.block_size   = block_size
+        self.logger       = logger
+        self._z_cache     = {}
 
-    def _height_bins(self, trial: ParamTrial) -> int:
-        tomogram_path = trial.run_dir.parent.parent / "data" / "tomogram_full.npy"
-        if tomogram_path not in self._height_cache:
-            tomogram = np.load(tomogram_path, mmap_mode="r")
-            self._height_cache[tomogram_path] = int(tomogram.shape[0])
+    def _z_bins(self, trial: ParamTrial) -> int:
+        cube_path = trial.run_dir.parent.parent / "data" / "cube_full.npy"
+        if cube_path not in self._z_cache:
+            cube = np.load(cube_path, mmap_mode="r")
+            self._z_cache[cube_path] = int(cube.shape[0])
 
-        return self._height_cache[tomogram_path]
+        return self._z_cache[cube_path]
 
     def _load(self, trial: ParamTrial) -> tuple:
         meta        = FileIO.load_json(trial.run_dir / "param_extraction_meta.json")
@@ -197,7 +197,7 @@ class ParamMetrics:
     def compute(self, trial: ParamTrial) -> dict:
         self.logger.subsection(f"Measuring {trial.name}")
 
-        n_data = self._height_bins(trial)
+        n_data = self._z_bins(trial)
         meta, summary, diagnostics, parameters = self._load(trial)
 
         return self._summarise(trial, meta, summary, diagnostics, parameters, n_data)
@@ -323,7 +323,7 @@ class ParamComparisonReport(ComparisonReportBase):
     def _notes(self) -> list[str]:
         return [
             "## Notes\n",
-            "BIC penalises the extra free parameters a larger K spends, so it is comparable within a fixed K family but is reported, not used, across K. Collapsed slot fraction and slot separation expose Gaussian-slot collapse: a high collapsed fraction with small separation means the extra slots are fitting noise rather than distinct scatterers. Spatial coherence (block standard deviation of the dominant scatterer height) is low when fitted parameters vary smoothly across neighbouring pixels and high when the fit is locking onto speckle.\n",
+            "BIC penalises the extra free parameters a larger K spends, so it is comparable within a fixed K family but is reported, not used, across K. Collapsed slot fraction and slot separation expose Gaussian-slot collapse: a high collapsed fraction with small separation means the extra slots are fitting noise rather than distinct components. Spatial coherence (block standard deviation of the dominant component height) is low when fitted parameters vary smoothly across neighbouring pixels and high when the fit is locking onto speckle.\n",
         ]
 
     def _write_overview(self, trials: list[ParamTrial]) -> Path:

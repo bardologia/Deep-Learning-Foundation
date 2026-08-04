@@ -9,8 +9,8 @@ from tools.loss.param_loss                  import ParamLoss, ParamMatcher
 
 
 class Loss:
-    def __init__(self, x_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, log_all_losses=False, sampler=None, slot_vitals=None):
-        self.x_axis          = x_axis
+    def __init__(self, z_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, log_all_losses=False, sampler=None, slot_vitals=None):
+        self.z_axis          = z_axis
         self.logger          = logger
         self.tracker         = tracker
         self.gaussian_cfg    = gaussian_cfg
@@ -19,7 +19,7 @@ class Loss:
         self.norm_stats      = norm_stats
         self.sampler         = sampler
         self.slot_vitals     = slot_vitals
-        self.dx              = float(x_axis[1] - x_axis[0])
+        self.dx              = float(z_axis[1] - z_axis[0])
         self.log_all_losses  = log_all_losses
         self.loss_generation = 0
 
@@ -27,7 +27,7 @@ class Loss:
 
         self.logger.section("[Loss Function]")
         self.logger.kv_table({
-            "Sample points"  : x_axis.shape[0],
+            "Sample points"  : z_axis.shape[0],
             "Log all losses" : self.log_all_losses,
             "Param matching" : cfg.param_matching.value,
         })
@@ -76,7 +76,7 @@ class Loss:
         self.log_slot_presence_config(complete_cfg, title=f"Slot-Presence Loss Config ({context})")
 
     def reconstruct_gaussians(self, params: torch.Tensor) -> torch.Tensor:
-        return GaussianCurve.reconstruct(params, self.x_axis, self.gaussian_cfg.params_per_gaussian)
+        return GaussianCurve.reconstruct(params, self.z_axis, self.gaussian_cfg.params_per_gaussian)
 
     def _param_term(self, matched, kind):
         pred, pred_phys, gt, gt_phys = matched
@@ -119,9 +119,9 @@ class Loss:
         n_active    = active_mask.sum().clamp(min=1.0)
 
         return {
-            "amp_mae"     : diff[:, :, 0].mean(),
-            "mu_mae_m"    : (diff[:, :, 1] * active_mask).sum() / n_active,
-            "sigma_mae_m" : (diff[:, :, 2] * active_mask).sum() / n_active,
+            "amp_mae"   : diff[:, :, 0].mean(),
+            "mu_mae"    : (diff[:, :, 1] * active_mask).sum() / n_active,
+            "sigma_mae" : (diff[:, :, 2] * active_mask).sum() / n_active,
         }
 
     def _match_params(self, pred_gauss, gt_gauss, gt_phys_gauss, pred_phys_gauss):
@@ -152,7 +152,7 @@ class Loss:
         if clamp_cfg.enabled:
             pred_params_phys = GaussianClamp.apply(
                 pred_params_phys,
-                x_axis      = self.x_axis,
+                z_axis      = self.z_axis,
                 amp_max     = clamp_cfg.amp_max,
                 ppg         = self.gaussian_cfg.params_per_gaussian,
                 leaky_slope = clamp_cfg.param_leaky_slope,
@@ -185,7 +185,7 @@ class Loss:
             "charbonnier_curve"  : lambda: lc.charbonnier_diff(diff, cfg.charbonnier_eps),
             "cosine_curve"       : lambda: lc.cosine(pred_curves, exp_curves, axis=1),
             "total_power_relerr" : lambda: mc.total_power(pred_curves, exp_curves, self.dx, cfg.power_floor),
-            "moments"            : lambda: mc.moments(pred_curves, exp_curves, self.x_axis, self.dx, cfg.power_floor, cfg.moments_weights),
+            "moments"            : lambda: mc.moments(pred_curves, exp_curves, self.z_axis, self.dx, cfg.power_floor, cfg.moments_weights),
             "param_huber"        : lambda: self._param_term(matched, "huber")[0],
             "param_mse"          : lambda: self._param_term(matched, "mse")[0],
             "smoothness_tv"      : lambda: ParamLoss.tv(pred_params_norm),

@@ -66,7 +66,7 @@ class R2:
 class MetricOrientation:
 
     _HIGHER_OVERRIDES = {"relative_mse_reduction", "fraction_pred_beats_reduced"}
-    _NEUTRAL_PATTERN  = re.compile(r"^(n_pixels|n_elevation|x_axis_|gt_|pred_)|^matched_(n_pairs|tol)$|^active_count_\w+_mean$|^active_frac_(gt|pred)$|^slot_\d+_active_(gt|pred)_frac$")
+    _NEUTRAL_PATTERN  = re.compile(r"^(n_pixels|n_z|x_axis_|gt_|pred_)|^matched_(n_pairs|tol)$|^active_count_\w+_mean$|^active_frac_(gt|pred)$|^slot_\d+_active_(gt|pred)_frac$")
     _LOWER_TOKENS     = ("distance", "_dist", "error", "_err", "loss", "_mse", "_mae", "_rmse")
     _HIGHER_TOKENS    = ("r2", "ssim", "psnr", "cosine", "precision", "recall", "f1", "count_acc", "count_exact")
 

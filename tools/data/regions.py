@@ -6,57 +6,57 @@ from typing      import Tuple
 
 @dataclass
 class CropRegion:
-    azimuth_start : int
-    azimuth_end   : int
-    range_start   : int
-    range_end     : int
+    row_start : int
+    row_end   : int
+    col_start : int
+    col_end   : int
 
     def __post_init__(self) -> None:
-        if self.azimuth_start >= self.azimuth_end:
-            raise ValueError(f"azimuth_start ({self.azimuth_start}) must be < azimuth_end ({self.azimuth_end})")
-        if self.range_start   >= self.range_end:
-            raise ValueError(f"range_start ({self.range_start}) must be < range_end ({self.range_end})")
+        if self.row_start >= self.row_end:
+            raise ValueError(f"row_start ({self.row_start}) must be < row_end ({self.row_end})")
+        if self.col_start   >= self.col_end:
+            raise ValueError(f"col_start ({self.col_start}) must be < col_end ({self.col_end})")
 
     def as_tuple(self) -> Tuple[int, int, int, int]:
-        return (self.azimuth_start, self.azimuth_end, self.range_start, self.range_end)
+        return (self.row_start, self.row_end, self.col_start, self.col_end)
 
     def as_identifier_string(self) -> str:
         return "a".join(str(value) for value in self.as_tuple())
 
     def as_labeled_string(self) -> str:
-        return f"az{self.azimuth_start}-{self.azimuth_end}_rg{self.range_start}-{self.range_end}"
+        return f"row{self.row_start}-{self.row_end}_col{self.col_start}-{self.col_end}"
 
     @property
-    def azimuth_size(self) -> int:
-        return self.azimuth_end - self.azimuth_start
+    def row_size(self) -> int:
+        return self.row_end - self.row_start
 
     @property
-    def range_size(self) -> int:
-        return self.range_end - self.range_start
+    def col_size(self) -> int:
+        return self.col_end - self.col_start
 
     def overlaps(self, other: "CropRegion") -> bool:
-        azimuth_overlap = self.azimuth_start < other.azimuth_end and other.azimuth_start < self.azimuth_end
-        range_overlap   = self.range_start   < other.range_end   and other.range_start   < self.range_end
-        return azimuth_overlap and range_overlap
+        row_overlap = self.row_start < other.row_end and other.row_start < self.row_end
+        col_overlap = self.col_start   < other.col_end   and other.col_start   < self.col_end
+        return row_overlap and col_overlap
 
     def contains(self, other: "CropRegion") -> bool:
-        azimuth_inside = self.azimuth_start <= other.azimuth_start and other.azimuth_end <= self.azimuth_end
-        range_inside   = self.range_start   <= other.range_start   and other.range_end   <= self.range_end
-        return azimuth_inside and range_inside
+        row_inside = self.row_start <= other.row_start and other.row_end <= self.row_end
+        col_inside = self.col_start   <= other.col_start   and other.col_end   <= self.col_end
+        return row_inside and col_inside
 
     def local_slices(self, global_crop: "CropRegion") -> Tuple[slice, slice]:
-        azimuth_slice = slice(self.azimuth_start - global_crop.azimuth_start, self.azimuth_end - global_crop.azimuth_start)
-        range_slice   = slice(self.range_start   - global_crop.range_start,   self.range_end   - global_crop.range_start)
-        return azimuth_slice, range_slice
+        row_slice = slice(self.row_start - global_crop.row_start, self.row_end - global_crop.row_start)
+        col_slice = slice(self.col_start   - global_crop.col_start,   self.col_end   - global_crop.col_start)
+        return row_slice, col_slice
 
-    def subdivide_by_azimuth(self, max_width: int) -> list["CropRegion"]:
+    def subdivide_by_rows(self, max_width: int) -> list["CropRegion"]:
         subsections = []
-        current     = self.azimuth_start
+        current     = self.row_start
 
-        while current < self.azimuth_end:
-            next_azimuth = min(current + max_width, self.azimuth_end)
-            subsections.append(CropRegion(current, next_azimuth, self.range_start, self.range_end))
-            current = next_azimuth
+        while current < self.row_end:
+            next_row = min(current + max_width, self.row_end)
+            subsections.append(CropRegion(current, next_row, self.col_start, self.col_end))
+            current = next_row
 
         return subsections
 
@@ -87,7 +87,7 @@ class SplitRegions:
         for name, regions in self.region_lists():
             for index, region in enumerate(regions):
                 label = name if len(regions) == 1 else f"{name}[{index}]"
-                rows.append({"Split": label, "Crop": str(region.as_tuple()), "Azimuth (lines)": region.azimuth_size, "Range (samples)": region.range_size})
+                rows.append({"Split": label, "Crop": str(region.as_tuple()), "Rows": region.row_size, "Cols": region.col_size})
         return rows
 
     def validate_disjoint(self) -> None:
@@ -113,12 +113,12 @@ class SplitRegions:
 
     @classmethod
     def from_ratios(cls, global_crop: CropRegion, train_ratio: float = 0.70, val_ratio: float = 0.15) -> "SplitRegions":
-        total_az  = global_crop.azimuth_end - global_crop.azimuth_start
-        train_end = global_crop.azimuth_start + int(total_az * train_ratio)
-        val_end   = train_end + int(total_az * val_ratio)
+        total_rows = global_crop.row_end - global_crop.row_start
+        train_end  = global_crop.row_start + int(total_rows * train_ratio)
+        val_end    = train_end + int(total_rows * val_ratio)
 
         return cls(
-            train = CropRegion(global_crop.azimuth_start, train_end,               global_crop.range_start, global_crop.range_end),
-            val   = CropRegion(train_end,                 val_end,                 global_crop.range_start, global_crop.range_end),
-            test  = CropRegion(val_end,                   global_crop.azimuth_end, global_crop.range_start, global_crop.range_end),
+            train = CropRegion(global_crop.row_start, train_end,               global_crop.col_start, global_crop.col_end),
+            val   = CropRegion(train_end,                 val_end,                 global_crop.col_start, global_crop.col_end),
+            test  = CropRegion(val_end,                   global_crop.row_end, global_crop.col_start, global_crop.col_end),
         )

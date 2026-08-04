@@ -29,9 +29,9 @@ class ProfileAeReport(InferenceReportBase):
         return {
             "model_name"        : self.run.ae_name,
             "embedding_dim"     : self.run.embedding_dim,
-            "profile_length"    : int(self.run.x_axis.shape[0]),
-            "x_axis_min"        : float(self.run.x_axis.min()),
-            "x_axis_max"        : float(self.run.x_axis.max()),
+            "profile_length"    : int(self.run.z_axis.shape[0]),
+            "x_axis_min"        : float(self.run.z_axis.min()),
+            "x_axis_max"        : float(self.run.z_axis.max()),
             "split"             : self.run.split_name,
             "split_regions"     : ", ".join(str(region.as_tuple()) for region in self.run.split_regions),
             "best_epoch"        : self.run.checkpoint_meta["best_epoch"],

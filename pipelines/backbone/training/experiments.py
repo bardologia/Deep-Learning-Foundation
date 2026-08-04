@@ -461,7 +461,7 @@ class HeadMatchingTrialPlanner:
 
 class InputTrialPlanner:
 
-    INPUT_KEYS   = ("use_primary", "use_secondaries", "use_interferograms", "use_dem")
+    INPUT_KEYS   = ("use_primary", "use_secondaries", "use_derived", "use_aux")
     TRACKS_KEY   = "tracks"
     TRACK_SCOPES = ("all", "reduced")
 
@@ -562,10 +562,10 @@ class AugmentationTrialPlanner:
 class NormalizationTrialPlanner:
 
     STEPS = (
-        ("pass_mag",  ("pass_mag",)),
-        ("ifg_phase", ("ifg_phase",)),
-        ("out_amp",   ("out_amp",)),
-        ("out_sigma", ("out_sigma",)),
+        ("chan_mag",      ("chan_mag",)),
+        ("derived_phase", ("derived_phase",)),
+        ("out_amp",       ("out_amp",)),
+        ("out_sigma",     ("out_sigma",)),
     )
 
     def __init__(self, trials, preset_names: tuple) -> None:

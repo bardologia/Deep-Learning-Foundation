@@ -18,7 +18,7 @@ def standard_seeds() -> list[int]:
 class TrainingPathsConfig:
     dataset_path     : Path  = DEFAULT_DATASET_DIR
     parameters_path  : Path  = DEFAULT_DATASET_DIR / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
-    secondary_labels : tuple = ("FL01_PS04", "FL01_PS06", "FL01_PS08", "FL01_PS26")
+    secondary_labels : tuple = ("CH01", "CH02", "CH03", "CH04")
 
 
 @dataclass
@@ -74,6 +74,6 @@ class TrainingQueueConfig:
     patch_stride          : tuple[int, int] = (32, 16)
     use_symmetric_padding : bool            = True
 
-    train_azimuth : tuple[int, int] = (1000, 1358)
-    val_azimuth   : tuple[int, int] = (1358, 1434)
-    test_azimuth  : tuple[int, int] = (1434, 1512)
+    train_rows : tuple[int, int] = (1000, 1358)
+    val_rows   : tuple[int, int] = (1358, 1434)
+    test_rows  : tuple[int, int] = (1434, 1512)

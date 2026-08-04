@@ -8,7 +8,7 @@ import torch
 
 
 class ParamSampler:
-    PARAM_NAMES          = ("amp", "mu_m", "sigma_m")
+    PARAM_NAMES          = ("amp", "mu", "sigma")
     MAX_VALUES_PER_BATCH = 2048
     MAX_VALUES_TOTAL     = 200_000
 
@@ -333,13 +333,13 @@ class ReconstructionFigures:
         self._pixels  = pixels
         self._ylims   = self._fixed_ylims(criterion)
 
-    def _figure(self, x_axis, pred_curve, gt_curve, ylim):
+    def _figure(self, z_axis, pred_curve, gt_curve, ylim):
         fig, ax = plt.subplots(figsize=(5.0, 3.2), dpi=120)
 
-        ax.plot(x_axis, gt_curve,   color="black",   linestyle="--", linewidth=1.2, label="Ground truth")
-        ax.plot(x_axis, pred_curve, color="#1f77b4", linestyle="-",  linewidth=1.4, label="Prediction")
+        ax.plot(z_axis, gt_curve,   color="black",   linestyle="--", linewidth=1.2, label="Ground truth")
+        ax.plot(z_axis, pred_curve, color="#1f77b4", linestyle="-",  linewidth=1.4, label="Prediction")
 
-        ax.set_xlabel("Elevation [m]")
+        ax.set_xlabel("Z")
         ax.set_ylabel("Amplitude")
         ax.set_ylim(*ylim)
         ax.legend(frameon=False)
@@ -354,7 +354,7 @@ class ReconstructionFigures:
 
         pred                    = model(self._images)
         pred_curves, exp_curves = criterion.curves(pred, self._targets)
-        x                       = criterion.x_axis.detach().cpu().numpy()
+        x                       = criterion.z_axis.detach().cpu().numpy()
 
         for (row, h, w, tag), ylim in zip(self._pixels, self._ylims):
             pred_curve = pred_curves[row, :, h, w].float().cpu().numpy()

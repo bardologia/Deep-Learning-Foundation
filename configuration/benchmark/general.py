@@ -49,11 +49,11 @@ class InferenceQueueConfig:
     n_worst_profiles  : int = 12
     n_random_profiles : int = 12
 
-    n_range_slices     : int = 5
-    n_azimuth_slices   : int = 5
-    n_elevation_slices : int = 5
+    n_col_slices : int = 5
+    n_row_slices : int = 5
+    n_z_slices   : int = 5
 
-    gif_axes       : list[str] = field(default_factory=lambda: ["elevation"])
+    gif_axes       : list[str] = field(default_factory=lambda: ["z"])
     gif_fps        : int       = 12
     gif_max_frames : int       = 150
 

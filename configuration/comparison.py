@@ -55,7 +55,7 @@ class ParamExtractionComparisonConfig:
 
     pixel_sample : int = 200000
     block_size   : int = 8
-    range_chunk  : int = 512
+    col_chunk    : int = 512
 
     make_plots : bool           = True
     output_dir : Optional[Path] = None

@@ -204,10 +204,10 @@ class ReceptiveFieldConfig:
     checkpoint_name : str = "best_model.pt"
     output_subdir   : str = "receptive_field"
 
-    window           : int       = 160
-    n_azimuth_probes : int       = 4
-    n_range_probes   : int       = 3
-    mass_windows     : List[int] = field(default_factory=lambda: [8, 16, 24, 32, 40, 48, 56, 64, 96, 128])
+    window       : int       = 160
+    n_row_probes : int       = 4
+    n_col_probes : int       = 3
+    mass_windows : List[int] = field(default_factory=lambda: [8, 16, 24, 32, 40, 48, 56, 64, 96, 128])
 
     figure_style : str = "report"
 
@@ -246,9 +246,9 @@ class InputAttributionConfig:
     checkpoint_name : str = "best_model.pt"
     output_subdir   : str = "input_attribution"
 
-    window           : int = 64
-    n_azimuth_probes : int = 4
-    n_range_probes   : int = 3
+    window       : int = 64
+    n_row_probes : int = 4
+    n_col_probes : int = 3
 
     occlude          : bool  = True
     batch_size       : int   = 8
@@ -364,10 +364,10 @@ class TrainingEvolutionConfig:
     checkpoint_name : str = "best_model.pt"
     output_subdir   : str = "training_evolution"
 
-    window           : int = 64
-    n_azimuth_probes : int = 2
-    n_range_probes   : int = 2
-    fps              : int = 4
+    window       : int = 64
+    n_row_probes : int = 2
+    n_col_probes : int = 2
+    fps          : int = 4
 
     figure_style : str = "report"
 

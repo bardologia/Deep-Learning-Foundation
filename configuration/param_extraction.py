@@ -72,11 +72,11 @@ class ExtractionConfig:
     processed_data_path : Path
     output_prefix       : str                           = "params"
     output_suffix       : Optional[str]                 = None
-    height_range        : Optional[Tuple[float, float]] = None
+    z_range             : Optional[Tuple[float, float]] = None
     fit_settings        : FitSettings                   = field(default_factory=FitSettings)
     parameter_workers   : int                           = 20
 
-    range_batch_size     : int   = 3500
+    col_batch_size       : int   = 3500
     gpu_pixel_batch_size : int   = 24576
     adam_steps           : int   = 3000
     adam_lr              : float = 2e-1
@@ -120,17 +120,17 @@ class ExtractionConfig:
     def diagnostics_npz_path(self) -> Path:
         return self.output_directory / "fit_diagnostics.npz"
 
-    def discover_tomogram_path(self) -> Path:
-        tomogram_path = self.data_directory / "tomogram_full.npy"
+    def discover_cube_path(self) -> Path:
+        cube_path = self.data_directory / "cube_full.npy"
 
-        if not tomogram_path.is_file():
-            raise FileNotFoundError(f"No tomogram_full.npy in {self.data_directory}")
+        if not cube_path.is_file():
+            raise FileNotFoundError(f"No cube_full.npy in {self.data_directory}")
 
-        return tomogram_path
+        return cube_path
 
-    def discover_height_range(self) -> Tuple[float, float]:
-        if self.height_range is not None:
-            return tuple(self.height_range)
+    def discover_z_range(self) -> Tuple[float, float]:
+        if self.z_range is not None:
+            return tuple(self.z_range)
 
         meta_dir   = self.metadata_directory
         state_path = meta_dir / "config_state.json"
@@ -138,11 +138,11 @@ class ExtractionConfig:
             with open(state_path, "r", encoding="utf-8") as f:
                 state = json.load(f)
 
-            hr = state["tomogram_config"]["height_range"]
+            hr = state["cube_config"]["z_range"]
             if isinstance(hr, (list, tuple)) and len(hr) == 2:
                 return (float(hr[0]), float(hr[1]))
 
-        raise FileNotFoundError(f"No height_range override given and no config_state.json with a tomogram height_range under {meta_dir}")
+        raise FileNotFoundError(f"No z_range override given and no config_state.json with a cube z_range under {meta_dir}")
 
 
 @dataclass
@@ -152,7 +152,7 @@ class ExtractParamsEntryConfig:
 
     output_prefix : str          = "params"
     output_suffix : str | None   = None
-    height_range  : tuple | None = None
+    z_range       : tuple | None = None
 
     fit_k_values           : list  = field(default_factory=lambda: [5])
     fit_lambda_values      : list  = field(default_factory=lambda: [1e-2])
@@ -167,7 +167,7 @@ class ExtractParamsEntryConfig:
     adam_lr    : float = 2e-1
 
     gpu_device_ids       : list = field(default_factory=lambda: [0, 1, 2, 3])
-    range_batch_size     : int  = 3500
+    col_batch_size       : int  = 3500
     gpu_pixel_batch_size : int  = 24576
     parameter_workers    : int  = field(default_factory=lambda: min(64, os.cpu_count() or 16))
 

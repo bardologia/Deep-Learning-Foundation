@@ -96,7 +96,7 @@ class TrainingPipeline:
         g = self.trainer_config.gaussian
         return g.params_per_gaussian * g.n_default_gaussians
 
-    def _run_overfit_check(self, run_meta, logger, datasets, x_len: int, x_axis) -> None:
+    def _run_overfit_check(self, run_meta, logger, datasets, z_len: int, z_axis) -> None:
         check = OverfitCheck(self.entry.overfit_check, run_meta.run_directory, logger)
         if not check.enabled:
             return
@@ -112,14 +112,14 @@ class TrainingPipeline:
         base_backbone_config = ModelBuilder.config_from_registry(self.backbone_name, self.entry.model_overrides, head=self.entry.backbone_head)
         gate_backbone_config = check.sanitized_model_config(base_backbone_config)
 
-        gate_module, gate_backbone_cfg = self._build_module(datasets, x_len, x_axis, logger, backbone_config=gate_backbone_config)
+        gate_module, gate_backbone_cfg = self._build_module(datasets, z_len, z_axis, logger, backbone_config=gate_backbone_config)
         profile_normalizer             = self._profile_normalizer(run_meta.metadata_directory, logger)
 
-        gate_trainer = Trainer(gate_module, gate_backbone_cfg, x_axis, gate_trainer_config, check.work_directory, logger, datasets["train"].normalizer, profile_normalizer)
+        gate_trainer = Trainer(gate_module, gate_backbone_cfg, z_axis, gate_trainer_config, check.work_directory, logger, datasets["train"].normalizer, profile_normalizer)
 
         check.run(gate_trainer, datasets["train"])
 
-    def _build_module(self, datasets, x_len: int, x_axis, logger, backbone_config=None):
+    def _build_module(self, datasets, z_len: int, z_axis, logger, backbone_config=None):
         dataset_in_channels = datasets["train"].input_channels
 
         image_autoencoder = None
@@ -132,11 +132,11 @@ class TrainingPipeline:
 
         profile_autoencoder = None
         if self.autoencoder_cfg is not None:
-            if self.autoencoder_cfg.profile_length != x_len:
-                raise ValueError(f"Profile autoencoder was trained with profile_length={self.autoencoder_cfg.profile_length} but the JEPA dataset produces curves of length {x_len}; retrain the profile autoencoder on this dataset's elevation axis before coupling it.")
+            if self.autoencoder_cfg.profile_length != z_len:
+                raise ValueError(f"Profile autoencoder was trained with profile_length={self.autoencoder_cfg.profile_length} but the JEPA dataset produces curves of length {z_len}; retrain the profile autoencoder on this dataset's z axis before coupling it.")
 
             backbone_out        = self.autoencoder_cfg.embedding_dim
-            profile_autoencoder = self._load_profile_autoencoder(x_axis)
+            profile_autoencoder = self._load_profile_autoencoder(z_axis)
         else:
             backbone_out = self._gaussian_out_channels()
 
@@ -208,20 +208,20 @@ class TrainingPipeline:
                 overrides[k] = v
         return get_backbone(self.backbone_name, config=config, **overrides)
 
-    def _load_profile_autoencoder(self, x_axis):
+    def _load_profile_autoencoder(self, z_axis):
         autoencoder, _ = get_profile_autoencoder(self.ae_model_name, self.autoencoder_cfg)
         ckpt_path      = self.trainer_config.profile_autoencoder_checkpoint
         self.validate_checkpoint(ckpt_path, "profile")
 
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-        self._validate_profile_axis(np.asarray(ckpt["x_axis"], dtype=np.float32), np.asarray(x_axis, dtype=np.float32), ckpt_path)
+        self._validate_profile_axis(np.asarray(ckpt["z_axis"], dtype=np.float32), np.asarray(z_axis, dtype=np.float32), ckpt_path)
         autoencoder.load_state_dict(ckpt["params"])
         return autoencoder
 
     @staticmethod
     def _validate_profile_axis(ae_axis, jepa_axis, ckpt_path) -> None:
         if ae_axis.shape != jepa_axis.shape or not np.allclose(ae_axis, jepa_axis, rtol=1e-5, atol=1e-5):
-            raise ValueError(f"Profile autoencoder checkpoint '{ckpt_path}' was trained on elevation axis [{ae_axis[0]:.3f}, {ae_axis[-1]:.3f}] with {ae_axis.size} bins, but the JEPA dataset produces axis [{jepa_axis[0]:.3f}, {jepa_axis[-1]:.3f}] with {jepa_axis.size} bins; retrain the profile autoencoder on this dataset's elevation axis before coupling it.")
+            raise ValueError(f"Profile autoencoder checkpoint '{ckpt_path}' was trained on z axis [{ae_axis[0]:.3f}, {ae_axis[-1]:.3f}] with {ae_axis.size} bins, but the JEPA dataset produces axis [{jepa_axis[0]:.3f}, {jepa_axis[-1]:.3f}] with {jepa_axis.size} bins; retrain the profile autoencoder on this dataset's z axis before coupling it.")
 
     def _load_image_autoencoder(self):
         autoencoder, _ = get_image_autoencoder(self.image_ae_model_name, self.image_ae_cfg)
@@ -237,7 +237,7 @@ class TrainingPipeline:
         if not Path(ckpt_path).is_file():
             raise FileNotFoundError(f"{label} autoencoder checkpoint '{ckpt_path}' does not exist; expected 'best_model.pt' under the selected {label} autoencoder run directory.")
 
-    def _save_metadata(self, run_meta, backbone_cfg, x_len: int) -> None:
+    def _save_metadata(self, run_meta, backbone_cfg, z_len: int) -> None:
         gaussian_cfg = self.trainer_config.gaussian
 
         run_meta.save_trainer_config()
@@ -248,7 +248,7 @@ class TrainingPipeline:
         if self.image_ae_cfg is not None:
             ImageAutoencoderConfigIO.save(self.image_ae_cfg, self.image_ae_model_name, run_meta.metadata_directory)
 
-        run_meta.save_run_summary(self.backbone_name, in_channels=self.backbone_in_channels, out_channels=self.backbone_out_channels, x_axis_length=x_len, n_gaussians=gaussian_cfg.n_default_gaussians, seed=self.entry.seed)
+        run_meta.save_run_summary(self.backbone_name, in_channels=self.backbone_in_channels, out_channels=self.backbone_out_channels, x_axis_length=z_len, n_gaussians=gaussian_cfg.n_default_gaussians, seed=self.entry.seed)
 
     def _profile_normalizer(self, metadata_directory, logger):
         if self.autoencoder_cfg is None:
@@ -259,14 +259,14 @@ class TrainingPipeline:
 
         return ProfileNormalizer(stats)
 
-    def _make_trainer(self, model, backbone_cfg, x_axis, run_dir, logger, norm_stats, profile_normalizer):
-        return Trainer(model, backbone_cfg, x_axis, self.trainer_config, run_dir, logger, norm_stats, profile_normalizer)
+    def _make_trainer(self, model, backbone_cfg, z_axis, run_dir, logger, norm_stats, profile_normalizer):
+        return Trainer(model, backbone_cfg, z_axis, self.trainer_config, run_dir, logger, norm_stats, profile_normalizer)
 
-    def _train(self, run_meta, logger, model, backbone_cfg, x_axis, datasets, loaders, profile_normalizer):
+    def _train(self, run_meta, logger, model, backbone_cfg, z_axis, datasets, loaders, profile_normalizer):
         train_loader, val_loader, test_loader = loaders
         norm_stats                            = datasets["train"].normalizer
 
-        trainer = self._make_trainer(model, backbone_cfg, x_axis, run_meta.run_directory, logger, norm_stats, profile_normalizer)
+        trainer = self._make_trainer(model, backbone_cfg, z_axis, run_meta.run_directory, logger, norm_stats, profile_normalizer)
         try:
             results = trainer.train(train_loader, val_loader, test_loader)
         finally:
@@ -276,12 +276,12 @@ class TrainingPipeline:
     def build_pretrain_trainer(self, work_dir, logger):
         work_dir = Path(work_dir)
 
-        loaders, datasets, x_axis, x_len = self._prepare_datasets(work_dir, logger, self.entry.seed)
+        loaders, datasets, z_axis, z_len = self._prepare_datasets(work_dir, logger, self.entry.seed)
 
-        model, backbone_cfg = self._build_module(datasets, x_len, x_axis, logger)
+        model, backbone_cfg = self._build_module(datasets, z_len, z_axis, logger)
         profile_normalizer  = self._profile_normalizer(work_dir / "meta", logger)
 
-        trainer = self._make_trainer(model, backbone_cfg, x_axis, work_dir, logger, datasets["train"].normalizer, profile_normalizer)
+        trainer = self._make_trainer(model, backbone_cfg, z_axis, work_dir, logger, datasets["train"].normalizer, profile_normalizer)
 
         return trainer, datasets["train"], model
 
@@ -289,21 +289,21 @@ class TrainingPipeline:
         run_meta = TrainingRunMetadata(self.trainer_config, self.backbone_name, Path(self.trainer_config.io.logdir), self.entry.run_name)
         logger   = run_meta.logger
 
-        loaders, datasets, x_axis, x_len = self._prepare_datasets(run_meta.run_directory, logger, self.entry.seed)
+        loaders, datasets, z_axis, z_len = self._prepare_datasets(run_meta.run_directory, logger, self.entry.seed)
 
-        model, backbone_cfg = self._build_module(datasets, x_len, x_axis, logger)
+        model, backbone_cfg = self._build_module(datasets, z_len, z_axis, logger)
 
-        self._save_metadata(run_meta, backbone_cfg, x_len)
+        self._save_metadata(run_meta, backbone_cfg, z_len)
 
         try:
-            self._run_overfit_check(run_meta, logger, datasets, x_len, x_axis)
+            self._run_overfit_check(run_meta, logger, datasets, z_len, z_axis)
         except BaseException:
             run_meta.close()
             raise
 
         profile_normalizer = self._profile_normalizer(run_meta.metadata_directory, logger)
 
-        return self._train(run_meta, logger, model, backbone_cfg, x_axis, datasets, loaders, profile_normalizer)
+        return self._train(run_meta, logger, model, backbone_cfg, z_axis, datasets, loaders, profile_normalizer)
 
 
 class SingleTrainRunner(EntryConfigTrainRunner):

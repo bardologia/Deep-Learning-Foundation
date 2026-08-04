@@ -37,9 +37,9 @@ class ConfigFactory:
         training = self.config.training
 
         return SplitRegions(
-            train = CropRegion(training.train_azimuth[0], training.train_azimuth[1], crop.range_start, crop.range_end),
-            val   = CropRegion(training.val_azimuth[0],   training.val_azimuth[1],   crop.range_start, crop.range_end),
-            test  = CropRegion(training.test_azimuth[0],  training.test_azimuth[1],  crop.range_start, crop.range_end),
+            train = CropRegion(training.train_rows[0], training.train_rows[1], crop.col_start, crop.col_end),
+            val   = CropRegion(training.val_rows[0],   training.val_rows[1],   crop.col_start, crop.col_end),
+            test  = CropRegion(training.test_rows[0],  training.test_rows[1],  crop.col_start, crop.col_end),
         )
 
     def training_dataset_config(self) -> DatasetConfig:
@@ -108,25 +108,25 @@ class ConfigFactory:
         inference = self.config.inference
 
         return InferenceConfig(
-            run_directory      = run_directory,
-            output_subdir      = None,
-            device             = "cuda",
-            checkpoint_name    = inference.checkpoint_name,
-            split              = inference.split,
-            batch_size         = inference.batch_size,
-            num_workers        = inference.num_workers,
-            stitch_window      = inference.stitch_window,
-            save_cubes         = inference.save_cubes,
-            save_plots         = inference.save_plots,
-            save_animations    = inference.save_animations,
-            n_best_profiles    = inference.n_best_profiles,
-            n_worst_profiles   = inference.n_worst_profiles,
-            n_random_profiles  = inference.n_random_profiles,
-            n_range_slices     = inference.n_range_slices,
-            n_azimuth_slices   = inference.n_azimuth_slices,
-            n_elevation_slices = inference.n_elevation_slices,
-            gif_axes           = list(inference.gif_axes),
-            gif_fps            = inference.gif_fps,
-            gif_max_frames     = inference.gif_max_frames,
-            cpu_workers        = inference.cpu_workers,
+            run_directory     = run_directory,
+            output_subdir     = None,
+            device            = "cuda",
+            checkpoint_name   = inference.checkpoint_name,
+            split             = inference.split,
+            batch_size        = inference.batch_size,
+            num_workers       = inference.num_workers,
+            stitch_window     = inference.stitch_window,
+            save_cubes        = inference.save_cubes,
+            save_plots        = inference.save_plots,
+            save_animations   = inference.save_animations,
+            n_best_profiles   = inference.n_best_profiles,
+            n_worst_profiles  = inference.n_worst_profiles,
+            n_random_profiles = inference.n_random_profiles,
+            n_col_slices      = inference.n_col_slices,
+            n_row_slices      = inference.n_row_slices,
+            n_z_slices        = inference.n_z_slices,
+            gif_axes          = list(inference.gif_axes),
+            gif_fps           = inference.gif_fps,
+            gif_max_frames    = inference.gif_max_frames,
+            cpu_workers       = inference.cpu_workers,
         )

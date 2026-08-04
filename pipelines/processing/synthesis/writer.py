@@ -15,11 +15,11 @@ from tools.monitoring.logger import Logger
 class DatasetWriter:
 
     ARTIFACTS = {
-        "primary"        : "primary.npy",
-        "secondaries"    : "secondaries.npy",
-        "interferograms" : "interferograms.npy",
-        "dem_full"       : "dem_full.npy",
-        "tomogram_full"  : "tomogram_full.npy",
+        "primary"     : "primary.npy",
+        "secondaries" : "secondaries.npy",
+        "derived"     : "derived.npy",
+        "aux_full"    : "aux_full.npy",
+        "cube_full"   : "cube_full.npy",
     }
 
     SOURCE = "synthesis"
@@ -45,10 +45,10 @@ class DatasetWriter:
         payload = {
             "global_crop"        : list(self.config.global_crop),
             "dataset_type"       : self.config.dataset_type,
-            "tomogram_tag"       : self.config.tomogram_tag,
+            "cube_tag"           : self.config.cube_tag,
             "parameter_tag"      : self.config.parameter_tag,
             "max_amplitude_clip" : self.config.max_amplitude_clip,
-            "pass_labels"        : self.config.pass_labels,
+            "channel_labels"     : self.config.channel_labels,
             "artifacts"          : dict(self.ARTIFACTS),
         }
 
@@ -58,14 +58,14 @@ class DatasetWriter:
         crop    = self.config.global_crop
         payload = {
             "crop" : {
-                "azimuth_start" : int(crop[0]),
-                "azimuth_end"   : int(crop[1]),
-                "range_start"   : int(crop[2]),
-                "range_end"     : int(crop[3]),
+                "row_start" : int(crop[0]),
+                "row_end"   : int(crop[1]),
+                "col_start" : int(crop[2]),
+                "col_end"   : int(crop[3]),
             },
-            "tomogram_config" : {
-                "height_range" : list(self.config.height_range),
-                "n_heights"    : int(self.config.profile_length),
+            "cube_config" : {
+                "z_range" : list(self.config.z_range),
+                "n_z"     : int(self.config.profile_length),
             },
             "synthesis_config" : {key: str(value) if isinstance(value, Path) else value for key, value in dataclasses.asdict(self.config).items()},
         }
@@ -97,11 +97,11 @@ class DatasetWriter:
             "timestamp"           : datetime.now().isoformat(timespec="seconds"),
             "source"              : self.SOURCE,
             "processed_data_path" : str(config.output_directory),
-            "source_tomogram"     : str(config.data_directory / self.ARTIFACTS["tomogram_full"]),
+            "source_cube"         : str(config.data_directory / self.ARTIFACTS["cube_full"]),
             "output_directory"    : str(config.parameters_directory),
             "parameters_npy"      : parameters_path.name,
             "diagnostics_npz"     : diagnostics_path.name,
-            "height_range"        : list(config.height_range),
+            "z_range"             : list(config.z_range),
             "k_max"               : int(config.k_max),
             "lambda_k"            : float(config.lambda_k),
             "activity_threshold"  : float(config.activity_threshold),

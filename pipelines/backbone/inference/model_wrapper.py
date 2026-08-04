@@ -14,7 +14,7 @@ class ModelWrapper:
         *,
         params_per_gaussian: int = 3,
         normalizer=None,
-        x_axis: torch.Tensor | None = None,
+        z_axis: torch.Tensor | None = None,
         amp_max: float | None = None,
     ) -> None:
 
@@ -22,7 +22,7 @@ class ModelWrapper:
         self._device              = device
         self._params_per_gaussian = params_per_gaussian
         self._normalizer          = normalizer
-        self._x_axis              = x_axis
+        self._x_axis              = z_axis
         self._amp_max             = amp_max
 
     @property
@@ -40,7 +40,7 @@ class ModelWrapper:
         if self._x_axis is not None and self._amp_max is not None:
             out = GaussianClamp.apply(
                 out,
-                x_axis      = self._x_axis.to(out.device),
+                z_axis      = self._x_axis.to(out.device),
                 amp_max     = self._amp_max,
                 ppg         = self._params_per_gaussian,
                 leaky_slope = 0.0,

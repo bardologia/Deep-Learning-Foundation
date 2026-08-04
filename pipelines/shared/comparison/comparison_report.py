@@ -22,14 +22,14 @@ class ComparisonReportBase:
         ("psnr_db_gt",                   "PSNR"),
         ("pixel_r2_gt_mean",             "Pixel R²"),
         ("pixel_cosine_gt_mean",         "Cosine"),
-        ("ssim_gt_elev_mean",            "SSIM elev"),
+        ("ssim_gt_z_mean",               "SSIM z"),
         ("pixel_peak_err_units_mean_gt", "Peak err"),
     ]
 
     HEADLINE_GROUPS = [
         ("Curve error",           ["curve_rmse_gt", "curve_mae_gt", "psnr_db_gt"]),
         ("Variance explained",    ["overall_r2_gt", "pixel_r2_gt_mean"]),
-        ("Structural similarity", ["ssim_gt_elev_mean"]),
+        ("Structural similarity", ["ssim_gt_z_mean"]),
         ("Shape (cosine)",        ["pixel_cosine_gt_mean"]),
         ("Peak location",         ["pixel_peak_err_units_mean_gt"]),
     ]
@@ -163,10 +163,10 @@ class ComparisonReport(ComparisonReportBase):
         ("Per-pixel metric maps",       re.compile(r"^(pixel_|metric_histograms)")),
         ("Gaussian parameter analysis", re.compile(r"^param_")),
         ("Active Gaussian count",       re.compile(r"^active_count")),
-        ("SSIM and elevation curves",   re.compile(r"^(ssim_|elev_metric)")),
-        ("Azimuth slices",              re.compile(r"^slice_azimuth_")),
-        ("Elevation slices",            re.compile(r"^slice_elev_")),
-        ("Range slices",                re.compile(r"^slice_range_")),
+        ("SSIM and z curves",           re.compile(r"^(ssim_|z_metric)")),
+        ("Row slices",                  re.compile(r"^slice_row_")),
+        ("Z slices",                    re.compile(r"^slice_z_")),
+        ("Col slices",                  re.compile(r"^slice_col_")),
     ]
 
     def __init__(self, records: list[TrialRecord], out_dir: Path, reference_model: str, embed_images: bool, logger: Logger, rank_models: bool = True, seed_dispersion: dict | None = None) -> None:
@@ -186,7 +186,7 @@ class ComparisonReport(ComparisonReportBase):
             lines = self.assets.header("Benchmark Overview")
         else:
             lines  = self.assets.header("Cross-Validation Fold Overview")
-            lines += [f"Folds of the single model `{self.reference_model}`; each fold tests a different disjoint azimuth region, so fold-to-fold differences reflect data heterogeneity, not model quality. No ranking is implied.\n"]
+            lines += [f"Folds of the single model `{self.reference_model}`; each fold tests a different disjoint row region, so fold-to-fold differences reflect data heterogeneity, not model quality. No ranking is implied.\n"]
 
         if self.rank_models:
             lines += ["## Model Capacity\n"]
@@ -291,7 +291,7 @@ class ComparisonReport(ComparisonReportBase):
                 lines += ["> Each model was trained under multiple seeds; cells show the seed mean ± seed standard deviation.\n"]
         else:
             lines  = self.assets.header("Per-Fold Test Metrics")
-            lines += ["> Folds of one model across disjoint azimuth regions; no value is highlighted as best (↓ lower is better, ↑ higher is better). Per-bin array metrics are excluded.\n"]
+            lines += ["> Folds of one model across disjoint row regions; no value is highlighted as best (↓ lower is better, ↑ higher is better). Per-bin array metrics are excluded.\n"]
 
         if not scored:
             lines += ["_No inference metrics available yet._\n"]

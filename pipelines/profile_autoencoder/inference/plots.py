@@ -15,34 +15,34 @@ from pipelines.autoencoder_common.inference.plots import AePlotsBase
 class ProfileAePlots(AePlotsBase):
     ERROR_XLABEL = r"$\log_{10}$ per-curve MSE"
 
-    def _overlay(self, x_axis: np.ndarray, gt: np.ndarray, pred: np.ndarray, title: str, path: Path) -> Path:
+    def _overlay(self, z_axis: np.ndarray, gt: np.ndarray, pred: np.ndarray, title: str, path: Path) -> Path:
         fig, ax = plt.subplots(figsize=(6.2, 4.0))
 
-        ax.plot(x_axis, gt,   color="#1f4e79", linewidth=1.6, label="ground truth")
-        ax.plot(x_axis, pred, color="#c0392b", linewidth=1.6, linestyle="--", label="reconstruction")
+        ax.plot(z_axis, gt,   color="#1f4e79", linewidth=1.6, label="ground truth")
+        ax.plot(z_axis, pred, color="#c0392b", linewidth=1.6, linestyle="--", label="reconstruction")
 
-        ax.set_xlabel("elevation (m)")
+        ax.set_xlabel("z (m)")
         ax.set_ylabel("intensity")
         ax.set_title(title)
         ax.legend(frameon=False)
 
         return self._save(fig, path)
 
-    def _reconstructions(self, x_axis, gt, pred, mse, ranked, label, figures_dir) -> List[Path]:
+    def _reconstructions(self, z_axis, gt, pred, mse, ranked, label, figures_dir) -> List[Path]:
         paths = []
         for rank, idx in enumerate(ranked):
             title = f"{label} reconstruction #{rank + 1}  (MSE = {mse[idx]:.4g})"
             path  = figures_dir / "reconstructions" / f"{label}_{rank + 1:02d}.png"
-            paths.append(self._overlay(x_axis, gt[idx], pred[idx], title, path))
+            paths.append(self._overlay(z_axis, gt[idx], pred[idx], title, path))
 
         return paths
 
-    def _mean_profile(self, x_axis, gt, pred, figures_dir) -> Path:
-        return self._overlay(x_axis, gt.mean(axis=0), pred.mean(axis=0), "Mean profile over split", figures_dir / "mean_profile.png")
+    def _mean_profile(self, z_axis, gt, pred, figures_dir) -> Path:
+        return self._overlay(z_axis, gt.mean(axis=0), pred.mean(axis=0), "Mean profile over split", figures_dir / "mean_profile.png")
 
-    def _power_scatter(self, x_axis, gt, pred, active, n_points, seed, figures_dir) -> Path:
-        power_gt   = np.trapezoid(gt[active],   x_axis, axis=1)
-        power_pred = np.trapezoid(pred[active], x_axis, axis=1)
+    def _power_scatter(self, z_axis, gt, pred, active, n_points, seed, figures_dir) -> Path:
+        power_gt   = np.trapezoid(gt[active],   z_axis, axis=1)
+        power_pred = np.trapezoid(pred[active], z_axis, axis=1)
 
         idx = self._subsample(np.arange(power_gt.shape[0]), n_points, seed=seed)
         pg  = power_gt[idx]
@@ -62,7 +62,7 @@ class ProfileAePlots(AePlotsBase):
 
         return self._save(fig, figures_dir / "power_scatter.png")
 
-    def compose(self, result, x_axis: np.ndarray, mse: np.ndarray, cfg, figures_dir: Path, amp_zero_thr: float) -> Dict[str, List[Path]]:
+    def compose(self, result, z_axis: np.ndarray, mse: np.ndarray, cfg, figures_dir: Path, amp_zero_thr: float) -> Dict[str, List[Path]]:
         gt   = result.gt
         pred = result.pred
 
@@ -75,12 +75,12 @@ class ProfileAePlots(AePlotsBase):
         random = rng.choice(active, size=min(cfg.n_random_curves, active.shape[0]), replace=False) if active.size else np.empty(0, dtype=np.int64)
 
         figures = {
-            "best"            : self._reconstructions(x_axis, gt, pred, mse, best,   "best",   figures_dir),
-            "worst"           : self._reconstructions(x_axis, gt, pred, mse, worst,  "worst",  figures_dir),
-            "random"          : self._reconstructions(x_axis, gt, pred, mse, random, "random", figures_dir),
-            "mean_profile"    : [self._mean_profile(x_axis, gt, pred, figures_dir)],
+            "best"            : self._reconstructions(z_axis, gt, pred, mse, best,   "best",   figures_dir),
+            "worst"           : self._reconstructions(z_axis, gt, pred, mse, worst,  "worst",  figures_dir),
+            "random"          : self._reconstructions(z_axis, gt, pred, mse, random, "random", figures_dir),
+            "mean_profile"    : [self._mean_profile(z_axis, gt, pred, figures_dir)],
             "error_histogram" : [self._error_histogram(mse, figures_dir)],
-            "power_scatter"   : [self._power_scatter(x_axis, gt, pred, active, cfg.n_scatter_points, cfg.curve_seed, figures_dir)],
+            "power_scatter"   : [self._power_scatter(z_axis, gt, pred, active, cfg.n_scatter_points, cfg.curve_seed, figures_dir)],
             "embedding_norm"  : [self._embedding_norm(result.embeddings, figures_dir)],
         }
 

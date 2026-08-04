@@ -111,7 +111,7 @@ class LossLandscapeRun(AnalysisRun):
     REPORT_FILENAME  = "loss_landscape.md"
 
     def _loss_fn(self, run):
-        renderer = PredictionCurves(run.n_gaussians, run.x_axis)
+        renderer = PredictionCurves(run.n_gaussians, run.z_axis)
         batches  = []
 
         for index, batch in enumerate(run.loader):
