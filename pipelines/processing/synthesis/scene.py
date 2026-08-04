@@ -70,9 +70,9 @@ class ChannelBuilder:
     def _weighted_mean(self, profiles: np.ndarray, window: np.ndarray) -> np.ndarray:
         return (window[:, None, None] * profiles).sum(axis=0) / float(window.sum())
 
-    def _coherence(self, profiles: np.ndarray, wavenumber: float) -> np.ndarray:
+    def _coherence(self, profiles: np.ndarray, phase_rate: float) -> np.ndarray:
         total  = profiles.sum(axis=0)
-        kernel = np.exp(1j * wavenumber * self.z_axis).astype(np.complex64)
+        kernel = np.exp(1j * phase_rate * self.z_axis).astype(np.complex64)
         summed = (kernel[:, None, None] * profiles).sum(axis=0)
 
         return (summed / np.maximum(total, 1e-8)).astype(np.complex64)
