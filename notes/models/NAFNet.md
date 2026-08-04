@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - Nonlinear Activation Free Network
 family: nafnet
@@ -103,4 +103,4 @@ Ground truth: Chen, Chu, Zhang, Sun, *Simple Baselines for Image Restoration*, E
 - [[HRNet]] — The other fidelity-first design (no resolution bottleneck)
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — NAFNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

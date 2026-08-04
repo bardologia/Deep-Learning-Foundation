@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - SwinUNet
   - Swin Transformer U-Net
@@ -92,7 +92,7 @@ This halves spatial resolution and doubles channels at each level (analogous to 
 
 ## Design Rationale
 
-**Global context.** For TomoSAR, some scattering structures span tens of pixels (building facades, roof-to-ground layover). CNN architectures with limited receptive fields struggle to model these. Swin attention within windows of configurable size provides long-range context at a cost proportional to window size rather than image size.
+**Global context.** For ML Template, some scattering structures span tens of pixels (building facades, roof-to-ground layover). CNN architectures with limited receptive fields struggle to model these. Swin attention within windows of configurable size provides long-range context at a cost proportional to window size rather than image size.
 
 > **Resolution handling.** SwinUNet uses only window-relative position bias (the `relative_position_bias_table`, sized by `window_size`), not absolute positional embeddings. The implementation never reads `image_size` in `SwinUNet.__init__`: the token grid is inferred dynamically from the patch-embedding convolution output, and arbitrary patch sizes are accommodated by per-block window padding and the `match_spatial_size` interpolation guard. The `image_size` config field is therefore documentary only and does not constrain the runtime input resolution.
 
@@ -171,4 +171,4 @@ With `embedding_dim = 80` and four stages, the per-stage dimensions are $[80, 16
 - [[TransUNet]] — Alternative transformer-based architecture
 - [[UNETR]] — Pure transformer encoder
 - [[Configuration Layer]] — SwinUNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

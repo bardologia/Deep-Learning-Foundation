@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - DilatedConv2dImageAutoencoder
   - dilated2d_ae

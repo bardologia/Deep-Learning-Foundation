@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - ResMlpAutoencoder
   - resmlp_ae
@@ -15,7 +15,7 @@ summary: Pre-norm residual-MLP profile autoencoder; deeper variant of the MLP Au
 
 # ResMLP Autoencoder
 
-`ResMlpAutoencoder` (`models/profile_autoencoder/resmlp.py`) is a [[Model Zoo|profile autoencoder]] that treats the elevation profile as a flat vector, like the [[MLP Autoencoder]], but replaces the plain dense stack with pre-norm residual blocks so the encoder and decoder can go deeper without optimisation trouble. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
+`ResMlpAutoencoder` (`models/profile_autoencoder/resmlp.py`) is a [[Model Zoo|profile autoencoder]] that treats the z profile as a flat vector, like the [[MLP Autoencoder]], but replaces the plain dense stack with pre-norm residual blocks so the encoder and decoder can go deeper without optimisation trouble. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
 
 ---
 

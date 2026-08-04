@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - TcnAutoencoder
   - tcn_ae
@@ -15,7 +15,7 @@ summary: Dilated-residual temporal convolutional network profile autoencoder wit
 
 # TCN Autoencoder
 
-`TcnAutoencoder` (`models/profile_autoencoder/tcn.py`) is a [[Model Zoo|profile autoencoder]] built from a temporal convolutional network: stacked dilated residual convolutions along the range axis whose receptive field grows exponentially with depth. It captures both narrow and broad elevation features without the cost of attention. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
+`TcnAutoencoder` (`models/profile_autoencoder/tcn.py`) is a [[Model Zoo|profile autoencoder]] built from a temporal convolutional network: stacked dilated residual convolutions along the range axis whose receptive field grows exponentially with depth. It captures both narrow and broad z features without the cost of attention. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
 
 ---
 
@@ -72,4 +72,4 @@ Training minimizes a reconstruction loss between $\mathbf{p}$ and $\hat{\mathbf{
 
 ## When to use
 
-When the elevation profile has structure at several scales at once — sharp single-bin peaks alongside broad lobes. The exponentially growing dilation reaches long range with few parameters, sitting between the purely local [[Conv1D Autoencoder]] and the global but heavier [[Transformer1D Autoencoder]].
+When the z profile has structure at several scales at once — sharp single-bin peaks alongside broad lobes. The exponentially growing dilation reaches long range with few parameters, sitting between the purely local [[Conv1D Autoencoder]] and the global but heavier [[Transformer1D Autoencoder]].

@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - Architecture Summary
   - Model Registry
@@ -12,7 +12,7 @@ aliases:
 
 # Model Zoo
 
-This note summarises all model architectures available in DLR-TomoSAR, their key properties, and guidance on when to prefer each. Model selection has two independent axes: the backbone (`backbone_name`, the registry key below) and the output head (`head` on the architecture config, `backbone_head` in the entry configs), so any backbone pairs with any head.
+This note summarises all model architectures available in ML-Template, their key properties, and guidance on when to prefer each. Model selection has two independent axes: the backbone (`backbone_name`, the registry key below) and the output head (`head` on the architecture config, `backbone_head` in the entry configs), so any backbone pairs with any head.
 
 ---
 
@@ -112,7 +112,7 @@ Probing how much decoder capacity the task actually needs: the FPN decoder is de
 Intra-stage multi-scale mixing is desired: every stage is itself a small U-Net, so even full-resolution layers integrate wide context.
 
 ### Use PixelMLP when
-Establishing the no-spatial-context control. Classical tomographic inversion (beamforming, Capon, CS) is strictly per-pixel; PixelMLP is its learned analogue, and the margin any spatial backbone holds over it is the measured value of spatial context. Every benchmark sweep should carry it.
+Establishing the no-spatial-context control. Classical profile inversion is strictly per-pixel; PixelMLP is its learned analogue, and the margin any spatial backbone holds over it is the measured value of spatial context. Every benchmark sweep should carry it.
 
 ### Use Local CNN when
 Measuring how far local context alone goes. A fixed $(4B+1)\times(4B+1)$ receptive field with no downsampling completes the context ladder PixelMLP → Local CNN → encode-decode backbones, decomposing performance into per-pixel mapping, local smoothing, and long-range aggregation.
@@ -124,7 +124,6 @@ Testing the restoration hypothesis: the task is dense continuous regression, clo
 
 ## Beyond the Zoo
 
-[[GammaNet Unrolled]] is the physics-native counterpart to every model above: instead of learning a generic image-to-parameters mapping, it unrolls the exact tomographic forward operator into learned proximal-gradient iterations. It lives outside this registry — its own `unrolled` model family, training pipeline, and entry point — because its input contract (per-pixel coherence measurements plus kz, not the image channel stack) and output (reflectivity profiles, not Gaussian parameters) differ from the zoo's.
 
 ---
 
@@ -169,7 +168,7 @@ Each training run persists the full architecture configuration so a checkpoint c
 
 ## Related Notes
 
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index
 - [[Training Pipeline]] — Model instantiation and training loop
 - [[UNet]] — Baseline architecture
 - [[Attention UNet]] — Attention-gated variant

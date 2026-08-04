@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - Transformer1dAutoencoder
   - transformer1d_ae
@@ -15,7 +15,7 @@ summary: Self-attention profile autoencoder capturing long-range dependencies; h
 
 # Transformer1D Autoencoder
 
-`Transformer1dAutoencoder` (`models/autoencoder/transformer1d.py`) is a [[Model Zoo|profile autoencoder]] that models the elevation profile with self-attention, capturing long-range dependencies between distant range bins. As with the other profile autoencoders, its encoder defines the output latent space targeted by [[JEPA Profile-Embedding|JEPA]].
+`Transformer1dAutoencoder` (`models/autoencoder/transformer1d.py`) is a [[Model Zoo|profile autoencoder]] that models the z profile with self-attention, capturing long-range dependencies between distant range bins. As with the other profile autoencoders, its encoder defines the output latent space targeted by [[JEPA Profile-Embedding|JEPA]].
 
 ---
 
@@ -69,4 +69,4 @@ Each profile is a single token, so attention here mixes the embedded representat
 
 ## When to use
 
-When dependencies span the full elevation axis and the extra parameter budget over [[Conv1D Autoencoder]] and [[MLP Autoencoder]] is justified. The most expensive profile autoencoder; start with the MLP and escalate only if reconstruction quality demands it.
+When dependencies span the full z axis and the extra parameter budget over [[Conv1D Autoencoder]] and [[MLP Autoencoder]] is justified. The most expensive profile autoencoder; start with the MLP and escalate only if reconstruction quality demands it.

@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - UNetBackbone
 family: unet
@@ -226,7 +226,7 @@ No element of the paper's architectural description is silently dropped: every d
 
 ## Related Notes
 
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index
 - [[Model Zoo]] — Comparison with other architectures
 - [[Attention UNet]] — U-Net variant with attention gates on skip connections
 - [[UNet++]] — U-Net variant with nested dense skip connections

@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - PixelMLPNet
   - Pixel-wise MLP
@@ -21,7 +21,7 @@ summary: Pixel-wise MLP control baseline realised as a stack of 1×1 convolution
 
 ## Summary
 
-The trunk applies $L$ layers of ($1\times1$ conv → norm → act → optional element-wise `Dropout`), each mapping the per-pixel channel vector to the next hidden width in `features`; a final $1\times1$ `output_head` emits the flat `out_channels` $= 3K$ Gaussian-parameter stack. Classical tomographic inversion — beamforming, Capon, and compressive-sensing spectral estimation — operates strictly per pixel on the covariance signature, so this baseline is the learned analogue of that regime: whatever it achieves is attributable to per-pixel mapping capacity alone, and any margin the spatial backbones ([[UNet]] and the rest of the [[Model Zoo]]) hold over it is the measured value of spatial context for this task.
+The trunk applies $L$ layers of ($1\times1$ conv → norm → act → optional element-wise `Dropout`), each mapping the per-pixel channel vector to the next hidden width in `features`; a final $1\times1$ `output_head` emits the flat `out_channels` $= 3K$ Gaussian-parameter stack. Classical per-pixel profile inversion operates on one pixel's channel vector at a time with no spatial context, so this baseline is the learned analogue of that regime: whatever it achieves is attributable to per-pixel mapping capacity alone, and any margin the spatial backbones ([[UNet]] and the rest of the [[Model Zoo]]) hold over it is the measured value of spatial context for this task.
 
 ---
 
@@ -55,7 +55,7 @@ Every operation is pointwise across the spatial grid: the same MLP is applied in
 
 ## Design Rationale
 
-**The control the benchmark cannot do without.** The premise of using spatial backbones for tomographic parameter extraction is that neighbourhood context regularises the per-pixel inversion. Without a context-free baseline the benchmark cannot separate what the encode-decode architectures contribute spatially from what any sufficiently wide per-pixel mapping would achieve on the same input channels. PixelMLP closes that gap; [[Local CNN]] then adds the smallest increment of context (a fixed local window) between this model and the full backbones.
+**The control the benchmark cannot do without.** The premise of using spatial backbones for cube parameter extraction is that neighbourhood context regularises the per-pixel inversion. Without a context-free baseline the benchmark cannot separate what the encode-decode architectures contribute spatially from what any sufficiently wide per-pixel mapping would achieve on the same input channels. PixelMLP closes that gap; [[Local CNN]] then adds the smallest increment of context (a fixed local window) between this model and the full backbones.
 
 **Capacity matching caveat.** Because every parameter is applied at every pixel at full resolution, matching this model to the UNet parameter budget inflates per-pixel FLOPs and activation memory far beyond the encode-decode models (which spend most parameters at downsampled resolutions). The [[Capacity Matching]] stage will match it faithfully; the throughput and VRAM probes of the [[Benchmark Pipeline]] make the cost visible, and `skip_models` can exclude it from strictly budget-matched sweeps where the scaled width is impractical.
 
@@ -69,7 +69,7 @@ See [[Configuration Layer]] → `PixelMLPNetConfig` (`features` — hidden width
 
 ## Provenance
 
-Not derived from a reference paper: this is a purpose-built scientific control, mirroring the per-pixel structure of classical TomoSAR spectral estimators (beamforming / Capon / CS) in learned form.
+Not derived from a reference paper: this is a purpose-built scientific control, mirroring the per-pixel structure of classical context-free profile estimators in learned form.
 
 ---
 
@@ -78,4 +78,4 @@ Not derived from a reference paper: this is a purpose-built scientific control, 
 - [[Local CNN]] — The local-context-only companion control
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — PixelMLPNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

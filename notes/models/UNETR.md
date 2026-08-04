@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - UNETR
   - UNet Transformer
@@ -182,4 +182,4 @@ The default `embedding_dim = 544` is divisible by `transformer_heads = 8`. Every
 - [[SwinUNet]] — Window-attention alternative
 - [[TransUNet]] — CNN + ViT hybrid
 - [[Configuration Layer]] — UNETRConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

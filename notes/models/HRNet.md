@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - HRNet
   - HRNetLite
@@ -87,7 +87,7 @@ so high-resolution detail and low-resolution context are mixed at every stage ra
 
 ## Design Rationale
 
-**No resolution bottleneck.** Every other CNN in the zoo compresses to $P/8$ or $P/16$ and reconstructs; position-sensitive information (exact scatterer elevation per pixel) must survive that round trip through skip connections. HRNet never discards the full-resolution stream, which is precisely the property dense per-pixel regression rewards in human-pose and segmentation benchmarks.
+**No resolution bottleneck.** Every other CNN in the zoo compresses to $P/8$ or $P/16$ and reconstructs; position-sensitive information (exact component position along z per pixel) must survive that round trip through skip connections. HRNet never discards the full-resolution stream, which is precisely the property dense per-pixel regression rewards in human-pose and segmentation benchmarks.
 
 > The hypothesis: per-pixel $\mu$ estimation is position-critical, so a permanently high-resolution representation should reduce peak-location error relative to hourglass designs at equal capacity.
 
@@ -133,13 +133,13 @@ See [[Configuration Layer]] → `HRNetLiteConfig` (`base_channels`, `n_branches`
 
 **Adaptation 4c.** Upsampling uses `bilinear` with `align_corners=False` (`hrnet_lite.py:59`). HRNetV2's head and fusion specify bilinear upsampling (§3.2–3.3), so this matches the paper text; it differs only from PyTorch ports that use nearest. Accepted.
 
-**Stem (2).** The paper stem is two stride-2 $3\times3$ convolutions taking the input to $1/4$ resolution (Fig. 2 caption); the highest branch therefore runs at $1/4$. The Lite stem is a single `ResidualConvBlock` at stride 1 (`hrnet_lite.py:81-88`), so branch 0 runs at full input resolution. This is a deliberate dense-prediction adaptation for per-pixel scatterer regression — keeping the top branch at full resolution maximizes position fidelity, which is the stated rationale of this note (§ Design Rationale) — and shifts the resolution pyramid from $\{1/4,1/8,\dots\}$ to $\{1, 1/2, 1/4,\dots\}$ without altering topology. Accepted adaptation.
+**Stem (2).** The paper stem is two stride-2 $3\times3$ convolutions taking the input to $1/4$ resolution (Fig. 2 caption); the highest branch therefore runs at $1/4$. The Lite stem is a single `ResidualConvBlock` at stride 1 (`hrnet_lite.py:81-88`), so branch 0 runs at full input resolution. This is a deliberate dense-prediction adaptation for per-pixel component regression — keeping the top branch at full resolution maximizes position fidelity, which is the stated rationale of this note (§ Design Rationale) — and shifts the resolution pyramid from $\{1/4,1/8,\dots\}$ to $\{1, 1/2, 1/4,\dots\}$ without altering topology. Accepted adaptation.
 
 **Block type (6) and Lite scaling.** The paper uses bottleneck units in stage 1 and basic (two $3\times3$) units thereafter, with four residual units per branch per modularized block and four-resolution width $C,2C,4C,8C$ at $C=32/48$ (§3.4). The Lite model uses `ResidualConvBlock` (a pre-activation basic block) uniformly, `blocks_per_stage = 2`, and `n_branches = 3` ($C=48 \Rightarrow 48,96,192$) by default (`configuration/architectures/backbone.py`). Fewer branches/blocks and a single block type are explicitly within the accepted Lite-scaling envelope; the block is structurally a residual basic unit, so the per-branch computation is of the paper's family. The `ResidualConvBlock` `stride` parameter (`blocks.py:161`) defaults to 1 and `HRNetLite` never passes it (`hrnet_lite.py:81-115`), so all in-branch blocks run at stride 1. Accepted adaptation.
 
 **Fusion frequency (5).** The paper fuses repeatedly, roughly every four residual units and at stage boundaries (§3.2). The Lite model fuses once per stage, after that stage's `blocks_per_stage` (= 2) blocks (`hrnet_lite.py:136`), plus the final head fusion. With only two blocks per stage this is effectively "fuse every two units at each stage boundary" — the same repeated-fusion principle at lower depth, consistent with Lite scaling. The paper's ablation (Table 12) confirms both across-stage and within-stage fusions help; the Lite model retains across-stage fusion but, having a single block group per stage, has no separate within-stage fusion. Accepted adaptation (a within-stage fusion could be added if depth is increased, but it is not a deviation at this depth).
 
-**Head (7, 9).** The representation head is HRNetV2 (Fig. 4(b)): all branches are bilinearly upsampled to the highest resolution (`hrnet_lite.py:139-142`), **concatenated** (`torch.cat`, `hrnet_lite.py:144`) — not summed — then mixed by a convolution (`hrnet_lite.py:121-125`). This is exactly the V2 head; concat-vs-sum is the load-bearing distinction from the fusion units and is correct. The paper's V2 head uses a $1\times1$ mixing conv followed by a task-specific linear classifier; the Lite head uses a $3\times3$ mixing conv then a $1\times1$ output head (`hrnet_lite.py:127`, `:145`). The $3\times3$ vs $1\times1$ mix and the regression output head are accepted task adaptations (dense continuous-valued scatterer parameters rather than a softmax segmentation map).
+**Head (7, 9).** The representation head is HRNetV2 (Fig. 4(b)): all branches are bilinearly upsampled to the highest resolution (`hrnet_lite.py:139-142`), **concatenated** (`torch.cat`, `hrnet_lite.py:144`) — not summed — then mixed by a convolution (`hrnet_lite.py:121-125`). This is exactly the V2 head; concat-vs-sum is the load-bearing distinction from the fusion units and is correct. The paper's V2 head uses a $1\times1$ mixing conv followed by a task-specific linear classifier; the Lite head uses a $3\times3$ mixing conv then a $1\times1$ output head (`hrnet_lite.py:127`, `:145`). The $3\times3$ vs $1\times1$ mix and the regression output head are accepted task adaptations (dense continuous-valued component parameters rather than a softmax segmentation map).
 
 **Summary.** No structural deviations. The fusion down path matches the paper and the official `_make_fuse_layers`, and all departures are justified dense-prediction or Lite-scaling adaptations. The model is a correct scaled-down HRNetV2.
 
@@ -150,4 +150,4 @@ See [[Configuration Layer]] → `HRNetLiteConfig` (`base_channels`, `n_branches`
 - [[ResUNet]] — Source of the residual block
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — HRNetLiteConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - MultiResUNet
   - MultiRes block U-Net
@@ -74,7 +74,7 @@ Skip connections at level $i$ pass through $n_{\text{levels}} - i$ units of $\te
 
 ## Design Rationale
 
-**Multi-scale within the block.** Tomographic structures span scales — single bright scatterers, building facades, extended layover regions. The MultiRes block gives every level explicit access to three receptive-field sizes, where standard blocks rely on depth alone. The ResPath addresses a known U-Net weakness: raw shallow features are too low-level to concatenate directly into a nearly-final decoder representation.
+**Multi-scale within the block.** Tomographic structures span scales — single bright components, building facades, extended layover regions. The MultiRes block gives every level explicit access to three receptive-field sizes, where standard blocks rely on depth alone. The ResPath addresses a known U-Net weakness: raw shallow features are too low-level to concatenate directly into a nearly-final decoder representation.
 
 ---
 
@@ -117,7 +117,7 @@ Equation-by-equation, figure-by-figure verification of `models/backbone/multires
 
 **Encoder / decoder / topology (MATCH).** Five-level encoder–decoder (four downsampling stages plus bottleneck), $2\times2$ max pooling (`:90`), transposed-conv upsampling (default `convtranspose`, `:99-108`), skip concatenation in the decoder (`:125`). Filters double per level and $W$ doubles after each pool/deconv per §4 — realized through `config.features` and the bottleneck factor (`:80-94`). Res paths apply to all four encoder skips and the bridge (bottleneck `MultiResBlock` at `:94`) is correctly excluded from any ResPath, matching Fig. 5 / Table 1. MATCH.
 
-**Output head (DEVIATION, minor).** §2 and §4 state the final $1\times1$ conv is activated by **Sigmoid** (binary medical segmentation in $[0,1]$). The code's `output_head` is a bare $1\times1$ `Conv2d` with no activation (`:109,128`). This is an intentional and correct adaptation for the TomoSAR regression task (Gaussian-mixture parameter outputs, `out_channels=6`, `params_per_gaussian=3`), where a Sigmoid would be wrong — but relative to the paper as ground truth it is a deviation. Severity: minor (task-driven, not an architecture-fidelity error in the body of the network). No fix proposed; activation belongs in the task head / loss, not the backbone.
+**Output head (DEVIATION, minor).** §2 and §4 state the final $1\times1$ conv is activated by **Sigmoid** (binary medical segmentation in $[0,1]$). The code's `output_head` is a bare $1\times1$ `Conv2d` with no activation (`:109,128`). This is an intentional and correct adaptation for the ML Template regression task (Gaussian-mixture parameter outputs, `out_channels=6`, `params_per_gaussian=3`), where a Sigmoid would be wrong — but relative to the paper as ground truth it is a deviation. Severity: minor (task-driven, not an architecture-fidelity error in the body of the network). No fix proposed; activation belongs in the task head / loss, not the backbone.
 
 **Note on $\alpha$ and `features`.** The paper fixes $\alpha=1.67$ and derives $W$ from $U\in\{32,64,128,256,512\}$. The code exposes `features` directly (default `[64,128,256,512]`) as the realized block widths and a `bottleneck_factor`, i.e. it absorbs $\alpha$ into the chosen widths rather than computing $W=\alpha U$ at runtime. This is a configuration-surface choice (hyperparameter, out of scope) and does not alter the architecture.
 
@@ -132,4 +132,4 @@ Architecture is a faithful rendering of MultiResUNet. All structural components 
 - [[UNet]] — Shared topology
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — MultiResUNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

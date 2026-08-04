@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - MlpAutoencoder
   - mlp_ae
@@ -15,7 +15,7 @@ summary: Default, cheapest profile autoencoder; fully-convolutional symmetric ML
 
 # MLP Autoencoder
 
-`MlpAutoencoder` (`models/autoencoder/mlp.py`) is the default [[Model Zoo|profile autoencoder]]. It learns the latent space of the *output* domain: it encodes a fitted, normalized elevation profile into a low-dimensional embedding and reconstructs it. The encoder later supplies the target latent that the [[JEPA Profile-Embedding|JEPA]] predictor regresses towards.
+`MlpAutoencoder` (`models/autoencoder/mlp.py`) is the default [[Model Zoo|profile autoencoder]]. It learns the latent space of the *output* domain: it encodes a fitted, normalized z profile into a low-dimensional embedding and reconstructs it. The encoder later supplies the target latent that the [[JEPA Profile-Embedding|JEPA]] predictor regresses towards.
 
 ---
 
@@ -59,4 +59,4 @@ with $W_1 \in \mathbb{R}^{h \times L}$, $W_{2 \dots D} \in \mathbb{R}^{h \times 
 
 ## When to use
 
-The default starting point. With no spatial or sequential inductive bias it is the smallest and fastest profile autoencoder, and in practice a very strong reconstruction baseline. Prefer [[Conv1D Autoencoder]] when local smoothness of the profile should be exploited, or [[Transformer1D Autoencoder]] when long-range dependencies along the elevation axis matter.
+The default starting point. With no spatial or sequential inductive bias it is the smallest and fastest profile autoencoder, and in practice a very strong reconstruction baseline. Prefer [[Conv1D Autoencoder]] when local smoothness of the profile should be exploited, or [[Transformer1D Autoencoder]] when long-range dependencies along the z axis matter.

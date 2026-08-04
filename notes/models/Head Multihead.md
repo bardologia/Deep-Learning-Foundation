@@ -3,9 +3,9 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
-  - tomosar/head
+  - ml-template
+  - ml-template/model
+  - ml-template/head
 aliases:
   - MultiheadHead
   - TripleHeads
@@ -16,7 +16,7 @@ summary: Three parameter-type-specific PixelMLP heads (amplitude, mean, sigma) r
 
 # Head Multihead
 
-The `multihead` head (`OutputHeadsMixin._build_triple_heads` / `_triple_head_forward`, `models/blocks.py`) attaches three independent pixel-wise MLP output heads to the backbone embedding — one for amplitude, one for mean elevation, and one for sigma — rather than a single shared convolution. It is selected with `head = "multihead"` on any backbone architecture config.
+The `multihead` head (`OutputHeadsMixin._build_triple_heads` / `_triple_head_forward`, `models/blocks.py`) attaches three independent pixel-wise MLP output heads to the backbone embedding — one for amplitude, one for mean z, and one for sigma — rather than a single shared convolution. It is selected with `head = "multihead"` on any backbone architecture config.
 
 ---
 

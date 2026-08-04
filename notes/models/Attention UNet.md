@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - AttentionUNet
   - Attention Gate
@@ -98,7 +98,7 @@ $$
 
 > **Why attention gates on skip connections.** In standard U-Net, all skip features are concatenated equally regardless of relevance; attention gates let the decoder's coarse-scale context down-weight skip features in low-relevance regions.
 
-For TomoSAR, different spatial regions have different scattering complexity (e.g., layover vs. single-reflection areas). Attention gates allow the model to down-weight skip features in regions where the decoder's coarser-scale context (gate signal) predicts low relevance, focusing representation capacity on the most informative regions.
+For ML Template, different spatial regions have different scattering complexity (e.g., layover vs. single-reflection areas). Attention gates allow the model to down-weight skip features in regions where the decoder's coarser-scale context (gate signal) predicts low relevance, focusing representation capacity on the most informative regions.
 
 **Versus self-attention.** Attention gates cost $O(H \cdot W)$ compute per level (from the gate/skip projections, the $1\times1$ scoring convolution, and the $1\times1$ output transform), considerably cheaper than full self-attention which would require $O((H \cdot W)^2)$ memory.
 
@@ -124,7 +124,7 @@ All other parameters are identical to [[UNet]].
 
 **Reference.** Oktay, O., Schlemper, J., Le Folgoc, L., Lee, M., Heinrich, M., Misawa, K., Mori, K., McDonagh, S., Hammerla, N. Y., Kainz, B., Glocker, B., Rueckert, D. (2018). *Attention U-Net: Learning Where to Look for the Pancreas*. MIDL 2018. arXiv:1804.03999. [[AttentionUNet_Oktay2018_1804.03999.pdf|PDF]]
 
-This section records an equation-by-equation, figure-by-figure verification of `AttentionUNet` (`models/backbone/attention_unet.py`, shared blocks and builders in `models/blocks.py`) against the paper. The paper PDF is treated as ground truth. The reference architecture is 3D (volumetric CT); the implementation is the 2D adaptation for TomoSAR tomograms, so any pure $3D \rightarrow 2D$ change (e.g. trilinear $\rightarrow$ bilinear resampling, $\text{Conv3d} \rightarrow \text{Conv2d}$) is an accepted adaptation rather than a deviation.
+This section records an equation-by-equation, figure-by-figure verification of `AttentionUNet` (`models/backbone/attention_unet.py`, shared blocks and builders in `models/blocks.py`) against the paper. The paper PDF is treated as ground truth. The reference architecture is 3D (volumetric CT); the implementation is the 2D adaptation for ML Template cubes, so any pure $3D \rightarrow 2D$ change (e.g. trilinear $\rightarrow$ bilinear resampling, $\text{Conv3d} \rightarrow \text{Conv2d}$) is an accepted adaptation rather than a deviation.
 
 The gate follows the paper's coarse-grid (grid-attention) formulation: (i) the gating signal $g$ is the pre-upsample decoder feature, (ii) the skip is projected with a kernel-2 stride-2 convolution ($W_x$) so attention is computed on the coarse $H_g \times W_g$ grid as in Fig. 2 and Section 3.2 ("input feature-maps are downsampled to the resolution of gating signal"), (iii) $\alpha$ is bilinearly resampled back to the skip grid (the Resampler block of Fig. 2), and (iv) an output transform $W$ ($1\times1$ conv + norm) is applied after the multiplicative gating.
 
@@ -163,7 +163,7 @@ with $\sigma_1 = \text{ReLU}$ and $\sigma_2 = \text{sigmoid}$. The code realises
 
 ### Accepted adaptations
 
-- **$3D \rightarrow 2D$.** All convolutions and the resampler are 2D; the paper's trilinear coefficient resampling becomes bilinear (`models/backbone/attention_unet.py:65`). This is the intended adaptation for 2D tomogram inputs and changes no architectural semantics.
+- **$3D \rightarrow 2D$.** All convolutions and the resampler are 2D; the paper's trilinear coefficient resampling becomes bilinear (`models/backbone/attention_unet.py:65`). This is the intended adaptation for 2D cube inputs and changes no architectural semantics.
 - **$W_x$ as a strided convolution.** The paper performs the linear transforms with $1\times1$ convolutions and *separately* downsamples the input feature-maps to the gating resolution (Sec. 3.2, "without any spatial support ... input feature-maps are downsampled to the resolution of gating signal"). The code fuses these two steps into a single kernel-2 stride-2 convolution (`models/backbone/attention_unet.py:28-37`), which matches the official `Attention-Gated-Networks` reference implementation. The resulting attention grid is identical ($H_g \times W_g$); accepted.
 - **Intermediate-channel count $F_{int}$.** Driven by `attention_intermediate_ratio` ($D = \max(1, \lfloor S \cdot r \rfloor)$, default $r = 0.5$). The paper does not fix $F_{int}$ analytically, so this is a free design choice, not a deviation.
 
