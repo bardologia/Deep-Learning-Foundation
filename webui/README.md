@@ -35,11 +35,11 @@ talking to one group of JSON endpoints.
 | Tab | Route | Backed by | What it does |
 |---|---|---|---|
 | Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/notify/*` | Live host and GPU telemetry, per-user memory attribution, running-job tiles, the GPU guard history, the charity-mode schedule, the neighbour-impact alarm and the ntfy settings. |
-| Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 14 animated step-by-step derivations from parameter extraction through training, inference, benchmarking and tuning. |
-| Pipelines | `#/pipelines` | `/api/pipelines` | The 14 pipelines as staged flows; each maps to the entry point that runs it. |
-| Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 12 folders and 28 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
+| Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 15 animated step-by-step derivations from dataset synthesis and parameter extraction through training, inference, benchmarking and tuning. |
+| Pipelines | `#/pipelines` | `/api/pipelines` | The 15 pipelines as staged flows; each maps to the entry point that runs it. |
+| Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 13 folders and 29 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
 | Architectures | `#/architectures` | `/api/backbones`, `/api/profile-autoencoders`, `/api/image-autoencoders`, `/api/jepa-variants` | The 20 backbones across 5 families plus their 4 output heads and the autoencoder and JEPA variants, with selection guidance and per-model defaults. |
-| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 33 of them and folds the per-family variants into 4 groups (train, infer, analyze, compare). |
+| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 34 of them and folds the per-family variants into 4 groups (train, infer, analyze, compare). |
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. |
 | Ablation | `#/ablation` | `/api/backbones`, `/api/run` | Reached from a script card. Picks the entry, the features to ablate and their order, then launches a cumulative loop that trains the full model and degrades one feature at a time down to the baseline. |
 | Saved | `#/saved` | `/api/saved-runs` | Configurations stored from launch pages, one JSON file each under `logs/saved_runs/`. Each card can be launched, queued or deleted. |
@@ -126,7 +126,8 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 and 34 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
 tab (`home`, `equations`, `flow_view` with `flow_sketches`, `pipelines`, `repomap`,
 `models`, `scripts`, `launch` with `launch_widgets` and `launch_pickers`, `ablation`,
-`saved_runs`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube`,
+`saved_runs`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube_view`,
 `slice_collector`, `fit_lab`, `microscope`, `triage`, `autopsy`, `feed_tuner`); the rest
-are shared drawing and animation helpers (`radar`, `diagram`, `gauges`, `process_anim`,
-`server_anim`, `training_anim`).
+are shared helpers, `run_strip` for the run picker the cube, slices, microscope, triage
+and autopsy tabs share, and `radar`, `diagram`, `gauges`, `process_anim`, `server_anim`
+and `training_anim` for drawing and animation.
