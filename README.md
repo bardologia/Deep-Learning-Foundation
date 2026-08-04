@@ -137,25 +137,19 @@ training run is one command:
 python main/training/train_backbone.py \
   --seeds "[0]" \
   --training.epochs 5 \
-  --training.batch_size 64 \
   --curriculum.swap_epoch 2 \
   --gpu 0
 ```
 
-Three of those four overrides exist because the defaults are sized for a real dataset and
-a real budget, and the bundled scene is neither. They are worth understanding before you
-change anything else:
+The defaults are sized for the bundled scene: `training.batch_size` is 64, which fits
+the 209-patch training split of `datasets/synthetic_small`, and `gpus` is `[0]`. The two
+overrides exist because this is a shortened demonstration run:
 
-- `--seeds "[0]"` trains one model in this process. The default is `[0, 1, 2, 3, 4]`, and
-  with more than one seed the entry fans one job per seed across the GPU pool in
-  `--gpus`, which defaults to `[0, 1, 3]`. On a single-GPU machine that fails for every
-  seed that lands on a GPU you do not have.
-- `--training.batch_size 64` fits the scene. The default is 256, the training split of
-  `datasets/synthetic_small` is 209 patches, and the train loader drops the last partial
-  batch, so the default leaves zero batches and the run dies with `StopIteration`.
+- `--seeds "[0]"` trains one model. The default is `[0, 1]`, which fans one job per seed
+  across the GPU pool in `--gpus` and doubles the runtime of a demo.
 - `--curriculum.swap_epoch 2` keeps the loss curriculum inside the run. The warmup loss
-  swaps for the complete loss at that epoch, the default is 15, and the trainer refuses
-  to start if it is not below `training.epochs`.
+  swaps for the complete loss at that epoch, the default is 15 (sized for the default 60
+  epochs), and the trainer refuses to start unless it is below `training.epochs`.
 
 Overrides work the same way for anything else:
 
@@ -165,7 +159,6 @@ python main/training/train_backbone.py \
   --backbone_name unet \
   --backbone_head conv \
   --training.epochs 5 \
-  --training.batch_size 64 \
   --curriculum.swap_epoch 2 \
   --gpu 0
 ```

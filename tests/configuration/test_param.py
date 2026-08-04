@@ -221,4 +221,4 @@ def test_extract_params_entry_default_lists_independent():
     a = ExtractParamsEntryConfig()
     b = ExtractParamsEntryConfig()
     a.gpu_device_ids.append(99)
-    assert b.gpu_device_ids == [0, 1, 2, 3]
+    assert b.gpu_device_ids == [0]

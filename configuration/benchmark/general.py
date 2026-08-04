@@ -93,7 +93,7 @@ class BenchmarkConfig:
     pixel_subsample : float           = 1.0
     keep_empty_frac : float           = 0.05
 
-    gpus            : list[int]  = field(default_factory=lambda: [2, 3])
+    gpus            : list[int]  = field(default_factory=lambda: [0])
     gpus_file       : str        = ""
     heads           : list[str]  = field(default_factory=lambda: ["conv"])
     skip_models     : list[str]  = field(default_factory=list)

@@ -1016,7 +1016,7 @@
         "backbone_head": "Output head built on the selected backbone (conv, multihead, per_gaussian, or set_pred); stored in the model config and restored at inference",
         "gpu": "Primary GPU device index on which a single run executes",
         "seed": "Base random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
+        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "Base directory under which this run's output subdirectory and TensorBoard logs are written",
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation; the special key all_groups_lr fans out to every *_lr field of the chosen architecture (uniform learning rate across parameter groups), with explicit per-group keys applied afterwards",
         "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-track labels",
@@ -1325,7 +1325,7 @@
         "gpus_file": "Path of the live GPU pool control file for the seed fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it executes (added devices pick up queued seeds, removed devices retire once the seed in flight ends). Empty places gpu_pool.json inside the base run directory",
         "poll_interval_s": "Seconds between successive polls of the seed queue while waiting for GPUs or completed seed runs",
         "seed": "random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
+        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "base directory under which this run's output subdirectory and TensorBoard logs are written",
         "ae_model_name": "registry key selecting the image-autoencoder architecture: conv2d_ae, resnet2d_ae, convnext2d_ae, dilated2d_ae, or vit_ae",
         "model_overrides": "dict of architecture-config field overrides applied to the selected autoencoder before instantiation",
@@ -1395,7 +1395,7 @@
         "gpus_file": "Path of the live GPU pool control file for the seed fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it executes (added devices pick up queued seeds, removed devices retire once the seed in flight ends). Empty places gpu_pool.json inside the base run directory",
         "poll_interval_s": "Seconds between successive polls of the seed queue while waiting for GPUs or completed seed runs",
         "seed": "Random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
+        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "Base directory under which this JEPA run's output subdirectory and TensorBoard logs are written",
         "model_overrides": "Dict of backbone architecture-config field overrides applied to the selected backbone before instantiation",
         "profile_autoencoder_logdir": "Directory containing pretrained profile-autoencoder runs from which the JEPA target encoder checkpoint is loaded",
@@ -1456,7 +1456,7 @@
         "gpus_file": "Path of the live GPU pool control file for the seed fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it executes (added devices pick up queued seeds, removed devices retire once the seed in flight ends). Empty places gpu_pool.json inside the base run directory",
         "poll_interval_s": "Seconds between successive polls of the seed queue while waiting for GPUs or completed seed runs",
         "seed": "Random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
+        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "Base directory under which this run's timestamped output subdirectory and TensorBoard logs are written",
         "pixel_subsample": "Fraction of populated (Gaussian-active) profile pixels kept when building each split's dataset, 1.0 keeps all of them",
         "keep_empty_frac": "Fraction of empty (all-amplitude-below-threshold) profile pixels retained alongside the populated ones, applied once when each split's dataset is built",
@@ -1737,7 +1737,7 @@
         "resume": "Whether to reuse stage results that finished in a prior run of the same run_tag: max-batch units with a cached PASS result, and training/inference units whose directory holds a complete.json marker stamped only at successful completion; unfinished unit directories are deleted and restarted",
         "infer_after": "Whether to run the inference stage automatically after training; only applies when training_type is backbone or jepa, and off leaves the comparison report without inference galleries",
         "seed": "base random seed used for the max-batch probe and as the default per-unit seed when seeds is empty",
-        "seeds": "List of seeds expanded across every (model, loss-component) pair, one run per seed nested as seed<N> inside each unit directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
+        "seeds": "List of seeds expanded across every (model, loss-component) pair, one run per seed nested as seed<N> inside each unit directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "seconds between polls of queued job status while waiting for GPUs or completed jobs",
         "sweep_loss_components": "loss component names from LossComponentCatalog, one training run launched per component layered onto loss, must be non-empty and valid"
       }
@@ -1788,7 +1788,7 @@
         "run_tag": "Optional label identifying this cross-validation run's output subdirectory; None auto-generates one",
         "resume": "Whether to skip a fold's training job or inference split whose directory holds a complete.json marker stamped only at successful completion, letting an interrupted CV sweep continue without retraining finished folds while unfinished ones are deleted and restarted (distinct from training.resume, which resumes a single run's own training mid-epoch)",
         "seed": "Base random seed used for a fold when no per-seed override is given, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one run per fold and seed nested as seed<N> inside each fold directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
+        "seeds": "List of seeds for a multi-seed sweep, one run per fold and seed nested as seed<N> inside each fold directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "Seconds between successive polls of the fold job queue while waiting for GPUs or completed jobs"
       }
     },
@@ -2025,7 +2025,7 @@
         "model_name": "Dual-family model key looked up in the dual registry; the registry holds only dual_resunet, so the field stays at its default and is not shown on the launch page (the trunk backbones are the architecture selection)",
         "gpu": "Primary GPU device index on which a single run executes",
         "seed": "Base random seed for a single training run, controlling weight init, shuffling, and augmentation",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
+        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "Base directory under which this run's output subdirectory and TensorBoard logs are written",
         "model_overrides": "Dict of architecture-config field overrides applied to the dual model config before instantiation",
         "params_backbone": "Trunk architecture of the full-input parameter branch, any backbone-zoo model key, applied to the model config before instantiation",
@@ -2118,7 +2118,7 @@
         "run_tag": "Name of the sweep run directory under paths.log_base_dir; empty generates a timestamp",
         "resume": "When true, units whose run directory holds a complete.json marker stamped only at successful completion are reused instead of retrained; unfinished unit directories are deleted and restarted",
         "seed": "Fallback seed when seeds is empty, so the patch size and dataset remain the only varied factors",
-        "seeds": "List of seeds swept per (dataset, patch size) unit, one training run per seed nested as seed<N> inside the unit directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field, and the report ranks on the seed-mean test loss",
+        "seeds": "List of seeds swept per (dataset, patch size) unit, one training run per seed nested as seed<N> inside the unit directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field, and the report ranks on the seed-mean test loss",
         "poll_interval_s": "Seconds between GPU-queue polls while training runs are in flight"
       }
     },

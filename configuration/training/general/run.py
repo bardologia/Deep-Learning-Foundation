@@ -11,7 +11,7 @@ DEFAULT_PARAMS_RUN  = "params_k2"
 
 
 def standard_seeds() -> list[int]:
-    return [0, 1, 2, 3, 4]
+    return [0, 1]
 
 
 @dataclass
@@ -31,7 +31,7 @@ class TrainingQueueConfig:
     epochs               : int        = 60
     scheduler_epochs     : int | None = None
     validation_frequency : int        = 1
-    batch_size           : int        = 256
+    batch_size           : int        = 64
     num_workers          : int        = 4
     prefetch_factor      : int        = 2
     eta_min              : float      = 1e-6

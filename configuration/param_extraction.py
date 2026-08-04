@@ -166,7 +166,7 @@ class ExtractParamsEntryConfig:
     adam_steps : int   = 3000
     adam_lr    : float = 2e-1
 
-    gpu_device_ids       : list = field(default_factory=lambda: [0, 1, 2, 3])
+    gpu_device_ids       : list = field(default_factory=lambda: [0])
     col_batch_size       : int  = 3500
     gpu_pixel_batch_size : int  = 24576
     parameter_workers    : int  = field(default_factory=lambda: min(64, os.cpu_count() or 16))

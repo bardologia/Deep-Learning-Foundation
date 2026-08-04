@@ -41,7 +41,7 @@ class ImageAeEntryConfig:
     run_name        : str | None = None
     resume          : bool       = True
     gpu             : int        = 0
-    gpus            : list[int]  = field(default_factory=lambda: [0, 1, 3])
+    gpus            : list[int]  = field(default_factory=lambda: [0])
     gpus_file       : str        = ""
     poll_interval_s : float      = 5.0
     seed            : int        = 0
