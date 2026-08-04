@@ -355,8 +355,6 @@ class App {
         max       : document.getElementById("cube-cloud-max"),
         demWrap   : document.getElementById("cube-cloud-dem-wrap"),
         dem       : document.getElementById("cube-cloud-dem"),
-        scaleWrap : document.getElementById("cube-cloud-scale-wrap"),
-        scale     : document.getElementById("cube-cloud-scale"),
         at        : document.getElementById("cube-cloud-at"),
         canvas    : document.getElementById("cube-cloud-canvas"),
       },

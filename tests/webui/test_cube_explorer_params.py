@@ -14,8 +14,8 @@ from tests.webui.conftest import N_AZ, N_ELEV, N_RG, N_SLOTS, load_cube, loaded_
 PARAM_SOURCES = ("pred", "gt")
 
 
-def _loaded_explorer(base: Path, with_params: tuple = PARAM_SOURCES, with_spacing: bool = False, with_reduced: bool = False) -> tuple[CubeExplorer, str]:
-    return loaded_cube(base, with_params=with_params, with_spacing=with_spacing, with_reduced=with_reduced)
+def _loaded_explorer(base: Path, with_params: tuple = PARAM_SOURCES, with_reduced: bool = False) -> tuple[CubeExplorer, str]:
+    return loaded_cube(base, with_params=with_params, with_reduced=with_reduced)
 
 
 def test_meta_reports_param_block(tmp_path):
@@ -37,18 +37,6 @@ def test_meta_without_params_is_none(tmp_path):
     explorer, _ = _loaded_explorer(tmp_path, with_params=())
 
     assert explorer.load_status()["cube"]["params"] is None
-
-
-def test_meta_spacing_absent_without_track_parameters(tmp_path):
-    explorer, _ = _loaded_explorer(tmp_path)
-
-    assert explorer.load_status()["cube"]["spacing"] is None
-
-
-def test_meta_spacing_from_reference_track(tmp_path):
-    explorer, _ = _loaded_explorer(tmp_path, with_spacing=True)
-
-    assert explorer.load_status()["cube"]["spacing"] == {"az": 0.4, "rg": 0.6}
 
 
 def test_meta_intensity_ranges_per_source(tmp_path):

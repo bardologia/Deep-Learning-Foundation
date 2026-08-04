@@ -73,7 +73,7 @@ def wait_until_finished(manager: ProcessManager, job_id: str, timeout: float = 1
     return False
 
 
-def make_preproc(base: Path, rng: np.random.Generator | None = None, with_spacing: bool = False) -> Path:
+def make_preproc(base: Path, rng: np.random.Generator | None = None) -> Path:
     rng     = np.random.default_rng(0) if rng is None else rng
     preproc = base / "preproc"
     (preproc / "data").mkdir(parents=True)
@@ -83,17 +83,6 @@ def make_preproc(base: Path, rng: np.random.Generator | None = None, with_spacin
 
     layout = {"global_crop": [0, N_AZ, 0, N_RG], "artifacts": {"primary": "primary.npy"}}
     (preproc / "data" / "dataset.json").write_text(json.dumps(layout))
-
-    if with_spacing:
-        payload = {
-            "labels"      : ["T01", "T02"],
-            "reference"   : "T01",
-            "shared"      : {"ps_rg": 0.6},
-            "per_track"   : {"T01": {"ps_az": 0.4}, "T02": {"ps_az": 0.41}},
-            "track_files" : [],
-        }
-        (preproc / "meta").mkdir()
-        (preproc / "meta" / "track_parameters.json").write_text(json.dumps(payload))
 
     return preproc
 
@@ -112,9 +101,9 @@ def make_stamp(run: Path, preproc: Path, rng: np.random.Generator, sources: tupl
     return stamp
 
 
-def make_cube_run(base: Path, sources: tuple = ("pred", "gt"), with_spacing: bool = False, with_reduced: bool = False, with_params: tuple = (), with_metrics: bool = False) -> Path:
+def make_cube_run(base: Path, sources: tuple = ("pred", "gt"), with_reduced: bool = False, with_params: tuple = (), with_metrics: bool = False) -> Path:
     rng     = np.random.default_rng(0)
-    preproc = make_preproc(base, rng, with_spacing)
+    preproc = make_preproc(base, rng)
     stamp   = make_stamp(base / "group" / "run_a", preproc, rng, sources)
 
     if with_reduced:
@@ -132,7 +121,7 @@ def make_cube_run(base: Path, sources: tuple = ("pred", "gt"), with_spacing: boo
         r2       = rng.random((N_AZ, N_RG)).astype(np.float32)
         r2[0, 0] = np.nan
         np.save(stamp / "cubes" / "pixel_r2.npy", r2)
-        np.save(stamp / "cubes" / "physics_valid_mask.npy", rng.random((N_AZ, N_RG)) > 0.5)
+        np.save(stamp / "cubes" / "label_r2.npy", rng.random((N_AZ, N_RG)).astype(np.float32))
         np.save(stamp / "cubes" / "misshaped.npy", rng.random((3, 3)).astype(np.float32))
 
     return stamp

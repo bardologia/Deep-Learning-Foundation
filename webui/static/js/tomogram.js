@@ -911,8 +911,6 @@ class TomogramCloud {
     this.maxEl = refs.max;
     this.demWrap = refs.demWrap;
     this.demEl = refs.dem;
-    this.scaleWrap = refs.scaleWrap;
-    this.scaleEl = refs.scale;
     this.atEl = refs.at;
     this.canvas = refs.canvas;
 
@@ -934,12 +932,9 @@ class TomogramCloud {
     this.colorEl.querySelectorAll(".cube-space").forEach((btn) => {
       btn.addEventListener("click", () => this._setColor(btn.dataset.color));
     });
-    this.scaleEl.checked = localStorage.getItem("cube-cloud-scale") === "1";
-
     this.thrEl.addEventListener("input", () => this._onThreshold());
     this.maxEl.addEventListener("change", () => this._fetch());
     this.demEl.addEventListener("change", () => this._onDem());
-    this.scaleEl.addEventListener("change", () => this._onScale());
 
     this.canvas.addEventListener("mousedown", (ev) => { this.dragging = { x: ev.clientX, y: ev.clientY }; });
     window.addEventListener("mousemove", (ev) => this._onDrag(ev));
@@ -956,7 +951,6 @@ class TomogramCloud {
     this.demGrid = null;
     this.demWrap.hidden = !meta.dem;
     this.demEl.checked = false;
-    this.scaleWrap.hidden = !meta.spacing;
     this._resetView(false);
     this._syncThresholdLabel();
   }
@@ -1009,11 +1003,6 @@ class TomogramCloud {
     this._draw();
   }
 
-  _onScale() {
-    localStorage.setItem("cube-cloud-scale", this.scaleEl.checked ? "1" : "0");
-    this._draw();
-  }
-
   _ampMin() {
     const frac = Number(this.thrEl.value) / 100;
 
@@ -1045,9 +1034,7 @@ class TomogramCloud {
     });
 
     const binAxis = this.source === "full";
-    this.scaleEl.disabled = binAxis;
     this.demEl.disabled = binAxis;
-    this.scaleWrap.title = binAxis ? "The raw Capon cube has a bin elevation axis; 1:1 applies to metric sources only" : "Metres on all three axes — no height exaggeration";
     this.demWrap.title = binAxis ? "The DEM drape needs a metric elevation axis" : "Drape the cloud on the terrain: point height = DEM + elevation";
   }
 
@@ -1150,10 +1137,9 @@ class TomogramCloud {
     const zMid = (muLo + muHi) / 2;
     const zSpan = (muHi - muLo) || 1;
 
-    const spacing = this.scaleEl.checked && !this.scaleEl.disabled && meta.spacing ? meta.spacing : null;
-    const azStep = spacing ? spacing.az : 1;
-    const rgStep = spacing ? spacing.rg : 1;
-    const zScale = spacing ? 1 : (Math.max(meta.n_az, meta.n_rg) * 0.35) / (zSpan / 2);
+    const azStep = 1;
+    const rgStep = 1;
+    const zScale = (Math.max(meta.n_az, meta.n_rg) * 0.35) / (zSpan / 2);
     const extent = Math.max(meta.n_az * azStep, meta.n_rg * rgStep);
 
     const sinY = Math.sin(this.yaw), cosY = Math.cos(this.yaw);
@@ -1217,10 +1203,7 @@ class TomogramCloud {
 
     const shown = rows.length / 4;
     const unit = logAmp ? "scatterers" : "voxels";
-    const scaleNote = spacing
-      ? ` · 1:1 in metres · az ${Math.round(meta.n_az * azStep)} m × rg ${Math.round(meta.n_rg * rgStep)} m`
-      : "";
-    this.atEl.textContent = `${shown.toLocaleString()} of ${Math.round(this.total).toLocaleString()} ${unit}${scaleNote} · drag to orbit · wheel to zoom · double-click to reset`;
+    this.atEl.textContent = `${shown.toLocaleString()} of ${Math.round(this.total).toLocaleString()} ${unit} · drag to orbit · wheel to zoom · double-click to reset`;
   }
 }
 

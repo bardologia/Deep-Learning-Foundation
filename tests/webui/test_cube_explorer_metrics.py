@@ -19,7 +19,7 @@ def test_meta_lists_metric_layers(tmp_path):
     layers = explorer.load_status()["cube"]["metric_maps"]
     keys   = {layer["key"] for layer in layers}
 
-    assert keys == {"pixel_r2", "physics_valid_mask"}
+    assert keys == {"pixel_r2", "label_r2"}
     assert all(np.isfinite(layer["vmin"]) and np.isfinite(layer["vmax"]) and layer["vmax"] > layer["vmin"] for layer in layers)
     assert next(layer for layer in layers if layer["key"] == "pixel_r2")["label"] == "R2"
 

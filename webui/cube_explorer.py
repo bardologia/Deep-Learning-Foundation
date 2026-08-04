@@ -15,11 +15,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
-from catalog_roots              import CatalogRoots, RunScanner
-from tools.loss.param_loss      import ParamMatcher
-from tools.reporting.plotting   import PlotBase
-from tools.sar.track_parameters import TrackParameters
-from web_logger                 import WebLogger
+from catalog_roots            import CatalogRoots, RunScanner
+from tools.loss.param_loss    import ParamMatcher
+from tools.reporting.plotting import PlotBase
+from web_logger               import WebLogger
 
 
 class SliceFigureArchiver(PlotBase):
@@ -103,9 +102,6 @@ class CubeExplorer:
         "pixel_r2"                 : "R2",
         "pixel_cos"                : "cosine",
         "pixel_peak"               : "peak shift",
-        "physics_coherence_error"  : "coherence err",
-        "physics_covariance_error" : "covariance err",
-        "physics_valid_mask"       : "valid mask",
         "seed_std_profile"         : "seed std profile",
         "seed_std_amp"             : "seed std amp",
         "seed_std_mu"              : "seed std mu",
@@ -628,7 +624,7 @@ class CubeExplorer:
         return data, primary
 
     SELECTIVE_KEYS   = ("pixel_mse", "pixel_mae", "pixel_r2", "pixel_cos", "pixel_peak")
-    HIGH_IS_CONFIDENT = ("pixel_r2", "pixel_cos", "label_r2", "physics_valid_mask")
+    HIGH_IS_CONFIDENT = ("pixel_r2", "pixel_cos", "label_r2")
 
     def selective_metrics(self, cube_id: str, key: str, coverage: float) -> dict:
         resolved = self._metric_state(cube_id, key)
@@ -891,23 +887,8 @@ class CubeExplorer:
             "metric_maps" : self._metric_maps_meta(metric_maps),
             "attached"    : None,
             "dem"         : dem is not None,
-            "spacing"     : self._load_spacing(stamp_dir),
         }
         return entries, meta, primary, params, metric_maps, dem
-
-    def _load_spacing(self, stamp_dir: Path) -> dict | None:
-        resolved = self._preproc_layout(stamp_dir)
-        if resolved is None:
-            return None
-
-        preproc_dir, _ = resolved
-
-        params_path = preproc_dir / "meta" / TrackParameters.FILENAME
-        if not params_path.is_file():
-            return None
-
-        reference = TrackParameters.load(params_path).parameters[0]
-        return {"az": float(reference["ps_az"]), "rg": float(reference["ps_rg"])}
 
     def _load_dem(self, stamp_dir: Path, n_az: int, n_rg: int) -> np.ndarray | None:
         resolved = self._preproc_layout(stamp_dir)
