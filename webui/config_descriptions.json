@@ -1,6 +1,5 @@
 {
   "sections": {
-    "sar": "The first stage of the pipeline, which turns raw multi-baseline F-SAR stacks into focused tomograms. It drives PyRAT fusartomo beamforming and interferogram generation for one preprocessing run, resolving acquisition geometry and interferometric baselines into the vertical-wavenumber (kz) axis used downstream. The configs here control focusing and filter settings, CPU and thread budgets, run filesystem layout, the Gaussian-mixture height axis, and the batch entry points that sweep filter window sizes and render stack-overview diagnostics.",
     "param_extraction": "The stage that fits parametric height profiles to focused tomograms, producing the per-pixel Gaussian-mixture ground truth the backbone learns to predict. It runs constrained optimization over each preprocessed tomogram and recomputes fit metrics and diagnostic plots for existing trials. The configs here control optimizer iteration caps and fit hyperparameters, the single-run extraction driver, the batch entry point that sweeps datasets and hyperparameter grids, and the inference config that regenerates metrics and summaries.",
     "normalization": "The stage that standardizes network inputs and outputs, mapping heavy-tailed SAR channels and Gaussian parameters onto stable numeric ranges for training and inference. It fits per-channel location/scale transforms from pixel statistics, persists them, and bounds predicted outputs to a physically valid range. The configs here control per-channel normalization recipes, per-slot strategy selection for input and output channels, runtime output clamping, and the persisted fitted statistics applied at train and inference time.",
     "dataset": "The stage that assembles trainable examples from a preprocessed SAR run, feeding both the backbone and the profile autoencoder. It selects input and target channels, tiles cropped scenes into overlapping patches, applies augmentation, and builds the train/val/test dataloaders. The configs here control which stack passes and DEM form the input, which per-Gaussian parameters are predicted, patch tiling and augmentation, and the parallel assembly of image-patch and per-pixel profile datasets.",
@@ -15,119 +14,6 @@
     "patch_sweep": "The experiment that measures the best patch lengths per dataset. Each selected dataset is preprocessed with its own boxcar covariance window, and the same backbone trains across every admissible combination of azimuth and range patch lengths on the traditional reduced stack, seeds nested per unit. The configs here select the datasets to sweep, derive the per-axis patch grids at the architecture's minimum admissible step, fan the training runs out across GPUs, and produce a report ranking the best patch lengths per dataset on the seed-mean test loss."
   },
   "configs": {
-    "sar/gaussian_config::GaussianConfig": {
-      "summary": "Gaussian-mixture head geometry: component count and height-axis bounds for the tomographic profile",
-      "fields": {
-        "n_default_gaussians": "Number of Gaussian components (K) predicted per pixel, derived from param_extraction_meta.json k_max and propagated to dataset_config.n_gaussians and out_channels",
-        "x_min": "Lower bound of the height/elevation axis in meters, taken from the dataset's tomogram_config.height_range and used to build the GaussianAxis for curve synthesis",
-        "x_max": "Upper bound of the height/elevation axis in meters, taken from the dataset's tomogram_config.height_range and used to build the GaussianAxis for curve synthesis",
-        "params_per_gaussian": "Number of predicted parameters per Gaussian component (amplitude, mean, sigma = 3); out_channels must be an exact multiple of it"
-      }
-    },
-    "sar/geometry_config::GeometryConfig": {
-      "summary": "SAR acquisition geometry and interferometric baselines mapping stack tracks to the vertical wavenumber (kz) axis for physics losses",
-      "fields": {
-        "wavelength": "radar carrier wavelength in meters, default 0.23 corresponds to L-band, denominator of the 4*pi/(wavelength*slant_range) kz scale factor together with slant_range (and sin(look_angle) under the height convention)",
-        "slant_range": "sensor-to-target slant range in meters, denominator of the kz scale factor together with wavelength (and additionally sin(look_angle) under the height axis convention)",
-        "look_angle_deg": "radar look angle in degrees, used to project the perpendicular baseline component and, under the height axis convention, to divide the kz scale by sin(look_angle)",
-        "baselines": "tuple of per-track baseline offsets in meters relative to the primary/reference track (labels[0]), converted to kz via wavelength/slant_range/look_angle when kz_values is empty",
-        "kz_values": "tuple of explicit per-track vertical wavenumbers in rad/m; non-empty overrides baselines and skips the geometric kz derivation entirely",
-        "baselines_source": "how baselines are resolved: dataset (load meta/baselines.json from the preprocessing run, error if missing) or manual (use the configured baselines tuple)",
-        "baseline_component": "baseline projection used when resolving from the dataset: perpendicular, vertical, horizontal, or magnitude; perpendicular requires look_angle_deg",
-        "baselines_origin": "provenance tag of the active baselines, set to 'config' for manual values or to the loaded meta/baselines.json path after dataset resolution",
-        "height_axis_convention": "vertical reconstruction axis convention: height or slant; height divides the kz scale by sin(look_angle) while slant does not, persisted into the training run's docs/trainer_config.json and re-read by GeometryField.kz for physics losses and inference data-consistency checks"
-      }
-    },
-    "sar/processing_config::TomogramConfig": {
-      "summary": "PyRAT fusartomo beamforming, filter, and geometry settings for one tomogram-focusing job",
-      "fields": {
-        "fusar_project_path": "Path to the F-SAR project CSV listing the stack's acquisitions, passed to pyrat as FuSARproject",
-        "base_directory": "Root filesystem path where raw SAR track data resides, passed to pyrat as basedir",
-        "polarisation": "Radar polarisation channel processed, e.g. hv, passed to pyrat as polarisation",
-        "track_selection": "Glob pattern selecting which acquisition tracks are included, passed to pyrat as select",
-        "height_range": "Vertical focusing extent in meters as (min, max), passed to pyrat as the range argument",
-        "filter_method": "Covariance-estimation spatial filter name passed to pyrat as filter, e.g. Boxcar",
-        "filter_arguments": "Filter parameter dict passed to pyrat as filargs, e.g. win: [azimuth, range] window size",
-        "beamforming_method": "Tomographic spectral estimator name passed to pyrat as method, e.g. Capon",
-        "beamforming_arguments": "Extra arguments list forwarded to the beamforming method via pyrat's args parameter",
-        "max_crop_azimuth_width": "Maximum azimuth pixels per PyRAT subsection; wider crops split into multiple parallel-worker jobs",
-        "apply_resampling": "Whether pyrat resamples the stack geometry before focusing, passed as the resampling argument",
-        "apply_presumming": "Whether pyrat presums (averages) acquisitions before focusing to reduce data volume, passed as presum",
-        "max_amplitude_clip": "Linear-amplitude ceiling clipping secondary SLC amplitude before forming interferograms, also shown in the diagnostic-plot title/label text"
-      }
-    },
-    "sar/processing_config::ParallelConfig": {
-      "summary": "CPU core and thread budget allocated across parallel PyRAT tomogram and interferogram jobs",
-      "fields": {
-        "effort": "Parallelism intensity level: low, medium, or high, mapped to a core-budget fraction via EFFORT_FRACTIONS",
-        "tomogram_workers": "Fixed number of parallel PyRAT tomogram worker processes; None lets resolve_plan derive it from the core budget",
-        "pyrat_threads": "Fixed thread count per PyRAT job for both tomogram dispatch and the interferogram build; None derives it from the core budget",
-        "EFFORT_FRACTIONS": "Class-level map from effort level to core-budget fraction: low 0.25, medium 0.5, high 0.8",
-        "THREAD_CAP": "Class-level cap of 16 threads per worker applied only when resolve_plan auto-derives the thread count; bypassed when pyrat_threads is set explicitly and not applied to the interferogram phase"
-      }
-    },
-    "sar/processing_config::PathConfig": {
-      "summary": "Filesystem layout for a preprocessing run's data, metadata, scratch, and PyRAT directories",
-      "fields": {
-        "main_directory": "Root dataset directory under which the per-run subfolder is created",
-        "pyrat_directory": "PyRAT installation/working root passed to PyRatEnvironment for module discovery and job execution",
-        "data_subdirectory": "Subfolder name under the run directory holding processed tomogram and interferogram data arrays",
-        "metadata_subdirectory": "Subfolder name under the run directory holding meta json files (config_state, specs, geometry)",
-        "temporary_subdirectory": "Subfolder name under the run directory holding transient per-job PyRAT scratch output",
-        "run_subdirectory": "Per-run subfolder name; None uses main_directory directly and ProcessingConfig auto-fills it from the tomogram tag and timestamp"
-      }
-    },
-    "sar/processing_config::ProcessingConfig": {
-      "summary": "Top-level orchestration config for one PyRAT tomogram and interferogram generation run",
-      "fields": {
-        "crop": "Required CropRegion (azimuth_start/end, range_start/end) pixel window to process, validated start < end",
-        "tomogram_config": "Nested TomogramConfig with the pyrat beamforming, filter, geometry, and amplitude-clip settings",
-        "parallel": "Nested ParallelConfig with the CPU worker/thread budget for tomogram and interferogram jobs",
-        "paths": "Nested PathConfig with the run's data/metadata/temporary/pyrat directory layout",
-        "dataset_type": "Sensor/dataset family tag; only FSAR is implemented, other values raise NotImplementedError at interferogram build",
-        "stack_identifier": "Identifier distinguishing the acquisition stack, passed to pyrat as id and embedded in the tomogram/parameter tags",
-        "tomogram_output_tag": "Filename tag embedded in tomogram_tag, naming generated tomogram output artifacts",
-        "parameter_output_tag": "Filename tag embedded in parameter_tag, naming generated parameter output artifacts",
-        "tomogram_env_name": "Conda environment name in which the tomogram and interferogram PyRAT launchers execute"
-      }
-    },
-    "sar/processing_config::PreProcessEntryConfig": {
-      "summary": "Entry-point config sweeping a batch preprocessing run across one or more filter window sizes",
-      "fields": {
-        "azimuth_start": "Starting azimuth pixel index of the crop region shared by every queued window session",
-        "azimuth_end": "Ending azimuth pixel index of the crop region shared by every queued window session",
-        "range_start": "Starting range pixel index of the crop region shared by every queued window session",
-        "range_end": "Ending range pixel index of the crop region shared by every queued window session",
-        "fusar_project_path": "Path to F-SAR project CSV listing the stack's acquisitions, forwarded into each session's TomogramConfig",
-        "base_directory": "Root filesystem path where raw SAR track data resides, forwarded into each session's TomogramConfig",
-        "track_selection": "Glob pattern selecting which acquisition tracks are included, forwarded into each session's TomogramConfig",
-        "polarisation": "Radar polarisation channel processed, e.g. hv, forwarded into each session's TomogramConfig",
-        "beamforming_method": "Tomographic spectral estimator name, e.g. Capon, forwarded into each session's TomogramConfig",
-        "filter_method": "Covariance-estimation spatial filter name, e.g. Boxcar, forwarded into each session's TomogramConfig",
-        "height_range": "Vertical focusing extent in meters as (min, max), forwarded into each session's TomogramConfig",
-        "win_list": "List of [azimuth, range] filter window sizes to sweep, one sequential session launched per entry",
-        "max_crop_azimuth_width": "Maximum azimuth pixels per PyRAT subsection, forwarded into each session's TomogramConfig; wider crops split into multiple parallel-worker jobs",
-        "apply_resampling": "Whether pyrat resamples the stack geometry before focusing, forwarded into each session's TomogramConfig",
-        "apply_presumming": "Whether pyrat presums (averages) acquisitions before focusing, forwarded into each session's TomogramConfig",
-        "max_amplitude_clip": "Upper amplitude clip applied to the focused tomogram, forwarded into each session's TomogramConfig",
-        "effort": "Parallelism intensity level: low, medium, or high, forwarded to each session's ParallelConfig",
-        "tomogram_workers": "Fixed number of parallel PyRAT tomogram worker processes; None lets ParallelConfig.resolve_plan derive it from the core budget",
-        "pyrat_threads": "Fixed thread count per PyRAT job; None derives it from the core budget",
-        "dataset_name": "Explicit output dataset/run-subdirectory name; None auto-derives one from the project source filename, crop, window size, polarisation, stack identifier, and run timestamp",
-        "dataset_type": "Sensor/dataset family tag forwarded to each session; only FSAR is implemented downstream",
-        "stack_identifier": "Identifier distinguishing the acquisition stack, forwarded into each session's ProcessingConfig",
-        "tomogram_output_tag": "Filename tag embedded in each session's generated tomogram output artifacts",
-        "parameter_output_tag": "Filename tag embedded in each session's generated parameter output artifacts",
-        "tomogram_env_name": "Conda environment name in which each session's tomogram and interferogram PyRAT launchers execute"
-      }
-    },
-    "sar/processing_config::PreprocessInferenceConfig": {
-      "summary": "Batch renders diagnostic stack-overview plots for one or more completed preprocessing runs",
-      "fields": {
-        "runs_dir": "Directory scanned for completed preprocessing run folders containing a data/dataset.json layout file",
-        "run_tags": "List of run-folder names to render plots for; empty auto-discovers every run under runs_dir with a dataset.json"
-      }
-    },
     "param_extraction::FitConfig": {
       "summary": "Gaussian-fit hyperparameters and per-parameter free/frozen toggles for one profile-fitting run",
       "fields": {
@@ -153,7 +39,6 @@
       "summary": "Drives one Gaussian-mixture parameter-extraction run over a single preprocessed tomogram",
       "fields": {
         "processed_data_path": "root of the preprocessed run holding data/ and meta/ subfolders, source of the tomogram to fit",
-        "pyrat_directory": "path to the PyRAT installation carried on the config but not read by this extraction pipeline",
         "output_prefix": "leading token of the generated output subdirectory name, joined with the hyperparameter suffix",
         "output_suffix": "optional fixed naming tag overriding the auto-derived k/lambda/sigma/free-params suffix",
         "height_range": "reconstruction height-axis extent in meters as (min, max); None reads it from meta/config_state.json",
@@ -172,7 +57,6 @@
       "fields": {
         "dataset_base_path": "root directory scanned for dataset subdirectories, each requiring a data/ folder, to process",
         "dataset_filter": "list of dataset directory names selecting which datasets under the base path run; empty processes all",
-        "pyrat_directory": "path to the PyRAT installation forwarded into each generated ExtractionConfig but not read by this pipeline",
         "output_prefix": "leading token of each generated output subdirectory name, shared across the sweep",
         "output_suffix": "optional fixed naming tag overriding the auto-derived suffix; rejected when the sweep expands to more than one permutation",
         "height_range": "reconstruction height-axis extent in meters as (min, max) applied to every plan; None reads it per-dataset from metadata",
@@ -198,22 +82,6 @@
         "params_dir": "root directory recursively scanned for param_extraction_meta.json markers identifying completed trials",
         "run_tags": "trial subdirectory paths (relative to params_dir) selecting which trials to process; empty auto-discovers all",
         "make_plots": "whether FittingResultPlotter renders diagnostic plots in addition to the JSON metrics summary"
-      }
-    },
-    "param_extraction::InjectExternalParamsEntryConfig": {
-      "summary": "Batch entry point that imports externally fitted Gaussian parameter cubes into preprocessed datasets as ready-to-train parameter runs",
-      "fields": {
-        "dataset_base_path": "root directory holding the preprocessed dataset runs that receive the external parameters",
-        "dataset_filter": "explicit dataset directory names to inject into; empty injects into every dataset under the base path",
-        "source_files": "absolute paths of the external RAT parameter cubes, each holding three channels per Gaussian over one azimuth/range window",
-        "source_windows": "explicit '<az_start>a<az_end>a<rg_start>a<rg_end>' extent per source file; empty reads each window from its filename",
-        "source_order": "order of the three channels inside each Gaussian triple of the source files, as a permutation of amp, mu and sigma joined with '_'",
-        "output_prefix": "leading token of the generated parameter-run subdirectory name, joined with the suffix",
-        "output_suffix": "trailing token of the generated parameter-run subdirectory name, distinguishing this import from the fitted runs beside it",
-        "origin_note": "free-text provenance recorded in the run metadata, naming who produced the external fit and how",
-        "k_slots": "number of Gaussian slots written per pixel; 0 keeps the slot count the sources carry, a larger value pads the remainder with empty slots",
-        "activity_threshold": "amplitude above which a Gaussian counts as active, driving the slot ordering and the height-convention check",
-        "overwrite": "toggle allowing an existing parameter run of the same name to be deleted and rewritten"
       }
     },
     "normalization/general::ChannelStrategy": {
@@ -266,6 +134,15 @@
         "names": "Optional per-channel slot labels aligned with loc/scale entries",
         "strategies": "Optional per-channel ChannelStrategy recording the fitting method (norm_method, apply_log1p) used",
         "clampable": "Per-channel flag marking physical values bounded by the output clamp on denormalization; true for out/amp and out/sigma, false for out/mu and all input channels"
+      }
+    },
+    "dataset/gaussian::GaussianConfig": {
+      "summary": "Gaussian-mixture head geometry: component count and height-axis bounds for the tomographic profile",
+      "fields": {
+        "n_default_gaussians": "Number of Gaussian components (K) predicted per pixel, derived from param_extraction_meta.json k_max and propagated to dataset_config.n_gaussians and out_channels",
+        "x_min": "Lower bound of the height/elevation axis in meters, taken from the dataset's tomogram_config.height_range and used to build the GaussianAxis for curve synthesis",
+        "x_max": "Upper bound of the height/elevation axis in meters, taken from the dataset's tomogram_config.height_range and used to build the GaussianAxis for curve synthesis",
+        "params_per_gaussian": "Number of predicted parameters per Gaussian component (amplitude, mean, sigma = 3); out_channels must be an exact multiple of it"
       }
     },
     "dataset/general/dataset::InputConfig": {
@@ -876,22 +753,6 @@
         "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence"
       }
     },
-    "architectures/unrolled::GammaNetConfig": {
-      "summary": "Unrolled physics inversion network (gamma-Net-style LISTA): L unrolled proximal-gradient iterations over the discretized elevation axis, with learned per-iteration step sizes, nonnegative soft-thresholds, and a small per-pixel 1D convolutional prox refining the profile; the steering operator is built from the per-pixel kz field, so the forward model is encoded exactly rather than learned",
-      "fields": {
-        "n_iterations": "Number of unrolled proximal-gradient iterations (the network depth L)",
-        "prox_hidden": "Hidden channel width of the per-iteration 1D convolutional prox operating along the elevation axis",
-        "prox_kernel_size": "Kernel size of the prox convolutions along the elevation axis",
-        "step_init": "Initial gradient step size per iteration in Lipschitz-normalized units (the raw gradient is divided by n_tracks x n_points x dx^2); stored through a softplus reparameterization so learned steps stay positive",
-        "threshold_init": "Initial nonnegative soft-threshold per iteration; stored through a softplus reparameterization so learned thresholds stay positive",
-        "activation": "Activation function inside the prox blocks (relu, leaky_relu, gelu, elu, silu)",
-        "steps_lr": "AdamW learning rate for the per-iteration step sizes and thresholds",
-        "prox_lr": "AdamW learning rate for the prox convolution blocks",
-        "steps_wd": "Weight decay for the step-size and threshold parameters; 0 by default because shrinking them biases the inversion",
-        "prox_wd": "Weight decay for the prox convolution blocks",
-        "shape_logger_types": "Module types the shape logger hooks into when tracing tensor shapes through the network; excluded from config persistence"
-      }
-    },
     "architectures/dual::DualResUNetConfig": {
       "summary": "Dual-trunk set-prediction model: a parameter trunk feeds the per-gaussian heads while a second trunk feeds the sigmoid existence gate; the standard build routes the full stack to both trunks (full-full) on unet_skip at a 90/10 parameter split, and each trunk is any headless encode-decode architecture from the backbone zoo, configured through its own config class",
       "fields": {
@@ -1077,14 +938,6 @@
         "final_out_sigma": "Final normalization preset the output Gaussian sigma parameters switch to on rung four"
       }
     },
-    "training/backbone::PhysicsTrialsConfig": {
-      "summary": "Sweep of physics loss components and weights for the physics-loss trial planner",
-      "fields": {
-        "components": "Physics loss components to test, each crossed with every weight as one training run: total_power, moments, coherence_resyn, covariance_match, or capon_cycle",
-        "weights": "Candidate loss weights applied to the tested component in the complete-stage loss, all must be positive",
-        "include_baseline": "Prepend one run of the plain base config with every physics term disabled, as the reference for the sweep"
-      }
-    },
     "training/backbone::PairTrialsConfig": {
       "summary": "Sweep pairing one fixed base loss component with each candidate second component and weight",
       "fields": {
@@ -1141,7 +994,6 @@
       "summary": "Aggregates the resolved component configs the Trainer consumes for one backbone training run",
       "fields": {
         "gaussian": "GaussianConfig describing the default Gaussian count and height-axis bounds (x_min, x_max) derived from the dataset",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry (wavelength, slant range, look angle, baselines/kz) used to synthesize tomographic profiles for physics losses, already resolved against the dataset baselines table",
         "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
         "warmup": "WarmupConfig sub-config for the initial learning-rate warmup (steps, start factor, mode, poly power)",
         "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
@@ -1170,7 +1022,6 @@
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
         "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, defaults to the physics-loss curriculum with coherence resynthesis and covariance matching enabled in the complete stage",
-        "geometry": "GeometryConfig sub-config of raw SAR acquisition geometry defaults, resolved against the dataset's baselines table before training starts",
         "input": "InputConfig sub-config selecting which channel groups (primary, secondaries, interferograms, DEM) feed the network, defaults to the full stack",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
@@ -1188,7 +1039,6 @@
         "warmup_losses": "Named loss-term override presets: in trials_mode=curriculum applied to the curriculum warmup stage and crossed against every complete_losses preset (one run per pair); in trials_mode=warmup applied instead to the complete stage with curriculum disabled, one run per preset",
         "complete_losses": "Named loss-term override presets applied to the curriculum complete stage, used only by trials_mode=curriculum where each preset is crossed against every warmup_losses preset (one run per pair)",
         "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
-        "physics_trials": "PhysicsTrialsConfig sub-config for the physics-loss sweep crossing every selected component with every candidate weight and curriculum state on top of the base config",
         "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight, curriculum disabled",
         "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-track selection sweep (strategy, count, sampling seed)",
         "patch_trials": "PatchTrialsConfig sub-config for the patch-size and stride sweep",
@@ -1227,10 +1077,6 @@
         "param_huber_delta": "Transition threshold between quadratic and linear regimes of the parameter Huber loss",
         "use_param_mse": "Enable MSE loss on matched, normalized Gaussian mixture parameters",
         "weight_param_mse": "Relative weight of the parameter MSE term in the weighted-average loss",
-        "use_param_legacy": "Enable the legacy two-Gaussian scaled MSE: physical parameters are min-max scaled by the fixed legacy_bounds ranges and a plain MSE is taken over all scaled parameters of both slots, every pixel supervised; requires sorted_gt matching and exactly 2 Gaussians, ignores param_weights and presence weighting",
-        "weight_param_legacy": "Relative weight of the legacy scaled MSE term in the weighted-average loss",
-        "legacy_bounds_min": "Lower physical bounds of the legacy min-max target scaling, ordered amp1, mu1, sigma1, amp2, mu2, sigma2 (the repo layout; the legacy code stored h, w, a per slot, so its constants are remapped here); defaults are the confirmed norm_bound constants of the legacy DataTomoSARfromRAT_spock loader (h1 -15..5, w1 0.01..5, a1 1e-5..10, h2 1..40, w2 1..20, a2 1e-5..10)",
-        "legacy_bounds_max": "Upper physical bounds of the legacy min-max target scaling, ordered amp1, mu1, sigma1, amp2, mu2, sigma2; each entry must exceed its legacy_bounds_min counterpart",
         "param_weights": "Per-parameter weights for amplitude, mean, sigma; length must equal params_per_gaussian",
         "param_matching": "Slot assignment before parameter losses: hungarian (permutes predictions to best GT match) or sorted_gt (positional, GT sorted only)",
         "use_active_normalization": "Normalize parameter loss by summed slot weights instead of plain mean, avoiding dilution by empty slots",
@@ -1247,14 +1093,7 @@
         "use_moments": "Enable term matching mass, mean, and spread moments of the curves",
         "weight_moments": "Relative weight of the moments term in the weighted-average loss",
         "moments_weights": "Per-moment sub-weights for mass, mean, and spread combined in the moments loss",
-        "use_coherence_resyn": "Enable loss re-synthesizing per-track interferometric coherence from the reconstructed curve",
-        "weight_coherence_resyn": "Relative weight of the coherence-resynthesis term in the weighted-average loss",
-        "use_covariance_match": "Enable term matching predicted vs observed multi-track covariance from the reconstructed curve",
-        "weight_covariance_match": "Relative weight of the covariance-match term in the weighted-average loss",
-        "use_capon_cycle": "Enable Capon-beamforming cycle-consistency loss between resynthesized and target spectra",
-        "weight_capon_cycle": "Relative weight of the Capon-cycle term in the weighted-average loss",
-        "capon_loading": "Diagonal loading fraction of the covariance trace regularizing the Capon inverse, active only under use_capon_cycle",
-        "physics_floor": "Minimum target total power below which a pixel is masked out of every physics-loss term; also clamps several terms' power-normalization denominators"
+        "power_floor": "Minimum target integrated power below which a pixel is masked out of the total-power and moments terms; also floors those terms' power-normalization denominators"
       }
     },
     "training/general/loss::LossCurriculumConfig": {
@@ -1464,7 +1303,6 @@
         "gaussian": "GaussianConfig sub-config supplying n_default_gaussians and height-axis bounds x_min/x_max, used only to size the profile-autoencoder pretrain-context dataset",
         "image_autoencoder": "ImageAutoencoderBaseConfig sub-config selecting the autoencoder network architecture and its hyperparameters, defaulting to the Conv2d variant",
         "ae_loss": "ImageAeLossConfig sub-config selecting the image reconstruction loss kind (mse/l1/huber/charbonnier) plus huber_delta and charbonnier_eps",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry (wavelength, slant range, look angle, baselines/kz), resolved from the entry config's dataset before training",
         "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
         "warmup": "WarmupConfig sub-config for the initial learning-rate warmup: enable flag, steps, start factor, mode, poly power",
         "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
@@ -1491,7 +1329,6 @@
         "ae_model_name": "registry key selecting the image-autoencoder architecture: conv2d_ae, resnet2d_ae, convnext2d_ae, dilated2d_ae, or vit_ae",
         "model_overrides": "dict of architecture-config field overrides applied to the selected autoencoder before instantiation",
         "ae_loss": "ImageAeLossConfig sub-config selecting the image reconstruction loss kind (mse/l1/huber/charbonnier) plus huber_delta and charbonnier_eps",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry (wavelength, slant range, look angle, baselines/kz) used to resolve run geometry from the dataset",
         "paths": "TrainingPathsConfig sub-config holding the dataset directory, extracted-parameters file path, and the secondary track labels used to build the run's dataset",
         "training": "TrainingQueueConfig sub-config driving epochs, dataloader batch_size/num_workers/prefetch_factor, scheduler/warmup/gradient-clip/early-stopping/EMA settings, and train/val/test azimuth patch splits; defaulted here to batch_size 512, num_workers 16, prefetch_factor 2",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
@@ -1534,7 +1371,6 @@
         "image_ae_finetune_lr": "Learning rate for the image-autoencoder parameter group, applied only when image_autoencoder_mode is finetune",
         "image_ae_finetune_wd": "Weight decay for the image-autoencoder parameter group, applied only when image_autoencoder_mode is finetune",
         "param_loss": "LossConfig on predicted Gaussian parameters, defaulting to param_l1 weight 1.0 with sorted-GT matching and active normalization",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry (wavelength, slant range, look angle, baselines/kz) used to synthesize tomographic profiles for physics losses",
         "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
         "warmup": "WarmupConfig sub-config for the initial learning-rate warmup (steps, start factor, mode, poly power)",
         "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
@@ -1574,7 +1410,6 @@
         "image_ae_finetune_wd": "Weight decay of the image-autoencoder optimiser group, applied only when image_autoencoder_mode is finetune",
         "embedding_loss": "EmbeddingLossConfig weighting the JEPA latent-prediction terms (embedding MSE/cosine/smooth-L1) and optional curve reconstruction",
         "param_loss": "LossConfig on predicted Gaussian parameters, defaulting to param_l1 weight 1.0 with sorted-GT matching and active normalization",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry (wavelength, slant range, look angle, baselines/kz) used to synthesize tomographic profiles for physics losses",
         "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-image labels",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
@@ -1599,7 +1434,6 @@
         "gaussian": "GaussianConfig instance giving the fixed Gaussian count and height-axis bounds (x_min, x_max) derived from the dataset, required with no default",
         "autoencoder": "ProfileAutoencoderBaseConfig architecture sub-config (encoder/decoder hyperparameters), defaults to the MLP autoencoder",
         "ae_loss": "ProfileAeLossConfig sub-config setting the curve reconstruction loss kind and its huber/charbonnier robustness parameters",
-        "geometry": "GeometryConfig with resolved SAR acquisition geometry (wavelength, baselines, kz), inherited for shared trainer structure but not consumed by the plain profile-autoencoder loss",
         "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
         "warmup": "WarmupConfig sub-config for the initial learning-rate warmup (steps, start factor, mode, poly power)",
         "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
@@ -1629,7 +1463,6 @@
         "ae_model_name": "Registry key selecting the profile-autoencoder architecture: mlp_ae, conv1d_ae, transformer1d_ae, resmlp_ae, tcn_ae, gru_ae, or cnn_attn_ae",
         "model_overrides": "Dict of architecture-config field overrides applied to the selected autoencoder before instantiation",
         "ae_loss": "ProfileAeLossConfig sub-config setting the curve reconstruction loss kind and its huber/charbonnier robustness parameters",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry (wavelength, look angle, baselines/kz), resolved against the dataset and copied into the trainer config though not consumed by the plain profile-autoencoder loss",
         "paths": "TrainingPathsConfig sub-config holding the preprocessed dataset directory, extracted Gaussian-parameters file, and secondary track labels",
         "training": "TrainingQueueConfig sub-config bundling epoch count, dataloader batch size/workers/prefetch, AMP/EMA/resume, and scheduler/warmup/clip settings, defaulting to batch_size=1024 and num_workers=32 for per-pixel training",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
@@ -1678,14 +1511,6 @@
         "stitch_window": "Per-patch tapering window used by CubeStitcher when overlap-adding patches into the full scene: hann, uniform, or triangular",
         "cube_dtype": "Numpy dtype string the stitched curve/parameter cubes and exported .npy arrays are cast to, e.g. float32",
         "render_amp_floor": "Physical amplitude below which a predicted or GT Gaussian component is dropped from curve reconstruction (cubes, figures, curve metrics); parameter cubes keep the raw values; 0 disables the mask, legacy mode sets 1e-3 to reject the legacy fit's prior-stuck phantom components",
-        "compute_reduced": "Whether to synthesize the reduced-track Capon baseline tomogram and add the NN-vs-reduced-vs-GT comparison to metrics, figures, and report; skipped automatically when the run uses the full secondary stack",
-        "reduced_effort": "CPU parallelism level for the reduced Capon tomogram generation subprocess: low, medium, or high, mapping to 0.25/0.5/0.8 of available cores",
-        "reduced_cache_subdir": "Subdirectory under run_directory caching the generated reduced tomogram, DEM, and launch spec by crop/selection key",
-        "reduced_env_name": "Conda environment name the reduced-baseline PyRAT/Capon tomogram generation job is dispatched into via CondaJobDispatcher",
-        "reduced_pyrat_dir": "Optional override path to the PyRAT installation used for reduced-baseline generation; None reuses the pyrat_directory recorded in the preprocessing config_state.json",
-        "compute_data_consistency": "Whether to evaluate predicted profiles against the measured interferometric stack via coherence-resynthesis and covariance-matching error maps; requires the per-pixel geometry field from preprocessing",
-        "physics_floor": "Minimum re-synthesized total power below which a pixel is excluded from the data-consistency coherence/covariance masks, also used to clamp the power denominators against division by zero",
-        "phase_multilook": "Boxcar multilook window size (pixels) applied to the measured interferometric phasors before the phase_agreement metric compares them against re-synthesized phase",
         "n_best_profiles": "Count of lowest-curve-MSE pixel profiles plotted in the best profile figures",
         "n_worst_profiles": "Count of highest-curve-MSE pixel profiles plotted in the worst profile figures",
         "n_random_profiles": "Count of randomly sampled pixel profiles plotted, drawn with profile_seed",
@@ -1797,47 +1622,6 @@
         "profile_inference": "ProfileAeInferenceConfig template applied to each discovered run, with run_directory overridden per run"
       }
     },
-    "inference/unrolled::UnrolledInferencePaths": {
-      "summary": "Output subdirectory and filename layout for unrolled-physics-network inference artifacts",
-      "fields": {
-        "figures_subdir": "Subdirectory name under the inference output directory where error maps and profile figures are written",
-        "logs_subdir": "Subdirectory name under the inference output directory where inference log files are written",
-        "metrics_filename": "Filename of the JSON file holding the computed inversion metrics",
-        "report_filename": "Filename of the assembled markdown inference report"
-      }
-    },
-    "inference/unrolled::UnrolledInferenceConfig": {
-      "summary": "Runs a trained unrolled physics network over a dataset split region, re-synthesising coherence measurements from the ground-truth profiles through the exact kz steering operator and scoring the inverted profiles against those targets",
-      "fields": {
-        "run_directory": "Path to the unrolled training run directory holding the checkpoint and receiving inference outputs",
-        "output_subdir": "Optional fixed subdirectory name under run_directory/inference/unrolled for this call's outputs, None auto-generates a timestamped subdirectory",
-        "device": "Torch device string for inference, e.g. cuda or cpu",
-        "seed": "Random seed applied before prediction so the optional synthetic measurement-noise draw is reproducible",
-        "log_level": "Logging verbosity threshold, e.g. INFO or DEBUG",
-        "split": "Dataset split region to run inference on: train, val, or test",
-        "checkpoint_name": "Checkpoint filename in the run directory to load; best_model.pt is the best-validation checkpoint written by the shared trainer",
-        "measurement_noise_std": "Complex noise standard deviation added to the synthesised coherences, None reuses the value the run was trained with",
-        "chunk_cells": "Upper bound on elevation bins times pixels processed per prediction chunk, bounding peak memory during region inference",
-        "save_plots": "Whether to write error maps, the error histogram, peak-height maps, and profile-overlay figures to disk",
-        "n_example_profiles": "Number of best, median, and worst pixels each rendered as ground-truth versus prediction profile overlays",
-        "save_profile_cube": "Whether to persist the full predicted profile cube as profile_cube.npy next to the metrics",
-        "fig_dpi": "Resolution in DPI applied to on-screen figure rendering (matplotlib figure.dpi)",
-        "save_dpi": "Resolution in DPI applied when figures are saved to disk (matplotlib savefig.dpi)",
-        "figure_style": "Figure style preset: report for on-screen PNG reports, paper for print-ready NeurIPS figures (9pt fonts, Okabe-Ito colors, 300 DPI, vector PDF for non-image plots)",
-        "paths": "UnrolledInferencePaths sub-config naming the output subdirectories and result filenames for this inference run"
-      }
-    },
-    "inference/unrolled::UnrolledInferenceEntryConfig": {
-      "summary": "Entry point queuing unrolled-physics-network inference across every run discovered recursively under the runs directory",
-      "fields": {
-        "runs_dir": "Master runs directory scanned recursively for unrolled runs to infer, defaults to the unrolled subtree of the runs root; every run at any depth is discovered and non-unrolled runs are skipped by type",
-        "run_filter": "List of run names relative to runs_dir to restrict inference to, empty processes every discovered run of this type",
-        "gpus": "List of GPU device indices across which queued inference jobs are distributed and launched in parallel",
-        "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
-        "poll_interval_s": "Seconds between successive polls of the GPU job queue while waiting for a free GPU or a running job to finish",
-        "unrolled_inference": "UnrolledInferenceConfig template applied to each discovered run, with run_directory overridden per run"
-      }
-    },
     "inference/dual::DualInferenceEntryConfig": {
       "summary": "Entry config for the scheduler that runs sliding-window dual-trunk model inference over multiple runs, queuing one worker process per run across a fixed pool of GPUs",
       "fields": {
@@ -1908,7 +1692,6 @@
         "save_animations": "whether to render GIF animations sweeping the profile cube along the gif_axes",
         "save_cubes": "whether to persist reconstructed 3D reflectivity/parameter cubes to disk",
         "stitch_window": "window function blending overlapping inference tiles back into the full scene: hann, uniform, or triangular",
-        "compute_reduced": "whether each benchmarked run synthesizes the reduced-track Capon baseline tomogram and adds the NN-vs-reduced-vs-GT comparison to its metrics, figures, and report; skipped automatically when the run uses the full secondary stack",
         "n_best_profiles": "count of profiles with the lowest pixel MSE selected for diagnostic plotting",
         "n_worst_profiles": "count of profiles with the highest pixel MSE selected for diagnostic plotting",
         "n_random_profiles": "count of randomly sampled profiles selected for diagnostic plotting",
@@ -1937,7 +1720,6 @@
         "inference": "InferenceQueueConfig sub-config for batched inference and diagnostic-artifact output, run only when training_type is backbone or jepa",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-model comparison report",
         "input": "InputConfig sub-config selecting the SAR channel stack fed to each model, defaults to the full stack (primary+secondaries+interferograms, DEM off)",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry used to synthesize tomographic profiles for physics losses",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
         "loss": "LossConfig base loss-term weights (the curriculum's complete stage) that each swept loss component is layered onto",
@@ -1994,7 +1776,6 @@
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings shared by every fold's training job",
         "inference": "InferenceQueueConfig sub-config governing the queue that runs per-fold inference jobs after training",
         "comparison": "ComparisonReportConfig sub-config controlling the cross-fold comparison report generated once all folds finish",
-        "geometry": "GeometryConfig sub-config supplying SAR acquisition geometry (wavelength, slant range, look angle, baselines/kz) shared by all folds",
         "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, applied to every fold's trainer",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping, shared across folds' datasets",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to every fold's training patches",
@@ -2091,19 +1872,6 @@
         "compare_gifs": "Whether to render animated GIF comparisons across the collected runs",
         "embed_images": "Base64-embed figures inline in the generated markdown report instead of linking external files",
         "output_dir": "Destination for the comparison report; None writes to a _comparison subfolder under runs_dir"
-      }
-    },
-    "comparison::PreprocessingComparisonConfig": {
-      "summary": "Entry config for comparing preprocessing trials that differ by multilook window size",
-      "fields": {
-        "runs_dir": "Root directory holding the preprocessing run subdirectories to compare",
-        "run_tags": "Run subfolder names to include, empty auto-discovers every run with a tomogram and config_state.json",
-        "pixel_sample": "Approximate total pixel budget used to pick how many range chunks are sampled per trial when computing spatial-dispersion statistics",
-        "block_size": "Square block edge length in pixels (tiled over both azimuth and range) used by the block-coefficient-of-variation speckle metric",
-        "range_chunk": "Range-line chunk width in pixels used to tile the tomogram when sampling and reading blocks",
-        "workers": "Number of thread-pool workers used to measure trials in parallel, 0 auto-sizes to the CPU count",
-        "make_plots": "Whether to render comparison plots for the collected preprocessing trials",
-        "output_dir": "Destination for the comparison report; None writes to a _window_comparison subfolder under runs_dir"
       }
     },
     "comparison::SeedComparisonConfig": {
@@ -2248,84 +2016,6 @@
         "embed_images": "embed referenced images as base64 data URIs so each collected report is fully self-contained instead of linking back to the original run figures"
       }
     },
-    "training/unrolled::UnrolledEntryConfig": {
-      "summary": "Entry configuration for main/training/train_unrolled.py: trains the unrolled physics network on per-pixel coherence measurements synthesised from the ground-truth Gaussian profiles through the exact kz steering operator, isolated from the backbone training stack",
-      "fields": {
-        "run_name": "Optional run directory name; defaults to run_<model_name>_<timestamp> under logdir",
-        "resume": "Reuse this run directory when it already holds a completed run (complete.json marker stamped only at successful completion); an unfinished run directory is deleted and restarted from scratch. Lets an interrupted seed sweep continue without retraining the seeds that finished. Unrolled training has no mid-run continuation, so a partially trained run always restarts",
-        "model_name": "Key into the unrolled model registry (gamma_net)",
-        "gpu": "CUDA device index pinned before torch import",
-        "gpus": "GPU pool across which the seeds of a multi-seed run are fanned out, one training job per seed launched in parallel",
-        "gpus_file": "Path of the live GPU pool control file for the seed fan-out; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it executes (added devices pick up queued seeds, removed devices retire once the seed in flight ends). Empty places gpu_pool.json inside the base run directory",
-        "poll_interval_s": "Seconds between successive polls of the seed queue while waiting for GPUs or completed seed runs",
-        "seed": "Global random seed for reproducibility",
-        "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard five-seed set 0-4, empty falls back to the single seed field",
-        "logdir": "Base directory that receives one subdirectory per training run",
-        "model_overrides": "Field overrides applied to the model config from the registry (e.g. n_iterations)",
-        "paths": "Dataset locations: preprocessing run directory, extracted-parameters file, and secondary track labels",
-        "training": "Training-loop knobs (epochs, cosine schedule, LR warmup, EMA weight averaging, VRAM reservation, early stopping, batch/loader settings, patch tiling, azimuth splits); a slim UnrolledTrainingConfig containing exactly the fields the trainer reads",
-        "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
-        "geometry": "Tomographic geometry configuration resolved against the dataset; supplies the height-axis convention and enables the per-pixel kz field the operator requires",
-        "normalization": "Per-channel normalization recipes used by the dataset pipeline; output denormalization recovers physical Gaussian parameters before profile rendering",
-        "augmentation": "Dataset augmentation configuration; kz-consistent flips only, since the geometry field must stay aligned with the patches. Input-noise fields (p_noise, noise_std) are inert for this family because the input stack is discarded in favour of synthesised measurements; use measurement_noise_std instead",
-        "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before full training and aborts if the model cannot overfit them",
-        "curve_loss": "Profile reconstruction loss over the elevation axis: l1 or mse, masked to pixels with ground-truth power",
-        "measurement_noise_std": "Standard deviation of complex Gaussian noise added to the synthesised coherence measurements; 0 trains on exact forward-model measurements",
-        "power_floor": "Minimum integrated ground-truth profile power for a pixel to enter the loss and the coherence normalization"
-      }
-    },
-    "training/unrolled::UnrolledTrainingConfig": {
-      "summary": "Training-loop knobs for the unrolled physics pipeline; slimmer than the shared TrainingQueueConfig, exposing exactly the fields the unrolled trainer reads (schedule, warmup, EMA, VRAM reservation, clipping, batching, splits); AMP, the cosine schedule type and the linear warmup mode are fixed for this family and are therefore not exposed",
-      "fields": {
-        "epochs": "Number of training epochs",
-        "scheduler_epochs": "Cosine schedule horizon in epochs; null uses the full epoch count",
-        "validation_frequency": "Run validation, checkpointing and early stopping every N epochs; the final epoch always validates",
-        "eta_min": "Final learning rate of the cosine annealing schedule",
-        "early_stop_patience": "Epochs without validation improvement before training stops",
-        "early_stop_min_delta": "Minimum validation-loss decrease that counts as an improvement",
-        "max_grad_norm": "Fixed gradient-norm clipping threshold",
-        "resume": "Resume the trainer from last.pt in the run directory (model, optimizer, EMA, schedules, RNG); the run fails loudly when no state file exists",
-        "snapshot_every_n_epochs": "Save a weights-only epoch snapshot to checkpoints/epoch_<N>.pt every N epochs (EMA weights when EMA is on); 0 disables",
-        "log_debug": "Emit per-step debug telemetry (gradient NaN scans and extra tracker scalars)",
-        "warmup_enabled": "Whether linear LR warmup runs at the start of training, scaling all group learning rates up from 10% of base over warmup_steps optimizer steps",
-        "warmup_steps": "Number of optimizer steps the linear warmup spans",
-        "use_ema": "Whether an exponential moving average of the weights is maintained; validation, checkpointing, and the final test run use the averaged weights",
-        "ema_decay": "EMA decay factor per optimizer step; closer to 1 averages over a longer history",
-        "reserve_vram": "Whether the pre-training guard parks spare GPU memory in the allocator cache so concurrent jobs cannot squeeze this run out",
-        "vram_keep_free_gb": "GPU memory left unreserved for other processes when the VRAM reservation fills",
-        "batch_size": "Patches per training batch",
-        "num_workers": "Dataloader worker processes",
-        "prefetch_factor": "Batches prefetched per dataloader worker",
-        "gradient_accumulation_steps": "Batches accumulated before each optimizer step; the effective batch is batch_size times this factor",
-        "abort_on_nonfinite_loss": "Raise on the first non-finite loss instead of skipping the batch and continuing",
-        "scale_lr_with_batch": "Scale all param-group learning rates linearly by batch_size / lr_reference_batch_size, else keep them at the model-config base values",
-        "lr_reference_batch_size": "Baseline batch size the learning-rate scaling ratio is computed against",
-        "patch_size": "Spatial patch size (height, width) tiled from the scene, the two dimensions may differ",
-        "patch_stride": "Per-axis (vertical, horizontal) stride between neighbouring patches during tiling",
-        "use_symmetric_padding": "pad scene borders with symmetric (mirror) padding instead of zero (constant) padding so edge patches stay fully covered",
-        "train_azimuth": "Azimuth pixel range of the training split",
-        "val_azimuth": "Azimuth pixel range of the validation split",
-        "test_azimuth": "Azimuth pixel range of the test split"
-      }
-    },
-    "training/unrolled::UnrolledTrainerConfig": {
-      "summary": "Aggregates the resolved component configs the UnrolledTrainer consumes for one unrolled physics run, built from the slim entry config by ConfigFactory",
-      "fields": {
-        "params_per_gaussian": "Number of parameters per Gaussian component in the ground-truth parameter stack, read from the dataset extraction metadata",
-        "curve_loss": "Per-pixel elevation-profile loss used to compare the unrolled reconstruction against the synthesised target ('l1' or 'mse')",
-        "measurement_noise_std": "Standard deviation of the complex Gaussian noise added to the synthesised coherence measurements, resampled every epoch",
-        "power_floor": "Minimum integrated profile power for a pixel to enter the loss; pixels below it are masked out",
-        "early_stopping": "EarlyStoppingConfig sub-config setting patience, min-delta, and best-checkpoint restore for training",
-        "warmup": "WarmupConfig sub-config for the initial learning-rate warmup (steps, start factor, mode, poly power)",
-        "scheduler": "SchedulerConfig sub-config selecting the LR schedule type and its parameters (epochs, eta_min, step size, gamma, power)",
-        "io": "IOConfig sub-config holding the run logdir; the TensorBoard writer stays None because unrolled runs write no event files",
-        "optimizer": "OptimizerConfig sub-config for the AdamW-style optimizer (lr, betas, eps, weight decay, lr scale)",
-        "training": "TrainingLoopConfig sub-config for the training loop: epochs, validation frequency, AMP, gradient accumulation, EMA, resume, epoch snapshots",
-        "resources": "ResourceConfig sub-config controlling the system-resource monitor (poll interval, TensorBoard logging, RAM/VRAM/swap/shm warn thresholds)",
-        "memory": "MemoryConfig sub-config governing CUDA cache clearing cadence and VRAM reservation to protect other GPU users",
-        "gradient_clipper": "GradientClipperConfig sub-config selecting the gradient-clip mode (disabled, fixed, adaptive_percentile, or adaptive_mean_std) and its thresholds"
-      }
-    },
     "training/dual::DualEntryConfig": {
       "summary": "Top-level entry config launching one dual-trunk training run through the shared backbone dataset, curriculum, and trainer machinery",
       "fields": {
@@ -2347,7 +2037,6 @@
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
         "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch; defaults to the physics-loss curriculum with hungarian param matching in both stages, the recommended pairing for the set-prediction existence gate",
-        "geometry": "GeometryConfig sub-config of raw SAR acquisition geometry defaults, resolved against the dataset's baselines table before training starts",
         "input": "InputConfig sub-config selecting which channel groups feed the network, defaults to the full stack; use_interferograms must stay enabled because the existence trunk consumes exactly those channels",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
         "augmentation": "AugmentationConfig sub-config setting horizontal/vertical flip, rot90, and additive-noise probabilities applied to training patches",
@@ -2365,7 +2054,6 @@
         "warmup_losses": "Named loss-term override presets: in trials_mode=curriculum applied to the curriculum warmup stage and crossed against every complete_losses preset (one run per pair); in trials_mode=warmup applied instead to the complete stage with curriculum disabled, one run per preset",
         "complete_losses": "Named loss-term override presets applied to the curriculum complete stage, used only by trials_mode=curriculum where each preset is crossed against every warmup_losses preset (one run per pair)",
         "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
-        "physics_trials": "PhysicsTrialsConfig sub-config for the physics-loss sweep crossing every selected component with every candidate weight and curriculum state on top of the base config",
         "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight, curriculum disabled",
         "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-track selection sweep (strategy, count, sampling seed)",
         "patch_trials": "PatchTrialsConfig sub-config for the patch-size and stride sweep",
@@ -2421,7 +2109,6 @@
         "paths": "RunPathsConfig sub-config holding the sweep run/output directories plus the dataset/parameters template: dataset_path and parameters_path define the relative parameters layout the planner re-roots onto every swept dataset, and secondary_labels holds the fixed reduced-stack selection shared by every unit",
         "training": "TrainingQueueConfig sub-config shared by every sweep unit; patch_size, patch_stride, and batch_size act as the reference values the planner rescales per unit",
         "input": "InputConfig sub-config selecting the input channel families (primary, secondaries, interferograms, DEM) fed to every unit",
-        "geometry": "GeometryConfig sub-config resolving acquisition geometry and per-track kz from each swept dataset's baselines table",
         "curriculum": "Loss curriculum shared by every sweep unit, inherited from the backbone training defaults unless overridden",
         "normalization": "NormalizationConfig sub-config with per-channel normalization strategies, refitted per dataset",
         "augmentation": "AugmentationConfig sub-config applied identically to every sweep unit",

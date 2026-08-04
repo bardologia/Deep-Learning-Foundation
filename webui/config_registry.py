@@ -12,7 +12,6 @@ class ConfigRegistry:
     DESCRIPTIONS_FILE = "config_descriptions.json"
 
     SECTION_TITLES = {
-        "sar"              : "SAR Processing",
         "param_extraction" : "Parameter Extraction",
         "normalization"    : "Normalization",
         "dataset"          : "Dataset",
@@ -27,7 +26,7 @@ class ConfigRegistry:
         "diagnostics"      : "Diagnostics",
     }
 
-    SECTION_ORDER = ["sar", "param_extraction", "normalization", "dataset", "architectures", "training", "inference", "benchmark", "cross_validation", "patch_sweep", "tuning", "comparison", "diagnostics"]
+    SECTION_ORDER = ["param_extraction", "normalization", "dataset", "architectures", "training", "inference", "benchmark", "cross_validation", "patch_sweep", "tuning", "comparison", "diagnostics"]
 
     def __init__(self, paths: ProjectPaths) -> None:
         self.paths        = paths
