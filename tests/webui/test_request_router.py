@@ -16,11 +16,12 @@ from routers.static_router      import StaticRouter
 from routers.system_router      import SystemRouter
 from routers.tensorboard_router import TensorboardRouter
 
-ROUTE_COUNT   = 106
-SECTION_COUNT = 33
+ROUTE_COUNT   = 107
+SECTION_COUNT = 34
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
+    ("GET",  "/favicon.ico",                       StaticRouter),
     ("GET",  "/static/js/app.js",                  StaticRouter),
     ("GET",  "/resultsmedia",                      StaticRouter),
     ("GET",  "/api/results/tree",                  ResultsRouter),

@@ -13,15 +13,19 @@ class StaticRouter(SubRouter):
         self.paths   = paths
         self.results = results
 
-        super().__init__(("/", "/static", "/resultsmedia"))
+        super().__init__(("/", "/static", "/resultsmedia", "/favicon.ico"))
 
     def declare(self, table: RouteTable) -> None:
         table.add("GET", "/",             self.index)
+        table.add("GET", "/favicon.ico",  self.favicon)
         table.add("GET", "/resultsmedia", self.media)
         table.wildcard("GET", "/static/", "", self.asset)
 
     def index(self, exchange: HttpExchange) -> None:
         self.serve(exchange, "index.html")
+
+    def favicon(self, exchange: HttpExchange) -> None:
+        self.serve(exchange, "favicon.svg")
 
     def media(self, exchange: HttpExchange) -> None:
         target = self.results.file_path(exchange.text("path"))
