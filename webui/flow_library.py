@@ -280,12 +280,12 @@ class FlowLibrary:
             {"id": "sel",    "tex": r"\pi",                "role": "calculated",   "kind": "vector", "shape": "N_s",                   "desc": "positional indices of secondaries selected by label",    "sample": ["3", "5", "7", "25"]},
             {"id": "s0",     "tex": r"\mathbf{s}_0",       "role": "measured",     "kind": "matrix", "shape": "n_row x n_col",               "desc": "primary (reference) complex channel",                        "sample": [["0.8+0.2j", "0.6-0.4j"], ["0.5+0.5j", "0.9-0.1j"]]},
             {"id": "Smat",   "tex": r"S",                  "role": "measured",     "kind": "tensor", "shape": "N_s x n_row x n_col",         "desc": "selected secondary complex channels",                  "sample": [["0.7+0.1j"]]},
-            {"id": "Imat",   "tex": r"I",                  "role": "measured",     "kind": "tensor", "shape": "N_i x n_row x n_col",         "desc": "selected derived passes",                          "sample": [["0.9+0.4j"]]},
+            {"id": "Imat",   "tex": r"I",                  "role": "measured",     "kind": "tensor", "shape": "N_i x n_row x n_col",         "desc": "selected derived channels",                          "sample": [["0.9+0.4j"]]},
             {"id": "X",      "tex": r"\mathbf{X}",         "role": "measured",     "kind": "tensor", "shape": "(1+N_s+N_i) x n_row x n_col", "desc": "stacked complex buffer: primary, secondaries, derived",     "sample": [["0.8+0.2j", "0.6-0.4j"], ["0.5+0.5j", "0.9-0.1j"]]},
             {"id": "aux",    "tex": r"\mathbf{D}",         "role": "measured",     "kind": "matrix", "shape": "n_row x n_col",               "desc": "Aux z channel, real (optional)",                 "sample": [["112.4", "113.1"], ["110.8", "111.9"]]},
             {"id": "grid",   "tex": r"\mathcal{G}",        "role": "calculated",   "kind": "set",    "shape": "n_v x n_h",             "desc": "patch grid counts and padding",                          "sample": "n_v=89, n_h=93"},
             {"id": "cpatch", "tex": r"\mathbf{p}",         "role": "intermediate", "kind": "tensor", "shape": "C x P x P",             "desc": "one extracted complex patch (padded copy)",              "sample": [["0.8+0.2j", "0.6-0.4j", "1.1+0.0j"], ["0.5+0.5j", "0.9-0.1j", "0.7+0.3j"], ["1.0+0.2j", "0.4-0.6j", "0.8+0.1j"]]},
-            {"id": "rep",    "tex": r"\mathbf{r}",         "role": "intermediate", "kind": "tensor", "shape": "c x P x P",             "desc": "real channels of one complex pass",                      "sample": ["|s|", "ang", "re", "im"]},
+            {"id": "rep",    "tex": r"\mathbf{r}",         "role": "intermediate", "kind": "tensor", "shape": "c x P x P",             "desc": "real channels of one complex source",                      "sample": ["|s|", "ang", "re", "im"]},
             {"id": "x",      "tex": r"\mathbf{x}",         "role": "calculated",   "kind": "tensor", "shape": "C_in x P x P",          "desc": "assembled real-valued input tensor",                     "sample": [["0.91", "0.62", "1.10"], ["0.55", "0.88", "0.71"]]},
             {"id": "y",      "tex": r"\mathbf{y}",         "role": "calculated",   "kind": "tensor", "shape": "C_out x P x P",         "desc": "selected Gaussian-parameter target patch",               "sample": ["a_1", "mu_1", "sig_1", "..."]},
             {"id": "xgeo",   "tex": r"\mathbf{x}'",        "role": "intermediate", "kind": "tensor", "shape": "C_in x P x P",          "desc": "geometrically augmented input (flip/rotation)",          "sample": [["0.93", "0.60", "1.08"], ["0.57", "0.86", "0.70"]]},
@@ -316,7 +316,7 @@ class FlowLibrary:
             },
             {
                 "id": "secselect", "title": "Secondary selection by label", "phase": "Crop & split",
-                "note": "The processed stack carries every pass; the secondary subset is chosen by flight-qualified label, mapping labels to positional indices applied to both secondaries and derived.",
+                "note": "The processed stack carries every channel; the secondary subset is chosen by label, mapping labels to positional indices applied to both secondaries and derived.",
                 "inputs": ["Smat", "Imat"], "outputs": ["sel"],
                 "lines": [
                     [{"id": "sel", "tex": r"\pi", "role": "calculated"}, {"tex": "="}, {"tex": r"\{\,i : \ell_i \in L_{\mathrm{req}}\,\},\qquad \ell_0 \notin L_{\mathrm{req}}"}],
@@ -325,7 +325,7 @@ class FlowLibrary:
             },
             {
                 "id": "stack", "title": "Stacked complex input buffer", "phase": "Crop & split",
-                "note": "Primary, selected secondaries, and selected derived are written by pass-index into one pre-allocated complex buffer; the Aux and parameters are cropped to the same window but kept separate.",
+                "note": "Primary, selected secondaries, and selected derived are written by channel index into one pre-allocated complex buffer; the Aux and parameters are cropped to the same window but kept separate.",
                 "inputs": ["s0", "Smat", "Imat"], "outputs": ["X"],
                 "lines": [
                     [{"id": "X", "tex": r"\mathbf{X}[0]", "role": "measured"}, {"tex": "="}, {"id": "s0", "tex": r"\mathbf{s}_0", "role": "measured"}, {"tex": r",\quad \mathbf{X}[1:1{+}N_s] = "}, {"id": "Smat", "tex": r"S", "role": "measured"}, {"tex": r",\quad \mathbf{X}[1{+}N_s:] = "}, {"id": "Imat", "tex": r"I", "role": "measured"}],
@@ -436,7 +436,7 @@ class FlowLibrary:
         ]
         return {
             "key": "dataset", "name": "Dataset (Loaders)",
-            "blurb": "Processed artifacts become PyTorch tensors: split the scene, select secondaries, stack and tile into patches, convert complex passes to real channels, assemble and augment, then apply train-fitted per-slot normalisation.",
+            "blurb": "Processed artifacts become PyTorch tensors: split the scene, select secondaries, stack and tile into patches, convert the complex sources to real channels, assemble and augment, then apply train-fitted per-slot normalisation.",
             "nodes": nodes, "steps": steps,
         }
 
@@ -619,12 +619,12 @@ class FlowLibrary:
                 "note": "The dataset stack labels every input channel with a group key: the primary magnitude and the secondary magnitudes are chan/*, the derived channels are derived/*. TrunkChannelMap infers the channel count that reproduces in_channels under the active InputConfig and raises when that count is not unique. The dual pipeline refuses input.use_aux, so no aux/* key can appear.",
                 "inputs": ["xhat"], "outputs": ["keys"],
                 "lines": [
-                    [{"id": "keys", "tex": r"\mathcal{K}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big(\underbrace{\mathtt{pass}/\ast}_{1 + N_s},\ \underbrace{\mathtt{derived}/\ast}_{N_i}\big),\qquad C_{\mathrm{in}} = 1 + N_s + N_i = 9\ \text{for the default stack}"}],
+                    [{"id": "keys", "tex": r"\mathcal{K}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big(\underbrace{\mathtt{chan}/\ast}_{1 + N_s},\ \underbrace{\mathtt{derived}/\ast}_{N_i}\big),\qquad C_{\mathrm{in}} = 1 + N_s + N_i = 9\ \text{for the default stack}"}],
                 ],
             },
             {
                 "id": "dual_route", "title": "Trunk input routing", "phase": "A - Input routing",
-                "note": "params_input and existence_input each select a subset of the groups {pass, derived}; the resolved index tuples are stored as the params_channels and existence_channels buffers and applied with index_select. The shipped default is full-full, meaning both trunks see all nine channels; the routing trials mode enumerates the seven asymmetric variants (pass-full, full-pass, derived-full, full-derived, pass-derived, derived-pass and full-full).",
+                "note": "params_input and existence_input each select a subset of the groups {chan, derived}; the resolved index tuples are stored as the params_channels and existence_channels buffers and applied with index_select. The shipped default is full-full, meaning both trunks see all nine channels; the routing trials mode enumerates the seven asymmetric variants (chan-full, full-chan, derived-full, full-derived, chan-derived, derived-chan and full-full).",
                 "inputs": ["xhat", "keys"], "outputs": ["xp", "xe"],
                 "lines": [
                     [{"id": "xp", "tex": r"\hat{\mathbf{x}}^{P}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\hat{\mathbf{x}}\big[\,\mathcal{C}_P\,\big],\qquad \mathcal{C}_P = \{\,c : \mathrm{group}(\mathcal{K}_c) \in \mathtt{params\_input}\,\}"}],

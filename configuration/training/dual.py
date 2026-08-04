@@ -23,17 +23,17 @@ def _parity_resunet_features() -> list[int]:
 
 def _default_dual_routing_trials() -> dict:
     full    = ["chan", "derived"]
-    passes  = ["chan"]
+    chan    = ["chan"]
     derived = ["derived"]
 
     return {
-        "full-full"    : {"params": full,   "existence": full},
-        "pass-full"    : {"params": passes, "existence": full},
-        "full-pass"    : {"params": full,   "existence": passes},
-        "derived-full" : {"params": derived,    "existence": full},
-        "full-derived" : {"params": full,   "existence": derived},
-        "pass-derived" : {"params": passes, "existence": derived},
-        "derived-pass" : {"params": derived,    "existence": passes},
+        "full-full"       : {"params": full,    "existence": full},
+        "chan-full"       : {"params": chan,    "existence": full},
+        "full-chan"       : {"params": full,    "existence": chan},
+        "derived-full"    : {"params": derived, "existence": full},
+        "full-derived"    : {"params": full,    "existence": derived},
+        "chan-derived"    : {"params": chan,    "existence": derived},
+        "derived-chan"    : {"params": derived, "existence": chan},
     }
 
 

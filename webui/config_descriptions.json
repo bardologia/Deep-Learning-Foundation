@@ -150,7 +150,7 @@
       "summary": "Selects which SAR stack channels and Aux feed the network input and their per-channel channel encoding",
       "fields": {
         "use_primary": "include the primary reference channel in the input stack",
-        "primary_representation": "channel encoding of the primary pass: real_imag, mag_real_imag, mag_angle, mag_ri_angle, angle_only, or mag_only",
+        "primary_representation": "channel encoding of the primary channel: real_imag, mag_real_imag, mag_angle, mag_ri_angle, angle_only, or mag_only",
         "use_secondaries": "include secondary-pass channels, requires the dataset stack to actually contain secondaries or the dataset build raises",
         "secondaries_representation": "channel encoding applied to each secondary channel: real_imag, mag_real_imag, mag_angle, mag_ri_angle, angle_only, or mag_only",
         "use_derived": "include primary-secondary derived channels, requires the dataset stack to contain derived or the dataset build raises",

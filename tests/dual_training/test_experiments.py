@@ -42,26 +42,26 @@ def _ratio_planner(trials_config=None, model_overrides=None):
 def test_dual_routing_planner_default_catalog_covers_the_seven_ordered_pairs():
     plans = dict(_planner().plan())
 
-    assert list(plans) == ["di-full-full", "di-pass-full", "di-full-pass", "di-derived-full", "di-full-derived", "di-pass-derived", "di-derived-pass"]
+    assert list(plans) == ["di-full-full", "di-chan-full", "di-full-chan", "di-derived-full", "di-full-derived", "di-chan-derived", "di-derived-chan"]
 
     full    = ["chan", "derived"]
-    passes  = ["chan"]
+    chan    = ["chan"]
     derived = ["derived"]
 
     assert plans["di-full-full"]["params_input"]    == full
     assert plans["di-full-full"]["existence_input"] == full
-    assert plans["di-pass-full"]["params_input"]    == passes
-    assert plans["di-pass-full"]["existence_input"] == full
-    assert plans["di-full-pass"]["params_input"]    == full
-    assert plans["di-full-pass"]["existence_input"] == passes
+    assert plans["di-chan-full"]["params_input"]    == chan
+    assert plans["di-chan-full"]["existence_input"] == full
+    assert plans["di-full-chan"]["params_input"]    == full
+    assert plans["di-full-chan"]["existence_input"] == chan
     assert plans["di-derived-full"]["params_input"]     == derived
     assert plans["di-derived-full"]["existence_input"]  == full
     assert plans["di-full-derived"]["params_input"]     == full
     assert plans["di-full-derived"]["existence_input"]  == derived
-    assert plans["di-pass-derived"]["params_input"]     == passes
-    assert plans["di-pass-derived"]["existence_input"]  == derived
-    assert plans["di-derived-pass"]["params_input"]     == derived
-    assert plans["di-derived-pass"]["existence_input"]  == passes
+    assert plans["di-chan-derived"]["params_input"]     == chan
+    assert plans["di-chan-derived"]["existence_input"]  == derived
+    assert plans["di-derived-chan"]["params_input"]     == derived
+    assert plans["di-derived-chan"]["existence_input"]  == chan
 
 
 def test_dual_routing_planner_default_catalog_never_selects_the_dem():
@@ -296,7 +296,7 @@ def test_dual_scheduler_plans_the_trunk_input_grid(tmp_path):
 
     plans = dict(scheduler.planner().plan())
 
-    assert list(plans) == ["di-full-full", "di-pass-full", "di-full-pass", "di-derived-full", "di-full-derived", "di-pass-derived", "di-derived-pass"]
+    assert list(plans) == ["di-full-full", "di-chan-full", "di-full-chan", "di-derived-full", "di-full-derived", "di-chan-derived", "di-derived-chan"]
     assert plans["di-full-derived"]["model_overrides"]["params_features"] == PARITY_FEATURES
 
 
