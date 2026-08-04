@@ -29,7 +29,6 @@ class LaunchLayout:
     NUM_FRACTION = {"kind": "number", "min": 0, "max": 1, "step": 0.01, "presets": [0.05, 0.1, 0.25, 0.5, 1.0]}
     NUM_PROB     = {"kind": "number", "min": 0, "max": 1, "step": 0.05, "presets": [0, 0.25, 0.5, 0.75, 1.0]}
     NUM_DPI      = {"kind": "number", "int": True, "min": 72, "max": 600, "presets": [110, 150, 300, 600]}
-    NUM_CELLS    = {"kind": "number", "int": True, "min": 10_000, "max": 100_000_000, "presets": [250_000, 500_000, 1_000_000, 2_000_000, 4_000_000, 8_000_000]}
 
     CH_AE_MODE      = {"kind": "choice", "options": ["frozen", "finetune"]}
     CH_TRUNK        = {"kind": "choice", "options": [
@@ -49,12 +48,6 @@ class LaunchLayout:
     MULTI_K       = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add K, Enter", "empty": "select at least one K"}
     MULTI_LAMBDA  = {"kind": "multi", "numeric": True, "placeholder": "add lambda, Enter", "empty": "select at least one lambda"}
     MULTI_INT     = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
-    MULTI_PATHS   = {"kind": "multi", "wide": True, "placeholder": "add absolute file path, Enter", "empty": "name at least one external parameter file"}
-    MULTI_WINDOWS = {"kind": "multi", "placeholder": "add <az0>a<az1>a<rg0>a<rg1>, Enter"}
-
-    CH_CHANNEL_ORDER = {"kind": "choice", "options": [
-        "amp_mu_sigma", "amp_sigma_mu", "mu_amp_sigma", "mu_sigma_amp", "sigma_amp_mu", "sigma_mu_amp",
-    ]}
 
     MULTI_TRUNK_INPUT = {"kind": "multi", "empty": "select at least one channel group", "choices": [
         {"value": "pass", "label": "Passes (amplitudes)"},
@@ -82,7 +75,6 @@ class LaunchLayout:
         {"value": "param_l1",           "label": "Param L1 (baseline)"},
         {"value": "param_huber",        "label": "Param Huber"},
         {"value": "param_mse",          "label": "Param MSE"},
-        {"value": "param_legacy",       "label": "Param legacy scaled MSE"},
         {"value": "mse_curve",          "label": "MSE curve"},
         {"value": "l1_curve",           "label": "L1 curve"},
         {"value": "huber_curve",        "label": "Huber curve"},
@@ -91,76 +83,7 @@ class LaunchLayout:
         {"value": "smoothness_tv",      "label": "Smoothness TV"},
         {"value": "total_power_relerr", "label": "Total power rel. error"},
         {"value": "moments",            "label": "Moments"},
-        {"value": "coherence_resyn",    "label": "Coherence resynthesis"},
-        {"value": "covariance_match",   "label": "Covariance match"},
-        {"value": "capon_cycle",        "label": "Capon cycle"},
     ]}
-
-    LEGACY_MODE = {
-        "sections": [],
-        "expose": [
-            "curriculum.complete.use_param_legacy",
-            "curriculum.complete.weight_param_legacy",
-            "curriculum.complete.legacy_bounds_min",
-            "curriculum.complete.legacy_bounds_max",
-            "training.epochs",
-            "training.batch_size",
-        ],
-        "preset": {
-            "curriculum.enabled": "False",
-            "curriculum.complete.use_mse_curve": "False",
-            "curriculum.complete.use_l1_curve": "False",
-            "curriculum.complete.use_huber_curve": "False",
-            "curriculum.complete.use_charbonnier_curve": "False",
-            "curriculum.complete.use_cosine_curve": "False",
-            "curriculum.complete.use_param_l1": "False",
-            "curriculum.complete.use_param_huber": "False",
-            "curriculum.complete.use_param_mse": "False",
-            "curriculum.complete.use_param_legacy": "True",
-            "curriculum.complete.use_smoothness_tv": "False",
-            "curriculum.complete.use_total_power": "False",
-            "curriculum.complete.use_moments": "False",
-            "curriculum.complete.use_coherence_resyn": "False",
-            "curriculum.complete.use_covariance_match": "False",
-            "curriculum.complete.use_capon_cycle": "False",
-            "curriculum.complete.weight_param_legacy": "1.0",
-            "curriculum.complete.param_matching": "sorted_gt",
-            "curriculum.complete.use_active_normalization": "False",
-            "curriculum.complete.presence_balance": "False",
-            "curriculum.complete.amp_focal_gamma": "0.0",
-            "curriculum.complete.amp_zero_thr": "0.001",
-            "inference.render_amp_floor": "0.001",
-            "augmentation.p_flip_h": "0.0",
-            "augmentation.p_flip_v": "0.0",
-            "augmentation.p_rot90": "0.0",
-            "augmentation.p_noise": "0.0",
-            "training.warmup_enabled": "False",
-            "training.clip_mode": "disabled",
-            "training.scheduler_type": "constant",
-            "training.scale_lr_with_batch": "False",
-            "training.epochs": "300",
-            "training.patch_size": "(64, 64)",
-            "training.patch_stride": "(32, 32)",
-            "backbone_name": "unet",
-            "backbone_head": "conv",
-            "model_overrides": "{'all_groups_lr': 1e-05, 'all_groups_wd': 0.0, 'features': [64, 128, 256, 512], 'bottleneck_factor': 2, 'dropout': 0.0, 'normalization': 'none', 'conv_bias': True}",
-            "input.use_primary": "False",
-            "input.use_secondaries": "True",
-            "input.secondaries_representation": "mag_only",
-            "input.use_interferograms": "True",
-            "input.interferograms_representation": "angle_only",
-            "input.use_dem": "False",
-            "normalization.pass_mag": "fixed_log1p",
-            "normalization.pass_phase": "fixed_angle_01",
-            "normalization.ifg_mag": "fixed_log1p",
-            "normalization.ifg_phase": "fixed_angle_01",
-            "normalization.out_amp": "fixed_bounds",
-            "normalization.out_mu": "fixed_bounds",
-            "normalization.out_sigma": "fixed_bounds",
-            "normalization.clamp_output": "False",
-            "trials_enabled": "False",
-        },
-    }
 
     TEMPLATES = {
         "loss": [
@@ -174,8 +97,7 @@ class LaunchLayout:
             {"title": "Parameter losses", "fields": [
                 {"gate": "use_param_l1",     "fields": [{"path": "weight_param_l1", "widget": NUM_WEIGHT}]},
                 {"gate": "use_param_huber",  "fields": [{"path": "weight_param_huber", "widget": NUM_WEIGHT}, "param_huber_delta"]},
-                {"gate": "use_param_mse",    "fields": [{"path": "weight_param_mse", "widget": NUM_WEIGHT}]},
-                {"gate": "use_param_legacy", "fields": [{"path": "weight_param_legacy", "widget": NUM_WEIGHT}, "legacy_bounds_min", "legacy_bounds_max"]},
+                {"gate": "use_param_mse",   "fields": [{"path": "weight_param_mse", "widget": NUM_WEIGHT}]},
                 "param_weights",
                 "param_matching",
             ]},
@@ -191,13 +113,10 @@ class LaunchLayout:
             {"title": "Regularization", "fields": [
                 {"gate": "use_smoothness_tv", "fields": [{"path": "weight_smoothness_tv", "widget": NUM_WEIGHT}]},
             ]},
-            {"title": "Physics", "fields": [
-                {"gate": "use_total_power",     "fields": [{"path": "weight_total_power", "widget": NUM_WEIGHT}]},
-                {"gate": "use_moments",         "fields": [{"path": "weight_moments", "widget": NUM_WEIGHT}, "moments_weights"]},
-                {"gate": "use_coherence_resyn", "fields": [{"path": "weight_coherence_resyn", "widget": NUM_WEIGHT}]},
-                {"gate": "use_covariance_match", "fields": [{"path": "weight_covariance_match", "widget": NUM_WEIGHT}]},
-                {"gate": "use_capon_cycle",     "fields": [{"path": "weight_capon_cycle", "widget": NUM_WEIGHT}, "capon_loading"]},
-                "physics_floor",
+            {"title": "Profile statistics", "fields": [
+                {"gate": "use_total_power", "fields": [{"path": "weight_total_power", "widget": NUM_WEIGHT}]},
+                {"gate": "use_moments",     "fields": [{"path": "weight_moments", "widget": NUM_WEIGHT}, "moments_weights"]},
+                "power_floor",
             ]},
         ],
         "training_queue": [
@@ -252,58 +171,12 @@ class LaunchLayout:
                 "test_azimuth",
             ]},
         ],
-        "training_unrolled": [
-            {"title": "Schedule", "fields": [
-                {"path": "epochs", "widget": NUM_EPOCHS},
-                "scheduler_epochs",
-                {"path": "validation_frequency", "widget": NUM_FREQ},
-                {"path": "eta_min", "widget": NUM_ETA_MIN},
-                {"path": "early_stop_patience", "widget": NUM_PATIENCE},
-                "early_stop_min_delta",
-                "resume",
-                "snapshot_every_n_epochs",
-                "log_debug",
-            ]},
-            {"title": "LR warmup", "fields": [
-                {"gate": "warmup_enabled", "fields": [{"path": "warmup_steps", "widget": NUM_STEPS}]},
-            ]},
-            {"title": "Weight averaging", "fields": [
-                {"gate": "use_ema", "fields": ["ema_decay"]},
-            ]},
-            {"title": "VRAM reservation", "fields": [
-                {"gate": "reserve_vram", "fields": ["vram_keep_free_gb"]},
-            ]},
-            {"title": "Batch and loader", "fields": [
-                {"path": "batch_size", "widget": NUM_BATCH},
-                {"path": "num_workers", "widget": NUM_WORKERS},
-                {"path": "prefetch_factor", "widget": NUM_PREFETCH},
-                {"path": "gradient_accumulation_steps", "widget": NUM_ACCUM},
-                "abort_on_nonfinite_loss",
-                "scale_lr_with_batch",
-                {"path": "lr_reference_batch_size", "widget": NUM_BATCH},
-            ]},
-            {"title": "Gradient clipping", "fields": [
-                "max_grad_norm",
-            ]},
-            {"title": "Patches and splits", "fields": [
-                "patch_size",
-                "patch_stride",
-                "use_symmetric_padding",
-                "train_azimuth",
-                "val_azimuth",
-                "test_azimuth",
-            ]},
-        ],
         "paths_rest": [
             {"title": "Run paths", "fields": ["log_base_dir", "secondary_labels"]},
         ],
 
         "paths_train": [
             {"title": "Run paths", "fields": ["secondary_labels"]},
-        ],
-        "geometry": [
-            {"title": "Acquisition", "fields": ["wavelength", "slant_range", "look_angle_deg"]},
-            {"title": "Baselines", "fields": ["baselines", "kz_values", "baselines_source", "baseline_component", "baselines_origin", "height_axis_convention"]},
         ],
         "input": [
             {"title": "Primary", "fields": [{"gate": "use_primary", "fields": ["primary_representation"]}]},
@@ -364,12 +237,6 @@ class LaunchLayout:
                 {"path": "gif_workers", "widget": NUM_WORKERS},
             ]},
             {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window", "cube_dtype", "render_amp_floor"]},
-            {"title": "Reduced baseline", "fields": [
-                {"gate": "compute_reduced", "fields": ["reduced_effort", "reduced_cache_subdir", "reduced_env_name", "reduced_pyrat_dir"]},
-            ]},
-            {"title": "Data consistency", "fields": [
-                {"gate": "compute_data_consistency", "fields": ["physics_floor", "phase_multilook"]},
-            ]},
             {"title": "Flip consistency", "fields": ["compute_flip_consistency"]},
             {"title": "Stratified errors", "fields": ["compute_stratified"]},
             {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles", {"path": "profile_seed", "widget": NUM_SEED}]},
@@ -394,7 +261,6 @@ class LaunchLayout:
                 {"path": "cpu_workers", "widget": NUM_WORKERS},
             ]},
             {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window"]},
-            {"title": "Reduced baseline", "fields": ["compute_reduced"]},
             {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles"]},
             {"title": "Slices", "fields": ["n_range_slices", "n_azimuth_slices", "n_elevation_slices"]},
             {"title": "GIFs", "fields": ["gif_axes", "gif_fps", "gif_max_frames"]},
@@ -411,13 +277,6 @@ class LaunchLayout:
             {"title": "Run", "fields": ["run_directory", "output_subdir", "device", "log_level"]},
             {"title": "Execution", "fields": ["split", "checkpoint_name", {"path": "batch_size", "widget": NUM_BATCH}, {"path": "num_workers", "widget": NUM_WORKERS}]},
             {"title": "Report", "fields": ["save_plots", "n_best_patches", "n_worst_patches", "n_random_patches", "n_scatter_points", {"path": "patch_seed", "widget": NUM_SEED}]},
-            {"title": "Figures", "fields": [{"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
-            {"title": "Output layout", "fields": ["paths.figures_subdir", "paths.logs_subdir", "paths.metrics_filename", "paths.report_filename"]},
-        ],
-        "unrolled_inference": [
-            {"title": "Run", "fields": ["run_directory", "output_subdir", "device", "log_level", {"path": "seed", "widget": NUM_SEED}]},
-            {"title": "Execution", "fields": ["split", "checkpoint_name", "measurement_noise_std", {"path": "chunk_cells", "widget": NUM_CELLS}]},
-            {"title": "Report", "fields": ["save_plots", "n_example_profiles", "save_profile_cube"]},
             {"title": "Figures", "fields": [{"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
             {"title": "Output layout", "fields": ["paths.figures_subdir", "paths.logs_subdir", "paths.metrics_filename", "paths.report_filename"]},
         ],
@@ -474,7 +333,6 @@ class LaunchLayout:
         "head_trials.backbone", "head_trials.heads", "head_trials.matchings",
         "normalization_trials.initial_pass_mag", "normalization_trials.initial_ifg_phase", "normalization_trials.initial_out_amp", "normalization_trials.initial_out_sigma",
         "normalization_trials.final_pass_mag", "normalization_trials.final_ifg_phase", "normalization_trials.final_out_amp", "normalization_trials.final_out_sigma",
-        "physics_trials.components", "physics_trials.weights", "physics_trials.include_baseline",
         "pair_trials.base_component", "pair_trials.base_weight", "pair_trials.components", "pair_trials.weights", "pair_trials.include_baseline",
         "secondary_trials.strategy", "secondary_trials.n_secondaries", "secondary_trials.n_trials", "secondary_trials.mean",
         "secondary_trials.sigma", "secondary_trials.block_step", "secondary_trials.spacing", "secondary_trials.seed",
@@ -538,17 +396,6 @@ class LaunchLayout:
         ],
     }
 
-    INFER_UNROLLED_LAYOUT = {
-        "essentials": INFER_ESSENTIALS,
-        "sections": [
-            {"key": "unrolled", "title": "Unrolled", "panels": [
-                {"kind": "fields", "title": "Unrolled physics-network inference", "template": "unrolled_inference", "at": "unrolled_inference"},
-
-                {"kind": "hidden", "fields": ["gpus_file"]},
-            ]},
-        ],
-    }
-
     INFER_DUAL_LAYOUT = {
         "essentials": INFER_ESSENTIALS,
         "sections": [
@@ -561,19 +408,6 @@ class LaunchLayout:
     }
 
     LAYOUTS = {
-        "pre_process": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Crop window", "fields": ["azimuth_start", "azimuth_end", "range_start", "range_end"]},
-                        {"title": "Source", "fields": ["fusar_project_path", "base_directory", "track_selection", "polarisation"]},
-                        {"title": "Beamforming", "fields": ["beamforming_method", "filter_method", "height_range", "win_list", "apply_resampling", "apply_presumming", "max_amplitude_clip"]},
-                        {"title": "Effort", "fields": ["effort", "max_crop_azimuth_width", "tomogram_workers", "pyrat_threads"]},
-                        {"title": "Outputs", "fields": ["dataset_name", "dataset_type", "stack_identifier", "tomogram_output_tag", "parameter_output_tag", "tomogram_env_name"]},
-                    ]},
-                ]},
-            ],
-        },
         "extract_params": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
@@ -581,7 +415,6 @@ class LaunchLayout:
                         {"title": "Datasets", "fields": [
                             "dataset_base_path",
                             {"path": "dataset_filter", "widget": PICK_DATASETS},
-                            "pyrat_directory",
                         ]},
                         {"title": "Output", "fields": ["output_prefix", "output_suffix", "height_range"]},
                         {"title": "Fit sweep", "fields": [
@@ -608,36 +441,8 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "inject_external_params": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Datasets", "fields": [
-                            "dataset_base_path",
-                            {"path": "dataset_filter", "widget": PICK_DATASETS},
-                        ]},
-                        {"title": "External sources", "fields": [
-                            {"path": "source_files", "widget": MULTI_PATHS},
-                            {"path": "source_windows", "widget": MULTI_WINDOWS},
-                            {"path": "source_order", "widget": CH_CHANNEL_ORDER},
-                        ]},
-                        {"title": "Output", "fields": [
-                            "output_prefix",
-                            "output_suffix",
-                            "origin_note",
-                            "overwrite",
-                        ]},
-                        {"title": "Slots", "fields": [
-                            "k_slots",
-                            "activity_threshold",
-                        ]},
-                    ]},
-                ]},
-            ],
-        },
         "train_backbone": {
             "essentials": TRAIN_ESSENTIALS,
-            "legacy": LEGACY_MODE,
             "sections": [
                 {"key": "model", "title": "Model", "panels": [
                     {"kind": "special", "panel": "model_card", "fields": ["backbone_name", "backbone_head"]},
@@ -660,9 +465,6 @@ class LaunchLayout:
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
                     {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
-                ]},
-                {"key": "geometry", "title": "Geometry", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
                 ]},
                 {"key": "experiments", "title": "Experiments", "panels": [
                     {"kind": "special", "panel": "experiment_builder", "fields": EXPERIMENT_TRIALS},
@@ -705,9 +507,6 @@ class LaunchLayout:
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_profile", "at": "ae_loss"},
                 ]},
-                {"key": "geometry", "title": "Geometry", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
-                ]},
             ],
         },
         "train_image_autoencoder": {
@@ -731,9 +530,6 @@ class LaunchLayout:
                 ]},
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_image", "at": "ae_loss"},
-                ]},
-                {"key": "geometry", "title": "Geometry", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
                 ]},
             ],
         },
@@ -776,9 +572,6 @@ class LaunchLayout:
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Embedding loss", "template": "embedding_loss", "at": "embedding_loss"},
                     {"kind": "fields", "title": "Param loss", "template": "loss", "at": "param_loss"},
-                ]},
-                {"key": "geometry", "title": "Geometry", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
                 ]},
                 {"key": "inference", "title": "Inference", "panels": [
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after"]}]},
@@ -824,9 +617,6 @@ class LaunchLayout:
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
                     {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
                 ]},
-                {"key": "geometry", "title": "Geometry", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
-                ]},
                 {"key": "experiments", "title": "Experiments", "panels": [
                     {"kind": "special", "panel": "experiment_builder", "fields": DUAL_EXPERIMENT_TRIALS},
                     {"kind": "fields", "groups": [
@@ -840,46 +630,9 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "train_unrolled": {
-            "essentials": [
-                "run_name",
-                "resume",
-                {"path": "gpu", "widget": GPU_ONE},
-                {"path": "gpus", "widget": GPU_MANY},
-                "logdir",
-                {"path": "paths.dataset_path", "widget": PICK_DATASET},
-                {"path": "paths.parameters_path", "widget": PICK_PARAMS},
-                {"path": "seed", "widget": NUM_SEED},
-                "seeds",
-            ],
-            "sections": [
-                {"key": "model", "title": "Model", "panels": [
-                    {"kind": "fields", "groups": [{"title": "Unrolled model", "fields": ["model_name", "model_overrides"]}]},
-                ]},
-                {"key": "data", "title": "Data", "panels": [
-                    {"kind": "fields", "title": "Paths", "template": "paths_train", "at": "paths"},
-                    {"kind": "fields", "title": "Normalization", "template": "normalization", "at": "normalization"},
-                    {"kind": "fields", "title": "Augmentation", "template": "augmentation", "at": "augmentation"},
-                ]},
-                {"key": "training", "title": "Training", "panels": [
-                    {"kind": "fields", "title": "Training", "template": "training_unrolled", "at": "training"},
-                    {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
-                    {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
-                    {"kind": "fields", "groups": [{"title": "Fan-out execution", "fields": ["poll_interval_s"]}]},
-                    {"kind": "hidden", "fields": ["gpus_file"]},
-                ]},
-                {"key": "physics", "title": "Physics", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
-                    {"kind": "fields", "title": "Measurements and loss", "groups": [
-                        {"title": None, "fields": ["curve_loss", "measurement_noise_std", "power_floor"]},
-                    ]},
-                ]},
-            ],
-        },
         "infer_backbone":            INFER_BACKBONE_LAYOUT,
         "infer_profile_autoencoder": INFER_PROFILE_AE_LAYOUT,
         "infer_image_autoencoder":   INFER_IMAGE_AE_LAYOUT,
-        "infer_unrolled":            INFER_UNROLLED_LAYOUT,
         "infer_dual":                INFER_DUAL_LAYOUT,
         "benchmark": {
             "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["jepa", "JEPA"]]},
@@ -936,9 +689,6 @@ class LaunchLayout:
                     ]},
                 ]},
                 JEPA_SECTION,
-                {"key": "geometry", "title": "Geometry", "when": {"field": "training_type", "in": ["backbone", "jepa"]}, "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
-                ]},
                 {"key": "inference", "title": "Inference", "when": {"field": "training_type", "in": ["backbone", "jepa"]}, "panels": [
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after"]}]},
                     {"kind": "fields", "title": "Inference run", "template": "inference_queue", "at": "inference"},
@@ -993,9 +743,6 @@ class LaunchLayout:
                     ]},
                 ]},
                 JEPA_SECTION,
-                {"key": "geometry", "title": "Geometry", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
-                ]},
                 {"key": "inference", "title": "Inference", "when": {"field": "training_type", "in": ["backbone", "jepa"]}, "panels": [
                     {"kind": "fields", "groups": [{"title": "Splits", "fields": ["inference_splits"]}]},
                     {"kind": "fields", "title": "Inference run", "template": "inference_queue", "at": "inference"},
@@ -1038,9 +785,6 @@ class LaunchLayout:
                 {"key": "loss", "title": "Loss", "panels": [
                     {"kind": "fields", "title": "Curriculum", "template": "curriculum_head", "at": "curriculum"},
                     {"kind": "pair", "title": "Loss stages", "template": "loss", "base": "curriculum.complete", "override": "curriculum.warmup"},
-                ]},
-                {"key": "geometry", "title": "Geometry", "panels": [
-                    {"kind": "fields", "title": "Physics geometry", "template": "geometry", "at": "geometry"},
                 ]},
             ],
         },
@@ -1113,18 +857,6 @@ class LaunchLayout:
                 ]},
             ],
         },
-        "analyze_preprocessing": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Runs", "fields": [
-                            "runs_dir",
-                            {"path": "run_tags", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir"}},
-                        ]},
-                    ]},
-                ]},
-            ],
-        },
         "analyze_param_extraction": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
@@ -1171,20 +903,6 @@ class LaunchLayout:
                         ]},
                         {"title": "Report", "fields": ["inference_subdir", "output_subdir", "metrics_filename", "report_filename"]},
                         {"title": "Disagreement maps", "fields": ["compute_disagreement", "cubes_subdir"]},
-                    ]},
-                ]},
-            ],
-        },
-        "compare_preprocessing_trials": {
-            "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
-                        {"title": "Runs", "fields": [
-                            "runs_dir",
-                            {"path": "run_tags", "widget": {"kind": "dataset", "mode": "runs_compare", "multi": True, "baseFrom": "runs_dir"}},
-                        ]},
-                        {"title": "Sampling", "fields": ["pixel_sample", "block_size", "range_chunk", {"path": "workers", "widget": NUM_WORKERS}]},
-                        {"title": "Report", "fields": ["make_plots", "output_dir"]},
                     ]},
                 ]},
             ],
@@ -1548,8 +1266,6 @@ class LaunchLayout:
         layout = {"essentials": essentials, "sections": sections, "widgets": widgets}
         if "type_tab" in spec:
             layout["type_tab"] = copy.deepcopy(spec["type_tab"])
-        if "legacy" in spec:
-            layout["legacy"] = copy.deepcopy(spec["legacy"])
         return layout
 
     def _entry_claims(self, entry, out):
@@ -1614,20 +1330,6 @@ class LaunchLayout:
         for path, widget in layout["widgets"].items():
             if widget.get("kind") == "number" and not ("min" in widget and "max" in widget):
                 problems.append(f"number widget for {path} lacks min/max bounds")
-
-        legacy = layout.get("legacy")
-        if legacy:
-            section_keys = {section["key"] for section in layout["sections"]}
-            unknown_sections = sorted(set(legacy["sections"]) - section_keys)
-            unknown_expose   = sorted(set(legacy["expose"]) - known)
-            unknown_preset   = sorted(set(legacy["preset"]) - known)
-
-            if unknown_sections:
-                problems.append(f"legacy mode for {key} keeps unknown sections: {', '.join(unknown_sections)}")
-            if unknown_expose:
-                problems.append(f"legacy mode for {key} exposes unknown fields: {', '.join(unknown_expose)}")
-            if unknown_preset:
-                problems.append(f"legacy mode for {key} presets unknown fields: {', '.join(unknown_preset)}")
 
         if problems:
             raise LayoutError("\n".join(problems))

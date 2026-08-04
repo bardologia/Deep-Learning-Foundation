@@ -63,7 +63,7 @@ class ProcessManager:
     ORPHAN_RESCAN_S  = 3.0
     HISTORY_LIMIT    = 50
     ENDED_STATES     = ("finished", "failed", "cancelled")
-    POOL_SCRIPTS     = ("train_backbone", "train_dual", "train_jepa", "train_image_autoencoder", "train_profile_autoencoder", "train_unrolled", "sweep_patches", "benchmark", "cross_validate", "tune", "infer_backbone", "infer_profile_autoencoder", "infer_image_autoencoder", "infer_unrolled", "infer_dual")
+    POOL_SCRIPTS     = ("train_backbone", "train_dual", "train_jepa", "train_image_autoencoder", "train_profile_autoencoder", "sweep_patches", "benchmark", "cross_validate", "tune", "infer_backbone", "infer_profile_autoencoder", "infer_image_autoencoder", "infer_dual")
     POOL_FIELD       = "gpus_file"
 
     def __init__(self, paths: ProjectPaths, logger: WebLogger, notifier: JobNotifier, describer: JobDescriber) -> None:

@@ -64,7 +64,7 @@ class CatalogRouter(SubRouter):
             exchange.send_json({"error": f"unknown script '{key}'"}, 404)
             return
 
-        result = self.resolver.resolve(key, self.launcher.preferred_interpreter(key))
+        result = self.resolver.resolve(key, self.launcher.preferred_interpreter())
         if result.get("ok"):
             try:
                 result = {**result, "layout": self.layout.build(key, result["leaves"])}
@@ -116,7 +116,7 @@ class JobRouter(SubRouter):
             exchange.send_json({"error": f"unknown script '{key}'"}, 404)
             return
 
-        interpreter = body.get("interpreter") or self.launcher.preferred_interpreter(key)
+        interpreter = body.get("interpreter") or self.launcher.preferred_interpreter()
         result      = self.launcher.execute(key, interpreter, body.get("overrides", {}), body.get("follow_up") or None, bool(body.get("detach")), bool(body.get("queue")))
         exchange.send_result(result)
 
@@ -192,7 +192,7 @@ class SavedRunRouter(SubRouter):
         interpreter = body.get("interpreter", "")
 
         if not interpreter and self.paths.has_script(key):
-            interpreter = self.launcher.preferred_interpreter(key)
+            interpreter = self.launcher.preferred_interpreter()
 
         error = self.launcher.interpreter_error(interpreter)
         if error:
