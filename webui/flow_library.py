@@ -1,9 +1,118 @@
 class FlowLibrary:
 
+    def _synthesis(self) -> dict:
+        nodes = [
+            {"id": "seed",   "tex": r"s_0",                     "role": "measured",     "kind": "scalar", "shape": "1",                  "desc": "generator seed; every field below is a deterministic function of it",  "sample": "0"},
+            {"id": "u",      "tex": r"u^{(j)}",                 "role": "intermediate", "kind": "matrix", "shape": "n_row x n_col",      "desc": "unit-scaled smooth random field, one per parameter stream",           "sample": [["0.12", "0.74"], ["0.55", "0.31"]]},
+            {"id": "amps",   "tex": r"a_k",                     "role": "intermediate", "kind": "tensor", "shape": "K x n_row x n_col",  "desc": "per-slot Gaussian amplitude field, zeroed on silent pixels",          "sample": [["0.00", "3.10"], ["1.82", "0.00"]]},
+            {"id": "mus",    "tex": r"\mu_k",                   "role": "intermediate", "kind": "tensor", "shape": "K x n_row x n_col",  "desc": "per-slot mean field, confined to slot k's band of the z axis",        "sample": [["0.0", "12.4"], ["31.8", "0.0"]]},
+            {"id": "sigs",   "tex": r"\sigma_k",                "role": "intermediate", "kind": "tensor", "shape": "K x n_row x n_col",  "desc": "per-slot width field, drawn inside sigma_range",                      "sample": [["0.00", "4.20"], ["6.75", "0.00"]]},
+            {"id": "silent", "tex": r"\mathbb{1}_{\mathrm{off}}", "role": "intermediate", "kind": "matrix", "shape": "n_row x n_col",   "desc": "pixels with no component at all, plus per-slot dropouts",             "sample": [["1", "0"], ["0", "1"]]},
+            {"id": "prof",   "tex": r"\gamma_h",                "role": "intermediate", "kind": "tensor", "shape": "H x n_row x n_col",  "desc": "noise-free profile volume, the mixture evaluated on the z axis",      "sample": [["0.0", "2.9"], ["1.7", "0.0"]]},
+            {"id": "cube",   "tex": r"T_h",                     "role": "calculated",   "kind": "tensor", "shape": "H x n_row x n_col",  "desc": "reference cube: random-phase complex profiles plus circular noise",   "sample": [["0.0+0.0j", "2.7-1.1j"], ["0.9+1.4j", "0.0+0.0j"]]},
+            {"id": "phi",    "tex": r"\varphi",                 "role": "intermediate", "kind": "matrix", "shape": "n_row x n_col",      "desc": "smooth reference phase screen shared by every channel",              "sample": [["-1.90", "0.42"], ["2.11", "-0.75"]]},
+            {"id": "prim",   "tex": r"c_0",                     "role": "calculated",   "kind": "matrix", "shape": "n_row x n_col",      "desc": "primary channel: profile mean on the reference phase, plus noise",    "sample": [["0.31+0.02j", "1.02-0.44j"], ["0.77+0.58j", "0.12-0.03j"]]},
+            {"id": "sec",    "tex": r"c_i",                     "role": "calculated",   "kind": "tensor", "shape": "N_s x n_row x n_col","desc": "secondary channels, each seeing its own window of the z axis",       "sample": [["0.28+0.05j", "0.91-0.30j"]]},
+            {"id": "cohe",   "tex": r"\rho_i",                  "role": "intermediate", "kind": "matrix", "shape": "n_row x n_col",      "desc": "profile-weighted complex coherence at channel i's phase rate",        "sample": [["0.94-0.21j", "0.88+0.31j"]]},
+            {"id": "der",    "tex": r"d_i",                     "role": "calculated",   "kind": "tensor", "shape": "N_i x n_row x n_col","desc": "derived channels, the primary against each secondary",               "sample": [["0.09-0.02j", "0.93+0.11j"]]},
+            {"id": "aux",    "tex": r"A",                       "role": "calculated",   "kind": "matrix", "shape": "n_row x n_col",      "desc": "auxiliary scalar field, a second smooth surface over aux_range",      "sample": [["4.10", "21.7"], ["17.3", "8.44"]]},
+            {"id": "mseK",   "tex": r"\mathrm{MSE}_K",          "role": "intermediate", "kind": "tensor", "shape": "K x n_row x n_col",  "desc": "residual of the k tallest components against the observed profile",   "sample": [["0.18", "0.04"], ["0.05", "0.07"]]},
+            {"id": "Kstar",  "tex": r"K^{*}",                   "role": "intermediate", "kind": "matrix", "shape": "n_row x n_col",      "desc": "retained component count per pixel after the complexity penalty",     "sample": [["0", "2"], ["1", "0"]]},
+            {"id": "theta",  "tex": r"\theta",                  "role": "final",        "kind": "tensor", "shape": "3K x n_row x n_col", "desc": "mean-sorted interleaved (a, mu, sigma) supervised target",            "sample": [["a_1", "mu_1"], ["sig_1", "a_2"]]},
+        ]
+        steps = [
+            {
+                "id": "fields", "title": "Smooth random parameter fields", "phase": "1 - Parameters",
+                "note": "Every parameter is a separately seeded white field smoothed by a Gaussian of field_smoothing_pixels and rescaled to unit span, so neighbouring pixels stay correlated and the scene has structure a spatial model can exploit. Slot k draws its mean inside its own band of the z axis, inset by slot_band_margin, which keeps components separable.",
+                "inputs": ["seed"], "outputs": ["u", "amps", "mus", "sigs"],
+                "lines": [
+                    [{"id": "u", "tex": r"u^{(j)}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{unit}\big(G_{\sigma_f} * \mathcal{N}(0,1)\big),\qquad \sigma_f = \texttt{field\_smoothing\_pixels}"}],
+                    [{"id": "mus", "tex": r"\mu_k", "role": "intermediate"}, {"tex": r"\in\ \big[z_{\min} + (k+m)w,\ z_{\min} + (k+1-m)w\big],\quad w = \tfrac{z_{\max}-z_{\min}}{K}"}],
+                ],
+            },
+            {
+                "id": "occupancy", "title": "Silencing and slot dropout", "phase": "1 - Parameters",
+                "note": "A quantile cut on one more smooth field switches off empty_pixel_fraction of the scene entirely; an independent cut per slot above the first drops dropped_slot_fraction of the survivors. Occupancy therefore varies spatially instead of being uniform, which is what makes the existence problem real.",
+                "inputs": ["u"], "outputs": ["silent", "amps", "mus", "sigs"],
+                "lines": [
+                    [{"id": "silent", "tex": r"\mathbb{1}_{\mathrm{off}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathbb{1}\big[u^{(0)} < q_{f_e}(u^{(0)})\big]\ \vee\ \mathbb{1}\big[u^{(k)} < q_{f_d}(u^{(k)})\big]"}],
+                    [{"id": "amps", "tex": r"a_k", "role": "intermediate"}, {"tex": r"\leftarrow 0\quad\text{where }"}, {"id": "silent", "tex": r"\mathbb{1}_{\mathrm{off}}", "role": "intermediate"}],
+                ],
+            },
+            {
+                "id": "render", "title": "Profile rendering", "phase": "2 - Scene",
+                "note": "The mixture is evaluated on the profile_length-bin z axis, one slot at a time and accumulated in place so the full volume is never held twice. The width is floored at 1e-6 and the exponent clipped to [-100, 0] before exponentiation, the same guards the loss uses.",
+                "inputs": ["amps", "mus", "sigs"], "outputs": ["prof"],
+                "lines": [
+                    [{"id": "prof", "tex": r"\gamma_h", "role": "intermediate"}, {"tex": "="}, {"tex": r"\sum_{k}"}, {"id": "amps", "tex": r"a_k", "role": "intermediate"}, {"tex": r"\,\exp\!\Big(\!-\tfrac{(z_h-"}, {"id": "mus", "tex": r"\mu_k", "role": "intermediate"}, {"tex": r")^2}{2\max("}, {"id": "sigs", "tex": r"\sigma_k", "role": "intermediate"}, {"tex": r",10^{-6})^2}\Big)"}],
+                ],
+            },
+            {
+                "id": "cube", "title": "Reference cube", "phase": "2 - Scene",
+                "note": "The profile volume is given a uniform random phase per voxel and circular complex noise scaled by cube_noise_fraction of the per-pixel peak, producing the reference cube every downstream label-quality metric scores against.",
+                "inputs": ["prof"], "outputs": ["cube"],
+                "lines": [
+                    [{"id": "cube", "tex": r"T_h", "role": "calculated"}, {"tex": "="}, {"id": "prof", "tex": r"\gamma_h", "role": "intermediate"}, {"tex": r"\,e^{i\psi_h} + \eta_h,\qquad \psi_h \sim \mathcal{U}(-\pi,\pi)"}],
+                    [{"tex": r"\eta_h \sim \mathcal{CN}\big(0,\ \nu_T \max_h "}, {"id": "prof", "tex": r"\gamma_h", "role": "intermediate"}, {"tex": r"\big),\qquad \nu_T = \texttt{cube\_noise\_fraction}"}],
+                ],
+            },
+            {
+                "id": "channels", "title": "Primary and secondary channels", "phase": "3 - Channels",
+                "note": "All channels share one smooth reference phase screen. The primary carries the profile mean; secondary i carries the profile seen through a Gaussian window centred at its own slice of the z axis, clipped at max_amplitude_clip times the mean so no channel dominates.",
+                "inputs": ["prof", "phi"], "outputs": ["prim", "sec"],
+                "lines": [
+                    [{"id": "prim", "tex": r"c_0", "role": "calculated"}, {"tex": "="}, {"tex": r"\bar{\gamma}\,e^{i"}, {"id": "phi", "tex": r"\varphi", "role": "intermediate"}, {"tex": r"} + \varepsilon_0,\qquad \bar{\gamma} = \tfrac{1}{H}\sum_h"}, {"id": "prof", "tex": r"\gamma_h", "role": "intermediate"}],
+                    [{"id": "sec", "tex": r"c_i", "role": "calculated"}, {"tex": "="}, {"tex": r"\min\!\big(\langle w_i,"}, {"id": "prof", "tex": r"\gamma", "role": "intermediate"}, {"tex": r"\rangle,\ \kappa\bar{\gamma}\big)\,e^{i("}, {"id": "phi", "tex": r"\varphi", "role": "intermediate"}, {"tex": r"-\arg"}, {"id": "cohe", "tex": r"\rho_i", "role": "intermediate"}, {"tex": r")} + \varepsilon_i"}],
+                ],
+            },
+            {
+                "id": "derived", "title": "Coherence phase and derived channels", "phase": "3 - Channels",
+                "note": "Channel i's phase offset is the argument of the profile-weighted coherence at its phase rate, so position along z maps into phase exactly as the derived channels expect. The derived channel is then the primary against the conjugate secondary, which is what use_derived feeds the model.",
+                "inputs": ["prof", "prim", "sec"], "outputs": ["cohe", "der"],
+                "lines": [
+                    [{"id": "cohe", "tex": r"\rho_i", "role": "intermediate"}, {"tex": "="}, {"tex": r"\dfrac{\sum_h e^{i\kappa_i z_h}"}, {"id": "prof", "tex": r"\gamma_h", "role": "intermediate"}, {"tex": r"}{\max\big(\sum_h"}, {"id": "prof", "tex": r"\gamma_h", "role": "intermediate"}, {"tex": r",\,10^{-8}\big)},\quad \kappa_i = \texttt{channel\_phase\_rates}_i"}],
+                    [{"id": "der", "tex": r"d_i", "role": "calculated"}, {"tex": "="}, {"id": "prim", "tex": r"c_0", "role": "calculated"}, {"tex": r"\;\overline{"}, {"id": "sec", "tex": r"c_i", "role": "calculated"}, {"tex": r"}"}],
+                ],
+            },
+            {
+                "id": "aux", "title": "Auxiliary field", "phase": "3 - Channels",
+                "note": "A second smooth surface, twice as smooth as the parameter fields and bounded by aux_range, is written as the auxiliary channel. It is a per-pixel scalar covariate the input stack can optionally carry, independent of the mixture that generated the profiles.",
+                "inputs": ["seed"], "outputs": ["aux"],
+                "lines": [
+                    [{"id": "aux", "tex": r"A", "role": "calculated"}, {"tex": "="}, {"tex": r"A_{\min} + (A_{\max}-A_{\min})\,\mathrm{unit}\big(G_{2\sigma_f} * \mathcal{N}(0,1)\big)"}],
+                ],
+            },
+            {
+                "id": "bestk", "title": "Best-K scoring against the observed cube", "phase": "4 - Targets",
+                "note": "The generator does not hand its own parameters over unchecked. Slots are ranked by amplitude and added one at a time, each order scored by the residual against the peak-normalised cube magnitude, and the same complexity penalty lambda_k the extraction stage uses picks the order. A slot the noise has swallowed is therefore dropped from the label, so the targets are honestly attainable.",
+                "inputs": ["cube", "amps", "mus", "sigs"], "outputs": ["mseK", "Kstar"],
+                "lines": [
+                    [{"id": "mseK", "tex": r"\mathrm{MSE}_K", "role": "intermediate"}, {"tex": "="}, {"tex": r"\tfrac{1}{H}\sum_h\big(\hat\gamma_K(z_h) - \tilde{T}_h\big)^2,\qquad \tilde{T}_h = \tfrac{|T_h|}{\max_h |T_h|}"}],
+                    [{"id": "Kstar", "tex": r"K^{*}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\arg\min_K\Big("}, {"id": "mseK", "tex": r"\mathrm{MSE}_K", "role": "intermediate"}, {"tex": r" + \lambda_K K\Big)"}],
+                ],
+            },
+            {
+                "id": "write", "title": "Mean-sorted target and artifact write", "phase": "4 - Targets",
+                "note": "Slots beyond K* are zeroed, the survivors sorted by mean along z so slot order is a stable convention rather than an accident, and the interleaved (a, mu, sigma) stack is written next to the channels. dataset.json names every artifact and lists the channel labels; param_extraction_meta.json records k_max and the fit constants so downstream code is never guessing.",
+                "inputs": ["Kstar", "amps", "mus", "sigs", "cube", "prim", "sec", "der", "aux"], "outputs": ["theta"],
+                "lines": [
+                    [{"id": "theta", "tex": r"\theta_{3k:3k+3}", "role": "final"}, {"tex": "="}, {"tex": r"\big("}, {"id": "amps", "tex": r"a_{\pi(k)}", "role": "intermediate"}, {"tex": ","}, {"id": "mus", "tex": r"\mu_{\pi(k)}", "role": "intermediate"}, {"tex": ","}, {"id": "sigs", "tex": r"\sigma_{\pi(k)}", "role": "intermediate"}, {"tex": r"\big)\cdot\mathbb{1}\big[k <"}, {"id": "Kstar", "tex": r"K^{*}", "role": "intermediate"}, {"tex": r"\big]"}],
+                    [{"tex": r"\pi = \mathrm{argsort}_k\ "}, {"id": "mus", "tex": r"\mu_k", "role": "intermediate"}, {"tex": r"\quad\text{over active slots}"}],
+                ],
+            },
+        ]
+        return {
+            "key"   : "synthesis",
+            "name"  : "Dataset Synthesis (bundled example data)",
+            "blurb" : "Build the example dataset from a seed alone. Smooth random fields give every pixel its Gaussian-mixture parameters, those render into profiles along z, the profiles become a reference cube and a primary-plus-secondary channel stack with matching derived channels and an auxiliary field, and the mixture is then re-scored against the noisy cube so the written targets are the ones a model can actually reach.",
+            "nodes" : nodes,
+            "steps" : steps,
+        }
+
     def _param_extraction(self) -> dict:
         nodes = [
-            {"id": "T",       "tex": r"T",                         "role": "measured",     "kind": "tensor", "shape": "H x Az x R", "desc": "beamformed tomogram from processing, magnitude taken per profile", "sample": [["0.2", "0.9", "0.3"], ["0.1", "0.7", "0.8"], ["0.0", "0.4", "1.0"]]},
-            {"id": "P",       "tex": r"P_h",                       "role": "intermediate", "kind": "vector", "shape": "H",          "desc": "thresholded and truncated magnitude profile over elevation",       "sample": ["0.00", "0.62", "0.31", "0.88", "0.00"]},
+            {"id": "T",       "tex": r"T",                         "role": "measured",     "kind": "tensor", "shape": "H x n_row x n_col", "desc": "beamformed cube from processing, magnitude taken per profile", "sample": [["0.2", "0.9", "0.3"], ["0.1", "0.7", "0.8"], ["0.0", "0.4", "1.0"]]},
+            {"id": "P",       "tex": r"P_h",                       "role": "intermediate", "kind": "vector", "shape": "H",          "desc": "thresholded and truncated magnitude profile over z",       "sample": ["0.00", "0.62", "0.31", "0.88", "0.00"]},
             {"id": "active",  "tex": r"\mathbb{1}_{\mathrm{act}}", "role": "intermediate", "kind": "scalar", "shape": "1",          "desc": "active-profile gate (profile max above tau_a)",                    "sample": "1"},
             {"id": "scale",   "tex": r"s",                         "role": "intermediate", "kind": "scalar", "shape": "1",          "desc": "per-profile scale = profile max (1 if inactive)",                  "sample": "0.88"},
             {"id": "gtilde",  "tex": r"\tilde{\gamma}_h",          "role": "intermediate", "kind": "vector", "shape": "H",          "desc": "peak-normalised profile (tallest bin equals one)",                 "sample": ["0.00", "0.70", "0.35", "1.00", "0.00"]},
@@ -11,7 +120,7 @@ class FlowLibrary:
             {"id": "sigbase", "tex": r"\sigma_{\mathrm{base}}",    "role": "intermediate", "kind": "scalar", "shape": "1",          "desc": "span-derived width scale, sets d_min and sig0, m",                 "sample": "2.50"},
             {"id": "sig0",    "tex": r"\sigma^{(0)}",              "role": "intermediate", "kind": "vector", "shape": "K",          "desc": "shared initial width guess, m",                                    "sample": ["0.62", "0.62", "0.62"]},
             {"id": "idxs",    "tex": r"\mathcal{I}",               "role": "intermediate", "kind": "set",    "shape": "K",          "desc": "K seed indices (peaks then residual-argmax fill)",                 "sample": ["97", "34", "151", "12", "180"]},
-            {"id": "mu0",     "tex": r"\mu",                       "role": "intermediate", "kind": "vector", "shape": "K",          "desc": "seed component means at peak elevations, m",                       "sample": ["12.4", "31.8", "47.0"]},
+            {"id": "mu0",     "tex": r"\mu",                       "role": "intermediate", "kind": "vector", "shape": "K",          "desc": "seed component means at peak z values, m",                       "sample": ["12.4", "31.8", "47.0"]},
             {"id": "a0",      "tex": r"a",                         "role": "intermediate", "kind": "vector", "shape": "K",          "desc": "seed component amplitudes at peaks, raw units",                    "sample": ["0.88", "0.62", "0.34"]},
             {"id": "loss",    "tex": r"\mathcal{L}",               "role": "intermediate", "kind": "scalar", "shape": "1",          "desc": "per-profile MSE on the normalised profile",                        "sample": "3.4e-2"},
             {"id": "grad",    "tex": r"g_t",                       "role": "intermediate", "kind": "vector", "shape": "K",          "desc": "loss gradient at step t, masked to free parameters",               "sample": ["-0.04", "0.01", "-0.02"]},
@@ -21,13 +130,13 @@ class FlowLibrary:
             {"id": "Kstar",   "tex": r"K^{*}",                     "role": "calculated",   "kind": "scalar", "shape": "1",          "desc": "selected number of active components",                             "sample": "2"},
             {"id": "aout",    "tex": r"a^{\mathrm{out}}",          "role": "calculated",   "kind": "vector", "shape": "K",          "desc": "winner amplitudes rescaled to raw units",                          "sample": ["0.81", "0.55"]},
             {"id": "theta",   "tex": r"\theta",                    "role": "final",        "kind": "vector", "shape": "3K",         "desc": "mean-ordered interleaved (a, mu, sigma) supervised target",        "sample": ["a_1", "mu_1", "sig_1", "a_2", "..."]},
-            {"id": "r2",      "tex": r"R^2",                       "role": "final",        "kind": "matrix", "shape": "Az x R",     "desc": "per-pixel fit-quality map",                                        "sample": [["0.97", "0.91"], ["0.88", "0.99"]]},
-            {"id": "mrel",    "tex": r"m_{\mathrm{rel}}",          "role": "final",        "kind": "matrix", "shape": "Az x R",     "desc": "relative K-selection margin diagnostic",                           "sample": [["0.31", "0.04"], ["0.12", "0.55"]]},
+            {"id": "r2",      "tex": r"R^2",                       "role": "final",        "kind": "matrix", "shape": "n_row x n_col",     "desc": "per-pixel fit-quality map",                                        "sample": [["0.97", "0.91"], ["0.88", "0.99"]]},
+            {"id": "mrel",    "tex": r"m_{\mathrm{rel}}",          "role": "final",        "kind": "matrix", "shape": "n_row x n_col",     "desc": "relative K-selection margin diagnostic",                           "sample": [["0.31", "0.04"], ["0.12", "0.55"]]},
         ]
         steps = [
             {
                 "id": "threshold", "title": "Profile floor and truncation", "phase": "0 - Conditioning",
-                "note": "The elevation profile is the tomogram magnitude; ProfilePreprocessor zeroes every sample not exceeding t_f = 0.25 of the per-profile max, then zeroes all bins from index H_tr = 170 onward. This is the exact conditioning the fit, R2 and contrast all consume.",
+                "note": "The z profile is the cube magnitude; ProfilePreprocessor zeroes every sample not exceeding t_f = 0.25 of the per-profile max, then zeroes all bins from index H_tr = 170 onward. This is the exact conditioning the fit, R2 and contrast all consume.",
                 "inputs": ["T"], "outputs": ["P"],
                 "lines": [
                     [{"id": "P", "tex": r"P_h", "role": "intermediate"}, {"tex": "="}, {"id": "T", "tex": r"\left|T_h\right|", "role": "measured"}, {"tex": r"\cdot\,\mathbb{1}\!\left[\left|T_h\right| > t_f \max_h \left|T_h\right|\right],\quad t_f = 0.25"}],
@@ -45,7 +154,7 @@ class FlowLibrary:
             },
             {
                 "id": "pnorm", "title": "Peak normalisation", "phase": "0 - Conditioning",
-                "note": "Dividing by the per-profile maximum sets the tallest peak to one, decoupling the fit loss from absolute backscatter so the MSE and the penalty are comparable across pixels.",
+                "note": "Dividing by the per-profile maximum sets the tallest peak to one, decoupling the fit loss from absolute intensity so the MSE and the penalty are comparable across pixels.",
                 "inputs": ["P", "scale"], "outputs": ["gtilde"],
                 "lines": [
                     [{"id": "gtilde", "tex": r"\tilde{\gamma}_h", "role": "intermediate"}, {"tex": "="}, {"tex": r"\dfrac{1}{"}, {"id": "scale", "tex": r"s", "role": "intermediate"}, {"tex": r"}\;"}, {"id": "P", "tex": r"P_h", "role": "intermediate"}],
@@ -61,7 +170,7 @@ class FlowLibrary:
             },
             {
                 "id": "geometry", "title": "Width scales and clamp bounds", "phase": "1 - Init (CPU)",
-                "note": "The span-derived sigma_base sets the peak-separation distance d_min and, divided by D_sigma = 4, the shared initial width; the Adam width clamp runs from one elevation bin to half the height span.",
+                "note": "The span-derived sigma_base sets the peak-separation distance d_min and, divided by D_sigma = 4, the shared initial width; the Adam width clamp runs from one z bin to half the height span.",
                 "inputs": [], "outputs": ["sigbase", "sig0"],
                 "lines": [
                     [{"id": "sigbase", "tex": r"\sigma_{\mathrm{base}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\max\!\left(2\Delta\xi,\ \tfrac{x_{\max}-x_{\min}}{8K}\right),\quad d_{\min} = \max\!\big(1,\ \lfloor \sigma_{\mathrm{base}}/\Delta\xi\rfloor\big)"}],
@@ -123,7 +232,7 @@ class FlowLibrary:
             },
             {
                 "id": "rescale", "title": "Rescale winner to raw amplitude", "phase": "3 - Best-K",
-                "note": "Scoring lives on the normalised scale, but the saved amplitudes of the winning order return to raw backscatter units; means and widths are written unchanged.",
+                "note": "Scoring lives on the normalised scale, but the saved amplitudes of the winning order return to raw intensity units; means and widths are written unchanged.",
                 "inputs": ["Kstar", "a0", "scale"], "outputs": ["aout"],
                 "lines": [
                     [{"id": "aout", "tex": r"a^{\mathrm{out}}_k", "role": "calculated"}, {"tex": "="}, {"id": "a0", "tex": r"a_k", "role": "intermediate"}, {"tex": r"\cdot"}, {"id": "scale", "tex": r"s", "role": "intermediate"}, {"tex": r",\qquad k \le"}, {"id": "Kstar", "tex": r"K^{*}", "role": "calculated"}],
@@ -131,7 +240,7 @@ class FlowLibrary:
             },
             {
                 "id": "assemble", "title": "Order and pack the target", "phase": "3 - Best-K",
-                "note": "The K_max slots are sorted by ascending mean elevation, with inactive slots (amplitude at or below tau_a) keyed to infinity and pushed last, then written into the interleaved 3K target; slots beyond K* are exact zeros.",
+                "note": "The K_max slots are sorted by ascending mean z, with inactive slots (amplitude at or below tau_a) keyed to infinity and pushed last, then written into the interleaved 3K target; slots beyond K* are exact zeros.",
                 "inputs": ["Kstar", "aout", "mu0", "sigstar"], "outputs": ["theta"],
                 "lines": [
                     [{"id": "theta", "tex": r"\theta", "role": "final"}, {"tex": "="}, {"tex": r"\big[\,"}, {"id": "aout", "tex": r"a^{\mathrm{out}}", "role": "calculated"}, {"tex": ","}, {"id": "mu0", "tex": r"\mu", "role": "intermediate"}, {"tex": ","}, {"id": "sigstar", "tex": r"\sigma^{*}", "role": "calculated"}, {"tex": r"\,\big]_{\pi}^{\,k \le"}, {"id": "Kstar", "tex": r"K^{*}", "role": "calculated"}, {"tex": r"},\ \ \pi=\operatorname{argsort}_k\big(\mu_k\ \text{if}\ a_k>\tau_a\ \text{else}\ \infty\big)"}],
@@ -139,7 +248,7 @@ class FlowLibrary:
             },
             {
                 "id": "quality", "title": "Fit-quality R-squared map", "phase": "4 - Diagnostics",
-                "note": "In the inference/metrics stage, the per-pixel coefficient of determination is computed over elevation against the same thresholded-and-truncated profile the fit saw, in float64, with a 1e-12 stabiliser on the total sum of squares.",
+                "note": "In the inference/metrics stage, the per-pixel coefficient of determination is computed over z against the same thresholded-and-truncated profile the fit saw, in float64, with a 1e-12 stabiliser on the total sum of squares.",
                 "inputs": ["theta", "T"], "outputs": ["r2"],
                 "lines": [
                     [{"id": "r2", "tex": r"R^2", "role": "final"}, {"tex": "="}, {"tex": r"1 - \dfrac{\sum_h \big(\hat{\gamma}_h("}, {"id": "theta", "tex": r"\theta", "role": "final"}, {"tex": r") - \gamma_h\big)^2}{\sum_h (\gamma_h - \bar{\gamma})^2 + \delta},\quad \delta = 10^{-12}"}],
@@ -158,22 +267,22 @@ class FlowLibrary:
         return {
             "key"   : "param",
             "name"  : "Parameter Extraction (K-Gaussian fit)",
-            "blurb" : "Per-pixel K-Gaussian fit. Threshold and peak-normalise each elevation profile, seed a mixture from prominence peaks on the CPU, fit component widths (and, per mode, amplitudes and means) with clamped bias-corrected Adam on the GPU, select the penalised best order, sort by mean elevation into the interleaved target, then score R2 and K-margin diagnostics.",
+            "blurb" : "Per-pixel K-Gaussian fit. Threshold and peak-normalise each z profile, seed a mixture from prominence peaks on the CPU, fit component widths (and, per mode, amplitudes and means) with clamped bias-corrected Adam on the GPU, select the penalised best order, sort by mean z into the interleaved target, then score R2 and K-margin diagnostics.",
             "nodes" : nodes,
             "steps" : steps,
         }
 
     def _dataset(self) -> dict:
         nodes = [
-            {"id": "Gcrop",  "tex": r"\Omega_G",           "role": "measured",     "kind": "set",    "shape": "(az0,az1,rg0,rg1)",     "desc": "global crop region in absolute pixel coords",            "sample": "(0, 4096, 0, 3000)"},
-            {"id": "Rsplit", "tex": r"\Omega_s",           "role": "intermediate", "kind": "set",    "shape": "(az0,az1,rg0,rg1)",     "desc": "one split region (train/val/test)",                      "sample": "(0, 2867, 0, 3000)"},
+            {"id": "Gcrop",  "tex": r"\Omega_G",           "role": "measured",     "kind": "set",    "shape": "(row0,row1,col0,col1)",     "desc": "global crop region in absolute pixel coords",            "sample": "(0, 4096, 0, 3000)"},
+            {"id": "Rsplit", "tex": r"\Omega_s",           "role": "intermediate", "kind": "set",    "shape": "(row0,row1,col0,col1)",     "desc": "one split region (train/val/test)",                      "sample": "(0, 2867, 0, 3000)"},
             {"id": "azsl",   "tex": r"\sigma_a,\sigma_r",  "role": "calculated",   "kind": "set",    "shape": "slices",                "desc": "zero-based local slices into the mmap arrays",           "sample": "[0:2867], [0:3000]"},
             {"id": "sel",    "tex": r"\pi",                "role": "calculated",   "kind": "vector", "shape": "N_s",                   "desc": "positional indices of secondaries selected by label",    "sample": ["3", "5", "7", "25"]},
-            {"id": "s0",     "tex": r"\mathbf{s}_0",       "role": "measured",     "kind": "matrix", "shape": "Az x Rg",               "desc": "primary (reference) complex SLC",                        "sample": [["0.8+0.2j", "0.6-0.4j"], ["0.5+0.5j", "0.9-0.1j"]]},
-            {"id": "Smat",   "tex": r"S",                  "role": "measured",     "kind": "tensor", "shape": "N_s x Az x Rg",         "desc": "selected secondary complex SLC passes",                  "sample": [["0.7+0.1j"]]},
-            {"id": "Imat",   "tex": r"I",                  "role": "measured",     "kind": "tensor", "shape": "N_i x Az x Rg",         "desc": "selected interferogram passes",                          "sample": [["0.9+0.4j"]]},
-            {"id": "X",      "tex": r"\mathbf{X}",         "role": "measured",     "kind": "tensor", "shape": "(1+N_s+N_i) x Az x Rg", "desc": "stacked complex buffer: primary, secondaries, ifgs",     "sample": [["0.8+0.2j", "0.6-0.4j"], ["0.5+0.5j", "0.9-0.1j"]]},
-            {"id": "dem",    "tex": r"\mathbf{D}",         "role": "measured",     "kind": "matrix", "shape": "Az x Rg",               "desc": "DEM elevation channel, real (optional)",                 "sample": [["112.4", "113.1"], ["110.8", "111.9"]]},
+            {"id": "s0",     "tex": r"\mathbf{s}_0",       "role": "measured",     "kind": "matrix", "shape": "n_row x n_col",               "desc": "primary (reference) complex channel",                        "sample": [["0.8+0.2j", "0.6-0.4j"], ["0.5+0.5j", "0.9-0.1j"]]},
+            {"id": "Smat",   "tex": r"S",                  "role": "measured",     "kind": "tensor", "shape": "N_s x n_row x n_col",         "desc": "selected secondary complex channels",                  "sample": [["0.7+0.1j"]]},
+            {"id": "Imat",   "tex": r"I",                  "role": "measured",     "kind": "tensor", "shape": "N_i x n_row x n_col",         "desc": "selected derived passes",                          "sample": [["0.9+0.4j"]]},
+            {"id": "X",      "tex": r"\mathbf{X}",         "role": "measured",     "kind": "tensor", "shape": "(1+N_s+N_i) x n_row x n_col", "desc": "stacked complex buffer: primary, secondaries, derived",     "sample": [["0.8+0.2j", "0.6-0.4j"], ["0.5+0.5j", "0.9-0.1j"]]},
+            {"id": "aux",    "tex": r"\mathbf{D}",         "role": "measured",     "kind": "matrix", "shape": "n_row x n_col",               "desc": "Aux z channel, real (optional)",                 "sample": [["112.4", "113.1"], ["110.8", "111.9"]]},
             {"id": "grid",   "tex": r"\mathcal{G}",        "role": "calculated",   "kind": "set",    "shape": "n_v x n_h",             "desc": "patch grid counts and padding",                          "sample": "n_v=89, n_h=93"},
             {"id": "cpatch", "tex": r"\mathbf{p}",         "role": "intermediate", "kind": "tensor", "shape": "C x P x P",             "desc": "one extracted complex patch (padded copy)",              "sample": [["0.8+0.2j", "0.6-0.4j", "1.1+0.0j"], ["0.5+0.5j", "0.9-0.1j", "0.7+0.3j"], ["1.0+0.2j", "0.4-0.6j", "0.8+0.1j"]]},
             {"id": "rep",    "tex": r"\mathbf{r}",         "role": "intermediate", "kind": "tensor", "shape": "c x P x P",             "desc": "real channels of one complex pass",                      "sample": ["|s|", "ang", "re", "im"]},
@@ -181,7 +290,7 @@ class FlowLibrary:
             {"id": "y",      "tex": r"\mathbf{y}",         "role": "calculated",   "kind": "tensor", "shape": "C_out x P x P",         "desc": "selected Gaussian-parameter target patch",               "sample": ["a_1", "mu_1", "sig_1", "..."]},
             {"id": "xgeo",   "tex": r"\mathbf{x}'",        "role": "intermediate", "kind": "tensor", "shape": "C_in x P x P",          "desc": "geometrically augmented input (flip/rotation)",          "sample": [["0.93", "0.60", "1.08"], ["0.57", "0.86", "0.70"]]},
             {"id": "ygeo",   "tex": r"\mathbf{y}'",        "role": "intermediate", "kind": "tensor", "shape": "C_out x P x P",         "desc": "augmented target (same transform as input)",             "sample": ["a_1", "mu_1", "sig_1", "..."]},
-            {"id": "gkeys",  "tex": r"g_c",                "role": "intermediate", "kind": "vector", "shape": "C_in",                  "desc": "per-channel slot keys (pass/mag, ifg/phase, ...)",       "sample": ["pass/mag", "ifg/phase", "..."]},
+            {"id": "gkeys",  "tex": r"g_c",                "role": "intermediate", "kind": "vector", "shape": "C_in",                  "desc": "per-channel slot keys (chan/mag, derived/phase, ...)",       "sample": ["chan/mag", "derived/phase", "..."]},
             {"id": "stats",  "tex": r"(\mu_c, s_c)",       "role": "calculated",   "kind": "vector", "shape": "C_in",                  "desc": "per-slot location and scale, fitted on the train split", "sample": ["0.12", "0.94", "..."]},
             {"id": "xhat",   "tex": r"\hat{\mathbf{x}}",   "role": "final",        "kind": "tensor", "shape": "C_in x P x P",          "desc": "normalised network input",                               "sample": [["0.41", "-0.20", "0.88"], ["-0.33", "0.27", "0.05"]]},
             {"id": "yhat",   "tex": r"\hat{\mathbf{y}}",   "role": "final",        "kind": "tensor", "shape": "C_out x P x P",         "desc": "normalised target",                                      "sample": ["0.30", "-0.11", "0.42"]},
@@ -189,12 +298,12 @@ class FlowLibrary:
         ]
         steps = [
             {
-                "id": "splitgeom", "title": "Scene split by azimuth", "phase": "Crop & split",
-                "note": "The global crop is partitioned along azimuth into contiguous train/val/test bands; the standard ratio split gives 70/15/15 with no overlap and the full range extent shared.",
+                "id": "splitgeom", "title": "Scene split by row", "phase": "Crop & split",
+                "note": "The global crop is partitioned along row into contiguous train/val/test bands; the standard ratio split gives 70/15/15 with no overlap and the full range extent shared.",
                 "inputs": ["Gcrop"], "outputs": ["Rsplit"],
                 "lines": [
-                    [{"tex": r"A = \mathtt{az}_1 - \mathtt{az}_0,\quad \mathtt{az}^{\mathrm{tr}}_1 = \mathtt{az}_0 + \lfloor 0.70\,A\rfloor"}],
-                    [{"id": "Rsplit", "tex": r"\Omega_s", "role": "intermediate"}, {"tex": r"\in\ \big\{[\mathtt{az}_0,\mathtt{az}^{\mathrm{tr}}_1),\ [\mathtt{az}^{\mathrm{tr}}_1,\mathtt{az}^{\mathrm{val}}_1),\ [\mathtt{az}^{\mathrm{val}}_1,\mathtt{az}_1)\big\}\times[\mathtt{rg}_0,\mathtt{rg}_1)"}],
+                    [{"tex": r"A = \mathtt{row}_1 - \mathtt{row}_0,\quad \mathtt{row}^{\mathrm{tr}}_1 = \mathtt{row}_0 + \lfloor 0.70\,A\rfloor"}],
+                    [{"id": "Rsplit", "tex": r"\Omega_s", "role": "intermediate"}, {"tex": r"\in\ \big\{[\mathtt{row}_0,\mathtt{row}^{\mathrm{tr}}_1),\ [\mathtt{row}^{\mathrm{tr}}_1,\mathtt{row}^{\mathrm{val}}_1),\ [\mathtt{row}^{\mathrm{val}}_1,\mathtt{row}_1)\big\}\times[\mathtt{col}_0,\mathtt{col}_1)"}],
                 ],
             },
             {
@@ -202,12 +311,12 @@ class FlowLibrary:
                 "note": "Each split region's absolute bounds are shifted by the global-crop origin to give zero-based slices into the memory-mapped artifact arrays.",
                 "inputs": ["Rsplit", "Gcrop"], "outputs": ["azsl"],
                 "lines": [
-                    [{"id": "azsl", "tex": r"\sigma_a", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\,\mathtt{az}^S_0 - \mathtt{az}^G_0,\ \ \mathtt{az}^S_1 - \mathtt{az}^G_0\,\big),\qquad A_z = \mathtt{az}^S_1-\mathtt{az}^S_0"}],
+                    [{"id": "azsl", "tex": r"\sigma_a", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\,\mathtt{row}^S_0 - \mathtt{row}^G_0,\ \ \mathtt{row}^S_1 - \mathtt{row}^G_0\,\big),\qquad A_z = \mathtt{row}^S_1-\mathtt{row}^S_0"}],
                 ],
             },
             {
                 "id": "secselect", "title": "Secondary selection by label", "phase": "Crop & split",
-                "note": "The processed stack carries every pass; the secondary subset is chosen by flight-qualified label, mapping labels to positional indices applied to both secondaries and interferograms.",
+                "note": "The processed stack carries every pass; the secondary subset is chosen by flight-qualified label, mapping labels to positional indices applied to both secondaries and derived.",
                 "inputs": ["Smat", "Imat"], "outputs": ["sel"],
                 "lines": [
                     [{"id": "sel", "tex": r"\pi", "role": "calculated"}, {"tex": "="}, {"tex": r"\{\,i : \ell_i \in L_{\mathrm{req}}\,\},\qquad \ell_0 \notin L_{\mathrm{req}}"}],
@@ -216,7 +325,7 @@ class FlowLibrary:
             },
             {
                 "id": "stack", "title": "Stacked complex input buffer", "phase": "Crop & split",
-                "note": "Primary, selected secondaries, and selected interferograms are written by pass-index into one pre-allocated complex buffer; the DEM and parameters are cropped to the same window but kept separate.",
+                "note": "Primary, selected secondaries, and selected derived are written by pass-index into one pre-allocated complex buffer; the Aux and parameters are cropped to the same window but kept separate.",
                 "inputs": ["s0", "Smat", "Imat"], "outputs": ["X"],
                 "lines": [
                     [{"id": "X", "tex": r"\mathbf{X}[0]", "role": "measured"}, {"tex": "="}, {"id": "s0", "tex": r"\mathbf{s}_0", "role": "measured"}, {"tex": r",\quad \mathbf{X}[1:1{+}N_s] = "}, {"id": "Smat", "tex": r"S", "role": "measured"}, {"tex": r",\quad \mathbf{X}[1{+}N_s:] = "}, {"id": "Imat", "tex": r"I", "role": "measured"}],
@@ -242,15 +351,15 @@ class FlowLibrary:
             },
             {
                 "id": "extract", "title": "Patch extraction (contiguous copy)", "phase": "Patch extraction",
-                "note": "The clipped read window is copied, never aliased, then symmetric-padded (edge-mirrored) in one pass; the same routine serves the complex stack, the parameters, and the DEM.",
-                "inputs": ["X", "dem", "grid"], "outputs": ["cpatch"],
+                "note": "The clipped read window is copied, never aliased, then symmetric-padded (edge-mirrored) in one pass; the same routine serves the complex stack, the parameters, and the Aux.",
+                "inputs": ["X", "aux", "grid"], "outputs": ["cpatch"],
                 "lines": [
                     [{"id": "cpatch", "tex": r"\mathbf{p}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{pad}\!\big("}, {"id": "X", "tex": r"\mathbf{X}", "role": "measured"}, {"tex": r"[:,\ v_0^c{:}v_1^c,\ h_0^c{:}h_1^c]\big)"}],
                 ],
             },
             {
                 "id": "represent", "title": "Complex to real channels", "phase": "Patch extraction",
-                "note": "Each complex pass is converted to real channels by its representation mode; the default keeps magnitude for SLCs and phase for interferograms. Magnitude-normalised modes guard zero magnitude by substituting one.",
+                "note": "Each complex channel is converted to real channels by its representation mode; the default keeps magnitude for the amplitude channels and phase for the derived channels. Magnitude-normalised modes guard zero magnitude by substituting one.",
                 "inputs": ["cpatch"], "outputs": ["rep"],
                 "lines": [
                     [{"tex": r"\texttt{MAG}:\ (\left|\mathbf{p}\right|)\quad \texttt{ANG}:\ (\angle\mathbf{p})\quad \texttt{RI}:\ (\Re\mathbf{p},\ \Im\mathbf{p})"}],
@@ -259,11 +368,11 @@ class FlowLibrary:
             },
             {
                 "id": "assemble_in", "title": "Input tensor assembly", "phase": "Patch extraction",
-                "note": "Per patch, every enabled source is represented and concatenated along the channel axis: primary, then secondaries, then interferograms, with the optional DEM channel last; the secondary and ifg counts are independent.",
-                "inputs": ["rep", "dem"], "outputs": ["x"],
+                "note": "Per patch, every enabled source is represented and concatenated along the channel axis: primary, then secondaries, then derived, with the optional Aux channel last; the secondary and derived counts are independent.",
+                "inputs": ["rep", "aux"], "outputs": ["x"],
                 "lines": [
-                    [{"id": "x", "tex": r"\mathbf{x}", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\ "}, {"id": "rep", "tex": r"\mathbf{r}_0", "role": "intermediate"}, {"tex": r"\mid \mathbf{r}_S \mid \mathbf{r}_I \mid"}, {"id": "dem", "tex": r"\mathbf{D}", "role": "measured"}, {"tex": r"\ \big]"}],
-                    [{"tex": r"C_{\mathrm{in}} = c_{\mathrm{prim}} + N_s\,c_{\mathrm{sec}} + N_i\,c_{\mathrm{ifg}} + c_{\mathrm{dem}}"}],
+                    [{"id": "x", "tex": r"\mathbf{x}", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\ "}, {"id": "rep", "tex": r"\mathbf{r}_0", "role": "intermediate"}, {"tex": r"\mid \mathbf{r}_S \mid \mathbf{r}_I \mid"}, {"id": "aux", "tex": r"\mathbf{D}", "role": "measured"}, {"tex": r"\ \big]"}],
+                    [{"tex": r"C_{\mathrm{in}} = c_{\mathrm{prim}} + N_s\,c_{\mathrm{sec}} + N_i\,c_{\mathrm{derived}} + c_{\mathrm{aux}}"}],
                 ],
             },
             {
@@ -288,12 +397,12 @@ class FlowLibrary:
                 "note": "Each input channel is labelled with a slot key by the same strided layout used to build the tensor, fixing which normalisation strategy each channel receives.",
                 "inputs": ["x"], "outputs": ["gkeys"],
                 "lines": [
-                    [{"id": "gkeys", "tex": r"g_c", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{family}\,/\,\mathrm{slot}\big[\,c \bmod c_{pp}\,\big]\quad (\texttt{pass/mag},\ \texttt{ifg/phase},\ \texttt{dem/elev})"}],
+                    [{"id": "gkeys", "tex": r"g_c", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{family}\,/\,\mathrm{slot}\big[\,c \bmod c_{pp}\,\big]\quad (\texttt{chan/mag},\ \texttt{derived/phase},\ \texttt{aux/z})"}],
                 ],
             },
             {
                 "id": "fitstats", "title": "Fit normalisation statistics", "phase": "Normalization",
-                "note": "Statistics are fitted on the train split only, per slot, in float64 over up to 1e6 sampled values. Heavy-tailed magnitude channels (SLC/interferogram magnitude, output amplitude and sigma) use the median and IQR of their log1p values (robust-IQR-log1p); Gaussian-like channels (normalised re/im, SLC phase, output mu, DEM elevation) use the mean and standard deviation (z-score); interferogram phase is mapped by a fixed division by pi. Every fitted scale is floored at 1e-8, and output roles are fitted over active pixels only (amplitude > 1e-3).",
+                "note": "Statistics are fitted on the train split only, per slot, in float64 over up to 1e6 sampled values. Heavy-tailed magnitude channels (SLC/derived magnitude, output amplitude and sigma) use the median and IQR of their log1p values (robust-IQR-log1p); Gaussian-like channels (normalised re/im, SLC phase, output mu, Aux z) use the mean and standard deviation (z-score); derived phase is mapped by a fixed division by pi. Every fitted scale is floored at 1e-8, and output roles are fitted over active pixels only (amplitude > 1e-3).",
                 "inputs": ["xgeo", "gkeys"], "outputs": ["stats"],
                 "lines": [
                     [{"tex": r"f(x_c) = \log\!\big(1 + \max(x_c,0)\big)\ \ \text{(log1p slots)},\ \ \text{else } x_c"}],
@@ -338,8 +447,8 @@ class FlowLibrary:
             {"id": "thp",   "tex": r"\hat{\theta}",                "role": "calculated",   "kind": "tensor", "shape": "B x 3K x P x P",   "desc": "denormalised, physically clamped parameters",         "sample": ["12.4", "8.1", "1.9", "..."]},
             {"id": "thrn",  "tex": r"\tilde{\theta}_{\mathrm{n}}", "role": "intermediate", "kind": "tensor", "shape": "B x 3K x P x P",   "desc": "clamped params renormalised for parameter terms",     "sample": ["0.74", "0.55", "0.33", "..."]},
             {"id": "gtp",   "tex": r"\theta^{\mathrm{GT}}",        "role": "measured",     "kind": "tensor", "shape": "B x 3K x P x P",   "desc": "ground-truth Gaussian parameters, loader-normalised", "sample": ["0.55", "0.47", "0.34", "..."]},
-            {"id": "yhat",  "tex": r"\hat{y}",                     "role": "intermediate", "kind": "tensor", "shape": "B x N x P x P",    "desc": "reconstructed predicted elevation curve",             "sample": [["0.05", "0.71"], ["0.33", "0.88"]]},
-            {"id": "y",     "tex": r"y",                           "role": "measured",     "kind": "tensor", "shape": "B x N x P x P",    "desc": "GT elevation curve (denormalised params, no_grad)",   "sample": [["0.06", "0.70"], ["0.35", "0.86"]]},
+            {"id": "yhat",  "tex": r"\hat{y}",                     "role": "intermediate", "kind": "tensor", "shape": "B x N x P x P",    "desc": "reconstructed predicted z curve",             "sample": [["0.05", "0.71"], ["0.33", "0.88"]]},
+            {"id": "y",     "tex": r"y",                           "role": "measured",     "kind": "tensor", "shape": "B x N x P x P",    "desc": "GT z curve (denormalised params, no_grad)",   "sample": [["0.06", "0.70"], ["0.35", "0.86"]]},
             {"id": "err",   "tex": r"e",                           "role": "intermediate", "kind": "tensor", "shape": "B x N x P x P",    "desc": "curve-space residual y-hat minus y",                  "sample": ["-0.01", "0.01", "-0.02", "..."]},
             {"id": "lj",    "tex": r"\ell_j",                      "role": "calculated",   "kind": "scalar", "shape": "1",                "desc": "raw value of one enabled loss term",                  "sample": "0.0317"},
             {"id": "loss",  "tex": r"\mathcal{L}",                 "role": "calculated",   "kind": "scalar", "shape": "1",                "desc": "weight-normalised composite loss",                    "sample": "4.1e-2"},
@@ -385,7 +494,7 @@ class FlowLibrary:
             },
             {
                 "id": "reconstruct", "title": "Gaussian curve reconstruction", "phase": "Reconstruction",
-                "note": "Ground truth is denormalised under no_grad, then both the predicted physical parameters and the GT are evaluated on the elevation axis as an additive Gaussian mixture; the exponent is floored at -100 and sigma at 1e-6.",
+                "note": "Ground truth is denormalised under no_grad, then both the predicted physical parameters and the GT are evaluated on the z axis as an additive Gaussian mixture; the exponent is floored at -100 and sigma at 1e-6.",
                 "inputs": ["thp", "gtp"], "outputs": ["yhat", "y"],
                 "lines": [
                     [{"id": "yhat", "tex": r"\hat{y}(x_n)", "role": "intermediate"}, {"tex": "="}, {"tex": r"\sum_{k}"}, {"id": "thp", "tex": r"\hat{a}_k", "role": "calculated"}, {"tex": r"\exp\!\Big(-\tfrac{(x_n-\hat{\mu}_k)^2}{2\hat{\sigma}_k^2}\Big),\qquad K = C/3"}],
@@ -490,8 +599,8 @@ class FlowLibrary:
 
     def _dual_train(self) -> dict:
         nodes = [
-            {"id": "xhat",   "tex": r"\hat{\mathbf{x}}",          "role": "measured",     "kind": "tensor", "shape": "B x C_in x P x P", "desc": "normalised input batch: primary magnitude, secondary magnitudes, interferogram phases", "sample": [["0.41", "-0.20"], ["-0.33", "0.27"]]},
-            {"id": "keys",   "tex": r"\mathcal{K}",               "role": "intermediate", "kind": "vector", "shape": "C_in",             "desc": "per-channel group keys from InputConfig.channel_group_keys",                            "sample": ["pass/mag", "pass/mag", "ifg/angle", "..."]},
+            {"id": "xhat",   "tex": r"\hat{\mathbf{x}}",          "role": "measured",     "kind": "tensor", "shape": "B x C_in x P x P", "desc": "normalised input batch: primary magnitude, secondary magnitudes, derived phases", "sample": [["0.41", "-0.20"], ["-0.33", "0.27"]]},
+            {"id": "keys",   "tex": r"\mathcal{K}",               "role": "intermediate", "kind": "vector", "shape": "C_in",             "desc": "per-channel group keys from InputConfig.channel_group_keys",                            "sample": ["chan/mag", "chan/mag", "derived/angle", "..."]},
             {"id": "xp",     "tex": r"\hat{\mathbf{x}}^{P}",      "role": "intermediate", "kind": "tensor", "shape": "B x C_P x P x P",  "desc": "channels routed to the parameter trunk (params_input groups)",                          "sample": [["0.41", "-0.20"], ["0.15", "0.62"]]},
             {"id": "xe",     "tex": r"\hat{\mathbf{x}}^{E}",      "role": "intermediate", "kind": "tensor", "shape": "B x C_E x P x P",  "desc": "channels routed to the existence trunk (existence_input groups)",                       "sample": [["0.41", "-0.20"], ["0.15", "0.62"]]},
             {"id": "zp",     "tex": r"\mathbf{z}^{P}",            "role": "calculated",   "kind": "tensor", "shape": "B x D_P x P x P",  "desc": "parameter-trunk decoder embedding (headless backbone output)",                          "sample": [["0.72", "0.11"], ["-0.34", "0.58"]]},
@@ -507,15 +616,15 @@ class FlowLibrary:
         steps = [
             {
                 "id": "dual_keys", "title": "Channel group keys", "phase": "A - Input routing",
-                "note": "The dataset stack labels every input channel with a group key: the primary magnitude and the secondary magnitudes are pass/*, the interferogram channels are ifg/*. TrunkChannelMap infers the track count that reproduces in_channels under the active InputConfig and raises when that count is not unique. The dual pipeline refuses input.use_dem, so no dem/* key can appear.",
+                "note": "The dataset stack labels every input channel with a group key: the primary magnitude and the secondary magnitudes are chan/*, the derived channels are derived/*. TrunkChannelMap infers the channel count that reproduces in_channels under the active InputConfig and raises when that count is not unique. The dual pipeline refuses input.use_aux, so no aux/* key can appear.",
                 "inputs": ["xhat"], "outputs": ["keys"],
                 "lines": [
-                    [{"id": "keys", "tex": r"\mathcal{K}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big(\underbrace{\mathtt{pass}/\ast}_{1 + N_s},\ \underbrace{\mathtt{ifg}/\ast}_{N_i}\big),\qquad C_{\mathrm{in}} = 1 + N_s + N_i = 9\ \text{for the default stack}"}],
+                    [{"id": "keys", "tex": r"\mathcal{K}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big(\underbrace{\mathtt{pass}/\ast}_{1 + N_s},\ \underbrace{\mathtt{derived}/\ast}_{N_i}\big),\qquad C_{\mathrm{in}} = 1 + N_s + N_i = 9\ \text{for the default stack}"}],
                 ],
             },
             {
                 "id": "dual_route", "title": "Trunk input routing", "phase": "A - Input routing",
-                "note": "params_input and existence_input each select a subset of the groups {pass, ifg}; the resolved index tuples are stored as the params_channels and existence_channels buffers and applied with index_select. The shipped default is full-full, meaning both trunks see all nine channels; the routing trials mode enumerates the seven asymmetric variants (pass-full, full-pass, ifg-full, full-ifg, pass-ifg, ifg-pass and full-full).",
+                "note": "params_input and existence_input each select a subset of the groups {pass, derived}; the resolved index tuples are stored as the params_channels and existence_channels buffers and applied with index_select. The shipped default is full-full, meaning both trunks see all nine channels; the routing trials mode enumerates the seven asymmetric variants (pass-full, full-pass, derived-full, full-derived, pass-derived, derived-pass and full-full).",
                 "inputs": ["xhat", "keys"], "outputs": ["xp", "xe"],
                 "lines": [
                     [{"id": "xp", "tex": r"\hat{\mathbf{x}}^{P}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\hat{\mathbf{x}}\big[\,\mathcal{C}_P\,\big],\qquad \mathcal{C}_P = \{\,c : \mathrm{group}(\mathcal{K}_c) \in \mathtt{params\_input}\,\}"}],
@@ -598,11 +707,11 @@ class FlowLibrary:
 
     def _profile_ae_train(self) -> dict:
         nodes = [
-            {"id": "params", "tex": r"\Theta",                    "role": "measured",     "kind": "tensor", "shape": "3K x Az x Rg", "desc": "per-pixel Gaussian mixture parameters (a, mu, sigma) from extraction", "sample": [["0.81", "12.4", "1.9"], ["0.55", "31.8", "2.6"]]},
+            {"id": "params", "tex": r"\Theta",                    "role": "measured",     "kind": "tensor", "shape": "3K x n_row x n_col", "desc": "per-pixel Gaussian mixture parameters (a, mu, sigma) from extraction", "sample": [["0.81", "12.4", "1.9"], ["0.55", "31.8", "2.6"]]},
             {"id": "gp",     "tex": r"(a,\mu,\sigma)",            "role": "intermediate", "kind": "tensor", "shape": "3 x N_p x K",  "desc": "de-interleaved per-pixel amplitudes, means and widths",                "sample": [["0.81", "0.55"], ["12.4", "31.8"], ["1.9", "2.6"]]},
             {"id": "active", "tex": r"\mathbb{1}_{\mathrm{act}}", "role": "intermediate", "kind": "vector", "shape": "N_p",          "desc": "active-pixel mask: any component amplitude above threshold",           "sample": ["1", "0", "1", "1"]},
             {"id": "idx",    "tex": r"\mathcal{I}",               "role": "calculated",   "kind": "vector", "shape": "N_keep",       "desc": "kept, shuffled pixel indices (subsampled active + empty frac)",        "sample": ["4", "1", "9", "2"]},
-            {"id": "curve",  "tex": r"\mathbf{c}",                "role": "calculated",   "kind": "vector", "shape": "L",            "desc": "synthesised elevation profile, the autoencoder sample",                "sample": ["0.00", "0.62", "0.31", "0.88", "0.00"]},
+            {"id": "curve",  "tex": r"\mathbf{c}",                "role": "calculated",   "kind": "vector", "shape": "L",            "desc": "synthesised z profile, the autoencoder sample",                "sample": ["0.00", "0.62", "0.31", "0.88", "0.00"]},
             {"id": "caug",   "tex": r"\mathbf{c}'",               "role": "intermediate", "kind": "vector", "shape": "L",            "desc": "geometrically augmented profile (scale, shift, flip)",                 "sample": ["0.00", "0.68", "0.34", "0.80", "0.00"]},
             {"id": "stats",  "tex": r"(\ell, s)",                 "role": "calculated",   "kind": "vector", "shape": "2",            "desc": "log1p-standardize location and scale, fitted on the train split",      "sample": ["0.32", "0.51"]},
             {"id": "cn",     "tex": r"\hat{\mathbf{c}}",          "role": "calculated",   "kind": "vector", "shape": "L",            "desc": "normalised profile: network input and reconstruction target",          "sample": ["-0.63", "0.58", "-0.10", "1.20", "-0.63"]},
@@ -637,7 +746,7 @@ class FlowLibrary:
             },
             {
                 "id": "pae_genesis", "title": "Gaussian curve genesis", "phase": "A - Curve genesis",
-                "note": "For each kept pixel the elevation profile is synthesised on the fly by summing the K Gaussians over the axis; the width is floored at 1e-6 and the exponent clipped to [-100, 0] before exponentiation. This curve is both the autoencoder input and its reconstruction target.",
+                "note": "For each kept pixel the z profile is synthesised on the fly by summing the K Gaussians over the axis; the width is floored at 1e-6 and the exponent clipped to [-100, 0] before exponentiation. This curve is both the autoencoder input and its reconstruction target.",
                 "inputs": ["gp", "idx"], "outputs": ["curve"],
                 "lines": [
                     [{"id": "curve", "tex": r"c_h", "role": "calculated"}, {"tex": "="}, {"tex": r"\sum_{k}"}, {"id": "gp", "tex": r"a_k", "role": "intermediate"}, {"tex": r"\exp\!\Big(\mathrm{clip}\big(-\tfrac{(x_h-\mu_k)^2}{2\max(\sigma_k,10^{-6})^2},\ -100,\ 0\big)\Big)"}],
@@ -744,7 +853,7 @@ class FlowLibrary:
         ]
         return {
             "key": "profile_ae_train", "name": "Profile AE (Train)",
-            "blurb": "A profile autoencoder trained to reconstruct elevation curves. Synthesise each pixel's curve from its Gaussian mixture parameters, augment and log1p-standardise it, compress to a normalised bottleneck embedding and decode it back, then minimise a single reconstruction loss with AdamW, warmup, cosine annealing and early stopping.",
+            "blurb": "A profile autoencoder trained to reconstruct z curves. Synthesise each pixel's curve from its Gaussian mixture parameters, augment and log1p-standardise it, compress to a normalised bottleneck embedding and decode it back, then minimise a single reconstruction loss with AdamW, warmup, cosine annealing and early stopping.",
             "nodes": nodes, "steps": steps,
         }
 
@@ -857,7 +966,7 @@ class FlowLibrary:
             {"id": "gtp",     "tex": r"\theta^{\mathrm{GT}}_{n}", "role": "measured",     "kind": "tensor", "shape": "B x 3K x P x P",   "desc": "loader-normalised GT Gaussian parameters",          "sample": ["0.55", "0.47", "0.34", "..."]},
             {"id": "zhat",    "tex": r"\hat{\mathbf{z}}",         "role": "calculated",   "kind": "tensor", "shape": "B x E x P x P",    "desc": "predicted per-pixel embedding, E = embedding_dim",  "sample": ["0.18", "-0.44", "0.29", "..."]},
             {"id": "gtphys",  "tex": r"\theta^{\mathrm{GT}}",     "role": "intermediate", "kind": "tensor", "shape": "B x 3K x P x P",   "desc": "denormalised physical GT parameters (no_grad)",     "sample": ["12.4", "8.1", "1.9", "..."]},
-            {"id": "gtcurve", "tex": r"\gamma",                   "role": "intermediate", "kind": "tensor", "shape": "B x L x P x P",    "desc": "reconstructed GT elevation curve (mixture)",        "sample": [["0.06", "0.70"], ["0.35", "0.86"]]},
+            {"id": "gtcurve", "tex": r"\gamma",                   "role": "intermediate", "kind": "tensor", "shape": "B x L x P x P",    "desc": "reconstructed GT z curve (mixture)",        "sample": [["0.06", "0.70"], ["0.35", "0.86"]]},
             {"id": "gtcn",    "tex": r"\bar{\gamma}",             "role": "intermediate", "kind": "tensor", "shape": "B x L x P x P",    "desc": "profile-normalised GT curve (log1p, standardise)",  "sample": [["-0.9", "0.4"], ["-0.2", "0.8"]]},
             {"id": "zstar",   "tex": r"\mathbf{z}^{\star}",       "role": "calculated",   "kind": "tensor", "shape": "B x E x P x P",    "desc": "target embedding from the profile encoder",         "sample": ["0.20", "-0.41", "0.27", "..."]},
             {"id": "zhn",     "tex": r"\hat{\mathbf{z}}_{n}",     "role": "intermediate", "kind": "tensor", "shape": "B x E x P x P",    "desc": "embedding-normalised prediction",                   "sample": ["0.31", "-0.52", "0.10", "..."]},
@@ -891,7 +1000,7 @@ class FlowLibrary:
             },
             {
                 "id": "jep_gtcurve", "title": "Reconstruct and normalise the GT curve", "phase": "B - Target",
-                "note": "Under no_grad the GT parameters are denormalised to physical units and evaluated on the elevation axis as an additive Gaussian mixture (sigma floored at 1e-6, exponent clamped to [-100, 0]); the curve is then mapped to the autoencoder's own space by log1p compression and standardisation with the pretrained profile stats (scale floored at 1e-6).",
+                "note": "Under no_grad the GT parameters are denormalised to physical units and evaluated on the z axis as an additive Gaussian mixture (sigma floored at 1e-6, exponent clamped to [-100, 0]); the curve is then mapped to the autoencoder's own space by log1p compression and standardisation with the pretrained profile stats (scale floored at 1e-6).",
                 "inputs": ["gtp"], "outputs": ["gtphys", "gtcurve", "gtcn"],
                 "lines": [
                     [{"id": "gtphys", "tex": r"\theta^{\mathrm{GT}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{denorm}\big("}, {"id": "gtp", "tex": r"\theta^{\mathrm{GT}}_{n}", "role": "measured"}, {"tex": r"\big),\qquad "}, {"id": "gtcurve", "tex": r"\gamma", "role": "intermediate"}, {"tex": r"(\xi_n) = \sum_k a_k \exp\!\Big(-\tfrac{(\xi_n-\mu_k)^2}{2\sigma_k^2}\Big)"}],
@@ -980,25 +1089,25 @@ class FlowLibrary:
     def _inference(self) -> dict:
         nodes = [
             {"id": "ckpt",     "tex": r"\theta^{\star}",             "role": "measured",     "kind": "vector", "shape": "|theta|",           "desc": "best-epoch checkpoint weights (params) with bundled x-axis; per-slot norm stats load from the run meta", "sample": ["0.31", "-0.08", "..."]},
-            {"id": "xaxis",    "tex": r"\mathbf{x}",                 "role": "measured",     "kind": "vector", "shape": "N",                 "desc": "elevation axis (m) restored from the checkpoint",                                                        "sample": ["-20", "-19.6", "...", "20"]},
+            {"id": "xaxis",    "tex": r"\mathbf{x}",                 "role": "measured",     "kind": "vector", "shape": "N",                 "desc": "z axis (m) restored from the checkpoint",                                                        "sample": ["-20", "-19.6", "...", "20"]},
             {"id": "xhat",     "tex": r"\hat{\mathbf{x}}",           "role": "measured",     "kind": "tensor", "shape": "B x C_in x P x P",  "desc": "normalised input patch batch from the loader",                                                           "sample": [["0.41", "-0.20"], ["-0.33", "0.27"]]},
             {"id": "znorm",    "tex": r"\hat{\mathbf{z}}",           "role": "intermediate", "kind": "tensor", "shape": "B x 3K x P x P",    "desc": "raw normalised network output",                                                                          "sample": ["0.22", "-1.1", "0.7", "..."]},
             {"id": "th",       "tex": r"\hat{\theta}",               "role": "calculated",   "kind": "tensor", "shape": "B x 3K x P x P",    "desc": "denormalised, hard-clamped predicted params (a,mu,sig per slot)",                                        "sample": ["0.78", "12.1", "1.9", "..."]},
             {"id": "thgt",     "tex": r"\theta^{\mathrm{GT}}",       "role": "measured",     "kind": "tensor", "shape": "B x 3K x P x P",    "desc": "ground-truth params, denormalised (no clamp)",                                                           "sample": ["0.80", "12.0", "1.8", "..."]},
             {"id": "thgts",    "tex": r"\theta^{\mathrm{GT}}_{\pi}", "role": "intermediate", "kind": "tensor", "shape": "B x 3K x P x P",    "desc": "mu-sorted GT params (active first, inactive at the tail)",                                               "sample": ["0.80", "11.9", "1.8", "..."]},
-            {"id": "p",        "tex": r"\mathbf{p}",                 "role": "intermediate", "kind": "tensor", "shape": "N x P x P",         "desc": "per-patch reconstructed elevation spectrum",                                                             "sample": [["0.05", "0.71"], ["0.33", "0.88"]]},
+            {"id": "p",        "tex": r"\mathbf{p}",                 "role": "intermediate", "kind": "tensor", "shape": "N x P x P",         "desc": "per-patch reconstructed z spectrum",                                                             "sample": [["0.05", "0.71"], ["0.33", "0.88"]]},
             {"id": "winv",     "tex": r"w_v",                        "role": "intermediate", "kind": "vector", "shape": "P",                 "desc": "1D Hann taper, floored at 1e-3",                                                                         "sample": ["0.10", "0.45", "0.85", "1.00"]},
             {"id": "win",      "tex": r"w",                          "role": "intermediate", "kind": "matrix", "shape": "P x P",             "desc": "separable 2D Hann window, also the patch centrality",                                                    "sample": [["0.10", "0.45"], ["0.45", "1.00"]]},
             {"id": "acc",      "tex": r"A",                          "role": "intermediate", "kind": "tensor", "shape": "N x H_pad x W_pad", "desc": "curve value accumulator",                                                                                "sample": [["1.2", "3.4"], ["0.8", "2.1"]]},
             {"id": "wacc",     "tex": r"W",                          "role": "intermediate", "kind": "matrix", "shape": "H_pad x W_pad",     "desc": "curve weight accumulator",                                                                               "sample": [["0.9", "1.8"], ["1.8", "2.7"]]},
-            {"id": "cube",     "tex": r"\hat{C}",                    "role": "final",        "kind": "tensor", "shape": "N x Az x Rg",       "desc": "stitched predicted curve cube (denorm)",                                                                 "sample": [["0.2", "0.9"], ["0.1", "0.7"]]},
-            {"id": "cubegt",   "tex": r"C",                          "role": "measured",     "kind": "tensor", "shape": "N x Az x Rg",       "desc": "stitched ground-truth curve cube (denorm)",                                                              "sample": [["0.2", "0.9"], ["0.1", "0.7"]]},
-            {"id": "params",   "tex": r"\hat{\Theta}",               "role": "final",        "kind": "tensor", "shape": "3K x Az x Rg",      "desc": "centrality-selected predicted parameter cube",                                                           "sample": ["0.78", "12.1", "1.9", "..."]},
-            {"id": "paramsgt", "tex": r"\Theta^{\mathrm{GT}}",       "role": "measured",     "kind": "tensor", "shape": "3K x Az x Rg",      "desc": "GT parameter cube; inactive-slot mu,sigma set to NaN",                                                   "sample": ["0.80", "11.9", "NaN", "..."]},
-            {"id": "pr2",      "tex": r"R^2_{a,r}",                  "role": "calculated",   "kind": "matrix", "shape": "Az x Rg",           "desc": "per-pixel R-squared map",                                                                                "sample": [["0.95", "0.88"], ["0.91", "0.97"]]},
+            {"id": "cube",     "tex": r"\hat{C}",                    "role": "final",        "kind": "tensor", "shape": "N x n_row x n_col",       "desc": "stitched predicted curve cube (denorm)",                                                                 "sample": [["0.2", "0.9"], ["0.1", "0.7"]]},
+            {"id": "cubegt",   "tex": r"C",                          "role": "measured",     "kind": "tensor", "shape": "N x n_row x n_col",       "desc": "stitched ground-truth curve cube (denorm)",                                                              "sample": [["0.2", "0.9"], ["0.1", "0.7"]]},
+            {"id": "params",   "tex": r"\hat{\Theta}",               "role": "final",        "kind": "tensor", "shape": "3K x n_row x n_col",      "desc": "centrality-selected predicted parameter cube",                                                           "sample": ["0.78", "12.1", "1.9", "..."]},
+            {"id": "paramsgt", "tex": r"\Theta^{\mathrm{GT}}",       "role": "measured",     "kind": "tensor", "shape": "3K x n_row x n_col",      "desc": "GT parameter cube; inactive-slot mu,sigma set to NaN",                                                   "sample": ["0.80", "11.9", "NaN", "..."]},
+            {"id": "pr2",      "tex": r"R^2_{a,r}",                  "role": "calculated",   "kind": "matrix", "shape": "n_row x n_col",           "desc": "per-pixel R-squared map",                                                                                "sample": [["0.95", "0.88"], ["0.91", "0.97"]]},
             {"id": "r2",       "tex": r"R^2",                        "role": "final",        "kind": "scalar", "shape": "1",                 "desc": "overall reconstruction R-squared",                                                                       "sample": "0.94"},
             {"id": "psnr",     "tex": r"\mathrm{PSNR}",              "role": "calculated",   "kind": "scalar", "shape": "1",                 "desc": "peak signal-to-noise ratio (dB), GT dynamic range",                                                      "sample": "28.4"},
-            {"id": "elevr2",   "tex": r"R^2_{\mathrm{elev}}",        "role": "calculated",   "kind": "vector", "shape": "N",                 "desc": "per-elevation-bin R-squared",                                                                            "sample": ["0.91", "0.93", "..."]},
+            {"id": "elevr2",   "tex": r"R^2_{\mathrm{z}}",        "role": "calculated",   "kind": "vector", "shape": "N",                 "desc": "per-z-bin R-squared",                                                                            "sample": ["0.91", "0.93", "..."]},
             {"id": "gmu",      "tex": r"\mathrm{MAE}_{\mu}",         "role": "calculated",   "kind": "scalar", "shape": "1",                 "desc": "matched Gaussian mu MAE over matched active pairs",                                                      "sample": "0.42"},
             {"id": "mf1",      "tex": r"F_1",                        "role": "calculated",   "kind": "scalar", "shape": "1",                 "desc": "matched detection F1 within mu tolerance",                                                               "sample": "0.86"},
         ]
@@ -1022,7 +1131,7 @@ class FlowLibrary:
             },
             {
                 "id": "idenorm", "title": "Denormalise and hard clamp", "phase": "Windowed predict",
-                "note": "Inside the model wrapper the raw output is denormalised by the per-slot output stats then hard-clamped with leaky_slope=0 to physical bounds: amplitude to [0, a_max], mean to the elevation axis, spread to half a bin up to half the span.",
+                "note": "Inside the model wrapper the raw output is denormalised by the per-slot output stats then hard-clamped with leaky_slope=0 to physical bounds: amplitude to [0, a_max], mean to the z axis, spread to half a bin up to half the span.",
                 "inputs": ["znorm"], "outputs": ["th"],
                 "lines": [
                     [{"id": "th", "tex": r"\hat{a}_k", "role": "calculated"}, {"tex": r"= \mathrm{clip}(\tilde a_k,\,0,\,a_{\max}),\quad \hat{\mu}_k = \mathrm{clip}(\tilde\mu_k,\,x_{\min},\,x_{\max})"}],
@@ -1040,7 +1149,7 @@ class FlowLibrary:
             },
             {
                 "id": "recon", "title": "Curve reconstruction", "phase": "Windowed predict",
-                "note": "Each patch's parameters, the clamped prediction and the mu-sorted GT alike, are evaluated on the elevation axis into a spectrum; amplitudes are rectified at zero and the kernel denominator is 2 sigma^2 + 1e-8 with no sigma floor.",
+                "note": "Each patch's parameters, the clamped prediction and the mu-sorted GT alike, are evaluated on the z axis into a spectrum; amplitudes are rectified at zero and the kernel denominator is 2 sigma^2 + 1e-8 with no sigma floor.",
                 "inputs": ["th", "xaxis"], "outputs": ["p"],
                 "lines": [
                     [{"id": "p", "tex": r"\mathbf{p}_n", "role": "intermediate"}, {"tex": "="}, {"tex": r"\sum_{k} \max("}, {"id": "th", "tex": r"\hat{a}_k", "role": "calculated"}, {"tex": r",0)\,\exp\!\Big(-\tfrac{(x_n-\hat{\mu}_k)^2}{2\hat{\sigma}_k^2 + 10^{-8}}\Big)"}],
@@ -1076,13 +1185,13 @@ class FlowLibrary:
                 "note": "Parameter cubes are not blended: at each pixel the patch with the largest Hann centrality wins, overwriting the running value wherever its centrality exceeds the incumbent; inactive GT slots then have their mu and sigma set to NaN before scoring.",
                 "inputs": ["th", "win"], "outputs": ["params"],
                 "lines": [
-                    [{"id": "params", "tex": r"\hat{\Theta}", "role": "final"}, {"tex": r"[:,m] = "}, {"id": "th", "tex": r"\hat{\theta}", "role": "calculated"}, {"tex": r"[:,m],\quad m = \big\{"}, {"id": "win", "tex": r"w", "role": "intermediate"}, {"tex": r" > w^{\star}\big\},\ \ w^{\star}\!\leftarrow\! w[m]"}],
+                    [{"id": "params", "tex": r"\hat{\Theta}", "role": "final"}, {"tex": r"[:,m] = "}, {"id": "th", "tex": r"\hat{\theta}", "role": "calculated"}, {"tex": r"[:,m],\quad m = \big\{"}, {"id": "win", "tex": r"w", "role": "intermediate"}, {"tex": r" > w^{\star}\big\},\ \ w^{\star}\!\leftarrow\! w"}],
                     [{"id": "paramsgt", "tex": r"\Theta^{\mathrm{GT}}", "role": "measured"}, {"tex": r"[\mu_k,\sigma_k] = \mathrm{NaN}\ \ \text{where}\ a^{\mathrm{GT}}_k \le 10^{-3}"}],
                 ],
             },
             {
                 "id": "pixelmaps", "title": "Per-pixel metric maps", "phase": "Pixel metrics",
-                "note": "Five per-pixel maps are reduced over the N elevation bins of the stitched curve cubes: MSE, MAE, R-squared (denominator floored at 1e-12), cosine similarity (norms floored at 1e-8), and absolute peak-bin index error.",
+                "note": "Five per-pixel maps are reduced over the N z bins of the stitched curve cubes: MSE, MAE, R-squared (denominator floored at 1e-12), cosine similarity (norms floored at 1e-8), and absolute peak-bin index error.",
                 "inputs": ["cube", "cubegt"], "outputs": ["pr2"],
                 "lines": [
                     [{"id": "pr2", "tex": r"R^2_{a,r}", "role": "calculated"}, {"tex": "="}, {"tex": r"1 - \dfrac{\sum_n(\hat C_{n,a,r}-C_{n,a,r})^2}{\sum_n(C_{n,a,r}-\bar C_{a,r})^2 + 10^{-12}}"}],
@@ -1099,17 +1208,17 @@ class FlowLibrary:
                 ],
             },
             {
-                "id": "elevssim", "title": "Per-elevation metrics and SSIM", "phase": "Curve metrics",
-                "note": "Per elevation bin (all pixels as samples): MAE, RMSE, R-squared and a cross-entropy between column-normalised distributions; plus mean SSIM over all slices along each axis, on both denorm and unit-area cubes at each slice's GT data range.",
+                "id": "elevssim", "title": "Per-z metrics and SSIM", "phase": "Curve metrics",
+                "note": "Per z bin (all pixels as samples): MAE, RMSE, R-squared and a cross-entropy between column-normalised distributions; plus mean SSIM over all slices along each axis, on both denorm and unit-area cubes at each slice's GT data range.",
                 "inputs": ["cube", "cubegt"], "outputs": ["elevr2"],
                 "lines": [
-                    [{"id": "elevr2", "tex": r"R^2_{\mathrm{elev}}(n)", "role": "calculated"}, {"tex": "="}, {"tex": r"1 - \dfrac{\sum_{a,r}(\hat C_{n,a,r}-C_{n,a,r})^2}{\sum_{a,r}(C_{n,a,r}-\bar C_n)^2 + 10^{-12}}"}],
+                    [{"id": "elevr2", "tex": r"R^2_{\mathrm{z}}(n)", "role": "calculated"}, {"tex": "="}, {"tex": r"1 - \dfrac{\sum_{a,r}(\hat C_{n,a,r}-C_{n,a,r})^2}{\sum_{a,r}(C_{n,a,r}-\bar C_n)^2 + 10^{-12}}"}],
                     [{"tex": r"\mathrm{CE}(n) = -\tfrac{1}{A_z R_g}\textstyle\sum_{a,r} \bar p^{\mathrm{GT}}_{n}\log \bar p^{\mathrm{pred}}_{n},\quad \bar p_n = \tfrac{C_n}{\sum_m C_m}"}],
                 ],
             },
             {
                 "id": "paramslot", "title": "Matched Gaussian metrics", "phase": "Param metrics",
-                "note": "On active pixels each predicted pixel's Gaussians are matched to its GT Gaussians by exact brute-force optimal assignment over all K! permutations on |dmu| (inactive pairs cost 1e7, no Hungarian fallback): matched mu and sigma MAE/RMSE over matched pairs, plus detection recall, precision and F1 counting a hit when |dmu| is at most 5 elevation units.",
+                "note": "On active pixels each predicted pixel's Gaussians are matched to its GT Gaussians by exact brute-force optimal assignment over all K! permutations on |dmu| (inactive pairs cost 1e7, no Hungarian fallback): matched mu and sigma MAE/RMSE over matched pairs, plus detection recall, precision and F1 counting a hit when |dmu| is at most 5 z units.",
                 "inputs": ["params", "paramsgt"], "outputs": ["gmu", "mf1"],
                 "lines": [
                     [{"id": "gmu", "tex": r"\mathrm{MAE}_{\mu}", "role": "calculated"}, {"tex": "="}, {"tex": r"\tfrac{1}{|\mathcal M|}\textstyle\sum_{(i,j)\in\mathcal M}|\hat\mu_{i}-\mu^{\mathrm{GT}}_{j}|,\quad \pi^{\star}=\operatorname*{argmin}_{\pi}\textstyle\sum_i|\hat\mu_i-\mu^{\mathrm{GT}}_{\pi(i)}|"}],
@@ -1119,18 +1228,18 @@ class FlowLibrary:
         ]
         return {
             "key": "inference", "name": "Inference (Stitching)",
-            "blurb": "The trained run is rebuilt strictly from its saved config, then every sliding-window patch is predicted, denormalised and hard-clamped, reconstructed to an elevation spectrum, blended into dense pred and GT cubes by weighted overlap-add for curves and highest-centrality selection for parameters, and scored by the full per-pixel, curve, per-elevation and matched-parameter suite.",
+            "blurb": "The trained run is rebuilt strictly from its saved config, then every sliding-window patch is predicted, denormalised and hard-clamped, reconstructed to an z spectrum, blended into dense pred and GT cubes by weighted overlap-add for curves and highest-centrality selection for parameters, and scored by the full per-pixel, curve, per-z and matched-parameter suite.",
             "nodes": nodes, "steps": steps,
         }
 
     def _profile_ae_infer(self) -> dict:
         nodes = [
-            {"id": "gparams", "tex": r"\theta^{\mathrm{GT}}",                 "role": "measured",     "kind": "tensor", "shape": "3K x Az x Rg",  "desc": "stored per-pixel Gaussian parameters (a, mu, sigma per slot)",            "sample": ["a_1", "mu_1", "sig_1", "..."]},
-            {"id": "xaxis",   "tex": r"\mathbf{x}",                           "role": "measured",     "kind": "vector", "shape": "L",             "desc": "elevation axis (m), linspace(x_min, x_max, L)",                           "sample": ["-20", "-19.6", "...", "80"]},
-            {"id": "ckpt",    "tex": r"\theta^{\star}",                       "role": "measured",     "kind": "vector", "shape": "|theta|",       "desc": "best-epoch AE weights (encoder + decoder); elevation x-axis bundled",     "sample": ["0.31", "-0.08", "..."]},
+            {"id": "gparams", "tex": r"\theta^{\mathrm{GT}}",                 "role": "measured",     "kind": "tensor", "shape": "3K x n_row x n_col",  "desc": "stored per-pixel Gaussian parameters (a, mu, sigma per slot)",            "sample": ["a_1", "mu_1", "sig_1", "..."]},
+            {"id": "xaxis",   "tex": r"\mathbf{x}",                           "role": "measured",     "kind": "vector", "shape": "L",             "desc": "z axis (m), linspace(x_min, x_max, L)",                           "sample": ["-20", "-19.6", "...", "80"]},
+            {"id": "ckpt",    "tex": r"\theta^{\star}",                       "role": "measured",     "kind": "vector", "shape": "|theta|",       "desc": "best-epoch AE weights (encoder + decoder); z x-axis bundled",     "sample": ["0.31", "-0.08", "..."]},
             {"id": "norm",    "tex": r"(\ell,\,s)",                           "role": "measured",     "kind": "vector", "shape": "2",             "desc": "log1p location and scale fitted on the train split (scale floored 1e-6)", "sample": ["0.12", "0.94"]},
             {"id": "sel",     "tex": r"\mathcal{S}",                          "role": "intermediate", "kind": "set",    "shape": "N",             "desc": "kept pixel indices: all active plus a fraction of empties, shuffled",     "sample": ["37", "5", "210", "..."]},
-            {"id": "curve",   "tex": r"c",                                    "role": "intermediate", "kind": "tensor", "shape": "B x L",         "desc": "mixture-built GT elevation profile, the AE input and reference",          "sample": [["0.00", "0.62"], ["0.31", "0.88"]]},
+            {"id": "curve",   "tex": r"c",                                    "role": "intermediate", "kind": "tensor", "shape": "B x L",         "desc": "mixture-built GT z profile, the AE input and reference",          "sample": [["0.00", "0.62"], ["0.31", "0.88"]]},
             {"id": "cn",      "tex": r"c_{\mathrm{n}}",                       "role": "intermediate", "kind": "tensor", "shape": "B x L",         "desc": "log1p-standardised profile fed to the network",                           "sample": [["-0.13", "0.51"], ["0.09", "0.74"]]},
             {"id": "X",       "tex": r"\mathbf{X}",                           "role": "intermediate", "kind": "tensor", "shape": "B x L x 1 x 1", "desc": "profile cast to an L-channel 1x1 spatial map",                            "sample": [["-0.13"], ["0.51"]]},
             {"id": "z",       "tex": r"\mathbf{z}",                           "role": "intermediate", "kind": "tensor", "shape": "B x d",         "desc": "per-profile latent embedding after embedding-norm (d = 24 default)",      "sample": ["0.22", "-1.1", "0.70", "..."]},
@@ -1165,7 +1274,7 @@ class FlowLibrary:
             },
             {
                 "id": "paei_curves", "title": "Profile reconstruction from parameters", "phase": "A - Load run",
-                "note": "Each kept pixel's supervised profile is rebuilt from its Gaussian parameters as an additive mixture on the elevation axis; sigma is floored at 1e-6 and the exponent clipped to [-100, 0] before the sum. This mixture curve is exactly the AE input and the reconstruction reference.",
+                "note": "Each kept pixel's supervised profile is rebuilt from its Gaussian parameters as an additive mixture on the z axis; sigma is floored at 1e-6 and the exponent clipped to [-100, 0] before the sum. This mixture curve is exactly the AE input and the reconstruction reference.",
                 "inputs": ["gparams", "xaxis"], "outputs": ["curve"],
                 "lines": [
                     [{"id": "curve", "tex": r"c(x_n)", "role": "intermediate"}, {"tex": "="}, {"tex": r"\sum_{k}"}, {"id": "gparams", "tex": r"a_k", "role": "measured"}, {"tex": r"\exp\!\Big(\mathrm{clip}\big(-\tfrac{(x_n-"}, {"id": "gparams", "tex": r"\mu_k", "role": "measured"}, {"tex": r")^2}{2\max("}, {"id": "gparams", "tex": r"\sigma_k", "role": "measured"}, {"tex": r",\,\sigma_{\mathrm{flr}})^2},\,-100,\,0\big)\Big),\ \ \sigma_{\mathrm{flr}}=10^{-6}"}],
@@ -1241,7 +1350,7 @@ class FlowLibrary:
             },
             {
                 "id": "paei_power", "title": "Power and peak-location error", "phase": "D - Metrics",
-                "note": "Also over active curves: the integrated profile power is the trapezoidal area under the curve, giving a relative power error, and the peak-location MAE is the distance between the argmax elevations of the reconstruction and the GT; the peak-amplitude relative error is reported alongside.",
+                "note": "Also over active curves: the integrated profile power is the trapezoidal area under the curve, giving a relative power error, and the peak-location MAE is the distance between the argmax z values of the reconstruction and the GT; the peak-amplitude relative error is reported alongside.",
                 "inputs": ["pred", "gt", "xaxis"], "outputs": ["pwr"],
                 "lines": [
                     [{"id": "pwr", "tex": r"\delta_P", "role": "calculated"}, {"tex": "="}, {"tex": r"\Big\langle\dfrac{|P(\hat{c}) - P(c^{\mathrm{gt}})|}{|P(c^{\mathrm{gt}})| + \varepsilon}\Big\rangle_{a},\qquad P(c) = \mathrm{trapz}\big(c,\,"}, {"id": "xaxis", "tex": r"\mathbf{x}", "role": "measured"}, {"tex": r"\big)"}],
@@ -1340,7 +1449,7 @@ class FlowLibrary:
             },
             {
                 "id": "iaei_denorm", "title": "Denormalise to physical units", "phase": "B - Reconstruct",
-                "note": "Input and reconstruction are inverted with the same input stats: scale, shift, and for log1p slots (SLC and ifg magnitudes) apply expm1 after clamping the argument to [log1p(floor), log1p(ceil)] with floor 0 and ceil 1000, so error is measured in physical backscatter units.",
+                "note": "Input and reconstruction are inverted with the same input stats: scale, shift, and for log1p slots (SLC and derived magnitudes) apply expm1 after clamping the argument to [log1p(floor), log1p(ceil)] with floor 0 and ceil 1000, so error is measured in physical backscatter units.",
                 "inputs": ["xn", "xrecn", "stats"], "outputs": ["gt", "pred"],
                 "lines": [
                     [{"id": "gt", "tex": r"\mathbf{x}", "role": "calculated"}, {"tex": "="}, {"tex": r"\mathrm{denorm}\!\big("}, {"id": "xn", "tex": r"\hat{\mathbf{x}}", "role": "measured"}, {"tex": r"\big),\quad \mathrm{denorm}(u)_c = \mathrm{expm1}\!\big(\operatorname{clip}(u_c s_c + \mu_c,\ 0,\ \log 1001)\big)\ \ (\mathrm{log1p})"}],
@@ -1382,7 +1491,7 @@ class FlowLibrary:
             },
             {
                 "id": "iaei_channel", "title": "Per-channel error", "phase": "C - Metrics",
-                "note": "Averaging the squared residual over patches and both spatial axes but not the channel axis gives a per-input-channel MSE, isolating which passes or interferograms reconstruct worst.",
+                "note": "Averaging the squared residual over patches and both spatial axes but not the channel axis gives a per-input-channel MSE, isolating which passes or derived reconstruct worst.",
                 "inputs": ["err"], "outputs": ["cmse"],
                 "lines": [
                     [{"id": "cmse", "tex": r"m_c", "role": "calculated"}, {"tex": "="}, {"tex": r"\big\langle e_c^2 \big\rangle_{(p,\,i,\,j)},\qquad c = 1,\dots,C_{\mathrm{in}}"}],
@@ -1539,10 +1648,10 @@ class FlowLibrary:
 
     def _cross_validate(self) -> dict:
         nodes = [
-            {"id": "cv_extent",     "tex": r"\Omega_{\mathrm{az}}", "role": "measured",     "kind": "set",    "shape": "(az0, az1)", "desc": "fold azimuth window in absolute SLC lines",               "sample": "(1000, 16000)"},
-            {"id": "cv_guard",      "tex": r"g",                    "role": "measured",     "kind": "scalar", "shape": "1",          "desc": "guard-band width between folds (azimuth lines, even)",    "sample": "64"},
-            {"id": "cv_blocks",     "tex": r"B_k",                  "role": "calculated",   "kind": "set",    "shape": "K x 2",      "desc": "K equal-width contiguous azimuth blocks",                 "sample": [["1000", "2500"], ["2500", "4000"]]},
-            {"id": "cv_region",     "tex": r"R_k",                  "role": "calculated",   "kind": "set",    "shape": "A_z x R_g",  "desc": "guard-trimmed block region (azimuth slice x full range)", "sample": "[2532, 3968) x [0, 3000)"},
+            {"id": "cv_extent",     "tex": r"\Omega_{\mathrm{row}}", "role": "measured",     "kind": "set",    "shape": "(row0, row1)", "desc": "fold row window in absolute SLC lines",               "sample": "(1000, 16000)"},
+            {"id": "cv_guard",      "tex": r"g",                    "role": "measured",     "kind": "scalar", "shape": "1",          "desc": "guard-band width between folds (row lines, even)",    "sample": "64"},
+            {"id": "cv_blocks",     "tex": r"B_k",                  "role": "calculated",   "kind": "set",    "shape": "K x 2",      "desc": "K equal-width contiguous row blocks",                 "sample": [["1000", "2500"], ["2500", "4000"]]},
+            {"id": "cv_region",     "tex": r"R_k",                  "role": "calculated",   "kind": "set",    "shape": "n_row x n_col",  "desc": "guard-trimmed block region (row slice x full range)", "sample": "[2532, 3968) x [0, 3000)"},
             {"id": "cv_split",      "tex": r"\Omega^{(k)}",         "role": "calculated",   "kind": "set",    "shape": "3 regions",  "desc": "fold-k disjoint train / val / test split regions",        "sample": "test B0, val B1, train B2..9"},
             {"id": "cv_units",      "tex": r"\mathcal{U}",          "role": "calculated",   "kind": "set",    "shape": "K x |S|",    "desc": "expanded (fold, seed) training run units",                "sample": ["fold_0", "fold_1", "..."]},
             {"id": "cv_model",      "tex": r"\theta_k^{\star}",     "role": "intermediate", "kind": "tensor", "shape": "|theta|",    "desc": "fold-k best-epoch weights and validation loss",           "sample": "0.041 (best val)"},
@@ -1553,12 +1662,12 @@ class FlowLibrary:
         ]
         steps = [
             {
-                "id": "cv_partition", "title": "Azimuth block partition", "phase": "A - Fold plan",
-                "note": "The fold azimuth window [azimuth_start, azimuth_end) (default [1000, 16000)) is cut into K = n_folds contiguous equal-width blocks of size floor((az1-az0)/K); the final block absorbs the remainder. K must be at least 3 so that train, val and test stay mutually disjoint.",
+                "id": "cv_partition", "title": "Row block partition", "phase": "A - Fold plan",
+                "note": "The fold row window [row_start, row_end) (default [1000, 16000)) is cut into K = n_folds contiguous equal-width blocks of size floor((row1-row0)/K); the final block absorbs the remainder. K must be at least 3 so that train, val and test stay mutually disjoint.",
                 "inputs": ["cv_extent"], "outputs": ["cv_blocks"],
                 "lines": [
-                    [{"tex": r"w = \big\lfloor (\mathtt{az}_1 - \mathtt{az}_0)/K \big\rfloor,\qquad K = n_{\mathrm{folds}} \ge 3"}],
-                    [{"id": "cv_blocks", "tex": r"B_k", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\,\mathtt{az}_0 + k\,w,\ \ \mathtt{az}_0 + (k{+}1)\,w\,\big),\qquad"}, {"id": "cv_extent", "tex": r"\Omega_{\mathrm{az}} = [\mathtt{az}_0, \mathtt{az}_1)", "role": "measured"}],
+                    [{"tex": r"w = \big\lfloor (\mathtt{row}_1 - \mathtt{row}_0)/K \big\rfloor,\qquad K = n_{\mathrm{folds}} \ge 3"}],
+                    [{"id": "cv_blocks", "tex": r"B_k", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\,\mathtt{row}_0 + k\,w,\ \ \mathtt{row}_0 + (k{+}1)\,w\,\big),\qquad"}, {"id": "cv_extent", "tex": r"\Omega_{\mathrm{row}} = [\mathtt{row}_0, \mathtt{row}_1)", "role": "measured"}],
                 ],
             },
             {
@@ -1566,7 +1675,7 @@ class FlowLibrary:
                 "note": "Interior block boundaries are eroded by margin = guard/2 lines on each side, while outer edges at the window boundary are left intact; this opens a guard-width gap between neighbouring splits so no patch straddles two folds. guard (default 64) must be even, non-negative and strictly smaller than the smallest block.",
                 "inputs": ["cv_blocks", "cv_guard"], "outputs": ["cv_region"],
                 "lines": [
-                    [{"id": "cv_region", "tex": r"R_k", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\,s_k + m\,\mathbb{1}_{s_k>\mathtt{az}_0},\ \ e_k - m\,\mathbb{1}_{e_k<\mathtt{az}_1}\,\big)\ \times\ [\mathtt{rg}_0, \mathtt{rg}_1)"}],
+                    [{"id": "cv_region", "tex": r"R_k", "role": "calculated"}, {"tex": "="}, {"tex": r"\big[\,s_k + m\,\mathbb{1}_{s_k>\mathtt{row}_0},\ \ e_k - m\,\mathbb{1}_{e_k<\mathtt{row}_1}\,\big)\ \times\ [\mathtt{col}_0, \mathtt{col}_1)"}],
                     [{"tex": r"m = "}, {"id": "cv_guard", "tex": r"g", "role": "measured"}, {"tex": r"/2,\qquad g\ \text{even},\quad 0 \le g < \min_k \big|"}, {"id": "cv_blocks", "tex": r"B_k", "role": "calculated"}, {"tex": r"\big|"}],
                 ],
             },
@@ -1637,7 +1746,7 @@ class FlowLibrary:
         return {
             "key"   : "cross_validate",
             "name"  : "Cross-Validation (K-fold)",
-            "blurb" : "K-fold spatial cross-validation. Partition the scene azimuth into K equal blocks, erode a guard band so folds cannot leak, and rotate each block through test / val / train; train one model per fold (optionally per seed), infer on the held-out val and test bands, then aggregate every metric into a cross-fold mean and sample standard deviation with a machine-readable summary.",
+            "blurb" : "K-fold spatial cross-validation. Partition the scene row into K equal blocks, erode a guard band so folds cannot leak, and rotate each block through test / val / train; train one model per fold (optionally per seed), infer on the held-out val and test bands, then aggregate every metric into a cross-fold mean and sample standard deviation with a machine-readable summary.",
             "nodes" : nodes,
             "steps" : steps,
         }
@@ -1892,6 +2001,7 @@ class FlowLibrary:
 
     def collect(self) -> list:
         return [
+            self._synthesis(),
             self._param_extraction(),
             self._dataset(),
             self._training(),

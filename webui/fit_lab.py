@@ -46,7 +46,7 @@ class FitLab:
             return {"ok": False, "error": f"not a directory: {base or '(empty)'}"}
 
         candidates = [root] + sorted(child for child in root.iterdir() if child.is_dir())
-        found      = [{"name": c.name, "path": str(c)} for c in candidates if (c / "data" / "tomogram_full.npy").is_file()]
+        found      = [{"name": c.name, "path": str(c)} for c in candidates if (c / "data" / "cube_full.npy").is_file()]
 
         return {"ok": True, "base": str(root), "datasets": found}
 
@@ -66,38 +66,38 @@ class FitLab:
 
     def _load_worker(self, path: str) -> None:
         try:
-            cfg          = ExtractionConfig(processed_data_path=Path(path))
-            tomo_path    = cfg.discover_tomogram_path()
-            height_range = cfg.discover_height_range()
+            cfg       = ExtractionConfig(processed_data_path=Path(path))
+            tomo_path = cfg.discover_cube_path()
+            z_range   = cfg.discover_z_range()
 
-            self._set_load(0.05, "mapping tomogram")
-            tomogram = np.load(str(tomo_path), mmap_mode="r", allow_pickle=False)
-            if tomogram.ndim != 3:
-                raise ValueError(f"tomogram_full.npy must be 3-D (H, Az, R), got shape {tomogram.shape}")
-            H, Az, R = tomogram.shape
+            self._set_load(0.05, "mapping cube")
+            cube = np.load(str(tomo_path), mmap_mode="r", allow_pickle=False)
+            if cube.ndim != 3:
+                raise ValueError(f"cube_full.npy must be 3-D (H, n_row, n_col), got shape {cube.shape}")
+            H, n_row, n_col = cube.shape
 
-            self._set_load(0.1, "reading primary SLC")
+            self._set_load(0.1, "reading primary channel")
             primary = np.abs(np.load(str(cfg.data_directory / "primary.npy"), allow_pickle=False)).astype(np.float32)
 
-            peak = np.empty((Az, R), dtype=np.float32)
-            for r_start in range(0, R, self.RANGE_STEP):
-                r_end                 = min(r_start + self.RANGE_STEP, R)
-                peak[:, r_start:r_end] = np.abs(np.array(tomogram[:, :, r_start:r_end])).max(axis=0)
-                self._set_load(0.1 + 0.9 * r_end / R, f"scanning tomogram {r_end}/{R}")
+            peak = np.empty((n_row, n_col), dtype=np.float32)
+            for r_start in range(0, n_col, self.RANGE_STEP):
+                r_end                 = min(r_start + self.RANGE_STEP, n_col)
+                peak[:, r_start:r_end] = np.abs(np.array(cube[:, :, r_start:r_end])).max(axis=0)
+                self._set_load(0.1 + 0.9 * r_end / n_col, f"scanning cube {r_end}/{n_col}")
 
             meta = {
-                "path"         : path,
-                "name"         : Path(path).name,
-                "h"            : int(H),
-                "az"           : int(Az),
-                "rg"           : int(R),
-                "height_range" : [float(height_range[0]), float(height_range[1])],
+                "path"    : path,
+                "name"    : Path(path).name,
+                "h"       : int(H),
+                "row"     : int(n_row),
+                "col"     : int(n_col),
+                "z_range" : [float(z_range[0]), float(z_range[1])],
             }
 
             with self.lock:
-                self.loaded = {"path": path, "tomogram": tomogram, "maps": {"slc": primary, "peak": peak}, "height_range": height_range, "meta": meta}
+                self.loaded = {"path": path, "cube": cube, "maps": {"primary": primary, "peak": peak}, "z_range": z_range, "meta": meta}
                 self.status = {"state": "ready", "path": path, "progress": 1.0, "stage": "ready", "error": ""}
-            self.logger.ok(f"fitlab loaded {path} (H={H}, Az={Az}, R={R})")
+            self.logger.ok(f"fitlab loaded {path} (H={H}, n_row={n_row}, n_col={n_col})")
 
         except Exception as exc:
             with self.lock:
@@ -122,7 +122,7 @@ class FitLab:
                 return None
             image = self.loaded["maps"][src]
 
-        if src == "slc":
+        if src == "primary":
             vmin, vmax = PlotBase._amplitude_clim(image)
             cmap       = "gray"
         else:
@@ -142,7 +142,7 @@ class FitLab:
             meta = self.loaded["meta"]
 
         try:
-            pixels = self._parse_pixels(body.get("pixels"), meta["az"], meta["rg"])
+            pixels = self._parse_pixels(body.get("pixels"), meta["row"], meta["col"])
             config = self._parse_config(body.get("config"))
         except (KeyError, TypeError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
@@ -153,22 +153,22 @@ class FitLab:
         threading.Thread(target=self._fit_worker, args=(pixels, config), name="FitLabFit", daemon=True).start()
         return {"ok": True}
 
-    def _parse_pixels(self, raw, az_size: int, rg_size: int) -> list:
+    def _parse_pixels(self, raw, row_size: int, col_size: int) -> list:
         if not isinstance(raw, list) or not raw:
-            raise ValueError("pixels must be a non-empty list of {az, rg}")
+            raise ValueError("pixels must be a non-empty list of {row, col}")
         if len(raw) > self.MAX_PIXELS:
             raise ValueError(f"at most {self.MAX_PIXELS} pixels per fit, got {len(raw)}")
 
         pixels = []
         seen   = set()
         for entry in raw:
-            az, rg = int(entry["az"]), int(entry["rg"])
-            if not (0 <= az < az_size and 0 <= rg < rg_size):
-                raise ValueError(f"pixel az={az}, rg={rg} outside tomogram ({az_size} x {rg_size})")
-            if (az, rg) in seen:
+            row, col = int(entry["row"]), int(entry["col"])
+            if not (0 <= row < row_size and 0 <= col < col_size):
+                raise ValueError(f"pixel row={row}, col={col} outside cube ({row_size} x {col_size})")
+            if (row, col) in seen:
                 continue
-            seen.add((az, rg))
-            pixels.append((az, rg))
+            seen.add((row, col))
+            pixels.append((row, col))
 
         return pixels
 
@@ -211,13 +211,13 @@ class FitLab:
             from tools.data.gaussians                                    import GaussianMixture
 
             with self.lock:
-                tomogram     = self.loaded["tomogram"]
-                height_range = self.loaded["height_range"]
-                dataset      = self.loaded["path"]
+                cube    = self.loaded["cube"]
+                z_range = self.loaded["z_range"]
+                dataset = self.loaded["path"]
 
             self._set_fit(0.05, "reading profiles")
-            H      = tomogram.shape[0]
-            raw_hn = np.abs(np.stack([np.array(tomogram[:, az, rg]) for az, rg in pixels], axis=1)).astype(np.float32)
+            H      = cube.shape[0]
+            raw_hn = np.abs(np.stack([np.array(cube[:, row, col]) for row, col in pixels], axis=1)).astype(np.float32)
             target = ProfilePreprocessor.apply(raw_hn, config["threshold_factor"], config["truncation_index"])
             pf     = np.ascontiguousarray(target.T)
 
@@ -226,9 +226,9 @@ class FitLab:
             scale  = np.where(active[:, None], pmax, 1.0).astype(np.float32)
             norm   = pf / scale
 
-            height_axis = np.linspace(height_range[0], height_range[1], H, dtype=np.float32)
-            h_span      = float(height_axis[-1] - height_axis[0])
-            dh          = h_span / (H - 1)
+            z_axis = np.linspace(z_range[0], z_range[1], H, dtype=np.float32)
+            h_span = float(z_axis[-1] - z_axis[0])
+            dh     = h_span / (H - 1)
 
             k_max      = config["k_max"]
             active_idx = np.where(active)[0]
@@ -246,18 +246,18 @@ class FitLab:
                 amp_mask      = jnp.float32(1.0 if fit_amplitude else 0.0)
                 mu_mask       = jnp.float32(1.0 if fit_mean else 0.0)
                 sigma_mask    = jnp.float32(1.0 if fit_sigma else 0.0)
-                mu_lower_j    = jnp.float32(height_axis[0])
-                mu_upper_j    = jnp.float32(height_axis[-1])
+                mu_lower_j    = jnp.float32(z_axis[0])
+                mu_upper_j    = jnp.float32(z_axis[-1])
                 sigma_lower_j = jnp.float32(dh)
                 sigma_upper_j = jnp.float32(h_span / 2.0)
-                height_ax_j   = jnp.array(height_axis)
+                z_ax_j        = jnp.array(z_axis)
 
                 prof_raw_act  = pf[active_idx]
                 prof_norm_act = norm[active_idx].astype(np.float32)
                 scale_act     = scale[active_idx, 0]
                 n_act         = len(active_idx)
 
-                amps_km, mus_km, sigs_km = self._initialiser.run(prof_raw_act, height_axis, k_max, config["prominence_frac"], config["sigma_init_divisor"])
+                amps_km, mus_km, sigs_km = self._initialiser.run(prof_raw_act, z_axis, k_max, config["prominence_frac"], config["sigma_init_divisor"])
 
                 for K in range(1, k_max + 1):
                     self._set_fit(0.15 + 0.8 * (K - 1) / k_max, f"fitting K={K}/{k_max}")
@@ -267,7 +267,7 @@ class FitLab:
                         jnp.array(self._pad_rows(amps_norm, self.BATCH_ROWS)),
                         jnp.array(self._pad_rows(mus_km[:, :K], self.BATCH_ROWS)),
                         jnp.array(self._pad_rows(sigs_km[:, :K], self.BATCH_ROWS)),
-                        height_ax_j,
+                        z_ax_j,
                         jnp.array(self._pad_rows(prof_norm_act, self.BATCH_ROWS)),
                         amp_mask,
                         mu_mask,
@@ -290,7 +290,7 @@ class FitLab:
                     per_k_out[K] = (fit_a, fit_m, fit_s, mse, mse + config["lambda_k"] * K)
 
             self._set_fit(0.97, "packing results")
-            result = self._pack_result(GaussianMixture, pixels, config, dataset, height_axis, raw_hn, pf, scale, active, active_idx, per_k_out)
+            result = self._pack_result(GaussianMixture, pixels, config, dataset, z_axis, raw_hn, pf, scale, active, active_idx, per_k_out)
 
             with self.lock:
                 self.fit_result = result
@@ -309,14 +309,14 @@ class FitLab:
             return np.ascontiguousarray(arr, dtype=np.float32)
         return np.concatenate([arr.astype(np.float32, copy=False), np.zeros((pad, arr.shape[1]), dtype=np.float32)], axis=0)
 
-    def _pack_result(self, mixture, pixels: list, config: dict, dataset: str, height_axis: np.ndarray, raw_hn: np.ndarray, pf: np.ndarray, scale: np.ndarray, active: np.ndarray, active_idx: np.ndarray, per_k_out: dict) -> dict:
+    def _pack_result(self, mixture, pixels: list, config: dict, dataset: str, z_axis: np.ndarray, raw_hn: np.ndarray, pf: np.ndarray, scale: np.ndarray, active: np.ndarray, active_idx: np.ndarray, per_k_out: dict) -> dict:
         act_pos = {int(idx): pos for pos, idx in enumerate(active_idx)}
         entries = []
 
-        for i, (az, rg) in enumerate(pixels):
+        for i, (row, col) in enumerate(pixels):
             entry = {
-                "az"     : az,
-                "rg"     : rg,
+                "row"    : row,
+                "col"    : col,
                 "active" : bool(active[i]),
                 "scale"  : float(scale[i, 0]),
                 "raw"    : raw_hn[:, i].tolist(),
@@ -333,7 +333,7 @@ class FitLab:
                     sigs        = fit_s[pos][order]
                     interleaved = np.stack([amps, mus, sigs], axis=1).reshape(-1)
 
-                    total, components = mixture.evaluate_pixel(interleaved, height_axis, K)
+                    total, components = mixture.evaluate_pixel(interleaved, z_axis, K)
                     per_k.append({
                         "k"          : K,
                         "mse"        : float(mse[pos]),
@@ -351,7 +351,7 @@ class FitLab:
         return {
             "ok"      : True,
             "dataset" : dataset,
-            "height"  : height_axis.tolist(),
+            "height"  : z_axis.tolist(),
             "config"  : config,
             "pixels"  : entries,
         }

@@ -138,7 +138,7 @@ class ModelGallery {
   }
 
   _aeLegend(m) {
-    const what = this.kind === "image_autoencoder" ? "image stack" : "elevation profile";
+    const what = this.kind === "image_autoencoder" ? "image stack" : "z profile";
     return (
       `<div class="mdetail__legend">` +
       `<span class="legend__dot"></span>The encoder compresses the ${what} into the embedding` +

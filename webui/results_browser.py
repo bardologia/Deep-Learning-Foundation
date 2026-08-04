@@ -24,7 +24,7 @@ class ResultsBrowser:
 
     STAGE_MARKERS = (
         ("benchmark",        ("pipeline/resolved_config.json", "results/benchmark_overview.md", "benchmark_overview.md")),
-        ("preprocess",       ("images/slc", "images/interferograms", "images/dem")),
+        ("preprocess",       ("images/primary", "images/derived", "images/aux")),
         ("param extraction", ("images/colormaps", "images/example_fits", "fit_report.md")),
         ("training",         ("docs/trainer_config.json", "last.pt", "tensorboard")),
         ("inference",        ("inference", "figures", "animations")),

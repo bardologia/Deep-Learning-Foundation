@@ -48,7 +48,7 @@ talking to one group of JSON endpoints.
 | TensorBoard | `#/tensorboard` | `/api/tensorboard/*` | Starts and supervises a TensorBoard process against any run directory. |
 | Leaderboard | `#/leaderboard` | `/api/leaderboard`, `/api/curves` | Three modes. Runs: every saved inference `metrics.json` as one sortable, filterable table with run-name axes parsed into dropdowns and a metric plus resolved-config diff; seeded layouts also get one seed-mean row per unit. Trials: seeded runs aggregated to mean-and-std bars. Curves: native overlay of TensorBoard scalars across runs. |
 | Results | `#/results` | `/api/results/*`, `/api/fs/*` | Browse any run or dataset directory: rendered markdown reports, figure galleries with compare pinning, configs, and inline log and text files. |
-| Cube | `#/cube` | `/api/cubes/*` | Cube explorer over saved inference cubes: live cuts with profiles and SSIM, axis sweeps, Gaussian parameter maps with per-pixel slot readout, per-pixel metric overlays with thresholding, arbitrary-line transects, a 3D scatterer point cloud, run-vs-run comparison, selectable colormaps and paper-style figure export. |
+| Cube | `#/cube` | `/api/cubes/*` | Cube explorer over saved inference cubes: live cuts with profiles and SSIM, axis sweeps, Gaussian parameter maps with per-pixel slot readout, per-pixel metric overlays with thresholding, arbitrary-line transects, a 3D component point cloud, run-vs-run comparison, selectable colormaps and paper-style figure export. |
 | Slices | `#/slices` | `/api/slices/*` | Multi-run slice collector: tick any number of cubes, set a cut position plus an optional queue of extra points, and preview the same slice from every run side by side on a shared colour scale. Collect renders the figures into one `slice_collections/<name>/` folder with a `collection.json` manifest. |
 | Fit Lab | `#/fitlab` | `/api/fitlab/*` | Parameter-extraction playground over a dataset: pick pixels on the input or profile-peak map, then run the real Gaussian-fit stack (`PeakInitialiser` plus `SigmaAdamKernel` on CPU) on just those pixels. Each run is a labelled overlay with a per-K mixture, a per-run K override and a penalised-MSE K sweep. |
 | Microscope | `#/microscope` | `/api/probe/*` | Model microscope over a trained run: load the checkpoint with its real dataset, click a pixel, and inspect the predicted profile against ground truth, gradient attribution of every output family to every input channel with per-pair spatial maps, feature-map grids along a clickable architecture strip, and live what-if perturbations with per-slot deltas. |
@@ -126,7 +126,7 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 and 34 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
 tab (`home`, `equations`, `flow_view` with `flow_sketches`, `pipelines`, `repomap`,
 `models`, `scripts`, `launch` with `launch_widgets` and `launch_pickers`, `ablation`,
-`saved_runs`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `tomogram`,
+`saved_runs`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube`,
 `slice_collector`, `fit_lab`, `microscope`, `triage`, `autopsy`, `feed_tuner`); the rest
 are shared drawing and animation helpers (`radar`, `diagram`, `gauges`, `process_anim`,
 `server_anim`, `training_anim`).

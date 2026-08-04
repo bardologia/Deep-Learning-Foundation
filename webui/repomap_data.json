@@ -3,14 +3,14 @@
     {
       "folder": "param_extraction",
       "title": "Parameter Extraction",
-      "blurb": "The parameter-extraction subsystem fits per-pixel multi-Gaussian height profiles to reduced tomograms on the GPU and re-analyses the fitted parameter stacks into fit-quality metrics and diagnostic plots.",
+      "blurb": "The parameter-extraction subsystem fits per-pixel multi-Gaussian height profiles to reduced cubes on the GPU and re-analyses the fitted parameter stacks into fit-quality metrics and diagnostic plots.",
       "diagrams": [
         {
           "key": "param-extraction",
           "stage": "Extraction",
           "title": "Per-pixel K-Gaussian mixture fit",
           "entry": "main/processing/extract_params.py",
-          "blurb": "Fits a per-pixel K-Gaussian mixture to every tomogram profile while sweeping K, lambda and fit modes, and writes the mu-sorted parameter stack with fit diagnostics and run metadata.",
+          "blurb": "Fits a per-pixel K-Gaussian mixture to every cube profile while sweeping K, lambda and fit modes, and writes the mu-sorted parameter stack with fit diagnostics and run metadata.",
           "nodes": [
             {
               "id": "entry",
@@ -36,14 +36,14 @@
             },
             {
               "id": "tomo_in",
-              "label": "tomogram_full.npy",
+              "label": "cube_full.npy",
               "module": "pipelines/processing",
               "role": "external",
-              "fn": "Full tomogram cube (H x Az x R) produced by the tomogram-generation pipeline, discovered from each dataset's data/ directory.",
+              "fn": "Full cube cube (H x n_row x n_col) produced by the cube-generation pipeline, discovered from each dataset's data/ directory.",
               "col": 1,
               "reads": [],
               "writes": [
-                "tomogram_full.npy"
+                "cube_full.npy"
               ],
               "row": 2
             },
@@ -63,7 +63,7 @@
               "label": "ParamExtractionPipeline",
               "module": "pipelines/processing/param_extraction/pipeline.py",
               "role": "orchestrator",
-              "fn": "Per-group orchestrator that discovers the tomogram and height range, drives one shared fit for all modes and lambdas, mu-sorts each returned Gaussian stack via ParameterExtractor, and saves every permutation through IO.",
+              "fn": "Per-group orchestrator that discovers the cube and height range, drives one shared fit for all modes and lambdas, mu-sorts each returned Gaussian stack via ParameterExtractor, and saves every permutation through IO.",
               "col": 2,
               "reads": [],
               "writes": [],
@@ -77,7 +77,7 @@
               "fn": "Sequences the shared three-phase fit over range-bin batches: one CPU peak init per batch, one GPU Adam scan per fit mode, and per-lambda best-K selection reusing the mode's fits; scoring and map accumulation run on a background thread so the next mode's GPU fit starts immediately.",
               "col": 3,
               "reads": [
-                "tomogram_full.npy"
+                "cube_full.npy"
               ],
               "writes": [],
               "row": 1
@@ -120,7 +120,7 @@
               "label": "ParameterIO + MetadataManager",
               "module": "pipelines/processing/param_extraction/io.py",
               "role": "io",
-              "fn": "Saves the mu-sorted parameters.npy, the fit_diagnostics.npz and the param_extraction_meta.json describing K, lambda, thresholds and the source tomogram.",
+              "fn": "Saves the mu-sorted parameters.npy, the fit_diagnostics.npz and the param_extraction_meta.json describing K, lambda, thresholds and the source cube.",
               "col": 2,
               "reads": [],
               "writes": [
@@ -153,13 +153,13 @@
             {
               "from": "tomo_in",
               "to": "pipeline",
-              "label": "tomogram_full.npy path",
+              "label": "cube_full.npy path",
               "kind": "io"
             },
             {
               "from": "pipeline",
               "to": "sigma_fit",
-              "label": "path + height_range",
+              "label": "path + z_range",
               "kind": "control"
             },
             {
@@ -195,13 +195,13 @@
           ],
           "artifacts": [
             {
-              "name": "tomogram_full.npy",
+              "name": "cube_full.npy",
               "producer": "tomo_in",
               "consumers": [
                 "sigma_fit"
               ],
-              "fmt": "npy - tomogram cube (H, Az, R)",
-              "desc": "Reduced tomogram whose per-pixel amplitude profiles are fitted; mmap-loaded range-batch by range-batch.",
+              "fmt": "npy - cube cube (H, n_row, n_col)",
+              "desc": "Reduced cube whose per-pixel amplitude profiles are fitted; mmap-loaded range-batch by range-batch.",
               "scope": "cross"
             },
             {
@@ -211,7 +211,7 @@
                 "backbone dataset",
                 "param-analysis stage"
               ],
-              "fmt": "npy - (3*k_max, Az, R) float32, mu-sorted per pixel",
+              "fmt": "npy - (3*k_max, n_row, n_col) float32, mu-sorted per pixel",
               "desc": "Per-pixel Gaussian parameters (amp, mu, sigma per slot), sorted by mu among active slots; the backbone regression target.",
               "scope": "cross"
             },
@@ -232,7 +232,7 @@
                 "backbone dataset",
                 "param-analysis stage"
               ],
-              "fmt": "json - k_max, lambda_k, height_range, thresholds, source_tomogram",
+              "fmt": "json - k_max, lambda_k, z_range, thresholds, source_cube",
               "desc": "Self-describing run metadata; k_max drives downstream n_gaussians and preprocessing/threshold reuse.",
               "scope": "cross"
             }
@@ -274,14 +274,14 @@
               "label": "extraction run dir",
               "module": "pipelines/processing/param_extraction",
               "role": "external",
-              "fn": "An extraction run directory (parameters.npy, fit_diagnostics.npz, param_extraction_meta.json and the source tomogram) produced by the Extraction stage.",
+              "fn": "An extraction run directory (parameters.npy, fit_diagnostics.npz, param_extraction_meta.json and the source cube) produced by the Extraction stage.",
               "col": 1,
               "reads": [],
               "writes": [
                 "parameters.npy",
                 "fit_diagnostics.npz",
                 "param_extraction_meta.json",
-                "tomogram_full.npy"
+                "cube_full.npy"
               ],
               "row": 0
             },
@@ -331,10 +331,10 @@
               "label": "FittingMetricsCalculator",
               "module": "pipelines/processing/param_extraction/metrics.py",
               "role": "metric",
-              "fn": "Reloads the tomogram and recomputes per-pixel R2, active-Gaussian count, peak-to-floor contrast and K-selection-margin maps plus global/per-K/contrast summaries.",
+              "fn": "Reloads the cube and recomputes per-pixel R2, active-Gaussian count, peak-to-floor contrast and K-selection-margin maps plus global/per-K/contrast summaries.",
               "col": 4,
               "reads": [
-                "tomogram_full.npy"
+                "cube_full.npy"
               ],
               "writes": [],
               "row": 0
@@ -399,7 +399,7 @@
             {
               "from": "trial_in",
               "to": "metrics",
-              "label": "source tomogram",
+              "label": "source cube",
               "kind": "io"
             },
             {
@@ -424,7 +424,7 @@
                 "metrics",
                 "plots"
               ],
-              "fmt": "npy - (3*k_max, Az, R) float32, mu-sorted",
+              "fmt": "npy - (3*k_max, n_row, n_col) float32, mu-sorted",
               "desc": "The fitted Gaussian parameter stack reloaded for metric recompute and plotting.",
               "scope": "cross"
             },
@@ -446,18 +446,18 @@
                 "scheduler",
                 "io"
               ],
-              "fmt": "json - k_max, lambda_k, height_range, thresholds, source_tomogram",
-              "desc": "Drives trial discovery and supplies k_max, thresholds, height range and the tomogram path for recompute.",
+              "fmt": "json - k_max, lambda_k, z_range, thresholds, source_cube",
+              "desc": "Drives trial discovery and supplies k_max, thresholds, height range and the cube path for recompute.",
               "scope": "cross"
             },
             {
-              "name": "tomogram_full.npy",
+              "name": "cube_full.npy",
               "producer": "trial_in",
               "consumers": [
                 "metrics"
               ],
-              "fmt": "npy - tomogram cube (H, Az, R)",
-              "desc": "Source tomogram reloaded to compute per-pixel R2 and peak-to-floor contrast against the fits.",
+              "fmt": "npy - cube cube (H, n_row, n_col)",
+              "desc": "Source cube reloaded to compute per-pixel R2 and peak-to-floor contrast against the fits.",
               "scope": "cross"
             },
             {
@@ -489,7 +489,7 @@
     {
       "folder": "backbone",
       "title": "Backbone",
-      "blurb": "The backbone subsystem turns a preprocessed F-SAR stack into per-pixel Gaussian elevation-profile predictions: it assembles normalized patch DataLoaders, trains a CNN backbone under a curriculum of curve/parameter/physics losses, and runs stitched-cube inference with metrics, a classical Capon baseline and a full report.",
+      "blurb": "The backbone subsystem turns a preprocessed channel stack into per-pixel Gaussian z-profile predictions: it assembles normalized patch DataLoaders, trains a CNN backbone under a loss curriculum, and runs stitched-cube inference with metrics and a full report.",
       "diagrams": [
         {
           "key": "backbone-dataset",
@@ -525,7 +525,7 @@
               "label": "Cropper / Layout",
               "module": "pipelines/backbone/dataset/spatial.py",
               "role": "io",
-              "fn": "Memmaps the preprocessing primary/secondaries/interferograms/parameters/DEM arrays and slices each split region into a stacked input tensor and targets.",
+              "fn": "Memmaps the preprocessing primary/secondaries/derived/parameters/Aux arrays and slices each split region into a stacked input tensor and targets.",
               "col": 2,
               "reads": [
                 "preprocessing arrays (*.npy)"
@@ -637,7 +637,7 @@
             {
               "from": "cropper",
               "to": "dataset",
-              "label": "cropped input/param/DEM",
+              "label": "cropped input/param/Aux",
               "kind": "data"
             },
             {
@@ -697,7 +697,7 @@
                 "Cropper"
               ],
               "fmt": "npy (mmap)",
-              "desc": "Primary, secondaries, interferograms, parameters, DEM and full-tomogram arrays sliced per split region.",
+              "desc": "Primary, secondaries, derived, parameters, Aux and full-cube arrays sliced per split region.",
               "scope": "cross"
             },
             {
@@ -969,7 +969,7 @@
             {
               "from": "pipeline",
               "to": "trainer",
-              "label": "x_axis, cfg, normalizer",
+              "label": "z_axis, cfg, normalizer",
               "kind": "control"
             },
             {
@@ -1024,7 +1024,7 @@
                 "InferencePipeline"
               ],
               "fmt": "PyTorch checkpoint",
-              "desc": "Best-validation state dict plus x_axis, epoch and best-loss metadata loaded for inference.",
+              "desc": "Best-validation state dict plus z_axis, epoch and best-loss metadata loaded for inference.",
               "scope": "cross"
             },
             {
@@ -1098,7 +1098,7 @@
           "stage": "Inference",
           "title": "Stitched-cube inference, metrics and report",
           "entry": "main/inference/infer_backbone.py",
-          "blurb": "Loads a trained checkpoint and its split, predicts and stitches the elevation-profile cube, scores it against the GT tomogram and a classical Capon baseline, checks interferometric consistency, and renders figures, animations and a markdown report.",
+          "blurb": "Loads a trained checkpoint and its split, predicts and stitches the z-profile cube, scores it against the GT cube and the dataset reference cube, checks derived-channel consistency, and renders figures, animations and a markdown report.",
           "nodes": [
             {
               "id": "entry",
@@ -1149,7 +1149,7 @@
               "label": "RunLoader",
               "module": "pipelines/backbone/inference/loader.py",
               "role": "io",
-              "fn": "Rebuilds dataset config, model and single-region PatchDataset, loads the checkpoint and stats and track baselines into a Run.",
+              "fn": "Rebuilds dataset config, model and single-region PatchDataset, loads the checkpoint and stats and channel baselines into a Run.",
               "col": 2,
               "reads": [
                 "best_model.pt",
@@ -1189,7 +1189,7 @@
               "label": "Metrics",
               "module": "pipelines/backbone/inference/metrics.py",
               "role": "metric",
-              "fn": "Computes curve, per-pixel, SSIM, per-elevation, matched-Gaussian and slot-organization metrics.",
+              "fn": "Computes curve, per-pixel, SSIM, per-z, matched-Gaussian and slot-organization metrics.",
               "col": 4,
               "reads": [],
               "writes": [
@@ -1202,7 +1202,7 @@
               "label": "FigureComposer / Plotter / Animator",
               "module": "pipelines/backbone/inference/figures.py",
               "role": "io",
-              "fn": "Renders profiles, pixel maps, parameter/slot plots, tomogram slices, SSIM curves and walk animations via the plots/* plotter family.",
+              "fn": "Renders profiles, pixel maps, parameter/slot plots, cube slices, SSIM curves and walk animations via the plots/* plotter family.",
               "col": 5,
               "reads": [],
               "writes": [
@@ -1319,7 +1319,7 @@
                 "RunLoader"
               ],
               "fmt": "PyTorch checkpoint",
-              "desc": "Trained backbone weights and x_axis loaded and wrapped for the forward pass.",
+              "desc": "Trained backbone weights and z_axis loaded and wrapped for the forward pass.",
               "scope": "cross"
             },
             {
@@ -1352,7 +1352,7 @@
                 "webui"
               ],
               "fmt": "json",
-              "desc": "All global metrics: curve, per-pixel, per-elevation, SSIM and matched-Gaussian summaries.",
+              "desc": "All global metrics: curve, per-pixel, per-z, SSIM and matched-Gaussian summaries.",
               "scope": "within"
             },
             {
@@ -1451,7 +1451,7 @@
               "label": "DualTrainingPipeline / TrunkChannelMap",
               "module": "pipelines/dual/training/pipeline.py",
               "role": "orchestrator",
-              "fn": "TrainingPipeline subclass. TrunkChannelMap turns the params_input and existence_input group names into concrete channel index tuples against the active InputConfig; the pipeline refuses input.use_dem and logs the per-arm parameter counts.",
+              "fn": "TrainingPipeline subclass. TrunkChannelMap turns the params_input and existence_input group names into concrete channel index tuples against the active InputConfig; the pipeline refuses input.use_aux and logs the per-arm parameter counts.",
               "col": 2,
               "reads": [],
               "writes": [],
@@ -1647,7 +1647,7 @@
             {
               "from": "pipeline",
               "to": "trainer",
-              "label": "loaders + model + x_axis",
+              "label": "loaders + model + z_axis",
               "kind": "control"
             },
             {
@@ -1687,7 +1687,7 @@
                 "DualRunLoader"
               ],
               "fmt": "PyTorch checkpoint",
-              "desc": "Best-validation state dict plus x_axis, epoch and best-loss metadata.",
+              "desc": "Best-validation state dict plus z_axis, epoch and best-loss metadata.",
               "scope": "cross"
             },
             {
@@ -1824,7 +1824,7 @@
               "label": "Metrics",
               "module": "pipelines/backbone/inference/metrics.py",
               "role": "metric",
-              "fn": "Curve, per-pixel, SSIM, per-elevation, matched-Gaussian and slot-organization metrics, unchanged for dual runs.",
+              "fn": "Curve, per-pixel, SSIM, per-z, matched-Gaussian and slot-organization metrics, unchanged for dual runs.",
               "col": 4,
               "reads": [],
               "writes": [],
@@ -1857,7 +1857,7 @@
               "label": "FigureComposer / Plotter / Animator",
               "module": "pipelines/backbone/inference/figures.py",
               "role": "io",
-              "fn": "Renders profiles, pixel maps, parameter and slot plots, tomogram slices and walk animations.",
+              "fn": "Renders profiles, pixel maps, parameter and slot plots, cube slices and walk animations.",
               "col": 5,
               "reads": [],
               "writes": [],
@@ -1975,7 +1975,7 @@
                 "DualRunLoader"
               ],
               "fmt": "PyTorch checkpoint",
-              "desc": "Trained dual weights and x_axis loaded and wrapped for the forward pass.",
+              "desc": "Trained dual weights and z_axis loaded and wrapped for the forward pass.",
               "scope": "cross"
             },
             {
@@ -2017,7 +2017,7 @@
     {
       "folder": "profile_autoencoder",
       "title": "Profile Autoencoder",
-      "blurb": "Standalone per-pixel profile-autoencoder subsystem that compresses Gaussian-mixture elevation profiles into latent embeddings: it builds per-pixel curve datasets, trains a reconstruction autoencoder whose checkpoint seeds the JEPA target encoder, and runs reconstruction inference with metrics and reports.",
+      "blurb": "Standalone per-pixel profile-autoencoder subsystem that compresses Gaussian-mixture z profiles into latent embeddings: it builds per-pixel curve datasets, trains a reconstruction autoencoder whose checkpoint seeds the JEPA target encoder, and runs reconstruction inference with metrics and reports.",
       "diagrams": [
         {
           "key": "profileae-dataset",
@@ -2055,7 +2055,7 @@
               "label": "ProfileDatasetPipeline",
               "module": "pipelines/profile_autoencoder/dataset/pipeline.py",
               "role": "orchestrator",
-              "fn": "Sequences dataset construction: builds the elevation axis, crops per-split parameters, fits the normalizer on train, then assembles the three DataLoaders.",
+              "fn": "Sequences dataset construction: builds the z axis, crops per-split parameters, fits the normalizer on train, then assembles the three DataLoaders.",
               "col": 1,
               "reads": [],
               "writes": [],
@@ -2079,7 +2079,7 @@
               "label": "GaussianAxis / GaussianMixture",
               "module": "tools/data/gaussians.py",
               "role": "transform",
-              "fn": "Builds the shared elevation axis and evaluates Gaussian-mixture (amp, mu, sigma) parameters into per-pixel intensity curves.",
+              "fn": "Builds the shared z axis and evaluates Gaussian-mixture (amp, mu, sigma) parameters into per-pixel intensity curves.",
               "col": 2,
               "reads": [],
               "writes": [],
@@ -2154,7 +2154,7 @@
             {
               "from": "pipeline",
               "to": "curve",
-              "label": "axis bounds -> x_axis",
+              "label": "axis bounds -> z_axis",
               "kind": "control"
             },
             {
@@ -2166,7 +2166,7 @@
             {
               "from": "curve",
               "to": "dataset",
-              "label": "x_axis + curve eval",
+              "label": "z_axis + curve eval",
               "kind": "data"
             },
             {
@@ -2202,7 +2202,7 @@
                 "Layout",
                 "ParameterCropper"
               ],
-              "fmt": "npy (memmap, C x az x rg)",
+              "fmt": "npy (memmap, C x row x col)",
               "desc": "Extracted Gaussian-mixture profile parameters (amp/mu/sigma channels) per pixel from the preprocessing run.",
               "scope": "cross"
             },
@@ -2225,7 +2225,7 @@
                 "AutoencoderTrainer"
               ],
               "fmt": "in-memory DataLoader",
-              "desc": "Curve batches plus x_axis and profile length handed to the training stage.",
+              "desc": "Curve batches plus z_axis and profile length handed to the training stage.",
               "scope": "cross"
             }
           ],
@@ -2277,7 +2277,7 @@
               "label": "ProfileDatasetPipeline",
               "module": "pipelines/profile_autoencoder/dataset/pipeline.py",
               "role": "external",
-              "fn": "Dataset stage that supplies the train/val/test DataLoaders, x_axis and profile length consumed here (see Dataset diagram).",
+              "fn": "Dataset stage that supplies the train/val/test DataLoaders, z_axis and profile length consumed here (see Dataset diagram).",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -2367,7 +2367,7 @@
             {
               "from": "datasetpipe",
               "to": "pipeline",
-              "label": "loaders + x_axis + x_len",
+              "label": "loaders + z_axis + z_len",
               "kind": "data"
             },
             {
@@ -2415,7 +2415,7 @@
                 "ProfileAeRunLoader",
                 "JepaTrainingPipeline"
               ],
-              "fmt": "PyTorch checkpoint (params state_dict, x_axis, epoch, best_val_loss)",
+              "fmt": "PyTorch checkpoint (params state_dict, z_axis, epoch, best_val_loss)",
               "desc": "Trained profile-AE weights; JEPA loads it as the target-provider encoder yielding latent-embedding targets, and profile inference loads it to reconstruct.",
               "scope": "cross"
             },
@@ -2640,7 +2640,7 @@
               "consumers": [
                 "ProfileAeRunLoader"
               ],
-              "fmt": "PyTorch checkpoint (params, x_axis)",
+              "fmt": "PyTorch checkpoint (params, z_axis)",
               "desc": "Trained profile-AE weights reloaded to reconstruct the split's curves and produce latent embeddings.",
               "scope": "cross"
             },
@@ -2938,7 +2938,7 @@
             {
               "from": "pipeline",
               "to": "trainer",
-              "label": "loaders, x_axis, run_dir",
+              "label": "loaders, z_axis, run_dir",
               "kind": "control"
             },
             {
@@ -2980,7 +2980,7 @@
                 "JepaTrainingPipeline",
                 "ImageAeRunLoader"
               ],
-              "fmt": "torch checkpoint (params, x_axis, best_epoch, best_val_loss)",
+              "fmt": "torch checkpoint (params, z_axis, best_epoch, best_val_loss)",
               "desc": "Trained image-AE weights = latent input-embedding front-end consumed by JEPA and reloaded by inference.",
               "scope": "cross"
             },
@@ -3236,14 +3236,14 @@
     {
       "folder": "jepa",
       "title": "JEPA",
-      "blurb": "JEPA trains a spatial backbone to predict a pretrained profile-autoencoder's latent embedding of each pixel's elevation profile (optionally behind an image-autoencoder frontend), then at inference decodes those embeddings back into elevation curves and scores them.",
+      "blurb": "JEPA trains a spatial backbone to predict a pretrained profile-autoencoder's latent embedding of each pixel's z profile (optionally behind an image-autoencoder frontend), then at inference decodes those embeddings back into z curves and scores them.",
       "diagrams": [
         {
           "key": "jepa-training",
           "stage": "Training",
           "title": "JEPA Predictor Training",
           "entry": "main/training/train_jepa.py",
-          "blurb": "Couples one or two pretrained autoencoders to a spatial backbone and trains that backbone to predict, in latent space, the profile-autoencoder embedding of each pixel's elevation curve.",
+          "blurb": "Couples one or two pretrained autoencoders to a spatial backbone and trains that backbone to predict, in latent space, the profile-autoencoder embedding of each pixel's z curve.",
           "nodes": [
             {
               "id": "entry",
@@ -3288,7 +3288,7 @@
               "label": "Preprocessing arrays",
               "module": "pipelines/processing",
               "role": "external",
-              "fn": "Preprocessing run supplying the input SLC stack and per-pixel Gaussian-parameter arrays consumed by the dataset preparation.",
+              "fn": "Preprocessing run supplying the input channel stack and per-pixel Gaussian-parameter arrays consumed by the dataset preparation.",
               "col": 1,
               "reads": [],
               "writes": [
@@ -3327,7 +3327,7 @@
               "label": "BackboneDatasetPreparation",
               "module": "pipelines/backbone/dataset/pipeline.py",
               "role": "data",
-              "fn": "Shared preparation that crops patches and yields train/val/test DataLoaders of (input stack, GT params) plus the elevation x-axis.",
+              "fn": "Shared preparation that crops patches and yields train/val/test DataLoaders of (input stack, GT params) plus the z x-axis.",
               "col": 2,
               "reads": [
                 "preprocessing input + parameter arrays"
@@ -3426,7 +3426,7 @@
             {
               "from": "dataprep",
               "to": "module",
-              "label": "input_channels + x_len",
+              "label": "input_channels + z_len",
               "kind": "data"
             },
             {
@@ -3520,7 +3520,7 @@
                 "BackboneDatasetPreparation"
               ],
               "fmt": "npy",
-              "desc": "Input SLC stack and per-pixel Gaussian-parameter ground truth for the scene.",
+              "desc": "Input channel stack and per-pixel Gaussian-parameter ground truth for the scene.",
               "scope": "cross"
             },
             {
@@ -3540,7 +3540,7 @@
                 "JepaRunLoader"
               ],
               "fmt": "pt",
-              "desc": "Trained backbone (plus coupled AE) predictor checkpoint with the elevation x-axis.",
+              "desc": "Trained backbone (plus coupled AE) predictor checkpoint with the z x-axis.",
               "scope": "cross"
             }
           ],
@@ -3552,7 +3552,7 @@
           "stage": "Inference",
           "title": "JEPA Curve Inference",
           "entry": "",
-          "blurb": "Reloads a trained JEPA run, decodes backbone embeddings back into elevation curves across the scene, and scores both curve-space and embedding-space accuracy.",
+          "blurb": "Reloads a trained JEPA run, decodes backbone embeddings back into z curves across the scene, and scores both curve-space and embedding-space accuracy.",
           "nodes": [
             {
               "id": "resolver",
@@ -3622,7 +3622,7 @@
               "label": "JepaInferenceModel",
               "module": "pipelines/jepa/inference/loader.py",
               "role": "model",
-              "fn": "Runs backbone -> profile-AE decode -> denormalize, turning an input patch into a physical elevation curve.",
+              "fn": "Runs backbone -> profile-AE decode -> denormalize, turning an input patch into a physical z curve.",
               "col": 3,
               "reads": [],
               "writes": [],
@@ -3776,7 +3776,7 @@
                 "Report"
               ],
               "fmt": "npy",
-              "desc": "Stitched predicted and GT elevation-curve cubes with per-pixel MSE/MAE/R2/cosine/peak maps.",
+              "desc": "Stitched predicted and GT z-curve cubes with per-pixel MSE/MAE/R2/cosine/peak maps.",
               "scope": "within"
             },
             {
@@ -4015,11 +4015,11 @@
               "label": "Layout",
               "module": "pipelines/shared/dataset/dataset_spatial.py",
               "role": "io",
-              "fn": "Loads dataset.json, resolves artifact paths, reads profile_length from the tomogram, and maps secondary labels to indices.",
+              "fn": "Loads dataset.json, resolves artifact paths, reads profile_length from the cube, and maps secondary labels to indices.",
               "col": 1,
               "reads": [
                 "dataset.json",
-                "tomogram_full.npy"
+                "cube_full.npy"
               ],
               "writes": [],
               "row": 0
@@ -4032,7 +4032,7 @@
               "fn": "Builds spatial patch datasets from the resolved artifacts and hands them to the shared Loader.",
               "col": 2,
               "reads": [
-                "tomogram_full.npy",
+                "cube_full.npy",
                 "parameters"
               ],
               "writes": [],
@@ -4083,7 +4083,7 @@
             {
               "from": "ds_prep",
               "to": "ds_pipeline",
-              "label": "n_gaussians + x_axis",
+              "label": "n_gaussians + z_axis",
               "kind": "data"
             },
             {
@@ -4101,7 +4101,7 @@
             {
               "from": "ds_prep",
               "to": "trainer",
-              "label": "x_axis, x_len, datasets",
+              "label": "z_axis, z_len, datasets",
               "kind": "data"
             }
           ],
@@ -4117,14 +4117,14 @@
               "scope": "cross"
             },
             {
-              "name": "tomogram_full.npy",
+              "name": "cube_full.npy",
               "producer": "generation pipeline",
               "consumers": [
                 "layout",
                 "ds_pipeline"
               ],
               "fmt": "npy",
-              "desc": "Full-resolution tomogram cube whose first axis sets profile_length.",
+              "desc": "Full-resolution cube cube whose first axis sets profile_length.",
               "scope": "cross"
             },
             {
@@ -4772,14 +4772,14 @@
     {
       "folder": "cross_validation",
       "title": "Cross-Validation",
-      "blurb": "K-fold spatial cross-validation subsystem that partitions the scene by azimuth into disjoint train/val/test folds, trains and evaluates one model per fold across GPUs by delegating to the shared training and inference pipelines, and aggregates the per-fold checkpoints and metrics into a cross-validation report.",
+      "blurb": "K-fold spatial cross-validation subsystem that partitions the scene by row into disjoint train/val/test folds, trains and evaluates one model per fold across GPUs by delegating to the shared training and inference pipelines, and aggregates the per-fold checkpoints and metrics into a cross-validation report.",
       "diagrams": [
         {
           "key": "cv-pipeline",
           "stage": "K-Fold",
           "title": "K-Fold Cross-Validation Pipeline",
           "entry": "main/experiments/cross_validate.py",
-          "blurb": "Partitions the azimuth extent into azimuth-disjoint folds, schedules per-fold training and inference as GPU subprocesses that delegate to the shared training and inference pipelines, then collects each fold's checkpoint and metrics into mean-and-std cross-validation reports.",
+          "blurb": "Partitions the row extent into row-disjoint folds, schedules per-fold training and inference as GPU subprocesses that delegate to the shared training and inference pipelines, then collects each fold's checkpoint and metrics into mean-and-std cross-validation reports.",
           "nodes": [
             {
               "id": "entry",
@@ -4797,7 +4797,7 @@
               "label": "CrossValidationConfig",
               "module": "configuration/cross_validation/general.py",
               "role": "config",
-              "fn": "Holds the k-fold run configuration: fold count and azimuth window, seeds, training and inference settings, GPUs, and dataset paths.",
+              "fn": "Holds the k-fold run configuration: fold count and row window, seeds, training and inference settings, GPUs, and dataset paths.",
               "col": 0,
               "reads": [],
               "writes": [],
@@ -4819,7 +4819,7 @@
               "label": "FoldConfigFactory",
               "module": "pipelines/cross_validation/folds.py",
               "role": "config",
-              "fn": "Builds the azimuth-validated FoldPlanner and derives per-fold trainer, dataset, and inference configs from the CV config.",
+              "fn": "Builds the row-validated FoldPlanner and derives per-fold trainer, dataset, and inference configs from the CV config.",
               "col": 1,
               "reads": [],
               "writes": [],
@@ -4830,7 +4830,7 @@
               "label": "FoldPlanner",
               "module": "pipelines/cross_validation/folds.py",
               "role": "transform",
-              "fn": "Partitions the azimuth extent into n_folds guard-trimmed blocks and assigns disjoint train/val/test SplitRegions for each fold.",
+              "fn": "Partitions the row extent into n_folds guard-trimmed blocks and assigns disjoint train/val/test SplitRegions for each fold.",
               "col": 1,
               "reads": [],
               "writes": [],
@@ -4940,7 +4940,7 @@
               "label": "shared inference pipeline",
               "module": "pipelines/shared/inference",
               "role": "external",
-              "fn": "Reconstructs the tomogram and evaluation metrics for one fold-split from its checkpoint.",
+              "fn": "Reconstructs the cube and evaluation metrics for one fold-split from its checkpoint.",
               "col": 4,
               "reads": [
                 "best_model.pt"
@@ -5988,7 +5988,7 @@
                 "param_extraction_meta.json",
                 "fit_metrics_summary.json",
                 "fit_diagnostics.npz",
-                "tomogram_full.npy"
+                "cube_full.npy"
               ],
               "writes": [],
               "row": 1
@@ -6180,7 +6180,7 @@
               "scope": "cross"
             },
             {
-              "name": "tomogram_full.npy",
+              "name": "cube_full.npy",
               "producer": "Preprocessing pipeline (external)",
               "consumers": [
                 "ParamMetrics"

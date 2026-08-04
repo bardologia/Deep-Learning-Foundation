@@ -9,6 +9,10 @@ class ProjectPaths:
     PRIORITY = ["conda:Dune"]
 
     ENTRY_OVERRIDES = {
+        "generate_dataset": {
+            "config_module" : "configuration.synthesis",
+            "config_class"  : "GenerateDatasetEntryConfig",
+        },
         "train_backbone": {
             "config_module" : "configuration.training.backbone",
             "config_class"  : "BackboneEntryConfig",
@@ -68,6 +72,7 @@ class ProjectPaths:
         self.saved_runs_dir = self.logs_dir / "saved_runs"
 
     SCRIPT_DIRS = {
+        "generate_dataset"                : "processing",
         "extract_params"                  : "processing",
         "train_backbone"                  : "training",
         "train_profile_autoencoder"       : "training",

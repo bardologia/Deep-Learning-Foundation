@@ -152,7 +152,7 @@ class FitLabView {
   constructor(refs) {
     this.refs   = refs;
     this.meta   = null;
-    this.mapSrc = "slc";
+    this.mapSrc = "primary";
     this.pixels = [];
     this.runs   = [];
     this.showComponents = true;
@@ -221,11 +221,11 @@ class FitLabView {
       return;
     }
     if (!data.datasets.length) {
-      this.refs.hint.textContent = "no datasets with data/tomogram_full.npy found here";
+      this.refs.hint.textContent = "no datasets with data/cube_full.npy found here";
       return;
     }
 
-    this.refs.hint.textContent = "pick a dataset to load its tomogram";
+    this.refs.hint.textContent = "pick a dataset to load its cube";
     data.datasets.forEach((ds) => {
       const btn = document.createElement("button");
       btn.type        = "button";
@@ -274,14 +274,14 @@ class FitLabView {
   }
 
   _ready(meta) {
-    this.meta = meta;
-    this.refs.hint.textContent = `${meta.name} · ${meta.az} × ${meta.rg} px · ${meta.h} height bins · heights ${meta.height_range[0]} to ${meta.height_range[1]} m`;
-    this.refs.stage.hidden = false;
+    this.meta                  = meta;
+    this.refs.hint.textContent = `${meta.name} · ${meta.row} × ${meta.col} px · ${meta.h} height bins · heights ${meta.z_range[0]} to ${meta.z_range[1]} m`;
+    this.refs.stage.hidden     = false;
 
-    this.refs.azInput.max = meta.az - 1;
-    this.refs.rgInput.max = meta.rg - 1;
-    this.refs.azRange.textContent = `0–${meta.az - 1}`;
-    this.refs.rgRange.textContent = `0–${meta.rg - 1}`;
+    this.refs.rowInput.max          = meta.row - 1;
+    this.refs.colInput.max          = meta.col - 1;
+    this.refs.rowRange.textContent  = `0–${meta.row - 1}`;
+    this.refs.colRange.textContent  = `0–${meta.col - 1}`;
     this.refs.truncationInput.value = Math.min(Number(this.refs.truncationInput.value), meta.h) || meta.h;
 
     this._refreshMap();
@@ -303,37 +303,37 @@ class FitLabView {
     const rect = this.refs.mapImg.getBoundingClientRect();
     const fx   = (ev.clientX - rect.left) / rect.width;
     const fy   = (ev.clientY - rect.top) / rect.height;
-    const az   = Math.min(this.meta.az - 1, Math.max(0, Math.round(fx * this.meta.az - 0.5)));
-    const rg   = Math.min(this.meta.rg - 1, Math.max(0, Math.round(fy * this.meta.rg - 0.5)));
-    return { az, rg };
+    const row  = Math.min(this.meta.row - 1, Math.max(0, Math.round(fx * this.meta.row - 0.5)));
+    const col  = Math.min(this.meta.col - 1, Math.max(0, Math.round(fy * this.meta.col - 0.5)));
+    return { row, col };
   }
 
   _onMapMove(ev) {
     if (!this.meta) return;
-    const { az, rg } = this._mapCoords(ev);
-    this.refs.coords.textContent = `az ${az} · rg ${rg}`;
+    const { row, col } = this._mapCoords(ev);
+    this.refs.coords.textContent = `row ${row} · col ${col}`;
   }
 
   _onMapClick(ev) {
     if (!this.meta) return;
-    const { az, rg } = this._mapCoords(ev);
-    this._addPixel(az, rg);
+    const { row, col } = this._mapCoords(ev);
+    this._addPixel(row, col);
   }
 
   _onAddPixel() {
     if (!this.meta) return;
-    const az = Number(this.refs.azInput.value);
-    const rg = Number(this.refs.rgInput.value);
-    if (!Number.isInteger(az) || !Number.isInteger(rg)) return;
-    if (az < 0 || az >= this.meta.az || rg < 0 || rg >= this.meta.rg) {
+    const row = Number(this.refs.rowInput.value);
+    const col = Number(this.refs.colInput.value);
+    if (!Number.isInteger(row) || !Number.isInteger(col)) return;
+    if (row < 0 || row >= this.meta.row || col < 0 || col >= this.meta.col) {
       this._flash("pixel out of range");
       return;
     }
-    this._addPixel(az, rg);
+    this._addPixel(row, col);
   }
 
-  _addPixel(az, rg) {
-    const at = this.pixels.findIndex((p) => p.az === az && p.rg === rg);
+  _addPixel(row, col) {
+    const at = this.pixels.findIndex((p) => p.row === row && p.col === col);
     if (at >= 0) {
       this.pixels.splice(at, 1);
     } else {
@@ -341,7 +341,7 @@ class FitLabView {
         this._flash(`at most ${FitLabView.MAX_PIXELS} pixels`);
         return;
       }
-      this.pixels.push({ az, rg });
+      this.pixels.push({ row, col });
     }
     this._renderPixels();
   }
@@ -352,22 +352,22 @@ class FitLabView {
     if (!this.meta) return;
 
     this.pixels.forEach((p, i) => {
-      const mark = document.createElement("i");
-      mark.className   = "fl-mark";
-      mark.style.left  = `${((p.az + 0.5) / this.meta.az) * 100}%`;
-      mark.style.top   = `${((p.rg + 0.5) / this.meta.rg) * 100}%`;
-      mark.title       = `az ${p.az} · rg ${p.rg}`;
-      mark.addEventListener("click", (ev) => { ev.stopPropagation(); this._addPixel(p.az, p.rg); });
+      const mark      = document.createElement("i");
+      mark.className  = "fl-mark";
+      mark.style.left = `${((p.row + 0.5) / this.meta.row) * 100}%`;
+      mark.style.top  = `${((p.col + 0.5) / this.meta.col) * 100}%`;
+      mark.title      = `row ${p.row} · col ${p.col}`;
+      mark.addEventListener("click", (ev) => { ev.stopPropagation(); this._addPixel(p.row, p.col); });
       this.refs.marks.appendChild(mark);
 
-      const chip = document.createElement("span");
+      const chip     = document.createElement("span");
       chip.className = "fl-pixel";
-      chip.innerHTML = `<b>${i + 1}</b> az ${p.az} · rg ${p.rg}`;
-      const rm = document.createElement("button");
+      chip.innerHTML = `<b>${i + 1}</b> row ${p.row} · col ${p.col}`;
+      const rm       = document.createElement("button");
       rm.type        = "button";
       rm.className   = "fl-pixel__rm";
       rm.textContent = "×";
-      rm.addEventListener("click", () => this._addPixel(p.az, p.rg));
+      rm.addEventListener("click", () => this._addPixel(p.row, p.col));
       chip.appendChild(rm);
       this.refs.pixels.appendChild(chip);
     });
@@ -520,7 +520,7 @@ class FitLabView {
   }
 
   _runSeries(run, key) {
-    const pixel = run.result.pixels.find((p) => `${p.az},${p.rg}` === key);
+    const pixel = run.result.pixels.find((p) => `${p.row},${p.col}` === key);
     if (!pixel || !pixel.active || !run.visible) return null;
 
     const kUsed = run.kSel === "best" ? pixel.best_k : Math.min(Number(run.kSel), pixel.per_k.length);
@@ -546,21 +546,21 @@ class FitLabView {
 
     const keys = [];
     shown.forEach((run) => run.result.pixels.forEach((p) => {
-      const key = `${p.az},${p.rg}`;
+      const key = `${p.row},${p.col}`;
       if (!keys.includes(key)) keys.push(key);
     }));
 
     keys.forEach((key) => {
-      const [az, rg] = key.split(",").map(Number);
-      const sample   = shown.map((run) => run.result.pixels.find((p) => `${p.az},${p.rg}` === key)).find(Boolean);
+      const [row, col] = key.split(",").map(Number);
+      const sample   = shown.map((run) => run.result.pixels.find((p) => `${p.row},${p.col}` === key)).find(Boolean);
       const series   = shown.map((run) => this._runSeries(run, key)).filter(Boolean);
 
       const card = document.createElement("article");
       card.className = "fl-card";
 
-      const head = document.createElement("header");
+      const head     = document.createElement("header");
       head.className = "fl-card__head";
-      head.innerHTML = `<b>az ${az} · rg ${rg}</b><span>${sample.active ? `scale ${sample.scale.toExponential(2)}` : "inactive pixel — below activity threshold, not fitted"}</span>`;
+      head.innerHTML = `<b>row ${row} · col ${col}</b><span>${sample.active ? `scale ${sample.scale.toExponential(2)}` : "inactive pixel — below activity threshold, not fitted"}</span>`;
       card.appendChild(head);
 
       const media = document.createElement("div");

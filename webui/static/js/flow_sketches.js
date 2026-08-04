@@ -222,7 +222,7 @@ window.FLOW_SKETCHES = {
   },
 
   splitgeom: {
-    tip: "Azimuth splits 70/15/15 into contiguous, non-overlapping train, val and test bands.",
+    tip: "Row splits 70/15/15 into contiguous, non-overlapping train, val and test bands.",
     build(svg) { svg.innerHTML = `
       <rect x="40" y="22" width="160" height="74" class="skl-pop f-mid" style="opacity:.85"/>
       <rect x="40" y="96" width="160" height="16" class="skl-pop f-cal" style="opacity:.85"/>
@@ -234,7 +234,7 @@ window.FLOW_SKETCHES = {
   },
 
   localslice: {
-    tip: "Subtracting the crop origin az0 turns absolute azimuth bounds into zero-based slices.",
+    tip: "Subtracting the crop origin row0 turns absolute row bounds into zero-based slices.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="50" x2="214" y2="50"/>
       <text x="30" y="40" style="fill:#7e8aa0;font-size:7px">absolute</text>
@@ -243,12 +243,12 @@ window.FLOW_SKETCHES = {
       <text x="30" y="124" style="fill:#7e8aa0;font-size:7px">local (0-based)</text>
       <rect x="30" y="96" width="78" height="16" class="skl-pop f-cal"/>
       <path class="skl-draw c-cal" d="M131 60 L60 94 M66 90 L60 94 L66 98" style="fill:none"/>
-      <text x="138" y="80" style="fill:#4fd6c4;font-size:8px">- az0</text>`; },
+      <text x="138" y="80" style="fill:#4fd6c4;font-size:8px">- row0</text>`; },
     anim: null,
   },
 
   secselect: {
-    tip: "Qualified labels in L_req map to positional indices, gathered alike from the secondaries and interferograms.",
+    tip: "Qualified labels in L_req map to positional indices, gathered alike from the secondaries and derived.",
     build(svg) {
       let row = "";
       for (let i = 0; i < 7; i++) { const sel = (i === 3 || i === 5 || i === 6); row += `<rect class="skl-pop ${sel ? "f-cal" : "f-faint"}" x="${28 + i * 24}" y="32" width="20" height="20" style="opacity:${sel ? 1 : 0.5}"/>`; if (sel) row += `<rect class="sk-live" x="${28 + i * 24}" y="32" width="20" height="20" style="fill:none;stroke:#4fd6c4;stroke-width:2.5"/>`; }
@@ -263,7 +263,7 @@ window.FLOW_SKETCHES = {
   },
 
   stack: {
-    tip: "Primary at slot 0, Ns secondaries in X[1:1+Ns], Ni interferograms after, into one complex buffer.",
+    tip: "Primary at slot 0, Ns secondaries in X[1:1+Ns], Ni derived after, into one complex buffer.",
     build(svg) { svg.innerHTML = `
       <rect x="38" y="30" width="44" height="18" class="skl-pop f-meas"/>
       <text x="60" y="43" text-anchor="middle" style="fill:#0b1014;font-size:8px">s0</text>
@@ -288,7 +288,7 @@ window.FLOW_SKETCHES = {
   },
 
   padgeom: {
-    tip: "The azimuth deficit pv splits floor(pv/2) on top, the rest below; odd deficits go to the bottom.",
+    tip: "The row deficit pv splits floor(pv/2) on top, the rest below; odd deficits go to the bottom.",
     build(svg) { svg.innerHTML = `
       <rect x="78" y="44" width="84" height="62" class="skl-pop f-mid" style="opacity:.8"/>
       <text x="120" y="80" text-anchor="middle" style="fill:#0b1014;font-size:8px">region</text>
@@ -312,7 +312,7 @@ window.FLOW_SKETCHES = {
   },
 
   represent: {
-    tip: "An SLC pass keeps |p|, an interferogram keeps its phase; normalised re/im divide by m=|p| (1 if |p|=0).",
+    tip: "An amplitude channel keeps |p|, a derived channel keeps its phase; normalised re/im divide by m=|p| (1 if |p|=0).",
     build(svg) { svg.innerHTML = `
       <circle cx="64" cy="70" r="32" class="skl-axis" style="fill:none;opacity:.5"/>
       <line class="skl-axis" x1="26" y1="70" x2="102" y2="70"/>
@@ -330,7 +330,7 @@ window.FLOW_SKETCHES = {
   },
 
   assemble_in: {
-    tip: "Real channels concatenate in fixed order: primary, secondaries, interferograms, optional DEM last.",
+    tip: "Real channels concatenate in fixed order: primary, secondaries, derived, optional Aux last.",
     build(svg) { svg.innerHTML = `
       <rect x="28" y="44" width="22" height="40" class="skl-pop f-meas"/>
       <rect x="54" y="44" width="22" height="40" class="skl-pop f-mid"/>
@@ -368,10 +368,10 @@ window.FLOW_SKETCHES = {
   },
 
   slotkeys: {
-    tip: "The strided layout labels each channel by family/slot, so pass/mag, ifg/phase and dem/elev get their own norm.",
+    tip: "The strided layout labels each channel by family/slot, so chan/mag, derived/phase and aux/z get their own norm.",
     build(svg) {
-      const L = [["pass/mag", "f-meas", "#6ea8ff"], ["pass/mag", "f-meas", "#6ea8ff"], ["ifg/phase", "f-mid", "#f5b971"], ["ifg/phase", "f-mid", "#f5b971"], ["dem/elev", "f-faint", "#7e8aa0"]];
-      let s = "";
+      const L = [["chan/mag", "f-meas", "#6ea8ff"], ["chan/mag", "f-meas", "#6ea8ff"], ["derived/phase", "f-mid", "#f5b971"], ["derived/phase", "f-mid", "#f5b971"], ["aux/z", "f-faint", "#7e8aa0"]];
+      let s   = "";
       L.forEach((l, i) => { const x = 34 + i * 36; s += `<rect class="skl-pop ${l[1]}" x="${x}" y="34" width="28" height="28"/><line x1="${x + 14}" y1="64" x2="${x + 14}" y2="92" style="stroke:${l[2]};stroke-width:1.3"/><text x="${x + 14}" y="106" text-anchor="middle" transform="rotate(38 ${x + 14} 106)" style="fill:${l[2]};font-size:6px">${l[0]}</text>`; });
       svg.innerHTML = s;
     },
@@ -379,7 +379,7 @@ window.FLOW_SKETCHES = {
   },
 
   fitstats: {
-    tip: "On train only (float64): magnitudes use robust-IQR-log1p, others z-score, ifg phase fixed pi; scale floored at 1e-8.",
+    tip: "On train only (float64): magnitudes use robust-IQR-log1p, others z-score, derived phase fixed pi; scale floored at 1e-8.",
     build(svg) {
       const hs = [14, 26, 40, 52, 46, 32, 20, 10];
       let b = "";
@@ -474,7 +474,7 @@ window.FLOW_SKETCHES = {
   },
 
   reconstruct: {
-    tip: "Predicted and GT parameters each sum K Gaussians into an elevation curve; the GT curve is built once under no_grad.",
+    tip: "Predicted and GT parameters each sum K Gaussians into an z curve; the GT curve is built once under no_grad.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="28" y1="118" x2="216" y2="118"/>
       <path class="skl-draw c-faint" d="M40 118 Q70 70 100 118" style="fill:none;opacity:.4"/>
@@ -1113,7 +1113,7 @@ window.FLOW_SKETCHES = {
   },
 
   recon: {
-    tip: "Each patch's clamped Gaussians sum on the elevation axis, amplitudes rectified at zero, denominator 2 sigma^2 + 1e-8.",
+    tip: "Each patch's clamped Gaussians sum on the z axis, amplitudes rectified at zero, denominator 2 sigma^2 + 1e-8.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="34" y1="116" x2="214" y2="116"/>
       <path class="skl-draw c-faint" d="M34 116 C70 116 78 64 96 64 C114 64 122 116 158 116" style="fill:none;opacity:.4"/>
@@ -1179,7 +1179,7 @@ window.FLOW_SKETCHES = {
   },
 
   pixelmaps: {
-    tip: "Five per-pixel maps reduce over the elevation bins: MSE, MAE, R-squared, cosine similarity, and peak-bin error.",
+    tip: "Five per-pixel maps reduce over the z bins: MSE, MAE, R-squared, cosine similarity, and peak-bin error.",
     build(svg) {
       const vals = [0.9, 0.7, 0.95, 0.6, 0.8, 0.4, 0.85, 0.5, 0.92, 0.65, 0.75, 0.55];
       let cells = "";
@@ -1207,7 +1207,7 @@ window.FLOW_SKETCHES = {
   },
 
   elevssim: {
-    tip: "Per elevation bin: MAE, RMSE, R-squared and a column-normalised cross-entropy, plus mean SSIM over the slices.",
+    tip: "Per z bin: MAE, RMSE, R-squared and a column-normalised cross-entropy, plus mean SSIM over the slices.",
     build(svg) {
       const h = [20, 34, 46, 40, 28, 18];
       let b = "";
@@ -1264,7 +1264,7 @@ window.FLOW_SKETCHES = {
   },
 
   paei_curves: {
-    tip: "Each kept pixel's profile is rebuilt as a sum of its K Gaussians on the elevation axis; sigma floored 1e-6, exponent clipped.",
+    tip: "Each kept pixel's profile is rebuilt as a sum of its K Gaussians on the z axis; sigma floored 1e-6, exponent clipped.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="24" y1="118" x2="216" y2="118"/>
       <path class="skl-draw c-faint" d="M30 118 Q66 60 102 118" style="fill:none;opacity:.45"/>
@@ -1380,7 +1380,7 @@ window.FLOW_SKETCHES = {
   },
 
   paei_power: {
-    tip: "Integrated power is the trapezoidal area under each curve; peak-location MAE is the gap between the argmax elevations.",
+    tip: "Integrated power is the trapezoidal area under each curve; peak-location MAE is the gap between the argmax z values.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="26" y1="114" x2="214" y2="114"/>
       <path class="skl-draw c-cal" d="M40 114 Q92 30 120 30 Q150 30 200 114 Z" style="fill:rgba(79,214,196,0.14)"/>
@@ -1774,11 +1774,11 @@ window.FLOW_SKETCHES = {
   },
 
   cv_partition: {
-    tip: "The fold azimuth window is cut into K equal contiguous blocks; the last block absorbs the remainder.",
+    tip: "The fold row window is cut into K equal contiguous blocks; the last block absorbs the remainder.",
     build(svg) {
       let b = "";
       for (let i = 0; i < 6; i++) b += `<rect x="${26 + i * 31}" y="52" width="29" height="46" class="skl-pop f-mid" style="opacity:${0.4 + 0.12 * (i % 2)}"/>`;
-      svg.innerHTML = `<text x="120" y="40" text-anchor="middle" style="fill:#6ea8ff;font-size:8px">azimuth window [az0, az1)</text>${b}<line class="skl-axis" x1="26" y1="108" x2="212" y2="108"/><text x="26" y="122" style="fill:#7e8aa0;font-size:7px">az0 = 1000</text><text x="212" y="122" text-anchor="end" style="fill:#7e8aa0;font-size:7px">az1 = 16000</text>`;
+      svg.innerHTML = `<text x="120" y="40" text-anchor="middle" style="fill:#6ea8ff;font-size:8px">row window [row0, row1)</text>${b}<line class="skl-axis" x1="26" y1="108" x2="212" y2="108"/><text x="26" y="122" style="fill:#7e8aa0;font-size:7px">row0 = 1000</text><text x="212" y="122" text-anchor="end" style="fill:#7e8aa0;font-size:7px">row1 = 16000</text>`;
     },
     anim: null,
   },

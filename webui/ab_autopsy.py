@@ -15,7 +15,7 @@ class AbAutopsy:
     BLOCK        = 16
     MAX_METRICS  = 40
     MAX_HOTSPOTS = 3
-    SKIP_PREFIX  = ("tracks", "track_positions", "split", "x_axis")
+    SKIP_PREFIX  = ("tracks", "track_positions", "split", "z_axis")
     REQUIRED     = ("metrics.json", "cubes/pixel_mse.npy")
 
     def __init__(self, logger: WebLogger) -> None:
@@ -76,12 +76,12 @@ class AbAutopsy:
 
     def _hotspots(self, mse_a: np.ndarray, mse_b: np.ndarray) -> list[dict]:
         delta      = np.asarray(mse_a, dtype=np.float64) - np.asarray(mse_b, dtype=np.float64)
-        n_az, n_rg = delta.shape
+        n_rows, n_cols = delta.shape
 
         blocks = []
-        for az0 in range(0, n_az, self.BLOCK):
-            for rg0 in range(0, n_rg, self.BLOCK):
-                patch  = delta[az0:az0 + self.BLOCK, rg0:rg0 + self.BLOCK]
+        for row0 in range(0, n_rows, self.BLOCK):
+            for col0 in range(0, n_cols, self.BLOCK):
+                patch  = delta[row0:row0 + self.BLOCK, col0:col0 + self.BLOCK]
                 finite = np.isfinite(patch)
                 if finite.sum() < max(4, patch.size // 4):
                     continue
@@ -90,11 +90,11 @@ class AbAutopsy:
                 peak_flat  = np.nanargmax(np.where(finite, np.abs(patch), -np.inf))
 
                 blocks.append({
-                    "az0"        : az0,
-                    "rg0"        : rg0,
+                    "row0"       : row0,
+                    "col0"       : col0,
                     "mean_delta" : mean_delta,
-                    "az"         : az0 + int(peak_flat // patch.shape[1]),
-                    "rg"         : rg0 + int(peak_flat % patch.shape[1]),
+                    "row"        : row0 + int(peak_flat // patch.shape[1]),
+                    "col"        : col0 + int(peak_flat % patch.shape[1]),
                 })
 
         a_better = sorted((b for b in blocks if b["mean_delta"] < 0), key=lambda b: b["mean_delta"])[: self.MAX_HOTSPOTS]
@@ -138,7 +138,7 @@ class AbAutopsy:
         except (OSError, ValueError, FileNotFoundError) as error:
             return {"ok": False, "error": str(error)}
 
-    def profile(self, a: str, b: str, az: int, rg: int) -> dict:
+    def profile(self, a: str, b: str, row: int, col: int) -> dict:
         try:
             stamp_a, stamp_b = Path(a), Path(b)
 
@@ -148,8 +148,8 @@ class AbAutopsy:
 
             if pred_b.shape != pred_a.shape:
                 return {"ok": False, "error": f"runs cover different cubes: {pred_a.shape} vs {pred_b.shape}"}
-            if not (0 <= az < pred_a.shape[1] and 0 <= rg < pred_a.shape[2]):
-                return {"ok": False, "error": f"pixel ({az}, {rg}) is outside the region {pred_a.shape[1:]}"}
+            if not (0 <= row < pred_a.shape[1] and 0 <= col < pred_a.shape[2]):
+                return {"ok": False, "error": f"pixel ({row}, {col}) is outside the region {pred_a.shape[1:]}"}
 
             metrics   = self._metrics(stamp_a)
             metrics_b = self._metrics(stamp_b)
@@ -157,18 +157,18 @@ class AbAutopsy:
             bounds_b  = (float(metrics_b["x_axis_min"]), float(metrics_b["x_axis_max"]))
 
             if bounds_b != bounds:
-                return {"ok": False, "error": f"runs cover different elevation axes: {bounds} vs {bounds_b}"}
+                return {"ok": False, "error": f"runs cover different z axes: {bounds} vs {bounds_b}"}
 
-            x_axis = np.linspace(bounds[0], bounds[1], pred_a.shape[0])
+            z_axis = np.linspace(bounds[0], bounds[1], pred_a.shape[0])
 
             return {
                 "ok"     : True,
-                "az"     : az,
-                "rg"     : rg,
-                "x_axis" : [float(v) for v in x_axis],
-                "a"      : [float(v) for v in pred_a[:, az, rg]],
-                "b"      : [float(v) for v in pred_b[:, az, rg]],
-                "gt"     : [float(v) for v in gt[:, az, rg]],
+                "row"    : row,
+                "col"    : col,
+                "z_axis" : [float(v) for v in z_axis],
+                "a"      : [float(v) for v in pred_a[:, row, col]],
+                "b"      : [float(v) for v in pred_b[:, row, col]],
+                "gt"     : [float(v) for v in gt[:, row, col]],
             }
         except (OSError, ValueError, FileNotFoundError, IndexError, KeyError) as error:
             return {"ok": False, "error": str(error)}

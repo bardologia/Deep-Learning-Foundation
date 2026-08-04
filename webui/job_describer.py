@@ -23,6 +23,13 @@ class JobDescriber:
     }
 
     SPECS = {
+        "generate_dataset": [
+            ("output",  "synthesis.output_directory", "opt_tail"),
+            ("crop",    "synthesis.global_crop",      "text"),
+            ("K",       "synthesis.k_max",            "text"),
+            ("params",  "synthesis.params_run_name",  "opt"),
+            ("seed",    "synthesis.seed",             "text"),
+        ],
         "extract_params": [
             ("datasets",  "dataset_filter",     "list", "all datasets"),
             ("K",         "fit_k_values",       "list"),

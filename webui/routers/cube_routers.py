@@ -23,7 +23,7 @@ class CubeRouter(SubRouter):
         table.add("GET", "/api/cubes/metric_at",    self.metric_at)
         table.add("GET", "/api/cubes/selective",    self.selective)
         table.add("GET", "/api/cubes/points",       self.points)
-        table.add("GET", "/api/cubes/dem_grid",     self.dem_grid)
+        table.add("GET", "/api/cubes/aux_grid",     self.aux_grid)
         table.add("GET", "/api/cubes/transect",     self.transect)
         table.add("GET", "/api/cubes/param_map",    self.param_map)
         table.add("GET", "/api/cubes/param_cbar",   self.param_cbar)
@@ -48,16 +48,16 @@ class CubeRouter(SubRouter):
     def profiles(self, exchange: HttpExchange) -> None:
         result = self.cubes.profiles(
             cube_id = exchange.text("id"),
-            az      = exchange.integer("az"),
-            rg      = exchange.integer("rg"),
+            row     = exchange.integer("row"),
+            col     = exchange.integer("col"),
         )
         exchange.send_result(result, 404)
 
     def ssim(self, exchange: HttpExchange) -> None:
         result = self.cubes.slice_ssim(
             cube_id = exchange.text("id"),
-            az      = exchange.integer("az"),
-            rg      = exchange.integer("rg"),
+            row     = exchange.integer("row"),
+            col     = exchange.integer("col"),
             space   = exchange.text("space", "physical"),
         )
         exchange.send_result(result, 404)
@@ -91,8 +91,8 @@ class CubeRouter(SubRouter):
         result = self.cubes.metric_value_at(
             cube_id = exchange.text("id"),
             key     = exchange.text("key"),
-            az      = exchange.integer("az"),
-            rg      = exchange.integer("rg"),
+            row     = exchange.integer("row"),
+            col     = exchange.integer("col"),
         )
         exchange.send_result(result, 404)
 
@@ -113,17 +113,17 @@ class CubeRouter(SubRouter):
         )
         exchange.send_bytes(blob)
 
-    def dem_grid(self, exchange: HttpExchange) -> None:
-        exchange.send_bytes(self.cubes.dem_grid_bin(cube_id=exchange.text("id")))
+    def aux_grid(self, exchange: HttpExchange) -> None:
+        exchange.send_bytes(self.cubes.aux_grid_bin(cube_id=exchange.text("id")))
 
     def transect(self, exchange: HttpExchange) -> None:
         png = self.cubes.transect_png(
             cube_id = exchange.text("id"),
             source  = exchange.text("source", "pred"),
-            az0     = exchange.integer("az0"),
-            rg0     = exchange.integer("rg0"),
-            az1     = exchange.integer("az1"),
-            rg1     = exchange.integer("rg1"),
+            row0    = exchange.integer("row0"),
+            col0    = exchange.integer("col0"),
+            row1    = exchange.integer("row1"),
+            col1    = exchange.integer("col1"),
             space   = exchange.text("space", "physical"),
             cmap    = exchange.text("cmap", "jet"),
         )
@@ -149,8 +149,8 @@ class CubeRouter(SubRouter):
     def params_at(self, exchange: HttpExchange) -> None:
         result = self.cubes.params_at(
             cube_id = exchange.text("id"),
-            az      = exchange.integer("az"),
-            rg      = exchange.integer("rg"),
+            row     = exchange.integer("row"),
+            col     = exchange.integer("col"),
         )
         exchange.send_result(result, 404)
 
@@ -158,9 +158,9 @@ class CubeRouter(SubRouter):
         png = self.cubes.slice_png(
             cube_id = exchange.text("id"),
             source  = exchange.text("source", "pred"),
-            axis    = exchange.text("axis", "range"),
-            az      = exchange.integer("az"),
-            rg      = exchange.integer("rg"),
+            axis    = exchange.text("axis", "col"),
+            row     = exchange.integer("row"),
+            col     = exchange.integer("col"),
             space   = exchange.text("space", "physical"),
             cmap    = exchange.text("cmap", "jet"),
         )
@@ -179,10 +179,10 @@ class CubeRouter(SubRouter):
         body   = exchange.body
         result = self.cubes.save_transect(
             cube_id = body.get("id", ""),
-            az0     = int(body.get("az0", 0)),
-            rg0     = int(body.get("rg0", 0)),
-            az1     = int(body.get("az1", 0)),
-            rg1     = int(body.get("rg1", 0)),
+            row0    = int(body.get("row0", 0)),
+            col0    = int(body.get("col0", 0)),
+            row1    = int(body.get("row1", 0)),
+            col1    = int(body.get("col1", 0)),
             space   = body.get("space", "physical"),
             cmap    = body.get("cmap", "jet"),
         )
@@ -192,8 +192,8 @@ class CubeRouter(SubRouter):
         body   = exchange.body
         result = self.cubes.save_slices(
             cube_id = body.get("id", ""),
-            az      = int(body.get("az", 0)),
-            rg      = int(body.get("rg", 0)),
+            row     = int(body.get("row", 0)),
+            col     = int(body.get("col", 0)),
             space   = body.get("space", "physical"),
             cmap    = body.get("cmap", "jet"),
         )
@@ -219,9 +219,9 @@ class SliceRouter(SubRouter):
         png = self.slices.slice_png(
             cube_id = exchange.text("id"),
             source  = exchange.text("source", "pred"),
-            axis    = exchange.text("axis", "range"),
-            az      = exchange.integer("az"),
-            rg      = exchange.integer("rg"),
+            axis    = exchange.text("axis", "col"),
+            row     = exchange.integer("row"),
+            col     = exchange.integer("col"),
             space   = exchange.text("space", "physical"),
             cmap    = exchange.text("cmap", "jet"),
             vmin    = exchange.optional_number("vmin"),

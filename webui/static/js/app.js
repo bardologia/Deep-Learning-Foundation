@@ -256,10 +256,10 @@ class App {
       mapImg           : document.getElementById("fl-map-img"),
       marks            : document.getElementById("fl-marks"),
       coords           : document.getElementById("fl-coords"),
-      azInput          : document.getElementById("fl-az"),
-      rgInput          : document.getElementById("fl-rg"),
-      azRange          : document.getElementById("fl-az-range"),
-      rgRange          : document.getElementById("fl-rg-range"),
+      rowInput         : document.getElementById("fl-row"),
+      colInput         : document.getElementById("fl-col"),
+      rowRange         : document.getElementById("fl-row-range"),
+      colRange         : document.getElementById("fl-col-range"),
       addBtn           : document.getElementById("fl-add"),
       clearBtn         : document.getElementById("fl-clear"),
       pixels           : document.getElementById("fl-pixels"),
@@ -284,7 +284,7 @@ class App {
       cards            : document.getElementById("fl-cards"),
     });
 
-    this.tomogramView = new window.TomogramView({
+    this.cubeView = new window.CubeView({
       strip         : document.getElementById("cube-strip"),
       stage         : document.getElementById("cube-stage"),
       deck          : document.getElementById("cube-deck"),
@@ -361,19 +361,19 @@ class App {
         thrLabel  : document.getElementById("cube-cloud-thr-label"),
         thrVal    : document.getElementById("cube-cloud-thr-val"),
         max       : document.getElementById("cube-cloud-max"),
-        demWrap   : document.getElementById("cube-cloud-dem-wrap"),
-        dem       : document.getElementById("cube-cloud-dem"),
+        auxWrap   : document.getElementById("cube-cloud-aux-wrap"),
+        aux       : document.getElementById("cube-cloud-aux"),
         at        : document.getElementById("cube-cloud-at"),
         canvas    : document.getElementById("cube-cloud-canvas"),
       },
-      cmapSel       : document.getElementById("cube-cmap"),
-      jumpAz        : document.getElementById("cube-jump-az"),
-      jumpRg        : document.getElementById("cube-jump-rg"),
-      jumpGo        : document.getElementById("cube-jump-go"),
-      jumpPrint     : document.getElementById("cube-jump-print"),
-      jumpAzRange   : document.getElementById("cube-jump-az-range"),
-      jumpRgRange   : document.getElementById("cube-jump-rg-range"),
-      sweeps        : ["elevation", "azimuth", "range"].map((axis) => {
+      cmapSel      : document.getElementById("cube-cmap"),
+      jumpAz       : document.getElementById("cube-jump-row"),
+      jumpRg       : document.getElementById("cube-jump-col"),
+      jumpGo       : document.getElementById("cube-jump-go"),
+      jumpPrint    : document.getElementById("cube-jump-print"),
+      jumpRowRange : document.getElementById("cube-jump-row-range"),
+      jumpColRange : document.getElementById("cube-jump-col-range"),
+      sweeps       : ["z", "row", "col"].map((axis) => {
         const grid = document.getElementById(`cube-${axis}-grid`);
         return {
           axis,
@@ -404,16 +404,16 @@ class App {
         canvas : root.querySelector("canvas"),
       })),
     });
-    window.tomogramView = this.tomogramView;
+    window.cubeView = this.cubeView;
 
     this.sliceCollectorView = new window.SliceCollectorView({
       strip       : document.getElementById("sc-strip"),
       hint        : document.getElementById("sc-hint"),
       stage       : document.getElementById("sc-stage"),
-      azInput     : document.getElementById("sc-az"),
-      rgInput     : document.getElementById("sc-rg"),
-      azRange     : document.getElementById("sc-az-range"),
-      rgRange     : document.getElementById("sc-rg-range"),
+      rowInput    : document.getElementById("sc-row"),
+      colInput    : document.getElementById("sc-col"),
+      rowRange    : document.getElementById("sc-row-range"),
+      colRange    : document.getElementById("sc-col-range"),
       addBtn      : document.getElementById("sc-add"),
       clearBtn    : document.getElementById("sc-clear"),
       points      : document.getElementById("sc-points"),
@@ -480,8 +480,8 @@ class App {
     if (route === "results") this.resultsView.enter();
     if (route === "leaderboard") this.leaderboardView.enter();
     if (route === "feedtuner") this.feedTuner.enter();
-    if (route === "cube") this.tomogramView.enter();
-    else this.tomogramView.leave();
+    if (route === "cube") this.cubeView.enter();
+    else this.cubeView.leave();
     if (route === "slices") this.sliceCollectorView.enter();
     if (route === "fitlab") this.fitLabView.enter();
     if (route === "microscope") this.microscopeView.enter();

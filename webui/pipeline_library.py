@@ -6,10 +6,17 @@ class PipelineLibrary:
     def collect(self) -> list[dict]:
         return [
             {
+                "key"    : "synthesis",
+                "name"   : "Dataset Synthesis",
+                "script" : "generate_dataset",
+                "blurb"  : "Write the bundled example dataset from nothing but a seed: smooth random Gaussian-mixture parameter fields, the profiles they render along z, a primary and secondary channel stack with its derived channels, an auxiliary field, the reference cube, and the parameter run that supervises training.",
+                "stages" : ["Smooth parameter fields", "Profile rendering", "Channel synthesis", "Best-K scoring", "Artifact write"],
+            },
+            {
                 "key"    : "param",
                 "name"   : "Parameter Extraction",
                 "script" : "extract_params",
-                "blurb"  : "Fit a K-Gaussian mixture per elevation profile to build the supervised parameter targets, with penalised model-order selection.",
+                "blurb"  : "Fit a K-Gaussian mixture per z profile to build the supervised parameter targets, with penalised model-order selection.",
                 "stages" : ["Profile conditioning", "Prominence init (CPU)", "Adam mixture fit (JAX GPU)", "Penalised best-K", "Mean-sorted target and diagnostics"],
             },
             {
@@ -37,7 +44,7 @@ class PipelineLibrary:
                 "key"    : "profile_ae_train",
                 "name"   : "Profile AE (Train)",
                 "script" : "train_profile_autoencoder",
-                "blurb"  : "Self-supervised profile autoencoder: synthesise elevation curves from the Gaussian parameters, normalise, then train an encoder-decoder to reconstruct them through a low-dimensional bottleneck.",
+                "blurb"  : "Self-supervised profile autoencoder: synthesise z curves from the Gaussian parameters, normalise, then train an encoder-decoder to reconstruct them through a low-dimensional bottleneck.",
                 "stages" : ["Curve genesis", "Normalization", "Autoencode", "Reconstruction loss", "Optimiser step"],
             },
             {
@@ -65,7 +72,7 @@ class PipelineLibrary:
                 "key"    : "profile_ae_infer",
                 "name"   : "Profile AE (Infer)",
                 "script" : "infer_profile_autoencoder",
-                "blurb"  : "Replay a trained profile autoencoder over a split: re-synthesise the GT elevation profiles from their Gaussian parameters, encode each to a latent and decode it back, then persist embeddings and score the physical, shape, power and latent-health metrics.",
+                "blurb"  : "Replay a trained profile autoencoder over a split: re-synthesise the GT z profiles from their Gaussian parameters, encode each to a latent and decode it back, then persist embeddings and score the physical, shape, power and latent-health metrics.",
                 "stages" : ["Load run & rebuild profiles", "Encode-decode reconstruct", "Persist embeddings", "Metric suite", "Report & figures"],
             },
             {
@@ -86,7 +93,7 @@ class PipelineLibrary:
                 "key"    : "cross_validate",
                 "name"   : "Cross-Validation (K-fold)",
                 "script" : "cross_validate",
-                "blurb"  : "Guard-banded spatial K-fold cross-validation: partition the scene azimuth into folds, train one model per fold (optionally per seed), infer on held-out val and test bands, and aggregate metrics into cross-fold mean and std.",
+                "blurb"  : "Guard-banded spatial K-fold cross-validation: partition the scene row into folds, train one model per fold (optionally per seed), infer on held-out val and test bands, and aggregate metrics into cross-fold mean and std.",
                 "stages" : ["Fold plan & guard", "Per-fold training", "Held-out inference", "Seed & cross-fold aggregate", "Report & summary"],
             },
             {

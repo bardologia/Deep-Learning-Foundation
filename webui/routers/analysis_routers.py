@@ -30,7 +30,7 @@ class FitLabRouter(SubRouter):
         exchange.send_json(self.fitlab.load_status())
 
     def map_view(self, exchange: HttpExchange) -> None:
-        exchange.send_png(self.fitlab.map_png(exchange.text("src", "slc")))
+        exchange.send_png(self.fitlab.map_png(exchange.text("src", "primary")))
 
     def fit_status(self, exchange: HttpExchange) -> None:
         exchange.send_json(self.fitlab.fit_status())
@@ -76,7 +76,7 @@ class ProbeRouter(SubRouter):
         exchange.send_png(self.probe.map_png())
 
     def features(self, exchange: HttpExchange) -> None:
-        exchange.send_png(self.probe.features_png(exchange.integer("az"), exchange.integer("rg"), exchange.text("layer")))
+        exchange.send_png(self.probe.features_png(exchange.integer("row"), exchange.integer("col"), exchange.text("layer")))
 
     def load(self, exchange: HttpExchange) -> None:
         body = exchange.body
@@ -106,10 +106,10 @@ class TriageRouter(SubRouter):
         table.add("POST", "/api/triage/annotate", self.annotate)
 
     def thumb(self, exchange: HttpExchange) -> None:
-        exchange.send_png(self.triage.thumb(exchange.text("id"), exchange.integer("az0"), exchange.integer("rg0")))
+        exchange.send_png(self.triage.thumb(exchange.text("id"), exchange.integer("row0"), exchange.integer("col0")))
 
     def profile(self, exchange: HttpExchange) -> None:
-        exchange.send_result(self.triage.profile(exchange.text("id"), exchange.integer("az"), exchange.integer("rg")))
+        exchange.send_result(self.triage.profile(exchange.text("id"), exchange.integer("row"), exchange.integer("col")))
 
     def cases(self, exchange: HttpExchange) -> None:
         result = self.triage.cases(
@@ -146,9 +146,9 @@ class AutopsyRouter(SubRouter):
 
     def profile(self, exchange: HttpExchange) -> None:
         result = self.autopsy.profile(
-            a  = exchange.text("a"),
-            b  = exchange.text("b"),
-            az = exchange.integer("az"),
-            rg = exchange.integer("rg"),
+            a   = exchange.text("a"),
+            b   = exchange.text("b"),
+            row = exchange.integer("row"),
+            col = exchange.integer("col"),
         )
         exchange.send_result(result)

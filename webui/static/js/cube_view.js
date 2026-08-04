@@ -908,7 +908,7 @@ class CubeCloud {
     this.thrLabel = refs.thrLabel;
     this.thrValEl = refs.thrVal;
     this.maxEl    = refs.max;
-    this.demWrap  = refs.demWrap;
+    this.auxWrap  = refs.auxWrap;
     this.auxEl    = refs.aux;
     this.atEl     = refs.at;
     this.canvas   = refs.canvas;
@@ -948,7 +948,7 @@ class CubeCloud {
     if (!sources.includes(this.source)) this.source = sources[0] || "pred";
     this.points         = null;
     this.auxGrid        = null;
-    this.demWrap.hidden = !meta.aux;
+    this.auxWrap.hidden = !meta.aux;
     this.auxEl.checked  = false;
     this._resetView(false);
     this._syncThresholdLabel();
@@ -1034,7 +1034,7 @@ class CubeCloud {
 
     const binAxis       = this.source === "full";
     this.auxEl.disabled = binAxis;
-    this.demWrap.title  = binAxis ? "The Aux drape needs a metric z axis" : "Drape the cloud on the terrain: point height = Aux + z";
+    this.auxWrap.title  = binAxis ? "The auxiliary drape needs a metric z axis" : "Drape the cloud on the auxiliary field: point height = aux + z";
   }
 
   async _fetchBinary(url) {
@@ -1201,7 +1201,7 @@ class CubeCloud {
     ctx.putImageData(image, 0, 0);
 
     const shown = rows.length / 4;
-    const unit = logAmp ? "scatterers" : "voxels";
+    const unit = logAmp ? "components" : "voxels";
     this.atEl.textContent = `${shown.toLocaleString()} of ${Math.round(this.total).toLocaleString()} ${unit} · drag to orbit · wheel to zoom · double-click to reset`;
   }
 }

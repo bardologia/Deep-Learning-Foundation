@@ -444,7 +444,7 @@ class ExperimentBuilder {
         return names;
       } },
 
-    { key: "secondary",  label: "secondaries", hint: "one trial per secondary-track selection",
+    { key: "secondary",  label: "secondaries", hint: "one trial per secondary-channel selection",
       at        : 0,
       el        : "secondaryEl",
       available : (b) => b.secondary.size > 0,
@@ -482,7 +482,7 @@ class ExperimentBuilder {
       },
       names     : (b, model) => b._presenceCells().map((cell) => `${model}_pr-${cell}`) },
 
-    { key: "input",      label: "input channels", hint: "input-channel ablation, one trial per input variant on its own track scope (all tracks or the reduced selection)",
+    { key: "input",      label: "input channels", hint: "input-channel ablation, one trial per input variant on its own channel scope (all channels or the reduced selection)",
       at        : 5,
       el        : "inputEl",
       available : (b) => Boolean(b.inputTrialsLeaf),
@@ -492,7 +492,7 @@ class ExperimentBuilder {
         const trials = b._inputTrials();
         const n      = Object.keys(trials).length;
         const nAll   = Object.values(trials).filter((spec) => spec && spec.tracks === "all").length;
-        return `${n} input variant${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"} (${nAll} all tracks, ${n - nAll} reduced)${b._seedsSuffix(n)}${gpus}`;
+        return `${n} input variant${n === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"} (${nAll} all channels, ${n - nAll} reduced)${b._seedsSuffix(n)}${gpus}`;
       },
       names     : (b, model) => b._inputCells().map((cell) => `${model}_in-${cell}`) },
 
@@ -553,14 +553,14 @@ class ExperimentBuilder {
       },
       names     : (b, model) => b._augCells().map((cell) => `${model}_aug-${cell}`) },
 
-    { key: "normalization", label: "normalization", hint: "cumulative normalization ladder: pass amp, then ifg phase, then output amp, then output sigma switch from initial to final strategy",
+    { key: "normalization", label: "normalization", hint: "cumulative normalization ladder: pass amp, then derived phase, then output amp, then output sigma switch from initial to final strategy",
       at        : 10,
       el        : "normEl",
       available : (b) => b.normTrials.size > 0,
       make      : (b) => b._normalizationPanel(),
       paint     : (b) => b._paintNormalization(),
       summary   : (b, gpus) => `baseline + 4 ladder rungs = 5 trials${b._seedsSuffix(5)}${gpus}`,
-      names     : (b, model) => ["nrm-0-initial", "nrm-1-pass_mag", "nrm-2-ifg_phase", "nrm-3-out_amp", "nrm-4-out_sigma"].map((rung) => `${model}_${rung}`) },
+      names     : (b, model) => ["nrm-0-initial", "nrm-1-chan_mag", "nrm-2-derived_phase", "nrm-3-out_amp", "nrm-4-out_sigma"].map((rung) => `${model}_${rung}`) },
 
     { key: "routing", label: "trunk routing", hint: "one trial per params/existence channel-group assignment, both trunks fixed at the shared parity feature ladders",
       at        : 11,
@@ -590,8 +590,8 @@ class ExperimentBuilder {
   static NORM_PRESETS = ["min_max", "min_max_log1p", "robust_iqr", "robust_iqr_log1p", "fixed_div_pi", "zscore", "zscore_log1p"];
 
   static NORM_GROUPS = [
-    { key: "pass_mag",  label: "pass amplitude",   step: 1 },
-    { key: "ifg_phase", label: "ifg phase",        step: 2 },
+    { key: "chan_mag",  label: "pass amplitude",   step: 1 },
+    { key: "derived_phase", label: "derived phase",        step: 2 },
     { key: "out_amp",   label: "output amplitude", step: 3 },
     { key: "out_sigma", label: "output sigma",     step: 4 },
   ];
@@ -615,10 +615,10 @@ class ExperimentBuilder {
   ];
 
   static STRATEGIES = [
-    { key: "uniform",     note: "each trial samples n_secondaries distinct tracks uniformly, n_trials distinct sets" },
+    { key: "uniform",     note: "each trial samples n_secondaries distinct channels uniformly, n_trials distinct sets" },
     { key: "gaussian",    note: "indices drawn from Normal(mean, sigma) over the secondary list, mean and sigma required" },
-    { key: "consecutive", note: "block of n_secondaries consecutive tracks, advanced block_step per trial until the stack ends" },
-    { key: "spaced",      note: "n_secondaries tracks spaced 'spacing' apart, advanced block_step per trial until the stack ends" },
+    { key: "consecutive", note: "block of n_secondaries consecutive channels, advanced block_step per trial until the stack ends" },
+    { key: "spaced",      note: "n_secondaries channels spaced 'spacing' apart, advanced block_step per trial until the stack ends" },
   ];
 
   static SECONDARY_FIELDS = [
@@ -1369,8 +1369,8 @@ class ExperimentBuilder {
     const parts = [];
     parts.push(`${spec && spec.tracks} tracks`);
     parts.push(amps.length ? `${amps.join("+")} amp` : "no amplitude");
-    parts.push(on("use_interferograms") === false ? "no ifg" : "ifg");
-    if (on("use_dem") === true) parts.push("dem");
+    parts.push(on("use_derived") === false ? "no derived" : "derived");
+    if (on("use_aux") === true) parts.push("aux");
     return parts.join(", ");
   }
 
@@ -1387,7 +1387,7 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "Each variant toggles which input channels feed the model and scopes its track list: tracks=all expands the secondaries to every track in the baselines table, tracks=reduced keeps the configured selection. Drop variants to trim the fan-out. Adding variants and channel representations live in code (_default_input_trials); use reset variants to restore the default.";
+    note.textContent = "Each variant toggles which input channels feed the model and scopes its channel list: tracks=all expands the secondaries to every channel in the baselines table, tracks=reduced keeps the configured selection. Drop variants to trim the fan-out. Adding variants and channel representations live in code (_default_input_trials); use reset variants to restore the default.";
 
     const cellHead       = document.createElement("div");
     cellHead.className    = "exp-presence__sub";
@@ -1731,7 +1731,7 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "Cumulative ladder from the all-initial baseline to the final strategies: rung 1 switches pass amplitude, rung 2 adds ifg phase, rung 3 adds output amplitude, rung 4 adds output sigma (out_mu keeps the base config throughout). Every rung sets all four channel strategies explicitly and repeats across the seeds list.";
+    note.textContent = "Cumulative ladder from the all-initial baseline to the final strategies: rung 1 switches pass amplitude, rung 2 adds derived phase, rung 3 adds output amplitude, rung 4 adds output sigma (out_mu keeps the base config throughout). Every rung sets all four channel strategies explicitly and repeats across the seeds list.";
 
     const grid     = document.createElement("div");
     grid.className = "exp-secondary__grid";

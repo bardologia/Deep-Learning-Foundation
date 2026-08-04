@@ -11,6 +11,7 @@
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" />
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f172a'/%3E%3Cpath d='M8 21V11l8 6 8-6v10' fill='none' stroke='%2338bdf8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="/static/css/styles.css?v=20260804d" />
 </head>
 <body>
@@ -254,10 +255,10 @@
   <!-- CUBE -->
   <section class="page page--pad" data-page="cube">
     <div class="page__head">
-      <h2 class="page__title">Tomogram explorer</h2>
+      <h2 class="page__title">Cube explorer</h2>
       <p class="page__lead">
-        Load a saved inference cube, then hover the primary SLC image to cut every tomogram
-        live along range and azimuth. Click to lock a point and read vertical profiles out
+        Load a saved inference cube, then hover the primary channel image to cut every cube
+        live along range and row. Click to lock a point and read vertical profiles out
         of the slices.
       </p>
     </div>
@@ -274,14 +275,14 @@
     <div class="cube-stage" id="cube-stage" hidden>
       <div class="cube-modes" role="tablist" aria-label="Cube view">
         <button type="button" class="cube-mode is-active" data-view="explorer">Cuts</button>
-        <button type="button" class="cube-mode" data-view="elevation">Elevation sweep</button>
-        <button type="button" class="cube-mode" data-view="azimuth">Azimuth sweep</button>
-        <button type="button" class="cube-mode" data-view="range">Range sweep</button>
+        <button type="button" class="cube-mode" data-view="z">Z sweep</button>
+        <button type="button" class="cube-mode" data-view="row">Row sweep</button>
+        <button type="button" class="cube-mode" data-view="col">Col sweep</button>
         <button type="button" class="cube-mode" data-view="params">Parameters</button>
         <button type="button" class="cube-mode" data-view="metrics">Metric maps</button>
         <button type="button" class="cube-mode" data-view="transect">Transect</button>
         <button type="button" class="cube-mode" data-view="cloud">Point cloud</button>
-        <select id="cube-cmap" class="cube-mselect cube-modes__cmap" aria-label="Tomogram colormap">
+        <select id="cube-cmap" class="cube-mselect cube-modes__cmap" aria-label="Cube colormap">
           <option value="jet" selected>jet</option>
           <option value="viridis">viridis</option>
           <option value="inferno">inferno</option>
@@ -294,33 +295,33 @@
       <div class="cube-deck" id="cube-deck" data-mode="map">
         <aside class="cube-map" id="cube-map">
           <div class="cube-map__head">
-            <h3 class="cube-panel-title">Primary SLC amplitude</h3>
+            <h3 class="cube-panel-title">Primary channel amplitude</h3>
           </div>
           <div class="cube-map__frame">
-            <span class="cube-axis cube-axis--y">azimuth &rarr;</span>
+            <span class="cube-axis cube-axis--y">row &rarr;</span>
             <div class="cube-map__wrap">
-              <img id="cube-topdown" alt="Primary SLC amplitude" />
+              <img id="cube-topdown" alt="Primary channel amplitude" />
               <i class="cube-cross" id="cube-cross" hidden></i>
             </div>
             <span class="cube-axis cube-axis--x">range &rarr;</span>
           </div>
-          <p class="cube-coords" id="cube-coords">Hover the image to cut every tomogram &middot; click to lock the slices</p>
+          <p class="cube-coords" id="cube-coords">Hover the image to cut every cube &middot; click to lock the slices</p>
         </aside>
 
         <div class="cube-slices" id="cube-slices" hidden>
           <div class="cube-slices__bar">
             <button type="button" class="btn btn--mini" id="cube-back" hidden>&larr; Back to primary</button>
             <span class="cube-slices__at" id="cube-slices-at"></span>
-            <div class="cube-jump" role="group" aria-label="Set a cut by azimuth and range">
+            <div class="cube-jump" role="group" aria-label="Set a cut by row and range">
               <span class="cube-jump__cell">
-                <label for="cube-jump-az">az</label>
-                <input type="number" id="cube-jump-az" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-                <span class="cube-jump__range" id="cube-jump-az-range"></span>
+                <label for="cube-jump-row">row</label>
+                <input type="number" id="cube-jump-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+                <span class="cube-jump__range" id="cube-jump-row-range"></span>
               </span>
               <span class="cube-jump__cell">
-                <label for="cube-jump-rg">rg</label>
-                <input type="number" id="cube-jump-rg" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-                <span class="cube-jump__range" id="cube-jump-rg-range"></span>
+                <label for="cube-jump-col">col</label>
+                <input type="number" id="cube-jump-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+                <span class="cube-jump__range" id="cube-jump-col-range"></span>
               </span>
               <button type="button" class="btn btn--mini" id="cube-jump-go">Cut</button>
               <button type="button" class="btn btn--mini" id="cube-jump-print" title="Save these cuts as paper-style figures under the run directory">Print</button>
@@ -331,32 +332,30 @@
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
             </div>
           </div>
-          <section class="cube-cutgroup" data-axis="range">
+          <section class="cube-cutgroup" data-axis="col">
             <h3 class="cube-cutgroup__title">
-              Range cut <span class="cube-cutgroup__sub">tomogram column at the marked azimuth</span>
-              <span class="cube-cutgroup__at" data-axis="range"></span>
+              Col cut <span class="cube-cutgroup__sub">cube column at the marked row</span>
+              <span class="cube-cutgroup__at" data-axis="col"></span>
             </h3>
             <div class="cube-cutgroup__stack">
-              <figure class="cube-slice" data-axis="range" data-source="pred"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="range" data-source="predb"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="range" data-source="diff"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="range" data-source="gt"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="range" data-source="reduced"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="reduced"></i>capon reduced</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="range" data-source="full"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>capon full</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="col" data-source="pred"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="col" data-source="predb"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="col" data-source="diff"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="col" data-source="gt"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="col" data-source="full"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>reference</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
             </div>
           </section>
-          <section class="cube-cutgroup" data-axis="azimuth">
+          <section class="cube-cutgroup" data-axis="row">
             <h3 class="cube-cutgroup__title">
-              Azimuth cut <span class="cube-cutgroup__sub">tomogram row at the marked range</span>
-              <span class="cube-cutgroup__at" data-axis="azimuth"></span>
+              Row cut <span class="cube-cutgroup__sub">cube row at the marked range</span>
+              <span class="cube-cutgroup__at" data-axis="row"></span>
             </h3>
             <div class="cube-cutgroup__stack">
-              <figure class="cube-slice" data-axis="azimuth" data-source="pred"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="azimuth" data-source="predb"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="azimuth" data-source="diff"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="azimuth" data-source="gt"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="azimuth" data-source="reduced"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="reduced"></i>capon reduced</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
-              <figure class="cube-slice" data-axis="azimuth" data-source="full"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>capon full</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="row" data-source="pred"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="row" data-source="predb"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="row" data-source="diff"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="row" data-source="gt"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
+              <figure class="cube-slice" data-axis="row" data-source="full"><div class="cube-slice__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>reference</span><i class="cube-ref" hidden></i></div><figcaption class="cube-slice__metric"></figcaption></figure>
             </div>
           </section>
         </div>
@@ -374,8 +373,7 @@
             <figure class="cube-prof" data-source="pred"><header class="cube-slice__head"><i class="cube-dot" data-source="pred"></i><span class="cube-slice__src">pred</span></header><div class="cube-prof__media"><canvas></canvas></div></figure>
             <figure class="cube-prof" data-source="predb"><header class="cube-slice__head"><i class="cube-dot" data-source="predb"></i><span class="cube-slice__src">pred B</span></header><div class="cube-prof__media"><canvas></canvas></div></figure>
             <figure class="cube-prof" data-source="gt"><header class="cube-slice__head"><i class="cube-dot" data-source="gt"></i><span class="cube-slice__src">gt</span></header><div class="cube-prof__media"><canvas></canvas></div></figure>
-            <figure class="cube-prof" data-source="reduced"><header class="cube-slice__head"><i class="cube-dot" data-source="reduced"></i><span class="cube-slice__src">capon reduced</span></header><div class="cube-prof__media"><canvas></canvas></div></figure>
-            <figure class="cube-prof" data-source="full"><header class="cube-slice__head"><i class="cube-dot" data-source="full"></i><span class="cube-slice__src">capon full</span></header><div class="cube-prof__media"><canvas></canvas></div></figure>
+            <figure class="cube-prof" data-source="full"><header class="cube-slice__head"><i class="cube-dot" data-source="full"></i><span class="cube-slice__src">reference</span></header><div class="cube-prof__media"><canvas></canvas></div></figure>
           </div>
           <table class="cube-metrics" id="cube-prof-metrics">
             <thead>
@@ -384,71 +382,68 @@
             <tbody>
               <tr data-source="pred"><th scope="row"><i class="cube-dot" data-source="pred"></i>pred</th><td data-k="mae">&ndash;</td><td data-k="mse">&ndash;</td><td data-k="r2">&ndash;</td></tr>
               <tr data-source="predb"><th scope="row"><i class="cube-dot" data-source="predb"></i>pred B</th><td data-k="mae">&ndash;</td><td data-k="mse">&ndash;</td><td data-k="r2">&ndash;</td></tr>
-              <tr data-source="reduced"><th scope="row"><i class="cube-dot" data-source="reduced"></i>capon reduced</th><td data-k="mae">&ndash;</td><td data-k="mse">&ndash;</td><td data-k="r2">&ndash;</td></tr>
             </tbody>
           </table>
         </aside>
       </div>
       </div>
 
-      <div class="cube-view" data-view="elevation" hidden>
-        <div class="cube-elev">
-          <div class="cube-elev__bar">
+      <div class="cube-view" data-view="z" hidden>
+        <div class="cube-z">
+          <div class="cube-z__bar">
             <div class="cube-sweep__controls">
-              <button type="button" class="cube-sweep__play" id="cube-elevation-play">Play</button>
-              <div class="cube-jump" role="group" aria-label="Set an elevation bin">
+              <button type="button" class="cube-sweep__play" id="cube-z-play">Play</button>
+              <div class="cube-jump" role="group" aria-label="Set an z bin">
                 <span class="cube-jump__cell">
-                  <label for="cube-elevation-input">bin</label>
-                  <input type="number" id="cube-elevation-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
-                  <span class="cube-jump__range" id="cube-elevation-range"></span>
+                  <label for="cube-z-input">bin</label>
+                  <input type="number" id="cube-z-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
+                  <span class="cube-jump__range" id="cube-z-range"></span>
                 </span>
               </div>
             </div>
-            <span class="cube-elev__at" id="cube-elevation-at">Play the sweep, or scroll a panel to move through elevation.</span>
+            <span class="cube-z__at" id="cube-z-at">Play the sweep, or scroll a panel to move through z.</span>
             <div class="cube-spaces" role="group" aria-label="Value space">
               <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
             </div>
           </div>
-          <div class="cube-elev__track"><i class="cube-elev__fill" id="cube-elevation-fill"></i></div>
-          <div class="cube-elev__grid" id="cube-elevation-grid">
+          <div class="cube-z__track"><i class="cube-z__fill" id="cube-z-fill"></i></div>
+          <div class="cube-z__grid" id="cube-z-grid">
             <figure class="cube-eplane" data-source="pred"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span></div></figure>
             <figure class="cube-eplane" data-source="predb"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span></div></figure>
             <figure class="cube-eplane" data-source="diff"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span></div></figure>
             <figure class="cube-eplane" data-source="gt"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span></div></figure>
-            <figure class="cube-eplane" data-source="reduced"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="reduced"></i>capon reduced</span></div></figure>
-            <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>capon full</span></div></figure>
+            <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>reference</span></div></figure>
           </div>
         </div>
       </div>
 
-      <div class="cube-view" data-view="azimuth" hidden>
-        <div class="cube-elev">
-          <div class="cube-elev__bar">
+      <div class="cube-view" data-view="row" hidden>
+        <div class="cube-z">
+          <div class="cube-z__bar">
             <div class="cube-sweep__controls">
-              <button type="button" class="cube-sweep__play" id="cube-azimuth-play">Play</button>
-              <div class="cube-jump" role="group" aria-label="Set an azimuth bin">
+              <button type="button" class="cube-sweep__play" id="cube-row-play">Play</button>
+              <div class="cube-jump" role="group" aria-label="Set an row bin">
                 <span class="cube-jump__cell">
-                  <label for="cube-azimuth-input">bin</label>
-                  <input type="number" id="cube-azimuth-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
-                  <span class="cube-jump__range" id="cube-azimuth-range"></span>
+                  <label for="cube-row-input">bin</label>
+                  <input type="number" id="cube-row-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
+                  <span class="cube-jump__range" id="cube-row-range"></span>
                 </span>
               </div>
             </div>
-            <span class="cube-elev__at" id="cube-azimuth-at">Play the sweep, or scroll a panel to move through azimuth.</span>
+            <span class="cube-z__at" id="cube-row-at">Play the sweep, or scroll a panel to move through row.</span>
             <div class="cube-spaces" role="group" aria-label="Value space">
               <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
             </div>
           </div>
-          <div class="cube-elev__track"><i class="cube-elev__fill" id="cube-azimuth-fill"></i></div>
-          <div class="cube-elev__grid cube-elev__grid--strip" id="cube-azimuth-grid">
+          <div class="cube-z__track"><i class="cube-z__fill" id="cube-row-fill"></i></div>
+          <div class="cube-z__grid cube-z__grid--strip" id="cube-row-grid">
             <figure class="cube-eplane" data-source="pred"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span></div></figure>
             <figure class="cube-eplane" data-source="predb"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span></div></figure>
             <figure class="cube-eplane" data-source="diff"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span></div></figure>
             <figure class="cube-eplane" data-source="gt"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span></div></figure>
-            <figure class="cube-eplane" data-source="reduced"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="reduced"></i>capon reduced</span></div></figure>
-            <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>capon full</span></div></figure>
+            <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>reference</span></div></figure>
           </div>
         </div>
       </div>
@@ -464,7 +459,7 @@
               <button type="button" class="cube-space" data-field="count">Active count</button>
             </div>
             <div class="cube-spaces" id="cube-param-slot" role="group" aria-label="Gaussian slot"></div>
-            <span class="cube-elev__at" id="cube-param-at">Pick a source, field and slot to map the Gaussian parameters.</span>
+            <span class="cube-z__at" id="cube-param-at">Pick a source, field and slot to map the Gaussian parameters.</span>
           </div>
           <div class="cube-pview__deck">
             <figure class="cube-pmap">
@@ -494,16 +489,15 @@
             <div class="cube-spaces" id="cube-cloud-source" role="group" aria-label="Point cloud source">
               <button type="button" class="cube-space is-active" data-source="pred">pred</button>
               <button type="button" class="cube-space" data-source="gt">gt</button>
-              <button type="button" class="cube-space" data-source="reduced" title="Capon reduced tomogram (metric elevation axis)">capon</button>
-              <button type="button" class="cube-space" data-source="full" title="Capon full raw tomogram (bin elevation axis)">full</button>
+                            <button type="button" class="cube-space" data-source="full" title="Reference cube (bin z axis)">reference</button>
             </div>
             <div class="cube-spaces" id="cube-cloud-color" role="group" aria-label="Colour by">
-              <button type="button" class="cube-space is-active" data-color="mu">colour: elevation</button>
+              <button type="button" class="cube-space is-active" data-color="mu">colour: z</button>
               <button type="button" class="cube-space" data-color="amp">colour: amplitude</button>
             </div>
             <div class="cube-mctl" role="group" aria-label="Amplitude threshold">
               <label for="cube-cloud-thr" id="cube-cloud-thr-label">amp &ge;</label>
-              <input type="range" id="cube-cloud-thr" min="0" max="100" value="0" />
+              <input type="col" id="cube-cloud-thr" min="0" max="100" value="0" />
               <span class="cube-mctl__val" id="cube-cloud-thr-val"></span>
             </div>
             <div class="cube-mctl" role="group" aria-label="Point budget">
@@ -514,8 +508,8 @@
                 <option value="150000">150k</option>
               </select>
             </div>
-            <label class="lb-check" id="cube-cloud-dem-wrap" title="Drape the cloud on the terrain: point height = DEM + elevation"><input type="checkbox" id="cube-cloud-dem" /> DEM terrain</label>
-            <span class="cube-elev__at" id="cube-cloud-at">Drag to orbit &middot; wheel to zoom &middot; double-click to reset.</span>
+            <label class="lb-check" id="cube-cloud-aux-wrap" title="Drape the cloud on the auxiliary field: point height = aux + z"><input type="checkbox" id="cube-cloud-aux" /> Aux drape</label>
+            <span class="cube-z__at" id="cube-cloud-at">Drag to orbit &middot; wheel to zoom &middot; double-click to reset.</span>
           </div>
           <div class="cube-cloud__stage">
             <canvas id="cube-cloud-canvas"></canvas>
@@ -526,7 +520,7 @@
       <div class="cube-view" data-view="transect" hidden>
         <div class="cube-pview">
           <div class="cube-pview__bar">
-            <span class="cube-elev__at" id="cube-transect-at">Click a start point on the map, then an end point, to cut every tomogram along that line.</span>
+            <span class="cube-z__at" id="cube-transect-at">Click a start point on the map, then an end point, to cut every cube along that line.</span>
             <button type="button" class="btn btn--mini" id="cube-transect-clear" hidden>Clear line</button>
             <button type="button" class="btn btn--mini" id="cube-transect-print" hidden title="Save the transect as paper-style figures under the run directory">Print</button>
             <div class="cube-spaces" role="group" aria-label="Value space">
@@ -537,17 +531,16 @@
           <div class="cube-tview">
             <figure class="cube-pmap cube-pmap--transect">
               <div class="cube-pmap__media">
-                <img id="cube-transect-map" alt="Primary SLC amplitude" />
+                <img id="cube-transect-map" alt="Primary channel amplitude" />
                 <svg id="cube-transect-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
               </div>
             </figure>
-            <div class="cube-elev__grid cube-elev__grid--transect" id="cube-transect-grid">
+            <div class="cube-z__grid cube-z__grid--transect" id="cube-transect-grid">
               <figure class="cube-eplane" data-source="pred"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span></div></figure>
               <figure class="cube-eplane" data-source="predb"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span></div></figure>
               <figure class="cube-eplane" data-source="diff"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span></div></figure>
               <figure class="cube-eplane" data-source="gt"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span></div></figure>
-              <figure class="cube-eplane" data-source="reduced"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="reduced"></i>capon reduced</span></div></figure>
-              <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>capon full</span></div></figure>
+              <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>reference</span></div></figure>
             </div>
           </div>
         </div>
@@ -571,12 +564,12 @@
                 <option value="below">below</option>
                 <option value="above">above</option>
               </select>
-              <input type="range" id="cube-metric-thr" min="0" max="1000" value="500" disabled />
+              <input type="col" id="cube-metric-thr" min="0" max="1000" value="500" disabled />
               <span class="cube-mctl__val" id="cube-metric-thr-val"></span>
             </div>
             <div class="cube-mctl" role="group" aria-label="Overlay opacity">
               <label for="cube-metric-alpha">opacity</label>
-              <input type="range" id="cube-metric-alpha" min="0" max="100" value="75" />
+              <input type="col" id="cube-metric-alpha" min="0" max="100" value="75" />
             </div>
           </div>
           <div class="cube-pview__deck">
@@ -598,7 +591,7 @@
               <button type="button" class="btn btn--mini" id="cube-metric-open" hidden>Open cuts at this pixel</button>
               <div class="cube-mctl" id="cube-selective-wrap">
                 <label for="cube-selective-cov">coverage</label>
-                <input type="range" id="cube-selective-cov" min="5" max="100" value="100" />
+                <input type="col" id="cube-selective-cov" min="5" max="100" value="100" />
                 <span class="cube-mctl__val" id="cube-selective-val">100%</span>
               </div>
               <p class="cube-hint">Selective prediction: keep the selected layer's most confident share of pixels (lowest values for error-like layers, highest for R&sup2;-like layers) and compare the kept-pixel metric means against the full region.</p>
@@ -608,9 +601,9 @@
         </div>
       </div>
 
-      <div class="cube-view" data-view="range" hidden>
-        <div class="cube-elev">
-          <div class="cube-elev__bar">
+      <div class="cube-view" data-view="col" hidden>
+        <div class="cube-z">
+          <div class="cube-z__bar">
             <div class="cube-sweep__controls">
               <button type="button" class="cube-sweep__play" id="cube-range-play">Play</button>
               <div class="cube-jump" role="group" aria-label="Set a range bin">
@@ -621,20 +614,19 @@
                 </span>
               </div>
             </div>
-            <span class="cube-elev__at" id="cube-range-at">Play the sweep, or scroll a panel to move through range.</span>
+            <span class="cube-z__at" id="cube-range-at">Play the sweep, or scroll a panel to move through range.</span>
             <div class="cube-spaces" role="group" aria-label="Value space">
               <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
             </div>
           </div>
-          <div class="cube-elev__track"><i class="cube-elev__fill" id="cube-range-fill"></i></div>
-          <div class="cube-elev__grid cube-elev__grid--strip" id="cube-range-grid">
+          <div class="cube-z__track"><i class="cube-z__fill" id="cube-range-fill"></i></div>
+          <div class="cube-z__grid cube-z__grid--strip" id="cube-range-grid">
             <figure class="cube-eplane" data-source="pred"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span></div></figure>
             <figure class="cube-eplane" data-source="predb"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="predb"></i>pred B</span></div></figure>
             <figure class="cube-eplane" data-source="diff"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="diff"></i>A &minus; B</span></div></figure>
             <figure class="cube-eplane" data-source="gt"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="gt"></i>gt</span></div></figure>
-            <figure class="cube-eplane" data-source="reduced"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="reduced"></i>capon reduced</span></div></figure>
-            <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>capon full</span></div></figure>
+            <figure class="cube-eplane" data-source="full"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="full"></i>reference</span></div></figure>
           </div>
         </div>
       </div>
@@ -663,27 +655,26 @@
         <div class="sc-bar__controls">
           <div class="cube-jump" role="group" aria-label="Cut position">
             <span class="cube-jump__cell">
-              <label for="sc-az">az</label>
-              <input type="number" id="sc-az" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="sc-az-range"></span>
+              <label for="sc-row">row</label>
+              <input type="number" id="sc-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+              <span class="cube-jump__range" id="sc-row-range"></span>
             </span>
             <span class="cube-jump__cell">
-              <label for="sc-rg">rg</label>
-              <input type="number" id="sc-rg" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="sc-rg-range"></span>
+              <label for="sc-col">col</label>
+              <input type="number" id="sc-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+              <span class="cube-jump__range" id="sc-col-range"></span>
             </span>
             <button type="button" class="btn btn--mini" id="sc-add" title="Queue this point so Collect saves it for every selected run">Add point</button>
             <button type="button" class="btn btn--mini" id="sc-clear" hidden>Clear points</button>
           </div>
           <div class="cube-spaces" id="sc-axes" role="group" aria-label="Cut axes">
-            <button type="button" class="cube-space is-active" data-axis="range">Range cut</button>
-            <button type="button" class="cube-space" data-axis="azimuth">Azimuth cut</button>
+            <button type="button" class="cube-space is-active" data-axis="col">Col cut</button>
+            <button type="button" class="cube-space" data-axis="row">Row cut</button>
           </div>
           <div class="cube-sources" id="sc-sources" role="group" aria-label="Sources">
             <button type="button" class="cube-source is-active" data-source="pred"><i class="cube-dot" data-source="pred"></i>pred</button>
             <button type="button" class="cube-source" data-source="gt"><i class="cube-dot" data-source="gt"></i>gt</button>
-            <button type="button" class="cube-source" data-source="reduced"><i class="cube-dot" data-source="reduced"></i>capon reduced</button>
-            <button type="button" class="cube-source" data-source="full"><i class="cube-dot" data-source="full"></i>capon full</button>
+            <button type="button" class="cube-source" data-source="full"><i class="cube-dot" data-source="full"></i>reference</button>
           </div>
           <div class="cube-spaces" id="sc-space" role="group" aria-label="Value space">
             <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
@@ -693,7 +684,7 @@
             <button type="button" class="cube-space is-active" data-scale="shared" title="One colour scale across all selected runs">Shared scale</button>
             <button type="button" class="cube-space" data-scale="perrun" title="Each run keeps its own colour scale">Per-run scale</button>
           </div>
-          <select id="sc-cmap" class="cube-mselect" aria-label="Tomogram colormap">
+          <select id="sc-cmap" class="cube-mselect" aria-label="Cube colormap">
             <option value="jet" selected>jet</option>
             <option value="viridis">viridis</option>
             <option value="inferno">inferno</option>
@@ -745,7 +736,7 @@
       <h2 class="page__title">Model microscope</h2>
       <p class="page__lead">
         Load a trained backbone checkpoint, pick a pixel on the scene, and inspect the model
-        from the inside: the predicted profile against ground truth and the raw tomogram,
+        from the inside: the predicted profile against ground truth and the raw cube,
         gradient attribution of every output family to every input channel, spatial maps of
         where in the window those gradients concentrate, feature maps along a clickable view
         of the architecture, and live what-if perturbations of the input.
@@ -759,7 +750,7 @@
     <div class="page__head">
       <h2 class="page__title">Param extraction lab</h2>
       <p class="page__lead">
-        Load a preprocessing dataset, pick pixels on the tomogram, and run the Gaussian
+        Load a preprocessing dataset, pick pixels on the cube, and run the Gaussian
         parameter-extraction fit on just those pixels under different configurations &mdash;
         compare K, &lambda;, free parameters and preprocessing constants before committing
         to a full extraction run.
@@ -786,8 +777,8 @@
           <div class="fl-map__head">
             <h3 class="cube-panel-title">Pixel selection</h3>
             <div class="cube-spaces" id="fl-map-src" role="group" aria-label="Map source">
-              <button type="button" class="cube-space is-active" data-src="slc">SLC amplitude</button>
-              <button type="button" class="cube-space" data-src="peak">Tomogram peak</button>
+              <button type="button" class="cube-space is-active" data-src="primary">Primary amplitude</button>
+              <button type="button" class="cube-space" data-src="peak">Cube peak</button>
             </div>
           </div>
           <div class="fl-map__frame">
@@ -796,19 +787,19 @@
               <img id="fl-map-img" alt="Dataset map" />
               <div class="fl-marks" id="fl-marks"></div>
             </div>
-            <span class="cube-axis cube-axis--x">azimuth &rarr;</span>
+            <span class="cube-axis cube-axis--x">row &rarr;</span>
           </div>
           <p class="cube-coords" id="fl-coords">Click the map to add pixels &middot; click a marker to remove it.</p>
           <div class="fl-pixrow" role="group" aria-label="Add a pixel by index">
             <span class="cube-jump__cell">
-              <label for="fl-az">az</label>
-              <input type="number" id="fl-az" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="fl-az-range"></span>
+              <label for="fl-row">row</label>
+              <input type="number" id="fl-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+              <span class="cube-jump__range" id="fl-row-range"></span>
             </span>
             <span class="cube-jump__cell">
-              <label for="fl-rg">rg</label>
-              <input type="number" id="fl-rg" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="fl-rg-range"></span>
+              <label for="fl-col">col</label>
+              <input type="number" id="fl-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+              <span class="cube-jump__range" id="fl-col-range"></span>
             </span>
             <button type="button" class="btn btn--mini" id="fl-add">Add</button>
             <button type="button" class="btn btn--mini" id="fl-clear">Clear</button>
@@ -1137,7 +1128,7 @@
 <script src="/static/js/results.js?v=20260714a"></script>
 <script src="/static/js/leaderboard.js?v=20260716"></script>
 <script src="/static/js/run_strip.js?v=20260804b"></script>
-<script src="/static/js/tomogram.js?v=20260804a"></script>
+<script src="/static/js/cube_view.js?v=20260804a"></script>
 <script src="/static/js/slice_collector.js?v=20260804a"></script>
 <script src="/static/js/fit_lab.js?v=20260721a"></script>
 <script src="/static/js/microscope.js?v=20260804c"></script>
