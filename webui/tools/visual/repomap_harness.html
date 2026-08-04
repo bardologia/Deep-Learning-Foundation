@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../../static/css/styles.css">
+  <style>
+    html, body { margin: 0; background: var(--bg, #f2f3ef); }
+    #rm { width: 100%; }
+    /* Faithful production scroll behavior by default. With ?fit the graph expands to full height
+       so a whole (even scrolling) diagram is captured in one screenshot. */
+    body.fit .rm-graph { max-height: none !important; min-height: 0 !important; overflow: visible !important; }
+  </style>
+</head>
+<body>
+  <div id="rm"></div>
+  <script src="../../static/js/repomap.js"></script>
+  <script>
+    window.REDUCED_MOTION = true;
+    window.apiGet = async function () { return window.__RM_DATA__; };
+    window.renderDiagram = async function (folderMeta, diagram) {
+      window.__RM_DATA__ = { folders: [ { folder: folderMeta.folder, title: folderMeta.title, blurb: folderMeta.blurb || "", diagrams: [ diagram ] } ] };
+      const root = document.getElementById("rm");
+      root.innerHTML = "";
+      const view = new window.RepoMapView(root);
+      window.__RM_VIEW__ = view;
+      await view.enter();
+      return true;
+    };
+  </script>
+</body>
+</html>
