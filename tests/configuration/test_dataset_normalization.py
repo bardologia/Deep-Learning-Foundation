@@ -22,7 +22,6 @@ from configuration.normalization         import (
     OutputClampConfig,
 )
 from configuration.normalization.general import _SLOT_STRATEGIES
-from configuration.training.general.loss import LossConfig
 from tools.data.representation           import Representation
 from tests.configuration._helpers        import make_split_regions
 
@@ -119,12 +118,11 @@ def test_normalization_config_attaches_bounds_to_fixed_bounds_strategy():
     assert plain.bounds is None
 
 
-def test_fixed_out_bounds_defaults_match_the_loss_legacy_bounds():
+def test_fixed_out_bounds_defaults_are_ordered_pairs():
     norm = NormalizationConfig()
-    loss = LossConfig()
 
-    assert norm.fixed_out_bounds_min == loss.legacy_bounds_min
-    assert norm.fixed_out_bounds_max == loss.legacy_bounds_max
+    assert len(norm.fixed_out_bounds_min) == len(norm.fixed_out_bounds_max)
+    assert all(hi > lo for lo, hi in zip(norm.fixed_out_bounds_min, norm.fixed_out_bounds_max))
 
 
 def test_normalization_clamp_round_trips_through_dict():

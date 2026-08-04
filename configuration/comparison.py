@@ -20,20 +20,6 @@ class TrialComparisonConfig:
 
 
 @dataclass
-class PreprocessingComparisonConfig:
-    runs_dir : Path      = Path("datasets")
-    run_tags : List[str] = field(default_factory=list)
-
-    pixel_sample : int = 200000
-    block_size   : int = 8
-    range_chunk  : int = 512
-    workers      : int = 4
-
-    make_plots : bool           = True
-    output_dir : Optional[Path] = None
-
-
-@dataclass
 class SeedComparisonConfig:
     runs_dir   : Path      = Path("runs")
     group_tags : List[str] = field(default_factory=list)

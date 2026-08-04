@@ -33,7 +33,6 @@ from configuration.training.profile_autoencoder import ProfileAeLossConfig
 
 from configuration.dataset               import AugmentationConfig, InputConfig
 from configuration.normalization.general import NormalizationConfig
-from configuration.sar.geometry_config   import GeometryConfig
 
 
 DEFAULT_CONFIGS = [
@@ -91,7 +90,7 @@ def test_backbone_inference_entry_config_holds_inference():
     assert isinstance(cfg.inference, InferenceConfig)
     assert cfg.inference.gif_axes == ["elevation", "range", "azimuth"]
     assert isinstance(cfg.run_filter, list)
-    assert cfg.runs_dir.endswith("/runs")
+    assert cfg.runs_dir == "runs"
 
 
 def test_ae_inference_entry_configs_expose_only_their_tree():
@@ -200,7 +199,6 @@ def test_benchmark_config_subconfigs():
 def test_benchmark_config_exposes_training_recipe_sections():
     cfg = BenchmarkConfig()
     assert isinstance(cfg.input, InputConfig)
-    assert isinstance(cfg.geometry, GeometryConfig)
     assert isinstance(cfg.normalization, NormalizationConfig)
     assert isinstance(cfg.augmentation, AugmentationConfig)
 

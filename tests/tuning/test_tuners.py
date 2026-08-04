@@ -294,7 +294,7 @@ class _FakeEarlyStop:
 
 class _FakeTrainerConfig:
     def __init__(self):
-        from configuration.sar.gaussian_config import GaussianConfig
+        from configuration.dataset.gaussian import GaussianConfig
         from configuration.training import LossConfig, LossCurriculumConfig
 
         self.training       = _FakeTrainingLoop()

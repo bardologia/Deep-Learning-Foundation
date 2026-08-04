@@ -220,10 +220,13 @@ def test_context_scheduler_plans_the_receptive_field_ladder(tmp_path):
     ]
 
 
-def test_reach_scheduler_houses_runs_and_plans_the_size_matched_arms(tmp_path):
-    config             = BackboneEntryConfig()
-    config.logdir      = tmp_path
-    config.trials_mode = "reach"
+@pytest.mark.real_data
+def test_reach_scheduler_houses_runs_and_plans_the_size_matched_arms(tmp_path, test_data_dir, params_dir):
+    config                       = BackboneEntryConfig()
+    config.logdir                = tmp_path
+    config.trials_mode           = "reach"
+    config.paths.dataset_path    = test_data_dir
+    config.paths.parameters_path = params_dir / "parameters.npy"
 
     scheduler = backbone_pipeline.TrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_backbone.py"))
 
@@ -472,7 +475,7 @@ def test_backbone_launcher_rejects_both_inference_flags(monkeypatch):
 
 
 def test_scheduler_houses_each_mode_in_its_own_dir(tmp_path):
-    for mode in ("curriculum", "warmup", "presence", "physics", "pair", "secondary", "patch", "input", "context", "head", "augmentation", "normalization", "ablation"):
+    for mode in ("curriculum", "warmup", "presence", "pair", "secondary", "patch", "input", "context", "head", "augmentation", "normalization", "ablation"):
         config             = BackboneEntryConfig()
         config.logdir      = tmp_path
         config.trials_mode = mode

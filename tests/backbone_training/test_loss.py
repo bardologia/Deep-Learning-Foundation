@@ -12,7 +12,7 @@ from pipelines.backbone.training.loss_terms import LOSS_TERMS, LossComponentCata
 from tools.monitoring.logger                import NullLogger
 from tools.monitoring.tracker               import NullTracker
 
-from tests.backbone_training._helpers import build_loss, gaussian_config, geometry_config, identity_normalizer, log1p_normalizer, param_tensor, spock_normalizer, valid_param_tensor, x_axis_tensor, zscore_normalizer
+from tests.backbone_training._helpers import build_loss, gaussian_config, identity_normalizer, log1p_normalizer, param_tensor, spock_normalizer, valid_param_tensor, x_axis_tensor, zscore_normalizer
 
 
 def test_loss_terms_table_is_consistent():
@@ -20,7 +20,7 @@ def test_loss_terms_table_is_consistent():
 
     assert len(names) == len(set(names))
     assert "param_l1"         in names
-    assert "covariance_match" in names
+    assert "moments"          in names
 
     for term in LOSS_TERMS:
         assert term.use_flag.startswith("use_")
@@ -60,21 +60,21 @@ def test_catalog_standalone_inherits_shared_knobs_from_base():
 
 
 def test_catalog_curriculum_is_disabled_with_matching_phases():
-    curriculum = LossComponentCatalog.curriculum("covariance_match")
+    curriculum = LossComponentCatalog.curriculum("moments")
 
     assert curriculum.enabled is False
-    assert curriculum.warmup.use_covariance_match   is True
-    assert curriculum.complete.use_covariance_match is True
+    assert curriculum.warmup.use_moments   is True
+    assert curriculum.complete.use_moments is True
 
 
 def test_catalog_combined_enables_the_union_of_terms():
-    cfg = LossComponentCatalog.combined(["param_l1", "covariance_match", "l1_curve"])
+    cfg = LossComponentCatalog.combined(["param_l1", "moments", "l1_curve"])
 
-    assert cfg.use_param_l1         is True
-    assert cfg.use_covariance_match is True
-    assert cfg.use_l1_curve         is True
+    assert cfg.use_param_l1 is True
+    assert cfg.use_moments  is True
+    assert cfg.use_l1_curve is True
 
-    other_flags_off = [not getattr(cfg, term.use_flag) for term in LOSS_TERMS if term.name not in ("param_l1", "covariance_match", "l1_curve")]
+    other_flags_off = [not getattr(cfg, term.use_flag) for term in LOSS_TERMS if term.name not in ("param_l1", "moments", "l1_curve")]
     assert all(other_flags_off)
 
 
@@ -85,11 +85,10 @@ def test_probe_union_merges_stages_when_curriculum_enabled():
 
     union = LossComponentCatalog.probe_union(curriculum)
 
-    assert union.use_coherence_resyn  is True
-    assert union.use_covariance_match is True
-    assert union.use_smoothness_tv    is True
+    assert union.use_cosine_curve  is True
+    assert union.use_smoothness_tv is True
     assert union.weight_smoothness_tv == pytest.approx(0.7)
-    assert union.use_param_l1         is True
+    assert union.use_param_l1      is True
 
 
 def test_probe_union_is_the_single_stage_when_curriculum_disabled():
@@ -99,8 +98,8 @@ def test_probe_union_is_the_single_stage_when_curriculum_disabled():
 
     union = LossComponentCatalog.probe_union(curriculum)
 
-    assert union.use_smoothness_tv   is False
-    assert union.use_coherence_resyn is True
+    assert union.use_smoothness_tv is False
+    assert union.use_cosine_curve  is True
 
 
 def test_catalog_combined_rejects_empty_and_unknown():
@@ -112,13 +111,13 @@ def test_catalog_combined_rejects_empty_and_unknown():
 
 
 def test_catalog_combined_curriculum_mirrors_combined_in_both_phases():
-    curriculum = LossComponentCatalog.combined_curriculum(["param_l1", "coherence_resyn"])
+    curriculum = LossComponentCatalog.combined_curriculum(["param_l1", "total_power_relerr"])
 
     assert curriculum.enabled is False
-    assert curriculum.warmup.use_param_l1          is True
-    assert curriculum.warmup.use_coherence_resyn   is True
-    assert curriculum.complete.use_param_l1        is True
-    assert curriculum.complete.use_coherence_resyn is True
+    assert curriculum.warmup.use_param_l1     is True
+    assert curriculum.warmup.use_total_power  is True
+    assert curriculum.complete.use_param_l1   is True
+    assert curriculum.complete.use_total_power is True
 
 
 def test_forward_returns_finite_scalar_total():
@@ -395,35 +394,6 @@ def test_curriculum_swap_changes_active_terms():
     assert "param_l1"  not in after["components"]
 
 
-def test_geometry_coupled_covariance_term_uses_geometry():
-    cfg  = LossConfig(use_covariance_match=True, weight_covariance_match=1.0)
-    loss = build_loss(n_gaussians=2, loss_cfg=cfg)
-
-    assert loss.geometry.outer.shape[0]    == loss.geometry.n_tracks
-    assert loss.geometry.steering.shape[0] == loss.geometry.n_tracks
-
-    pred = param_tensor(2, 2, 5, 5, seed=17).requires_grad_(True)
-    gt   = param_tensor(2, 2, 5, 5, seed=18)
-
-    out  = loss(pred, gt)
-
-    assert "covariance_match" in out["components"]
-    out["total_loss"].backward()
-    assert torch.isfinite(pred.grad).all().item()
-
-
-def test_geometry_coupled_coherence_resyn_term():
-    cfg  = LossConfig(use_coherence_resyn=True, weight_coherence_resyn=1.0)
-    loss = build_loss(n_gaussians=2, loss_cfg=cfg)
-    pred = param_tensor(2, 2, 5, 5, seed=19)
-    gt   = param_tensor(2, 2, 5, 5, seed=20)
-
-    out  = loss(pred, gt)
-
-    assert "coherence_resyn" in out["components"]
-    assert out["total_loss"].item() >= 0.0
-
-
 def test_total_loss_is_weighted_normalised_mean():
     cfg  = LossConfig(use_param_l1=True, weight_param_l1=1.0, use_mse_curve=True, weight_mse_curve=1.0)
     loss = build_loss(n_gaussians=2, loss_cfg=cfg)
@@ -465,7 +435,6 @@ def test_loss_on_real_tomogram_param_target(parameters):
         gaussian_cfg = gaussian_config(n_gaussians),
         loss_cfg     = LossConfig(use_param_l1=True, weight_param_l1=1.0),
         norm_stats   = identity_normalizer(n_channels),
-        geometry_cfg = geometry_config(),
     )
 
     noisy = loss(pred, gt)
@@ -486,155 +455,3 @@ def test_gradient_flows_with_log_all_losses_and_shared_matching():
     assert pred.grad is not None
     assert torch.isfinite(pred.grad).all().item()
     assert pred.grad.abs().sum().item() > 0.0
-
-
-ZERO_FLOOR_MIN = (0.0, 0.0, 2.0, 0.0, 0.0, 2.0)
-ZERO_FLOOR_MAX = (4.0, 80.0, 10.0, 4.0, 80.0, 10.0)
-
-
-def _legacy_cfg(**overrides) -> LossConfig:
-    return LossConfig(use_param_legacy=True, weight_param_legacy=1.0, param_matching=ParamMatching.SORTED_GT, **overrides)
-
-
-def _legacy_zero_floor_cfg() -> LossConfig:
-    return _legacy_cfg(legacy_bounds_min=ZERO_FLOOR_MIN, legacy_bounds_max=ZERO_FLOOR_MAX)
-
-
-def _legacy_pred(slot2_amp_px0: float, slot2_amp_px1: float) -> torch.Tensor:
-    pred = torch.zeros(1, 6, 1, 2)
-
-    pred[0, :, 0, 0] = torch.tensor([1.0, 10.0, 5.0, slot2_amp_px0, 30.0, 6.0])
-    pred[0, :, 0, 1] = torch.tensor([3.0, 20.0, 7.0, slot2_amp_px1, 40.0, 8.0])
-
-    return pred
-
-
-def _legacy_gt(slot2: tuple = (1.0, 44.0, 6.0)) -> torch.Tensor:
-    gt = torch.zeros(1, 6, 1, 2)
-
-    gt[0, 0:3] = torch.tensor([2.0, 16.0, 4.0]).reshape(3, 1, 1)
-    gt[0, 3:6] = torch.tensor(slot2).reshape(3, 1, 1)
-
-    return gt
-
-
-def test_legacy_term_matches_hand_computed_scaled_mse():
-    loss = build_loss(n_gaussians=2, loss_cfg=_legacy_zero_floor_cfg())
-    pred = _legacy_pred(0.0, 2.0)
-    gt   = _legacy_gt()
-
-    out  = loss(pred, gt)
-
-    assert set(out["components"].keys()) == {"param_legacy"}
-    assert out["total_loss"].item() == pytest.approx(0.0425, rel=1e-4)
-
-
-def test_legacy_supervises_gt_slot2_when_prediction_absent():
-    loss = build_loss(n_gaussians=2, loss_cfg=_legacy_zero_floor_cfg())
-
-    out_a = loss(_legacy_pred(0.0, 0.0), _legacy_gt((1.0, 44.0, 6.0)))
-    out_b = loss(_legacy_pred(0.0, 0.0), _legacy_gt((1.5, 60.0, 9.0)))
-
-    assert out_a["total_loss"].item() != pytest.approx(out_b["total_loss"].item(), rel=1e-6)
-
-
-def test_legacy_predicted_absent_slot2_receives_gradient():
-    loss = build_loss(n_gaussians=2, loss_cfg=_legacy_zero_floor_cfg())
-    pred = _legacy_pred(0.0, 0.0).requires_grad_(True)
-
-    loss(pred, _legacy_gt())["total_loss"].backward()
-
-    assert pred.grad[:, 3:6].abs().sum().item() > 0.0
-    assert pred.grad[:, 0:3].abs().sum().item() > 0.0
-    assert torch.isfinite(pred.grad).all().item()
-
-
-def test_legacy_bounds_length_mismatch_raises():
-    loss = build_loss(n_gaussians=2, loss_cfg=_legacy_cfg(legacy_bounds_min=(0.0, 0.0, 2.0), legacy_bounds_max=ZERO_FLOOR_MAX))
-
-    with pytest.raises(ValueError):
-        loss(_legacy_pred(0.0, 2.0), _legacy_gt())
-
-
-def test_legacy_inverted_bounds_raise():
-    loss = build_loss(n_gaussians=2, loss_cfg=_legacy_cfg(legacy_bounds_min=ZERO_FLOOR_MAX, legacy_bounds_max=ZERO_FLOOR_MIN))
-
-    with pytest.raises(ValueError):
-        loss(_legacy_pred(0.0, 2.0), _legacy_gt())
-
-
-def test_legacy_requires_sorted_gt_matching():
-    cfg = LossConfig(use_param_legacy=True, weight_param_legacy=1.0)
-
-    with pytest.raises(ValueError):
-        build_loss(n_gaussians=2, loss_cfg=cfg)
-
-
-def test_legacy_matching_validated_at_curriculum_swap():
-    loss = build_loss(n_gaussians=2)
-
-    with pytest.raises(ValueError):
-        loss.set_curriculum(LossConfig(use_param_legacy=True, weight_param_legacy=1.0))
-
-
-def test_legacy_rejects_non_two_gaussian_runs():
-    loss = build_loss(n_gaussians=3, loss_cfg=_legacy_cfg())
-
-    with pytest.raises(ValueError):
-        loss(param_tensor(2, 3, 4, 4, seed=50), param_tensor(2, 3, 4, 4, seed=51))
-
-
-def test_legacy_monitored_only_on_two_gaussian_runs():
-    two   = build_loss(n_gaussians=2, log_all_losses=True)
-    three = build_loss(n_gaussians=3, log_all_losses=True)
-
-    out_two   = two(param_tensor(2, 2, 5, 5, seed=52), param_tensor(2, 2, 5, 5, seed=53))
-    out_three = three(param_tensor(2, 3, 5, 5, seed=54), param_tensor(2, 3, 5, 5, seed=55))
-
-    assert "param_legacy_denorm" in out_two["monitor"]
-    assert "param_legacy_denorm" not in out_three["monitor"]
-
-
-def test_legacy_loss_is_plain_mse_in_scaled_space():
-    from tools.loss.param_loss import LegacyParamLoss
-
-    cfg  = LossConfig()
-    gen  = torch.Generator().manual_seed(7)
-    mins = cfg.legacy_bounds_min
-    maxs = cfg.legacy_bounds_max
-
-    span      = torch.tensor([m2 - m1 for m1, m2 in zip(mins, maxs)]).reshape(1, 2, 3, 1, 1)
-    lo        = torch.tensor(mins).reshape(1, 2, 3, 1, 1)
-    pred_phys = lo + span * (torch.rand(4, 2, 3, 5, 5, generator=gen) * 1.6 - 0.3)
-    gt_phys   = lo + span * torch.rand(4, 2, 3, 5, 5, generator=gen)
-
-    ours     = LegacyParamLoss.mse(pred_phys, gt_phys, mins, maxs)
-    expected = ((((pred_phys - lo) / span) - ((gt_phys - lo) / span)) ** 2).mean()
-
-    assert ours.item() == pytest.approx(expected.item(), rel=1e-5)
-
-
-def test_legacy_pipeline_keeps_physical_slot_order_under_per_slot_bounds():
-    loss = build_loss(n_gaussians=2, loss_cfg=_legacy_cfg(), norm_stats=spock_normalizer())
-
-    phys = torch.tensor([2.0, 0.0, 2.0, 1.5, 20.0, 5.0]).reshape(1, 6, 1, 1).expand(2, 6, 3, 3).clone()
-    gt   = loss.norm_stats.normalize_output(phys)
-
-    out  = loss(gt.clone(), gt)
-
-    assert out["total_loss"].item() == pytest.approx(0.0, abs=1e-6)
-
-
-def test_legacy_bounds_defaults_match_the_spock_loader():
-    cfg = LossConfig()
-
-    assert cfg.legacy_bounds_min == (1e-05, -15.0, 0.01, 1e-05, 1.0, 1.0)
-    assert cfg.legacy_bounds_max == (10.0, 5.0, 5.0, 10.0, 40.0, 20.0)
-
-
-def test_legacy_term_logs_occupancy():
-    loss = build_loss(n_gaussians=2, loss_cfg=_legacy_cfg())
-    out  = loss(valid_param_tensor(2, 2, 5, 5, seed=56), valid_param_tensor(2, 2, 5, 5, seed=57))
-
-    assert "pred_active_slot1" in out["occupancy"]
-    assert "count/exact_frac"  in out["occupancy"]

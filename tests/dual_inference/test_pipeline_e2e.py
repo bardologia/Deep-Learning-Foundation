@@ -7,7 +7,7 @@ import pytest
 
 from configuration.dataset                     import DatasetConfig, InputConfig, PatchConfig, Representation, SplitRegions
 from configuration.inference                   import InferenceConfig
-from configuration.sar.gaussian_config         import GaussianConfig
+from configuration.dataset.gaussian         import GaussianConfig
 from configuration.training                    import OverfitCheckConfig
 from configuration.training.backbone           import BackboneTrainerConfig
 from models.dual                               import DUAL_CONFIG_REGISTRY
@@ -17,7 +17,6 @@ from pipelines.dual.training.pipeline          import DualTrainingPipeline
 from pipelines.shared.inference.run_classifier import RunClassifier, RunType
 from tools.data.regions                        import CropRegion
 
-from tests.backbone_training._helpers import geometry_config
 
 
 pytestmark = [pytest.mark.real_data, pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
@@ -61,7 +60,6 @@ def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfi
     config.training.epochs               = 1
     config.training.validation_frequency = 1
     config.resources.enabled             = False
-    config.geometry                      = geometry_config()
 
     config.curriculum.complete.use_param_l1    = True
     config.curriculum.complete.weight_param_l1 = 1.0

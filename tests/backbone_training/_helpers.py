@@ -4,8 +4,7 @@ import numpy as np
 import torch
 
 from configuration.normalization           import ChannelStats, ChannelStrategy, NormMethod, OutputClampConfig
-from configuration.sar.gaussian_config     import GaussianConfig
-from configuration.sar.geometry_config     import GeometryConfig
+from configuration.dataset.gaussian        import GaussianConfig
 from configuration.training.backbone       import BackboneTrainerConfig
 from configuration.training.general.loss   import LossConfig
 from pipelines.backbone.dataset.normalizer import Normalizer
@@ -87,11 +86,6 @@ def spock_normalizer() -> Normalizer:
     return normalizer
 
 
-def geometry_config(n_tracks: int = 3) -> GeometryConfig:
-    baselines = tuple(float(10 * i) for i in range(n_tracks))
-    return GeometryConfig(wavelength=0.23, slant_range=5000.0, baselines=baselines)
-
-
 def gaussian_config(n_gaussians: int) -> GaussianConfig:
     return GaussianConfig(n_default_gaussians=n_gaussians, x_min=X_MIN, x_max=X_MAX)
 
@@ -107,7 +101,6 @@ def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all
         gaussian_cfg   = gaussian_config(n_gaussians),
         loss_cfg       = loss_cfg,
         norm_stats     = norm_stats if norm_stats is not None else identity_normalizer(n_channels),
-        geometry_cfg   = geometry_config(),
         log_all_losses = log_all_losses,
         sampler        = sampler,
     )
@@ -151,7 +144,6 @@ def tiny_trainer_config(n_gaussians: int = 2, epochs: int = 1) -> BackboneTraine
     cfg.training.epochs               = epochs
     cfg.training.validation_frequency = 1
     cfg.resources.enabled             = False
-    cfg.geometry                      = geometry_config()
 
     cfg.curriculum.complete.use_param_l1    = True
     cfg.curriculum.complete.weight_param_l1 = 1.0

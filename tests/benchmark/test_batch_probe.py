@@ -8,8 +8,6 @@ import torch
 import pipelines.benchmark.batch_probe as module
 from configuration.benchmark                 import BenchmarkConfig
 from pipelines.backbone.dataset.pipeline     import DatasetPipeline
-from pipelines.backbone.training.loss_terms  import LossComponentCatalog
-from pipelines.backbone.training.pipeline    import TrainingPipeline
 from pipelines.backbone.training.trainer     import Trainer
 from pipelines.benchmark.batch_probe         import MaxBatchProbe
 from tools.monitoring.logger                 import Logger
@@ -258,7 +256,7 @@ def test_build_context_probes_with_the_swept_loss_union(monkeypatch, tmp_path, t
     config.paths.log_base_dir    = tmp_path
     config.paths.dataset_path    = str(test_data_dir)
     config.paths.parameters_path = test_data_dir / "params" / "params_k5_lam0.01_sig4_sigma" / "parameters.npy"
-    config.sweep_loss_components = ["param_l1", "covariance_match"]
+    config.sweep_loss_components = ["param_l1", "moments"]
 
     probe          = _bare_probe(ceiling=1)
     probe.config   = config
@@ -282,25 +280,10 @@ def test_build_context_probes_with_the_swept_loss_union(monkeypatch, tmp_path, t
     trainer_config, dataset_config, dataset, gaussian_cfg = probe._build_context()
 
     assert dataset == "train-split"
-    assert trainer_config.curriculum.complete.use_param_l1         is True
-    assert trainer_config.curriculum.complete.use_covariance_match is True
-    assert trainer_config.curriculum.complete.use_mse_curve        is False
-    assert captured["build_geometry_field"] is True
-    assert len(dataset_config.x_axis)       == 64
-    assert dataset_config.n_gaussians       == gaussian_cfg.n_default_gaussians
+    assert trainer_config.curriculum.complete.use_param_l1  is True
+    assert trainer_config.curriculum.complete.use_moments   is True
+    assert trainer_config.curriculum.complete.use_mse_curve is False
+    assert len(dataset_config.x_axis) == 64
+    assert dataset_config.n_gaussians == gaussian_cfg.n_default_gaussians
 
     probe.logger.close()
-
-
-def test_probe_curriculum_activates_geometry_field_for_physics_sweeps():
-    config = BenchmarkConfig()
-
-    config.sweep_loss_components = ["param_l1"]
-    plain = LossComponentCatalog.combined_curriculum(config.sweep_loss_components, base=config.loss)
-    stub  = type("Cfg", (), {"curriculum": plain})()
-    assert TrainingPipeline.physics_geometry_active(stub) is False
-
-    config.sweep_loss_components = ["param_l1", "covariance_match"]
-    physics = LossComponentCatalog.combined_curriculum(config.sweep_loss_components, base=config.loss)
-    stub    = type("Cfg", (), {"curriculum": physics})()
-    assert TrainingPipeline.physics_geometry_active(stub) is True

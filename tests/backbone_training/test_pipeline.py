@@ -3,12 +3,11 @@ from __future__ import annotations
 import pytest
 
 from configuration.dataset                import DatasetConfig, InputConfig, PatchConfig, Representation, SplitRegions
-from configuration.sar.gaussian_config    import GaussianConfig
+from configuration.dataset.gaussian    import GaussianConfig
 from configuration.training.backbone      import BackboneTrainerConfig
 from pipelines.backbone.training.pipeline import TrainingPipeline
 from tools.data.regions                   import CropRegion
 
-from tests.backbone_training._helpers import geometry_config
 
 
 pytestmark = pytest.mark.usefixtures("force_cpu")
@@ -50,7 +49,6 @@ def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfi
     config.training.epochs               = 1
     config.training.validation_frequency = 1
     config.resources.enabled             = False
-    config.geometry                      = geometry_config()
 
     config.curriculum.complete.use_param_l1    = True
     config.curriculum.complete.weight_param_l1 = 1.0
@@ -81,33 +79,6 @@ def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_
     assert (run_directory / "meta").is_dir()
     assert len(train_losses) == 1
     assert val_losses is not None
-
-
-@pytest.mark.real_data
-@pytest.mark.slow
-def test_training_pipeline_runs_per_pixel_physics_geometry(test_data_dir, params_dir, tmp_path):
-    dataset_config = _dataset_config(test_data_dir, params_dir)
-    trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path)
-
-    trainer_config.curriculum.complete.use_covariance_match    = True
-    trainer_config.curriculum.complete.weight_covariance_match = 1.0
-    trainer_config.geometry.height_axis_convention             = "height"
-
-    pipeline = TrainingPipeline(
-        trainer_config = trainer_config,
-        dataset_config = dataset_config,
-        backbone_name  = "resunet",
-        model_config   = None,
-        seed           = 0,
-        run_name       = "pipeline_physics",
-    )
-
-    train_losses, val_losses, best_val = pipeline.run(probe_config=None)
-
-    assert pipeline.dataset_pipeline.geometry_field is not None
-    assert pipeline.dataset_pipeline.geometry_field.n_tracks == 3
-    assert (pipeline.run_metadata.run_directory / "best_model.pt").exists()
-    assert len(train_losses) == 1
 
 
 @pytest.mark.real_data

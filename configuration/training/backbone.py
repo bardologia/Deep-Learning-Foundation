@@ -22,6 +22,8 @@ def default_curriculum() -> LossCurriculumConfig:
         param_matching           = AblationCatalog.PARAM_MATCH_FULL,
         use_active_normalization = True,
         presence_balance         = False,
+        use_cosine_curve         = True,
+        weight_cosine_curve      = AblationCatalog.COSINE_WEIGHT,
     )
 
     complete = LossConfig(
@@ -132,7 +134,7 @@ class PatchTrialsConfig:
 class PairTrialsConfig:
     base_component   : str         = "param_l1"
     base_weight      : float       = 1.0
-    components       : list[str]   = field(default_factory=lambda: ["cosine_curve", "total_power", "moments"])
+    components       : list[str]   = field(default_factory=lambda: ["cosine_curve", "total_power_relerr", "moments"])
     weights          : list[float] = field(default_factory=lambda: [0.01, 0.05, 0.25])
     include_baseline : bool        = True
 
