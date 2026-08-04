@@ -13,12 +13,10 @@ from models import (
     DUAL_MODEL_REGISTRY,
     IMAGE_AE_MODEL_REGISTRY,
     PROFILE_AE_MODEL_REGISTRY,
-    UNROLLED_MODEL_REGISTRY,
     get_backbone,
     get_dual,
     get_image_autoencoder,
     get_profile_autoencoder,
-    get_unrolled,
 )
 
 BASELINE_PATH = Path(__file__).resolve().parents[1] / "state_dict_baseline.json"
@@ -47,7 +45,6 @@ MODEL_FAMILIES = {
     "backbone"            : (_backbone_cases(),                       get_backbone),
     "profile_autoencoder" : (_plain_cases(PROFILE_AE_MODEL_REGISTRY), get_profile_autoencoder),
     "image_autoencoder"   : (_plain_cases(IMAGE_AE_MODEL_REGISTRY),   get_image_autoencoder),
-    "unrolled"            : (_plain_cases(UNROLLED_MODEL_REGISTRY),   get_unrolled),
     "dual"                : (_plain_cases(DUAL_MODEL_REGISTRY),       get_dual),
 }
 

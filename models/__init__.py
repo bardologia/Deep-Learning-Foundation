@@ -25,13 +25,6 @@ from .image_autoencoder import (
     ImageAutoencoderBase,
     get_image_autoencoder,
 )
-from .unrolled import (
-    UNROLLED_CONFIG_REGISTRY,
-    UNROLLED_MODEL_REGISTRY,
-    GammaNet,
-    TomoOperator,
-    get_unrolled,
-)
 from .dual import (
     DUAL_CONFIG_REGISTRY,
     DUAL_MODEL_REGISTRY,
@@ -44,8 +37,6 @@ def config_registry(training_type: str) -> dict:
         return PROFILE_AE_CONFIG_REGISTRY
     if training_type == "image_autoencoder":
         return IMAGE_AE_CONFIG_REGISTRY
-    if training_type == "unrolled":
-        return UNROLLED_CONFIG_REGISTRY
     if training_type == "dual":
         return DUAL_CONFIG_REGISTRY
     return BACKBONE_CONFIG_REGISTRY
@@ -83,11 +74,6 @@ __all__ = [
     "DilatedConv2dImageAutoencoder",
     "ViTImageAutoencoder",
     "get_image_autoencoder",
-    "UNROLLED_CONFIG_REGISTRY",
-    "UNROLLED_MODEL_REGISTRY",
-    "GammaNet",
-    "TomoOperator",
-    "get_unrolled",
     "DUAL_CONFIG_REGISTRY",
     "DUAL_MODEL_REGISTRY",
     "DualResUNet",

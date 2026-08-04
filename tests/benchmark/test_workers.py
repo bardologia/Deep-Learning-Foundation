@@ -189,8 +189,8 @@ def test_training_entry_configs_carry_the_overfit_check(config):
 def test_training_worker_rejects_unsupported_training_type(config):
     from pipelines.benchmark.workers import TrainingWorker
 
-    config.training_type = "unrolled"
+    config.training_type = "nonexistent_type"
     worker = TrainingWorker(config, "tag")
 
-    with pytest.raises(ValueError, match="unrolled"):
+    with pytest.raises(ValueError, match="nonexistent_type"):
         worker.run("gamma_net")

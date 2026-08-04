@@ -8,7 +8,6 @@ from models                                    import BACKBONE_CONFIG_REGISTRY
 from models.dual                               import DUAL_CONFIG_REGISTRY
 from models.image_autoencoder                  import IMAGE_AE_CONFIG_REGISTRY
 from models.profile_autoencoder                import PROFILE_AE_CONFIG_REGISTRY
-from models.unrolled                           import UNROLLED_CONFIG_REGISTRY
 from tools.data.io                             import FileIO
 from tools.data.regions                        import CropRegion, SplitRegions
 from pipelines.shared.inference.run_classifier import RunArtifacts
@@ -133,16 +132,6 @@ class ImageAutoencoderConfigIO(ConfigIO):
         return asdict(config)
 
 
-class UnrolledModelConfigIO(ModelConfigIO):
-    FILENAME     = RunArtifacts.UNROLLED_CONFIG
-    MISSING_NOUN = "unrolled"
-    UNKNOWN_NOUN = "unrolled model"
-
-    @classmethod
-    def _registry(cls) -> dict:
-        return UNROLLED_CONFIG_REGISTRY
-
-
 class DualModelConfigIO(ModelConfigIO):
     FILENAME     = RunArtifacts.DUAL_CONFIG
     MISSING_NOUN = "dual-input"
@@ -179,7 +168,7 @@ class ProfileDatasetConfigIO:
     def load(meta_directory: Path):
         path = Path(meta_directory) / ProfileDatasetConfigIO.FILENAME
         if not path.is_file():
-            raise FileNotFoundError(f"No {ProfileDatasetConfigIO.FILENAME} under {meta_directory}; this profile-autoencoder run predates dataset-config persistence and is not self-describing. Regenerate it with 'python scripts/backfill_profile_dataset_config.py <run_directory>' (or retrain).")
+            raise FileNotFoundError(f"No {ProfileDatasetConfigIO.FILENAME} under {meta_directory}; this profile-autoencoder run predates dataset-config persistence and is not self-describing. Retrain the run.")
 
         payload = FileIO.load_json(path)
         splits  = payload["split_regions"]

@@ -279,7 +279,6 @@ def test_every_seeded_entry_defaults_to_the_standard_five_seeds():
     from configuration.cross_validation.general import CrossValidationConfig
     from configuration.training.dual            import DualEntryConfig
     from configuration.training.general.run     import standard_seeds
-    from configuration.training.unrolled        import UnrolledEntryConfig
 
     assert standard_seeds() == [0, 1, 2, 3, 4]
 
@@ -289,7 +288,6 @@ def test_every_seeded_entry_defaults_to_the_standard_five_seeds():
         ProfileAeEntryConfig,
         ImageAeEntryConfig,
         DualEntryConfig,
-        UnrolledEntryConfig,
         CrossValidationConfig,
         BenchmarkConfig,
     ]

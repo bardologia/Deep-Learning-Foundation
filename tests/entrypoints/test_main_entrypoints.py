@@ -30,12 +30,10 @@ DEFER_HEAVY_IMPORTS = (
     "train_jepa",
     "train_profile_autoencoder",
     "train_image_autoencoder",
-    "train_unrolled",
     "train_dual",
     "infer_backbone",
     "infer_profile_autoencoder",
     "infer_image_autoencoder",
-    "infer_unrolled",
     "infer_dual",
     "generate_interferograms",
     "generate_tomogram",
@@ -57,7 +55,6 @@ CLI_MODULES = (
     "infer_backbone",
     "infer_profile_autoencoder",
     "infer_image_autoencoder",
-    "infer_unrolled",
     "infer_dual",
     "analyze_preprocessing",
     "analyze_param_extraction",
@@ -81,7 +78,6 @@ ENTRY_CONFIGS = {
     "infer_backbone"                  : ("configuration.inference",          "BackboneInferenceEntryConfig"),
     "infer_profile_autoencoder"       : ("configuration.inference",          "ProfileAeInferenceEntryConfig"),
     "infer_image_autoencoder"         : ("configuration.inference",          "ImageAeInferenceEntryConfig"),
-    "infer_unrolled"                  : ("configuration.inference",          "UnrolledInferenceEntryConfig"),
     "infer_dual"                      : ("configuration.inference",          "DualInferenceEntryConfig"),
     "pre_process"                     : ("configuration.sar.processing_config",        "PreProcessEntryConfig"),
     "extract_params"                  : ("configuration.param_extraction", "ExtractParamsEntryConfig"),
@@ -183,7 +179,7 @@ def test_seed_sweep_entries_hand_their_script_to_the_fanout(name, main_on_path, 
     assert captured["entry_script"] == _script_path(name)
 
 
-@pytest.mark.parametrize("name", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder", "train_unrolled", "train_dual"))
+@pytest.mark.parametrize("name", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder", "train_dual"))
 def test_train_main_defers_heavy_imports(name, tmp_path):
     script = _script_path(name)
     code   = f"import sys; sys.path.insert(0, {str(script.parent)!r}); import {name}; print(sorted(module for module in sys.modules if module.split('.')[0] in {{'pipelines', 'models', 'torch'}}))"

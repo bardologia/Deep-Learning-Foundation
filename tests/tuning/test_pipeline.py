@@ -234,10 +234,10 @@ def test_tune_model_skips_dispatch_when_target_reached(tmp_path, monkeypatch):
 
 def test_schedule_rejects_unsupported_training_type(tmp_path):
     cfg               = _make_config(tmp_path)
-    cfg.training_type = "unrolled"
+    cfg.training_type = "nonexistent_type"
     orch              = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
 
-    with pytest.raises(SystemExit, match="unrolled"):
+    with pytest.raises(SystemExit, match="nonexistent_type"):
         orch.schedule()
 
 
@@ -245,10 +245,10 @@ def test_worker_rejects_unsupported_training_type(tmp_path):
     from pipelines.tuning.workers import TuningWorker
 
     cfg               = _make_config(tmp_path)
-    cfg.training_type = "unrolled"
+    cfg.training_type = "nonexistent_type"
     worker            = TuningWorker("testtag", cfg)
 
-    with pytest.raises(ValueError, match="unrolled"):
+    with pytest.raises(ValueError, match="nonexistent_type"):
         worker._build_tuner("gamma_net", cfg.tuning, StubLogger())
 
 
