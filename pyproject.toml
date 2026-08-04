@@ -3,7 +3,7 @@ requires      = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name            = "dlr-tomosar"
+name            = "ml-template"
 version         = "0.1.0"
 description     = "Deep-learning Gaussian-mixture parameter estimation for SAR tomography"
 readme          = "README.md"

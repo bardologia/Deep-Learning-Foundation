@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - ConvNeXtUNet
   - ConvNeXt U-Net
@@ -116,4 +116,4 @@ This model is a deliberate hybrid: the **encoder** is judged strictly against th
 - [[ResUNet]] — Classic residual counterpart
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — ConvNeXtUNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

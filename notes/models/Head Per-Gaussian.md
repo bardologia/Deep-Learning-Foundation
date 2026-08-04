@@ -3,9 +3,9 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
-  - tomosar/head
+  - ml-template
+  - ml-template/model
+  - ml-template/head
 aliases:
   - PerGaussianHead
 family: output-head

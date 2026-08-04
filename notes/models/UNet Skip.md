@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - UNetSkip
 family: resunet
@@ -139,4 +139,4 @@ Consequently this architecture cannot be checked against one paper. The residual
 - [[UNet]] — Base topology and the source of the `MaxPool` downsampling
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — UNetSkipConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

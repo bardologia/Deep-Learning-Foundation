@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - ResUNetBackbone
 family: resunet
@@ -180,4 +180,4 @@ The intra-unit mechanics — full pre-activation BN-ReLU-Conv, stride-2 on the f
 - [[UNet]] — Base architecture
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — ResUNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

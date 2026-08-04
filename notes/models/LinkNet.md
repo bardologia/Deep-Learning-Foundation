@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - LinkNet
   - additive-skip encoder-decoder
@@ -135,4 +135,4 @@ The stem (`LinkNet.py:124-135`) is a stride-1 convolution with no max-pool, so i
 - [[UNet]] — Concatenative skip alternative
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — LinkNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

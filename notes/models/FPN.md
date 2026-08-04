@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - FPN
   - FPNNet
@@ -138,4 +138,4 @@ The semantic segmentation branch follows the *depth-scaled* upsampling decoder o
 - [[LinkNet]] — Another light-decoder design (additive skips)
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — FPNNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

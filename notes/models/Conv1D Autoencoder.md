@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - Conv1dAutoencoder
   - conv1d_ae
@@ -15,7 +15,7 @@ summary: 1D convolutional profile autoencoder exploiting local smoothness along 
 
 # Conv1D Autoencoder
 
-`Conv1dAutoencoder` (`models/autoencoder/conv1d.py`) is a [[Model Zoo|profile autoencoder]] that treats the elevation profile as a 1D signal and applies convolutions along the range axis, exploiting the local smoothness of the fitted profile. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
+`Conv1dAutoencoder` (`models/autoencoder/conv1d.py`) is a [[Model Zoo|profile autoencoder]] that treats the z profile as a 1D signal and applies convolutions along the range axis, exploiting the local smoothness of the fitted profile. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
 
 ---
 
@@ -68,4 +68,4 @@ Training minimizes a reconstruction loss between $\mathbf{p}$ and $\hat{\mathbf{
 
 ## When to use
 
-When the local structure of the elevation profile carries the signal — adjacent range bins are correlated, and convolution shares parameters across positions while a pure [[MLP Autoencoder]] does not. Heavier than the MLP but lighter than the attention-based [[Transformer1D Autoencoder]].
+When the local structure of the z profile carries the signal — adjacent range bins are correlated, and convolution shares parameters across positions while a pure [[MLP Autoencoder]] does not. Heavier than the MLP but lighter than the attention-based [[Transformer1D Autoencoder]].

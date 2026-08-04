@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - TransUNet
   - ViT-CNN hybrid U-Net
@@ -162,4 +162,4 @@ The full `TransUNetConfig` (CNN widths, bottleneck factor, transformer layer/hea
 - [[UNETR]] — Pure transformer encoder
 - [[UNet]] — CNN-only baseline
 - [[Configuration Layer]] — TransUNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

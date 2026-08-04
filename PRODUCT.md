@@ -6,11 +6,11 @@ product
 
 ## Users
 
-A single ML researcher (and occasional colleagues) operating a shared multi-GPU Linux server for SAR tomography deep learning. The web UI is glanced at on a side monitor while long trainings run, and consulted closely when something goes wrong (GPU intrusion, RAM pressure, contention with other users).
+A single ML researcher (and occasional colleagues) operating a shared multi-GPU Linux server for dense per-pixel regression deep learning. The web UI is glanced at on a side monitor while long trainings run, and consulted closely when something goes wrong (GPU intrusion, RAM pressure, contention with other users).
 
 ## Product Purpose
 
-Local control room for the DLR-TomoSAR codebase: launch and monitor training/inference runs, inspect configs, browse results and tomograms, and watch live server telemetry (GPU/CPU/RAM/disk/processes) with watchdog and neighbour-impact guards.
+Local control room for the ML-Template codebase: launch and monitor training/inference runs, inspect configs, browse results and cubes, and watch live server telemetry (GPU/CPU/RAM/disk/processes) with watchdog and neighbour-impact guards.
 
 ## Brand Personality
 

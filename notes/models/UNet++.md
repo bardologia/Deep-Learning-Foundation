@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - UNetPlusPlus
   - Nested UNet
@@ -142,7 +142,7 @@ The concatenation channel counts ($j\cdot F_i + F_{i+1}$, where $F_4 = F_3\cdot 
 ### Accepted adaptations
 
 - **Conv block $\mathcal{H}$ (#3).** The paper defines $\mathcal{H}(\cdot)$ loosely as "a convolution operation followed by an activation function." The implementation uses the standard two-conv block with normalisation: Conv–Norm–Act–Conv–Norm–Act (`models/blocks.py:124-146`), matching the authors' own reference implementation and Fig. 1b (which shows each node as one dense conv block on the pathway). BatchNorm and the optional `Dropout2d` are modernisations not present in the 2018 text but consistent with its intent. Justified.
-- **Output head (#7).** The paper appends a $1\times1$ conv followed by a **sigmoid** to each target node for binary segmentation (§4). The TomoSAR task is regression of Gaussian-mixture parameters ($C_{\text{out}}=3K$), so the sigmoid is correctly dropped and a bare $1\times1$ conv is used (`:57-61, 103`). Domain-justified adaptation.
+- **Output head (#7).** The paper appends a $1\times1$ conv followed by a **sigmoid** to each target node for binary segmentation (§4). The ML Template task is regression of Gaussian-mixture parameters ($C_{\text{out}}=3K$), so the sigmoid is correctly dropped and a bare $1\times1$ conv is used (`:57-61, 103`). Domain-justified adaptation.
 - **Bottleneck width (#10).** Fig. 1a / Table 2 use a strict power-of-two pyramid ($F_4 = 2 F_3$). The code parameterises this as $F_4 = F_3\cdot r$ with `bottleneck_factor` $r$ (default $2$), recovering the paper's ratio at the default while remaining configurable. Justified.
 
 ### Deviations
@@ -160,4 +160,4 @@ The concatenation channel counts ($j\cdot F_i + F_{i+1}$, where $F_4 = F_3\cdot 
 - [[UNet]] — Base architecture
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — UNetPlusPlusConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - DeepLabV3+
   - DeepLabV3Plus
@@ -77,9 +77,9 @@ The ASPP output is upsampled ×4 to the stride-2 resolution, concatenated with t
 
 ## Design Rationale
 
-**Context without resolution loss.** Each tomographic pixel's Gaussian parameters depend on neighbourhood context (building facades and layover patterns extend over many pixels), but the output must stay dense. Dilated convolutions grow the receptive field without further downsampling, which is the regime where U-Net decoders spend most of their capacity recovering resolution.
+**Context without resolution loss.** Each cube pixel's Gaussian parameters depend on neighbourhood context (building facades and layover patterns extend over many pixels), but the output must stay dense. Dilated convolutions grow the receptive field without further downsampling, which is the regime where U-Net decoders spend most of their capacity recovering resolution.
 
-> ASPP is the only architecture in the zoo that aggregates context at multiple explicit dilation rates simultaneously; if scatterer structure has a characteristic spatial scale, one of the parallel branches can lock onto it directly.
+> ASPP is the only architecture in the zoo that aggregates context at multiple explicit dilation rates simultaneously; if component structure has a characteristic spatial scale, one of the parallel branches can lock onto it directly.
 
 ---
 
@@ -95,7 +95,7 @@ See [[Configuration Layer]] → `DeepLabV3PlusConfig`. The param groups expose a
 
 **Citation.** Chen, L.-C., Zhu, Y., Papandreou, G., Schroff, F., & Adam, H. (2018). *Encoder-Decoder with Atrous Separable Convolution for Semantic Image Segmentation*. arXiv:1802.02611v3. Architecture in Sections 3.1–3.2, Figs. 1–2 and 4; decoder ablations in Section 4.1 (Tables 1–2). [[DeepLabV3Plus_Chen2018_1802.02611.pdf|PDF]]
 
-This implementation adapts the macro-structure of DeepLabV3+ (encoder + ASPP + low-level-fusion decoder) to the dense TomoSAR regression task. The skeleton — parallel ASPP, reduce-then-concat decoder, bilinear recovery — is faithfully reproduced. Two choices distinguish the backbone from the paper's headline configuration, but on review both are **justified adaptations rather than open deviations**. First, the code reaches $\mathrm{OS}=8$ with a shallow residual stack and `MaxPool` placement, with no dilation anywhere in the backbone; this is conformant, because the paper itself trains its encoder at $\mathrm{OS}=32$ *without* any atrous convolution and only introduces backbone dilation as an optional inference-time densification (Sec. 4.1), so a non-atrous striding backbone is an in-paper configuration, not a departure. Second, the code uses regular (non-separable) convolutions throughout, whereas the paper's $\mathrm{SC}$ rows (Table 5) apply depthwise-separable convolution; the paper presents separable convolution as an *efficiency option* (33–41% Multiply-Add reduction at similar accuracy), not as a property the architecture requires, so dense convolutions are a justified parameterisation choice for the small SAR patches. The ASPP, where the paper does mandate dilation for multi-scale context, retains its atrous branches faithfully.
+This implementation adapts the macro-structure of DeepLabV3+ (encoder + ASPP + low-level-fusion decoder) to the dense ML Template regression task. The skeleton — parallel ASPP, reduce-then-concat decoder, bilinear recovery — is faithfully reproduced. Two choices distinguish the backbone from the paper's headline configuration, but on review both are **justified adaptations rather than open deviations**. First, the code reaches $\mathrm{OS}=8$ with a shallow residual stack and `MaxPool` placement, with no dilation anywhere in the backbone; this is conformant, because the paper itself trains its encoder at $\mathrm{OS}=32$ *without* any atrous convolution and only introduces backbone dilation as an optional inference-time densification (Sec. 4.1), so a non-atrous striding backbone is an in-paper configuration, not a departure. Second, the code uses regular (non-separable) convolutions throughout, whereas the paper's $\mathrm{SC}$ rows (Table 5) apply depthwise-separable convolution; the paper presents separable convolution as an *efficiency option* (33–41% Multiply-Add reduction at similar accuracy), not as a property the architecture requires, so dense convolutions are a justified parameterisation choice for the small SAR patches. The ASPP, where the paper does mandate dilation for multi-scale context, retains its atrous branches faithfully.
 
 ### Verdict table
 
@@ -134,4 +134,4 @@ The normalization is built as `build_norm2d("group", ...)` rather than inheritin
 - [[ResUNet]] — Source of the residual block
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — DeepLabV3PlusConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

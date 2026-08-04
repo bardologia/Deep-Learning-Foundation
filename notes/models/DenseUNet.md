@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - DenseUNet
   - FC-DenseNet
@@ -118,4 +118,4 @@ Two non-structural adaptations: (i) the transposed convolution uses a $2\times2$
 - [[ResUNet]] — Per-block residual alternative
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — DenseUNetConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

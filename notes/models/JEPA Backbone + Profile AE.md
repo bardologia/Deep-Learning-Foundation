@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - JEPA Profile AE coupling
 family: jepa
@@ -22,7 +22,7 @@ This is one configuration of the unified JEPA pipeline (`python -m main.training
 ## Data flow
 
 - The backbone receives the raw input stack and its output head is resized to emit the profile-autoencoder embedding dimension, producing a dense per-pixel prediction `z_hat` of shape `D x P x P`.
-- The supervision target is built on the fly: the ground-truth Gaussian parameters are denormalised and reconstructed into an elevation profile, normalised with the profile-autoencoder's own profile normaliser, and passed through the profile-autoencoder encoder to give the target embedding `z*`.
+- The supervision target is built on the fly: the ground-truth Gaussian parameters are denormalised and reconstructed into an z profile, normalised with the profile-autoencoder's own profile normaliser, and passed through the profile-autoencoder encoder to give the target embedding `z*`.
 - An auxiliary curve-reconstruction branch decodes `z_hat` through the profile-autoencoder decoder back to a profile and compares it with the reconstructed ground-truth profile.
 
 ## Objective

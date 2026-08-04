@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - LocalCNN
   - Shallow CNN Baseline
@@ -77,4 +77,4 @@ Not derived from a reference paper: this is a purpose-built scientific control c
 - [[UNet]] — Source of the shared ConvBlock
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — LocalCNNConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index

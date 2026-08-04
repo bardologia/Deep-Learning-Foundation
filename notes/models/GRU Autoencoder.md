@@ -3,19 +3,19 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - GruAutoencoder
   - gru_ae
 family: profile-autoencoder
 registry_key: gru_ae
-summary: Recurrent (GRU) profile autoencoder modelling the elevation profile as an ordered sequence; most compact model.
+summary: Recurrent (GRU) profile autoencoder modelling the z profile as an ordered sequence; most compact model.
 ---
 
 # GRU Autoencoder
 
-`GruAutoencoder` (`models/profile_autoencoder/gru.py`) is a [[Model Zoo|profile autoencoder]] that reads the elevation profile as a sequence with a gated recurrent unit, modelling ordering along the range axis explicitly. It is the most compact model in the profile zoo. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
+`GruAutoencoder` (`models/profile_autoencoder/gru.py`) is a [[Model Zoo|profile autoencoder]] that reads the z profile as a sequence with a gated recurrent unit, modelling ordering along the range axis explicitly. It is the most compact model in the profile zoo. Like the other profile autoencoders it defines the output latent space later targeted by [[JEPA Profile-Embedding|JEPA]].
 
 ---
 

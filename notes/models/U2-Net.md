@@ -3,8 +3,8 @@ type: model
 domain: model
 status: current
 tags:
-  - tomosar
-  - tomosar/model
+  - ml-template
+  - ml-template/model
 aliases:
   - U2-Net
   - U2NetLite
@@ -133,4 +133,4 @@ None of structural or minor severity. All non-MATCH dimensions are accepted Lite
 - [[MultiResUNet]] / [[DeepLabV3+]] — Alternative multi-scale mechanisms
 - [[Model Zoo]] — Architecture comparison
 - [[Configuration Layer]] — U2NetLiteConfig
-- [[DLR-TomoSAR Index]] — Master index
+- [[ML-Template Index]] — Master index
