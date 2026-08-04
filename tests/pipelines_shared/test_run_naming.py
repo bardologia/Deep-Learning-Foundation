@@ -16,20 +16,14 @@ def _aug(**probabilities) -> AugmentationConfig:
 
 
 def test_loss_tag_lists_enabled_terms_with_weights_param_first():
-    loss = _loss(use_param_l1=True, weight_param_l1=1.0, use_cosine_curve=True, weight_cosine_curve=0.05, use_covariance_match=True, weight_covariance_match=0.05)
+    loss = _loss(use_param_l1=True, weight_param_l1=1.0, use_cosine_curve=True, weight_cosine_curve=0.05, use_moments=True, weight_moments=0.05)
 
-    assert RunNaming.loss_tag(loss) == "param_l1_1-covariance_match_0.05-cosine_curve_0.05"
+    assert RunNaming.loss_tag(loss) == "param_l1_1-moments_0.05-cosine_curve_0.05"
 
 
 def test_loss_tag_rejects_empty_loss():
     with pytest.raises(ValueError):
         RunNaming.loss_tag(_loss())
-
-
-def test_loss_tag_names_the_legacy_term():
-    loss = _loss(use_param_legacy=True, weight_param_legacy=1.0, param_matching=ParamMatching.SORTED_GT)
-
-    assert RunNaming.loss_tag(loss) == "param_legacy_1"
 
 
 def test_matching_tag_names_the_strategy():
@@ -65,13 +59,13 @@ def test_tag_orders_model_head_matching_gaussians_augmentation_presence_loss():
 
 def test_training_tag_names_the_final_stage():
     warmup   = _loss(use_param_l1=True, weight_param_l1=1.0)
-    complete = _loss(use_param_l1=True, weight_param_l1=1.0, use_covariance_match=True, weight_covariance_match=0.05)
+    complete = _loss(use_param_l1=True, weight_param_l1=1.0, use_moments=True, weight_moments=0.05)
 
     enabled  = LossCurriculumConfig(enabled=True,  warmup=warmup, complete=complete)
     disabled = LossCurriculumConfig(enabled=False, warmup=warmup, complete=complete)
 
-    assert RunNaming.training_tag("unet", "conv", enabled, 3, _aug())  == "unet-conv-hungarian-K_3-hv-none-param_l1_1-covariance_match_0.05"
-    assert RunNaming.training_tag("unet", "conv", disabled, 3, _aug()) == "unet-conv-hungarian-K_3-hv-none-param_l1_1-covariance_match_0.05"
+    assert RunNaming.training_tag("unet", "conv", enabled, 3, _aug())  == "unet-conv-hungarian-K_3-hv-none-param_l1_1-moments_0.05"
+    assert RunNaming.training_tag("unet", "conv", disabled, 3, _aug()) == "unet-conv-hungarian-K_3-hv-none-param_l1_1-moments_0.05"
 
 
 def test_benchmark_unit_keeps_the_component_separator():

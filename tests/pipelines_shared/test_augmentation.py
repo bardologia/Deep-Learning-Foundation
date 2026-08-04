@@ -76,42 +76,6 @@ def test_spatial_deterministic_for_fixed_seed(tmp_path):
     np.testing.assert_array_equal(out1[1], out2[1])
 
 
-def test_spatial_flip_applies_to_geometry(tmp_path):
-    aug = _spatial(tmp_path, p_flip_h=1.0, p_flip_v=0.0, p_rot90=0.0, p_noise=0.0)
-    x   = np.random.default_rng(0).standard_normal((4, 8, 8)).astype(np.float32)
-    y   = np.random.default_rng(1).standard_normal((3, 8, 8)).astype(np.float32)
-    g   = np.random.default_rng(2).standard_normal((5, 8, 8)).astype(np.float32)
-
-    xa, ya, ga = aug(x, y, g)
-
-    np.testing.assert_array_equal(xa, x[..., :, ::-1])
-    np.testing.assert_array_equal(ga, g[..., :, ::-1])
-
-
-def test_spatial_rot90_skipped_when_geometry_present(tmp_path):
-    aug = _spatial(tmp_path, p_flip_h=0.0, p_flip_v=0.0, p_rot90=1.0, p_noise=0.0)
-    x   = np.random.default_rng(0).standard_normal((4, 8, 8)).astype(np.float32)
-    y   = np.random.default_rng(1).standard_normal((3, 8, 8)).astype(np.float32)
-    g   = np.random.default_rng(2).standard_normal((5, 8, 8)).astype(np.float32)
-
-    xa, ya, ga = aug(x, y, g)
-
-    np.testing.assert_array_equal(xa, x)
-    np.testing.assert_array_equal(ga, g)
-
-
-def test_spatial_geometry_returns_three_tuple(tmp_path):
-    aug = _spatial(tmp_path, p_flip_h=0.5, p_flip_v=0.5, p_rot90=0.0, p_noise=0.0)
-    x   = np.random.default_rng(0).standard_normal((4, 8, 8)).astype(np.float32)
-    y   = np.random.default_rng(1).standard_normal((3, 8, 8)).astype(np.float32)
-    g   = np.random.default_rng(2).standard_normal((5, 8, 8)).astype(np.float32)
-
-    out = aug(x, y, g)
-
-    assert len(out) == 3
-    assert out[2].shape == g.shape
-
-
 def test_spatial_noise_zero_probability_is_identity(tmp_path):
     aug = _spatial(tmp_path, p_noise=0.0)
     x   = np.random.default_rng(0).standard_normal((4, 8, 8)).astype(np.float32)

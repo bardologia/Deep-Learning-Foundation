@@ -73,18 +73,17 @@ def test_no_covariates_raises():
         StratifiedErrors(_run(), _result(np.ones((H, W)))).covariates()
 
 
-def test_amplitude_dem_and_coherence_covariates_appear():
+def test_amplitude_and_dem_covariates_appear():
     rng    = np.random.default_rng(1)
     inputs = rng.normal(size=(3, H, W)) + 1j * rng.normal(size=(3, H, W))
     dem    = np.cumsum(rng.uniform(0.0, 1.0, size=(H, W)), axis=0)
     err    = rng.uniform(0.1, 1.0, size=(H, W))
 
-    strat      = StratifiedErrors(_run(complex_inputs=inputs, dem=dem, n_secondaries=2), _result(err), coherence_window=(3, 3))
+    strat      = StratifiedErrors(_run(complex_inputs=inputs, dem=dem, n_secondaries=2), _result(err))
     covariates = strat.covariates()
 
-    assert set(covariates) == {"primary_amplitude", "coherence", "dem_slope"}
-    assert covariates["coherence"][0].shape == (H, W)
-    assert float(covariates["coherence"][0].max()) <= 1.0
+    assert set(covariates) == {"primary_amplitude", "dem_slope"}
+    assert covariates["primary_amplitude"][0].shape == (H, W)
 
 
 def test_spearman_of_anticorrelated_fields_is_negative():

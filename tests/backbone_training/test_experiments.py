@@ -3,9 +3,8 @@ from __future__ import annotations
 import pytest
 
 from configuration.normalization             import Presets
-from configuration.sar.geometry_config       import GeometryConfig
 from configuration.training                  import BackboneEntryConfig, CurriculumInheritance, default_curriculum
-from configuration.training.backbone         import HeadMatchingTrialsConfig, NormalizationTrialsConfig, PairTrialsConfig, PatchTrialsConfig, PhysicsTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig, _default_augmentation_trials, _default_context_trials, _default_input_trials, _default_presence_trials
+from configuration.training.backbone         import HeadMatchingTrialsConfig, NormalizationTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig, _default_augmentation_trials, _default_context_trials, _default_input_trials, _default_presence_trials
 from configuration.training.general.ablation import AblationCatalog
 from pipelines.backbone.training.experiments import (
     AblationTrialPlanner,
@@ -17,7 +16,6 @@ from pipelines.backbone.training.experiments import (
     NormalizationTrialPlanner,
     PatchSizeTrialPlanner,
     PairLossTrialPlanner,
-    PhysicsLossTrialPlanner,
     ReachTrialPlanner,
     SecondaryTrialPlanner,
     SlotPresenceTrialPlanner,
@@ -595,140 +593,8 @@ def test_input_planner_rejects_empty_trials():
         InputTrialPlanner({}, CANDIDATES)
 
 
-def test_physics_planner_crosses_components_and_weights():
-    trials  = PhysicsTrialsConfig(components=["coherence_resyn", "capon_cycle"], weights=[0.01, 0.05], include_baseline=False)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    plans = planner.plan()
-    names = [name for name, _ in plans]
-
-    assert len(plans) == 4
-    assert names == [
-        "phys-coherence_resyn-w0.01",
-        "phys-coherence_resyn-w0.05",
-        "phys-capon_cycle-w0.01",
-        "phys-capon_cycle-w0.05",
-    ]
-    assert planner.summary()["Total runs"] == 4
-
-    overrides = dict(plans)["phys-capon_cycle-w0.05"]
-    assert overrides["curriculum.enabled"]                     is True
-    assert overrides["curriculum.complete.use_capon_cycle"]    is True
-    assert overrides["curriculum.complete.weight_capon_cycle"] == 0.05
-
-
-def test_physics_planner_neutralizes_untested_terms():
-    trials  = PhysicsTrialsConfig(components=["coherence_resyn"], weights=[0.1], include_baseline=False)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    overrides = planner.plan()[0][1]
-
-    assert overrides["curriculum.inherit"] is False
-
-    for component in PhysicsLossTrialPlanner.COMPONENTS:
-        assert overrides[f"curriculum.warmup.use_{component}"]    is False
-        assert overrides[f"curriculum.warmup.weight_{component}"] == 0.0
-
-    for component in set(PhysicsLossTrialPlanner.COMPONENTS) - {"coherence_resyn"}:
-        assert overrides[f"curriculum.complete.use_{component}"]    is False
-        assert overrides[f"curriculum.complete.weight_{component}"] == 0.0
-
-
-def test_physics_planner_prepends_baseline_run():
-    trials  = PhysicsTrialsConfig(components=["total_power"], weights=[0.01], include_baseline=True)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    plans = planner.plan()
-
-    assert [name for name, _ in plans] == [
-        "phys-baseline",
-        "phys-total_power-w0.01",
-    ]
-    assert planner.summary()["Total runs"] == 2
-
-    baseline = dict(plans)["phys-baseline"]
-    assert baseline["curriculum.enabled"] is True
-    assert not any(key.startswith("curriculum.complete.use_") and value is True for key, value in baseline.items())
-
-
-def test_physics_planner_default_config_covers_recommended_terms():
-    planner = PhysicsLossTrialPlanner(PhysicsTrialsConfig())
-
-    plans = planner.plan()
-
-    assert len(plans) == 7
-    assert "phys-baseline" in dict(plans)
-    assert f"phys-coherence_resyn-w{AblationCatalog.PHYSICS_WEIGHT:g}"  in dict(plans)
-    assert f"phys-covariance_match-w{AblationCatalog.PHYSICS_WEIGHT:g}" in dict(plans)
-
-
-def test_physics_planner_rejects_empty_components():
-    with pytest.raises(ValueError, match="at least one"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=[], weights=[0.1]))
-
-
-def test_physics_planner_rejects_unknown_component():
-    with pytest.raises(ValueError, match="smoothness_tv"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["smoothness_tv"], weights=[0.1]))
-
-
-def test_physics_planner_rejects_duplicate_components():
-    with pytest.raises(ValueError, match="unique"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments", "moments"], weights=[0.1]))
-
-
-def test_physics_planner_rejects_empty_weights():
-    with pytest.raises(ValueError, match="weight"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments"], weights=[]))
-
-
-def test_physics_planner_rejects_non_positive_weights():
-    with pytest.raises(ValueError, match="positive"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments"], weights=[0.1, 0.0]))
-
-
-def test_physics_planner_rejects_duplicate_weights():
-    with pytest.raises(ValueError, match="unique"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments"], weights=[0.1, 0.1]))
-
-
-def test_physics_plan_round_trips_through_config_cli():
-    trials  = PhysicsTrialsConfig(components=["coherence_resyn", "covariance_match"], weights=[0.05], include_baseline=True)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    def _apply(overrides: dict):
-        cli   = ConfigCli(BackboneEntryConfig())
-        trial = cli.apply(ConfigCli.to_argv(overrides) + ["--trial"])
-        CurriculumInheritance(trial.curriculum, default_curriculum(), cli.overrides).apply()
-        return trial
-
-    plans = dict(planner.plan())
-
-    baseline = _apply({**plans["phys-baseline"], "run_name": "phys-baseline", "logdir": "/tmp/phys"})
-    assert baseline.curriculum.enabled                       is True
-    assert baseline.curriculum.complete.use_coherence_resyn  is False
-    assert baseline.curriculum.complete.use_covariance_match is False
-
-    tested = _apply({**plans["phys-coherence_resyn-w0.05"], "run_name": "phys-coherence_resyn-w0.05", "logdir": "/tmp/phys"})
-    assert tested.curriculum.enabled                         is True
-    assert tested.curriculum.complete.use_coherence_resyn    is True
-    assert tested.curriculum.complete.weight_coherence_resyn == 0.05
-    assert tested.curriculum.complete.use_covariance_match   is False
-    assert tested.curriculum.warmup.use_coherence_resyn      is False
-    assert tested.curriculum.warmup.weight_coherence_resyn   == 0.0
-
-
-def test_physics_planner_paths_are_entry_config_leaves():
-    planner = PhysicsLossTrialPlanner(PhysicsTrialsConfig())
-    leaves  = {path for path, _ in ConfigCli._leaves(BackboneEntryConfig())}
-
-    unknown = [path for _, overrides in planner.plan() for path in overrides if path not in leaves]
-
-    assert unknown == []
-
-
 def test_pair_planner_crosses_components_and_weights():
-    trials  = PairTrialsConfig(base_component="param_l1", components=["cosine_curve", "coherence_resyn"], weights=[0.01, 0.05], include_baseline=False)
+    trials  = PairTrialsConfig(base_component="param_l1", components=["cosine_curve", "moments"], weights=[0.01, 0.05], include_baseline=False)
     planner = PairLossTrialPlanner(trials)
 
     plans = planner.plan()
@@ -738,8 +604,8 @@ def test_pair_planner_crosses_components_and_weights():
     assert names == [
         "pair-cosine_curve-w0.01",
         "pair-cosine_curve-w0.05",
-        "pair-coherence_resyn-w0.01",
-        "pair-coherence_resyn-w0.05",
+        "pair-moments-w0.01",
+        "pair-moments-w0.05",
     ]
     assert planner.summary()["Total runs"] == 4
     assert planner.summary()["Base"]       == "param_l1 @ 1"
@@ -754,17 +620,17 @@ def test_pair_planner_crosses_components_and_weights():
 
 
 def test_pair_planner_neutralizes_every_other_term():
-    trials  = PairTrialsConfig(base_component="param_l1", components=["covariance_match"], weights=[0.1], include_baseline=False)
+    trials  = PairTrialsConfig(base_component="param_l1", components=["moments"], weights=[0.1], include_baseline=False)
     planner = PairLossTrialPlanner(trials)
 
     overrides = planner.plan()[0][1]
     enabled   = [path for path, value in overrides.items() if path.startswith("curriculum.complete.use_") and value is True]
 
-    assert sorted(enabled) == ["curriculum.complete.use_covariance_match", "curriculum.complete.use_param_l1"]
+    assert sorted(enabled) == ["curriculum.complete.use_moments", "curriculum.complete.use_param_l1"]
     assert overrides["curriculum.complete.use_cosine_curve"]       is False
     assert overrides["curriculum.complete.weight_cosine_curve"]    == 0.0
-    assert overrides["curriculum.complete.use_coherence_resyn"]    is False
-    assert overrides["curriculum.complete.weight_coherence_resyn"] == 0.0
+    assert overrides["curriculum.complete.use_total_power"]        is False
+    assert overrides["curriculum.complete.weight_total_power"]     == 0.0
 
 
 def test_pair_planner_uses_catalog_flags_for_irregular_names():
@@ -800,7 +666,7 @@ def test_pair_planner_default_config_targets_param_l1_partners():
 
     assert len(plans) == 10
     assert "pair-baseline" in dict(plans)
-    assert f"pair-coherence_resyn-w{AblationCatalog.PHYSICS_WEIGHT:g}" in dict(plans)
+    assert "pair-moments-w0.05" in dict(plans)
 
 
 def test_pair_planner_rejects_unknown_base_component():
@@ -860,7 +726,7 @@ def test_pair_plan_round_trips_through_config_cli():
     assert baseline.curriculum.enabled                           is False
     assert baseline.curriculum.initial_stage.use_param_l1        is True
     assert baseline.curriculum.initial_stage.use_cosine_curve    is False
-    assert baseline.curriculum.initial_stage.use_coherence_resyn is False
+    assert baseline.curriculum.initial_stage.use_moments         is False
 
     tested = _apply({**plans["pair-cosine_curve-w0.05"], "run_name": "pair-cosine_curve-w0.05", "logdir": "/tmp/pair"})
     assert tested.curriculum.enabled                            is False
@@ -868,7 +734,7 @@ def test_pair_plan_round_trips_through_config_cli():
     assert tested.curriculum.initial_stage.weight_param_l1      == 1.0
     assert tested.curriculum.initial_stage.use_cosine_curve     is True
     assert tested.curriculum.initial_stage.weight_cosine_curve  == 0.05
-    assert tested.curriculum.initial_stage.use_covariance_match is False
+    assert tested.curriculum.initial_stage.use_moments          is False
 
 
 def test_pair_planner_paths_are_entry_config_leaves():
@@ -958,7 +824,7 @@ def test_ablation_planner_rejects_duplicate_labels():
 def test_ablation_planner_allows_complete_terms_with_disabled_curriculum():
     features = [
         {"label": "curriculum", "enable": {"curriculum.enabled": True},                          "degrade": {"curriculum.enabled": False}},
-        {"label": "covariance", "enable": {"curriculum.complete.use_covariance_match": True},    "degrade": {"curriculum.complete.use_covariance_match": False}},
+        {"label": "moments",    "enable": {"curriculum.complete.use_moments": True},             "degrade": {"curriculum.complete.use_moments": False}},
     ]
 
     planner = AblationTrialPlanner(features, include_full=True)
@@ -968,7 +834,7 @@ def test_ablation_planner_allows_complete_terms_with_disabled_curriculum():
 
     no_curriculum = dict(planner.plan())["abl-1-no_curriculum"]
     assert no_curriculum["curriculum.enabled"]                       is False
-    assert no_curriculum["curriculum.complete.use_covariance_match"] is True
+    assert no_curriculum["curriculum.complete.use_moments"]          is True
 
 
 def test_ablation_catalog_default_is_the_standard_set():
@@ -976,7 +842,7 @@ def test_ablation_catalog_default_is_the_standard_set():
     labels   = [feature["label"] for feature in features]
 
     assert labels == [
-        "covariance_match", "physics_curriculum", "coherence_resyn",
+        "loss_curriculum",
         "cosine_curve", "architecture_param_loss", "augmentation",
         "active_norm", "lr_per_group", "lr_warmup",
         "out_sigma", "out_amp", "ifg_phase", "pass_mag",
@@ -998,20 +864,10 @@ def test_ablation_catalog_standard_categories_present():
     assert "out_mu"      not in catalog
     assert "total_power" not in catalog
     assert "moments"     not in catalog
-    assert "capon_cycle" not in catalog
 
-    covariance = catalog["covariance_match"]
-    assert covariance["enable"]["curriculum.complete.use_covariance_match"]  is True
-    assert covariance["degrade"]["curriculum.complete.use_covariance_match"] is False
-
-    coherence = catalog["coherence_resyn"]
-    assert coherence["enable"]["curriculum.complete.use_coherence_resyn"]     is True
-    assert coherence["degrade"]["curriculum.complete.weight_coherence_resyn"] == 0.0
-    assert "curriculum.warmup.use_coherence_resyn" not in coherence["degrade"]
-
-    physics_curriculum = catalog["physics_curriculum"]
-    assert physics_curriculum["enable"]["curriculum.enabled"] is True
-    assert physics_curriculum["degrade"]                      == {"curriculum.enabled": False}
+    loss_curriculum = catalog["loss_curriculum"]
+    assert loss_curriculum["enable"]["curriculum.enabled"] is True
+    assert loss_curriculum["degrade"]                      == {"curriculum.enabled": False}
 
     cosine = catalog["cosine_curve"]
     assert cosine["enable"]["curriculum.complete.use_cosine_curve"]  is True
@@ -1070,9 +926,8 @@ def test_ablation_catalog_covers_normalization_and_clamp():
     assert clamp["degrade"]["normalization.clamp_output"] is False
 
 
-@pytest.mark.real_data
-def test_input_from_dataset_uses_full_stack(test_data_dir):
-    planner = InputTrialPlanner.from_dataset(_default_input_trials(), GeometryConfig(), test_data_dir)
+def test_input_from_labels_uses_full_stack():
+    planner = InputTrialPlanner.from_labels(_default_input_trials(), ["S1", "S2", "S3", "S4"])
 
     plans = dict(planner.plan())
 
@@ -1085,10 +940,9 @@ def test_input_from_dataset_uses_full_stack(test_data_dir):
     assert "paths.secondary_labels" not in plans["in-amp-redsec-ifg"]
 
 
-@pytest.mark.real_data
-def test_secondary_from_dataset_loads_candidates(test_data_dir):
+def test_secondary_from_labels_loads_candidates():
     trials  = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=2, block_step=1)
-    planner = SecondaryTrialPlanner.from_dataset(trials, GeometryConfig(), test_data_dir)
+    planner = SecondaryTrialPlanner.from_labels(trials, ["S1", "S2", "S3", "S4"])
 
     plans = planner.plan()
 
@@ -1134,7 +988,7 @@ def test_ablation_default_plan_round_trips_through_config_cli():
     assert full.curriculum.complete.use_cosine_curve             is True
     assert full.curriculum.warmup.use_param_l1                   is True
     assert full.curriculum.warmup.use_cosine_curve               is True
-    assert full.curriculum.warmup.use_coherence_resyn            is False
+    assert full.curriculum.warmup.presence_balance               is False
     assert full.training.warmup_enabled                          is True
     assert baseline.curriculum.enabled                           is False
     assert baseline.backbone_name                                == "unet"

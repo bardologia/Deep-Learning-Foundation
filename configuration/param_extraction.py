@@ -178,21 +178,3 @@ class ParamExtractionInferenceConfig:
     run_tags   : list = field(default_factory=list)
 
     make_plots : bool = True
-
-
-@dataclass
-class InjectExternalParamsEntryConfig:
-    dataset_base_path : Path = Path("datasets")
-    dataset_filter    : list = field(default_factory=list)
-
-    source_files   : list = field(default_factory=list)
-    source_windows : list = field(default_factory=list)
-    source_order   : str  = "mu_sigma_amp"
-
-    output_prefix : str = "params"
-    output_suffix : str = "external"
-    origin_note   : str = ""
-
-    k_slots            : int   = 0
-    activity_threshold : float = 1e-3
-    overwrite          : bool  = False

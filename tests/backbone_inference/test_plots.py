@@ -7,9 +7,8 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 
-from pipelines.backbone.inference.plots          import Plotter, PlotTools, SlicePlotter, ParamPlotter, SlotPlotter, TrackPlotter
+from pipelines.backbone.inference.plots          import Plotter, PlotTools, SlicePlotter, ParamPlotter, SlotPlotter
 from pipelines.backbone.inference.plots.plotter  import Plotter as PloterClass
-from tools.baselines.containers                  import TrackBaselines, TrackProfiles
 from tools.metrics.gaussian_matching             import GaussianMatcher
 
 
@@ -55,7 +54,6 @@ def test_ploter_composes_subplotters():
     assert isinstance(p.slice, SlicePlotter)
     assert isinstance(p.param, ParamPlotter)
     assert isinstance(p.slot,  SlotPlotter)
-    assert isinstance(p.track, TrackPlotter)
     assert PloterClass is Plotter
 
 
@@ -298,29 +296,3 @@ def test_slice_plotter_elev_metric_curves(tmp_path):
     plotter = SlicePlotter()
     paths   = plotter.plot_elev_metric_curves(gm, tmp_path, N_ELEV, x_axis)
     _assert_files(paths)
-
-
-@pytest.mark.real_data
-def test_track_plotter_geometry(tmp_path, baselines_json):
-    baselines = TrackBaselines.from_payload(baselines_json)
-    plotter   = TrackPlotter()
-
-    path = plotter.plot_track_geometry(baselines, tmp_path / "geom.png")
-    assert path.is_file() and path.stat().st_size > 0
-
-
-@pytest.mark.real_data
-def test_track_plotter_profiles_and_flight(tmp_path, track_profiles):
-    profiles = TrackProfiles(
-        labels        = [str(label) for label in track_profiles["labels"]],
-        horizontal    = np.asarray(track_profiles["horizontal"], dtype=float),
-        vertical      = np.asarray(track_profiles["vertical"],   dtype=float),
-        azimuth_start = int(track_profiles["azimuth_start"]),
-    )
-    plotter = TrackPlotter()
-
-    paths = plotter.plot_track_profiles(profiles, tmp_path, split_azimuth=(1000, 1500))
-    _assert_files(paths)
-
-    flight = plotter.plot_track_flight_3d(profiles, tmp_path / "flight.png")
-    assert flight.is_file() and flight.stat().st_size > 0

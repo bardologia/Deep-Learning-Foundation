@@ -15,7 +15,6 @@ from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.backbone.inference.metrics            import Metrics, Result
 from pipelines.backbone.inference.figures            import Animator, FigureComposer
 from pipelines.backbone.inference.plots              import Plotter
-from tools.baselines                                 import TrackBaselines, TrackProfiles
 
 from tests.conftest import SilentLogger
 
@@ -91,34 +90,12 @@ def _result_and_metrics():
     return res, gm, indices, x_axis
 
 
-def _track_baselines():
-    return TrackBaselines(
-        labels         = ["PS02", "PS04", "PS06"],
-        vertical       = [0.0, 4.0, 8.0],
-        horizontal     = [0.0, 1.0, 2.0],
-        vertical_std   = [0.0, 0.2, 0.3],
-        horizontal_std = [0.0, 0.1, 0.2],
-    )
-
-
-def _track_profiles():
-    along = np.linspace(0.0, 1.0, H, dtype=np.float32)
-    return TrackProfiles(
-        labels        = ["PS02", "PS04", "PS06"],
-        horizontal    = np.stack([along * k       for k in range(3)]).astype(np.float32),
-        vertical      = np.stack([along * k + 4.0 * k for k in range(3)]).astype(np.float32),
-        azimuth_start = 0,
-    )
-
-
 def _run_stub():
     region = CropRegion(azimuth_start=0, azimuth_end=H, range_start=0, range_end=W)
     return types.SimpleNamespace(
         n_gaussians      = N_GAUSSIANS,
         split_region     = region,
         full_curves      = _curves(_params(), _x_axis()),
-        track_baselines  = _track_baselines(),
-        track_profiles   = _track_profiles(),
         complex_inputs   = None,
         n_secondaries    = 0,
         secondary_labels = None,
@@ -185,46 +162,3 @@ def test_figure_composer_compose_creates_files(tmp_path):
     for p in flat:
         assert p.is_file()
         assert p.stat().st_size > 0
-
-
-@pytest.mark.slow
-def test_figure_composer_compose_with_reduced(tmp_path):
-    res, gm, indices, x_axis = _result_and_metrics()
-
-    m    = Metrics(res, x_axis, N_GAUSSIANS)
-    comp = m.reduced_comparison(
-        res.gt_curves + 0.02,
-        elev_indices  = indices["all_elev_idx"],
-        range_indices = indices["all_range_idx"],
-        az_indices    = indices["all_az_idx"],
-    )
-    res.reduced = comp
-    gm.update(comp.metrics)
-
-    composer, meta = _composer(tmp_path)
-    run            = _run_stub()
-
-    figure_paths = composer.compose(
-        result=res, run=run, global_metrics=gm, x_axis_np=x_axis, indices=indices, param_space=True,
-    )
-
-    assert "improvement_map"       in figure_paths
-    assert "reduced_pixel_mse_map" in figure_paths
-    for p in figure_paths["improvement_map"]:
-        assert p.is_file() and p.stat().st_size > 0
-
-    assert "slices_range_reduced"       in figure_paths
-    assert "slices_azimuth_reduced"     in figure_paths
-    assert "slices_elev_reduced"        in figure_paths
-    assert "ssim_range_reduced"         in figure_paths
-    assert "ssim_azimuth_reduced"       in figure_paths
-    assert "ssim_elev_reduced"          in figure_paths
-    assert "elev_metric_curves_reduced" in figure_paths
-
-    assert len(figure_paths["slices_range_reduced"]) > 0
-    for p in figure_paths["slices_range_reduced"]:
-        assert "reduced" in str(p)
-        assert p.is_file() and p.stat().st_size > 0
-
-    for p in figure_paths["ssim_range_reduced"]:
-        assert p.is_file() and p.stat().st_size > 0

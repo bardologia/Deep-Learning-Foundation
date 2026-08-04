@@ -12,7 +12,7 @@ from pipelines.backbone.training.launcher   import SingleTrainRunner
 from pipelines.backbone.training.loss_probe import LossScaleProbe
 from tools.monitoring.logger                import NullLogger
 
-from tests.backbone_training._helpers import gaussian_config, geometry_config, identity_normalizer, tiny_model, x_axis_tensor
+from tests.backbone_training._helpers import gaussian_config, identity_normalizer, tiny_model, x_axis_tensor
 
 
 def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 4, hw: int = 12) -> DataLoader:
@@ -27,7 +27,6 @@ def _probe(probe_cfg: LossScaleProbeConfig, n_channels: int = 6) -> LossScalePro
         probe_cfg    = probe_cfg,
         loss_cfg     = LossConfig(),
         gaussian_cfg = gaussian_config(n_channels // 3),
-        geometry_cfg = geometry_config(),
         norm_stats   = identity_normalizer(n_channels),
         logger       = NullLogger(),
     )
@@ -36,41 +35,28 @@ def _probe(probe_cfg: LossScaleProbeConfig, n_channels: int = 6) -> LossScalePro
 def test_probe_forces_all_terms_on_with_unit_weight():
     probe = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False))
 
-    assert probe.loss_cfg.use_mse_curve        is True
-    assert probe.loss_cfg.weight_mse_curve     == 1.0
-    assert probe.loss_cfg.use_covariance_match is True
+    assert probe.loss_cfg.use_mse_curve    is True
+    assert probe.loss_cfg.weight_mse_curve == 1.0
+    assert probe.loss_cfg.use_moments      is True
 
 
 def test_entry_config_forwards_the_per_term_probe_overrides():
     config                      = BackboneEntryConfig()
     config.probe_enabled        = True
-    config.probe_enabled_losses = {"use_param_legacy": True}
+    config.probe_enabled_losses = {"use_moments": False}
 
     probe_cfg = SingleTrainRunner(config)._probe_config()
 
     assert probe_cfg.enabled        is True
-    assert probe_cfg.enabled_losses == {"use_param_legacy": True}
+    assert probe_cfg.enabled_losses == {"use_moments": False}
 
 
 def test_probe_respects_enabled_losses_override():
-    overrides = {"use_covariance_match": False}
+    overrides = {"use_moments": False}
     probe     = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False, enabled_losses=overrides))
 
-    assert probe.loss_cfg.use_covariance_match is False
-    assert probe.loss_cfg.use_mse_curve        is True
-
-
-def test_probe_leaves_legacy_term_off_by_default():
-    probe = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False))
-
-    assert probe.loss_cfg.use_param_legacy is False
-
-
-def test_probe_enables_legacy_term_only_on_explicit_override():
-    overrides = {"use_param_legacy": True}
-    probe     = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False, enabled_losses=overrides))
-
-    assert probe.loss_cfg.use_param_legacy is True
+    assert probe.loss_cfg.use_moments   is False
+    assert probe.loss_cfg.use_mse_curve is True
 
 
 def test_probe_runs_and_reports_suggested_weights():

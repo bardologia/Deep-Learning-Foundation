@@ -184,14 +184,12 @@ def test_curriculum_inheritance_respects_explicit_warmup_overrides():
 
 def test_curriculum_inheritance_skips_fields_with_divergent_stage_defaults():
     cfg       = default_curriculum()
-    overrides = {"curriculum.complete.use_coherence_resyn": True, "curriculum.complete.weight_coherence_resyn": 0.2}
-
-    cfg.complete.weight_coherence_resyn = 0.2
+    overrides = {"curriculum.complete.presence_balance": True}
 
     inherited = CurriculumInheritance(cfg, default_curriculum(), overrides).apply()
 
     assert inherited == {}
-    assert cfg.warmup.use_coherence_resyn is False
+    assert cfg.warmup.presence_balance is False
 
 
 def test_curriculum_inheritance_disabled_by_inherit_flag():

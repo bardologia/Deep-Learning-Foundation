@@ -200,9 +200,6 @@ def test_report_metric_taxonomy_routes_keys():
     assert _metric_group("pixel_mse_gt_mean")         == "3.3 Per-pixel (GT)"
     assert _metric_group("ssim_gt_elev_mean")         == "3.4 SSIM summaries (denorm)"
     assert _metric_group("ssim_norm_elev_mean")       == "3.4b SSIM summaries (normalised)"
-    assert _metric_group("curve_mse_red")             == "3.5 Curve-level (reduced vs GT)"
-    assert _metric_group("ssim_red_elev_mean")        == "3.7 SSIM summaries (reduced vs GT)"
-    assert _metric_group("relative_mse_reduction")    == "3.8 NN improvement over baseline"
     assert _metric_group("active_frac_gt")            == "3.9 Slot occupancy & active count"
     assert _metric_group("count_exact_frac")          == "3.9 Slot occupancy & active count"
     assert _metric_group("slot_0_active_pred_frac")   == "3.9 Slot occupancy & active count"
@@ -213,8 +210,6 @@ def test_report_metric_taxonomy_routes_keys():
     assert _metric_group("slot_mu_rank_diag")         == "3.9c Slot internal organization (emergent)"
     assert _metric_group("slot_gt_alignment")         == "3.9c Slot internal organization (emergent)"
     assert _metric_group("matched_mu_mae")            == "3.10 Matched Gaussian errors (permutation-invariant)"
-    assert _metric_group("physics_valid_fraction")    == "3.11 Interferometric data consistency"
-    assert _metric_group("phase_agreement_gt_mean")   == "3.11 Interferometric data consistency"
     assert _metric_group("jepa_embedding_mse")        == "3.12 JEPA embedding diagnostics"
 
 
@@ -231,15 +226,6 @@ def test_report_is_per_slice_ssim_classifier():
     assert Report._is_per_slice_ssim("elev_mae_gt_7")     is True
     assert Report._is_per_slice_ssim("ssim_gt_elev_mean") is False
     assert Report._is_per_slice_ssim("curve_mse_gt")      is False
-
-
-def test_report_is_reduced_key():
-    assert Report._is_reduced_key("curve_mse_red")  is True
-    assert Report._is_reduced_key("ssim_red_elev_3") is True
-    assert Report._is_reduced_key("pixel_mse_predn") is True
-    assert Report._is_reduced_key("reduced_orientation_corr_aligned") is True
-    assert Report._is_reduced_key("reduced_orientation_corr_flipped") is True
-    assert Report._is_reduced_key("curve_mse_gt")    is False
 
 
 def test_report_figure_sections_absent_without_figures(tmp_path):
