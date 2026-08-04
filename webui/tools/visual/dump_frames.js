@@ -15,7 +15,7 @@ class FrameDumper {
   }
 
   stage() {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tomosar-frames-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ml-template-frames-"));
     fs.copyFileSync(path.join(this.toolDir, "harness.html"), path.join(dir, "harness.html"));
     fs.copyFileSync(path.join(this.toolDir, "mathjax-tex-svg.js"), path.join(dir, "mathjax-tex-svg.js"));
     fs.copyFileSync(this.animFile, path.join(dir, "process_anim.js"));

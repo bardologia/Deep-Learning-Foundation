@@ -128,8 +128,9 @@ em { font-style: italic; color: var(--accent); }
 
 .nav__logo {
   height: 44px;
-  width: auto;
+  width: 44px;
   display: block;
+  color: var(--accent);
 }
 
 

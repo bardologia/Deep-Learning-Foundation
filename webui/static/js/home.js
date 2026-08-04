@@ -351,7 +351,7 @@ class StatusBoard {
       `<div class="sboard__metric"><span>free &middot; all users</span><span id="sb-disk-free">--</span></div>` +
       `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-user-path">${this._esc(sys.user || "user")} &middot; total</span><span id="sb-disk-user">--</span></div>` +
       `<div class="bar"><i class="bar__fill bar__fill--user" id="sb-disk-user-bar"></i></div>` +
-      `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-repo-path">dlr root</span><span id="sb-disk-repo">--</span></div>` +
+      `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-repo-path">repo root</span><span id="sb-disk-repo">--</span></div>` +
       `<div class="bar"><i class="bar__fill bar__fill--repo" id="sb-disk-repo-bar"></i></div>` +
       `</section>` +
 

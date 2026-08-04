@@ -8,8 +8,8 @@ class UiSnapper {
   DEFAULT_ROUTES = ["home", "model", "pipelines", "architectures", "scripts", "configuration", "console"];
 
   constructor(argv) {
-    this.port    = 8765;
-    this.outDir  = "/tmp/tomosar-ui";
+    this.port    = 8772;
+    this.outDir  = "/tmp/ml-template-ui";
     this.settle  = 1800;
     this.width   = 1600;
     this.height  = 950;

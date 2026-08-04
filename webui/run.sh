@@ -3,7 +3,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-PORT="${1:-8765}"
+PORT="${1:-8772}"
 
 for candidate in \
   "$HOME/miniconda3/envs/Dune/bin/python" \
@@ -15,5 +15,5 @@ for candidate in \
   fi
 done
 
-echo "Starting DLR-TomoSAR control console with: $PY"
+echo "Starting the ML Template control console with: $PY"
 exec "$PY" "$HERE/serve.py" --port "$PORT"

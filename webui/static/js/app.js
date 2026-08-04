@@ -23,6 +23,13 @@ window.apiPost = async function (url, body) {
   }
 };
 
+window.repoRoot = "";
+
+window.repoPath = function (name) {
+  const root = (window.repoRoot || "").replace(/\/+$/, "");
+  return root ? `${root}/${name}` : name;
+};
+
 window.fmtDuration = function (seconds) {
   const total = Math.max(0, Math.round(seconds));
   const h = Math.floor(total / 3600);
@@ -107,7 +114,7 @@ class App {
     const radar = document.getElementById("radar");
     const server = document.getElementById("server-anim");
     try {
-      if (radar && window.TomoScene) this.scenes.push(new window.TomoScene(radar));
+      if (radar && window.TrainingScene) this.scenes.push(new window.TrainingScene(radar));
     } catch (e) {}
     try {
       if (server && window.ServerScene) {
@@ -128,6 +135,7 @@ class App {
     }
 
     this.project = project;
+    window.repoRoot = project.repo_root || "";
     this._setStatus(true);
     this._initStatus();
   }
@@ -141,6 +149,7 @@ class App {
       }
 
       this.project = project;
+      window.repoRoot = project.repo_root || "";
       if (this.launchView) this.launchView.project = project;
       if (this.ablationView) this.ablationView.project = project;
       this._setStatus(true);

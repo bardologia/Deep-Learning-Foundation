@@ -105,8 +105,8 @@ class ConfigBrowser {
     let openTitles = null;
     let activeId   = null;
     try {
-      openTitles = JSON.parse(localStorage.getItem("dlr.config.open") || "null");
-      activeId   = localStorage.getItem("dlr.config.active");
+      openTitles = JSON.parse(localStorage.getItem("mlt.config.open") || "null");
+      activeId   = localStorage.getItem("mlt.config.active");
     } catch (e) {
       openTitles = null;
     }
@@ -118,8 +118,8 @@ class ConfigBrowser {
 
   _persistState() {
     try {
-      localStorage.setItem("dlr.config.open", JSON.stringify([...this.open]));
-      if (this.activeId) localStorage.setItem("dlr.config.active", this.activeId);
+      localStorage.setItem("mlt.config.open", JSON.stringify([...this.open]));
+      if (this.activeId) localStorage.setItem("mlt.config.active", this.activeId);
     } catch (e) {}
   }
 

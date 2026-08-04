@@ -6,8 +6,8 @@ const { ChromiumResolver } = require("./chromium");
 class RepoMapSnapper {
 
   constructor(argv) {
-    this.port    = 8765;
-    this.outDir  = "/tmp/tomosar-repomap";
+    this.port    = 8772;
+    this.outDir  = "/tmp/ml-template-repomap";
     this.settle  = 900;
     this.width   = 1680;
     this.height  = 1000;

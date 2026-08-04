@@ -1,8 +1,8 @@
 "use strict";
 
 class ResultsView {
-  static DEFAULT_DATASETS = "/ste/rnd/User/vice_vi/Dataset";
-  static DEFAULT_RUNS     = "/ste/rnd/User/vice_vi/DLR-TomoSAR/runs";
+  static get DEFAULT_DATASETS() { return window.repoPath("datasets"); }
+  static get DEFAULT_RUNS()     { return window.repoPath("runs"); }
 
   constructor(listEl, detailEl) {
     this.listEl    = listEl;

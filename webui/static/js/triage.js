@@ -1,7 +1,7 @@
 "use strict";
 
 class TriageView {
-  static DEFAULT_BASE = "/ste/rnd/User/vice_vi/DLR-TomoSAR/runs";
+  static get DEFAULT_BASE() { return window.repoPath("runs"); }
   static VERDICTS     = ["label problem", "model problem", "interesting"];
 
   constructor(root) {
