@@ -60,7 +60,7 @@ class LaunchView extends ConfigForm {
   static MODEL_MEANINGS = {
     backbone: {
       title  : "Backbone",
-      summary: "Supervised regression that maps the SAR image stack straight to the Gaussian-mixture profile parameters.",
+      summary: "Supervised regression that maps the input channel stack straight to the Gaussian-mixture profile parameters.",
       flow   : [
         { kind: "input",  glyph: "stack",  label: "Image stack",  sub: "primary · secondaries · derived" },
         { kind: "model",  glyph: "net",    label: "Backbone",     sub: "supervised network" },
@@ -80,7 +80,7 @@ class LaunchView extends ConfigForm {
     },
     image_autoencoder: {
       title  : "Image autoencoder",
-      summary: "Learns the latent input space: encodes the SAR image stack into a 2D embedding and reconstructs it. The encoder later serves as a JEPA front-end.",
+      summary: "Learns the latent input space: encodes the input channel stack into a 2D embedding and reconstructs it. The encoder later serves as a JEPA front-end.",
       flow   : [
         { kind: "input",  glyph: "stack",   label: "Image stack",            sub: "primary · secondaries · derived" },
         { kind: "model",  glyph: "encoder", label: "Encoder" },

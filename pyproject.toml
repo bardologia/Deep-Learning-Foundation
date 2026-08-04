@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name            = "ml-template"
 version         = "0.1.0"
-description     = "Deep-learning Gaussian-mixture parameter estimation for SAR tomography"
+description     = "Deep-learning Gaussian-mixture profile estimation from stacked 2-D channels"
 readme          = "README.md"
 requires-python = ">=3.11"
 dependencies    = [
