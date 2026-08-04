@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { margin: 0; background: #0a1014; }
+  #cv { width: 900px; height: 420px; display: block; }
+  #cap { width: 900px; min-height: 28px; color: #8fb0aa; font: 13px monospace; padding: 6px 8px; box-sizing: border-box; }
+</style>
+<script>window.MathJax = { svg: { fontCache: "none" }, startup: { typeset: false } };</script>
+<script src="mathjax-tex-svg.js"></script>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="cap"></div>
+<script src="process_anim.js"></script>
+<script>
+  class HarnessDriver {
+    constructor() {
+      this.animator = new ProcessAnimator(document.getElementById("cv"), document.getElementById("cap"));
+      this.animator._resize();
+    }
+
+    renderAt(key, t) {
+      this.animator.key = key;
+      this.animator.t   = t;
+      this.animator._draw();
+      return document.getElementById("cap").textContent;
+    }
+
+    eqStats() {
+      const cache = ProcessAnimator._eqCache || {};
+      const keys  = Object.keys(cache);
+      return { total: keys.length, ready: keys.filter(k => cache[k].ready).length, failed: keys.filter(k => cache[k].failed).length };
+    }
+  }
+
+  window.renderAt = (key, t) => {
+    if (!window.driver) window.driver = new HarnessDriver();
+    return window.driver.renderAt(key, t);
+  };
+  window.eqStats = () => window.driver ? window.driver.eqStats() : { total: 0, ready: 0, failed: 0 };
+</script>
+</body>
+</html>

@@ -1,0 +1,482 @@
+{
+  "backbone": {
+    "attention_unet": {
+      "signature": "7099da840272c024ce2b7f726bc7e3833fa5fa6f52c9c1f807b600ab6658d3e6",
+      "num_keys": 198,
+      "num_parameters": 32433770
+    },
+    "attention_unet-multihead": {
+      "signature": "e17f15e810895f941d1ce71067dafbc2c90710e033a187aa80f4028827b3819e",
+      "num_keys": 208,
+      "num_parameters": 32439818
+    },
+    "attention_unet-per_gaussian": {
+      "signature": "8fe2a3e620a2c8304679cfba7c55d2b27578bef0aeca482c2d01d6eb67ddb775",
+      "num_keys": 204,
+      "num_parameters": 32437738
+    },
+    "attention_unet-set_pred": {
+      "signature": "307234384dc3006a544845fb79a3b191eef6c92bb4bdbb967d2b8fa22677f1f6",
+      "num_keys": 209,
+      "num_parameters": 32439886
+    },
+    "convnext_unet": {
+      "signature": "278a598acb8887a80013d3a8280f2dc8bb0c9d5c49b39779a4bb7354606af234",
+      "num_keys": 207,
+      "num_parameters": 19099494
+    },
+    "convnext_unet-multihead": {
+      "signature": "5068d23ec1b953dca1e8a5a68c1bf0559c8b42596f6cad710c9ebd1f72e4722c",
+      "num_keys": 217,
+      "num_parameters": 19102878
+    },
+    "convnext_unet-per_gaussian": {
+      "signature": "5ba8d1f49ec4eec894c4d6e4d2ddbb7bed53a9c038890952db971777af396e3a",
+      "num_keys": 213,
+      "num_parameters": 19101702
+    },
+    "convnext_unet-set_pred": {
+      "signature": "35274dedaf35bad7006d2d0300bf8569ef003f946535b311454ee61c101dc89c",
+      "num_keys": 218,
+      "num_parameters": 19102930
+    },
+    "deeplabv3plus": {
+      "signature": "ccd95f5f39b0432128b0ca4fc1290a9845db598b919e8df77baa802626457e01",
+      "num_keys": 110,
+      "num_parameters": 10284166
+    },
+    "deeplabv3plus-multihead": {
+      "signature": "ea5d7033551048eda443f836336b8a07178bcc62a2fcfa53881e4d6fa192f155",
+      "num_keys": 120,
+      "num_parameters": 10382086
+    },
+    "deeplabv3plus-per_gaussian": {
+      "signature": "111641a21cc1acfc2e1b59069c8b414d3001e4a888924b49eaadd4e546b0f37e",
+      "num_keys": 116,
+      "num_parameters": 10349190
+    },
+    "deeplabv3plus-set_pred": {
+      "signature": "dc9d4fd71b4f7b9b02a1fd3bcef6b104bd3a153a2b573caabd9abaea3b18208a",
+      "num_keys": 121,
+      "num_parameters": 10382346
+    },
+    "dense_unet": {
+      "signature": "c5dd6ab29efb2ffc0d028089d800db04efbc2426085bae7d87dee77a8488a4a3",
+      "num_keys": 195,
+      "num_parameters": 1007318
+    },
+    "dense_unet-multihead": {
+      "signature": "e842a977fd766e9237190c77876bf377702d43ef12f4f2370d9e4ed831bc5aaf",
+      "num_keys": 205,
+      "num_parameters": 1013366
+    },
+    "dense_unet-per_gaussian": {
+      "signature": "4059a25d65c3717b190d445dd242ac1660a24230eebbbb8256dbe4a42b376746",
+      "num_keys": 201,
+      "num_parameters": 1011286
+    },
+    "dense_unet-set_pred": {
+      "signature": "1a7160f51dbbe6e63f1846b08fecd8d69af28695307f342f036295dde830fd89",
+      "num_keys": 206,
+      "num_parameters": 1013434
+    },
+    "fpn": {
+      "signature": "c244f45386369c794984c95b77cc9cc8d1c10a3fc6b237adfd93c2ecb5663466",
+      "num_keys": 151,
+      "num_parameters": 7786886
+    },
+    "fpn-multihead": {
+      "signature": "ce1f39c96575070caee046fd56082690f3259f8c89f8ae6123d3c677860afb9d",
+      "num_keys": 161,
+      "num_parameters": 7811270
+    },
+    "fpn-per_gaussian": {
+      "signature": "3c86e373c29ad465f3660daa04d9a16964cd2372ea8b7c9871da1fe829cbd4b9",
+      "num_keys": 157,
+      "num_parameters": 7803014
+    },
+    "fpn-set_pred": {
+      "signature": "bb0a549ee3686eb6965eeb98c6e4179f994fd297a2321c90d1996884e1d58ac7",
+      "num_keys": 162,
+      "num_parameters": 7811402
+    },
+    "hrnet": {
+      "signature": "b902697e6ec7e717a483434f7b315837e526973e2a683bc6734ac8c75027b38d",
+      "num_keys": 207,
+      "num_parameters": 3071816
+    },
+    "hrnet-multihead": {
+      "signature": "d5edbf0064235f86fc7aec126bfd129ea128321f40b3a94054afc349ce85579f",
+      "num_keys": 217,
+      "num_parameters": 3085496
+    },
+    "hrnet-per_gaussian": {
+      "signature": "1d95ec164d95d1700ee7b999d66cf832f0d7057fd1910e4e8e8cedc4a855dfb9",
+      "num_keys": 213,
+      "num_parameters": 3080840
+    },
+    "hrnet-set_pred": {
+      "signature": "ea61f7e93ab766df7f1509a18cb2d51059447e27b859e655315ef9507d103804",
+      "num_keys": 218,
+      "num_parameters": 3085596
+    },
+    "linknet": {
+      "signature": "94a3c26ff537d20742ab7d9a5699814725da67cdc95ee041f2e191139fa42488",
+      "num_keys": 152,
+      "num_parameters": 31013830
+    },
+    "linknet-multihead": {
+      "signature": "5b60a2a817426aacaa81e2732d7f72da9ff38249e50cf6da8ed1299189074a31",
+      "num_keys": 162,
+      "num_parameters": 31048258
+    },
+    "linknet-per_gaussian": {
+      "signature": "4cbc99b8b854bde58c2b8e642a7ca985e4faf2af97824a2e05559635d7744233",
+      "num_keys": 158,
+      "num_parameters": 31036630
+    },
+    "linknet-set_pred": {
+      "signature": "cad590669353e0aa89d2b8163009479e00d20bf8ea4eb8d71ad319ba03cf5ffc",
+      "num_keys": 163,
+      "num_parameters": 31048414
+    },
+    "local_cnn": {
+      "signature": "aa053da8d6353bf52ee9dea66d77c8ad902ce56a28e205868dc6572c6503e2bf",
+      "num_keys": 26,
+      "num_parameters": 31052630
+    },
+    "local_cnn-multihead": {
+      "signature": "b9977c2b9755df5d961733d4468b832876e77fc32d176f3014042a8e3b4a3bd6",
+      "num_keys": 36,
+      "num_parameters": 32774798
+    },
+    "local_cnn-per_gaussian": {
+      "signature": "f8287174448ceef757b7f20593e9dc9658b9dd206b07a6b1157c3dea4a741734",
+      "num_keys": 32,
+      "num_parameters": 32199670
+    },
+    "local_cnn-set_pred": {
+      "signature": "3558eec08ee72ec6455e8ec77c1f930554b0b74490568a23ad6f66cb8a5e0878",
+      "num_keys": 37,
+      "num_parameters": 32775874
+    },
+    "multires_unet": {
+      "signature": "8cec14f9728bc829dea3a3b96017ef185db0f0fb8a117668122c1a30c33a19a9",
+      "num_keys": 391,
+      "num_parameters": 14353291
+    },
+    "multires_unet-multihead": {
+      "signature": "786fc805bab2043eb88740accedc79e62b0de77085a16fefd94887f3a5b783bc",
+      "num_keys": 401,
+      "num_parameters": 14359339
+    },
+    "multires_unet-per_gaussian": {
+      "signature": "da35daebea1cc11825565c84d78cc6dd8f232dd9dfac0aa188f596b000a67da4",
+      "num_keys": 397,
+      "num_parameters": 14357259
+    },
+    "multires_unet-set_pred": {
+      "signature": "f1a4d22c6e663bc193b7d4273c789671ce41f60c813a1a5e564e1c83c1dbfb41",
+      "num_keys": 402,
+      "num_parameters": 14359407
+    },
+    "nafnet": {
+      "signature": "d78f496c6241ea4da05b9e75e06d18d021bf70e0b7105d865f03433a5d5f04ab",
+      "num_keys": 664,
+      "num_parameters": 29160006
+    },
+    "nafnet-multihead": {
+      "signature": "3f42facc9e80d17b467f4aa667e194a12323738719f38026b2d403059cfe076e",
+      "num_keys": 674,
+      "num_parameters": 29159958
+    },
+    "nafnet-per_gaussian": {
+      "signature": "991f9c61ebcc9f6a18303f09f566e3e8303734540597aa7a6df3b29a28394306",
+      "num_keys": 670,
+      "num_parameters": 29159430
+    },
+    "nafnet-set_pred": {
+      "signature": "a9c6e1adeb2e25d9377dc9457cc0a61093f0c48e8be5a0635d87c0832486c105",
+      "num_keys": 675,
+      "num_parameters": 29159994
+    },
+    "pixel_mlp": {
+      "signature": "785f5e8f39700b51ff47dc27a2713038bf006dcbe21f65cb8978aa1cb358ca55",
+      "num_keys": 26,
+      "num_parameters": 30768006
+    },
+    "pixel_mlp-multihead": {
+      "signature": "ff2ab4d2aa79c47a45ea186406f0b30284ff4cb3ae825d2aafa7d7e7e6b25343",
+      "num_keys": 36,
+      "num_parameters": 46123206
+    },
+    "pixel_mlp-per_gaussian": {
+      "signature": "874e32472c8519c4c9f45d980046236002f2a6a8d77545fedcd0aab8cdb40c0d",
+      "num_keys": 32,
+      "num_parameters": 41001606
+    },
+    "pixel_mlp-set_pred": {
+      "signature": "19bb90892a6e9263c0901f69d38972ae5ee29190c36a15875939e79f3a70242b",
+      "num_keys": 37,
+      "num_parameters": 46126410
+    },
+    "resunet": {
+      "signature": "35b6c81e5144a70347ebe98d2bdf3f11ddf1e861343bb1d1f77f1f06ed49ddfd",
+      "num_keys": 122,
+      "num_parameters": 32429382
+    },
+    "resunet-multihead": {
+      "signature": "3c2cb3d825bc935e674db4c9c6e9c821769227c8fe9ec51f8713d92962658c07",
+      "num_keys": 132,
+      "num_parameters": 32435430
+    },
+    "resunet-per_gaussian": {
+      "signature": "16503dde9748acd7eba6ac43ff33fb57b4becd5d90082a5e8fb945250855a6b4",
+      "num_keys": 128,
+      "num_parameters": 32433350
+    },
+    "resunet-set_pred": {
+      "signature": "a58a1091950d212fa8f0cecf6f43ee68b4b0c0844f3ddf26bfc9dc4a27229288",
+      "num_keys": 133,
+      "num_parameters": 32435498
+    },
+    "segformer": {
+      "signature": "7a4d7374fcbe3584449a8686912dca41bcd28120b85156441d7eb9ee1e93bf9e",
+      "num_keys": 176,
+      "num_parameters": 5152646
+    },
+    "segformer-multihead": {
+      "signature": "9b4faf49f5188d3daacea741d02ca3de7af9944e4cee3d105bc447074571eaca",
+      "num_keys": 186,
+      "num_parameters": 5250566
+    },
+    "segformer-per_gaussian": {
+      "signature": "7a1a93fad75d43b16a8a5ef11618ff33114c7f0271947c61c292747cc5466a9b",
+      "num_keys": 182,
+      "num_parameters": 5217670
+    },
+    "segformer-set_pred": {
+      "signature": "4a8c4cdb43d735f61b61d677cf35be50db19c876361c5e453b9e89fa6dd47ff9",
+      "num_keys": 187,
+      "num_parameters": 5250826
+    },
+    "swin_unet": {
+      "signature": "ecf83ee65a59df228bf5994a66f088cf64327d36568d61a459848a85ad934972",
+      "num_keys": 342,
+      "num_parameters": 28753938
+    },
+    "swin_unet-multihead": {
+      "signature": "f7e19b8cda3e4114c2955d2b53f90bf3069ad4fa96a4d06884fb0ec8b2e052a4",
+      "num_keys": 352,
+      "num_parameters": 28763418
+    },
+    "swin_unet-per_gaussian": {
+      "signature": "e16f6c2a0d7df38804f7e18220189ddc6e6a8220e538b0da33be624bea413114",
+      "num_keys": 348,
+      "num_parameters": 28760178
+    },
+    "swin_unet-set_pred": {
+      "signature": "5a346b682043ce584f1f322614024a90386192b72a9bfb7a7564523f0083f04b",
+      "num_keys": 353,
+      "num_parameters": 28763502
+    },
+    "transunet": {
+      "signature": "d1e8fe373ddee0e85a603cb81a4b0542a18765ac57f960bb5bffa369037f3eb8",
+      "num_keys": 197,
+      "num_parameters": 30572934
+    },
+    "transunet-multihead": {
+      "signature": "2157bf6b77bcf4ab1046f569eea9bd838d71669d2ac5b079a7885720d2a75c35",
+      "num_keys": 207,
+      "num_parameters": 30574422
+    },
+    "transunet-per_gaussian": {
+      "signature": "958c1d068d5efee530ef753d729f5b7b0381fec5ca655a40863e1dc2e29946e9",
+      "num_keys": 203,
+      "num_parameters": 30573894
+    },
+    "transunet-set_pred": {
+      "signature": "07326f0981c3f1129cf12e0dfd1ed09f8d29308c78c338df568e9b860b5db2c9",
+      "num_keys": 208,
+      "num_parameters": 30574458
+    },
+    "u2net": {
+      "signature": "b18f8c279515dac0e50a9473accdd9081ab602c70de971965c426e0c1c3d4dc5",
+      "num_keys": 338,
+      "num_parameters": 8314054
+    },
+    "u2net-multihead": {
+      "signature": "379c0d2a59dcb6dec8851b725b3a51b293ce7e3f62830094d141a22a4cbca88c",
+      "num_keys": 348,
+      "num_parameters": 8320102
+    },
+    "u2net-per_gaussian": {
+      "signature": "51d40b2de254eeebbb98fcaedac744c15a68d9f96b0e0adc412fa45c488fafef",
+      "num_keys": 344,
+      "num_parameters": 8318022
+    },
+    "u2net-set_pred": {
+      "signature": "b9b84522a60397e4d882823c61f63a4b9a64ae5ecd46dd3844976744fd35c29d",
+      "num_keys": 349,
+      "num_parameters": 8320170
+    },
+    "unet": {
+      "signature": "c4e8673ff1ea25aa220fb10c607461739436e1c12a3fa8e056bf55014aacd7a3",
+      "num_keys": 118,
+      "num_parameters": 31036806
+    },
+    "unet-multihead": {
+      "signature": "624897d082de8f99acde57d1e7a883e0016e81220d35c6064454ff1d3ba77fd3",
+      "num_keys": 128,
+      "num_parameters": 31042854
+    },
+    "unet-per_gaussian": {
+      "signature": "8241e63b977c8b2ac8f83b04814c84ae70b228323f4486b42c78eea16fa1647c",
+      "num_keys": 124,
+      "num_parameters": 31040774
+    },
+    "unet-set_pred": {
+      "signature": "8a782d70d161388b72913cef5d6eddcb20404871e8eee112d1d2b1fef3a37253",
+      "num_keys": 129,
+      "num_parameters": 31042922
+    },
+    "unet_skip": {
+      "signature": "473ddc27e4f4249de488f245c2250f95b2d7ab5d6ff620c90dc2f23f18eeac39",
+      "num_keys": 127,
+      "num_parameters": 32429384
+    },
+    "unet_skip-multihead": {
+      "signature": "f8d78def56ba4480297be101e17d44041445da3032ffd9eaf478fa413fd5fbbc",
+      "num_keys": 137,
+      "num_parameters": 32435432
+    },
+    "unet_skip-per_gaussian": {
+      "signature": "69555e15f998be9f0e36b5e90c310bfbba044496e99fd69c54e07e057ac60eff",
+      "num_keys": 133,
+      "num_parameters": 32433352
+    },
+    "unet_skip-set_pred": {
+      "signature": "f3368b344cedceaa386121e64061322c5bf7f2c218759e63ef18279ee4957e68",
+      "num_keys": 138,
+      "num_parameters": 32435500
+    },
+    "unetplusplus": {
+      "signature": "f8f5022cd742af636be4f3d0c519f09116fccfe75e69742c31313f811440b7de",
+      "num_keys": 190,
+      "num_parameters": 31081214
+    },
+    "unetplusplus-multihead": {
+      "signature": "91f3d70490317aa120b92e09261af9baf5893265c9dc57ec217b38c1e4328df6",
+      "num_keys": 200,
+      "num_parameters": 31085834
+    },
+    "unetplusplus-per_gaussian": {
+      "signature": "dd0bc664c1b61efecefece5b585f151c7a518bee284849808878b2f5cb1e6219",
+      "num_keys": 196,
+      "num_parameters": 31084238
+    },
+    "unetplusplus-set_pred": {
+      "signature": "c0fd3b6ab6eae1b4036e42f7b0f54978a1717d74f4d2f83db902c097c8dd7c32",
+      "num_keys": 201,
+      "num_parameters": 31085894
+    },
+    "unetr": {
+      "signature": "c07c13500241fc05a1e50e7553dcc68132af7fd646a85fc7d20d18b49d601f92",
+      "num_keys": 239,
+      "num_parameters": 34437606
+    },
+    "unetr-multihead": {
+      "signature": "76fdfe86af1e97e51455cc0f6d13560dc5ccb620ec46bda90e65652d35491c29",
+      "num_keys": 249,
+      "num_parameters": 34440990
+    },
+    "unetr-per_gaussian": {
+      "signature": "2d295de8fc75137fe09bdc2ef230acf4374a374340e2e630f012ddd876fec926",
+      "num_keys": 245,
+      "num_parameters": 34439814
+    },
+    "unetr-set_pred": {
+      "signature": "29e4f2cae863e7bc6a554de5ae914db158c7f5e085d8782d05cddd2195cdf9e3",
+      "num_keys": 250,
+      "num_parameters": 34441042
+    }
+  },
+  "profile_autoencoder": {
+    "cnn_attn_ae": {
+      "signature": "543a53588bb3dcfe77d3397f3245fad55aeb5a1348646728d7fe923dfd09b950",
+      "num_keys": 64,
+      "num_parameters": 1918096
+    },
+    "conv1d_ae": {
+      "signature": "d7091bcd0e7d76565eb8bf0a0e02dc7eadcbf5275211542eadd680b0f42aa088",
+      "num_keys": 14,
+      "num_parameters": 1604617
+    },
+    "gru_ae": {
+      "signature": "8d0aa92bbf8d575544590b2502d56248d7bd7e21465b12815e709b6346f63e80",
+      "num_keys": 32,
+      "num_parameters": 1832393
+    },
+    "mlp_ae": {
+      "signature": "b3429ce98e3165af42381fa78521f33aa93106d8eee724743ca542c15a9bb62f",
+      "num_keys": 22,
+      "num_parameters": 1864008
+    },
+    "resmlp_ae": {
+      "signature": "6ef94d76c98854149742ffe2a9e0020d2f713eb59eb5769a05b0594ccd2c0eb4",
+      "num_keys": 46,
+      "num_parameters": 1994824
+    },
+    "tcn_ae": {
+      "signature": "8c00f7711e491e49880c5b8b4faa9402db373847e9df98a2cd37093b8472878d",
+      "num_keys": 42,
+      "num_parameters": 1611721
+    },
+    "transformer1d_ae": {
+      "signature": "40e3a4e4d0ddecaecaeb9ca009a4c85f2795ce43edd6547f7f5b10853d73d23d",
+      "num_keys": 82,
+      "num_parameters": 1890376
+    }
+  },
+  "image_autoencoder": {
+    "conv2d_ae": {
+      "signature": "145cdacf05f4d189c74b512ccb76ed79ef36f85d830a0456491b2f28a0838eeb",
+      "num_keys": 42,
+      "num_parameters": 48377
+    },
+    "convnext2d_ae": {
+      "signature": "9a4094fe805be7e5855e24a7f35c0a37e27ba007aca6ad7fcd726365b604d155",
+      "num_keys": 77,
+      "num_parameters": 143257
+    },
+    "dilated2d_ae": {
+      "signature": "9d19ce01493116dd4556a05f040ed7fc93c630e7751393e5ea78210812b8b62d",
+      "num_keys": 84,
+      "num_parameters": 113337
+    },
+    "resnet2d_ae": {
+      "signature": "db7ca48105a18788e28c7a2e0f9b5aabd05a7818baa2d9bc670e99e136e806c4",
+      "num_keys": 77,
+      "num_parameters": 208217
+    },
+    "vit_ae": {
+      "signature": "3bdea83ccd7a588dc7e1a018a720bb36999e82945b97a5c11166a74e53b3c29f",
+      "num_keys": 114,
+      "num_parameters": 3598105
+    }
+  },
+  "unrolled": {
+    "gamma_net": {
+      "signature": "f9c7d294f7449ea4b5ee628a23e73dfd05a6cf7d9299afe14a165dd675182883",
+      "num_keys": 34,
+      "num_parameters": 1432
+    }
+  },
+  "dual": {
+    "dual_resunet": {
+      "signature": "29542bb0d72f16067dfcff801fa4c524bd39fb4b9de5ca90edfc5e36fe7bc7b9",
+      "num_keys": 263,
+      "num_parameters": 31181846
+    }
+  }
+}
