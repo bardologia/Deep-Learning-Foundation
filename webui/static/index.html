@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>DLR-TomoSAR Control Console</title>
+<title>ML Template Console</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -21,8 +21,11 @@
 
 <div class="nav-edge" id="nav-edge" aria-hidden="true"></div>
 <header class="nav" id="nav">
-  <a class="nav__brand" href="#/home" data-route="home" aria-label="DLR-TomoSAR home">
-    <img class="nav__logo" src="/static/img/dlr-logo.svg?v=20260624a" alt="DLR" />
+  <a class="nav__brand" href="#/home" data-route="home" aria-label="ML Template home">
+    <svg class="nav__logo" viewBox="0 0 44 44" role="img" aria-label="ML Template">
+      <rect x="3" y="3" width="38" height="38" rx="9" fill="none" stroke="currentColor" stroke-width="2" />
+      <path d="M13 30 V17 l9 8 9 -8 v13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
   </a>
   <nav class="nav__links" aria-label="Sections">
     <a href="#/model" data-route="model">Model</a>
@@ -1055,7 +1058,7 @@
 </main>
 
 <footer class="footer">
-  <span>DLR-TomoSAR control console</span>
+  <span>ML Template console</span>
   <span class="footer__dim" id="footer-root"></span>
 </footer>
 
@@ -1110,7 +1113,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 
 <script src="/static/js/radar.js?v=20260611z"></script>
-<script src="/static/js/tomo_anim.js?v=20260611z"></script>
+<script src="/static/js/training_anim.js?v=20260804a"></script>
 <script src="/static/js/gauges.js?v=20260703e"></script>
 <script src="/static/js/server_anim.js?v=20260703b"></script>
 <script src="/static/js/home.js?v=20260729a"></script>

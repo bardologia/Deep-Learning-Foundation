@@ -144,7 +144,7 @@ class FitLabChart {
 }
 
 class FitLabView {
-  static DEFAULT_BASE = "/ste/rnd/User/vice_vi/Dataset";
+  static get DEFAULT_BASE() { return window.repoPath("datasets"); }
   static MAX_PIXELS   = 24;
   static COMPONENTS   = ["sigma", "amp", "mu"];
   static PALETTE      = ["#1d4fd8", "#b91c1c", "#0f766e", "#7c3aed", "#b45309", "#0e7490", "#be185d", "#4d7c0f"];

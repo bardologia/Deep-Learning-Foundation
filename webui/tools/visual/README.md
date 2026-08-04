@@ -18,14 +18,14 @@ PORT=9000 OUT=/tmp/shots tools/visual/refresh.sh
 
 Default routes: `home model pipelines architectures scripts configuration console`.
 Parametrised routes work too, e.g. `launch/train_model`. Screenshots land in
-`/tmp/tomosar-ui/<route>.png` (slashes become underscores); the directory is cleared
+`/tmp/ml-template-ui/<route>.png` (slashes become underscores); the directory is cleared
 on each run so every PNG reflects the current code. The server is left running on
-the port and its log goes to `/tmp/tomosar-webui-<port>.log`.
+the port and its log goes to `/tmp/ml-template-webui-<port>.log`.
 
 `snap_ui.js` can also be run directly against an already-running server:
 
 ```
-node snap_ui.js --port 8765 --out /tmp/tomosar-ui [--settle 1800] [--width 1600] [--height 950] [routes...]
+node snap_ui.js --port 8772 --out /tmp/ml-template-ui [--settle 1800] [--width 1600] [--height 950] [routes...]
 ```
 
 It loads the SPA once, then per route sets the hash, waits for the route's page
@@ -51,7 +51,7 @@ node render_diagram.js --json ../../repomap_data.json --folder benchmarking --dk
 sub-tab before screenshotting the panel:
 
 ```
-node snap_repomap.js --port 8765 --out /tmp/tomosar-repomap [--labels] backbone:backbone-inference tune:tune-search
+node snap_repomap.js --port 8772 --out /tmp/ml-template-repomap [--labels] backbone:backbone-inference tune:tune-search
 ```
 
 Targets are `folder:dkey` pairs. `RepoMapLibrary` loads the JSON once at startup, so
@@ -81,7 +81,7 @@ Example — full sweep of the inference scene at 2 s steps:
 node dump_frames.js ../../static/js/process_anim.js inference 124 2 /tmp/frames
 ```
 
-Scene keys and loop durations: `param` 88 · `processing` 122 · `dataset` 118 · `training` 210 · `inference` 124 · `tuning` 96.
+Scene keys and loop durations: `param` 88 · `dataset` 118 · `training` 199 · `inference` 124 · `tuning` 96.
 
 The dumper performs two warm passes first so MathJax equation sprites are rasterized before screenshots, and prints sprite cache stats (`ready/total/failed`). Use a 2 s step for full audits and 0.5 s around transitions.
 

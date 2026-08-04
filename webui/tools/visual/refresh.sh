@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Restart the webui server and capture screenshots of the UI routes.
 # Usage: refresh.sh [route ...]        (no routes = default page set)
-# Env:   PORT (default 8765), OUT (default /tmp/tomosar-ui)
+# Env:   PORT (default 8772), OUT (default /tmp/ml-template-ui)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WEBUI="$(cd "$HERE/../.." && pwd)"
 
-PORT="${PORT:-8765}"
-OUT="${OUT:-/tmp/tomosar-ui}"
-LOG="/tmp/tomosar-webui-${PORT}.log"
+PORT="${PORT:-8772}"
+OUT="${OUT:-/tmp/ml-template-ui}"
+LOG="/tmp/ml-template-webui-${PORT}.log"
 
 pkill -f "serve.py --port $PORT" 2>/dev/null || true
 for _ in $(seq 1 20); do

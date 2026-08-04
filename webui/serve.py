@@ -12,9 +12,9 @@ from web_ui_server import WebUIServer
 class ServeEntry:
 
     def __init__(self) -> None:
-        self.parser = argparse.ArgumentParser(description="DLR-TomoSAR control console")
+        self.parser = argparse.ArgumentParser(description="ML Template control console")
         self.parser.add_argument("--host", default="127.0.0.1")
-        self.parser.add_argument("--port", type=int, default=8765)
+        self.parser.add_argument("--port", type=int, default=8772)
 
     def run(self) -> None:
         args   = self.parser.parse_args()

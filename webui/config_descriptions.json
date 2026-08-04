@@ -11,7 +11,8 @@
     "tuning": "The stage that searches hyperparameter spaces with Optuna to improve a chosen model family. It wires the search budget, pruning, and resources to a nested training configuration and swaps in per-trial hyperparameter samples. The configs here control the Optuna search controls and artifact emission, the entry point binding model type, resources, and data to the search, and the JEPA-specific search space over autoencoder pairing, target strategy, and loss weights.",
     "comparison": "The stage that rebuilds side-by-side comparisons across completed runs and trials without re-running training or inference. It aggregates existing inference or preprocessing outputs into a single report grouped by the varied factor. The configs here control comparison of backbone inference runs, of preprocessing trials differing by multilook window, of Gaussian-fit extraction trials grouped by component count, and the standalone rebuild of an existing benchmark comparison report.",
     "diagnostics": "The stage that inspects completed training runs independently of any data run. The weight-xray diagnostic classifies each checkpoint tensor against numeric thresholds and emits a per-run report and plots; the tensorboard export renders every logged scalar series as a publication-quality figure inside the run directory, pairing train and validation series of the same metric in one shared figure. The configs here control the pathology classification thresholds, the single-run diagnostics and their report and plot outputs, and the batch webui entries that select runs and build a per-run configuration.",
-    "patch_sweep": "The experiment that measures the best patch lengths per dataset. Each selected dataset is preprocessed with its own boxcar covariance window, and the same backbone trains across every admissible combination of azimuth and range patch lengths on the traditional reduced stack, seeds nested per unit. The configs here select the datasets to sweep, derive the per-axis patch grids at the architecture's minimum admissible step, fan the training runs out across GPUs, and produce a report ranking the best patch lengths per dataset on the seed-mean test loss."
+    "patch_sweep": "The experiment that measures the best patch lengths per dataset. Each selected dataset is preprocessed with its own boxcar covariance window, and the same backbone trains across every admissible combination of azimuth and range patch lengths on the traditional reduced stack, seeds nested per unit. The configs here select the datasets to sweep, derive the per-axis patch grids at the architecture's minimum admissible step, fan the training runs out across GPUs, and produce a report ranking the best patch lengths per dataset on the seed-mean test loss.",
+    "synthesis": "The stage that generates the bundled example dataset, so the template runs end to end without external data. It draws smooth per-pixel Gaussian-mixture parameter fields, renders them into elevation profiles, derives a multi-channel input stack with a matching DEM, and writes the dataset, its parameter run and the metadata the downstream stages expect. The configs here control the scene extent and height axis, the mixture statistics, the channel synthesis and noise levels, the fit metadata written alongside the parameters, and the entry point that runs the generator."
   },
   "configs": {
     "param_extraction::FitConfig": {
@@ -2290,6 +2291,47 @@
         "figures_subdir": "Name of the figures directory inside each inference stamp the patterns are matched against",
         "patterns": "Glob patterns relative to the figures directory selecting which figures enter the pack",
         "output_dir": "Publication figures directory the stable-named copies and the manifest are written into"
+      }
+    },
+    "synthesis::SynthesisConfig": {
+      "summary": "Generator settings for the bundled synthetic dataset: scene extent, height axis, mixture statistics, channel synthesis and output tags",
+      "fields": {
+        "output_directory": "Directory the generated dataset is written to, holding the data, meta and params subdirectories",
+        "global_crop": "Scene extent as (azimuth_start, azimuth_end, range_start, range_end) in pixels, recorded in the dataset layout so downstream splits address the same grid",
+        "profile_length": "Number of bins sampling the height axis of every rendered profile; must be at least 4",
+        "height_range": "Lower and upper bound of the height axis in meters, written to the dataset metadata and used to place every Gaussian",
+        "k_max": "Number of Gaussian slots generated per pixel, mirrored into the parameter run metadata as the K the models predict",
+        "params_run_name": "Name of the parameter run directory created under params/, referenced by the training path defaults",
+        "primary_label": "Label of the reference pass whose amplitude forms the primary input channel",
+        "secondary_labels": "Labels of the secondary passes, one amplitude channel and one interferogram channel each",
+        "field_smoothing_pixels": "Gaussian smoothing width in pixels applied to the random parameter fields, setting how slowly the scene varies spatially",
+        "phase_smoothing_pixels": "Gaussian smoothing width in pixels applied to the synthetic interferometric phase fields",
+        "amplitude_range": "Lower and upper bound of the per-slot Gaussian amplitude drawn across the scene",
+        "sigma_range": "Lower and upper bound of the per-slot Gaussian width in meters; must be resolvable on the sampled height axis and no wider than half its span",
+        "slot_band_margin": "Fraction of the height span kept free at each end of a slot's band, so slot means stay separated and inside the axis",
+        "empty_pixel_fraction": "Fraction of pixels generated with no active Gaussian at all, giving the models genuine background",
+        "dropped_slot_fraction": "Fraction of the remaining pixels where one slot is switched off, so slot occupancy varies across the scene",
+        "sensitivity_width_fraction": "Width of the per-pass height sensitivity window as a fraction of the height span, deciding how much of a profile each pass sees",
+        "pass_wavenumbers": "One phase wavenumber per secondary pass, converting profile height into interferometric phase; must list exactly as many entries as secondary_labels",
+        "tomogram_noise_fraction": "Relative noise added to the rendered profile volume, as a fraction of its scale",
+        "pass_noise_fraction": "Relative noise added to the synthesised pass and interferogram channels, as a fraction of their scale",
+        "dem_range": "Lower and upper bound in meters of the smooth terrain surface written as the DEM channel",
+        "lambda_k": "Model-order penalty recorded in the parameter run metadata, matching the field the extraction stage writes",
+        "activity_threshold": "Amplitude below which a generated slot counts as inactive, recorded in the parameter run metadata",
+        "threshold_factor": "Relative profile threshold recorded in the parameter run metadata; zero because generated profiles need no pre-cleaning",
+        "truncation_index": "Height-axis truncation index recorded in the parameter run metadata for compatibility with the extraction stage",
+        "dataset_type": "Dataset type tag written into the dataset metadata",
+        "tomogram_tag": "Tag identifying the profile volume in the dataset metadata",
+        "parameter_tag": "Prefix of the generated parameter run, combined with params_run_name",
+        "max_amplitude_clip": "Upper clip applied to the synthesised channel amplitudes, recorded in the dataset metadata",
+        "seed": "Seed of the random generator, so a dataset is reproducible from its config alone"
+      }
+    },
+    "synthesis::GenerateDatasetEntryConfig": {
+      "summary": "Entry config that generates the bundled synthetic dataset in one run",
+      "fields": {
+        "synthesis": "Generator settings deciding the scene, the mixture statistics and the written artifacts",
+        "log_dir": "Directory the run log is written to"
       }
     }
   }

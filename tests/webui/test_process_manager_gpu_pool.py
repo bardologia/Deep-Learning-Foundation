@@ -11,9 +11,9 @@ from process_manager import ProcessManager
 
 from configuration.benchmark.general        import BenchmarkConfig
 from configuration.cross_validation.general import CrossValidationConfig
-from configuration.inference                import BackboneInferenceEntryConfig, DualInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig, UnrolledInferenceEntryConfig
+from configuration.inference                import BackboneInferenceEntryConfig, DualInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig
 from configuration.patch_sweep.general      import PatchSweepConfig
-from configuration.training                 import BackboneEntryConfig, DualEntryConfig, ImageAeEntryConfig, JepaEntryConfig, ProfileAeEntryConfig, UnrolledEntryConfig
+from configuration.training                 import BackboneEntryConfig, DualEntryConfig, ImageAeEntryConfig, JepaEntryConfig, ProfileAeEntryConfig
 from configuration.tuning.general           import TuningEntryConfig
 
 from tests.webui.conftest import SLEEP_LONG, wait_for_status, wait_until_finished
@@ -24,7 +24,6 @@ _SCHEDULING_PAGES = [
     ("train_jepa",                JepaEntryConfig),
     ("train_profile_autoencoder", ProfileAeEntryConfig),
     ("train_image_autoencoder",   ImageAeEntryConfig),
-    ("train_unrolled",            UnrolledEntryConfig),
     ("benchmark",                 BenchmarkConfig),
     ("cross_validate",            CrossValidationConfig),
     ("sweep_patches",             PatchSweepConfig),
@@ -32,7 +31,6 @@ _SCHEDULING_PAGES = [
     ("infer_backbone",            BackboneInferenceEntryConfig),
     ("infer_profile_autoencoder", ProfileAeInferenceEntryConfig),
     ("infer_image_autoencoder",   ImageAeInferenceEntryConfig),
-    ("infer_unrolled",            UnrolledInferenceEntryConfig),
     ("infer_dual",                DualInferenceEntryConfig),
 ]
 

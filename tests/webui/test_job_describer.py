@@ -32,14 +32,6 @@ DUAL_LEAVES = [
     {"path": "training.epochs",     "value": "60"},
 ]
 
-PRE_PROCESS_LEAVES = [
-    {"path": "dataset_name",       "value": "None"},
-    {"path": "win_list",           "value": "[[20, 10]]"},
-    {"path": "track_selection",    "value": "*"},
-    {"path": "polarisation",       "value": "hv"},
-    {"path": "beamforming_method", "value": "Capon"},
-]
-
 EXTRACT_LEAVES = [
     {"path": "dataset_filter",    "value": "[]"},
     {"path": "fit_k_values",      "value": "[5]"},
@@ -113,22 +105,6 @@ def test_dual_lead_names_both_trunks_when_they_differ():
 
     assert "dual unet_skip.local_cnn" in text
     assert "existence_backbone=" not in text
-
-
-def test_pre_process_shows_windows_and_stack_choices():
-    text = _describer({"pre_process": PRE_PROCESS_LEAVES}).describe("pre_process", "python", {})
-
-    assert "windows [[20, 10]]" in text
-    assert "tracks *" in text
-    assert "pol hv" in text
-    assert "Capon" in text
-    assert "dataset" not in text
-
-
-def test_pre_process_named_dataset_appears():
-    text = _describer({"pre_process": PRE_PROCESS_LEAVES}).describe("pre_process", "python", {"dataset_name": "traunstein_w30_15"})
-
-    assert "dataset traunstein_w30_15" in text
 
 
 def test_extract_params_empty_filter_reads_all_datasets():

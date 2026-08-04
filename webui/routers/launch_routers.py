@@ -17,10 +17,10 @@ from script_config_resolver import ScriptConfigResolver
 class CatalogRouter(SubRouter):
 
     PROJECT = {
-        "name"        : "DLR-TomoSAR",
-        "tagline"     : "Neural SAR tomography control console",
-        "description" : "Supervised deep learning that replaces per-pixel iterative optimisation in SAR tomographic parameter estimation, inferring all 3K Gaussian-mixture parameters of the elevation spectrum in one forward pass.",
-        "pipelines"   : ["Processing", "Parameter Extraction", "Dataset", "Training", "Inference", "Tuning"],
+        "name"        : "ML Template",
+        "tagline"     : "Deep learning project template and control console",
+        "description" : "A reusable scaffold for supervised deep learning projects: dataset assembly, model zoo, training, inference, experiments and analysis, all wired to this console. The bundled example task predicts the parameters of a per-pixel Gaussian mixture from a synthetic multi-channel dataset.",
+        "pipelines"   : ["Parameter Extraction", "Dataset", "Training", "Inference", "Tuning"],
     }
 
     def __init__(self, paths: ProjectPaths, catalog: ScriptCatalog, resolver: ScriptConfigResolver, layout: LaunchLayout, models: BackboneModelLibrary, launcher: RunLauncher) -> None:

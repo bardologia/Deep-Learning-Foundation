@@ -71,7 +71,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 class WebUIServer:
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 8772) -> None:
         self.host   = host
         self.port   = port
         self.logger = WebLogger()
@@ -170,7 +170,7 @@ class WebUIServer:
         interpreters = self.paths.discover_interpreters()
         preferred    = self.paths.preferred_interpreter(interpreters)
 
-        self.logger.banner("DLR-TomoSAR Control Console", [
+        self.logger.banner("ML Template Control Console", [
             f"URL          http://{self.host}:{self.port}",
             f"repo root    {self.paths.repo_root}",
             f"scripts      {len(scripts)} entry points",
