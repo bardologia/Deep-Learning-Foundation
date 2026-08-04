@@ -14,6 +14,7 @@ class TrainingScene extends CanvasBase {
     this.lanes     = [];
     this.batches   = [];
     this.history   = [];
+    this.steps     = 0;
     this.epoch     = 0;
     this.loss      = 1.0;
     this.noise     = 0;
@@ -22,7 +23,6 @@ class TrainingScene extends CanvasBase {
     this._seed();
 
     if (REDUCED_MOTION) {
-      for (let i = 0; i < this.maxPoints; i++) this._step();
       this._draw();
     } else {
       this._loop = this._loop.bind(this);
@@ -31,8 +31,10 @@ class TrainingScene extends CanvasBase {
   }
 
   onResize() {
+    if (!this.history) return;
+
     this._seed();
-    if (REDUCED_MOTION && this.history.length) this._draw();
+    if (REDUCED_MOTION) this._draw();
   }
 
   _designH() {
@@ -58,19 +60,28 @@ class TrainingScene extends CanvasBase {
         weight : 0.35 + Math.random() * 0.65,
       });
     }
+
+    if (!this.history.length) {
+      for (let i = 0; i < 150; i++) this._step();
+    }
   }
 
   _step() {
-    this.noise = this.noise * 0.86 + (Math.random() - 0.5) * 0.09;
-    this.loss  = Math.max(0.035, this.loss * 0.985 + this.noise * 0.02);
+    this.noise  = this.noise * 0.86 + (Math.random() - 0.5) * 0.09;
+    this.loss   = Math.max(0.035, this.loss * 0.985 + this.noise * 0.02);
+    this.steps += 1;
 
     this.history.push(this.loss);
     if (this.history.length > this.maxPoints) this.history.shift();
 
-    if (this.history.length % 44 === 0) this.epoch += 1;
-    if (this.loss < 0.05) {
-      this.loss  = 0.9 + Math.random() * 0.2;
-      this.epoch = 0;
+    if (this.steps % 44 === 0) this.epoch += 1;
+
+    if (this.loss < 0.05 || this.history.length === this.maxPoints) {
+      this.loss    = 0.9 + Math.random() * 0.2;
+      this.noise   = 0;
+      this.steps   = 0;
+      this.epoch   = 0;
+      this.history = [];
     }
   }
 
