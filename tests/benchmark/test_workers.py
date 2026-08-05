@@ -172,7 +172,7 @@ def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data
 
     worker.run("resunet-conv")
 
-    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / 256)
+    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size)
     assert captured["dataset_config"].batch_size         == 500
 
 
