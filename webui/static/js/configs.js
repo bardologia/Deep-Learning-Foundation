@@ -19,12 +19,12 @@ class ConfigBrowser {
   }
 
   async load() {
-    const data = await window.apiGet("/api/configs");
+    const data = await Api.get("/api/configs");
 
     if (data.error) {
       this.groups = [];
       this.flat   = [];
-      this.listEl.innerHTML = `<div class="clist__empty">Could not load configurations: ${this._esc(String(data.error))}</div>`;
+      this.listEl.innerHTML = `<div class="clist__empty">Could not load configurations: ${SharedCharts.esc(String(data.error))}</div>`;
       return;
     }
 
@@ -155,7 +155,7 @@ class ConfigBrowser {
     const visible = this._visibleClasses();
 
     if (!visible.length) {
-      this.listEl.innerHTML = `<div class="clist__empty">Nothing matches &ldquo;${this._esc(this.searchEl.value.trim())}&rdquo;.</div>`;
+      this.listEl.innerHTML = `<div class="clist__empty">Nothing matches &ldquo;${SharedCharts.esc(this.searchEl.value.trim())}&rdquo;.</div>`;
       return;
     }
 
@@ -170,7 +170,7 @@ class ConfigBrowser {
       const head = document.createElement("button");
       head.className = "cgroup__head";
       head.setAttribute("aria-expanded", String(isOpen));
-      head.innerHTML = `<span class="cgroup__chev" aria-hidden="true"></span><span class="cgroup__title">${this._esc(g.title)}</span><span class="cgroup__count">${classes.length}</span>`;
+      head.innerHTML = `<span class="cgroup__chev" aria-hidden="true"></span><span class="cgroup__title">${SharedCharts.esc(g.title)}</span><span class="cgroup__count">${classes.length}</span>`;
       head.addEventListener("click", () => this._toggleGroup(g.title));
       grp.appendChild(head);
 
@@ -225,7 +225,7 @@ class ConfigBrowser {
     const visible = this._visibleClasses();
 
     if (!visible.length) {
-      this.detailEl.innerHTML = `<div class="cdetail__empty"><p>No config or field matches &ldquo;${this._esc(this.searchEl.value.trim())}&rdquo;.</p><button class="btn btn--mini" id="config-clear-search">Clear search</button></div>`;
+      this.detailEl.innerHTML = `<div class="cdetail__empty"><p>No config or field matches &ldquo;${SharedCharts.esc(this.searchEl.value.trim())}&rdquo;.</p><button class="btn btn--mini" id="config-clear-search">Clear search</button></div>`;
       const clear = document.getElementById("config-clear-search");
       if (clear) clear.addEventListener("click", () => {
         this.searchEl.value = "";
@@ -305,7 +305,7 @@ class ConfigBrowser {
         const tag = this._groupLabel(run.fields);
         rows +=
           `<div class="ctable__group is-c${run.g % 6}">` +
-          (tag ? `<div class="ctable__gtag">${this._esc(tag)}</div>` : "") +
+          (tag ? `<div class="ctable__gtag">${SharedCharts.esc(tag)}</div>` : "") +
           run.fields.map((f) => this._row(f)).join("") +
           `</div>`;
       });
@@ -315,10 +315,10 @@ class ConfigBrowser {
 
     this.detailEl.innerHTML =
       `<div class="cdetail__head">` +
-      `<div><span class="cdetail__module">${this._esc(cls.group)}</span>` +
-      (cls.groupDesc ? `<p class="cdetail__sectiondesc">${this._esc(cls.groupDesc)}</p>` : "") +
-      `<h3 class="cdetail__name">${this._esc(cls.name)}</h3>` +
-      `<div class="cdetail__path">configuration/${this._esc(cls.module)}.py</div>` +
+      `<div><span class="cdetail__module">${SharedCharts.esc(cls.group)}</span>` +
+      (cls.groupDesc ? `<p class="cdetail__sectiondesc">${SharedCharts.esc(cls.groupDesc)}</p>` : "") +
+      `<h3 class="cdetail__name">${SharedCharts.esc(cls.name)}</h3>` +
+      `<div class="cdetail__path">configuration/${SharedCharts.esc(cls.module)}.py</div>` +
       (cls.desc ? `<p class="cdetail__desc">${this._mark(cls.desc)}</p>` : "") +
       `</div>` +
       `<span class="cdetail__count">${this.query && fields.length !== cls.fields.length ? `${fields.length} of ${cls.fields.length} fields` : `${fields.length} field${fields.length === 1 ? "" : "s"}`}</span>` +
@@ -333,20 +333,16 @@ class ConfigBrowser {
     this.detailEl.classList.add("is-swap");
   }
 
-  _esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  }
-
   _mark(text) {
     const raw  = String(text == null ? "" : text);
-    const safe = this._esc(raw);
+    const safe = SharedCharts.esc(raw);
     if (!this.query) return safe;
 
     const idx = raw.toLowerCase().indexOf(this.query);
     if (idx < 0) return safe;
 
     const end = idx + this.query.length;
-    return this._esc(raw.slice(0, idx)) + "<mark>" + this._esc(raw.slice(idx, end)) + "</mark>" + this._esc(raw.slice(end));
+    return SharedCharts.esc(raw.slice(0, idx)) + "<mark>" + SharedCharts.esc(raw.slice(idx, end)) + "</mark>" + SharedCharts.esc(raw.slice(end));
   }
 }
 

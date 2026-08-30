@@ -47,7 +47,7 @@ class ServerScene extends CanvasBase {
 
     const levels = {};
     (alerts.active || []).forEach((a) => {
-      const unit  = a.kind === "ram" || a.kind === "ram_kill" ? "ram" : "cpu";
+      const unit  = a.kind === "ram" || a.kind === "ram_kill" || a.kind === "ram_foreign" ? "ram" : "cpu";
       const lvl   = a.level === "danger" ? 2 : 1;
       levels[unit] = Math.max(levels[unit] || 0, lvl);
     });

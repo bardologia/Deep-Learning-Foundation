@@ -8,6 +8,7 @@ class DatasetPicker {
     runs:         { endpoint: "/api/fs/runs",     key: "runs",     noun: "runs",     hint: "nothing selected = every run is processed",     badge: (d) => (d.n_seeds ? (d.own_inference ? { text: "seed report", tone: "ok" } : { text: "no seed report", tone: "warn" }) : !d.has_checkpoint ? { text: "no checkpoint", tone: "warn" } : d.has_inference ? { text: "inferred", tone: "ok" } : null) },
     runs_compare: { endpoint: "/api/fs/runs",     key: "runs",     noun: "runs",     hint: "select 2 or more runs to compare",            params: "units=1", badge: (d) => (d.n_seeds ? { text: `${d.n_seeds} seed${d.n_seeds > 1 ? "s" : ""}`, tone: d.has_inference ? "ok" : "warn" } : d.has_inference ? { text: "inferred", tone: "ok" } : { text: "no inference", tone: "warn" }) },
     run_groups:   { endpoint: "/api/fs/run_groups", key: "groups", noun: "groups",   hint: "nothing selected = runs_dir itself is treated as one seed group", badge: (d) => ({ text: `${d.n_runs} runs`, tone: d.n_runs >= 2 ? "ok" : "warn" }) },
+    experiments:  { endpoint: "/api/fs/experiments", key: "experiments", noun: "experiments", hint: "nothing selected = every experiment is mailed", badge: (d) => ({ text: `${d.n_comparisons} comparison${d.n_comparisons === 1 ? "" : "s"}`, tone: d.n_comparisons >= 1 ? "ok" : "warn" }) },
     param_trials: { endpoint: "/api/fs/param_trials", key: "trials", noun: "trials", hint: "select 2 or more trials to compare across datasets", badge: (d) => (d.dataset ? { text: d.dataset, tone: "ok" } : null) },
   };
 
@@ -30,6 +31,7 @@ class DatasetPicker {
     this.stale = [];
     this.reloadTimer = null;
     this.baseLabel = "";
+    this.multiLoadSeq = 0;
   }
 
   _baseList() {
@@ -78,6 +80,7 @@ class DatasetPicker {
       this.custom.classList.toggle("is-dirty", this.custom.value !== this.leaf.value);
       this.view._setValue(this.leaf, this.custom.value);
       this.view._fireDependents(this.leaf.path, this.custom.value);
+      this._paintAnalysisWarning();
     });
 
     this.el.appendChild(this.select);
@@ -137,7 +140,7 @@ class DatasetPicker {
       return;
     }
     this.note.textContent = "listing...";
-    const res = await window.apiGet(`/api/fs/runs?base=${encodeURIComponent(base)}`);
+    const res = await Api.get(`/api/fs/runs?base=${encodeURIComponent(base)}`);
     if (this._singleStale(seq)) return;
     if (!res.ok) {
       this.note.textContent = res.error || "could not list runs";
@@ -152,7 +155,7 @@ class DatasetPicker {
 
   async _fetchDatasets(base, seq) {
     this.note.textContent = "listing...";
-    const res = await window.apiGet(`/api/fs/datasets?base=${encodeURIComponent(base || "")}`);
+    const res = await Api.get(`/api/fs/datasets?base=${encodeURIComponent(base || "")}`);
     if (this._singleStale(seq)) return;
     if (!res.ok) {
       this.note.textContent = res.error || "could not list datasets";
@@ -166,21 +169,40 @@ class DatasetPicker {
 
   async _fetchParams(dataset, seq) {
     if (!dataset) {
+      this._clearAnalysisState();
       this.note.textContent = "select a dataset first";
       this._renderSingleOptions([]);
       return;
     }
     this.note.textContent = "listing...";
-    const res = await window.apiGet(`/api/fs/params?dataset=${encodeURIComponent(dataset)}`);
+    const res = await Api.get(`/api/fs/params?dataset=${encodeURIComponent(dataset)}`);
     if (this._singleStale(seq)) return;
     if (!res.ok) {
+      this._clearAnalysisState();
       this.note.textContent = res.error || "could not list params";
       this._renderSingleOptions([]);
       return;
     }
     const items = res.files || [];
-    this.note.textContent = items.length ? `${items.length} under ${res.params_root}` : "no extracted params yet";
-    this._renderSingleOptions(items.map((f) => ({ value: f.path, label: f.name })));
+    this.unanalysed = new Set(items.filter((f) => f.analysed === false).map((f) => f.path));
+    this.noteBase = items.length ? `${items.length} under ${res.params_root}` : "no extracted params yet";
+    this.note.textContent = this.noteBase;
+    this._renderSingleOptions(items.map((f) => ({ value: f.path, label: f.name + (this.spec.warnUnanalysed && f.analysed === false ? "  (not analysed)" : "") })));
+    this._paintAnalysisWarning();
+  }
+
+  _clearAnalysisState() {
+    this.unanalysed = null;
+    this.noteBase = "";
+    this.note.classList.remove("is-warn");
+  }
+
+  _paintAnalysisWarning() {
+    if (!this.spec.warnUnanalysed || !this.unanalysed) return;
+    const flagged = this.unanalysed.has(String(this.view._effective(this.leaf) || ""));
+    this.note.classList.toggle("is-warn", flagged);
+    if (flagged) this.note.textContent = "no resolution curves in this run: run Param inference (analyze_param_extraction) on it first, or the launch will abort";
+    else this.note.textContent = this.noteBase || "";
   }
 
   _renderSingleOptions(items) {
@@ -210,12 +232,14 @@ class DatasetPicker {
       this.custom.focus();
       this.view._setValue(this.leaf, this.custom.value);
       this.view._fireDependents(this.leaf.path, this.custom.value);
+      this._paintAnalysisWarning();
       return;
     }
     this.custom.hidden = true;
     this.select.classList.toggle("is-dirty", this.select.value !== this.leaf.value);
     this.view._setValue(this.leaf, this.select.value);
     this.view._fireDependents(this.leaf.path, this.select.value);
+    this._paintAnalysisWarning();
   }
 
   _buildMulti() {
@@ -256,6 +280,11 @@ class DatasetPicker {
     }
     head.appendChild(window.LaunchWidgetDom.mini("Reload", () => this._loadMulti()));
 
+    this.dropBtn = window.LaunchWidgetDom.mini("Drop missing", () => this._dropStale());
+    this.dropBtn.title = "remove the selected names that the current base does not list";
+    this.dropBtn.hidden = true;
+    head.appendChild(this.dropBtn);
+
     this.body = document.createElement("div");
     this.body.className = "picker__items";
 
@@ -265,6 +294,9 @@ class DatasetPicker {
 
     if (this.spec.baseFrom) {
       this.view._onDependency(this.spec.baseFrom, () => this._scheduleReload());
+    }
+    if (this.spec.markerFrom) {
+      this.view._onDependency(this.spec.markerFrom, () => this._scheduleReload());
     }
 
     this._loadMulti();
@@ -287,6 +319,7 @@ class DatasetPicker {
   async _loadMulti() {
     const mode  = DatasetPicker.MULTI_MODES[this.spec.mode];
     const bases = this._baseList();
+    const seq   = ++this.multiLoadSeq;
 
     this.count.textContent = "listing...";
     this.hint.textContent = "";
@@ -294,8 +327,14 @@ class DatasetPicker {
     const parts = (bases.length ? bases : [""]).map((b) => `base=${encodeURIComponent(b)}`);
     if (mode.params) parts.push(mode.params);
     else if (this.spec.units) parts.push("units=1");
+    if (this.spec.markerFrom) {
+      const markerLeaf = this.view._leafByPath(this.spec.markerFrom);
+      parts.push(`marker=${encodeURIComponent(markerLeaf ? this.view._effective(markerLeaf) : "")}`);
+    }
 
-    const res = await window.apiGet(`${mode.endpoint}?${parts.join("&")}`);
+    const res = await Api.get(`${mode.endpoint}?${parts.join("&")}`);
+    if (this._multiStale(seq)) return;
+
     if (!res.ok) {
       this.items = [];
       this.count.textContent = `no ${mode.noun}`;
@@ -309,9 +348,11 @@ class DatasetPicker {
 
     this._syncSelection();
     this._renderItems();
+    this._paintSummary();
+  }
 
-    if (this.stale.length) this._commitMulti();
-    else this._paintSummary();
+  _multiStale(seq) {
+    return seq !== this.multiLoadSeq;
   }
 
   _syncSelection() {
@@ -382,6 +423,7 @@ class DatasetPicker {
   }
 
   _setAll(on) {
+    if (!on) this.stale = [];
     this._visibleNames().forEach((n) => (on ? this.selected.add(n) : this.selected.delete(n)));
     this._renderItems();
     this._commitMulti();
@@ -409,8 +451,15 @@ class DatasetPicker {
     this._commitMulti();
   }
 
+  _dropStale() {
+    if (!this.stale.length) return;
+
+    this.stale = [];
+    this._commitMulti();
+  }
+
   _commitMulti() {
-    const names = this.items.map((d) => d.name).filter((n) => this.selected.has(n));
+    const names = this.items.map((d) => d.name).filter((n) => this.selected.has(n)).concat(this.stale);
 
     this.view._setValue(this.leaf, window.PythonLiteral.render(names));
     this._paintSummary();
@@ -420,8 +469,9 @@ class DatasetPicker {
     const mode = DatasetPicker.MULTI_MODES[this.spec.mode];
     const picked = this.items.filter((d) => this.selected.has(d.name)).length;
 
-    this.count.textContent = picked ? `${picked} of ${this.items.length} selected` : `all ${this.items.length} ${mode.noun}`;
-    this.hint.textContent = this.stale.length ? `dropped ${this.stale.join(", ")}: not under ${this.baseLabel}` : picked ? "" : mode.hint;
+    this.count.textContent = picked || this.stale.length ? `${picked + this.stale.length} of ${this.items.length + this.stale.length} selected` : `all ${this.items.length} ${mode.noun}`;
+    this.hint.textContent = this.stale.length ? `kept ${this.stale.join(", ")}: not under ${this.baseLabel}` : picked ? "" : mode.hint;
+    if (this.dropBtn) this.dropBtn.hidden = !this.stale.length;
     this.board.classList.toggle("is-dirty", this.view.dirty[this.leaf.path] !== undefined);
   }
 
@@ -453,4 +503,127 @@ class DatasetPicker {
   }
 }
 
+class RunConfigCopy {
+  static DATASET_ENTRIES = ["pre_process", "extract_params", "inject_external_params"];
+
+  constructor(view) {
+    this.view = view;
+    this.base = null;
+    this.baseKey = null;
+    this.run = "";
+    this.loadSeq = 0;
+    this.timer = null;
+  }
+
+  _entryKey() {
+    if (this.view.key) return this.view.key;
+    const editorKey = this.view.editorKey || "";
+    const cut = editorKey.indexOf(":");
+    return cut >= 0 ? editorKey.slice(cut + 1) : "";
+  }
+
+  _defaultBase() {
+    return RunConfigCopy.DATASET_ENTRIES.includes(this._entryKey()) ? ResultsSources.datasets() : ResultsSources.runs();
+  }
+
+  build() {
+    const key = this._entryKey();
+    if (key !== this.baseKey) {
+      this.baseKey = key;
+      this.base = null;
+      this.run = "";
+    }
+
+    const dir = document.createElement("input");
+    dir.className = "cfg-edit__input rail-copy__dir";
+    dir.spellcheck = false;
+    dir.placeholder = RunConfigCopy.DATASET_ENTRIES.includes(key) ? "dataset directory" : "runs directory";
+    dir.value = this.base !== null ? this.base : this._defaultBase();
+
+    const select = document.createElement("select");
+    select.className = "run-select";
+
+    const note = document.createElement("span");
+    note.className = "picker__note";
+
+    const apply = document.createElement("button");
+    apply.className = "btn btn--ghost rail-copy";
+    apply.textContent = "Copy configs";
+    apply.title = "Replace every field with the selected run's resolved config, so you only change what should differ; the run's own name and resume state are kept as they are";
+    apply.disabled = true;
+
+    dir.addEventListener("input", () => {
+      this.base = dir.value;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this._load(select, note, apply), 350);
+    });
+    select.addEventListener("change", () => {
+      this.run = select.value;
+      apply.disabled = !select.value;
+    });
+    apply.addEventListener("click", () => this._apply(select.value, apply));
+
+    this._load(select, note, apply);
+    return { dir, select, note, apply };
+  }
+
+  async _load(select, note, apply) {
+    const base = this.base !== null ? this.base : this._defaultBase();
+    const seq  = ++this.loadSeq;
+
+    note.textContent = "listing...";
+    const res = await Api.get(`/api/run-config/runs?base=${encodeURIComponent(base)}`);
+    if (seq !== this.loadSeq) return;
+
+    select.innerHTML = "";
+    if (!res.ok) {
+      note.textContent = res.error || "could not list runs";
+      apply.disabled = true;
+      return;
+    }
+
+    const runs = res.runs || [];
+    note.textContent = runs.length ? `${runs.length} run${runs.length > 1 ? "s" : ""} with a stored config` : "no runs with a stored config here";
+
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = runs.length ? "select a run..." : "no runs found";
+    select.appendChild(blank);
+
+    runs.forEach((run) => {
+      const opt = document.createElement("option");
+      opt.value = run.path;
+      opt.textContent = run.name;
+      if (run.path === this.run) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    apply.disabled = !select.value;
+  }
+
+  async _apply(path, apply) {
+    if (!path) return;
+
+    apply.disabled = true;
+    try {
+      const res = await Api.get(`/api/run-config?path=${encodeURIComponent(path)}`);
+      if (!res.ok) {
+        Toast.show(res.error || "Could not read the run's config", "error");
+        return;
+      }
+
+      const outcome  = this.view.applyRunConfig(res.config);
+      const identity = res.identity;
+      const parts    = [`Copied ${res.run}: ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`];
+      if (identity.length) parts.push(`${identity.length} identity field${identity.length === 1 ? "" : "s"} kept: ${identity.join(", ")}`);
+      if (outcome.locked.length) parts.push(`${outcome.locked.length} locked field${outcome.locked.length === 1 ? "" : "s"} kept`);
+      if (outcome.skipped.length) parts.push(`${outcome.skipped.length} unknown key${outcome.skipped.length === 1 ? "" : "s"} skipped: ${outcome.skipped.slice(0, 4).join(", ")}${outcome.skipped.length > 4 ? ", ..." : ""}`);
+      Toast.show(parts.join(" · "), outcome.skipped.length || outcome.locked.length ? "warn" : "ok");
+    } finally {
+      apply.disabled = false;
+    }
+  }
+}
+
 window.DatasetPicker = DatasetPicker;
+window.RunConfigCopy = RunConfigCopy;

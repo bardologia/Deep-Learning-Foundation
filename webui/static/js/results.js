@@ -1,9 +1,6 @@
 "use strict";
 
 class ResultsView {
-  static get DEFAULT_DATASETS() { return window.repoPath("datasets"); }
-  static get DEFAULT_RUNS()     { return window.repoPath("runs"); }
-
   constructor(listEl, detailEl) {
     this.listEl    = listEl;
     this.detailEl  = detailEl;
@@ -15,7 +12,7 @@ class ResultsView {
     this.expanded  = new Set();
     this.loaded    = false;
 
-    this.sources     = this._loadSources();
+    this.sources     = ResultsSources.all();
     this.catalog     = null;
     this.view        = "folder";
     this.filter      = "";
@@ -80,31 +77,21 @@ class ResultsView {
       return;
     }
 
-    let data;
-    try {
-      data = await window.apiGet(`/api/results/catalog?datasets=${encodeURIComponent(this.sources.datasets)}&logs=${encodeURIComponent(this.sources.logs)}`);
-    } catch (e) {
-      data = null;
-    }
+    const data = await Api.get(`/api/results/catalog?datasets=${encodeURIComponent(this.sources.datasets)}&logs=${encodeURIComponent(this.sources.logs)}`);
 
-    this.catalog = data && data.ok ? data : null;
+    this.catalog = data.ok ? data : null;
     this._renderSidebar();
   }
 
   async open(path) {
     this.detailEl.innerHTML = `<div class="res-empty">Loading&hellip;</div>`;
 
-    let data;
-    try {
-      data = await window.apiGet(`/api/results/tree?path=${encodeURIComponent(path)}`);
-    } catch (e) {
-      data = null;
-    }
+    const data = await Api.get(`/api/results/tree?path=${encodeURIComponent(path)}`);
 
-    if (!data || !data.ok) {
+    if (!data.ok) {
       this.root = null;
       this._renderSidebar();
-      this.detailEl.innerHTML = `<div class="res-empty">${this._esc(data && data.error ? data.error : "Could not open this path.")}</div>`;
+      this.detailEl.innerHTML = `<div class="res-empty">${SharedCharts.esc(data.error || "Could not open this path.")}</div>`;
       return;
     }
 
@@ -138,15 +125,10 @@ class ResultsView {
     this.view      = "folder";
     this._renderSidebar();
 
-    let data;
-    try {
-      data = await window.apiGet(`/api/results/folder?root=${encodeURIComponent(this.root.root)}&rel=${encodeURIComponent(rel)}`);
-    } catch (e) {
-      data = null;
-    }
+    const data = await Api.get(`/api/results/folder?root=${encodeURIComponent(this.root.root)}&rel=${encodeURIComponent(rel)}`);
 
-    if (!data || !data.ok) {
-      this.detailEl.innerHTML = `<div class="res-empty">Could not load this folder.</div>`;
+    if (!data.ok) {
+      this.detailEl.innerHTML = `<div class="res-empty">${SharedCharts.esc(data.error || "Could not load this folder.")}</div>`;
       return;
     }
 
@@ -158,13 +140,15 @@ class ResultsView {
     this.view = view;
 
     if (view === "all" && !this.galleryData) {
-      let data;
-      try {
-        data = await window.apiGet(`/api/results/gallery?root=${encodeURIComponent(this.root.root)}`);
-      } catch (e) {
-        data = null;
+      const data = await Api.get(`/api/results/gallery?root=${encodeURIComponent(this.root.root)}`);
+
+      if (!data.ok) {
+        this.galleryData = null;
+        this.detailEl.innerHTML = `<div class="res-empty">${SharedCharts.esc(data.error || "Could not load the gallery.")}</div>`;
+        return;
       }
-      this.galleryData = data && data.ok ? data : { groups: [], total: 0 };
+
+      this.galleryData = data;
     }
 
     this._renderDetail();
@@ -204,8 +188,8 @@ class ResultsView {
     box.className = "res-src";
     box.innerHTML =
       `<div class="res-src__head">Sources</div>` +
-      `<label>Datasets dir<input id="res-src-datasets" type="text" value="${this._esc(this.sources.datasets)}" placeholder="/path/to/datasets" spellcheck="false" autocomplete="off" /></label>` +
-      `<label>Runs dir<input id="res-src-logs" type="text" value="${this._esc(this.sources.logs)}" placeholder="/path/to/runs" spellcheck="false" autocomplete="off" /></label>` +
+      `<label>Datasets dir<input id="res-src-datasets" type="text" value="${SharedCharts.esc(this.sources.datasets)}" placeholder="/path/to/datasets" spellcheck="false" autocomplete="off" /></label>` +
+      `<label>Runs dir<input id="res-src-logs" type="text" value="${SharedCharts.esc(this.sources.logs)}" placeholder="/path/to/runs" spellcheck="false" autocomplete="off" /></label>` +
       `<button type="submit" class="btn btn--mini">Apply</button>`;
 
     box.addEventListener("submit", (ev) => {
@@ -214,7 +198,7 @@ class ResultsView {
         datasets : box.querySelector("#res-src-datasets").value.trim(),
         logs     : box.querySelector("#res-src-logs").value.trim(),
       };
-      localStorage.setItem("results-sources", JSON.stringify(this.sources));
+      ResultsSources.save(this.sources);
       this.loadCatalog();
     });
 
@@ -224,7 +208,7 @@ class ResultsView {
   _renderGroupHead(title, count) {
     const head = document.createElement("div");
     head.className = "run-group__head";
-    head.innerHTML = `<span>${this._esc(title)}</span><span class="run-group__count">${count}</span>`;
+    head.innerHTML = `<span>${SharedCharts.esc(title)}</span><span class="run-group__count">${count}</span>`;
     this.listEl.appendChild(head);
   }
 
@@ -243,7 +227,7 @@ class ResultsView {
     row.className = "res-cat__row" + (isOpen ? " is-open" : "") + (isOpen && this.activeRel === "" && this.view === "folder" ? " is-active" : "");
     row.style.paddingLeft = `${8 + depth * 14}px`;
     row.title = path;
-    row.innerHTML = `<span class="res-cat__name">${this._esc(name)}</span><span class="res-cat__stage">${this._esc(stage)}</span>`;
+    row.innerHTML = `<span class="res-cat__name">${SharedCharts.esc(name)}</span><span class="res-cat__stage">${SharedCharts.esc(stage)}</span>`;
     row.addEventListener("click", () => isOpen ? this.close() : this.open(path));
     this.listEl.appendChild(row);
 
@@ -463,7 +447,7 @@ class ResultsView {
     const link = document.createElement("button");
     link.type      = "button";
     link.className = "res-index__link" + (isSub ? " res-index__link--sub" : "") + (isDeep ? " res-index__link--deep" : "");
-    link.innerHTML = `${this._esc(label)}${count ? `<span>${this._esc(count)}</span>` : ""}`;
+    link.innerHTML = `${SharedCharts.esc(label)}${count ? `<span>${SharedCharts.esc(count)}</span>` : ""}`;
     link.addEventListener("click", onClick);
     return link;
   }
@@ -487,14 +471,14 @@ class ResultsView {
 
     return (
       `<div class="res-bar">` +
-      `<div class="res-bar__row">${crumbs}<span class="res-stamp is-active is-single">${this._esc(this.root.stage)}</span></div>` +
+      `<div class="res-bar__row">${crumbs}<span class="res-stamp is-active is-single">${SharedCharts.esc(this.root.stage)}</span></div>` +
       `<div class="res-bar__row res-bar__row--controls">` +
       `<div class="res-views" role="group" aria-label="Result views">` +
       `<button type="button" data-view="folder" class="${this.view === "folder" ? "is-active" : ""}">Folder</button>` +
       `<button type="button" data-view="all" class="${this.view === "all" ? "is-active" : ""}">All plots</button>` +
       `<button type="button" data-view="compare" class="${this.view === "compare" ? "is-active" : ""}">Compare <span id="res-compare-count">${count}</span></button>` +
       `</div>` +
-      `<input type="search" class="res-filter" id="res-filter" placeholder="Filter plots by name" value="${this._esc(this.filter)}" spellcheck="false" />` +
+      `<input type="search" class="res-filter" id="res-filter" placeholder="Filter plots by name" value="${SharedCharts.esc(this.filter)}" spellcheck="false" />` +
       `<div class="res-sizes" id="res-sizes" role="group" aria-label="Thumbnail size" ${this.view === "compare" ? "hidden" : ""}>` +
       ["s", "m", "l"].map((s) => `<button type="button" data-size="${s}" class="${this.size === s ? "is-active" : ""}">${s.toUpperCase()}</button>`).join("") +
       `</div>` +
@@ -507,13 +491,13 @@ class ResultsView {
 
   _crumbsHtml() {
     let html = `<nav class="res-crumbs" aria-label="Folder path">`;
-    html += `<button type="button" data-rel="">${this._esc(this.root.name)}</button>`;
+    html += `<button type="button" data-rel="">${SharedCharts.esc(this.root.name)}</button>`;
 
     if (this.view === "folder" && this.activeRel) {
       const parts = this.activeRel.split("/");
       parts.forEach((part, index) => {
         const rel = parts.slice(0, index + 1).join("/");
-        html += `<span class="res-crumbs__sep">/</span><button type="button" data-rel="${this._esc(rel)}">${this._esc(part)}</button>`;
+        html += `<span class="res-crumbs__sep">/</span><button type="button" data-rel="${SharedCharts.esc(rel)}">${SharedCharts.esc(part)}</button>`;
       });
     }
 
@@ -561,11 +545,11 @@ class ResultsView {
 
   _folderHtml() {
     const data = this.folderData;
-    let html   = `<p class="res-path">${this._esc(data.abs)}</p>`;
+    let html   = `<p class="res-path">${SharedCharts.esc(data.abs)}</p>`;
 
     data.markdown.forEach((md, index) => {
       html += `<section class="res-section">`;
-      html += `<h4 class="res-section__cap">${this._esc(md.name)}</h4>`;
+      html += `<h4 class="res-section__cap">${SharedCharts.esc(md.name)}</h4>`;
       html += `<article class="res-md" data-md="${index}"></article>`;
       html += `</section>`;
     });
@@ -583,7 +567,7 @@ class ResultsView {
       html += `<section class="res-section"><h4 class="res-section__cap">Configs <span>${data.configs.length}</span></h4>`;
       data.configs.forEach((cfg, index) => {
         html += `<details class="res-cfg"${data.configs.length === 1 ? " open" : ""}>`;
-        html += `<summary>${this._esc(cfg.name)}</summary>`;
+        html += `<summary>${SharedCharts.esc(cfg.name)}</summary>`;
         html += `<pre><code data-cfg="${index}"></code></pre>`;
         html += `</details>`;
       });
@@ -594,7 +578,7 @@ class ResultsView {
       html += `<section class="res-section"><h4 class="res-section__cap">Logs <span>${data.logs.length}</span></h4>`;
       data.logs.forEach((log, index) => {
         html += `<details class="res-cfg res-cfg--log"${data.logs.length === 1 ? " open" : ""}>`;
-        html += `<summary>${this._esc(log.name)} <span class="res-cfg__size">${this._size(log.size)}</span></summary>`;
+        html += `<summary>${SharedCharts.esc(log.name)} <span class="res-cfg__size">${this._size(log.size)}</span></summary>`;
         html += `<pre class="res-log"><code data-log="${index}"></code></pre>`;
         html += `</details>`;
       });
@@ -604,7 +588,7 @@ class ResultsView {
     if (data.other.length) {
       html += `<section class="res-section"><h4 class="res-section__cap">Other files <span>${data.other.length}</span></h4><ul class="res-files">`;
       data.other.forEach((file) => {
-        html += `<li><span>${this._esc(file.name)}</span><span>${this._size(file.size)}</span></li>`;
+        html += `<li><span>${SharedCharts.esc(file.name)}</span><span>${this._size(file.size)}</span></li>`;
       });
       html += `</ul></section>`;
     }
@@ -629,7 +613,7 @@ class ResultsView {
       const label = group.rel === "" ? "/" : this._relLabel(group.rel);
 
       html += `<section class="res-section">`;
-      html += `<h4 class="res-section__cap res-section__cap--link"><button type="button" data-rel="${this._esc(group.rel)}" title="Open this folder">${this._esc(label)}</button> <span>${items.length}</span></h4>`;
+      html += `<h4 class="res-section__cap res-section__cap--link"><button type="button" data-rel="${SharedCharts.esc(group.rel)}" title="Open this folder">${SharedCharts.esc(label)}</button> <span>${items.length}</span></h4>`;
       html += `<div class="res-grid">${items.map((item) => this._figHtml(item, group.rel, item.kind)).join("")}</div>`;
       html += `</section>`;
     });
@@ -651,10 +635,10 @@ class ResultsView {
     }
 
     const tiles = items.map((item) =>
-      `<figure class="res-fig res-fig--cmp" data-url="${item.url}" data-name="${this._esc(item.name)}" data-rel="${this._esc(item.rel)}">` +
+      `<figure class="res-fig res-fig--cmp" data-url="${item.url}" data-name="${SharedCharts.esc(item.name)}" data-rel="${SharedCharts.esc(item.rel)}">` +
       `<button type="button" class="res-pin is-on" data-url="${item.url}" title="Remove from compare">&minus;</button>` +
-      `<img src="${item.url}" alt="${this._esc(item.name)}" loading="lazy" />` +
-      `<figcaption><span class="res-fig__dir">${this._esc(item.rel === "" ? "/" : item.rel)}</span>${this._esc(item.name)}</figcaption>` +
+      `<img src="${item.url}" alt="${SharedCharts.esc(item.name)}" loading="lazy" />` +
+      `<figcaption><span class="res-fig__dir">${SharedCharts.esc(item.rel === "" ? "/" : item.rel)}</span>${SharedCharts.esc(item.name)}</figcaption>` +
       `</figure>`
     ).join("");
 
@@ -670,10 +654,10 @@ class ResultsView {
   _figHtml(item, rel, kind) {
     const pinned = this._isPinned(item.url);
     return (
-      `<figure class="res-fig${kind === "gif" ? " res-fig--gif" : ""}" data-url="${item.url}" data-name="${this._esc(item.name)}" data-rel="${this._esc(rel)}">` +
+      `<figure class="res-fig${kind === "gif" ? " res-fig--gif" : ""}" data-url="${item.url}" data-name="${SharedCharts.esc(item.name)}" data-rel="${SharedCharts.esc(rel)}">` +
       `<button type="button" class="res-pin${pinned ? " is-on" : ""}" data-url="${item.url}" title="${pinned ? "Remove from compare" : "Add to compare"}">${pinned ? "&minus;" : "+"}</button>` +
-      `<img src="${item.url}" alt="${this._esc(item.name)}" loading="lazy" />` +
-      `<figcaption>${this._esc(item.name)}</figcaption>` +
+      `<img src="${item.url}" alt="${SharedCharts.esc(item.name)}" loading="lazy" />` +
+      `<figcaption>${SharedCharts.esc(item.name)}</figcaption>` +
       `</figure>`
     );
   }
@@ -684,7 +668,7 @@ class ResultsView {
 
     return (
       `<section class="res-section">` +
-      `<h4 class="res-section__cap">${this._esc(title)} <span>${count}</span></h4>` +
+      `<h4 class="res-section__cap">${SharedCharts.esc(title)} <span>${count}</span></h4>` +
       `<div class="res-grid${kind === "gif" ? " res-grid--gif" : ""}">${figs}</div>` +
       `</section>`
     );
@@ -862,8 +846,12 @@ class ResultsView {
     localStorage.setItem(`results-compare:${this.root.root}`, JSON.stringify(this.compare));
   }
 
+  _decodeRelative(relative) {
+    return /%(?![0-9A-Fa-f]{2})/.test(relative) ? relative : decodeURIComponent(relative);
+  }
+
   _mediaUrl(folderAbs, relative) {
-    return "/resultsmedia?path=" + encodeURIComponent(folderAbs + "/" + decodeURIComponent(relative));
+    return "/resultsmedia?root=" + encodeURIComponent(this.root.root) + "&path=" + encodeURIComponent(folderAbs + "/" + this._decodeRelative(relative));
   }
 
   _prettyJson(text) {
@@ -871,18 +859,6 @@ class ResultsView {
       return JSON.stringify(JSON.parse(text), null, 2);
     } catch (e) {
       return text;
-    }
-  }
-
-  _loadSources() {
-    try {
-      const raw = JSON.parse(localStorage.getItem("results-sources") || "{}");
-      return {
-        datasets : raw.datasets || ResultsView.DEFAULT_DATASETS,
-        logs     : raw.logs     || ResultsView.DEFAULT_RUNS,
-      };
-    } catch (e) {
-      return { datasets: ResultsView.DEFAULT_DATASETS, logs: ResultsView.DEFAULT_RUNS };
     }
   }
 
@@ -937,9 +913,6 @@ class ResultsView {
     this.lightboxImg.src = "";
   }
 
-  _esc(text) {
-    return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
 }
 
 window.ResultsView = ResultsView;

@@ -19,7 +19,19 @@ class ModelGallery {
   }
 
   async load() {
-    const data = await window.apiGet(this.endpoint);
+    const data = await Api.get(this.endpoint);
+
+    if (data.error) {
+      this.families = [];
+      this.heads = [];
+      this.flat = [];
+      this.listEl.innerHTML = `<div class="clist__empty">Could not load the model zoo: ${SharedCharts.esc(data.error)}</div>`;
+      this.detailEl.innerHTML = `<div class="cdetail__empty"><p>The backend did not answer ${SharedCharts.esc(this.endpoint)}.</p><button class="btn btn--mini" id="models-retry">Retry</button></div>`;
+      const retry = document.getElementById("models-retry");
+      if (retry) retry.addEventListener("click", () => this.load());
+      return;
+    }
+
     this.families = data.families || [];
     this.heads = (data.heads || []).map((h) => ({ ...h, isHead: true, family: "Output heads", params: "" }));
     this.flat = this.families.flatMap((f) => f.models.map((m) => ({ ...m, family: f.family }))).concat(this.heads);
@@ -159,20 +171,26 @@ class ModelGallery {
   async _loadNote(m) {
     const host = this.detailEl.querySelector("[data-note-host] .mdetail__note-body");
     if (!host) return;
-    try {
-      const data = await window.apiGet(`${this.endpoint}/${m.key}/note`);
-      if (this.activeKey !== m.key) return;
-      host.innerHTML = this._mdToHtml(data.markdown, data.links || {});
-      host.querySelectorAll("[data-model-link]").forEach((el) => {
-        el.addEventListener("click", () => this._select(el.getAttribute("data-model-link")));
-      });
-      this._reorderTables(host);
-      this._tightenShortBlocks(host);
-      if (window.MathJax && window.MathJax.typesetPromise) {
-        window.MathJax.typesetPromise([host]).then(() => this._tightenShortBlocks(host)).catch(() => {});
-      }
-    } catch (err) {
-      host.innerHTML = `<span class="mdetail__note-loading">no vault note available</span>`;
+    const data = await Api.get(`${this.endpoint}/${m.key}/note`);
+    if (this.activeKey !== m.key) return;
+
+    if (typeof data.markdown !== "string") {
+      host.innerHTML = "";
+      const span = document.createElement("span");
+      span.className   = "mdetail__note-loading";
+      span.textContent = data.error || "no vault note available";
+      host.appendChild(span);
+      return;
+    }
+
+    host.innerHTML = this._mdToHtml(data.markdown, data.links || {});
+    host.querySelectorAll("[data-model-link]").forEach((el) => {
+      el.addEventListener("click", () => this._select(el.getAttribute("data-model-link")));
+    });
+    this._reorderTables(host);
+    this._tightenShortBlocks(host);
+    if (window.MathJax && window.MathJax.typesetPromise) {
+      window.MathJax.typesetPromise([host]).then(() => this._tightenShortBlocks(host));
     }
   }
 
@@ -232,7 +250,6 @@ class ModelGallery {
       return `${math.length - 1}`;
     });
 
-    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const inline = (s) => {
       s = s.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
       s = s.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
@@ -246,7 +263,7 @@ class ModelGallery {
       return s;
     };
 
-    const lines = esc(src).split("\n");
+    const lines = SharedCharts.esc(src).split("\n");
     const out = [];
     let para = [], list = null, table = null, quote = null;
 

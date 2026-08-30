@@ -1,6 +1,6 @@
 """Block-level error triage over inference cubes, with persisted verdicts.
 
-Ranks 16x16 azimuth-range blocks of a run's per-pixel MSE map, renders context
+Ranks 16x16 row-column blocks of a run's per-pixel MSE map, renders context
 thumbnails around a block, serves the predicted and ground-truth profile of a
 single pixel, and stores human verdicts per block.
 """
@@ -153,7 +153,7 @@ class TriageBoard:
             name      : Layer file stem, for example ``pixel_mse``.
 
         Returns:
-            Array of shape (azimuth, range), or None when the file is absent or not
+            Array of shape (rows, cols), or None when the file is absent or not
             two-dimensional.
         """
 

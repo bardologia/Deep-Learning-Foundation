@@ -7,11 +7,10 @@ class EquationView {
     this.groups   = [];
     this.active   = 0;
     this.rendered = new Map();
-    this.mjReady  = null;
   }
 
   async load() {
-    const data  = await window.apiGet("/api/equations");
+    const data  = await Api.get("/api/equations");
     this.groups = data.groups || [];
     this._renderTabs();
     this._select(0);
@@ -22,7 +21,7 @@ class EquationView {
     this.groups.forEach((group, i) => {
       const tab = document.createElement("button");
       tab.className = "eq-tab" + (i === 0 ? " is-active" : "");
-      tab.innerHTML = `${this._esc(group.group)}<span class="eq-tab__count">${group.items.length}</span>`;
+      tab.innerHTML = `${SharedCharts.esc(group.group)}<span class="eq-tab__count">${group.items.length}</span>`;
       tab.addEventListener("click", () => this._select(i));
       this.tabsEl.appendChild(tab);
     });
@@ -123,22 +122,6 @@ class EquationView {
     return face;
   }
 
-  _whenMathJax() {
-    if (this.mjReady) return this.mjReady;
-    this.mjReady = new Promise((resolve) => {
-      const check = () => {
-        if (window.MathJax && window.MathJax.tex2svgPromise) resolve();
-        else setTimeout(check, 120);
-      };
-      check();
-    }).then(() => {
-      if (!document.getElementById("MJX-SVG-styles")) {
-        document.head.appendChild(window.MathJax.svgStylesheet());
-      }
-    });
-    return this.mjReady;
-  }
-
   _stack(tex) {
     if (tex.indexOf("\\qquad") < 0) return tex;
     const parts = tex.split(/,?\s*\\qquad\s*/).filter((p) => p.trim().length);
@@ -147,15 +130,11 @@ class EquationView {
   }
 
   _typeset(el, tex, display) {
-    el.textContent = tex;
     const source = display ? this._stack(tex) : tex;
-    this._whenMathJax().then(() => {
-      return window.MathJax.tex2svgPromise(source, { display: !!display });
-    }).then((node) => {
-      el.textContent = "";
-      el.appendChild(node);
-      if (display) this._fit(el);
-    }).catch(() => {});
+
+    MathJaxTypesetter.render(el, tex, display, source).then((node) => {
+      if (node && display) this._fit(el);
+    });
   }
 
   _fit(el) {
@@ -174,9 +153,6 @@ class EquationView {
     });
   }
 
-  _esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  }
 }
 
 window.EquationView = EquationView;

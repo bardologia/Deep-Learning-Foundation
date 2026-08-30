@@ -4,14 +4,14 @@ class AutopsyView {
   constructor(root) {
     this.root       = root;
     this.built      = false;
-    this.pair       = null;
     this.runs       = [];
     this.sideA      = null;
     this.sideB      = null;
     this.runStrip   = null;
+    this.cmpToken   = 0;
   }
 
-  enter() {
+  async enter() {
     if (!this.built) {
       this._build();
       this.built = true;
@@ -22,7 +22,9 @@ class AutopsyView {
       window.abAutopsyPair = null;
       this.sideA = pending.a;
       this.sideB = pending.b;
+      await this._refreshRuns();
       this._compare();
+      return;
     }
 
     this._refreshRuns();
@@ -53,17 +55,8 @@ class AutopsyView {
     this.refs.goBtn.addEventListener("click", () => this._compare());
   }
 
-  _runsBase() {
-    try {
-      const raw = JSON.parse(localStorage.getItem("results-sources") || "{}");
-      return raw.logs || ResultsView.DEFAULT_RUNS;
-    } catch (e) {
-      return ResultsView.DEFAULT_RUNS;
-    }
-  }
-
   async _refreshRuns() {
-    const data = await window.apiGet(`/api/autopsy/runs?base=${encodeURIComponent(this._runsBase())}`);
+    const data = await Api.get(`/api/autopsy/runs?base=${encodeURIComponent(ResultsSources.runs())}`);
 
     if (!data || !data.ok) {
       this.refs.hint.textContent = (data && data.error) || "Backend unreachable.";
@@ -130,19 +123,22 @@ class AutopsyView {
     const b = this.sideB;
     if (!a || !b || a === b) return;
 
+    const token = ++this.cmpToken;
+
     this._syncSlots();
     this.refs.hint.textContent = "comparing…";
-    const data = await window.apiGet(`/api/autopsy/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+    const data = await Api.get(`/api/autopsy/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+
+    if (token !== this.cmpToken) return;
 
     if (!data.ok) {
       this.refs.hint.textContent = data.error || "comparison failed";
       return;
     }
 
-    this.pair = { a, b };
     this.refs.hint.textContent = `A = ${data.run_a} · B = ${data.run_b} · region ${data.region[0]}×${data.region[1]} px`;
     this._render(data);
-    data.hotspots.forEach((spot, index) => this._loadProfile(spot, index));
+    data.hotspots.forEach((spot, index) => this._loadProfile(spot, index, a, b, token));
   }
 
   _render(data) {
@@ -152,7 +148,7 @@ class AutopsyView {
 
     data.metrics.slice(0, 25).forEach((row) => {
       const tone = row.winner === "A" ? "#0f766e" : row.winner === "B" ? "#b91c1c" : "inherit";
-      html += `<tr><td class="lb-key">${this._esc(row.key)}</td>` +
+      html += `<tr><td class="lb-key">${SharedCharts.esc(row.key)}</td>` +
         `<td>${this._fmt(row.a)}</td><td>${this._fmt(row.b)}</td>` +
         `<td>${(row.rel * 100).toFixed(1)}%</td>` +
         `<td style="color:${tone};font-weight:600">${row.winner}</td></tr>`;
@@ -177,16 +173,22 @@ class AutopsyView {
     this.refs.out.innerHTML = html;
   }
 
-  async _loadProfile(spot, index) {
-    const data = await window.apiGet(
-      `/api/autopsy/profile?a=${encodeURIComponent(this.pair.a)}&b=${encodeURIComponent(this.pair.b)}&row=${spot.row}&col=${spot.col}`
+  async _loadProfile(spot, index, a, b, token) {
+    const data = await Api.get(
+      `/api/autopsy/profile?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&row=${spot.row}&col=${spot.col}`
     );
-    if (!data.ok) return;
+
+    if (token !== this.cmpToken) return;
+
+    if (!data.ok) {
+      this.refs.hint.textContent = data.error || "profile failed";
+      return;
+    }
 
     const canvas = this.root.querySelector(`#autopsy-spot-${index}`);
     if (!canvas) return;
 
-    window.drawLineChart(canvas, data.z_axis, [
+    SharedCharts.lineChart(canvas, data.z_axis, [
       { values: data.gt, color: "#111827", width: 1.2, label: "GT" },
       { values: data.a,  color: "#0f766e", width: 1.7, label: "A" },
       { values: data.b,  color: "#b91c1c", width: 1.7, label: "B" },
@@ -198,10 +200,6 @@ class AutopsyView {
     const abs = Math.abs(value);
     if (abs !== 0 && (abs < 1e-3 || abs >= 1e4)) return value.toExponential(2);
     return value.toPrecision(4);
-  }
-
-  _esc(text) {
-    return String(text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   }
 }
 

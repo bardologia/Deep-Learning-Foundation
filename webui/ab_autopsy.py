@@ -1,7 +1,7 @@
 """Pairwise autopsy of two inference stamps for the web UI A/B tab.
 
 Compares scalar metrics with their known orientation, locates the spatial blocks
-where one run's per-pixel MSE beats the other, and serves single-pixel elevation
+where one run's per-pixel MSE beats the other, and serves single-pixel z
 profiles from both runs against the shared ground truth.
 """
 
@@ -99,8 +99,8 @@ class AbAutopsy:
 
         Returns:
             The cube as a read-only memory map; profile cubes have shape
-            (n_samples, n_azimuth, n_range) and pixel_mse has shape
-            (n_azimuth, n_range).
+            (n_samples, n_rows, n_cols) and pixel_mse has shape
+            (n_rows, n_cols).
 
         Raises:
             FileNotFoundError : If the cube was not saved by the inference run.
@@ -164,12 +164,12 @@ class AbAutopsy:
         are ranked by mean MSE difference in each direction.
 
         Args:
-            mse_a : Per-pixel MSE of run A, shape (n_azimuth, n_range).
+            mse_a : Per-pixel MSE of run A, shape (n_rows, n_cols).
             mse_b : Per-pixel MSE of run B, same shape.
 
         Returns:
             Up to MAX_HOTSPOTS tiles favouring A followed by up to MAX_HOTSPOTS
-            favouring B, each with the tile origin, its mean delta, the azimuth and
+            favouring B, each with the tile origin, its mean delta, the row and
             range index of the largest absolute difference, and the winner.
         """
         delta      = np.asarray(mse_a, dtype=np.float64) - np.asarray(mse_b, dtype=np.float64)

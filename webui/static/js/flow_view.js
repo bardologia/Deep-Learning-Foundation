@@ -10,7 +10,6 @@ class FlowView {
     this.playing = false;
     this.timer   = null;
     this.iterTimer = null;
-    this.mjReady = null;
     this.loaded  = false;
     this.lineSeq = 0;
     this.groups  = [];
@@ -36,9 +35,10 @@ class FlowView {
   async load() {
     if (this.loaded) return;
     this.loaded = true;
-    const data = await window.apiGet("/api/flows");
+    const data = await Api.get("/api/flows");
     if (!data || data.error) {
       this.loaded = false;
+      this.root.innerHTML = `<p class="cube-hint">${SharedCharts.esc((data && data.error) || "flows unavailable")}</p>`;
       return;
     }
     this.flows = data.flows || [];
@@ -256,12 +256,12 @@ class FlowView {
     grp.className = "cine__grp";
     grp.dataset.step = i;
 
-    const sk = window.FLOW_SKETCHES ? window.FLOW_SKETCHES[step.id] : null;
+    const sk = FlowSketches.CATALOG[step.id] || null;
     let tip = null, sketchSvg = null;
     if (sk) {
       tip = document.createElement("div");
       tip.className = "cine__gtip";
-      tip.innerHTML = `<div class="cine__gsketch"></div><p class="cine__gtiptext">${this._esc(sk.tip)}</p>`;
+      tip.innerHTML = `<div class="cine__gsketch"></div><p class="cine__gtiptext">${SharedCharts.esc(sk.tip)}</p>`;
       sketchSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       sketchSvg.setAttribute("viewBox", "0 0 240 150");
       sketchSvg.classList.add("cine__skl");
@@ -386,7 +386,7 @@ class FlowView {
   _setHead(step, i, animate) {
     const set = () => {
       this.stepNo.textContent  = String(i + 1).padStart(2, "0");
-      this.titleEl.innerHTML   = this._esc(step.title) + (step.iterative ? ` <span class="cine__loop">iterative</span>` : "");
+      this.titleEl.innerHTML   = SharedCharts.esc(step.title) + (step.iterative ? ` <span class="cine__loop">iterative</span>` : "");
       this.phaseEl.textContent = step.phase ? "phase " + step.phase : "";
       this.noteEl.textContent  = step.note || "";
     };
@@ -407,7 +407,7 @@ class FlowView {
     const it = step.iterative;
     const unit = it.unit || "t";
     el.className = "cine__giter is-on is-idle";
-    el.innerHTML = `<span class="cine__iterlab">iterating</span><span class="cine__itercount">${this._esc(unit)} = 1 &hellip; ${it.steps}</span>`;
+    el.innerHTML = `<span class="cine__iterlab">iterating</span><span class="cine__itercount">${SharedCharts.esc(unit)} = 1 &hellip; ${it.steps}</span>`;
   }
 
   _iterRun(step, el, animate) {
@@ -442,24 +442,10 @@ class FlowView {
     this.trackFill.style.width = `${((this.cursor + 1) / n) * 100}%`;
   }
 
-  _whenMathJax() {
-    if (this.mjReady) return this.mjReady;
-    this.mjReady = new Promise((resolve) => {
-      const check = () => { if (window.MathJax && window.MathJax.tex2svgPromise) resolve(); else setTimeout(check, 120); };
-      check();
-    }).then(() => { if (!document.getElementById("MJX-SVG-styles")) document.head.appendChild(window.MathJax.svgStylesheet()); });
-    return this.mjReady;
-  }
-
   _typeset(el, tex, display) {
-    return this._whenMathJax().then(() => window.MathJax.tex2svgPromise(tex, { display: !!display })).then((node) => {
-      el.textContent = ""; el.appendChild(node);
-    }).catch(() => { el.textContent = ""; });
+    return MathJaxTypesetter.render(el, tex, display);
   }
 
-  _esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  }
 }
 
 window.FlowView = FlowView;

@@ -31,12 +31,6 @@ class RunStrip {
     });
   }
 
-  static _esc(text) {
-    const div = document.createElement("div");
-    div.textContent = text == null ? "" : String(text);
-    return div.innerHTML;
-  }
-
   static prettyStamp(stamp) {
     const m = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/.exec(stamp || "");
     if (!m) return stamp || "";
@@ -53,7 +47,7 @@ class RunStrip {
 
   static nameHtml(name) {
     const parts  = RunStrip.parseName(name);
-    const tokens = parts.tokens.map((tok, i) => `<span class="run-name__tok${i === 0 ? " run-name__tok--model" : ""}">${RunStrip._esc(tok)}</span>`);
+    const tokens = parts.tokens.map((tok, i) => `<span class="run-name__tok${i === 0 ? " run-name__tok--model" : ""}">${SharedCharts.esc(tok)}</span>`);
     return `<span class="run-name">${tokens.join(`<span class="run-name__sep">-</span>`)}</span>`;
   }
 
@@ -61,9 +55,9 @@ class RunStrip {
     const parts  = RunStrip.parseName(entry.run);
     const pieces = [];
 
-    if (parts.when)   pieces.push(`<span class="cube-run__when">${RunStrip._esc(parts.when)}</span>`);
-    if (entry.stamp)  pieces.push(`<span class="cube-run__when">cube ${RunStrip._esc(RunStrip.prettyStamp(entry.stamp))}</span>`);
-    if (parts.suffix) pieces.push(`<span class="cube-run__badge">${RunStrip._esc(parts.suffix)}</span>`);
+    if (parts.when)   pieces.push(`<span class="cube-run__when">${SharedCharts.esc(parts.when)}</span>`);
+    if (entry.stamp)  pieces.push(`<span class="cube-run__when">cube ${SharedCharts.esc(RunStrip.prettyStamp(entry.stamp))}</span>`);
+    if (parts.suffix) pieces.push(`<span class="cube-run__badge">${SharedCharts.esc(parts.suffix)}</span>`);
 
     if (!pieces.length) return "";
     return `<span class="cube-run__meta">${pieces.join("")}</span>`;
@@ -101,16 +95,15 @@ class RunStrip {
     return root;
   }
 
-  _shownBeneath(node) {
-    let count = node.entries.filter((entry) => this._matches(entry)).length;
-    node.dirs.forEach((dir) => { count += this._shownBeneath(dir); });
-    return count;
-  }
+  _countTree(node) {
+    node.shown  = node.entries.filter((entry) => this._matches(entry)).length;
+    node.picked = node.entries.filter((entry) => this._stateFor(entry)).length;
 
-  _pickedBeneath(node) {
-    let count = node.entries.filter((entry) => this._stateFor(entry)).length;
-    node.dirs.forEach((dir) => { count += this._pickedBeneath(dir); });
-    return count;
+    node.dirs.forEach((dir) => {
+      this._countTree(dir);
+      node.shown  += dir.shown;
+      node.picked += dir.picked;
+    });
   }
 
   _row(entry, depth) {
@@ -141,9 +134,8 @@ class RunStrip {
   }
 
   _dirRow(node, depth, isOpen) {
-    const shown  = this._shownBeneath(node);
-    const picked = this._pickedBeneath(node);
-    const count  = this.opts.multi && picked ? `${picked}/${shown}` : `${shown}`;
+    const picked = node.picked;
+    const count  = this.opts.multi && picked ? `${picked}/${node.shown}` : `${node.shown}`;
 
     const row = document.createElement("button");
     row.type      = "button";
@@ -152,8 +144,8 @@ class RunStrip {
     row.style.paddingLeft = `${9 + depth * 18}px`;
     row.innerHTML =
       `<span class="run-tree__chev" aria-hidden="true"></span>` +
-      `<span class="run-tree__name">${RunStrip._esc(node.name)}</span>` +
-      `<span class="run-tree__count">${RunStrip._esc(count)}</span>`;
+      `<span class="run-tree__name">${SharedCharts.esc(node.name)}</span>` +
+      `<span class="run-tree__count">${SharedCharts.esc(count)}</span>`;
     row.addEventListener("click", () => {
       if (this.openGroups.has(node.rel)) this.openGroups.delete(node.rel);
       else this.openGroups.add(node.rel);
@@ -167,7 +159,7 @@ class RunStrip {
     const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
 
     dirs.forEach((dir) => {
-      if (this.filter && !this._shownBeneath(dir)) return;
+      if (this.filter && !dir.shown) return;
 
       const isOpen = this.filter ? true : this.openGroups.has(dir.rel);
       host.appendChild(this._dirRow(dir, depth, isOpen));
@@ -178,10 +170,13 @@ class RunStrip {
   }
 
   _paint() {
-    this.tree.innerHTML = "";
-    this._renderNode(this._buildTree(), 0, this.tree);
+    const root = this._buildTree();
+    this._countTree(root);
 
-    const shown = this.entries.filter((entry) => this._matches(entry)).length;
+    this.tree.innerHTML = "";
+    this._renderNode(root, 0, this.tree);
+
+    const shown = root.shown;
     if (this.filter && !shown) {
       const note = document.createElement("p");
       note.className   = "run-strip__empty";
@@ -226,5 +221,98 @@ class RunStrip {
     }
 
     this._paint();
+  }
+}
+
+class AnalysisPickerView {
+  constructor(root, spec) {
+    this.root       = root;
+    this.prefix     = spec.prefix;
+    this.endpoint   = spec.endpoint;
+    this.stripLabel = spec.stripLabel;
+    this.introHint  = spec.introHint;
+    this.emptyHint  = spec.emptyHint;
+    this.entries    = [];
+    this.pickSeq    = 0;
+    this.scanSeq    = 0;
+    this.pickedId   = null;
+    this.payload    = null;
+    this.built      = false;
+    this.runStrip   = null;
+  }
+
+  enter() {
+    if (!this.built) {
+      this._build();
+      this.built = true;
+    }
+  }
+
+  _build() {
+    const p = this.prefix;
+    this.root.innerHTML = `
+      <div class="cube-pick">
+        <div class="fl-src" role="group" aria-label="Datasets directory">
+          <label for="${p}-base">Datasets dir</label>
+          <input id="${p}-base" type="text" spellcheck="false" autocomplete="off" placeholder="${ResultsSources.datasets()}" />
+          <button type="button" class="btn btn--mini" id="${p}-scan">Scan</button>
+        </div>
+        <div class="run-strip" id="${p}-strip" aria-label="${this.stripLabel}"></div>
+        <p class="cube-hint" id="${p}-hint">${this.introHint}</p>
+      </div>
+      <div id="${p}-out"></div>`;
+
+    this.refs = {
+      base  : this.root.querySelector(`#${p}-base`),
+      scan  : this.root.querySelector(`#${p}-scan`),
+      strip : this.root.querySelector(`#${p}-strip`),
+      hint  : this.root.querySelector(`#${p}-hint`),
+      out   : this.root.querySelector(`#${p}-out`),
+    };
+
+    this.refs.base.value = ResultsSources.datasets();
+    this.refs.scan.addEventListener("click", () => this._scan());
+    this.refs.base.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._scan(); });
+  }
+
+  async _scan() {
+    const base = this.refs.base.value.trim();
+    if (!base) return;
+
+    const seq = ++this.scanSeq;
+    const data = await Api.get(`${this.endpoint}/analyses?base=${encodeURIComponent(base)}`);
+    if (seq !== this.scanSeq) return;
+    if (!data.ok) {
+      this.refs.hint.textContent = data.error || "scan failed";
+      return;
+    }
+
+    this.entries = data.entries || [];
+    this.refs.hint.textContent = this.entries.length ? `${this.entries.length} analysis run(s); pick one.` : this.emptyHint;
+
+    if (!this.runStrip) {
+      this.runStrip = new RunStrip(this.refs.strip, {
+        stateFor : (entry) => entry.id === this.pickedId,
+        onPick   : (entry) => this._pick(entry.id),
+      });
+    }
+    this.runStrip.render(this.entries);
+  }
+
+  async _pick(id) {
+    this.pickedId = id;
+    this.runStrip.repaint();
+
+    const seq = ++this.pickSeq;
+    const data = await Api.get(`${this.endpoint}/report?id=${encodeURIComponent(id)}`);
+    if (seq !== this.pickSeq) return;
+    if (!data.ok) {
+      this.refs.out.innerHTML = `<p class="cube-hint">${SharedCharts.esc(data.error || "failed to load the analysis")}</p>`;
+      return;
+    }
+
+    this.payload = data.payload;
+    this._seedSelection(this.payload);
+    this._render();
   }
 }
