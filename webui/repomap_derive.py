@@ -1,3 +1,10 @@
+"""Derives the repository import graph and checks the curated Repo Map against it.
+
+Parses every source module under the tracked roots, keeps only intra-repository
+imports, and reports which curated map nodes point at files that no longer exist
+and which real modules the curated map does not cover.
+"""
+
 from __future__ import annotations
 
 import ast
@@ -6,13 +13,24 @@ from pathlib import Path
 
 
 class ImportGraph:
+    """Builds the module-to-module import graph of the repository.
+
+    Attributes:
+        repo_root : Root of the repository whose sources are parsed.
+    """
 
     ROOTS = ("main", "pipelines", "tools", "models", "configuration", "webui")
 
     def __init__(self, repo_root: Path) -> None:
+        """Stores the repository root the graph is built from."""
         self.repo_root = Path(repo_root)
 
     def _modules(self) -> list[Path]:
+        """Returns every source file under the tracked roots, sorted by path.
+
+        Raises:
+            FileNotFoundError : If one of the tracked source roots is missing.
+        """
         modules = []
         for root in self.ROOTS:
             base = self.repo_root / root
@@ -23,14 +41,24 @@ class ImportGraph:
         return sorted(modules)
 
     def _module_name(self, path: Path) -> str:
+        """Returns the dotted module name of a source path relative to the repository root."""
         return str(path.relative_to(self.repo_root).with_suffix("")).replace("/", ".")
 
     @staticmethod
     def _package_parts(module_name: str) -> list[str]:
-        parts = module_name.split(".")
-        return parts[:-1] if parts[-1] != "__init__" else parts[:-2] + [parts[-2]]
+        """Returns the package components of a dotted module name, dropping the module itself."""
+        return module_name.split(".")[:-1]
 
     def _imports_of(self, path: Path, module_name: str) -> set[str]:
+        """Returns the dotted names a module imports, resolving relative imports.
+
+        Args:
+            path        : Source file to parse.
+            module_name : Dotted name of that module, used to anchor relative imports.
+
+        Returns:
+            Set of absolute dotted names imported by the module.
+        """
         tree    = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imports = set()
 
@@ -53,6 +81,15 @@ class ImportGraph:
         return imports
 
     def build(self) -> dict[str, list[str]]:
+        """Returns the intra-repository import graph.
+
+        Imports are attributed to the deepest existing module along the dotted
+        name, webui modules imported by bare name are qualified, and
+        self-imports are dropped.
+
+        Returns:
+            Mapping from dotted module name to the sorted dotted names it imports.
+        """
         modules  = self._modules()
         by_name  = {self._module_name(path): path for path in modules}
         prefixes = tuple(f"{root}." for root in self.ROOTS)
@@ -79,12 +116,25 @@ class ImportGraph:
 
 
 class RepoMapDeriver:
+    """Turns the derived import graph into a map skeleton and audits the curated map.
+
+    Attributes:
+        repo_root : Root of the repository being mapped.
+        graph     : Import graph builder over that repository.
+    """
 
     def __init__(self, repo_root: Path) -> None:
+        """Stores the repository root and prepares its import graph builder."""
         self.repo_root = Path(repo_root)
         self.graph     = ImportGraph(repo_root)
 
     def skeleton(self) -> dict:
+        """Returns an auto-derived map grouping modules and intra-folder edges by top folder.
+
+        Returns:
+            Mapping with "folders", each entry holding the folder name, its
+            module nodes, and the import edges whose target lives in the same folder.
+        """
         edges   = self.graph.build()
         folders = {}
 
@@ -98,6 +148,16 @@ class RepoMapDeriver:
         return {"folders": [folders[name] for name in sorted(folders)]}
 
     def drift(self, curated: dict) -> dict:
+        """Compares the curated map against the real source tree.
+
+        Args:
+            curated : Curated map document with folders, diagrams and nodes.
+
+        Returns:
+            Mapping with "missing_files", the curated nodes whose module path no
+            longer exists, and "uncovered_modules", the real modules outside
+            webui and package initialisers that no curated node references.
+        """
         missing_files = []
         for folder in curated["folders"]:
             for diagram in folder["diagrams"]:
@@ -106,10 +166,10 @@ class RepoMapDeriver:
                     if not module:
                         continue
 
-                    path       = self.repo_root / module
-                    as_package = path.with_suffix("") if module.endswith(".py") else None
+                    path  = self.repo_root / module
+                    found = path.is_file() if module.endswith(".py") else path.is_dir()
 
-                    if not path.exists() and not (as_package is not None and as_package.is_dir()):
+                    if not found:
                         missing_files.append({"folder": folder["folder"], "diagram": diagram["key"], "node": node["id"], "module": module})
 
         curated_modules = {
@@ -132,6 +192,7 @@ class RepoMapDeriver:
         return {"missing_files": missing_files, "uncovered_modules": sorted(uncovered)}
 
     def write_skeleton(self, output_path: Path) -> Path:
+        """Writes the derived skeleton as indented JSON and returns the file path."""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(self.skeleton(), indent=2), encoding="utf-8")

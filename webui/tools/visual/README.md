@@ -35,6 +35,31 @@ screenshot. Network-idle waits are deliberately avoided: the status board keeps 
 `/api/system`, `/api/jobs` and the guard history from app boot, so the network idles only
 intermittently and never predictably. `snap_repomap.js` navigates the same way.
 
+## Experiment fan-out harnesses
+
+Two tools for the trial-sweep builder on the launch pages, one with a browser and one
+without.
+
+`snap_experiments.js` opens a launch route, switches to its Experiments section, clicks
+every mode button in turn, and screenshots each one. It prints the per-mode summary line
+and run-name preview as JSON, along with every `pageerror` and console error the page
+raised, which is the fastest way to catch a panel that silently fails to build.
+
+```
+node snap_experiments.js --port 8765 --out /tmp/experiments launch/train_jepa launch/train_backbone
+```
+
+`trial_names.js` runs the builder script under plain node with no DOM and no server. It
+takes the same config-leaf payload the browser receives (`{"key": ..., "leaves": [...]}`,
+as `ScriptConfigResolver` produces it) and prints the run names every available mode
+previews, keyed by mode. `tests/webui/test_experiment_names.py` drives it to assert those
+names byte-match the ones the Python planners plan, which is the contract that keeps the
+preview honest about the directories a sweep will create.
+
+```
+node trial_names.js /tmp/train_jepa.json
+```
+
 ## Repo-map diagram harness
 
 `render_diagram.js` renders a single repo-map schema (one folder/diagram from
@@ -44,8 +69,13 @@ audited or hand-tuned in isolation without the live server. Render at `--width 1
 match the real panel width (the point at which cards start clipping off the right edge).
 
 ```
-node render_diagram.js --json ../../repomap_data.json --folder benchmarking --dkey benchmark-pipeline --out /tmp/rm.png --width 1520 [--labels]
+node render_diagram.js --json ../../repomap_data.json --folder benchmarking --dkey benchmark-pipeline --out /tmp/rm.png --width 1520 [--labels] [--fit]
 ```
+
+`--labels` clicks the edge-label toggle before the screenshot. `--fit` drops the panel's
+scroll cap so a diagram taller than the viewport is captured whole instead of clipped at
+the fold; without it the shot matches what the live panel shows. `--settle <ms>` waits
+longer before shooting when a diagram animates in slowly.
 
 `snap_repomap.js` drives the live server instead, selecting the folder tab and diagram
 sub-tab before screenshotting the panel:
@@ -64,10 +94,22 @@ Renders the pipeline process animations (`webui/static/js/process_anim.js`) head
 ## Setup
 
 ```
-npm install
+npm ci
+npx playwright-core install chromium
 ```
 
-Requires a Playwright Chromium under `~/.cache/ms-playwright` (any `chromium*` build). Override the executable with `PW_CHROMIUM=/path/to/chrome`. All four scripts locate it through the shared `chromium.js` module.
+`npm ci` installs exactly what `package-lock.json` records, which is the pinned
+`playwright-core` from `package.json`. Use it rather than `npm install`, which is free to
+resolve a newer release and drift away from the browser build below.
+
+The browser itself is not in the lock file. `npx playwright-core install chromium` fetches
+the build that matches the installed `playwright-core` into `~/.cache/ms-playwright`. Note
+the binary is `playwright-core`, not `playwright`: this package ships no `playwright` bin,
+and calling that name would pull an unrelated release from the registry. The shared
+`chromium.js` module picks the highest build number present there, so an older leftover
+build never wins; it fails with a message naming the cache directory when there is nothing
+to pick. Override the executable with `PW_CHROMIUM=/path/to/chrome`. All four scripts
+resolve it the same way.
 
 ## Usage
 

@@ -1,9 +1,12 @@
+"""Web UI catalogue of the JEPA coupling variants."""
+
 from __future__ import annotations
 
 from model_library_base import ModelNoteLibrary
 
 
 class JepaModelLibrary(ModelNoteLibrary):
+    """Serves the three JEPA couplings and the vault note behind each one."""
 
     NOTE_FILES = {
         "jepa_profile" : "JEPA Backbone + Profile AE.md",
@@ -12,9 +15,17 @@ class JepaModelLibrary(ModelNoteLibrary):
     }
 
     def collect(self) -> list[dict]:
+        """Returns the JEPA families rendered by the model library tab."""
         return self._families()
 
     def _families(self) -> list[dict]:
+        """Returns the single JEPA family with one entry per coupling.
+
+        Returns:
+            A one-element list holding the family name, its blurb and the
+            coupling records (key, display name, skip and head labels,
+            parameter description, recommendation flag and selection guidance).
+        """
         return [
             {
                 "family" : "JEPA",

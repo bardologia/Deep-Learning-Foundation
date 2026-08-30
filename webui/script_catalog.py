@@ -1,3 +1,10 @@
+"""Curated metadata of every console entry point.
+
+Holds the title, category and purpose text shown for each entry, the analysis
+topic each one belongs to, and the groups that fold several stage-specific entries
+(train, infer, analyze, compare) into one console card with variant tabs.
+"""
+
 from __future__ import annotations
 
 from project_paths          import ProjectPaths
@@ -5,6 +12,12 @@ from script_config_resolver import ScriptConfigResolver
 
 
 class ScriptCatalog:
+    """Lists the entry points that exist on disk, with their metadata and grouping.
+
+    Attributes:
+        paths    : Project paths resolving each entry key to a file.
+        resolver : Config resolver providing each entry's configuration class name.
+    """
 
     META = {
         "generate_dataset": {
@@ -20,7 +33,7 @@ class ScriptCatalog:
         "train_backbone": {
             "title"     : "Train Backbone",
             "category"  : "Training",
-            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, loss-pair searches, secondary-channel selections, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, or cumulative normalization-strategy ladders.",
+            "purpose"   : "Train one supervised backbone end to end, or fan out trials across GPUs: loss-curriculum combinations, single-stage losses, slot-presence balance matrices, loss-pair searches, secondary-channel selections, rectangular patch-shape grids under a constant pixel budget, input-channel ablations, backbone context ladders, size-matched reach comparisons, head-and-matching grids, flips-only augmentation on/off pairs, weight-EMA on/off ladders, mixed-precision on/off pairs, or cumulative normalization-strategy ladders.",
         },
         "train_profile_autoencoder": {
             "title"     : "Train Profile Autoencoder",
@@ -40,7 +53,7 @@ class ScriptCatalog:
         "train_dual": {
             "title"     : "Train Dual",
             "category"  : "Training",
-            "purpose"   : "Train the dual-trunk set-prediction model: the standard build routes the full reduced stack to both unet_skip trunks at a 90/10 parameter split, the large trunk feeding the per-gaussian parameter heads and the small trunk feeding the existence gate; each trunk is any backbone-zoo architecture with routable channel groups. Shares the backbone dataset, loss curriculum, and trainer. Optionally fans out trials across GPUs: every backbone experiment ladder (loss-curriculum combinations, single-stage losses, slot-presence matrices, loss-pair searches, secondary-channel selections, patch sizes, input-channel ablations, context ladders, size-matched reach comparisons, matching grids, augmentation pairs, normalization ladders, cumulative ablations) plus the dual-specific trunk-routing assignments and budget-matched arm-ratio splits.",
+            "purpose"   : "Train the dual-trunk set-prediction model: the standard build routes the full reduced stack to both unet_skip trunks at a 90/10 parameter split, the large trunk feeding the per-gaussian parameter heads and the small trunk feeding the existence gate; each trunk is any backbone-zoo architecture with routable channel groups. Shares the backbone dataset, loss curriculum, and trainer. Optionally fans out trials across GPUs: every backbone experiment ladder (loss-curriculum combinations, single-stage losses, slot-presence matrices, loss-pair searches, secondary-channel selections, patch-shape grids, input-channel ablations, context ladders, size-matched reach comparisons, matching grids, augmentation pairs, weight-EMA ladders, mixed-precision pairs, normalization ladders, cumulative ablations) plus the dual-specific trunk-routing assignments and budget-matched arm-ratio splits.",
         },
         "infer_backbone": {
             "title"     : "Infer Backbone",
@@ -72,11 +85,6 @@ class ScriptCatalog:
             "category"  : "Experiments",
             "purpose"   : "Run K-fold cross-validation for a model across row folds, training and inferring each fold across GPUs.",
         },
-        "sweep_patches": {
-            "title"     : "Patch-Size Sweep",
-            "category"  : "Experiments",
-            "purpose"   : "Sweep the patch size per dataset: on each selected dataset, train the same backbone across all patch sizes admissible at the architecture's minimum step, then report the best patch size per dataset.",
-        },
         "tune": {
             "title"     : "Tune",
             "category"  : "Experiments",
@@ -91,6 +99,16 @@ class ScriptCatalog:
             "title"     : "Analyze Param Extraction",
             "category"  : "Analysis",
             "purpose"   : "Recompute the Gaussian-fit metrics, summary, and diagnostic plots for one or more parameter-extraction trials, decoupled from the GPU fitting step.",
+        },
+        "analyze_normalization": {
+            "title"     : "Analyze Normalization",
+            "category"  : "Analysis",
+            "purpose"   : "Pool every input and output channel slot of a dataset and one parameter-extraction run, evaluate every applicable normalization preset per slot, and report a recommended strategy with distributions, scores and stationarity probes.",
+        },
+        "analyze_symbolic": {
+            "title"     : "Symbolic Regression",
+            "category"  : "Analysis",
+            "purpose"   : "Run symbolic regression over one dataset and parameter run: certify the machinery by rediscovering the known TomoSAR laws, hunt unmodeled structure in known-law residuals, and benchmark closed-form inversion candidates, with a certification battery on every discovery.",
         },
         "compare_trials": {
             "title"     : "Compare Trials",
@@ -177,6 +195,37 @@ class ScriptCatalog:
             "category"  : "Analysis",
             "purpose"   : "Scan a runs directory for training runs with inference reports, select one or more, and gather each run's report into a single collector directory, renamed after the run (seed runs as <trial>_seed<N>). Selecting a trial directory collects its seed-comparison report when one exists (run Compare Seeds first), and otherwise falls back to every seed run nested beneath it. Image links are rewritten to absolute paths into the original run figures, or embedded to make each report self-contained.",
         },
+        "mail_experiment_reports": {
+            "title"     : "Mail Experiment Reports",
+            "category"  : "Analysis",
+            "purpose"   : "Scan an experiments directory as written by a sequence run and email each experiment's report bundle, one message per experiment: the seed-aggregate report of every trial (run Compare Seeds first), the newest trial-comparison reports (run Compare Trials first), and the configuration the experiment ran with (scheduler summary plus one run's resolved entry config). Files are staged per experiment before sending; the SMTP password comes from an environment variable, and a dry run stages without sending.",
+        },
+    }
+
+    TOPICS = {
+        "analyze_preprocessing"           : "trials",
+        "analyze_param_extraction"        : "trials",
+        "analyze_normalization"           : "trials",
+        "analyze_symbolic"                : "trials",
+        "compare_trials"                  : "trials",
+        "compare_preprocessing_trials"    : "trials",
+        "compare_param_extraction_trials" : "trials",
+        "compare_runs"                    : "trials",
+        "compare_seeds"                   : "trials",
+        "xray_weights"                    : "diagnostics",
+        "xray_activations"                : "diagnostics",
+        "measure_receptive_field"         : "diagnostics",
+        "attribute_inputs"                : "diagnostics",
+        "capture_attention"               : "diagnostics",
+        "probe_layers"                    : "diagnostics",
+        "compare_representations"         : "diagnostics",
+        "map_loss_landscape"              : "diagnostics",
+        "stress_inputs"                   : "diagnostics",
+        "animate_training"                : "diagnostics",
+        "export_tensorboard_plots"        : "exports",
+        "export_paper_figures"            : "exports",
+        "collect_reports"                 : "exports",
+        "mail_experiment_reports"         : "exports",
     }
 
     GROUPS = {
@@ -209,6 +258,8 @@ class ScriptCatalog:
             "purpose"  : "Re-render the diagnostic artifacts for a family of trials without re-running the heavy generation step. Pick the stage to analyze: Gaussian-fit parameter extraction.",
             "members"  : [
                 ("analyze_param_extraction",  "Param Extraction"),
+                ("analyze_normalization",     "Normalization"),
+                ("analyze_symbolic",          "Symbolic"),
             ],
         },
         "compare": {
@@ -225,10 +276,12 @@ class ScriptCatalog:
     }
 
     def __init__(self, paths: ProjectPaths, resolver: ScriptConfigResolver) -> None:
+        """Stores the project paths and the configuration resolver."""
         self.paths    = paths
         self.resolver = resolver
 
     def _group_of(self, key: str) -> tuple[str | None, dict | None, str | None]:
+        """Returns the group key, group and variant label of an entry, or a triple of None."""
         for group_key, group in self.GROUPS.items():
             for member_key, label in group["members"]:
                 if member_key == key:
@@ -236,6 +289,7 @@ class ScriptCatalog:
         return None, None, None
 
     def _variants(self, group: dict) -> list[dict]:
+        """Returns the group members whose entry file exists on disk."""
         variants = []
         for member_key, label in group["members"]:
             if self.paths.script_entry(member_key)["path"].exists():
@@ -243,6 +297,12 @@ class ScriptCatalog:
         return variants
 
     def list_scripts(self) -> list[dict]:
+        """Returns one catalog record per entry point present on disk.
+
+        Each record carries the entry key and relative file, its title, category and
+        purpose, the detected configuration class, the analysis topic, and the group,
+        variant label and sibling variants when the entry belongs to a group.
+        """
         entries = []
         for key in self.META:
             spec = self.paths.script_entry(key)
@@ -261,6 +321,7 @@ class ScriptCatalog:
                 "category"       : meta["category"],
                 "purpose"        : meta["purpose"],
                 "config_class"   : entry["class"] if entry else None,
+                "topic"          : self.TOPICS.get(key),
                 "group"          : group_key,
                 "variant"        : label,
                 "group_title"    : group["title"] if group else None,
@@ -271,6 +332,16 @@ class ScriptCatalog:
         return entries
 
     def get_script(self, key: str) -> dict | None:
+        """Returns one entry point's full detail, source text included.
+
+        Args:
+            key : Entry-point key.
+
+        Returns:
+            Record with the catalog metadata, the entry source, the shell command, the
+            preferred interpreter and the group variants, or None when the entry file
+            does not exist.
+        """
         spec = self.paths.script_entry(key)
         if not spec["path"].exists():
             return None

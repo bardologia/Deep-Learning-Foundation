@@ -1,3 +1,11 @@
+"""Leaderboard over the inference results found under a runs root.
+
+Reads every run's latest inference metrics, parses the training axes encoded in
+the run directory name, aggregates seed replicas of one trial into a mean row with
+significance against the leading unit, and diffs the metrics and configurations of
+selected runs.
+"""
+
 from __future__ import annotations
 
 import json
@@ -8,20 +16,40 @@ from pathlib import Path
 
 from catalog_roots                             import CatalogRoots
 from pipelines.shared.inference.run_classifier import RunArtifacts
+from tools.metrics.scoring                     import MetricOrientation
 from tools.metrics.significance                import SignificanceVsLeader
 from tools.reporting.reporting                 import MetricSectionGrouper
 from web_logger                                import WebLogger
 
 
 class RunAxes:
+    """Parses the experiment axes encoded in a run directory name.
 
-    TIMESTAMP = re.compile(r"_(\d{8}_\d{6})")
-    K_TAG     = re.compile(r"^K_(\d+)$")
-    INPUT_TAG = re.compile(r"^([a-z]+\.[a-z]+)-")
-    LOSS_TAG  = re.compile(r"([a-z0-9_]+?)_(\d+(?:\.\d+)?(?:e-?\d+)?)(?:-|$)")
+    The name carries model, head, matching, number of Gaussians K, augmentation and
+    presence tags, an optional input-channel and autoencoder prefix, the loss tag with
+    its weights, and the training timestamp.
+    """
+
+    TIMESTAMP      = re.compile(r"_(\d{8}_\d{6})")
+    K_TAG          = re.compile(r"^K_(\d+)$")
+    INPUT_TAG      = re.compile(r"^([a-z]+\.[a-z]+)-")
+    PROFILE_AE_TAG = re.compile(r"^pae_([a-z0-9_]+\.[a-z]+)-")
+    IMAGE_AE_TAG   = re.compile(r"^iae_([a-z0-9_]+\.[a-z]+)-")
+    LOSS_TAG       = re.compile(r"([a-z0-9_]+?)_(\d+(?:\.\d+)?(?:e-?\d+)?)(?:-|$)")
 
     @classmethod
     def parse(cls, name: str) -> dict | None:
+        """Returns the experiment axes encoded in a run directory name.
+
+        Args:
+            name : Run directory name.
+
+        Returns:
+            Mapping with model, head, matching, k, aug, presence, inputs, profile_ae,
+            image_ae, the raw loss tag, the parsed loss name/weight pairs, the timestamp
+            and any trailing suffix; None when the name does not follow the run-naming
+            convention or carries no parsable loss term.
+        """
         stamp_match = cls.TIMESTAMP.search(name)
         timestamp   = stamp_match.group(1) if stamp_match else ""
         tag         = name[: stamp_match.start()] if stamp_match else name
@@ -40,6 +68,14 @@ class RunAxes:
         inputs      = input_match.group(1) if input_match else ""
         loss_tag    = loss_tag[input_match.end():] if input_match else loss_tag
 
+        profile_match = cls.PROFILE_AE_TAG.match(loss_tag)
+        profile_ae    = profile_match.group(1) if profile_match else ""
+        loss_tag      = loss_tag[profile_match.end():] if profile_match else loss_tag
+
+        image_match = cls.IMAGE_AE_TAG.match(loss_tag)
+        image_ae    = image_match.group(1) if image_match else ""
+        loss_tag    = loss_tag[image_match.end():] if image_match else loss_tag
+
         losses   = []
         position = 0
         while position < len(loss_tag):
@@ -53,21 +89,29 @@ class RunAxes:
             return None
 
         return {
-            "model"     : parts[0],
-            "head"      : parts[1],
-            "matching"  : parts[2],
-            "k"         : int(k_match.group(1)),
-            "aug"       : parts[4],
-            "presence"  : parts[5],
-            "inputs"    : inputs,
-            "loss"      : loss_tag,
-            "losses"    : losses,
-            "timestamp" : timestamp,
-            "suffix"    : suffix,
+            "model"      : parts[0],
+            "head"       : parts[1],
+            "matching"   : parts[2],
+            "k"          : int(k_match.group(1)),
+            "aug"        : parts[4],
+            "presence"   : parts[5],
+            "inputs"     : inputs,
+            "profile_ae" : profile_ae,
+            "image_ae"   : image_ae,
+            "loss"       : loss_tag,
+            "losses"     : losses,
+            "timestamp"  : timestamp,
+            "suffix"     : suffix,
         }
 
 
 class RunLeaderboard:
+    """Builds the leaderboard rows, the seeded trial table and the run diff payloads.
+
+    Attributes:
+        logger : Console logger.
+        roots  : Registry of runs roots the leaderboard has opened.
+    """
 
     COLUMNS = (
         {"key": "curve_mse_gt",                    "label": "curve MSE",      "direction": -1, "default": True},
@@ -86,28 +130,40 @@ class RunLeaderboard:
         {"key": "improvement_pixel_mse_mean",      "label": "improv mean",    "direction": 1,  "default": False},
     )
 
-    HIGHER_BETTER = ("r2", "cosine", "psnr", "ssim", "agreement", "valid_fraction", "beats", "reduction", "improvement")
-    LOWER_BETTER  = ("mse", "mae", "rmse", "error", "err", "_d_")
-
     CONFIG_FILES = (
         ("summary", Path("meta") / "run_summary.json"),
         ("trainer", Path("docs") / "trainer_config.json"),
     )
 
     MODEL_CONFIGS = (
-        RunArtifacts.BACKBONE_CONFIG,
-        RunArtifacts.PROFILE_AE_CONFIG,
-        RunArtifacts.IMAGE_AE_CONFIG,
-        RunArtifacts.DUAL_CONFIG,
+        ("model",      RunArtifacts.BACKBONE_CONFIG),
+        ("profile_ae", RunArtifacts.PROFILE_AE_CONFIG),
+        ("image_ae",   RunArtifacts.IMAGE_AE_CONFIG),
+        ("dual",       RunArtifacts.DUAL_CONFIG),
     )
 
     SEED_DIR = re.compile(r"^seed(\d+)$")
 
     def __init__(self, logger: WebLogger) -> None:
+        """Stores the console logger and creates the opened-root registry."""
         self.logger = logger
         self.roots  = CatalogRoots()
 
     def table(self, base: str) -> dict:
+        """Returns one row per inference result under a runs root, newest first.
+
+        Every `inference/<stamp>/metrics.json` below the root becomes a row carrying the
+        leaderboard columns it reports, the run name and group, the modification time and
+        the parsed run axes. Seed runs additionally contribute a per-trial mean row.
+
+        Args:
+            base : Runs root to scan.
+
+        Returns:
+            Payload with the resolved root, the column definitions, the rows and the list
+            of metric files that could not be read; `ok` False with an error when the root
+            cannot be opened.
+        """
         root, error = self.roots.open(base)
         if error:
             return {"ok": False, "error": error, "rows": []}
@@ -150,6 +206,7 @@ class RunLeaderboard:
         return {"ok": True, "root": str(root), "columns": [dict(c) for c in self.COLUMNS], "rows": rows, "errors": errors}
 
     def _unit_rows(self, root: Path, seed_latest: dict) -> list[dict]:
+        """Returns one seed-mean row per trial directory holding seed runs."""
         units = {}
         for (unit_dir, _), member in seed_latest.items():
             units.setdefault(unit_dir, []).append(member)
@@ -176,6 +233,7 @@ class RunLeaderboard:
         return rows
 
     def _run_axes(self, run_dir: Path, root: Path) -> dict | None:
+        """Returns the axes of the nearest ancestor whose name follows the run convention."""
         node = run_dir
         while node != root:
             axes = RunAxes.parse(node.name)
@@ -185,6 +243,15 @@ class RunLeaderboard:
         return None
 
     def _annotate_significance(self, units_list: list[dict]) -> None:
+        """Marks the leading unit per metric and stores each rival's adjusted p-value.
+
+        Only units with at least two seeds enter the comparison, and only when at least
+        two such units exist. The leader gets `is_best` True and a None `p_vs_best`; every
+        other candidate gets its multiplicity-adjusted p-value against the leader.
+
+        Args:
+            units_list : Units of one experiment, each with `metrics` and `seed_rows`, annotated in place.
+        """
         for column in self.COLUMNS:
             key        = column["key"]
             candidates = [unit for unit in units_list if key in unit["metrics"] and unit["metrics"][key]["n"] >= 2]
@@ -207,6 +274,19 @@ class RunLeaderboard:
                     unit["metrics"][key]["is_best"]   = False
 
     def trials(self, base: str) -> dict:
+        """Returns the seed-aggregated trial table grouped by experiment.
+
+        Keeps each seed's latest inference, aggregates mean, sample std and seed count per
+        metric, and annotates significance against the leading unit inside each experiment.
+
+        Args:
+            base : Runs root to scan.
+
+        Returns:
+            Payload with the resolved root, the column definitions and one entry per
+            experiment holding its units; `ok` False with an error when the root cannot be
+            opened.
+        """
         root, error = self.roots.open(base)
         if error:
             return {"ok": False, "error": error, "experiments": []}
@@ -275,6 +355,16 @@ class RunLeaderboard:
     MAX_DIFF_RUNS = 6
 
     def diff(self, runs: list[str]) -> dict:
+        """Compares the metrics and configurations of two to MAX_DIFF_RUNS selected runs.
+
+        Args:
+            runs : Leaderboard entry paths, each either one inference stamp directory or a trial directory holding seed runs.
+
+        Returns:
+            Payload with one side per run, the improvement direction of every metric and
+            the metric sections used to lay the comparison out; `ok` False with an error
+            when the selection is too small, too large or unreadable.
+        """
         if len(runs) < 2:
             return {"ok": False, "error": "select at least two runs to compare"}
         if len(runs) > self.MAX_DIFF_RUNS:
@@ -294,6 +384,7 @@ class RunLeaderboard:
         return {"ok": True, "sides": sides, "directions": directions, "sections": sections}
 
     def _side(self, raw: str) -> dict:
+        """Returns the comparison side of one selection, reading it as a stamp or a trial."""
         target = self._target_dir(raw)
         if target is None:
             return {"error": f"unknown leaderboard entry: {raw}"}
@@ -303,6 +394,7 @@ class RunLeaderboard:
         return self._unit_side(target)
 
     def _stamp_side(self, stamp_dir: Path) -> dict:
+        """Returns the comparison side of one inference stamp: metrics, axes and config."""
         try:
             metrics = json.loads((stamp_dir / "metrics.json").read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
@@ -318,6 +410,7 @@ class RunLeaderboard:
         return {"id": str(stamp_dir), "run": run_dir.name, "stamp": stamp_dir.name, "axes": RunAxes.parse(run_dir.name), "metrics": numeric, "config": config["config"], "config_notes": config["notes"]}
 
     def _unit_side(self, unit_dir: Path) -> dict:
+        """Returns the comparison side of a trial: seed-mean metrics and the first seed's config."""
         latest = {}
         for metrics_path in sorted(unit_dir.glob("seed*/inference/*/metrics.json")):
             run_dir    = metrics_path.parent.parent.parent
@@ -352,6 +445,18 @@ class RunLeaderboard:
         return {"id": str(unit_dir), "run": unit_dir.name, "stamp": stamp, "axes": RunAxes.parse(unit_dir.name), "n_seeds": len(per_seed), "metrics": means, "config": config["config"], "config_notes": config["notes"]}
 
     def _run_config(self, run_dir: Path) -> dict:
+        """Returns the flattened configuration of a run plus notes on missing files.
+
+        Reads the run summary and trainer config plus every model config found under
+        `meta/`, flattening each into dotted keys under its own prefix.
+
+        Args:
+            run_dir : Run directory to read.
+
+        Returns:
+            Mapping with the flattened `config` and the `notes` naming absent files, or a
+            mapping with `error` when a present file cannot be read.
+        """
         config = {}
         notes  = []
 
@@ -366,20 +471,21 @@ class RunLeaderboard:
                 return {"error": f"could not read {path}: {exc}"}
             self._flatten(label, payload, config)
 
-        model_paths = [run_dir / "meta" / name for name in self.MODEL_CONFIGS if (run_dir / "meta" / name).is_file()]
+        model_paths = [(prefix, run_dir / "meta" / name) for prefix, name in self.MODEL_CONFIGS if (run_dir / "meta" / name).is_file()]
         if not model_paths:
-            notes.append(f"no model config under meta/ (looked for {', '.join(self.MODEL_CONFIGS)})")
+            notes.append(f"no model config under meta/ (looked for {', '.join(name for _, name in self.MODEL_CONFIGS)})")
 
-        for path in model_paths:
+        for prefix, path in model_paths:
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError) as exc:
                 return {"error": f"could not read {path}: {exc}"}
-            self._flatten("model", payload, config)
+            self._flatten(prefix, payload, config)
 
         return {"config": config, "notes": notes}
 
     def _flatten(self, prefix: str, value, out: dict) -> None:
+        """Writes nested mapping values into `out` under dotted keys, lists as JSON text."""
         if isinstance(value, dict):
             for key, child in value.items():
                 self._flatten(f"{prefix}.{key}", child, out)
@@ -388,6 +494,7 @@ class RunLeaderboard:
         out[prefix] = json.dumps(value) if isinstance(value, list) else value
 
     def _target_dir(self, raw: str) -> Path | None:
+        """Returns the selected directory when it lies inside an opened root, else None."""
         if not raw:
             return None
 
@@ -398,14 +505,12 @@ class RunLeaderboard:
             return None
         return target
 
-    @classmethod
-    def _direction(cls, key: str) -> int:
-        if any(token in key for token in cls.HIGHER_BETTER):
-            return 1
-        if any(token in key for token in cls.LOWER_BETTER):
-            return -1
-        return 0
+    @staticmethod
+    def _direction(key: str) -> int:
+        """Returns +1 when higher is better for a metric, -1 when lower is, 0 when neither."""
+        return {"higher": 1, "lower": -1, None: 0}[MetricOrientation.direction(key)]
 
     @staticmethod
     def _is_number(value) -> bool:
+        """Returns whether a value is a finite, non-boolean number."""
         return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)

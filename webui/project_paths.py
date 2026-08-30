@@ -1,3 +1,10 @@
+"""Repository layout, entry-point script registry and interpreter discovery.
+
+Resolves the directories the web UI writes to, maps every launchable script key
+to its file under main/ and its entry config class, and finds the conda
+interpreters a job can be launched with.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -5,8 +12,26 @@ from pathlib import Path
 
 
 class ProjectPaths:
+    """Resolved paths of a DLR-TomoSAR checkout plus its script and interpreter registry.
 
-    PRIORITY = ["conda:Dune"]
+    Attributes:
+        webui_root     : Directory holding this module and the static assets.
+        repo_root      : Root of the DLR-TomoSAR repository.
+        main_dir       : Directory holding the entry-point scripts.
+        scripts_dir    : Directory holding the auxiliary scripts.
+        config_dir     : Root of the configuration package.
+        static_dir     : Directory served as the front end's static assets.
+        runs_dir       : Root of the run-output tree the entry points write into.
+        logs_dir       : Directory the web UI writes logs and state files into.
+        gpu_guard_dir  : Directory holding GPU guard state files.
+        gpu_pools_dir  : Directory holding per-job live GPU pool files.
+        saved_runs_dir : Directory holding saved launch configurations.
+        sequences_dir  : Directory holding one JSON file per stored experiment sequence.
+    """
+
+    REQUIRED_DIRS   = ("main", "configuration", "tools")
+    PRIORITY        = ["conda:Dune"]
+    SCRIPT_PRIORITY = {}
 
     ENTRY_OVERRIDES = {
         "generate_dataset": {
@@ -53,23 +78,59 @@ class ProjectPaths:
             "config_module" : "configuration.cross_validation.general",
             "config_class"  : "CrossValidationConfig",
         },
-        "sweep_patches": {
-            "config_module" : "configuration.patch_sweep.general",
-            "config_class"  : "PatchSweepConfig",
-        },
     }
 
-    def __init__(self) -> None:
+    def __init__(self, root: Path | None = None) -> None:
+        """Resolves every project directory and verifies the root is a real checkout.
+
+        Args:
+            root : Repository root; defaults to the parent of the webui directory.
+
+        Raises:
+            ValueError : If the resolved root lacks any of REQUIRED_DIRS.
+        """
         self.webui_root     = Path(__file__).resolve().parent
-        self.repo_root      = self.webui_root.parent
+        self.repo_root      = self.webui_root.parent if root is None else Path(root).resolve()
         self.main_dir       = self.repo_root / "main"
         self.scripts_dir    = self.repo_root / "scripts"
         self.config_dir     = self.repo_root / "configuration"
         self.static_dir     = self.webui_root / "static"
+        self.runs_dir       = self.repo_root / "runs"
         self.logs_dir       = self.repo_root / "logs"
         self.gpu_guard_dir  = self.logs_dir / "gpu_guard"
         self.gpu_pools_dir  = self.logs_dir / "gpu_pools"
         self.saved_runs_dir = self.logs_dir / "saved_runs"
+        self.sequences_dir  = self.logs_dir / "sequences"
+
+        self._require_repository()
+
+    def _require_repository(self) -> None:
+        """Raises ValueError when the repository root is missing a required directory."""
+        missing = [name for name in self.REQUIRED_DIRS if not (self.repo_root / name).is_dir()]
+
+        if missing:
+            raise ValueError(f"project root {self.repo_root} is not a DLR-TomoSAR repository: missing {', '.join(missing)}")
+
+    def tree_signature(self, paths) -> tuple:
+        """Returns a cache key of (name, mtime_ns) pairs for the given paths.
+
+        Args:
+            paths : Iterable of paths to stamp; unreadable entries are skipped.
+
+        Returns:
+            Tuple of (file name, modification time in nanoseconds) pairs.
+        """
+        stamps = []
+        for path in paths:
+            try:
+                stamps.append((path.name, path.stat().st_mtime_ns))
+            except OSError:
+                continue
+        return tuple(stamps)
+
+    def config_signature(self) -> tuple:
+        """Returns the mtime signature of every Python file under the configuration package."""
+        return self.tree_signature(sorted(self.config_dir.rglob("*.py")))
 
     SCRIPT_DIRS = {
         "generate_dataset"                : "processing",
@@ -85,10 +146,11 @@ class ProjectPaths:
         "infer_dual"                      : "inference",
         "benchmark"                       : "experiments",
         "cross_validate"                  : "experiments",
-        "sweep_patches"                   : "experiments",
         "tune"                            : "experiments",
         "tune_dataloader"                 : "experiments",
         "analyze_param_extraction"        : "analysis",
+        "analyze_normalization"           : "analysis",
+        "analyze_symbolic"                : "analysis",
         "compare_trials"                  : "analysis",
         "compare_param_extraction_trials" : "analysis",
         "compare_runs"                    : "analysis",
@@ -106,25 +168,48 @@ class ProjectPaths:
         "export_paper_figures"            : "analysis",
         "export_tensorboard_plots"        : "analysis",
         "collect_reports"                 : "analysis",
+        "mail_experiment_reports"         : "analysis",
     }
 
     def has_script(self, key: str) -> bool:
+        """Returns whether the key names a registered entry-point script."""
         return key in self.SCRIPT_DIRS
 
     def script_entry(self, key: str) -> dict:
-        override  = self.ENTRY_OVERRIDES.get(key, {})
-        file_stem = override.get("file", key)
-        subdir    = self.SCRIPT_DIRS[key]
-        rel       = f"main/{subdir}/{file_stem}.py"
+        """Returns the absolute path, repo-relative path and entry config class of a script.
+
+        Args:
+            key : Registered script key, such as "train_backbone".
+
+        Returns:
+            Mapping with "path", "rel", "config_module" and "config_class"; the
+            two config entries are None for scripts without an entry override.
+
+        Raises:
+            KeyError : If the key is not registered in SCRIPT_DIRS.
+        """
+        override = self.ENTRY_OVERRIDES.get(key, {})
+        subdir   = self.SCRIPT_DIRS[key]
+        rel      = f"main/{subdir}/{key}.py"
 
         return {
-            "path"          : self.main_dir / subdir / f"{file_stem}.py",
+            "path"          : self.main_dir / subdir / f"{key}.py",
             "rel"           : rel,
             "config_module" : override.get("config_module"),
             "config_class"  : override.get("config_class"),
         }
 
     def discover_interpreters(self) -> list[dict]:
+        """Returns the conda interpreters available on this machine.
+
+        Scans the miniconda, anaconda and .conda installs under the home
+        directory for base and per-environment interpreters, and prepends the
+        running interpreter when it is not one of them.
+
+        Returns:
+            List of entries with "label", "path" and a "current" flag marking
+            the interpreter this server runs under.
+        """
         found   = []
         seen    = set()
         current = str(Path(sys.executable))
@@ -150,8 +235,20 @@ class ProjectPaths:
 
         return found
 
-    def preferred_interpreter(self, interpreters: list[dict]) -> str:
-        for wanted in self.PRIORITY:
+    def preferred_interpreter(self, interpreters: list[dict], script_key: str = "") -> str:
+        """Returns the interpreter path a script should default to.
+
+        Args:
+            interpreters : Discovered interpreter entries as returned by discover_interpreters.
+            script_key   : Script key whose per-script priority list is consulted first.
+
+        Returns:
+            Path of the highest-priority matching interpreter, the first
+            discovered one when none match, or the running interpreter when the
+            list is empty.
+        """
+        priority = self.SCRIPT_PRIORITY.get(script_key, []) + self.PRIORITY
+        for wanted in priority:
             for item in interpreters:
                 if item["label"] == wanted:
                     return item["path"]

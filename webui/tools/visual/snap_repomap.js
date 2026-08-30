@@ -31,17 +31,18 @@ class RepoMapSnapper {
   }
 
   async selectDiagram(page, folder, dkey) {
-    await page.evaluate(({ folder, dkey }) => {
-      const view = window.__repomap || null;
+    const hit = await page.evaluate(({ folder, dkey }) => {
       const clickBtn = (sel, key) => {
         const els = [...document.querySelectorAll(sel)];
         const b = els.find(e => e.dataset.key === key);
         if (b) b.click();
         return !!b;
       };
-      clickBtn(".rm-folder", folder);
-      clickBtn(".rm-sub", dkey);
+      return { folder: clickBtn(".rm-folder", folder), diagram: clickBtn(".rm-sub", dkey) };
     }, { folder, dkey });
+
+    if (!hit.folder)  throw new Error(`no repo-map folder button for "${folder}"`);
+    if (!hit.diagram) throw new Error(`no repo-map diagram button for "${dkey}" under "${folder}"`);
   }
 
   async snapOne(page, folder, dkey) {

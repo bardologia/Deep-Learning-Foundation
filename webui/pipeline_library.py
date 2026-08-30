@@ -1,9 +1,17 @@
+"""Curated catalog of the project's pipelines shown in the web UI.
+
+Each entry names a pipeline, the entry-point script that runs it, a short
+description, and the ordered stages the pipeline moves through.
+"""
+
 from __future__ import annotations
 
 
 class PipelineLibrary:
+    """Static descriptions of every processing, training and analysis pipeline."""
 
     def collect(self) -> list[dict]:
+        """Returns one descriptor per pipeline, each with key, script and stage list."""
         return [
             {
                 "key"    : "synthesis",
@@ -65,8 +73,8 @@ class PipelineLibrary:
                 "key"    : "inference",
                 "name"   : "Inference",
                 "script" : "infer_backbone",
-                "blurb"  : "Sliding-window prediction, overlap-add curve stitching and centrality-selected parameter stitching, then the full metric suite and report generation.",
-                "stages" : ["Windowed predict", "Cube stitch", "Metrics", "Stratified errors", "Report and figures"],
+                "blurb"  : "Sliding-window prediction, overlap-add curve stitching and centrality-selected parameter stitching. Runs that predict curves instead of parameters have K Gaussians refit to each predicted curve, scored against the extraction floor measured on the GT curves, so they reach the same parameter analysis. Then the full metric suite and report generation.",
+                "stages" : ["Windowed predict", "Cube stitch", "Curve param extraction", "Metrics", "Stratified errors", "Report and figures"],
             },
             {
                 "key"    : "profile_ae_infer",
