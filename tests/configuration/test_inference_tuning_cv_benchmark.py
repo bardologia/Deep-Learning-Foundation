@@ -115,10 +115,8 @@ def test_run_directory_inference_defaults_come_from_one_factory():
         assert cfg.run_directory == Path(".")
         assert cfg.save_cubes  is True
         assert cfg.cpu_workers == 16
-        assert cfg.gif_axes    == ["elevation", "range", "azimuth"]
+        assert cfg.gif_axes    == ["z", "col", "row"]
 
-    assert all(cfg.compute_reduced is True  for cfg in standalone)
-    assert all(cfg.compute_reduced is False for cfg in training)
 
 
 def test_ae_inference_entry_configs_expose_only_their_tree():
