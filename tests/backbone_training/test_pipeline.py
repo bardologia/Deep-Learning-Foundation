@@ -1,11 +1,22 @@
+"""Tests for the backbone and dual training pipelines.
+
+Covers the end-to-end run on real preprocessing data (checkpoint, metadata and config
+artifacts, per-pixel physics geometry, the overfit-check gate and its abort path) and the
+patch-squaring rule applied for backbones that only accept square inputs.
+"""
+
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
+from configuration.architectures          import DualResUNetConfig
 from configuration.dataset                import DatasetConfig, InputConfig, PatchConfig, Representation, SplitRegions
 from configuration.dataset.gaussian    import GaussianConfig
 from configuration.training.backbone      import BackboneTrainerConfig
 from pipelines.backbone.training.pipeline import TrainingPipeline
+from pipelines.dual.training.pipeline     import DualTrainingPipeline
 from tools.data.regions                   import CropRegion
 
 
@@ -14,6 +25,7 @@ pytestmark = pytest.mark.usefixtures("force_cpu")
 
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
+    """Returns a small five-Gaussian dataset config over three adjacent azimuth split regions."""
     input_config = InputConfig(
         use_primary     = True, primary_representation        = Representation.MAG_ONLY,
         use_secondaries = True, secondaries_representation    = Representation.MAG_ONLY,
@@ -41,11 +53,11 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
 
 
 def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfig:
+    """Returns a one-epoch backbone trainer config with only the param_l1 term active."""
     gaussian = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy")
     config   = BackboneTrainerConfig(gaussian=gaussian)
 
     config.io.logdir                     = str(tmp_path)
-    config.io.writer                     = None
     config.training.epochs               = 1
     config.training.validation_frequency = 1
     config.resources.enabled             = False
@@ -59,6 +71,7 @@ def _trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerConfi
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_dir, tmp_path):
+    """Verifies a full pipeline run writes the best checkpoint and the metadata directory."""
     dataset_config = _dataset_config(test_data_dir, params_dir)
     trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path)
 
@@ -83,7 +96,36 @@ def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_
 
 @pytest.mark.dataset
 @pytest.mark.slow
+def test_training_pipeline_runs_per_pixel_physics_geometry(test_data_dir, params_dir, tmp_path):
+    """Verifies the covariance term builds a three-channel per-pixel geometry field and the run completes."""
+    dataset_config = _dataset_config(test_data_dir, params_dir)
+    trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path)
+
+    trainer_config.curriculum.complete.use_moments    = True
+    trainer_config.curriculum.complete.weight_covariance_match = 1.0
+    trainer_config.geometry.height_axis_convention             = "z"
+
+    pipeline = TrainingPipeline(
+        trainer_config = trainer_config,
+        dataset_config = dataset_config,
+        backbone_name  = "resunet",
+        model_config   = None,
+        seed           = 0,
+        run_name       = "pipeline_physics",
+    )
+
+    train_losses, val_losses, best_val = pipeline.run(probe_config=None)
+
+    assert pipeline.dataset_pipeline.geometry_field is not None
+    assert pipeline.dataset_pipeline.geometry_field.n_tracks == 3
+    assert (pipeline.run_metadata.run_directory / "best_model.pt").exists()
+    assert len(train_losses) == 1
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
 def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
+    """Verifies the run writes configuration artifacts into the metadata directory."""
     dataset_config = _dataset_config(test_data_dir, params_dir)
     trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path)
 
@@ -108,6 +150,7 @@ def test_training_pipeline_saves_configs(test_data_dir, params_dir, tmp_path):
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_training_pipeline_overfit_check_gates_and_reports(test_data_dir, params_dir, tmp_path):
+    """Verifies a passing overfit check reports its sanitized overrides, leaves no checkpoints behind and lets training proceed."""
     import json
 
     from configuration.training import OverfitCheckConfig
@@ -153,6 +196,7 @@ def test_training_pipeline_overfit_check_gates_and_reports(test_data_dir, params
 
 @pytest.mark.dataset
 def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, params_dir, tmp_path):
+    """Verifies a failing overfit check aborts the run but still leaves the report and config artifacts."""
     from configuration.training import OverfitCheckConfig
 
     dataset_config = _dataset_config(test_data_dir, params_dir)
@@ -179,3 +223,48 @@ def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, par
     assert (run_directory / "docs" / "trainer_config.json").is_file()
     assert (run_directory / "meta" / "run_summary.json").is_file()
     assert not (run_directory / "best_model.pt").exists()
+
+
+def _square_patch_dataset_config() -> DatasetConfig:
+    """Returns a dataset config with a rectangular (64, 32) patch and (32, 16) stride."""
+    splits = SplitRegions(
+        train = CropRegion(0, 8, 0, 8),
+        val   = CropRegion(8, 16, 0, 8),
+        test  = CropRegion(16, 24, 0, 8),
+    )
+
+    return DatasetConfig(preprocessing_run_directory=Path("/x"), split_regions=splits, patch=PatchConfig(size=(64, 32), stride=(32, 16)))
+
+
+def _square_patch_trainer_config() -> BackboneTrainerConfig:
+    """Returns a minimal five-Gaussian backbone trainer config."""
+    return BackboneTrainerConfig(gaussian=GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=40.0))
+
+
+def test_pipeline_squares_the_patch_for_square_only_backbones():
+    """Verifies a square-only backbone widens the patch and stride to the larger axis."""
+    pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="swin_unet")
+
+    assert pipeline.dataset_config.patch.size   == (64, 64)
+    assert pipeline.dataset_config.patch.stride == (32, 32)
+    assert pipeline.patch_size                  == (64, 64)
+
+
+def test_pipeline_keeps_rectangular_patches_for_convolutional_backbones():
+    """Verifies a convolutional backbone keeps the rectangular patch and stride."""
+    pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="resunet")
+
+    assert pipeline.dataset_config.patch.size   == (64, 32)
+    assert pipeline.dataset_config.patch.stride == (32, 16)
+
+
+def test_dual_pipeline_squares_the_patch_when_a_trunk_is_square_only():
+    """Verifies the dual pipeline squares the patch when either trunk is square-only."""
+    model_config                    = DualResUNetConfig()
+    model_config.params_backbone    = "resunet"
+    model_config.existence_backbone = "swin_unet"
+
+    pipeline = DualTrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="dual_resunet", model_config=model_config)
+
+    assert pipeline.dataset_config.patch.size   == (64, 64)
+    assert pipeline.dataset_config.patch.stride == (32, 32)

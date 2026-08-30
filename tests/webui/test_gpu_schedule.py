@@ -1,7 +1,15 @@
+"""Tests for the GPU schedule that resizes live job pools by time of day.
+
+Covers weekday/night/weekend window arithmetic, phase transitions that grow and
+shrink a running job's GPU pool, withholding of devices held by other users, the
+greedy reclaim sweep, charity donations after a guard bounce, and settings
+persistence and validation.
+"""
+
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -23,19 +31,31 @@ THURSDAY_WORKDAY = datetime(2026, 7, 23, 9, 0)
 
 
 class StubProcesses:
+    """Stand-in process manager recording every GPU pool write.
+
+    Attributes:
+        jobs   : Job descriptors returned by list_jobs.
+        pools  : Per-job GPU pool state keyed by job id.
+        writes : Recorded (job_id, gpus) pairs applied through set_gpus.
+        refuse : When true, every set_gpus call is rejected.
+    """
     def __init__(self) -> None:
+        """Starts with no jobs, no pools and an accepting set_gpus."""
         self.jobs   = []
         self.pools  = {}
         self.writes = []
         self.refuse = False
 
     def list_jobs(self) -> list[dict]:
+        """Returns a copy of the registered job descriptors."""
         return list(self.jobs)
 
     def gpu_pool(self, job_id: str) -> dict:
+        """Returns the pool state for a job, or an unsupported placeholder when unknown."""
         return self.pools.get(job_id, {"ok": True, "supported": False, "live": False})
 
     def set_gpus(self, job_id: str, gpus) -> dict:
+        """Records a pool write and applies it unless the stub is set to refuse."""
         if self.refuse:
             return {"ok": False, "error": "job is not running"}
 
@@ -44,35 +64,59 @@ class StubProcesses:
         return {"ok": True, "gpus": list(gpus), "parked": False}
 
     def add_running_fan_out(self, job_id: str) -> None:
+        """Registers a running fan-out job holding a live pool of GPU 0."""
         self.jobs.append({"job_id": job_id, "status": "running", "script": "train_backbone"})
         self.pools[job_id] = {"ok": True, "supported": True, "live": True, "gpus": [0]}
 
 
 class StubGuard:
+    """Stand-in GPU guard holding bounced launch attempts.
+
+    Attributes:
+        bounced : Attempt records not yet drained by take_bounced.
+    """
     def __init__(self) -> None:
+        """Starts with an empty bounce queue."""
         self.bounced = []
 
-    def bounce(self, gpu: int, user: str) -> None:
-        self.bounced.append({"gpu_index": gpu, "user": user, "status": "survived"})
+    def bounce(self, gpu: int, user: str, at: datetime) -> None:
+        """Appends a survived bounce record for a GPU, user and timestamp."""
+        self.bounced.append({"gpu_index": gpu, "user": user, "status": "survived", "bounced_at": at.isoformat(timespec="seconds")})
 
     def take_bounced(self) -> list[dict]:
+        """Returns the queued bounce records and empties the queue."""
         bounced      = list(self.bounced)
         self.bounced = []
         return bounced
 
 
 class StubSystem:
+    """Stand-in system monitor reporting per-GPU process owners.
+
+    Attributes:
+        user    : Name of the local user whose processes never block a pool.
+        holders : Owner names occupying each GPU index.
+        blind   : When true, occupancy is reported as unknown.
+    """
     def __init__(self) -> None:
+        """Starts with four unoccupied GPUs owned by nobody."""
         self.user    = "bard"
         self.holders = {}
+        self.blind   = False
 
     def occupy(self, index: int, user: str) -> None:
+        """Adds a process owner to the given GPU index."""
         self.holders.setdefault(index, []).append(user)
 
     def release(self, index: int) -> None:
+        """Removes every process owner from the given GPU index."""
         self.holders.pop(index, None)
 
-    def gpu_occupancy(self) -> list[dict]:
+    def gpu_occupancy(self) -> list[dict] | None:
+        """Returns per-GPU process listings for four devices, or None when blind."""
+        if self.blind:
+            return None
+
         return [
             {"index": index, "procs": [{"pid": 100 + index, "owner": owner} for owner in self.holders.get(index, [])]}
             for index in range(4)
@@ -81,6 +125,7 @@ class StubSystem:
 
 @pytest.fixture
 def schedule(tmp_path):
+    """Returns an enabled GpuSchedule alongside its stub process manager and system monitor."""
     processes = StubProcesses()
     system    = StubSystem()
     schedule  = GpuSchedule(StubPaths(tmp_path), WebLogger(), processes, system, StubGuard())
@@ -89,6 +134,7 @@ def schedule(tmp_path):
 
 
 def test_default_window_spans_friday_evening_to_monday_morning():
+    """The default week window covers Friday evening through Monday morning and excludes ordinary weekdays."""
     window = WeekWindow(**{key: GpuSchedule.DEFAULTS[key] for key in ("start_day", "start_hour", "end_day", "end_hour")})
 
     assert window.contains(FRIDAY_EVENING) is True
@@ -102,6 +148,7 @@ def test_default_window_spans_friday_evening_to_monday_morning():
 
 
 def test_window_that_does_not_wrap_the_week():
+    """A window whose start day precedes its end day contains only the days between them."""
     window = WeekWindow(start_day=1, start_hour=8, end_day=3, end_hour=8)
 
     assert window.contains(datetime(2026, 7, 21, 9, 0))  is True
@@ -111,6 +158,7 @@ def test_window_that_does_not_wrap_the_week():
 
 
 def test_window_boundaries_are_inclusive_at_the_start_and_exclusive_at_the_end():
+    """The window includes its start hour and excludes its end hour."""
     window = WeekWindow(**{key: GpuSchedule.DEFAULTS[key] for key in ("start_day", "start_hour", "end_day", "end_hour")})
 
     assert window.contains(datetime(2026, 7, 17, 18, 0))  is True
@@ -120,6 +168,7 @@ def test_window_boundaries_are_inclusive_at_the_start_and_exclusive_at_the_end()
 
 
 def test_default_night_window_spans_the_evening_to_the_next_morning():
+    """The default night window wraps midnight, covering the evening start hour through the morning end hour exclusive."""
     window = NightWindow(**{key: GpuSchedule.DEFAULTS[key] for key in ("night_start_hour", "night_end_hour")})
 
     assert window.contains(WEDNESDAY_NIGHT)   is True
@@ -133,6 +182,7 @@ def test_default_night_window_spans_the_evening_to_the_next_morning():
 
 
 def test_phase_names_follow_the_window(schedule):
+    """Phase resolution names weekend, weekday and night according to the configured windows."""
     scheduler, _processes, _system = schedule
 
     assert scheduler.phase(SATURDAY)         == "weekend"
@@ -142,6 +192,7 @@ def test_phase_names_follow_the_window(schedule):
 
 
 def test_the_weekend_window_outranks_the_night_window(schedule):
+    """Times inside both windows resolve to weekend rather than night."""
     scheduler, _processes, _system = schedule
 
     assert scheduler.phase(SUNDAY_NIGHT)   == "weekend"
@@ -149,6 +200,7 @@ def test_the_weekend_window_outranks_the_night_window(schedule):
 
 
 def test_transition_into_the_night_grows_the_pool_and_the_morning_shrinks_it(schedule):
+    """Crossing into night widens the pool to all GPUs and the return to the workday narrows it to the weekday set."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -161,6 +213,7 @@ def test_transition_into_the_night_grows_the_pool_and_the_morning_shrinks_it(sch
 
 
 def test_first_tick_records_the_phase_without_touching_the_launch_selection(schedule):
+    """The first tick only records the current phase, leaving the pool the job launched with."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -171,6 +224,7 @@ def test_first_tick_records_the_phase_without_touching_the_launch_selection(sche
 
 
 def test_transition_into_the_weekend_grows_the_pool(schedule):
+    """Crossing from weekday into the weekend window widens the pool to the weekend GPU set."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -181,6 +235,7 @@ def test_transition_into_the_weekend_grows_the_pool(schedule):
 
 
 def test_transition_back_to_the_week_shrinks_the_pool(schedule):
+    """Leaving the weekend window narrows the pool to the weekday GPU set."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -191,6 +246,7 @@ def test_transition_back_to_the_week_shrinks_the_pool(schedule):
 
 
 def test_ticks_inside_one_phase_never_rewrite_the_pool(schedule):
+    """Repeated ticks within the same phase issue no pool writes."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -202,6 +258,7 @@ def test_ticks_inside_one_phase_never_rewrite_the_pool(schedule):
 
 
 def test_a_manual_resize_survives_until_the_next_transition(schedule):
+    """A hand-edited pool is left alone until the next phase change overwrites it."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -216,6 +273,7 @@ def test_a_manual_resize_survives_until_the_next_transition(schedule):
 
 
 def test_a_gpu_held_by_another_user_is_left_out_of_the_pool(schedule):
+    """A GPU running another user's process is withheld from the new pool and recorded as withheld."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     system.occupy(1, "colleague")
@@ -228,6 +286,7 @@ def test_a_gpu_held_by_another_user_is_left_out_of_the_pool(schedule):
 
 
 def test_our_own_processes_never_block_the_pool(schedule):
+    """GPUs occupied by the local user are still handed to the job."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     system.occupy(2, "bard")
@@ -240,7 +299,56 @@ def test_our_own_processes_never_block_the_pool(schedule):
     assert scheduler.applied["job1"]["withheld"] == []
 
 
+def test_an_unknown_occupancy_never_hands_out_a_gpu(schedule):
+    """An unreadable occupancy probe suppresses the transition entirely rather than guessing."""
+    scheduler, processes, system = schedule
+    processes.add_running_fan_out("job1")
+    system.occupy(1, "colleague")
+
+    scheduler.tick(WEDNESDAY)
+    system.blind = True
+    scheduler.tick(WEDNESDAY_NIGHT)
+
+    assert processes.writes                      == []
+    assert scheduler.applied["job1"]["phase"]    == "weekday"
+    assert scheduler.applied["job1"]["withheld"] == []
+
+
+def test_the_move_lands_once_the_probe_answers_again(schedule):
+    """The deferred transition is applied on the next tick after the occupancy probe recovers."""
+    scheduler, processes, system = schedule
+    processes.add_running_fan_out("job1")
+    system.occupy(1, "colleague")
+
+    scheduler.tick(WEDNESDAY)
+    system.blind = True
+    scheduler.tick(WEDNESDAY_NIGHT)
+
+    system.blind = False
+    scheduler.tick(WEDNESDAY_NIGHT)
+
+    assert processes.writes                      == [("job1", [0, 2, 3])]
+    assert scheduler.applied["job1"]["withheld"] == [1]
+
+
+def test_charity_donates_nothing_while_the_occupancy_is_unknown(schedule):
+    """Charity refuses to donate a GPU while the occupancy probe is blind."""
+    scheduler, processes, system = schedule
+    scheduler.settings["charity"] = True
+    processes.add_running_fan_out("job1")
+    processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
+
+    scheduler.tick(WEDNESDAY)
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
+    system.blind = True
+
+    assert scheduler.charity(WEDNESDAY) == []
+    assert processes.writes            == []
+    assert scheduler.nap_until is None
+
+
 def test_a_pool_held_entirely_by_others_leaves_the_job_untouched(schedule):
+    """When every candidate GPU is held by others, no write is issued and all indices are recorded as withheld."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     for index in (0, 1, 2, 3):
@@ -254,6 +362,7 @@ def test_a_pool_held_entirely_by_others_leaves_the_job_untouched(schedule):
 
 
 def test_a_blocked_shrink_stays_pending_until_the_weekday_pool_frees(schedule):
+    """A shrink blocked by foreign processes stays pending across sweeps and lands once those GPUs free."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
@@ -281,6 +390,7 @@ def test_a_blocked_shrink_stays_pending_until_the_weekday_pool_frees(schedule):
 
 
 def test_a_refused_pool_write_leaves_the_transition_pending(schedule):
+    """A rejected set_gpus call keeps the recorded phase unchanged so the transition retries later."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -299,6 +409,7 @@ def test_a_refused_pool_write_leaves_the_transition_pending(schedule):
 
 
 def test_greedy_picks_up_a_withheld_gpu_once_it_frees(schedule):
+    """The greedy sweep adds a previously withheld GPU back to the pool after its foreign process exits."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     system.occupy(1, "colleague")
@@ -318,6 +429,7 @@ def test_greedy_picks_up_a_withheld_gpu_once_it_frees(schedule):
 
 
 def test_greedy_stops_sweeping_once_the_pool_is_whole(schedule):
+    """Further sweeps issue no writes after the pool has reclaimed every withheld GPU."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     system.occupy(1, "colleague")
@@ -333,6 +445,7 @@ def test_greedy_stops_sweeping_once_the_pool_is_whole(schedule):
 
 
 def test_greedy_off_never_reclaims_a_withheld_gpu(schedule):
+    """With greedy disabled, a freed GPU is never added back to the pool."""
     scheduler, processes, system = schedule
     scheduler.settings["greedy"] = False
     processes.add_running_fan_out("job1")
@@ -347,6 +460,7 @@ def test_greedy_off_never_reclaims_a_withheld_gpu(schedule):
 
 
 def test_greedy_adds_to_a_hand_shrunk_pool_without_undoing_the_resize(schedule):
+    """The greedy sweep appends the freed GPU to a manually shrunk pool instead of restoring the full phase pool."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     system.occupy(1, "colleague")
@@ -362,6 +476,7 @@ def test_greedy_adds_to_a_hand_shrunk_pool_without_undoing_the_resize(schedule):
 
 
 def test_greedy_never_unparks_a_job_and_keeps_waiting_for_it(schedule):
+    """A parked job keeps its withheld GPU pending until it holds a GPU again, then the sweep adds the freed one."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     system.occupy(1, "colleague")
@@ -383,13 +498,14 @@ def test_greedy_never_unparks_a_job_and_keeps_waiting_for_it(schedule):
 
 
 def test_charity_frees_the_gpu_a_bounced_attempt_hit(schedule):
+    """A bounced attempt makes charity drop the contested GPU from the pool, start a nap and report the gift in the state payload."""
     scheduler, processes, _system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
     processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(1, "colleague")
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
     given = scheduler.charity(WEDNESDAY)
     state = scheduler.state()
 
@@ -405,13 +521,14 @@ def test_charity_frees_the_gpu_a_bounced_attempt_hit(schedule):
 
 
 def test_charity_stays_quiet_while_any_gpu_is_still_free(schedule):
+    """No donation happens when the machine still has a GPU outside every job pool."""
     scheduler, processes, _system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
     processes.pools["job1"]["gpus"] = [0, 1]
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(1, "colleague")
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
 
     assert scheduler.charity(WEDNESDAY) == []
     assert processes.writes             == []
@@ -419,6 +536,7 @@ def test_charity_stays_quiet_while_any_gpu_is_still_free(schedule):
 
 
 def test_charity_never_leaves_a_job_without_a_gpu(schedule):
+    """Charity declines to donate the last GPU a job holds."""
     scheduler, processes, system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
@@ -427,7 +545,7 @@ def test_charity_never_leaves_a_job_without_a_gpu(schedule):
         system.occupy(index, "colleague")
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(1, "colleague")
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
 
     assert scheduler.charity(WEDNESDAY) == []
     assert processes.writes             == []
@@ -435,6 +553,7 @@ def test_charity_never_leaves_a_job_without_a_gpu(schedule):
 
 
 def test_a_bounce_off_an_unshrinkable_pool_frees_a_gpu_from_the_biggest_one(schedule):
+    """When the bounced GPU belongs to a single-GPU job, the donation is taken from the largest pool instead."""
     scheduler, processes, _system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
@@ -443,7 +562,7 @@ def test_a_bounce_off_an_unshrinkable_pool_frees_a_gpu_from_the_biggest_one(sche
     processes.pools["job2"]["gpus"] = [1, 2, 3]
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(0, "colleague")
+    scheduler.guard.bounce(0, "colleague", WEDNESDAY)
     given = scheduler.charity(WEDNESDAY)
 
     assert given                                 == ["job2"]
@@ -451,13 +570,34 @@ def test_a_bounce_off_an_unshrinkable_pool_frees_a_gpu_from_the_biggest_one(sche
     assert scheduler.applied["job2"]["withheld"] == [3]
 
 
-def test_charity_off_drains_bounces_without_donating(schedule):
+def test_charity_off_leaves_the_bounce_queue_untouched(schedule):
+    """With charity disabled the bounce stays queued and is honoured once charity is enabled."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
     processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(1, "colleague")
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
+
+    assert scheduler.charity(WEDNESDAY) == []
+    assert processes.writes             == []
+    assert [attempt["gpu_index"] for attempt in scheduler.guard.bounced] == [1]
+
+    scheduler.settings["charity"] = True
+
+    assert scheduler.charity(WEDNESDAY) == ["job1"]
+    assert processes.writes             == [("job1", [0, 2, 3])]
+
+
+def test_a_bounce_older_than_the_ttl_is_discarded(schedule):
+    """A bounce older than the TTL is dropped without triggering a donation."""
+    scheduler, processes, _system = schedule
+    scheduler.settings["charity"] = True
+    processes.add_running_fan_out("job1")
+    processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
+
+    scheduler.tick(WEDNESDAY)
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY - GpuSchedule.BOUNCE_TTL - timedelta(seconds=1))
 
     assert scheduler.charity(WEDNESDAY) == []
     assert processes.writes             == []
@@ -465,13 +605,14 @@ def test_charity_off_drains_bounces_without_donating(schedule):
 
 
 def test_the_nap_blocks_greedy_until_it_ends_then_greedy_reclaims(schedule):
+    """The charity nap suppresses greedy reclaim until it expires, after which the donated GPU returns."""
     scheduler, processes, _system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
     processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(1, "colleague")
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
     scheduler.charity(WEDNESDAY)
 
     scheduler.sweep(WEDNESDAY)
@@ -486,25 +627,28 @@ def test_the_nap_blocks_greedy_until_it_ends_then_greedy_reclaims(schedule):
 
 
 def test_a_second_bounce_during_the_nap_gets_nothing(schedule):
+    """A bounce arriving during the nap triggers no second donation and is discarded when the nap ends."""
     scheduler, processes, _system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
     processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(1, "colleague")
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
     scheduler.charity(WEDNESDAY)
 
-    scheduler.guard.bounce(2, "rival")
+    scheduler.guard.bounce(2, "rival", WEDNESDAY)
 
     assert scheduler.charity(WEDNESDAY) == []
     assert processes.writes             == [("job1", [0, 2, 3])]
-    assert scheduler.guard.bounced      == []
+    assert [attempt["gpu_index"] for attempt in scheduler.guard.bounced] == [2]
 
     assert scheduler.charity(WEDNESDAY + GpuSchedule.CHARITY_NAP) == []
+    assert scheduler.guard.bounced                                == []
 
 
 def test_a_phase_cross_during_the_nap_keeps_the_gift_out(schedule):
+    """A phase transition during the nap rebuilds the pool without the donated GPU."""
     scheduler, processes, system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
@@ -513,7 +657,7 @@ def test_a_phase_cross_during_the_nap_keeps_the_gift_out(schedule):
     system.occupy(1, "colleague")
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(2, "colleague")
+    scheduler.guard.bounce(2, "colleague", WEDNESDAY)
     scheduler.charity(WEDNESDAY)
     assert processes.writes == [("job1", [3])]
 
@@ -526,13 +670,14 @@ def test_a_phase_cross_during_the_nap_keeps_the_gift_out(schedule):
 
 
 def test_turning_charity_off_ends_the_nap(schedule):
+    """Disabling charity through update clears the nap deadline and the gifted set."""
     scheduler, processes, _system = schedule
     scheduler.settings["charity"] = True
     processes.add_running_fan_out("job1")
     processes.pools["job1"]["gpus"] = [0, 1, 2, 3]
 
     scheduler.tick(WEDNESDAY)
-    scheduler.guard.bounce(1, "colleague")
+    scheduler.guard.bounce(1, "colleague", WEDNESDAY)
     scheduler.charity(WEDNESDAY)
     assert scheduler.nap_until is not None
 
@@ -544,6 +689,7 @@ def test_turning_charity_off_ends_the_nap(schedule):
 
 
 def test_a_disabled_schedule_sweeps_nothing(schedule):
+    """A disabled schedule performs no greedy reclaim."""
     scheduler, processes, system = schedule
     processes.add_running_fan_out("job1")
     system.occupy(1, "colleague")
@@ -559,6 +705,7 @@ def test_a_disabled_schedule_sweeps_nothing(schedule):
 
 
 def test_a_disabled_schedule_tracks_phases_without_writing(schedule):
+    """A disabled schedule still records phase changes but issues no pool writes."""
     scheduler, processes, _system = schedule
     scheduler.settings["enabled"] = False
     processes.add_running_fan_out("job1")
@@ -571,6 +718,7 @@ def test_a_disabled_schedule_tracks_phases_without_writing(schedule):
 
 
 def test_jobs_without_a_live_pool_are_ignored(schedule):
+    """Jobs whose pool is not live are never tracked or resized."""
     scheduler, processes, _system = schedule
     processes.jobs.append({"job_id": "single", "status": "running", "script": "train_backbone"})
 
@@ -582,6 +730,7 @@ def test_jobs_without_a_live_pool_are_ignored(schedule):
 
 
 def test_finished_jobs_are_forgotten(schedule):
+    """A job that stops running is dropped from the applied-phase bookkeeping."""
     scheduler, processes, _system = schedule
     processes.add_running_fan_out("job1")
 
@@ -595,6 +744,7 @@ def test_finished_jobs_are_forgotten(schedule):
 
 
 def test_update_persists_and_reloads(tmp_path):
+    """Accepted settings are written to disk and restored by a freshly constructed schedule."""
     processes = StubProcesses()
     payload   = {**GpuSchedule.DEFAULTS, "enabled": True, "charity": True, "weekday_gpus": [1], "night_gpus": [1, 2], "weekend_gpus": [0, 1, 2]}
 
@@ -614,6 +764,7 @@ def test_update_persists_and_reloads(tmp_path):
 
 
 def test_state_reports_the_pool_that_applies_right_now(schedule):
+    """The state payload names the current phase, its GPU set and the human-readable window descriptions."""
     scheduler, _processes, _system = schedule
 
     state = scheduler.state()
@@ -639,6 +790,7 @@ def test_state_reports_the_pool_that_applies_right_now(schedule):
     ({"night_start_hour": 20, "night_end_hour": 20}, "never switch"),
 ])
 def test_update_rejects_an_invalid_schedule(tmp_path, payload, reason):
+    """Invalid settings are refused with an explanatory error, leaving the in-memory settings and the file untouched."""
     scheduler = GpuSchedule(StubPaths(tmp_path), WebLogger(), StubProcesses(), StubSystem(), StubGuard())
     before    = dict(scheduler.settings)
 
@@ -651,6 +803,7 @@ def test_update_rejects_an_invalid_schedule(tmp_path, payload, reason):
 
 
 def test_update_rejects_a_partial_schedule(tmp_path):
+    """An update missing required keys is refused."""
     scheduler = GpuSchedule(StubPaths(tmp_path), WebLogger(), StubProcesses(), StubSystem(), StubGuard())
 
     result = scheduler.update({"enabled": True})
@@ -659,7 +812,8 @@ def test_update_rejects_a_partial_schedule(tmp_path):
     assert "must define" in result["error"]
 
 
-def test_an_unreadable_schedule_file_falls_back_to_defaults_loudly(tmp_path):
+def test_an_unreadable_schedule_file_falls_back_to_defaults_loudly(tmp_path, capsys):
+    """A corrupt settings file falls back to defaults and logs an error naming the file."""
     paths = StubPaths(tmp_path)
     paths.logs_dir.mkdir(parents=True)
     (paths.logs_dir / GpuSchedule.FILE_NAME).write_text("{not json")
@@ -667,3 +821,9 @@ def test_an_unreadable_schedule_file_falls_back_to_defaults_loudly(tmp_path):
     scheduler = GpuSchedule(paths, WebLogger(), StubProcesses(), StubSystem(), StubGuard())
 
     assert scheduler.settings == GpuSchedule.DEFAULTS
+
+    printed = capsys.readouterr().out
+
+    assert "ERROR" in printed
+    assert "ignoring unreadable GPU schedule" in printed
+    assert str(scheduler.path) in printed

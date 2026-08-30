@@ -1,3 +1,10 @@
+"""Tests for the dataset and normalization configuration dataclasses.
+
+Covers input and output channel bookkeeping, patch and augmentation defaults,
+the per-slot normalization strategy resolution with its preset and per-channel
+overrides, the output clamp, and the serialization of channel statistics.
+"""
+
 from __future__ import annotations
 
 import dataclasses
@@ -27,6 +34,7 @@ from tests.configuration._helpers        import make_split_regions
 
 
 def test_input_config_defaults_channel_counts():
+    """Verifies the default per-pass channel counts are non-negative and secondaries contribute none."""
     cfg = InputConfig()
     assert cfg.primary_channels_per_source        >= 0
     assert cfg.secondaries_channels_per_source    == 0
@@ -34,6 +42,7 @@ def test_input_config_defaults_channel_counts():
 
 
 def test_input_config_total_channels_consistent():
+    """Verifies the total channel count equals the number of channel group keys."""
     cfg   = InputConfig(use_primary=True, use_secondaries=True, use_derived=True, use_aux=True)
     total = cfg.total_channels(n_secondaries=4, n_derived=4)
     keys  = cfg.channel_group_keys(n_secondaries=4, n_derived=4)
@@ -41,18 +50,21 @@ def test_input_config_total_channels_consistent():
 
 
 def test_input_config_round_trips_through_dict():
+    """Verifies an input config rebuilt from its dict form compares equal."""
     cfg     = InputConfig(use_secondaries=True, secondaries_representation=Representation.MAG_ANGLE)
     rebuilt = InputConfig.from_dict(cfg.as_dict())
     assert rebuilt == cfg
 
 
 def test_input_config_dem_adds_one_channel():
+    """Verifies enabling the Aux adds exactly one input channel."""
     base = InputConfig(use_aux=False)
     aux  = InputConfig(use_aux=True)
     assert aux.total_channels(0, 0) == base.total_channels(0, 0) + 1
 
 
 def test_output_config_role_names_and_params():
+    """Verifies the output roles are amplitude, mean and sigma, giving three channels per Gaussian."""
     cfg = OutputConfig()
     assert cfg.role_names          == ["a", "mu", "sig"]
     assert cfg.params_per_gaussian == 3
@@ -60,24 +72,27 @@ def test_output_config_role_names_and_params():
 
 
 def test_output_config_selected_indices():
-    cfg = OutputConfig(use_mu=False)
-    assert cfg.role_names          == ["a", "sig"]
-    assert cfg.selected_indices(2) == [0, 2, 3, 5]
+    """Verifies two Gaussians select the first six output channels."""
+    cfg = OutputConfig()
+    assert cfg.selected_indices(2) == [0, 1, 2, 3, 4, 5]
 
 
 def test_output_config_round_trips_through_dict():
+    """Verifies an output config rebuilt from its dict form keeps its roles and strategies."""
     cfg     = OutputConfig()
     rebuilt = OutputConfig.from_dict(cfg.as_dict())
-    assert rebuilt.use_amplitude          == cfg.use_amplitude
+    assert rebuilt.role_names            == cfg.role_names
     assert set(rebuilt.output_strategies) == set(cfg.output_strategies)
 
 
 def test_output_config_strategy_for_known_key():
+    """Verifies a known output slot resolves to a channel strategy."""
     cfg = OutputConfig()
     assert isinstance(cfg.strategy_for("out/amp"), ChannelStrategy)
 
 
 def test_presets_by_name_resolves_and_rejects():
+    """Verifies preset lookup by name resolves known presets and rejects unknown ones."""
     assert Presets.by_name("zscore").norm_method           is NormMethod.ZSCORE
     assert Presets.by_name("robust_iqr_log1p").apply_log1p is True
 
@@ -86,6 +101,7 @@ def test_presets_by_name_resolves_and_rejects():
 
 
 def test_normalization_config_per_slot_matches_slot_defaults():
+    """Verifies the per-slot strategy is the default and resolves to the slot defaults."""
     cfg = NormalizationConfig()
     assert cfg.input_strategy                == "per_slot"
     assert cfg.output_strategy               == "per_slot"
@@ -94,12 +110,14 @@ def test_normalization_config_per_slot_matches_slot_defaults():
 
 
 def test_normalization_config_named_preset_overrides_every_slot():
+    """Verifies a named preset replaces the strategy of every input and output slot."""
     cfg = NormalizationConfig(input_strategy="zscore", output_strategy="zscore")
     assert cfg.strategy("input", "chan/mag").norm_method is NormMethod.ZSCORE
     assert cfg.strategy("output", "out/amp").norm_method is NormMethod.ZSCORE
 
 
 def test_normalization_config_per_channel_override_wins_over_global():
+    """Verifies a per-channel override applies to its slot only, leaving the others at their defaults."""
     cfg = NormalizationConfig(output_strategy="per_slot", out_amp="zscore")
 
     assert cfg.strategy("output", "out/amp").norm_method is NormMethod.ZSCORE
@@ -108,6 +126,7 @@ def test_normalization_config_per_channel_override_wins_over_global():
 
 
 def test_normalization_config_attaches_bounds_to_fixed_bounds_strategy():
+    """Verifies a fixed-bounds slot carries the configured output bounds while other slots carry none."""
     cfg   = NormalizationConfig(out_mu="fixed_bounds")
     strat = cfg.strategy("output", "out/mu")
 
@@ -119,6 +138,7 @@ def test_normalization_config_attaches_bounds_to_fixed_bounds_strategy():
 
 
 def test_fixed_out_bounds_defaults_are_ordered_pairs():
+    """Verifies the default fixed output bounds are ordered pairs."""
     norm = NormalizationConfig()
 
     assert len(norm.fixed_out_bounds_min) == len(norm.fixed_out_bounds_max)
@@ -126,6 +146,7 @@ def test_fixed_out_bounds_defaults_are_ordered_pairs():
 
 
 def test_normalization_clamp_round_trips_through_dict():
+    """Verifies the derived output clamp carries the configured knobs and rebuilds from its dict form."""
     cfg   = NormalizationConfig(clamp_output=False, clamp_floor=0.0, clamp_ceil=50.0, clamp_leaky_slope=0.2, param_clamp_leaky_slope=0.4, amp_max=500.0)
     clamp = cfg.clamp()
 
@@ -141,6 +162,7 @@ def test_normalization_clamp_round_trips_through_dict():
 
 
 def test_clamp_payload_missing_knobs_breaks_loudly():
+    """Verifies a clamp payload missing knobs raises instead of filling in defaults."""
     payload = {"enabled": True, "floor": 0.0, "ceil": 1000.0}
 
     with pytest.raises(KeyError):
@@ -148,6 +170,7 @@ def test_clamp_payload_missing_knobs_breaks_loudly():
 
 
 def test_patch_config_defaults():
+    """Verifies the default patch size and stride are positive tuples."""
     cfg = PatchConfig()
     assert cfg.size[0] > 0 and cfg.size[1] > 0
     assert cfg.stride[0] > 0 and cfg.stride[1] > 0
@@ -156,12 +179,14 @@ def test_patch_config_defaults():
 
 
 def test_augmentation_config_probabilities_in_range():
+    """Verifies every augmentation probability lies in the unit interval."""
     cfg = AugmentationConfig()
     for name in ("p_flip_h", "p_flip_v", "p_rot90", "p_noise"):
         assert 0.0 <= getattr(cfg, name) <= 1.0
 
 
 def test_dataset_config_requires_run_dir_and_split():
+    """Verifies a dataset config built from a run directory and split regions carries the batch, patch, input and output sub-configs."""
     cfg = DatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions())
     assert cfg.batch_size  > 0
     assert cfg.num_workers >= 0
@@ -172,11 +197,13 @@ def test_dataset_config_requires_run_dir_and_split():
 
 
 def test_dataset_config_secondary_labels_default():
+    """Verifies the default secondary track labels are the four FL01 passes."""
     cfg = DatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions())
     assert cfg.secondary_labels == ("CH01", "CH02", "CH03", "CH04")
 
 
 def test_profile_augmentation_defaults():
+    """Verifies the profile augmentation defaults hold a valid probability, shift and amplitude range."""
     cfg = ProfileAugmentationConfig()
     assert 0.0 <= cfg.p_amp_scale <= 1.0
     assert cfg.max_shift >= 0
@@ -184,6 +211,7 @@ def test_profile_augmentation_defaults():
 
 
 def test_profile_dataset_config_defaults():
+    """Verifies the profile dataset defaults carry positive Gaussian and batch counts, a subsample fraction in (0, 1] and its augmentation config."""
     cfg = ProfileDatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions())
     assert cfg.n_gaussians > 0
     assert cfg.batch_size > 0
@@ -192,6 +220,7 @@ def test_profile_dataset_config_defaults():
 
 
 def test_norm_method_enum_values():
+    """Verifies the normalization method enum holds exactly the seven supported methods."""
     assert {m.value for m in NormMethod} == {
         "min_max_p999", "robust_iqr", "fixed_div_pi", "zscore",
         "fixed_log1p", "fixed_angle_01", "fixed_bounds",
@@ -204,23 +233,37 @@ def test_norm_method_enum_values():
     "FIXED_LOG1P", "FIXED_ANGLE_01", "FIXED_BOUNDS",
 ])
 def test_presets_are_channel_strategies(preset_name):
+    """Verifies every named preset is a channel strategy carrying a normalization method."""
     preset = getattr(Presets, preset_name)
     assert isinstance(preset, ChannelStrategy)
     assert isinstance(preset.norm_method, NormMethod)
 
 
 def test_channel_strategy_round_trips_through_dict():
+    """Verifies a channel strategy rebuilt from its dict form compares equal."""
     strat   = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=True)
     rebuilt = ChannelStrategy.from_dict(strat.as_dict())
     assert rebuilt == strat
 
 
+def test_channel_strategy_round_trip_preserves_bounds():
+    """Verifies a fixed-bounds strategy keeps its bounds through the dict round trip."""
+    cfg     = NormalizationConfig(out_mu="fixed_bounds")
+    strat   = cfg.strategy("output", "out/mu")
+    rebuilt = ChannelStrategy.from_dict(strat.as_dict())
+
+    assert rebuilt.bounds == strat.bounds
+    assert rebuilt        == strat
+
+
 def test_channel_strategy_from_slot_known_keys():
+    """Verifies every known slot key resolves to a channel strategy."""
     for key in _SLOT_STRATEGIES:
         assert isinstance(ChannelStrategy.from_slot(key), ChannelStrategy)
 
 
 def test_channel_stats_round_trips():
+    """Verifies channel statistics rebuild from their dict form with location, scale, names and clampability intact."""
     stats = ChannelStats(
         loc        = [0.0, 1.0],
         scale      = [1.0, 2.0],
@@ -237,6 +280,7 @@ def test_channel_stats_round_trips():
 
 
 def test_channel_stats_serialization_requires_clampable():
+    """Verifies serializing without clampability raises and deserializing a payload lacking it raises."""
     import pytest
 
     stats = ChannelStats(
@@ -249,11 +293,12 @@ def test_channel_stats_serialization_requires_clampable():
     with pytest.raises(ValueError, match="clampable"):
         stats.as_dict()
 
-    with pytest.raises(KeyError):
-        ChannelStats.from_dict({"channels": [{"name": "c0", "loc": 0.0, "scale": 1.0, "norm_method": "zscore", "apply_log1p": False}]})
+    with pytest.raises(KeyError, match="clampable"):
+        ChannelStats.from_dict({"channels": [{"name": "c0", "loc": 0.0, "scale": 1.0, "norm_method": "zscore", "apply_log1p": False, "bounds": None}]})
 
 
 def test_factory_output_config_honors_out_slot_overrides():
+    """Verifies a per-slot normalization override reaches the built output config while the other slots keep their slot defaults."""
     from configuration.benchmark import BenchmarkConfig
     from pipelines.shared.config.config_factory import ConfigFactory
 
@@ -267,6 +312,7 @@ def test_factory_output_config_honors_out_slot_overrides():
 
 
 def test_factory_output_config_defaults_match_slots():
+    """Verifies the built output config resolves every output slot to its slot default strategy."""
     from configuration.benchmark import BenchmarkConfig
     from pipelines.shared.config.config_factory import ConfigFactory
 

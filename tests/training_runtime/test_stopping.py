@@ -1,3 +1,9 @@
+"""Tests for early stopping on validation loss.
+
+Covers best-loss tracking, the patience counter, the minimum improvement
+delta, reset and state dict round trips.
+"""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -8,10 +14,12 @@ from tools.training.stopping import EarlyStopping
 
 
 def _es_config(patience=3, min_delta=0.0):
+    """Returns a namespace holding an early_stopping section with the given settings."""
     return SimpleNamespace(early_stopping=SimpleNamespace(patience=patience, min_delta=min_delta, restore_best=True))
 
 
 def test_early_stopping_first_call_sets_best(logger, tracker):
+    """Verifies that the first call records the best loss and does not stop."""
     es   = EarlyStopping(_es_config(patience=3), logger, tracker)
     stop = es(5.0, epoch=0)
 
@@ -22,6 +30,7 @@ def test_early_stopping_first_call_sets_best(logger, tracker):
 
 
 def test_early_stopping_improvement_resets_counter(logger, tracker):
+    """Verifies that an improvement resets the patience counter and best epoch."""
     es = EarlyStopping(_es_config(patience=3), logger, tracker)
     es(5.0, 0)
     es(6.0, 1)
@@ -35,6 +44,7 @@ def test_early_stopping_improvement_resets_counter(logger, tracker):
 
 
 def test_early_stopping_triggers_after_patience(logger, tracker):
+    """Verifies that stopping triggers once patience epochs pass without improvement."""
     es = EarlyStopping(_es_config(patience=3), logger, tracker)
 
     assert es(1.0, 0) is False
@@ -45,6 +55,7 @@ def test_early_stopping_triggers_after_patience(logger, tracker):
 
 
 def test_early_stopping_does_not_trigger_below_patience(logger, tracker):
+    """Verifies that the counter grows without triggering below the patience limit."""
     es = EarlyStopping(_es_config(patience=5), logger, tracker)
 
     es(1.0, 0)
@@ -54,6 +65,7 @@ def test_early_stopping_does_not_trigger_below_patience(logger, tracker):
 
 
 def test_early_stopping_strict_less_than_for_improvement(logger, tracker):
+    """Verifies that an equal loss counts as no improvement."""
     es = EarlyStopping(_es_config(patience=2), logger, tracker)
 
     es(1.0, 0)
@@ -63,6 +75,7 @@ def test_early_stopping_strict_less_than_for_improvement(logger, tracker):
 
 
 def test_early_stopping_best_tracks_running_minimum(logger, tracker):
+    """Verifies that the best loss and epoch track the running minimum."""
     es     = EarlyStopping(_es_config(patience=10), logger, tracker)
     losses = [5.0, 4.0, 4.5, 3.0, 3.2, 2.0]
 
@@ -74,6 +87,7 @@ def test_early_stopping_best_tracks_running_minimum(logger, tracker):
 
 
 def test_early_stopping_reset(logger, tracker):
+    """Verifies that reset clears best loss, counter, best epoch and trigger flag."""
     es = EarlyStopping(_es_config(patience=2), logger, tracker)
     es(1.0, 0)
     es(2.0, 1)
@@ -86,6 +100,7 @@ def test_early_stopping_reset(logger, tracker):
 
 
 def test_early_stopping_min_delta_treats_small_gains_as_no_improvement(logger, tracker):
+    """Verifies that gains smaller than min_delta do not reset the counter."""
     es = EarlyStopping(_es_config(patience=2, min_delta=0.1), logger, tracker)
 
     assert es(1.0, 0) is False
@@ -95,6 +110,7 @@ def test_early_stopping_min_delta_treats_small_gains_as_no_improvement(logger, t
 
 
 def test_early_stopping_min_delta_accepts_large_gains(logger, tracker):
+    """Verifies that gains larger than min_delta update the best loss and reset the counter."""
     es = EarlyStopping(_es_config(patience=2, min_delta=0.1), logger, tracker)
 
     es(1.0, 0)
@@ -107,6 +123,7 @@ def test_early_stopping_min_delta_accepts_large_gains(logger, tracker):
 
 
 def test_early_stopping_state_roundtrip(logger, tracker):
+    """Verifies that best loss, counter, epoch and trigger flag survive a state round trip."""
     es = EarlyStopping(_es_config(patience=3), logger, tracker)
     es(1.0, 0)
     es(1.2, 1)

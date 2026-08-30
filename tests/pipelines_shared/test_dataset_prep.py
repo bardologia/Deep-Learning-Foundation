@@ -1,3 +1,5 @@
+"""Tests covering BackboneDatasetPreparation on real preprocessing data: the loaders, datasets, and height axis it returns, and the shapes of the batches the training loader yields."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -13,6 +15,15 @@ from tools.monitoring.logger             import Logger
 
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
+    """Builds a small dataset config over the real test data with adjacent train, validation, and test azimuth strips.
+
+    Args:
+        test_data_dir : Preprocessing run directory.
+        params_dir    : Directory holding parameters.npy.
+
+    Returns:
+        Dataset config using 8x8 patches, magnitude inputs, and interferogram phase.
+    """
     ic = InputConfig(
         use_primary=True,        primary_representation=Representation.MAG_ONLY,
         use_secondaries=True,    secondaries_representation=Representation.MAG_ONLY,
@@ -42,9 +53,10 @@ def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_preparation_returns_loaders_axis_and_datasets(test_data_dir, params_dir, scene_config, tmp_path):
+    """Verifies preparation returns three loaders, the three named datasets, and a z axis spanning the Gaussian range."""
     dataset_config = _dataset_config(test_data_dir, params_dir)
     gaussian       = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy")
-    trainer_config = SimpleNamespace(gaussian=gaussian)
+    trainer_config = SimpleNamespace(gaussian=gaussian, training=SimpleNamespace(resume=False))
     logger         = Logger(log_dir=str(tmp_path / "logs"), name="prep", level="ERROR")
 
     prep = BackboneDatasetPreparation(dataset_config, trainer_config, tmp_path, logger, seed=0)
@@ -66,9 +78,10 @@ def test_backbone_preparation_returns_loaders_axis_and_datasets(test_data_dir, p
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_preparation_loader_batches_consistent(test_data_dir, params_dir, tmp_path):
+    """Verifies a training batch matches the configured batch size and the dataset input and target channel counts."""
     dataset_config = _dataset_config(test_data_dir, params_dir)
     gaussian       = GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy")
-    trainer_config = SimpleNamespace(gaussian=gaussian)
+    trainer_config = SimpleNamespace(gaussian=gaussian, training=SimpleNamespace(resume=False))
     logger         = Logger(log_dir=str(tmp_path / "logs"), name="prep2", level="ERROR")
 
     prep = BackboneDatasetPreparation(dataset_config, trainer_config, tmp_path, logger, seed=0)

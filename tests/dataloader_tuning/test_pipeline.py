@@ -1,3 +1,10 @@
+"""Tests for the dataloader tuning pipeline's spec planning and selection logic.
+
+Covers clamping of worker counts to the available cores, the cartesian main
+sweep, the prefetch/pin refinement sweep, assembly of the final loader config,
+and the end-to-end run that picks the highest-throughput configuration.
+"""
+
 from __future__ import annotations
 
 import json
@@ -12,12 +19,14 @@ from tools.benchmarking                        import LoaderSpec, SweepReport
 
 
 def _config(tmp_path, **kwargs):
+    """Returns a synthetic-mode tuning config writing under the temporary path."""
     config            = DataLoaderTuningEntryConfig(mode="synthetic", **kwargs)
     config.output_dir = tmp_path / "tuning"
     return config
 
 
 def _ok_record(batch_size, num_workers, prefetch_factor, pin_memory, samples_per_s):
+    """Returns a successful sweep record with the given loader settings and throughput."""
     return {
         "status"                   : "ok",
         "batch_size"               : batch_size,
@@ -33,6 +42,7 @@ def _ok_record(batch_size, num_workers, prefetch_factor, pin_memory, samples_per
 
 
 def test_worker_counts_drops_counts_above_cores(tmp_path, monkeypatch):
+    """Worker counts exceeding the CPU core count are discarded."""
     config   = _config(tmp_path, worker_counts=[0, 2, 1000000])
     pipeline = DataLoaderTuningPipeline(config)
 
@@ -41,16 +51,26 @@ def test_worker_counts_drops_counts_above_cores(tmp_path, monkeypatch):
     assert pipeline._worker_counts() == [0, 2]
 
 
-def test_worker_counts_falls_back_to_min_when_all_dropped(tmp_path, monkeypatch):
+def test_worker_counts_clamps_to_the_core_count_when_all_dropped(tmp_path, monkeypatch):
+    """When every configured worker count exceeds the cores, the core count is used instead."""
     config   = _config(tmp_path, worker_counts=[64, 128])
     pipeline = DataLoaderTuningPipeline(config)
 
     monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.os.cpu_count", lambda: 4)
 
-    assert pipeline._worker_counts() == [64]
+    assert pipeline._worker_counts() == [4]
+
+
+def test_worker_counts_rejects_an_empty_configuration(tmp_path):
+    """An empty worker_counts list raises ValueError."""
+    pipeline = DataLoaderTuningPipeline(_config(tmp_path, worker_counts=[]))
+
+    with pytest.raises(ValueError, match="worker_counts is empty"):
+        pipeline._worker_counts()
 
 
 def test_main_specs_is_cartesian_product(tmp_path, monkeypatch):
+    """The main sweep enumerates every batch size crossed with every worker count."""
     config   = _config(tmp_path, batch_sizes=[256, 512], worker_counts=[0, 2])
     pipeline = DataLoaderTuningPipeline(config)
 
@@ -64,6 +84,7 @@ def test_main_specs_is_cartesian_product(tmp_path, monkeypatch):
 
 
 def test_main_specs_uses_reference_prefetch_and_pins(tmp_path, monkeypatch):
+    """Main specs adopt the reference prefetch factor with pinned and persistent workers."""
     config   = _config(tmp_path, batch_sizes=[256], worker_counts=[2], reference_prefetch=4)
     pipeline = DataLoaderTuningPipeline(config)
 
@@ -77,6 +98,7 @@ def test_main_specs_uses_reference_prefetch_and_pins(tmp_path, monkeypatch):
 
 
 def test_refine_specs_sweeps_prefetch_and_pin(tmp_path):
+    """The refinement sweep varies prefetch factor and pin_memory at the recommended batch size."""
     config   = _config(tmp_path, prefetch_factors=[2, 4])
     pipeline = DataLoaderTuningPipeline(config)
 
@@ -89,6 +111,7 @@ def test_refine_specs_sweeps_prefetch_and_pin(tmp_path):
 
 
 def test_refine_specs_forces_at_least_one_worker(tmp_path):
+    """Refinement raises a zero-worker recommendation to a single worker."""
     config   = _config(tmp_path, prefetch_factors=[2])
     pipeline = DataLoaderTuningPipeline(config)
 
@@ -98,6 +121,7 @@ def test_refine_specs_forces_at_least_one_worker(tmp_path):
 
 
 def test_final_config_uses_recommendation_defaults(tmp_path):
+    """Without a refinement report the final config keeps the recommendation and reference prefetch."""
     config   = _config(tmp_path, reference_prefetch=4)
     pipeline = DataLoaderTuningPipeline(config)
 
@@ -111,6 +135,7 @@ def test_final_config_uses_recommendation_defaults(tmp_path):
 
 
 def test_final_config_overrides_from_refine_report(tmp_path):
+    """The final config adopts the prefetch factor and pin flag of the fastest refinement record."""
     config   = _config(tmp_path)
     pipeline = DataLoaderTuningPipeline(config)
 
@@ -129,12 +154,14 @@ def test_final_config_overrides_from_refine_report(tmp_path):
 
 @pytest.mark.slow
 def test_run_exits_with_reason_when_no_configuration_succeeds(tmp_path, monkeypatch):
+    """A sweep in which every configuration goes out of memory exits with an explanatory message."""
     config   = _config(tmp_path, batch_sizes=[256], worker_counts=[2], refine=False, save_figures=False)
     pipeline = DataLoaderTuningPipeline(config)
 
     monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.os.cpu_count", lambda: 8)
 
     class FakeTarget:
+        """Minimal feed target stub with a trivial linear model and identity input mapping."""
         dataset        = [torch.zeros(2)]
         model          = torch.nn.Linear(2, 2)
         to_model_input = staticmethod(lambda batch, device: batch)
@@ -144,15 +171,18 @@ def test_run_exits_with_reason_when_no_configuration_succeeds(tmp_path, monkeypa
         item_source    = "synthetic"
         config_hint    = "synthetic"
 
-    monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.build_feed_target", lambda *a, **k: FakeTarget())
+    monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.FeedTargetFactory.build", classmethod(lambda cls, *a, **k: FakeTarget()))
     monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.GpuFeedBenchmark", lambda **kwargs: object())
 
     oom_records = [{"status": "oom", "batch_size": 256, "num_workers": 2, "prefetch_factor": 4, "pin_memory": True, "persistent_workers": True}]
 
     class FakeSweep:
+        """Sweep stub replaying prerecorded out-of-memory records through the result callback."""
         def __init__(self, benchmark, specs, on_result):
+            """Stores the per-result callback and ignores the benchmark and specs."""
             self.on_result = on_result
         def run(self):
+            """Replays the out-of-memory records and returns them."""
             for record in oom_records:
                 self.on_result(dict(record))
             return oom_records
@@ -165,12 +195,14 @@ def test_run_exits_with_reason_when_no_configuration_succeeds(tmp_path, monkeypa
 
 @pytest.mark.slow
 def test_run_selects_highest_throughput_config(tmp_path, monkeypatch):
+    """The run returns and persists the configuration with the highest end-to-end throughput."""
     config   = _config(tmp_path, batch_sizes=[256, 512], worker_counts=[2], refine=False, save_figures=False)
     pipeline = DataLoaderTuningPipeline(config)
 
     monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.os.cpu_count", lambda: 8)
 
     class FakeTarget:
+        """Minimal feed target stub with a trivial linear model and identity input mapping."""
         dataset        = [torch.zeros(2)]
         model          = torch.nn.Linear(2, 2)
         to_model_input = staticmethod(lambda batch, device: batch)
@@ -180,7 +212,7 @@ def test_run_selects_highest_throughput_config(tmp_path, monkeypatch):
         item_source    = "synthetic"
         config_hint    = "synthetic"
 
-    monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.build_feed_target", lambda *a, **k: FakeTarget())
+    monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.FeedTargetFactory.build", classmethod(lambda cls, *a, **k: FakeTarget()))
     monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.GpuFeedBenchmark", lambda **kwargs: object())
 
     main_records = [
@@ -189,9 +221,12 @@ def test_run_selects_highest_throughput_config(tmp_path, monkeypatch):
     ]
 
     class FakeSweep:
+        """Sweep stub replaying prerecorded successful records through the result callback."""
         def __init__(self, benchmark, specs, on_result):
+            """Stores the per-result callback and ignores the benchmark and specs."""
             self.on_result = on_result
         def run(self):
+            """Replays the successful records and returns them."""
             for record in main_records:
                 self.on_result(dict(record))
             return main_records

@@ -1,3 +1,10 @@
+"""Tests covering the dual-trunk model with separate parameter and existence branches.
+
+Checks the default ninety-ten capacity split, free choice of zoo backbones and widths
+per trunk, channel isolation between the two trunks, the amplitude gate, gradient
+reach, parameter-group coverage and the configuration rejections.
+"""
+
 from __future__ import annotations
 
 import pytest
@@ -24,26 +31,31 @@ OVERRIDES = {
 
 
 def _build(**extra):
+    """Returns the dual ResUNet built from the shared small overrides plus any extras, in eval mode."""
     model, config = get_dual("dual_resunet", **{**OVERRIDES, **extra})
     return model.eval(), config
 
 
 def _force_gate(model, logit_value: float) -> None:
+    """Pins the existence head to a constant logit by zeroing its final weights and setting its bias."""
     final_conv = model.existence_head.mlp[-1]
     torch.nn.init.zeros_(final_conv.weight)
     torch.nn.init.constant_(final_conv.bias, logit_value)
 
 
 def _gate(model, x: torch.Tensor) -> torch.Tensor:
+    """Returns the existence probability map produced by the existence trunk for the given input."""
     embedding = model.trunk_existence.encode_decode(x.index_select(1, model.existence_index))
     return torch.sigmoid(model.existence_head(embedding))
 
 
 def test_registry_holds_dual_resunet():
+    """Verifies the dual registry exposes exactly the dual ResUNet entry."""
     assert set(DUAL_MODEL_REGISTRY) == {"dual_resunet"}
 
 
 def test_default_build_is_the_ninety_ten_full_full_standard():
+    """Verifies the default dual build uses full-channel unet_skip trunks split ninety-ten by parameter count."""
     model, config = get_dual("dual_resunet")
 
     assert config.params_backbone    == "unet_skip"
@@ -62,6 +74,7 @@ def test_default_build_is_the_ninety_ten_full_full_standard():
 
 
 def test_trunk_architectures_are_selectable():
+    """Verifies each trunk can take a different zoo backbone and the model still forwards."""
     model, config = _build(params_backbone="unet", existence_backbone="unet_skip")
 
     assert isinstance(model.trunk_params, UNetBackbone)
@@ -75,6 +88,7 @@ def test_trunk_architectures_are_selectable():
 
 
 def test_trunks_take_independent_widths():
+    """Verifies the two trunks carry independent feature ladders and the heads follow their widths."""
     model, config = _build(existence_features=[4])
 
     assert model.trunk_existence.embedding_channels == 4
@@ -88,6 +102,7 @@ def test_trunks_take_independent_widths():
 
 
 def test_forward_shape_is_three_k_channels():
+    """Verifies the forward pass emits the configured output channel count at the patch size."""
     model, config = _build()
 
     with torch.no_grad():
@@ -97,6 +112,7 @@ def test_forward_shape_is_three_k_channels():
 
 
 def test_existence_trunk_sees_only_its_channels():
+    """Verifies perturbing channels outside the existence selection leaves the gate unchanged."""
     model, config = _build()
 
     x         = torch.randn(BATCH, config.in_channels, WINDOW, WINDOW)
@@ -108,6 +124,7 @@ def test_existence_trunk_sees_only_its_channels():
 
 
 def test_params_trunk_sees_only_its_channels():
+    """Verifies perturbing channels outside the parameter selection leaves the parameter embedding unchanged."""
     model, config = _build(params_channels=(0, 1, 2))
 
     x         = torch.randn(BATCH, config.in_channels, WINDOW, WINDOW)
@@ -122,6 +139,7 @@ def test_params_trunk_sees_only_its_channels():
 
 
 def test_params_trunk_sees_all_channels_by_default():
+    """Verifies the default parameter trunk reads every input channel."""
     model, config = _build()
 
     x         = torch.randn(BATCH, config.in_channels, WINDOW, WINDOW)
@@ -133,6 +151,7 @@ def test_params_trunk_sees_all_channels_by_default():
 
 
 def test_closed_gate_pins_amplitude_to_off_level():
+    """Verifies a fully closed gate drives each slot amplitude to its learned off level."""
     model, config = _build()
     _force_gate(model, logit_value=-30.0)
 
@@ -148,6 +167,7 @@ def test_closed_gate_pins_amplitude_to_off_level():
 
 
 def test_open_gate_passes_raw_amplitude():
+    """Verifies a fully open gate passes the raw head amplitudes through unchanged."""
     model, config = _build()
     _force_gate(model, logit_value=30.0)
 
@@ -165,6 +185,7 @@ def test_open_gate_passes_raw_amplitude():
 
 
 def test_gate_leaves_mu_sigma_untouched():
+    """Verifies the gate leaves the mu and sigma channels identical to the raw head outputs."""
     model, config = _build()
     _force_gate(model, logit_value=-30.0)
 
@@ -182,6 +203,7 @@ def test_gate_leaves_mu_sigma_untouched():
 
 
 def test_gradients_reach_both_trunks_and_heads():
+    """Verifies backpropagation delivers finite gradients to both trunks, both head groups and the off level."""
     model, config = _build()
     model.train()
 
@@ -198,6 +220,7 @@ def test_gradients_reach_both_trunks_and_heads():
 
 
 def test_param_groups_cover_every_parameter_exactly_once():
+    """Verifies the optimiser parameter groups partition the model parameters without duplication."""
     model, config = _build()
 
     grouped = [id(p) for group in config.get_param_groups(model) for p in group["params"]]
@@ -208,6 +231,7 @@ def test_param_groups_cover_every_parameter_exactly_once():
 
 
 def test_any_zoo_backbone_is_a_valid_trunk():
+    """Verifies a featureless zoo backbone such as NAFNet works as the existence trunk."""
     small_nafnet  = {"width": 8, "enc_blocks": [1, 1], "middle_blocks": 1, "dec_blocks": [1, 1]}
     model, config = _build(existence_backbone="nafnet", existence_features=[], existence_overrides=small_nafnet)
 
@@ -221,6 +245,7 @@ def test_any_zoo_backbone_is_a_valid_trunk():
 
 
 def test_zoo_trunks_carry_no_head_parameters():
+    """Verifies the trunks hold no output-head parameters of their own."""
     model, _ = _build()
 
     trunk_keys = [name for name, _ in model.trunk_params.named_parameters()]
@@ -230,35 +255,42 @@ def test_zoo_trunks_carry_no_head_parameters():
 
 
 def test_featureless_trunk_rejects_a_features_ladder():
+    """Verifies passing a feature ladder to a backbone without one is rejected."""
     with pytest.raises(ValueError, match="no 'features' ladder"):
         _build(existence_backbone="nafnet", existence_features=[8])
 
 
 def test_reserved_trunk_override_rejected():
+    """Verifies overriding a field the dual model sets itself is rejected."""
     with pytest.raises(ValueError, match="set by the dual model itself"):
         _build(params_overrides={"features": [8, 16]})
 
 
 def test_unknown_trunk_override_rejected():
+    """Verifies an override naming a field the trunk config lacks is rejected."""
     with pytest.raises(AttributeError, match="Unknown trunk override"):
         _build(params_overrides={"bottleneck_factor": 1, "no_such_field": 1})
 
 
 def test_unknown_trunk_backbone_rejected():
+    """Verifies an unknown trunk backbone name is rejected."""
     with pytest.raises(ValueError, match="params_backbone"):
         _build(params_backbone="resnet_trunk")
 
 
 def test_empty_trunk_channels_rejected():
+    """Verifies an empty channel selection for a trunk is rejected."""
     with pytest.raises(ValueError, match="existence_channels"):
         _build(existence_channels=())
 
 
 def test_out_of_range_trunk_channel_rejected():
+    """Verifies a trunk channel index beyond the input channel count is rejected."""
     with pytest.raises(ValueError, match="out of range"):
         _build(existence_channels=(3, 5))
 
 
 def test_non_set_pred_head_rejected():
+    """Verifies the dual model refuses any head other than set prediction."""
     with pytest.raises(ValueError, match="set_pred"):
         _build(head="conv")

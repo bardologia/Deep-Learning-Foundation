@@ -1,3 +1,10 @@
+"""Tests for the image autoencoder training pipeline.
+
+Covers model construction from the entry's architecture name, the artifacts a training run
+leaves behind and their reloadability, the refusal of input-noise augmentation for an
+autoencoder, and that the run metadata is closed when data preparation fails.
+"""
+
 from __future__ import annotations
 
 import types
@@ -9,10 +16,12 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from configuration.architectures.image_autoencoder import Conv2dImageAutoencoderConfig
+from configuration.dataset                         import AugmentationConfig
 from configuration.training                        import ImageAeEntryConfig
 from configuration.training.general.runtime        import ResourceConfig, TrainingLoopConfig
 from configuration.training.image_autoencoder      import ImageAeLossConfig, ImageAeTrainerConfig
 from models.image_autoencoder                      import IMAGE_AE_CONFIG_REGISTRY
+from pipelines.autoencoder_common                  import training as autoencoder_training
 from pipelines.image_autoencoder.training          import pipeline as image_pipeline
 from pipelines.shared.config.run_metadata          import TrainingRunMetadata
 
@@ -26,15 +35,17 @@ PATCH         = 16
 
 
 def _trainer_config(cfg):
+    """Returns a one-epoch CPU trainer config with early stopping and warmup disabled."""
     tc                         = ImageAeTrainerConfig(gaussian=None, image_autoencoder=cfg, ae_loss=ImageAeLossConfig(recon_kind="mse"))
     tc.training                = TrainingLoopConfig(epochs=1, validation_frequency=1, use_amp=False)
     tc.resources               = ResourceConfig(enabled=False)
     tc.early_stopping.patience = 1000
-    tc.warmup.warmup_steps     = 0
+    tc.warmup.warmup_fraction  = 0.0
     return tc
 
 
 def _pipeline(cfg):
+    """Returns a training pipeline with the trainer config and architecture fields set, bypassing its constructor."""
     pipe                 = image_pipeline.TrainingPipeline.__new__(image_pipeline.TrainingPipeline)
     pipe.trainer_config  = _trainer_config(cfg)
     pipe.autoencoder_cfg = cfg
@@ -44,6 +55,7 @@ def _pipeline(cfg):
 
 
 def _build_cfg():
+    """Returns a tiny conv2d image autoencoder config: 8 base channels at depth one."""
     cfg               = Conv2dImageAutoencoderConfig(in_channels=IN_CHANNELS, embedding_dim=EMBEDDING_DIM)
     cfg.base_channels = 8
     cfg.depth         = 1
@@ -51,12 +63,14 @@ def _build_cfg():
 
 
 def _loader(n=8, batch_size=4, seed=0):
+    """Returns a loader over random patches of shape (n, channels, 16, 16)."""
     g = torch.Generator().manual_seed(seed)
     x = torch.randn(n, IN_CHANNELS, PATCH, PATCH, generator=g)
     return DataLoader(TensorDataset(x), batch_size=batch_size)
 
 
 def test_build_model_sets_in_channels():
+    """Building the model installs the dataset channel count on the architecture config."""
     cfg  = _build_cfg()
     pipe = _pipeline(cfg)
 
@@ -67,6 +81,7 @@ def test_build_model_sets_in_channels():
 
 
 def test_orchestration_produces_checkpoint_and_metadata(tmp_path):
+    """A training run writes the best checkpoint plus the architecture, summary and trainer config metadata."""
     cfg  = _build_cfg()
     pipe = _pipeline(cfg)
 
@@ -92,6 +107,7 @@ def test_orchestration_produces_checkpoint_and_metadata(tmp_path):
 
 
 def test_saved_checkpoint_is_loadable(tmp_path):
+    """The saved parameters load into a freshly built model of the same configuration."""
     cfg  = _build_cfg()
     pipe = _pipeline(cfg)
 
@@ -109,6 +125,7 @@ def test_saved_checkpoint_is_loadable(tmp_path):
 
 
 def test_autoencoder_config_follows_ae_model_name():
+    """Every registered architecture name resolves to its own config class, with model overrides applied."""
     entry = ImageAeEntryConfig(ae_model_name="conv2d_ae", model_overrides={"embedding_dim": 48})
     cfg   = image_pipeline.TrainingPipeline._autoencoder_config(image_pipeline.TrainingPipeline.__new__(image_pipeline.TrainingPipeline), entry)
 
@@ -118,3 +135,76 @@ def test_autoencoder_config_follows_ae_model_name():
     for name in IMAGE_AE_CONFIG_REGISTRY:
         cfg = image_pipeline.TrainingPipeline._autoencoder_config(image_pipeline.TrainingPipeline.__new__(image_pipeline.TrainingPipeline), ImageAeEntryConfig(ae_model_name=name))
         assert type(cfg) is type(IMAGE_AE_CONFIG_REGISTRY[name]())
+
+
+def _dataset_config_pipeline(p_noise: float):
+    """Returns a pipeline whose dataset factory reports an augmentation config with the given noise probability."""
+    dataset_config = types.SimpleNamespace(split_regions=None, augmentation=AugmentationConfig(p_noise=p_noise))
+
+    pipe               = image_pipeline.TrainingPipeline.__new__(image_pipeline.TrainingPipeline)
+    pipe.factory       = types.SimpleNamespace(training_dataset_config=lambda: dataset_config)
+    pipe.split_regions = "split-regions"
+
+    return pipe
+
+
+def test_image_ae_refuses_input_noise_augmentation():
+    """Input noise augmentation raises, since the autoencoder reconstructs its own input."""
+    pipe = _dataset_config_pipeline(p_noise=0.5)
+
+    with pytest.raises(ValueError, match="p_noise"):
+        pipe._build_dataset_config()
+
+
+def test_image_ae_accepts_disabled_input_noise():
+    """With input noise disabled the dataset config is built and keeps the pipeline split regions."""
+    pipe   = _dataset_config_pipeline(p_noise=0.0)
+    config = pipe._build_dataset_config()
+
+    assert config.split_regions == "split-regions"
+
+
+class _RecordingRunMetadata:
+    """Run metadata stub recording every instance created and whether it was closed."""
+
+    instances = []
+
+    def __init__(self, trainer_config, run_label, logdir, run_name):
+        """Derives the run directory and registers the instance on the class."""
+        self.run_directory = Path(logdir) / str(run_name)
+        self.logger        = types.SimpleNamespace()
+        self.closed        = False
+
+        type(self).instances.append(self)
+
+    def __enter__(self):
+        """Returns the stub itself as the context manager value."""
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Closes the stub on context exit, however the block ended."""
+        self.close()
+
+    def close(self):
+        """Marks the stub as closed."""
+        self.closed = True
+
+
+def test_run_closes_the_run_metadata_when_data_preparation_fails(tmp_path, monkeypatch):
+    """A failure inside data preparation still closes the single run metadata that was opened."""
+    _RecordingRunMetadata.instances = []
+
+    pipe                          = _pipeline(_build_cfg())
+    pipe.trainer_config.io.logdir = str(tmp_path)
+
+    def _failing_prepare(run_directory, logger):
+        raise RuntimeError("dataset shape mismatch")
+
+    pipe._prepare_data = _failing_prepare
+    monkeypatch.setattr(autoencoder_training, "TrainingRunMetadata", _RecordingRunMetadata)
+
+    with pytest.raises(RuntimeError, match="dataset shape mismatch"):
+        pipe.run()
+
+    assert len(_RecordingRunMetadata.instances) == 1
+    assert _RecordingRunMetadata.instances[0].closed

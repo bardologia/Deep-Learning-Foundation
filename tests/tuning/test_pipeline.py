@@ -1,3 +1,10 @@
+"""Tests for the tuning scheduler that fans studies out over GPUs.
+
+Covers trial distribution, study naming and storage layout, stale trial
+handling, result summaries, best-config persistence and the guards on
+training type, GPU pool and resumed configurations.
+"""
+
 from __future__ import annotations
 
 import json
@@ -15,7 +22,9 @@ from pipelines.tuning.tuners              import ParamSampler
 
 
 class StubLogger:
+    """Logger stub recording (kind, message) pairs."""
     def __init__(self):
+        """Initialises the message buffer."""
         self.messages = []
 
     def section(self, t):     self.messages.append(("section", t))
@@ -28,6 +37,7 @@ class StubLogger:
 
 
 def _make_config(tmp_path: Path, n_trials: int = 10):
+    """Returns a tuning entry config namespace rooted at `tmp_path`."""
     tuning = SimpleNamespace(
         n_trials                = n_trials,
         n_epochs                = 2,
@@ -52,6 +62,7 @@ def _make_config(tmp_path: Path, n_trials: int = 10):
 
 
 def _orchestrator(tmp_path: Path, n_trials: int = 10) -> TuningScheduler:
+    """Returns a TuningScheduler for `tmp_path` with a stub logger attached."""
     cfg  = _make_config(tmp_path, n_trials=n_trials)
     orch = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
     orch.logger = StubLogger()
@@ -59,6 +70,7 @@ def _orchestrator(tmp_path: Path, n_trials: int = 10) -> TuningScheduler:
 
 
 def test_distribute_trials_balances_remainder(tmp_path):
+    """Verifies that trials are split evenly with the remainder spread over the first GPUs."""
     orch = _orchestrator(tmp_path)
 
     assert orch._distribute_trials(10, 3) == [4, 3, 3]
@@ -68,11 +80,13 @@ def test_distribute_trials_balances_remainder(tmp_path):
 
 
 def test_study_name_combines_model_and_tag(tmp_path):
+    """Verifies that the study name joins the model key and the run tag."""
     orch = _orchestrator(tmp_path)
     assert orch._study_name("unet") == "unet_testtag"
 
 
 def test_search_space_matches_config_union(tmp_path):
+    """Verifies that the search space is the union of tunable LR and architecture params."""
     orch  = _orchestrator(tmp_path)
     space = orch._search_space("unet")
 
@@ -80,7 +94,32 @@ def test_search_space_matches_config_union(tmp_path):
     assert space == expected
 
 
+def test_model_keys_reject_structured_heads_for_profile_coupled_jepa(tmp_path):
+    """Verifies that structured heads are rejected when JEPA uses a profile autoencoder."""
+    orch = _orchestrator(tmp_path)
+    orch.config.training_type = "jepa"
+    orch.config.heads         = ["conv", "set_pred"]
+    orch.config.jepa          = SimpleNamespace(profile_autoencoder_run="mlp_ae_run")
+
+    with pytest.raises(SystemExit, match="only the conv head"):
+        orch._model_keys()
+
+
+def test_model_keys_allow_structured_heads_without_a_profile_ae(tmp_path):
+    """Verifies that structured heads are allowed when no profile autoencoder is set."""
+    orch = _orchestrator(tmp_path)
+    orch.config.training_type = "jepa"
+    orch.config.heads         = ["conv", "set_pred"]
+    orch.config.jepa          = SimpleNamespace(profile_autoencoder_run=None)
+
+    keys = orch._model_keys()
+
+    assert "unet" in keys
+    assert "unet-set_pred" in keys
+
+
 def test_storage_and_paths_derived_from_tag(tmp_path):
+    """Verifies that run directory, database and summary paths derive from the run tag."""
     orch = _orchestrator(tmp_path)
 
     assert orch.run_dir      == tmp_path / "testtag"
@@ -90,6 +129,7 @@ def test_storage_and_paths_derived_from_tag(tmp_path):
 
 
 def test_load_or_create_study_is_minimize_and_idempotent(tmp_path):
+    """Verifies that the study minimizes and is reused rather than duplicated."""
     orch  = _orchestrator(tmp_path)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -101,6 +141,7 @@ def test_load_or_create_study_is_minimize_and_idempotent(tmp_path):
 
 
 def test_count_done_counts_complete_and_pruned(tmp_path):
+    """Verifies that done trials count complete and pruned states but not failures."""
     orch  = _orchestrator(tmp_path)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
     study = orch._load_or_create_study("unet")
@@ -114,6 +155,7 @@ def test_count_done_counts_complete_and_pruned(tmp_path):
 
 
 def test_running_trial_within_its_grace_period_is_left_alone(tmp_path):
+    """Verifies that a running trial inside its heartbeat grace period is not failed."""
     orch  = _orchestrator(tmp_path)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
     study = orch._load_or_create_study("unet")
@@ -129,6 +171,7 @@ def test_running_trial_within_its_grace_period_is_left_alone(tmp_path):
 
 
 def test_study_storage_carries_heartbeats(tmp_path):
+    """Verifies that the study storage carries the configured heartbeat and grace period."""
     orch = _orchestrator(tmp_path)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -141,6 +184,7 @@ def test_study_storage_carries_heartbeats(tmp_path):
 
 
 def test_record_summarizes_counts(tmp_path):
+    """Verifies that a summary record carries model, status, trial count and best config."""
     orch  = _orchestrator(tmp_path)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
     study = orch._load_or_create_study("unet")
@@ -158,6 +202,7 @@ def test_record_summarizes_counts(tmp_path):
 
 @pytest.mark.slow
 def test_tune_model_extracts_synthetic_optimum_and_persists(tmp_path, monkeypatch):
+    """Verifies that tuning recovers a synthetic optimum and persists best config and summary."""
     orch = _orchestrator(tmp_path, n_trials=30)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -165,10 +210,12 @@ def test_tune_model_extracts_synthetic_optimum_and_persists(tmp_path, monkeypatc
     optimum = "gelu"
 
     def fake_dispatch(model_name, counts):
+        """Runs the synthetic objective in-process instead of dispatching GPU workers."""
         sampler = ParamSampler()
         study   = orch._load_or_create_study(model_name)
 
         def objective(trial):
+            """Returns a loss minimised by the target activation choice."""
             s    = sampler.sample(trial, space)
             base = 0.0 if s["activation"] == optimum else 1.0
             return base + 0.001 * s["dropout"]
@@ -197,6 +244,7 @@ def test_tune_model_extracts_synthetic_optimum_and_persists(tmp_path, monkeypatc
 
 @pytest.mark.slow
 def test_tune_model_records_failure_with_no_trials(tmp_path, monkeypatch):
+    """Verifies that a study with no completed trials is recorded as FAILED."""
     orch = _orchestrator(tmp_path, n_trials=5)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -211,6 +259,7 @@ def test_tune_model_records_failure_with_no_trials(tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_tune_model_skips_dispatch_when_target_reached(tmp_path, monkeypatch):
+    """Verifies that no workers are dispatched when the trial target is already met."""
     orch = _orchestrator(tmp_path, n_trials=2)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -221,6 +270,7 @@ def test_tune_model_skips_dispatch_when_target_reached(tmp_path, monkeypatch):
     called = {"dispatch": False}
 
     def fake_dispatch(model_name, counts):
+        """Records that dispatch was requested and reports success."""
         called["dispatch"] = True
         return True
 
@@ -233,6 +283,7 @@ def test_tune_model_skips_dispatch_when_target_reached(tmp_path, monkeypatch):
 
 
 def test_schedule_rejects_unsupported_training_type(tmp_path):
+    """Verifies that scheduling an unsupported training type exits with an error."""
     cfg               = _make_config(tmp_path)
     cfg.training_type = "nonexistent_type"
     orch              = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
@@ -241,7 +292,18 @@ def test_schedule_rejects_unsupported_training_type(tmp_path):
         orch.schedule()
 
 
+def test_schedule_rejects_an_empty_gpu_pool(tmp_path):
+    """Verifies that scheduling with an empty GPU pool exits with an error."""
+    cfg      = _make_config(tmp_path)
+    cfg.gpus = []
+    orch     = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
+
+    with pytest.raises(SystemExit, match="gpus is empty"):
+        orch.schedule()
+
+
 def test_worker_rejects_unsupported_training_type(tmp_path):
+    """Verifies that a worker rejects an unsupported training type."""
     from pipelines.tuning.workers import TuningWorker
 
     cfg               = _make_config(tmp_path)
@@ -253,6 +315,7 @@ def test_worker_rejects_unsupported_training_type(tmp_path):
 
 
 def test_image_ae_entry_template_forwards_normalization_and_augmentation(tmp_path):
+    """Verifies that the image AE entry template forwards normalization and augmentation."""
     from configuration.dataset              import AugmentationConfig
     from configuration.normalization.general import NormalizationConfig
     from configuration.training             import ImageAeLossConfig
@@ -270,3 +333,38 @@ def test_image_ae_entry_template_forwards_normalization_and_augmentation(tmp_pat
     assert entry.normalization is cfg.normalization
     assert entry.augmentation  is cfg.augmentation
     assert entry.ae_loss       is cfg.image_ae_loss
+
+
+def _resumed_scheduler(tmp_path: Path):
+    """Returns a scheduler whose run directory already holds a saved resolved config."""
+    from configuration.tuning     import TuningEntryConfig
+    from tools.runtime.config_cli import ConfigCli
+
+    cfg                    = TuningEntryConfig()
+    cfg.paths.log_base_dir = tmp_path
+
+    orch = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    ConfigCli.save_resolved(cfg, orch.run_dir / "resolved_config.json")
+
+    return orch
+
+
+def test_resume_rejects_a_changed_objective(tmp_path):
+    """Verifies that changing the epoch budget on resume is rejected."""
+    orch = _resumed_scheduler(tmp_path)
+
+    orch.config.tuning.n_epochs = 5
+
+    with pytest.raises(SystemExit, match="tuning.n_epochs"):
+        orch._guard_resumed_config(orch.run_dir / "resolved_config.json")
+
+
+def test_resume_allows_more_trials_and_a_new_gpu_pool(tmp_path):
+    """Verifies that raising the trial count and changing the GPU pool are allowed on resume."""
+    orch = _resumed_scheduler(tmp_path)
+
+    orch.config.tuning.n_trials = orch.config.tuning.n_trials + 50
+    orch.config.gpus            = [0]
+
+    orch._guard_resumed_config(orch.run_dir / "resolved_config.json")

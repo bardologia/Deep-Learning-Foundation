@@ -1,3 +1,11 @@
+"""Tests for the backbone inference plotting layer.
+
+Covers the composed `Plotter` facade and its shared drawing tools, the parameter
+distribution, scatter, error-map and error-histogram figures with their single slot
+matching per cube, the slot-occupancy map, the slice and tomogram figures, and the track
+geometry and flight-path figures.
+"""
+
 from __future__ import annotations
 
 import matplotlib
@@ -18,6 +26,7 @@ H           = W       = 8
 
 
 def _assert_files(paths):
+    """Asserts that at least one path was returned and every one is a non-empty file."""
     assert len(paths) > 0
     for p in paths:
         assert p.is_file()
@@ -25,6 +34,7 @@ def _assert_files(paths):
 
 
 def _params(n_gaussians=N_GAUSSIANS, h=H, w=W):
+    """Builds a parameter cube of shape (3 * n_gaussians, h, w) with random amplitudes and fixed centres and widths."""
     rng    = np.random.default_rng(0)
     params = np.zeros((n_gaussians * 3, h, w), dtype=np.float32)
     for k in range(n_gaussians):
@@ -35,6 +45,7 @@ def _params(n_gaussians=N_GAUSSIANS, h=H, w=W):
 
 
 def _curves(params, z_axis, n_gaussians=N_GAUSSIANS):
+    """Renders a parameter cube into profiles of shape (n_z, z, width)."""
     curve = np.zeros((z_axis.size, params.shape[1], params.shape[2]), dtype=np.float32)
     for k in range(n_gaussians):
         a   = np.maximum(params[3 * k], 0.0)[None]
@@ -46,10 +57,12 @@ def _curves(params, z_axis, n_gaussians=N_GAUSSIANS):
 
 
 def _x_axis():
+    """Returns the z axis of N_Z samples spanning -20 m to 80 m."""
     return np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
 
 
 def test_ploter_composes_subplotters():
+    """The plotter facade exposes the slice, parameter, slot and track sub-plotters."""
     p = Plotter()
     assert isinstance(p.slice, SlicePlotter)
     assert isinstance(p.param, ParamPlotter)
@@ -58,6 +71,7 @@ def test_ploter_composes_subplotters():
 
 
 def test_plottools_imshow_panel(tmp_path):
+    """The shared image panel writes a non-empty figure."""
     tools = PlotTools()
     data  = np.random.default_rng(0).random((8, 8)).astype(np.float32)
 
@@ -72,6 +86,7 @@ def test_plottools_imshow_panel(tmp_path):
 
 
 def test_plottools_intensity_scale_normalize():
+    """The intensity scale is the reference maximum when normalising and one otherwise."""
     tools = PlotTools(normalize=True)
     ref   = np.array([0.0, 1.0, 4.0], dtype=np.float32)
 
@@ -82,6 +97,7 @@ def test_plottools_intensity_scale_normalize():
 
 
 def test_param_plotter_distributions(tmp_path):
+    """Parameter distribution figures are written for the whole cube."""
     params  = _params()
     plotter = ParamPlotter()
 
@@ -92,6 +108,7 @@ def test_param_plotter_distributions(tmp_path):
 
 
 def test_param_plotter_scatter(tmp_path):
+    """Predicted-against-true scatter figures are written for the whole cube."""
     params  = _params()
     plotter = ParamPlotter()
 
@@ -102,6 +119,7 @@ def test_param_plotter_scatter(tmp_path):
 
 
 def test_param_plotter_error_maps(tmp_path):
+    """Spatial parameter error maps are written for the whole cube."""
     params  = _params()
     plotter = ParamPlotter()
 
@@ -113,6 +131,7 @@ def test_param_plotter_error_maps(tmp_path):
 
 
 def test_param_plotter_error_hists(tmp_path):
+    """One error histogram is written per slot and parameter."""
     params  = _params()
     noise   = np.random.default_rng(1).normal(0.0, 0.1, params.shape).astype(np.float32)
     plotter = ParamPlotter()
@@ -125,6 +144,7 @@ def test_param_plotter_error_hists(tmp_path):
 
 
 def test_param_plotter_matches_slots_once_per_cube(tmp_path, monkeypatch):
+    """Slot matching is computed once per distinct prediction cube and reused across figures."""
     params  = _params()
     pred    = params + 0.01
     other   = params + 0.5
@@ -134,6 +154,7 @@ def test_param_plotter_matches_slots_once_per_cube(tmp_path, monkeypatch):
     original = GaussianMatcher.aligned_prediction
 
     def counted(self, params_pred, params_gt, n_K, assignment=None):
+        """Records each slot-matching call and delegates to the real implementation."""
         calls.append(n_K)
         return original(self, params_pred, params_gt, n_K, assignment=assignment)
 
@@ -157,12 +178,14 @@ def test_param_plotter_matches_slots_once_per_cube(tmp_path, monkeypatch):
 
 
 def test_param_scatter_r2_value_exact():
+    """The scatter annotation reports an R2 of one for an exact prediction."""
     gt   = np.array([1.0, 2.0, 3.0, 4.0])
     pred = gt.copy()
     assert ParamPlotter._r2_value(gt, pred) == pytest.approx(1.0, abs=1e-9)
 
 
 def test_slot_plotter_active_count_map(tmp_path):
+    """The active-scatterer count map is written."""
     params  = _params()
     plotter = SlotPlotter()
     paths   = plotter.plot_active_count_map(
@@ -173,6 +196,7 @@ def test_slot_plotter_active_count_map(tmp_path):
 
 
 def test_slice_plotter_profiles(tmp_path):
+    """Per-pixel profile figures are written for the selected pixels."""
     z_axis = _x_axis()
     params = _params()
     gt     = _curves(params, z_axis)
@@ -195,6 +219,7 @@ def test_slice_plotter_profiles(tmp_path):
 
 
 def test_slice_plotter_pixel_metric_map_log(tmp_path):
+    """A pixel metric map is written on a logarithmic colour scale."""
     plotter = SlicePlotter()
     metric  = np.random.default_rng(0).random((H, W)).astype(np.float32) + 0.01
 
@@ -206,6 +231,7 @@ def test_slice_plotter_pixel_metric_map_log(tmp_path):
 
 
 def test_slice_plotter_cube_slice_col_and_row(tmp_path):
+    """Cube slices are written along both the column and the row axis."""
     z_axis = _x_axis()
     params = _params()
     gt     = _curves(params, z_axis)
@@ -222,6 +248,7 @@ def test_slice_plotter_cube_slice_col_and_row(tmp_path):
 
 
 def test_slice_plotter_cube_slice_bad_axis_raises(tmp_path):
+    """The z axis is not a valid cube slice axis and raises ValueError."""
     z_axis  = _x_axis()
     gt      = _curves(_params(), z_axis)
     plotter = SlicePlotter()
@@ -234,6 +261,7 @@ def test_slice_plotter_cube_slice_bad_axis_raises(tmp_path):
 
 
 def test_slice_plotter_z_intensity_slice(tmp_path):
+    """A constant-z intensity slice is written."""
     z_axis = _x_axis()
     params = _params()
     gt     = _curves(params, z_axis)
@@ -248,6 +276,7 @@ def test_slice_plotter_z_intensity_slice(tmp_path):
 
 
 def test_slice_plotter_metric_histograms(tmp_path):
+    """A histogram is written for each supplied pixel metric map."""
     plotter = SlicePlotter()
     arrays  = {"pixel_mse": np.random.default_rng(0).random((H, W)).astype(np.float32)}
 
@@ -256,6 +285,7 @@ def test_slice_plotter_metric_histograms(tmp_path):
 
 
 def test_slice_plotter_input_channels(tmp_path):
+    """Amplitude and phase figures are written for the complex input stack."""
     rng     = np.random.default_rng(0)
     n_sec   = 2
     inputs  = (rng.standard_normal((1 + 2 * n_sec, H, W)) + 1j * rng.standard_normal((1 + 2 * n_sec, H, W))).astype(np.complex64)
@@ -269,12 +299,23 @@ def test_slice_plotter_input_channels(tmp_path):
 
 
 def _ssim_metrics(axis, n, prefix="gt"):
+    """Builds a metric dictionary holding per-slice SSIM values and their mean for one axis.
+
+    Args:
+        axis   : Slice axis name the keys are built for.
+        n      : Number of slices.
+        prefix : Comparison side the keys refer to.
+
+    Returns:
+        Mapping of SSIM metric key to value.
+    """
     gm = {f"ssim_{prefix}_{axis}_{i}": 0.5 + 0.01 * i for i in range(n)}
     gm[f"ssim_{prefix}_{axis}_mean"] = 0.6
     return gm
 
 
 def test_slice_plotter_ssim_curves(tmp_path):
+    """The per-slice SSIM curve figure is written."""
     plotter = SlicePlotter()
     gm      = _ssim_metrics("col", W)
 
@@ -286,6 +327,7 @@ def test_slice_plotter_ssim_curves(tmp_path):
 
 
 def test_slice_plotter_z_metric_curves(tmp_path):
+    """One figure is written per z-resolved metric."""
     z_axis = _x_axis()
     gm     = {}
     for key in ("z_mae", "z_rmse", "z_r2", "z_ce"):
@@ -296,3 +338,31 @@ def test_slice_plotter_z_metric_curves(tmp_path):
     plotter = SlicePlotter()
     paths   = plotter.plot_z_metric_curves(gm, tmp_path, N_Z, z_axis)
     _assert_files(paths)
+
+
+@pytest.mark.dataset
+def test_track_plotter_geometry(tmp_path, baselines_json):
+    """The baseline geometry figure is written from the real channel baselines."""
+    baselines = TrackBaselines.from_payload(baselines_json)
+    plotter   = TrackPlotter()
+
+    path = plotter.plot_track_geometry(baselines, tmp_path / "geom.png")
+    assert path.is_file() and path.stat().st_size > 0
+
+
+@pytest.mark.dataset
+def test_track_plotter_profiles_and_flight(tmp_path, track_profiles):
+    """Track profile figures and the 3D flight-path figure are written from the real channel profiles."""
+    profiles = TrackProfiles(
+        labels        = [str(label) for label in track_profiles["labels"]],
+        horizontal    = np.asarray(track_profiles["horizontal"], dtype=float),
+        vertical      = np.asarray(track_profiles["vertical"],   dtype=float),
+        row_start = int(track_profiles["row_start"]),
+    )
+    plotter = TrackPlotter()
+
+    paths = plotter.plot_track_profiles(profiles, tmp_path, split_azimuth=(1000, 1500))
+    _assert_files(paths)
+
+    flight = plotter.plot_track_flight_3d(profiles, tmp_path / "flight.png")
+    assert flight.is_file() and flight.stat().st_size > 0

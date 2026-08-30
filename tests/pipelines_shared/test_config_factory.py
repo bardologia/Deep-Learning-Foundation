@@ -1,3 +1,5 @@
+"""Tests covering ConfigFactory against real preprocessing data: the global crop, secondary-track labels, input representations, split regions, patching, and the inference and trainer configs it derives."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,7 +13,17 @@ from tools.data.regions                     import CropRegion
 
 
 def _factory(test_data_dir, params_dir, **overrides) -> ConfigFactory:
-    cfg                        = BenchmarkConfig()
+    """Builds a config factory over the real test dataset with fixed splits and patching.
+
+    Args:
+        test_data_dir : Preprocessing run directory.
+        params_dir    : Directory holding parameters.npy.
+        **overrides   : Attributes set on the benchmark config itself.
+
+    Returns:
+        Factory wrapping the assembled benchmark config.
+    """
+    cfg = BenchmarkConfig()
     cfg.paths.dataset_path     = test_data_dir
     cfg.paths.parameters_path  = params_dir / "parameters.npy"
     cfg.paths.secondary_labels = ("CH01", "CH02", "CH03", "CH04")
@@ -31,6 +43,7 @@ def _factory(test_data_dir, params_dir, **overrides) -> ConfigFactory:
 
 @pytest.mark.dataset
 def test_global_crop_matches_dataset_json(test_data_dir, params_dir, dataset_json):
+    """Verifies the derived global crop matches the crop recorded in the dataset metadata."""
     factory = _factory(test_data_dir, params_dir)
     crop    = factory.global_crop()
 
@@ -40,6 +53,7 @@ def test_global_crop_matches_dataset_json(test_data_dir, params_dir, dataset_jso
 
 @pytest.mark.dataset
 def test_secondary_labels_propagate_as_tuple(test_data_dir, params_dir):
+    """Verifies the configured secondary-track labels are passed through unchanged."""
     factory = _factory(test_data_dir, params_dir)
 
     assert factory._secondary_labels() == ("CH01", "CH02", "CH03", "CH04")
@@ -47,6 +61,7 @@ def test_secondary_labels_propagate_as_tuple(test_data_dir, params_dir):
 
 @pytest.mark.dataset
 def test_empty_secondary_labels_become_none(test_data_dir, params_dir):
+    """Verifies an empty secondary-label tuple is reported as None."""
     factory = _factory(test_data_dir, params_dir)
     factory.config.paths.secondary_labels = ()
 
@@ -55,6 +70,7 @@ def test_empty_secondary_labels_become_none(test_data_dir, params_dir):
 
 @pytest.mark.dataset
 def test_benchmark_input_config_representations(test_data_dir, params_dir):
+    """Verifies the benchmark inputs use magnitudes for tracks and phase for interferograms."""
     factory = _factory(test_data_dir, params_dir)
     ic      = factory.benchmark_input_config()
 
@@ -65,6 +81,7 @@ def test_benchmark_input_config_representations(test_data_dir, params_dir):
 
 @pytest.mark.dataset
 def test_training_dataset_config_split_regions_share_global_range(test_data_dir, params_dir):
+    """Verifies the train, validation, and test regions share the global range extent and carry the configured azimuth spans."""
     factory = _factory(test_data_dir, params_dir)
     crop    = factory.global_crop()
     cfg     = factory.training_dataset_config()
@@ -80,6 +97,7 @@ def test_training_dataset_config_split_regions_share_global_range(test_data_dir,
 
 @pytest.mark.dataset
 def test_training_dataset_config_paths_and_patch(test_data_dir, params_dir):
+    """Verifies the dataset config carries the preprocessing paths, labels, patch geometry, batch size, and train shuffling."""
     factory = _factory(test_data_dir, params_dir)
     cfg     = factory.training_dataset_config()
 
@@ -94,6 +112,7 @@ def test_training_dataset_config_paths_and_patch(test_data_dir, params_dir):
 
 @pytest.mark.dataset
 def test_inference_config_propagates_queue_settings(test_data_dir, params_dir):
+    """Verifies the inference config carries the run directory, split, checkpoint name, and GIF axes."""
     factory = _factory(test_data_dir, params_dir)
     factory.config.inference.split           = "test"
     factory.config.inference.checkpoint_name = "best_model.pt"
@@ -109,6 +128,7 @@ def test_inference_config_propagates_queue_settings(test_data_dir, params_dir):
 
 @pytest.mark.dataset
 def test_training_trainer_config_adopts_vram_reservation(test_data_dir, params_dir):
+    """Verifies the trainer config adopts the configured VRAM reservation and headroom in gibibytes."""
     factory = _factory(test_data_dir, params_dir)
     factory.config.training.reserve_vram      = True
     factory.config.training.vram_keep_free_gb = 2.5

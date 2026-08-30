@@ -1,3 +1,11 @@
+"""Tests for the backbone Trainer and its curriculum controller.
+
+Covers component wiring and named parameter groups, a single optimisation step, one- and
+multi-epoch fits, TensorBoard throughput and diagnostic scalars, non-finite handling in
+evaluation, checkpoint save and restore, early-stopping and scheduler resets, and the
+curriculum swap with its learning-rate and diagnostic-threshold effects.
+"""
+
 from __future__ import annotations
 
 import pytest
@@ -6,7 +14,8 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from configuration.training.general.loss import LossConfig
 from pipelines.backbone.training.loss    import Loss
-from pipelines.backbone.training.trainer import CurriculumController, Trainer
+from pipelines.backbone.training.trainer import Trainer
+from pipelines.shared.training.curriculum import CurriculumController
 
 from tests.backbone_training._helpers import identity_normalizer, tiny_model, tiny_trainer_config, x_axis_numpy
 
@@ -17,6 +26,7 @@ pytestmark = pytest.mark.usefixtures("force_cpu")
 
 
 def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 6, hw: int = 16) -> DataLoader:
+    """Returns a loader of random (n, in_channels, hw, hw) inputs and (n, 3*n_gaussians, hw, hw) targets with a few hand-set pixels covering amplitude, mu separation and slot-order cases."""
     gen  = torch.Generator().manual_seed(0)
     imgs = torch.randn(n, in_channels, hw, hw, generator=gen)
     tgt  = torch.randn(n, n_gaussians * 3, hw, hw, generator=gen)
@@ -41,15 +51,19 @@ def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 6, hw: int = 16
 
 
 def _build_trainer(tmp_path, epochs: int = 1, n_gaussians: int = 2) -> Trainer:
+    """Returns a Trainer over a tiny backbone with an identity output normalizer."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=n_gaussians)
     config           = tiny_trainer_config(n_gaussians=n_gaussians, epochs=epochs)
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
     norm_stats       = identity_normalizer(n_gaussians * 3)
 
-    return Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False)
+    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False)
+    trainer.warmup.resolve(200)
+    return trainer
 
 
 def test_trainer_builds_on_cpu_with_wired_components(tmp_path):
+    """Verifies the trainer lands on CPU with criterion, optimizer, scheduler, stopper, warmup and curriculum controller wired."""
     trainer = _build_trainer(tmp_path)
 
     assert trainer.device.type == "cpu"
@@ -62,6 +76,7 @@ def test_trainer_builds_on_cpu_with_wired_components(tmp_path):
 
 
 def test_trainer_optimizer_has_named_param_groups(tmp_path):
+    """Verifies the optimizer carries named encoder and output-head groups with a base learning rate each."""
     trainer = _build_trainer(tmp_path)
     names   = {group.get("name") for group in trainer.optimizer.param_groups}
 
@@ -71,6 +86,7 @@ def test_trainer_optimizer_has_named_param_groups(tmp_path):
 
 
 def test_single_train_step_updates_parameters(tmp_path):
+    """Verifies one training epoch returns a finite average loss and changes model parameters."""
     trainer = _build_trainer(tmp_path)
     loader  = _loader()
 
@@ -84,6 +100,7 @@ def test_single_train_step_updates_parameters(tmp_path):
 
 
 def test_compute_loss_returns_finite_total(tmp_path):
+    """Verifies the per-batch loss computation returns a finite total."""
     trainer = _build_trainer(tmp_path)
     batch   = next(iter(_loader()))
 
@@ -94,6 +111,7 @@ def test_compute_loss_returns_finite_total(tmp_path):
 
 
 def test_one_epoch_fit_writes_checkpoint(tmp_path):
+    """Verifies a one-epoch fit writes the best checkpoint and a finite best validation loss."""
     trainer = _build_trainer(tmp_path, epochs=1)
     loader  = _loader()
 
@@ -104,7 +122,25 @@ def test_one_epoch_fit_writes_checkpoint(tmp_path):
     assert torch.isfinite(torch.tensor(best_val)).item()
 
 
+def test_train_writes_final_model_checkpoint(tmp_path):
+    """Verifies training always writes the final-epoch weights to final_model.pt with the same schema as best_model.pt."""
+    trainer = _build_trainer(tmp_path, epochs=2)
+    loader  = _loader()
+
+    trainer.train(loader, loader, loader)
+
+    saved = torch.load(tmp_path / "final_model.pt", map_location="cpu", weights_only=False)
+    best  = torch.load(tmp_path / "best_model.pt",  map_location="cpu", weights_only=False)
+
+    assert saved["epoch"] == 1
+    assert set(saved) == set(best)
+    assert saved["params"].keys() == trainer.model.state_dict().keys()
+    assert saved["best_val_loss"] == best["best_val_loss"]
+    assert saved["best_epoch"]    == best["best_epoch"]
+
+
 def test_multi_epoch_fit_records_losses(tmp_path):
+    """Verifies a three-epoch fit records one finite training loss per epoch and at least one validation loss."""
     trainer = _build_trainer(tmp_path, epochs=3)
     loader  = _loader()
 
@@ -116,35 +152,48 @@ def test_multi_epoch_fit_records_losses(tmp_path):
 
 
 class RecordingWriter:
+    """Minimal TensorBoard writer stub that records the scalars, histograms and figures it receives.
+
+    Attributes:
+        scalars    : Recorded (tag, value, step) triples.
+        histograms : Recorded (tag, values, step) triples.
+        figures    : Recorded (tag, figure, step) triples.
+    """
     def __init__(self):
+        """Initialises empty scalar, histogram and figure records."""
         self.scalars    = []
         self.histograms = []
         self.figures    = []
 
     def add_scalar(self, tag, value, step):
+        """Records a scalar entry."""
         self.scalars.append((tag, value, step))
 
     def add_histogram(self, tag, values, step, bins="auto"):
+        """Records a histogram entry."""
         self.histograms.append((tag, values, step))
 
     def add_figure(self, tag, figure, step, close=True):
+        """Records a figure entry."""
         self.figures.append((tag, figure, step))
 
     def flush(self):
+        """Accepts the flush call without doing anything."""
         pass
 
     def close(self):
+        """Accepts the close call without doing anything."""
         pass
 
 
 def test_train_logs_throughput_and_diagnostics(tmp_path):
+    """Verifies training emits throughput, non-finite-batch and gradient-norm scalars plus twelve validation reconstruction figures."""
     writer           = RecordingWriter()
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
-    config.io.writer = writer
     logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
     norm_stats       = identity_normalizer(6)
-    trainer          = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False)
+    trainer          = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False, writer=writer)
 
     loader = _loader()
     trainer.train(loader, loader, loader)
@@ -165,27 +214,30 @@ def test_train_logs_throughput_and_diagnostics(tmp_path):
 
 
 def _loss_dict(total: float) -> dict:
+    """Returns a loss output dict carrying only the given scalar total."""
     return {"total_loss": torch.tensor(total), "components": {}, "monitor": {}, "occupancy": {}, "physical": {}}
 
 
 def test_evaluate_raises_on_nonfinite_loss(tmp_path):
+    """Verifies evaluation aborts with FloatingPointError on a non-finite batch loss."""
     trainer = _build_trainer(tmp_path)
     loader  = _loader()
 
-    trainer._eval_step = lambda batch, aggregator: _loss_dict(float("nan"))
+    trainer._eval_step = lambda batch: _loss_dict(float("nan"))
 
     with pytest.raises(FloatingPointError):
         trainer.evaluate(loader, epoch=0)
 
 
 def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
+    """Verifies evaluation skips non-finite batches and averages the rest when aborting is disabled."""
     trainer = _build_trainer(tmp_path)
     trainer.abort_on_nonfinite_loss = False
 
     loader  = _loader()
     batches = iter(range(len(loader)))
 
-    trainer._eval_step = lambda batch, aggregator: _loss_dict(float("inf") if next(batches) == 0 else 2.0)
+    trainer._eval_step = lambda batch: _loss_dict(float("inf") if next(batches) == 0 else 2.0)
 
     result = trainer.evaluate(loader, epoch=0)
 
@@ -194,10 +246,11 @@ def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
 
 
 def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
+    """Verifies evaluation reports zero batches and a NaN average when every batch is non-finite."""
     trainer = _build_trainer(tmp_path)
     trainer.abort_on_nonfinite_loss = False
 
-    trainer._eval_step = lambda batch, aggregator: _loss_dict(float("nan"))
+    trainer._eval_step = lambda batch: _loss_dict(float("nan"))
 
     result = trainer.evaluate(_loader(), epoch=0)
 
@@ -206,6 +259,7 @@ def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
 
 
 def test_checkpoint_save_restore_round_trip(tmp_path):
+    """Verifies the best checkpoint stores params, x axis and best loss, and reloads into a fresh model."""
     trainer = _build_trainer(tmp_path, epochs=1)
     loader  = _loader()
 
@@ -225,6 +279,7 @@ def test_checkpoint_save_restore_round_trip(tmp_path):
 
 
 def test_best_checkpoint_epoch_matches_trainer_state_convention(tmp_path):
+    """Verifies the best checkpoint's epoch equals its best epoch while the last checkpoint holds the final epoch index."""
     trainer = _build_trainer(tmp_path, epochs=2)
     loader  = _loader()
 
@@ -239,6 +294,7 @@ def test_best_checkpoint_epoch_matches_trainer_state_convention(tmp_path):
 
 
 def test_restore_best_loads_best_parameters(tmp_path):
+    """Verifies the trainer's weights after fitting match the saved best checkpoint."""
     trainer = _build_trainer(tmp_path, epochs=2)
     loader  = _loader()
 
@@ -251,6 +307,7 @@ def test_restore_best_loads_best_parameters(tmp_path):
 
 
 def test_early_stopping_reset_clears_state(tmp_path):
+    """Verifies resetting early stopping clears the best loss, counter and trigger flag."""
     trainer = _build_trainer(tmp_path)
 
     trainer.early_stopping(val_loss=1.0, epoch=0)
@@ -262,6 +319,7 @@ def test_early_stopping_reset_clears_state(tmp_path):
 
 
 def test_scheduler_reset_restores_base_lrs(tmp_path):
+    """Verifies resetting the scheduler returns the current learning rates to the base rates."""
     trainer = _build_trainer(tmp_path)
 
     trainer.lr_scheduler.step(epoch=5)
@@ -271,6 +329,7 @@ def test_scheduler_reset_restores_base_lrs(tmp_path):
 
 
 def test_curriculum_swap_disabled_is_noop(tmp_path):
+    """Verifies a disabled curriculum never swaps and leaves the loss generation at zero."""
     trainer = _build_trainer(tmp_path)
 
     swapped = trainer.curriculum_controller.maybe_swap(epoch=0)
@@ -280,6 +339,7 @@ def test_curriculum_swap_disabled_is_noop(tmp_path):
 
 
 def test_curriculum_swap_replaces_loss_config(tmp_path):
+    """Verifies reaching the swap epoch installs the complete loss config and bumps the loss generation."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
@@ -298,6 +358,7 @@ def test_curriculum_swap_replaces_loss_config(tmp_path):
 
 
 def test_slot_diagnostics_follow_the_curriculum_threshold(tmp_path):
+    """Verifies the parameter sampler and slot vitals adopt the amplitude-zero threshold of the active stage."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
@@ -325,6 +386,7 @@ def test_slot_diagnostics_follow_the_curriculum_threshold(tmp_path):
 
 
 def test_curriculum_swap_applies_the_scheduled_learning_rate(tmp_path):
+    """Verifies a swap without an LR reset keeps the scheduler's decayed learning rates."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=4)
 

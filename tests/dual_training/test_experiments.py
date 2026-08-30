@@ -1,3 +1,12 @@
+"""Tests for the dual training trial planners, scheduler and launcher.
+
+Covers the routing catalogue of trunk-input pairs, the capacity-matched ratio
+ladders and their validation rules, the context, head/matching, reach and
+ablation planners, the run directory and override forwarding of the dual
+scheduler, and the launcher's choice between a single run, a seed fan-out and
+a trial scheduler.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +20,7 @@ from configuration.training.dual             import _default_dual_ratio_trials, 
 from configuration.training.general.ablation import AblationCatalog
 from pipelines.dual.training.experiments     import DualContextTrialPlanner, DualHeadMatchingTrialPlanner, DualRatioTrialPlanner, DualReachTrialPlanner, DualRoutingTrialPlanner
 from pipelines.dual.training.pipeline    import TrunkChannelMap
+from tools.baselines.containers          import TrackBaselines
 from tools.runtime.config_cli            import ConfigCli
 
 
@@ -18,17 +28,22 @@ PARITY_FEATURES = [48, 96, 184, 352]
 
 TINY_LADDER = [8, 16, 24, 32]
 
+RATIO_OUT_CHANNELS = 15
+
 
 def _planner(trials_config=None, model_overrides=None):
+    """Returns a routing trial planner over the given trials config and model overrides."""
     return DualRoutingTrialPlanner(trials_config or DualRoutingTrialsConfig(), model_overrides or {}, TrunkChannelMap.GROUPS)
 
 
 def _tiny_ratio_trials(**overrides) -> DualRatioTrialsConfig:
+    """Returns a ratio trials config with a single 50-50 split over a four-rung ladder."""
     defaults = {"trials": {"50-50": {"params": list(TINY_LADDER), "existence": list(TINY_LADDER)}}, "match_tolerance": 0.1}
     return DualRatioTrialsConfig(**{**defaults, **overrides})
 
 
-def _ratio_planner(trials_config=None, model_overrides=None):
+def _ratio_planner(trials_config=None, model_overrides=None, out_channels=RATIO_OUT_CHANNELS):
+    """Returns a ratio trial planner for a nine-channel dual_resunet with the given output width."""
     return DualRatioTrialPlanner(
         trials_config or _tiny_ratio_trials(),
         model_overrides or {},
@@ -36,57 +51,68 @@ def _ratio_planner(trials_config=None, model_overrides=None):
         ("resunet", "resunet"),
         ((0, 1, 2, 3, 4, 5, 6, 7, 8), (5, 6, 7, 8)),
         9,
+        out_channels,
     )
 
 
-def test_dual_routing_planner_default_catalog_covers_the_seven_ordered_pairs():
+def test_dual_routing_planner_default_catalog_covers_the_pairs_with_and_without_dem():
+    """The default routing catalogue doubles every ordered trunk-input pair as a no-DEM and a with-DEM variant."""
     plans = dict(_planner().plan())
 
-    assert list(plans) == ["di-full-full", "di-chan-full", "di-full-chan", "di-derived-full", "di-full-derived", "di-chan-derived", "di-derived-chan"]
+    pairs = ["full-full", "chan-full", "full-chan", "derived-full", "full-derived", "chan-derived", "derived-chan"]
+    assert list(plans) == [f"di-{pair}-{aux}" for pair in pairs for aux in ("nodem", "aux")]
 
     full    = ["chan", "derived"]
     chan    = ["chan"]
     derived = ["derived"]
 
-    assert plans["di-full-full"]["params_input"]    == full
-    assert plans["di-full-full"]["existence_input"] == full
-    assert plans["di-chan-full"]["params_input"]    == chan
-    assert plans["di-chan-full"]["existence_input"] == full
-    assert plans["di-full-chan"]["params_input"]    == full
-    assert plans["di-full-chan"]["existence_input"] == chan
-    assert plans["di-derived-full"]["params_input"]     == derived
-    assert plans["di-derived-full"]["existence_input"]  == full
-    assert plans["di-full-derived"]["params_input"]     == full
-    assert plans["di-full-derived"]["existence_input"]  == derived
-    assert plans["di-chan-derived"]["params_input"]     == chan
-    assert plans["di-chan-derived"]["existence_input"]  == derived
-    assert plans["di-derived-chan"]["params_input"]     == derived
-    assert plans["di-derived-chan"]["existence_input"]  == chan
+    assert plans["di-full-full-nodem"]["params_input"]    == full
+    assert plans["di-full-full-nodem"]["existence_input"] == full
+    assert plans["di-full-full-aux"]["params_input"]      == full + ["aux"]
+    assert plans["di-full-full-aux"]["existence_input"]   == full + ["aux"]
+    assert plans["di-chan-full-nodem"]["params_input"]    == channels
+    assert plans["di-chan-full-nodem"]["existence_input"] == full
+    assert plans["di-chan-full-aux"]["params_input"]      == channels + ["aux"]
+    assert plans["di-chan-full-aux"]["existence_input"]   == full + ["aux"]
+    assert plans["di-derived-chan-nodem"]["params_input"]     == derived
+    assert plans["di-derived-chan-nodem"]["existence_input"]  == channels
+    assert plans["di-derived-chan-aux"]["params_input"]       == derived + ["aux"]
+    assert plans["di-derived-chan-aux"]["existence_input"]    == channels + ["aux"]
 
 
-def test_dual_routing_planner_default_catalog_never_selects_the_dem():
-    for _, overrides in _planner().plan():
-        assert "aux" not in overrides["params_input"]
-        assert "aux" not in overrides["existence_input"]
+def test_dual_routing_planner_switches_the_dem_channel_with_the_selection():
+    """`input.use_dem` is on exactly when a trunk selects the aux group, aux variants routing it into both trunks."""
+    for run_name, overrides in _planner().plan():
+        selected = "aux" in overrides["params_input"] or "aux" in overrides["existence_input"]
+
+        assert overrides["input.use_dem"] is selected
+        assert selected == run_name.endswith("-aux")
+
+        if selected:
+            assert "aux" in overrides["params_input"] and "aux" in overrides["existence_input"]
 
 
 def test_dual_routing_planner_fixes_half_width_trunks_on_every_trial():
+    """Every routing trial pins both trunks to the parity feature ladder."""
     for _, overrides in _planner().plan():
         assert overrides["model_overrides"] == {"params_features": PARITY_FEATURES, "existence_features": PARITY_FEATURES}
 
 
 def test_dual_routing_planner_merges_entry_model_overrides():
+    """Entry-level model overrides survive alongside the planner's feature ladders."""
     for _, overrides in _planner(model_overrides={"head_activation": "gelu"}).plan():
         assert overrides["model_overrides"]["head_activation"] == "gelu"
         assert overrides["model_overrides"]["params_features"] == PARITY_FEATURES
 
 
 def test_dual_routing_planner_rejects_feature_keys_in_model_overrides():
+    """Setting trunk feature widths through model_overrides raises ValueError."""
     with pytest.raises(ValueError, match="routing_trials fields"):
         _planner(model_overrides={"params_features": [8, 16]})
 
 
 def test_dual_routing_planner_rejects_empty_or_invalid_features():
+    """Empty or non-positive feature ladders raise ValueError."""
     with pytest.raises(ValueError, match="at least one feature width"):
         _planner(DualRoutingTrialsConfig(params_features=[]))
 
@@ -95,63 +121,84 @@ def test_dual_routing_planner_rejects_empty_or_invalid_features():
 
 
 def test_dual_routing_planner_rejects_empty_trials():
+    """A routing catalogue without trials raises ValueError."""
     with pytest.raises(ValueError, match="at least one trunk-input variant"):
         _planner(DualRoutingTrialsConfig(trials={}))
 
 
 def test_dual_routing_planner_rejects_missing_trunk_key():
+    """A trial missing one trunk's input list raises ValueError."""
     with pytest.raises(ValueError, match="must set \\['existence'\\]"):
         _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan"]}}))
 
 
 def test_dual_routing_planner_rejects_unknown_keys():
+    """A trial carrying a key beyond the two trunks raises ValueError."""
     with pytest.raises(ValueError, match="unknown keys \\['gate'\\]"):
         _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan"], "existence": ["derived"], "gate": ["derived"]}}))
 
 
 def test_dual_routing_planner_rejects_unknown_groups():
+    """A trial naming an unregistered input group raises ValueError."""
     with pytest.raises(ValueError, match="unknown 'params' groups \\['phase'\\]"):
         _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan", "phase"], "existence": ["derived"]}}))
 
 
-def test_dual_routing_planner_rejects_the_dem_group():
-    with pytest.raises(ValueError, match="unknown 'params' groups \\['aux'\\]"):
-        _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan", "derived", "aux"], "existence": ["derived"]}}))
+def test_dual_routing_planner_accepts_the_dem_group():
+    """A trial routing the Aux into a trunk validates against the registered groups."""
+    plans = dict(_planner(DualRoutingTrialsConfig(trials={"aux-derived": {"params": ["chan", "aux"], "existence": ["derived"]}})).plan())
+
+    assert plans["di-aux-derived"]["params_input"] == ["chan", "aux"]
 
 
 def test_dual_routing_planner_rejects_empty_selection():
+    """A trunk with an empty group list raises ValueError."""
     with pytest.raises(ValueError, match="selects no channel groups for 'existence'"):
         _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan"], "existence": []}}))
 
 
 def test_dual_routing_planner_rejects_duplicate_groups():
+    """A trunk repeating an input group raises ValueError."""
     with pytest.raises(ValueError, match="repeats 'params' groups"):
         _planner(DualRoutingTrialsConfig(trials={"bad": {"params": ["chan", "chan"], "existence": ["derived"]}}))
 
 
 def test_dual_routing_planner_paths_are_entry_config_leaves():
+    """Every override path emitted by the routing planner exists on the dual entry config."""
     config = DualEntryConfig()
 
     for _, overrides in _planner().plan():
         for path in overrides:
-            assert hasattr(config, path), path
+            section, _, leaf = path.partition(".")
+            target = getattr(config, section)
+            assert not leaf or hasattr(target, leaf), path
 
 
 def test_dual_trial_overrides_round_trip_through_the_cli():
-    _, overrides = _planner().plan()[4]
+    """Routing overrides survive conversion to argv and back through the config CLI."""
+    plans = dict(_planner().plan())
 
-    config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(overrides))
+    config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(plans["di-full-ifg-dem"]))
+
+    assert config.params_input    == ["pass", "ifg", "dem"]
+    assert config.existence_input == ["ifg", "dem"]
+    assert config.input.use_dem   is True
+    assert config.model_overrides == {"params_features": PARITY_FEATURES, "existence_features": PARITY_FEATURES}
+
+    config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(plans["di-full-ifg-nodem"]))
 
     assert config.params_input    == ["chan", "derived"]
     assert config.existence_input == ["derived"]
-    assert config.model_overrides == {"params_features": PARITY_FEATURES, "existence_features": PARITY_FEATURES}
+    assert config.input.use_aux   is False
 
 
 def test_dual_default_trials_match_the_config_factory():
+    """The routing config's default trials come from the shared factory."""
     assert DualRoutingTrialsConfig().trials == _default_dual_routing_trials()
 
 
 def test_dual_ratio_planner_emits_ladder_overrides_and_leaves_inputs_alone():
+    """A ratio trial emits only the two feature ladders, without touching trunk inputs."""
     plans = _ratio_planner().plan()
 
     assert [name for name, _ in plans] == ["dr-50-50"]
@@ -159,6 +206,7 @@ def test_dual_ratio_planner_emits_ladder_overrides_and_leaves_inputs_alone():
 
 
 def test_dual_ratio_planner_merges_entry_model_overrides():
+    """Entry-level model overrides survive alongside the ratio ladders."""
     _, overrides = _ratio_planner(model_overrides={"head_activation": "gelu"}).plan()[0]
 
     assert overrides["model_overrides"]["head_activation"] == "gelu"
@@ -166,11 +214,13 @@ def test_dual_ratio_planner_merges_entry_model_overrides():
 
 
 def test_dual_ratio_planner_rejects_feature_keys_in_model_overrides():
+    """Setting trunk feature widths through model_overrides raises ValueError."""
     with pytest.raises(ValueError, match="ratio_trials ladders"):
         _ratio_planner(model_overrides={"existence_features": [8, 16]})
 
 
 def test_dual_ratio_planner_rejects_empty_trials_and_bad_tolerance():
+    """An empty split catalogue or a non-positive match tolerance raises ValueError."""
     with pytest.raises(ValueError, match="at least one arm-split variant"):
         _ratio_planner(_tiny_ratio_trials(trials={}))
 
@@ -179,6 +229,7 @@ def test_dual_ratio_planner_rejects_empty_trials_and_bad_tolerance():
 
 
 def test_dual_ratio_planner_rejects_missing_or_unknown_arm_keys():
+    """A split missing an arm ladder or carrying an extra key raises ValueError."""
     with pytest.raises(ValueError, match="must set \\['existence'\\]"):
         _ratio_planner(_tiny_ratio_trials(trials={"50-50": {"params": TINY_LADDER}}))
 
@@ -187,6 +238,7 @@ def test_dual_ratio_planner_rejects_missing_or_unknown_arm_keys():
 
 
 def test_dual_ratio_planner_rejects_empty_or_invalid_ladders():
+    """An empty ladder or a non-positive feature width raises ValueError."""
     with pytest.raises(ValueError, match="lists no feature widths"):
         _ratio_planner(_tiny_ratio_trials(trials={"50-50": {"params": TINY_LADDER, "existence": []}}))
 
@@ -195,11 +247,13 @@ def test_dual_ratio_planner_rejects_empty_or_invalid_ladders():
 
 
 def test_dual_ratio_planner_rejects_mixed_ladder_depths():
+    """Arm ladders of unequal depth raise ValueError."""
     with pytest.raises(ValueError, match="mix ladder depths"):
         _ratio_planner(_tiny_ratio_trials(trials={"50-50": {"params": TINY_LADDER, "existence": [8, 16, 24]}}))
 
 
 def test_dual_ratio_planner_rejects_malformed_share_labels():
+    """Split labels that are not two percentages summing to 100 with the detection arm smaller raise ValueError."""
     with pytest.raises(ValueError, match="percentage shares"):
         _ratio_planner(_tiny_ratio_trials(trials={"half": {"params": TINY_LADDER, "existence": TINY_LADDER}}))
 
@@ -211,11 +265,13 @@ def test_dual_ratio_planner_rejects_malformed_share_labels():
 
 
 def test_dual_ratio_planner_rejects_a_split_the_ladders_do_not_realize():
+    """Ladders whose realised parameter split misses the labelled share raise ValueError."""
     with pytest.raises(ValueError, match="match tolerance; retune the ladders"):
         _ratio_planner(_tiny_ratio_trials(trials={"90-10": {"params": list(TINY_LADDER), "existence": list(TINY_LADDER)}}, match_tolerance=0.01))
 
 
 def test_dual_ratio_planner_rejects_trials_with_unequal_budgets():
+    """Splits whose total parameter counts differ raise ValueError."""
     trials = {
         "50-50" : {"params": list(TINY_LADDER), "existence": list(TINY_LADDER)},
         "60-40" : {"params": [48, 96, 144, 192], "existence": [40, 80, 120, 160]},
@@ -226,28 +282,46 @@ def test_dual_ratio_planner_rejects_trials_with_unequal_budgets():
 
 
 def test_dual_ratio_overrides_round_trip_through_the_cli():
+    """Ratio overrides survive conversion to argv and back, leaving the default trunk inputs."""
     _, overrides = _ratio_planner().plan()[0]
 
     config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(overrides))
 
     assert config.model_overrides == {"params_features": TINY_LADDER, "existence_features": TINY_LADDER}
-    assert config.params_input    == ["chan", "derived"]
-    assert config.existence_input == ["chan", "derived"]
+    assert config.params_input    == ["chan", "derived", "aux"]
+    assert config.existence_input == ["chan", "derived", "aux"]
 
 
 def test_dual_ratio_default_catalog_holds_the_parity_budget_at_every_split():
+    """The five default splits share one four-rung ladder depth and the same total parameter budget."""
     planner = _ratio_planner(DualRatioTrialsConfig())
 
     assert DualRatioTrialsConfig().trials == _default_dual_ratio_trials()
     assert [name for name, _ in planner.plan()] == ["dr-50-50", "dr-60-40", "dr-70-30", "dr-80-20", "dr-90-10"]
-    assert planner.arm_counts["50-50"]["params"] + planner.arm_counts["50-50"]["existence"] == 31_189_858
+    assert planner.arm_counts["50-50"]["params"] + planner.arm_counts["50-50"]["existence"] == 31_193_689
 
     for spec in _default_dual_ratio_trials().values():
         assert len(spec["params"])    == 4
         assert len(spec["existence"]) == 4
 
 
+def test_dual_ratio_planner_counts_the_heads_at_the_resolved_output_width():
+    """A wider resolved output width raises the counted parameters of both arms."""
+    two_slots  = _ratio_planner(out_channels=6)
+    five_slots = _ratio_planner(out_channels=RATIO_OUT_CHANNELS)
+
+    assert five_slots.arm_counts["50-50"]["params"]    > two_slots.arm_counts["50-50"]["params"]
+    assert five_slots.arm_counts["50-50"]["existence"] > two_slots.arm_counts["50-50"]["existence"]
+
+
+def test_dual_ratio_planner_rejects_an_unresolved_output_width():
+    """A zero output width raises ValueError."""
+    with pytest.raises(ValueError, match="resolved output width"):
+        _ratio_planner(out_channels=0)
+
+
 def test_dual_single_runner_builds_the_model_config_with_trunk_fields():
+    """The single runner copies trunk backbone and per-trunk override fields into the model config."""
     config                     = DualEntryConfig()
     config.params_backbone     = "nafnet"
     config.params_overrides    = {"width": 8}
@@ -264,6 +338,7 @@ def test_dual_single_runner_builds_the_model_config_with_trunk_fields():
 
 
 def test_dual_single_runner_rejects_trunk_fields_in_model_overrides():
+    """Passing a dedicated trunk field through model_overrides raises ValueError."""
     config                 = DualEntryConfig()
     config.model_overrides = {"params_overrides": {"width": 8}}
 
@@ -272,6 +347,7 @@ def test_dual_single_runner_rejects_trunk_fields_in_model_overrides():
 
 
 def test_dual_scheduler_houses_runs_in_routing_dir(tmp_path):
+    """Routing mode places runs and per-trial logs under the routing subdirectory."""
     config             = DualEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "routing"
@@ -288,6 +364,7 @@ def test_dual_scheduler_houses_runs_in_routing_dir(tmp_path):
 
 
 def test_dual_scheduler_plans_the_trunk_input_grid(tmp_path):
+    """The scheduler's routing planner emits the trunk-input trials, DEM-doubled, with parity ladders."""
     config             = DualEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "routing"
@@ -296,21 +373,27 @@ def test_dual_scheduler_plans_the_trunk_input_grid(tmp_path):
 
     plans = dict(scheduler.planner().plan())
 
-    assert list(plans) == ["di-full-full", "di-chan-full", "di-full-chan", "di-derived-full", "di-full-derived", "di-chan-derived", "di-derived-chan"]
-    assert plans["di-full-derived"]["model_overrides"]["params_features"] == PARITY_FEATURES
+    pairs = ["full-full", "chan-full", "full-chan", "derived-full", "full-derived", "chan-derived", "derived-chan"]
+    assert list(plans) == [f"di-{pair}-{aux}" for pair in pairs for aux in ("nodem", "aux")]
+    assert plans["di-full-derived-aux"]["model_overrides"]["params_features"] == PARITY_FEATURES
 
 
-def test_dual_scheduler_houses_ratio_runs_in_ratio_dir_and_plans_the_split_grid(tmp_path):
-    config             = DualEntryConfig()
-    config.logdir      = tmp_path
-    config.trials_mode = "ratio"
+def test_dual_scheduler_houses_ratio_runs_in_ratio_dir_and_plans_the_split_grid(tmp_path, test_data_dir, params_dir):
+    """Ratio mode places runs under the ratio subdirectory and plans the five splits at the dataset's resolved output width."""
+    config                       = DualEntryConfig()
+    config.logdir                = tmp_path
+    config.trials_mode           = "ratio"
+    config.paths.dataset_path    = test_data_dir
+    config.paths.parameters_path = params_dir / "parameters.npy"
 
     scheduler = dual_launcher.DualTrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_dual.py"))
 
     assert scheduler.runs_root == tmp_path / "ratio"
 
-    plans = dict(scheduler.planner().plan())
+    planner = scheduler.planner()
+    plans   = dict(planner.plan())
 
+    assert planner.out_channels == RATIO_OUT_CHANNELS
     assert list(plans) == ["dr-50-50", "dr-60-40", "dr-70-30", "dr-80-20", "dr-90-10"]
     assert plans["dr-50-50"]["model_overrides"]["params_features"]    == PARITY_FEATURES
     assert plans["dr-50-50"]["model_overrides"]["existence_features"] == PARITY_FEATURES
@@ -318,7 +401,33 @@ def test_dual_scheduler_houses_ratio_runs_in_ratio_dir_and_plans_the_split_grid(
     assert plans["dr-90-10"]["model_overrides"]["existence_features"] == [24, 48, 84, 156]
 
 
+def test_dual_scheduler_inherits_the_exhaustive_secondary_sweep(tmp_path):
+    """Secondary mode enumerates every two-track selection from the dataset's baselines."""
+    labels = ["FL01_PS02", "FL01_PS04", "FL01_PS06", "FL01_PS08"]
+    meta   = tmp_path / "dataset" / "meta"
+    meta.mkdir(parents=True)
+    TrackBaselines(labels=labels, vertical=[0.0, 10.0, 20.0, 30.0], horizontal=[0.0] * 4, vertical_std=[0.0] * 4, horizontal_std=[0.0] * 4).save(meta / TrackBaselines.FILENAME)
+
+    config                                = DualEntryConfig()
+    config.logdir                         = tmp_path / "runs"
+    config.trials_mode                    = "secondary"
+    config.secondary_trials.strategy      = "exhaustive"
+    config.secondary_trials.n_secondaries = 2
+    config.paths.dataset_path             = str(tmp_path / "dataset")
+
+    scheduler = dual_launcher.DualTrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_dual.py"))
+    plans     = scheduler.planner().plan()
+
+    selections = [overrides["paths.secondary_labels"] for _, overrides in plans]
+
+    assert scheduler.runs_root == tmp_path / "runs" / "secondary"
+    assert len(plans) == 3
+    assert selections[0]  == ("FL01_PS04", "FL01_PS06")
+    assert selections[-1] == ("FL01_PS06", "FL01_PS08")
+
+
 def test_dual_scheduler_rejects_unknown_mode(tmp_path):
+    """An unregistered trials mode raises ValueError."""
     config             = DualEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "bogus"
@@ -328,6 +437,7 @@ def test_dual_scheduler_rejects_unknown_mode(tmp_path):
 
 
 def test_dual_scheduler_forwards_only_non_scheduler_overrides(tmp_path):
+    """Scheduler-owned CLI overrides are consumed and only the training ones are forwarded to workers."""
     config        = DualEntryConfig()
     config.logdir = tmp_path
 
@@ -348,24 +458,34 @@ def test_dual_scheduler_forwards_only_non_scheduler_overrides(tmp_path):
 
 
 def test_dual_launcher_trial_flag_runs_single_runner(monkeypatch):
+    """The trial flag runs a single training run instead of the trial scheduler."""
     ran = {}
 
     class FakeSingleRunner:
+        """Single-run runner stub recording the config it received."""
         def __init__(self, cfg):
+            """Records the config handed to the runner."""
             ran["single"] = cfg
         def run(self):
+            """Records that the single run executed."""
             ran["ran"] = True
 
     class FakeScheduler:
+        """Trial scheduler stub recording that it was constructed."""
         def __init__(self, **kwargs):
+            """Records that the scheduler was constructed."""
             ran["scheduler"] = True
         def run(self):
+            """Records that the scheduler executed."""
             ran["scheduler_ran"] = True
 
     class FakeCli:
+        """Config CLI stub returning a single-seed dual entry config."""
         def __init__(self, config, description):
+            """Starts with no recorded CLI overrides."""
             self.overrides = {}
         def apply(self, argv):
+            """Returns a dual entry config pinned to a single seed."""
             config       = DualEntryConfig()
             config.seeds = [0]
             return config
@@ -381,27 +501,37 @@ def test_dual_launcher_trial_flag_runs_single_runner(monkeypatch):
 
 
 def test_dual_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
+    """A multi-seed config is handed to the seed fan-out scheduler rather than run directly."""
     ran = {}
 
     class FakeSingleRunner:
+        """Single-run runner stub recording whether it was constructed or run."""
         def __init__(self, cfg):
+            """Records that the runner was constructed."""
             ran["single"] = True
         def run(self):
+            """Records that the single run executed."""
             ran["single_ran"] = True
 
     class FakeFanout:
+        """Seed fan-out scheduler stub recording the entry script, runner factory and inference flag."""
         @classmethod
         def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False):
+            """Records the fan-out arguments and returns a stub instance."""
             ran["for_runner"] = (entry_script, runner_factory)
             ran["infer_at_end"] = infer_at_end
             return cls()
         def run(self):
+            """Records that the fan-out executed."""
             ran["fanout_ran"] = True
 
     class FakeCli:
+        """Config CLI stub returning a default dual entry config."""
         def __init__(self, config, description):
+            """Starts with no recorded CLI overrides."""
             self.overrides = {}
         def apply(self, argv):
+            """Returns a default dual entry config."""
             return DualEntryConfig()
 
     monkeypatch.setattr(dual_launcher, "DualSingleTrainRunner", FakeSingleRunner)
@@ -417,30 +547,41 @@ def test_dual_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
 
 
 def test_dual_launcher_fans_out_when_trials_enabled(monkeypatch):
+    """A config with trials enabled is handed to the trial scheduler with the entry script."""
     ran = {}
 
     class FakeSingleRunner:
+        """Single-run runner stub recording whether it was constructed or run."""
         def __init__(self, cfg):
+            """Records that the runner was constructed."""
             ran["single"] = True
         def run(self):
+            """Records that the single run executed."""
             ran["single_ran"] = True
 
     class FakeScheduler:
+        """Trial scheduler stub recording the entry script it was given."""
         def __init__(self, **kwargs):
+            """Records the entry script passed to the scheduler."""
             ran["entry_script"] = kwargs["entry_script"]
         def run(self):
+            """Records that the scheduler executed."""
             ran["scheduler_ran"] = True
 
     class FakeConfig:
+        """Minimal config exposing trials as enabled with a dual curriculum and no trailing inference."""
         trials_enabled = True
         curriculum     = dual_curriculum()
         infer_after    = False
         infer_at_end   = False
 
     class FakeCli:
+        """Config CLI stub returning the trials-enabled fake config."""
         def __init__(self, config, description):
+            """Starts with no recorded CLI overrides."""
             self.overrides = {}
         def apply(self, argv):
+            """Returns the trials-enabled fake config."""
             return FakeConfig()
 
     monkeypatch.setattr(dual_launcher, "DualSingleTrainRunner", FakeSingleRunner)
@@ -456,6 +597,7 @@ def test_dual_launcher_fans_out_when_trials_enabled(monkeypatch):
 
 
 def _scheduler(tmp_path, mode):
+    """Returns a dual train scheduler in the given trials mode logging under the temporary path."""
     config             = DualEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = mode
@@ -464,6 +606,7 @@ def _scheduler(tmp_path, mode):
 
 
 def test_dual_scheduler_opens_every_backbone_mode():
+    """The dual scheduler supports every backbone trials mode plus routing and ratio."""
     modes = set(dual_launcher.DualTrainScheduler.MODE_SUBDIRS)
 
     assert set(dual_launcher.TrainScheduler.MODE_SUBDIRS) <= modes
@@ -471,6 +614,7 @@ def test_dual_scheduler_opens_every_backbone_mode():
 
 
 def test_dual_scheduler_reuses_backbone_planners_for_shared_modes(tmp_path):
+    """Curriculum mode reuses the backbone planner and its run directory layout."""
     scheduler = _scheduler(tmp_path, "curriculum")
 
     assert scheduler.runs_root == tmp_path / "curriculum"
@@ -482,6 +626,7 @@ def test_dual_scheduler_reuses_backbone_planners_for_shared_modes(tmp_path):
 
 
 def test_dual_context_planner_applies_the_rung_to_both_trunks():
+    """A context rung sets the same backbone, feature ladder and block kernels on both trunks."""
     rung    = {"label": "cnn09", "backbone": "local_cnn", "features": [8] * 10, "block_kernels": [3] * 2 + [1] * 8}
     planner = DualContextTrialPlanner([rung], ("local_cnn",))
 
@@ -496,8 +641,9 @@ def test_dual_context_planner_applies_the_rung_to_both_trunks():
 
 
 def test_dual_context_overrides_round_trip_through_the_cli(tmp_path):
+    """Context overrides survive conversion to argv and back with matching trunk ladders."""
     scheduler          = _scheduler(tmp_path, "context")
-    run_name, override = scheduler.planner().plan()[1]
+    run_name, override = scheduler.planner().plan()[2]
 
     config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(override))
 
@@ -509,6 +655,7 @@ def test_dual_context_overrides_round_trip_through_the_cli(tmp_path):
 
 
 def test_dual_head_planner_holds_set_pred_and_sweeps_matchings():
+    """The head planner keeps the set-prediction head fixed and varies the matching in both curriculum stages."""
     trials  = HeadMatchingTrialsConfig(backbone="unet_skip", heads=["set_pred"], matchings=["sorted_gt", "hungarian"])
     planner = DualHeadMatchingTrialPlanner(trials, ("unet_skip",), ("set_pred",), ("sorted_gt", "hungarian"))
 
@@ -524,6 +671,7 @@ def test_dual_head_planner_holds_set_pred_and_sweeps_matchings():
 
 
 def test_dual_head_planner_rejects_heads_the_dual_model_lacks():
+    """Requesting a head the dual model does not register raises ValueError."""
     trials = HeadMatchingTrialsConfig(backbone="unet_skip", heads=["conv", "set_pred"], matchings=["hungarian"])
 
     with pytest.raises(ValueError, match="registered heads"):
@@ -531,6 +679,7 @@ def test_dual_head_planner_rejects_heads_the_dual_model_lacks():
 
 
 def test_dual_reach_planner_counts_whole_dual_models_and_emits_trunk_settings():
+    """Reach rungs carry positive whole-model parameter counts and set both trunks plus the patch size."""
     rungs  = [
         {"label": "cnn",  "backbone": "local_cnn", "features": [64] * 2},
         {"label": "unet", "backbone": "unet",      "features": [8, 16]},
@@ -552,6 +701,7 @@ def test_dual_reach_planner_counts_whole_dual_models_and_emits_trunk_settings():
 
 
 def test_dual_reach_default_rungs_hold_the_capacity_match():
+    """The default reach rungs pass the capacity match and keep their labels."""
     config  = DualEntryConfig()
     planner = DualReachTrialPlanner(config.reach_trials, ("local_cnn", "unet"), 9, 6, "dual_resunet", (tuple(range(9)), tuple(range(9))))
 
@@ -559,6 +709,7 @@ def test_dual_reach_default_rungs_hold_the_capacity_match():
 
 
 def test_dual_ablation_catalog_swaps_the_backbone_only_rungs():
+    """The dual ablation catalogue replaces the backbone rungs with trunk backbones and per-group learning rates while preserving feature order."""
     features = {feature["label"]: feature for feature in AblationCatalog.dual_default_features()}
 
     assert features["architecture_param_loss"]["enable"]["params_backbone"]     == "unet_skip"
@@ -574,6 +725,7 @@ def test_dual_ablation_catalog_swaps_the_backbone_only_rungs():
 
 
 def test_dual_ablation_override_paths_are_dual_entry_leaves():
+    """Every ablation override path resolves to a leaf attribute of the dual entry config."""
     config = DualEntryConfig()
 
     for feature in config.ablation_features:

@@ -1,3 +1,9 @@
+"""Tests that the dual run loader rebuilds trained dual models bit-for-bit.
+
+Each registered dual architecture is trained-shaped, saved with its persisted
+config and checkpoint, then rebuilt from disk and compared output by output.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -24,6 +30,7 @@ SMALL_OVERRIDES = {
 
 @pytest.mark.parametrize("name", sorted(DUAL_MODEL_REGISTRY))
 def test_build_model_reconstructs_every_registry_dual_model(name, tmp_path):
+    """A rebuilt dual model reproduces the saved model's output on a random input stack of shape (1, in_channels, 32, 32)."""
     in_channels  = 5
     out_channels = 6
     meta_dir     = tmp_path / "meta"

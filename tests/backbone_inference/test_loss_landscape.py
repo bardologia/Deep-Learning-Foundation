@@ -1,23 +1,34 @@
+"""Tests for the filter-normalized loss-landscape probe around a trained checkpoint.
+
+Covers direction construction and its seeding, the weight-restoring grid evaluator, and
+the cut diagnostics (curvature, flatness radius, minimum offset, sharpness) plus the
+contour plot writer.
+"""
+
 from __future__ import annotations
 
 import numpy as np
 import pytest
 import torch
 
-from pipelines.backbone.inference.analysis.loss_landscape import FilterNormalizedDirection, LandscapeEvaluator, LossLandscapePlots
+from pipelines.backbone.inference.analysis.loss_landscape import CutDiagnostics, FilterNormalizedDirection, LandscapeEvaluator, LossLandscapePlots
 
 
 class _TinyConv(torch.nn.Module):
+    """Two-channel convolution followed by batch normalisation, used as a landscape probe target."""
     def __init__(self) -> None:
+        """Builds the 3x3 convolution and the batch-norm layer."""
         super().__init__()
         self.conv = torch.nn.Conv2d(2, 3, kernel_size=3, padding=1)
         self.norm = torch.nn.BatchNorm2d(3)
 
     def forward(self, x):
+        """Returns the normalised convolution of x, an input of shape (batch, 2, height, width)."""
         return self.norm(self.conv(x))
 
 
 def test_direction_is_filter_normalized_and_skips_1d_params():
+    """Direction filters carry the norm of the matching weight filters, and one-dimensional parameters stay zero."""
     model     = _TinyConv()
     direction = FilterNormalizedDirection.build(model, seed=0)
 
@@ -30,6 +41,7 @@ def test_direction_is_filter_normalized_and_skips_1d_params():
 
 
 def test_directions_differ_by_seed():
+    """Different seeds give different random directions."""
     model = _TinyConv()
 
     d0 = FilterNormalizedDirection.build(model, seed=0)
@@ -39,6 +51,7 @@ def test_directions_differ_by_seed():
 
 
 def test_evaluator_restores_weights_and_center_is_minimum_for_quadratic():
+    """The grid restores the original weights and the quadratic cut is symmetric with its minimum at the centre."""
     torch.manual_seed(0)
 
     model    = torch.nn.Linear(4, 1, bias=False)
@@ -47,6 +60,7 @@ def test_evaluator_restores_weights_and_center_is_minimum_for_quadratic():
         target = model(x).clone()
 
     def loss_fn() -> float:
+        """Returns the mean squared error of the perturbed model against the frozen target."""
         with torch.no_grad():
             return float(((model(x) - target) ** 2).mean())
 
@@ -65,6 +79,7 @@ def test_evaluator_restores_weights_and_center_is_minimum_for_quadratic():
 
 
 def test_zero_direction_model_raises():
+    """A model with only one-dimensional parameters yields no direction and raises ValueError."""
     model = torch.nn.Sequential(torch.nn.BatchNorm1d(3))
 
     with pytest.raises(ValueError):
@@ -73,6 +88,7 @@ def test_zero_direction_model_raises():
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a CUDA device")
 def test_direction_lives_on_the_parameter_device():
+    """Direction tensors are created on the device of the parameters they perturb."""
     model     = _TinyConv().cuda()
     direction = FilterNormalizedDirection.build(model, seed=0)
 
@@ -80,7 +96,55 @@ def test_direction_lives_on_the_parameter_device():
         assert direction[name].device == param.device
 
 
+def test_curvature_recovers_a_quadratic_bowl():
+    """Curvature of an analytic quadratic cut recovers its quadratic coefficient."""
+    alphas = np.linspace(-0.5, 0.5, 21)
+    cut    = 1.0 + 3.0 * alphas ** 2
+
+    assert CutDiagnostics.curvature(alphas, cut) == pytest.approx(3.0, rel=1e-6)
+
+
+def test_flatness_radius_interpolates_the_doubling_step():
+    """The flatness radius interpolates the step at which the loss doubles and reports it uncensored."""
+    alphas = np.linspace(-0.5, 0.5, 21)
+    cut    = 1.0 + 10.0 * np.abs(alphas)
+
+    radius = CutDiagnostics.flatness_radius(alphas, cut)
+
+    assert radius["radius"]   == pytest.approx(0.1, abs=1e-9)
+    assert radius["censored"] is False
+
+
+def test_flatness_radius_censors_a_flat_cut():
+    """A cut that never doubles reports the largest sampled step as censored."""
+    alphas = np.linspace(-0.5, 0.5, 21)
+    cut    = np.full(21, 1.0)
+    cut[10] = 0.999
+
+    radius = CutDiagnostics.flatness_radius(alphas, cut)
+
+    assert radius["radius"]   == pytest.approx(0.5)
+    assert radius["censored"] is True
+
+
+def test_min_offset_flags_a_shifted_minimum():
+    """The minimum offset recovers the displacement of a shifted quadratic."""
+    alphas = np.linspace(-0.5, 0.5, 21)
+    cut    = (alphas - 0.2) ** 2
+
+    assert CutDiagnostics.min_offset(alphas, cut) == pytest.approx(0.2, abs=0.05)
+
+
+def test_sharpness_measures_the_near_field_increase():
+    """Sharpness of a V-shaped cut equals the loss increase over the near-field step."""
+    alphas = np.linspace(-0.5, 0.5, 21)
+    cut    = 1.0 + 4.0 * np.abs(alphas)
+
+    assert CutDiagnostics.sharpness(alphas, cut) == pytest.approx(0.4, rel=1e-6)
+
+
 def test_flat_landscape_contour_raises(tmp_path):
+    """A constant loss surface has no contour levels and raises ValueError."""
     alphas = np.linspace(-0.5, 0.5, 5)
     losses = np.full((alphas.size, alphas.size), 0.37)
 
@@ -89,6 +153,7 @@ def test_flat_landscape_contour_raises(tmp_path):
 
 
 def test_contour_of_a_varying_landscape_is_written(tmp_path):
+    """A varying loss surface writes a non-empty contour figure."""
     alphas = np.linspace(-0.5, 0.5, 5)
     losses = 0.1 + np.abs(alphas)[:, None] + np.abs(alphas)[None, :]
 

@@ -1,3 +1,9 @@
+"""Tests for the Optuna study plot renderer.
+
+Covers which figures are emitted, the per-parameter slice, rank and contour
+directories, parameter relabelling and the contour pair cap.
+"""
+
 from __future__ import annotations
 
 import matplotlib
@@ -21,9 +27,11 @@ SYNTH_SPACE = {
 
 @pytest.fixture
 def completed_study():
+    """Returns a finished study over a synthetic search space with reported intermediates."""
     sampler = ParamSampler()
 
     def objective(trial):
+        """Returns a loss minimised by dropout 0.2 and the gelu activation."""
         s    = sampler.sample(trial, SYNTH_SPACE)
         loss = (s["dropout"] - 0.2) ** 2 + (0.0 if s["activation"] == "gelu" else 0.3)
 
@@ -38,6 +46,7 @@ def completed_study():
 
 
 def test_render_creates_nonempty_files(completed_study, tmp_path):
+    """Verifies that every rendered figure exists and is non-empty."""
     plotter = StudyPlotter(_QuietLogger())
     saved   = plotter.render(completed_study, tmp_path / "plots")
 
@@ -48,6 +57,7 @@ def test_render_creates_nonempty_files(completed_study, tmp_path):
 
 
 def test_render_emits_core_single_plots(completed_study, tmp_path):
+    """Verifies that history, importance and EDF figures are written."""
     plotter = StudyPlotter(_QuietLogger())
     plotter.render(completed_study, tmp_path / "plots")
 
@@ -58,6 +68,7 @@ def test_render_emits_core_single_plots(completed_study, tmp_path):
 
 
 def test_render_emits_per_param_slice_and_rank(completed_study, tmp_path):
+    """Verifies that per-parameter slice and rank figures are written to their directories."""
     plotter = StudyPlotter(_QuietLogger())
     plotter.render(completed_study, tmp_path / "plots")
 
@@ -71,6 +82,7 @@ def test_render_emits_per_param_slice_and_rank(completed_study, tmp_path):
 
 
 def test_render_emits_contour_pairs(completed_study, tmp_path):
+    """Verifies that pairwise contour figures are written to the contour directory."""
     plotter = StudyPlotter(_QuietLogger())
     plotter.render(completed_study, tmp_path / "plots")
 
@@ -80,6 +92,7 @@ def test_render_emits_contour_pairs(completed_study, tmp_path):
 
 
 def test_study_params_sorted_union(completed_study):
+    """Verifies that study params are sorted and use the stored index name for indexed choices."""
     params = StudyPlotter._study_params(completed_study)
 
     assert params == sorted(params)
@@ -88,20 +101,24 @@ def test_study_params_sorted_union(completed_study):
 
 
 def test_readable_param_relabels_indexed():
+    """Verifies that an indexed parameter is relabelled with a choice-index suffix."""
     assert StudyPlotter._readable_param("features__idx") == "features (choice index)"
     assert StudyPlotter._readable_param("dropout")       == "dropout"
 
 
 def test_relabel_text_maps_objective_value():
+    """Verifies that Optuna's default objective label is replaced by the configured name."""
     assert StudyPlotter._relabel_text("Objective Value") == StudyPlotter.OBJECTIVE_NAME
     assert StudyPlotter._relabel_text("dropout")         == "dropout"
 
 
 def test_contour_params_capped_by_max(tmp_path):
+    """Verifies that the number of contour parameters never exceeds the configured cap."""
     sampler = ParamSampler()
     space   = {f"p{i}": {"type": "float", "low": 0.0, "high": 1.0} for i in range(12)}
 
     def objective(trial):
+        """Returns the sum of the sampled parameters."""
         s = sampler.sample(trial, space)
         return sum(s.values())
 
@@ -115,6 +132,7 @@ def test_contour_params_capped_by_max(tmp_path):
 
 
 class _QuietLogger:
+    """Logger stub swallowing every message."""
     def info(self, *a, **k):    pass
     def warning(self, *a, **k): pass
     def error(self, *a, **k):   pass

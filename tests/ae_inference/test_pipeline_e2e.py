@@ -1,3 +1,10 @@
+"""End-to-end tests training then running inference for both autoencoder families on real data.
+
+Each family is trained for one epoch on the test preprocessing run, and the produced run
+directory is then fed back through its inference pipeline so the metrics, embeddings and
+pixel index artifacts written on disk can be checked against the training configuration.
+"""
+
 from __future__ import annotations
 
 import json
@@ -12,16 +19,20 @@ from configuration.inference.profile_autoencoder      import ProfileAeInferenceC
 from configuration.training                           import ImageAeEntryConfig
 from configuration.training.profile_autoencoder       import ProfileAeEntryConfig
 from pipelines.backbone.inference.loader              import RunLoader
+from pipelines.profile_autoencoder.inference.loader    import ProfileAeRunLoader
 from pipelines.image_autoencoder.inference.pipeline   import ImageAeInferencePipeline
 from pipelines.image_autoencoder.training.pipeline    import TrainingPipeline
 from pipelines.profile_autoencoder.inference.pipeline import ProfileAeInferencePipeline
 from pipelines.profile_autoencoder.training.pipeline  import TrainingPipeline as ProfileTrainingPipeline
+
+from tests.conftest import SilentLogger
 
 
 pytestmark = [pytest.mark.dataset, pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
 
 
 def _entry_config(test_data_dir, params_dir, tmp_path) -> ImageAeEntryConfig:
+    """Returns a one-epoch image autoencoder entry config over a small azimuth split of the test data."""
     entry = ImageAeEntryConfig(run_name="e2e_image_ae", logdir=tmp_path)
 
     entry.paths.dataset_path    = test_data_dir
@@ -43,6 +54,7 @@ def _entry_config(test_data_dir, params_dir, tmp_path) -> ImageAeEntryConfig:
 
 
 def test_build_dataset_config_reads_n_gaussians(tmp_path):
+    """The run loader carries n_gaussians from the persisted dataset payload into the rebuilt config."""
     loader  = RunLoader(tmp_path, logger=SimpleNamespace())
     payload = {
         "preprocessing_run_directory" : str(tmp_path),
@@ -61,7 +73,6 @@ def test_build_dataset_config_reads_n_gaussians(tmp_path):
             "use_aux": False,
         },
         "output_config" : {
-            "use_amplitude": True, "use_mu": True, "use_sigma": True,
             "output_strategies": {},
         },
         "batch_size"  : 4,
@@ -75,6 +86,7 @@ def test_build_dataset_config_reads_n_gaussians(tmp_path):
 
 
 def test_image_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_path):
+    """An image autoencoder run trains, persists its dataset config, and reports finite test metrics and embeddings."""
     entry = _entry_config(test_data_dir, params_dir, tmp_path)
 
     (_train_losses, _val_losses, best_val_loss), run_directory = TrainingPipeline(entry).run()
@@ -112,6 +124,7 @@ def test_image_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_pat
 
 
 def _profile_entry_config(test_data_dir, params_dir, tmp_path) -> ProfileAeEntryConfig:
+    """Returns a one-epoch profile autoencoder entry config over a subsampled azimuth split of the test data."""
     entry = ProfileAeEntryConfig(run_name="e2e_profile_ae", logdir=tmp_path)
 
     entry.paths.dataset_path    = test_data_dir
@@ -133,6 +146,7 @@ def _profile_entry_config(test_data_dir, params_dir, tmp_path) -> ProfileAeEntry
 
 
 def test_profile_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_path):
+    """A profile autoencoder run trains, reports finite test metrics, and writes unique in-range pixel indices; an unset inference batch size falls back to the training one."""
     entry = _profile_entry_config(test_data_dir, params_dir, tmp_path)
 
     (_train_losses, _val_losses, best_val_loss), run_directory = ProfileTrainingPipeline(entry).run()
@@ -171,3 +185,14 @@ def test_profile_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_p
     assert len(np.unique(pixel_indices)) == pixel_indices.shape[0]
     assert pixel_indices.min() >= 0
     assert pixel_indices.max() < 100 * 500
+
+    unset_batch = ProfileAeInferenceConfig(
+        run_directory = run_directory,
+        output_subdir = "e2e",
+        device        = "cpu",
+        num_workers   = 0,
+        batch_size    = None,
+    )
+    unset_run = ProfileAeRunLoader(run_directory, logger=SilentLogger()).load(config=unset_batch, device="cpu")
+
+    assert unset_run.loader.batch_size == 256

@@ -1,3 +1,9 @@
+"""Tests for GaussianMatcher, which pairs predicted Gaussian slots with ground-truth ones.
+
+Covers the identity assignment on a well-separated exact match, the invariance of the aligned
+prediction to the order of the predicted slots, and the NaN marking of ground-truth slots that no
+prediction was matched to."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -9,6 +15,7 @@ N_K = 5
 
 
 def _separated_params(H=3, W=3):
+    """Returns a parameter cube of shape (3 * N_K, H, W) whose slots sit at means 0, 10, 20, 30 and 40 metres."""
     params = np.zeros((N_K * 3, H, W), dtype=np.float32)
     for k in range(N_K):
         params[3 * k]     = 1.0
@@ -18,11 +25,13 @@ def _separated_params(H=3, W=3):
 
 
 def _reorder(params, order):
+    """Returns the parameter cube with its Gaussian slots permuted by `order`."""
     grouped = params.reshape(len(order), 3, *params.shape[1:])
     return grouped[order].reshape(len(order) * 3, *params.shape[1:])
 
 
 def test_assignment_is_identity_for_separated_match():
+    """Matching well-separated identical parameters assigns each slot to itself."""
     p        = _separated_params()
     sel      = GaussianMatcher().assignment(p, p.copy(), N_K)
     expected = np.tile(np.arange(N_K), (sel.shape[0], 1))
@@ -30,6 +39,7 @@ def test_assignment_is_identity_for_separated_match():
 
 
 def test_aligned_prediction_invariant_to_pred_slot_order():
+    """Permuting the predicted slots leaves the aligned prediction unchanged."""
     rng  = np.random.default_rng(0)
     gt   = _separated_params(4, 4)
     pred = gt.copy()
@@ -45,6 +55,7 @@ def test_aligned_prediction_invariant_to_pred_slot_order():
 
 
 def test_aligned_prediction_marks_missed_gt_as_nan():
+    """A ground-truth slot with no matching prediction comes back as NaN."""
     H, W = 2, 2
     gt   = np.zeros((N_K * 3, H, W), dtype=np.float32)
     pred = np.zeros((N_K * 3, H, W), dtype=np.float32)

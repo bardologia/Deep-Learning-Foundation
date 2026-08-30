@@ -1,3 +1,5 @@
+"""Tests covering seed-run inference resolution and the aggregated seed comparison report."""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +15,17 @@ from tests.conftest import SilentLogger
 
 
 def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp") -> Path:
+    """Writes a seed run directory holding one inference stamp with metrics and a report.
+
+    Args:
+        group     : Directory holding the seed runs.
+        seed_name : Name of the seed run directory.
+        metrics   : Metric payload written to the inference metrics file.
+        stamp     : Name of the inference output subdirectory.
+
+    Returns:
+        Path of the created run directory.
+    """
     run_dir = group / seed_name
     out_dir = run_dir / "inference" / stamp
     out_dir.mkdir(parents=True)
@@ -25,6 +38,7 @@ def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp") 
 
 
 def _report(group: Path, runs: list[Path], stamp: str = "stamp") -> SeedComparisonReport:
+    """Returns a seed comparison report over the given run directories and inference stamp."""
     return SeedComparisonReport(
         group_dir        = group,
         run_dirs         = runs,
@@ -37,6 +51,7 @@ def _report(group: Path, runs: list[Path], stamp: str = "stamp") -> SeedComparis
 
 
 def test_resolver_picks_the_explicit_inference_subdir(tmp_path):
+    """An explicit inference subdirectory is resolved directly."""
     run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
 
     resolved = SeedInferenceResolver("20240101_000000", "metrics.json").resolve(run)
@@ -45,6 +60,7 @@ def test_resolver_picks_the_explicit_inference_subdir(tmp_path):
 
 
 def test_resolver_raises_when_the_explicit_subdir_has_no_metrics(tmp_path):
+    """An explicit subdirectory without metrics is rejected."""
     run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
 
     with pytest.raises(FileNotFoundError):
@@ -52,6 +68,7 @@ def test_resolver_raises_when_the_explicit_subdir_has_no_metrics(tmp_path):
 
 
 def test_resolver_picks_the_latest_inference_with_metrics(tmp_path):
+    """With no explicit subdirectory the latest stamp carrying metrics wins."""
     run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
 
     later = run / "inference" / "20240301_000000"
@@ -67,6 +84,7 @@ def test_resolver_picks_the_latest_inference_with_metrics(tmp_path):
 
 
 def test_resolver_raises_when_a_run_has_no_inference(tmp_path):
+    """A run without any inference directory is rejected."""
     run = tmp_path / "group" / "seed0"
     run.mkdir(parents=True)
 
@@ -75,6 +93,7 @@ def test_resolver_raises_when_a_run_has_no_inference(tmp_path):
 
 
 def test_report_requires_at_least_two_runs(tmp_path):
+    """Aggregating a single seed run is rejected."""
     group = tmp_path / "group"
     run   = _seed_run(group, "seed0", {"m": 1.0})
 
@@ -83,6 +102,7 @@ def test_report_requires_at_least_two_runs(tmp_path):
 
 
 def test_report_aggregates_mean_and_sample_std(tmp_path):
+    """Numeric metrics are aggregated as mean and sample standard deviation, and non-numeric keys are dropped."""
     group = tmp_path / "group"
     runs  = [
         _seed_run(group, "seed0", {"curve_mse_gt": 1.0, "overall_r2_gt": 0.5, "split": "test"}),
@@ -103,6 +123,7 @@ def test_report_aggregates_mean_and_sample_std(tmp_path):
 
 
 def test_report_markdown_has_per_seed_columns_stamps_and_links(tmp_path):
+    """The markdown table lists per-seed columns, the inference stamp and relative links to per-seed reports."""
     group = tmp_path / "group"
     runs  = [
         _seed_run(group, "seed0", {"curve_mse_gt": 1.0}),
@@ -122,6 +143,7 @@ def test_report_markdown_has_per_seed_columns_stamps_and_links(tmp_path):
 
 
 def test_report_excludes_per_slice_metrics_from_the_tables(tmp_path):
+    """Per-slice metrics are aggregated into the payload but kept out of the tables."""
     group = tmp_path / "group"
     runs  = [
         _seed_run(group, "seed0", {"curve_mse_gt": 1.0, "ssim_gt_z_3": 0.9}),
@@ -138,6 +160,7 @@ def test_report_excludes_per_slice_metrics_from_the_tables(tmp_path):
 
 
 def _config(runs_dir: Path, group_tags: list[str], inference_subdir: str = "", output_subdir: str = "") -> SimpleNamespace:
+    """Returns a seed comparison config stub for the given runs directory and group tags."""
     return SimpleNamespace(
         runs_dir             = str(runs_dir),
         group_tags           = group_tags,
@@ -151,6 +174,7 @@ def _config(runs_dir: Path, group_tags: list[str], inference_subdir: str = "", o
 
 
 def test_comparison_compares_each_selected_group_in_isolation(tmp_path, monkeypatch):
+    """Each selected group is aggregated into its own report and metrics payload."""
     monkeypatch.chdir(tmp_path)
 
     group_a = tmp_path / "runs" / "group_a"
@@ -172,6 +196,7 @@ def test_comparison_compares_each_selected_group_in_isolation(tmp_path, monkeypa
 
 
 def test_comparison_raises_on_unknown_group_tag(tmp_path, monkeypatch):
+    """A group tag with no matching directory is rejected."""
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"
@@ -182,6 +207,7 @@ def test_comparison_raises_on_unknown_group_tag(tmp_path, monkeypatch):
 
 
 def test_comparison_raises_when_a_group_holds_fewer_than_two_runs(tmp_path, monkeypatch):
+    """A group holding a single run is rejected."""
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"
@@ -192,6 +218,7 @@ def test_comparison_raises_when_a_group_holds_fewer_than_two_runs(tmp_path, monk
 
 
 def test_comparison_treats_runs_dir_as_the_group_when_no_tags_are_given(tmp_path, monkeypatch):
+    """With no group tags the runs directory itself is the group."""
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"
@@ -207,6 +234,7 @@ def test_comparison_treats_runs_dir_as_the_group_when_no_tags_are_given(tmp_path
 
 
 def test_comparison_output_falls_back_to_the_inference_stamp(tmp_path, monkeypatch):
+    """Without an output subdirectory the inference stamp names the aggregate directory."""
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"
@@ -219,6 +247,7 @@ def test_comparison_output_falls_back_to_the_inference_stamp(tmp_path, monkeypat
 
 
 def test_comparison_output_gets_a_fresh_stamp_when_nothing_is_set(tmp_path, monkeypatch):
+    """With neither subdirectory set the aggregate lands in a freshly stamped directory."""
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"

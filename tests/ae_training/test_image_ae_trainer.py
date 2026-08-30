@@ -1,3 +1,10 @@
+"""Tests for the image autoencoder trainer.
+
+Covers CPU construction and parameter grouping, the loss dictionary a training step yields,
+that one epoch updates the weights, the checkpoint contents and their round trip through a
+fresh model, and that a non-finite loss aborts the epoch.
+"""
+
 from __future__ import annotations
 
 import copy
@@ -23,6 +30,7 @@ PATCH         = 16
 
 
 def _tiny_model():
+    """Returns a tiny conv2d image autoencoder and its config: 8 base channels at depth one."""
     cfg               = IMAGE_AE_CONFIG_REGISTRY["conv2d_ae"](in_channels=IN_CHANNELS, embedding_dim=EMBEDDING_DIM)
     cfg.base_channels = 8
     cfg.depth         = 1
@@ -31,21 +39,24 @@ def _tiny_model():
 
 
 def _trainer_config(cfg, epochs=2):
+    """Returns a CPU trainer config over the given epoch budget, with early stopping and warmup disabled."""
     tc                         = ImageAeTrainerConfig(gaussian=None, image_autoencoder=cfg, ae_loss=ImageAeLossConfig(recon_kind="mse"))
     tc.training                = TrainingLoopConfig(epochs=epochs, validation_frequency=1, use_amp=False)
     tc.resources               = ResourceConfig(enabled=False)
     tc.early_stopping.patience = 1000
-    tc.warmup.warmup_steps     = 0
+    tc.warmup.warmup_fraction  = 0.0
     return tc
 
 
 def _loader(n=8, batch_size=4, seed=0):
+    """Returns a loader over random patches of shape (n, channels, 16, 16)."""
     g = torch.Generator().manual_seed(seed)
     x = torch.randn(n, IN_CHANNELS, PATCH, PATCH, generator=g)
     return DataLoader(TensorDataset(x), batch_size=batch_size)
 
 
 def _build_trainer(tmp_path, epochs=2):
+    """Returns a trainer over the tiny model writing its run into tmp_path, and the architecture config."""
     model, cfg = _tiny_model()
     tc         = _trainer_config(cfg, epochs=epochs)
     logger     = Logger(log_dir=str(tmp_path), name="image_ae_trainer_test")
@@ -54,6 +65,7 @@ def _build_trainer(tmp_path, epochs=2):
 
 
 def test_trainer_builds_on_cpu(tmp_path):
+    """The trainer lands on CPU with a criterion and separate encoder and decoder parameter groups."""
     trainer, _ = _build_trainer(tmp_path)
 
     assert trainer.device.type == "cpu"
@@ -62,6 +74,7 @@ def test_trainer_builds_on_cpu(tmp_path):
 
 
 def test_compute_loss_finite_and_structured(tmp_path):
+    """A training step returns a finite total loss carrying the image_recon component."""
     trainer, _ = _build_trainer(tmp_path)
     batch      = next(iter(_loader()))
 
@@ -72,6 +85,7 @@ def test_compute_loss_finite_and_structured(tmp_path):
 
 
 def test_single_train_epoch_updates_params(tmp_path):
+    """One epoch returns a finite average loss and changes at least one model parameter."""
     trainer, _ = _build_trainer(tmp_path, epochs=1)
     loader     = _loader()
 
@@ -86,6 +100,7 @@ def test_single_train_epoch_updates_params(tmp_path):
 
 
 def test_fit_returns_finite_losses(tmp_path):
+    """Training over two epochs returns one finite loss per epoch and a finite best value."""
     trainer, _ = _build_trainer(tmp_path, epochs=2)
     loader     = _loader()
 
@@ -97,6 +112,7 @@ def test_fit_returns_finite_losses(tmp_path):
 
 
 def test_fit_reduces_or_stable_loss(tmp_path):
+    """Over three epochs the training loss does not increase beyond a small tolerance."""
     trainer, _ = _build_trainer(tmp_path, epochs=3)
     loader     = _loader()
 
@@ -106,6 +122,7 @@ def test_fit_reduces_or_stable_loss(tmp_path):
 
 
 def test_checkpoint_saved_and_roundtrips(tmp_path):
+    """The checkpoint stores parameters, the elevation axis and the best validation loss, and reloads bit-identically."""
     trainer, _ = _build_trainer(tmp_path, epochs=2)
     loader     = _loader()
 
@@ -128,6 +145,7 @@ def test_checkpoint_saved_and_roundtrips(tmp_path):
 
 
 def test_capture_state_contents(tmp_path):
+    """The captured state carries the epoch, the parameters and the elevation axis."""
     trainer, _ = _build_trainer(tmp_path)
 
     state = trainer.capture_state(epoch=3)
@@ -138,6 +156,7 @@ def test_capture_state_contents(tmp_path):
 
 
 def test_non_finite_loss_raises(tmp_path, monkeypatch):
+    """A NaN total loss aborts the epoch with a FloatingPointError."""
     trainer, _ = _build_trainer(tmp_path, epochs=1)
     loader     = _loader()
 

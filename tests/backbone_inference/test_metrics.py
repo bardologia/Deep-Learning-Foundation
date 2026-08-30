@@ -1,9 +1,19 @@
+"""Tests for the metric layer of backbone inference.
+
+Covers per-pixel and scalar curve metrics, elevation-resolved metrics, active-slot
+counting and per-slot parameter populations, Hungarian-matched Gaussian metrics and
+their permutation invariance, label quality against the raw tomogram, curve roughness,
+and the switches that gate parameter-space and slot-organisation metrics.
+"""
+
 from __future__ import annotations
+
+import os
 
 import numpy as np
 import pytest
 
-from pipelines.backbone.inference.metrics import Metrics, Result
+from pipelines.backbone.inference.metrics import LegacySsim, Metrics, Result
 from tools.loss.param_loss                import ParamMatcher
 
 
@@ -12,10 +22,22 @@ N_Z         = 24
 
 
 def _x_axis(n: int = N_Z) -> np.ndarray:
+    """Returns an z axis of n samples spanning -20 m to 80 m."""
     return np.linspace(-20.0, 80.0, n).astype(np.float32)
 
 
 def _make_result(pred_curves, gt_curves, params_pred=None, params_gt=None) -> Result:
+    """Builds a Result whose pixel maps are derived from the given curve cubes.
+
+    Args:
+        pred_curves : Predicted profiles of shape (n_elevation, height, width).
+        gt_curves   : Ground-truth profiles of shape (n_elevation, height, width).
+        params_pred : Optional predicted parameter cube of shape (3 * n_gaussians, height, width).
+        params_gt   : Optional ground-truth parameter cube of the same shape.
+
+    Returns:
+        A Result carrying the curves, the per-pixel metric maps and the parameters.
+    """
     pixel_maps = Metrics.curve_pixel_metrics(pred_curves, gt_curves)
 
     return Result(
@@ -35,6 +57,16 @@ def _make_result(pred_curves, gt_curves, params_pred=None, params_gt=None) -> Re
 
 
 def _curves_from_params(params, z_axis, n_gaussians) -> np.ndarray:
+    """Renders a Gaussian mixture parameter cube onto the z axis.
+
+    Args:
+        params      : Parameter cube of shape (3 * n_gaussians, z, width), grouped amplitude, mu, sigma.
+        z_axis      : Z axis in metres, of shape (n_z,).
+        n_gaussians : Number of slots to sum.
+
+    Returns:
+        Curve cube of shape (n_z, z, width).
+    """
     C, H, W = params.shape
     curve   = np.zeros((z_axis.size, H, W), dtype=np.float32)
 
@@ -48,7 +80,31 @@ def _curves_from_params(params, z_axis, n_gaussians) -> np.ndarray:
     return curve.astype(np.float32)
 
 
+def _gaussian_params(seed: int, height: int = 4, width: int = 3) -> np.ndarray:
+    """Draws a parameter cube whose first two of N_GAUSSIANS slots are randomly active.
+
+    Args:
+        seed   : Seed of the random generator.
+        height : Azimuth extent of the cube.
+        width  : Range extent of the cube.
+
+    Returns:
+        Parameter cube of shape (3 * N_GAUSSIANS, height, width), with centres in
+        metres between -10 and 60 and widths in metres between 4 and 9.
+    """
+    rng    = np.random.default_rng(seed)
+    params = np.zeros((N_GAUSSIANS * 3, height, width), dtype=np.float32)
+
+    for k in range(2):
+        params[3 * k]     = rng.uniform(0.5, 2.0, (height, width))
+        params[3 * k + 1] = rng.uniform(-10.0, 60.0, (height, width))
+        params[3 * k + 2] = rng.uniform(4.0, 9.0, (height, width))
+
+    return params
+
+
 def test_curve_pixel_metrics_identical_is_perfect():
+    """Identical curves give zero error, unit R2 and cosine, and no peak displacement."""
     rng   = np.random.default_rng(0)
     curve = rng.random((N_Z, 6, 7)).astype(np.float32) + 0.1
 
@@ -62,6 +118,7 @@ def test_curve_pixel_metrics_identical_is_perfect():
 
 
 def test_curve_pixel_metrics_more_noise_is_worse():
+    """Mean pixel MSE grows with the noise added to the prediction."""
     rng   = np.random.default_rng(1)
     ref   = rng.random((N_Z, 5, 5)).astype(np.float32) + 0.5
     small = ref + 0.01 * rng.standard_normal(ref.shape).astype(np.float32)
@@ -74,6 +131,7 @@ def test_curve_pixel_metrics_more_noise_is_worse():
 
 
 def test_curve_pixel_metrics_mse_mae_exact_on_tiny_input():
+    """Pixel MSE and MAE match the values computed by hand on a three-bin profile."""
     ref  = np.array([[[0.0]], [[0.0]], [[0.0]]], dtype=np.float32)
     pred = np.array([[[1.0]], [[2.0]], [[2.0]]], dtype=np.float32)
 
@@ -84,6 +142,7 @@ def test_curve_pixel_metrics_mse_mae_exact_on_tiny_input():
 
 
 def test_curve_pixel_metrics_peak_index_difference():
+    """The peak map reports the signed distance in bins between the predicted and true maxima."""
     ref     = np.zeros((4, 1, 1), dtype=np.float32)
     pred    = np.zeros((4, 1, 1), dtype=np.float32)
     ref[1]  = 1.0
@@ -95,6 +154,7 @@ def test_curve_pixel_metrics_peak_index_difference():
 
 
 def test_curve_pixel_metrics_cosine_orthogonal():
+    """Profiles peaking in different bins have zero cosine similarity."""
     ref     = np.zeros((4, 1, 1), dtype=np.float32)
     pred    = np.zeros((4, 1, 1), dtype=np.float32)
     ref[0]  = 1.0
@@ -105,10 +165,36 @@ def test_curve_pixel_metrics_cosine_orthogonal():
     assert out["cos"][0, 0] == pytest.approx(0.0, abs=1e-6)
 
 
+def test_unit_area_cubes_are_normalised_once_and_shared():
+    """Unit-area cubes are cached per side, are distinct objects, and integrate to one along elevation."""
+    rng    = np.random.default_rng(5)
+    curve  = rng.random((N_ELEV, 4, 4)).astype(np.float32) + 0.1
+    result = _make_result(curve.copy(), curve.copy())
+
+    pred_norm = result.pred_unit_area()
+    gt_norm   = result.gt_unit_area()
+
+    assert result.pred_unit_area() is pred_norm
+    assert result.gt_unit_area()   is gt_norm
+    assert pred_norm is not gt_norm
+    assert pred_norm.sum(axis=0) == pytest.approx(np.ones((4, 4)), abs=1e-5)
+
+
+def test_ssim_pool_follows_the_configured_cpu_workers():
+    """The worker count is taken from the configuration and capped at the CPU count."""
+    rng   = np.random.default_rng(4)
+    curve = rng.random((N_ELEV, 4, 4)).astype(np.float32)
+    result = _make_result(curve, curve)
+
+    assert Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=3).num_workers  == 3
+    assert Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=10_000).num_workers == (os.cpu_count() or 1)
+
+
 def test_curve_scalar_metrics_identical():
+    """Identical curves give zero MSE, MAE and RMSE, unit R2 and infinite PSNR."""
     rng   = np.random.default_rng(2)
     curve = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.2
-    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS)
+    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS, cpu_workers=2)
 
     scal = m._curve_scalar_metrics(curve, curve, suffix="gt")
 
@@ -120,10 +206,11 @@ def test_curve_scalar_metrics_identical():
 
 
 def test_curve_scalar_metrics_rmse_is_sqrt_mse():
+    """Curve RMSE is the square root of curve MSE."""
     rng  = np.random.default_rng(3)
     ref  = rng.random((N_Z, 3, 3)).astype(np.float32)
     pred = ref + 0.1 * rng.standard_normal(ref.shape).astype(np.float32)
-    m    = Metrics(_make_result(pred, ref), _x_axis(), N_GAUSSIANS)
+    m    = Metrics(_make_result(pred, ref), _x_axis(), N_GAUSSIANS, cpu_workers=2)
 
     scal = m._curve_scalar_metrics(pred, ref, suffix="gt")
 
@@ -131,6 +218,7 @@ def test_curve_scalar_metrics_rmse_is_sqrt_mse():
 
 
 def test_psnr_constant_reference_is_nan():
+    """A constant reference has no dynamic range, so PSNR is NaN."""
     ref  = np.ones((4, 2, 2), dtype=np.float32)
     pred = ref + 0.1
 
@@ -138,6 +226,7 @@ def test_psnr_constant_reference_is_nan():
 
 
 def test_basic_stats_and_percentiles_exact():
+    """Basic statistics and percentiles match the analytic values of a linear ramp."""
     x     = np.arange(0.0, 101.0, dtype=np.float64).reshape(101, 1, 1)
     stats = Metrics._basic_stats(x)
     pcts  = Metrics._percentiles(x)
@@ -151,6 +240,7 @@ def test_basic_stats_and_percentiles_exact():
 
 
 def test_select_pixels_best_worst_random_disjoint():
+    """Best and worst selections are sorted and separated, and all selected pixels are distinct."""
     rng        = np.random.default_rng(4)
     metric_map = rng.random((10, 10)).astype(np.float32)
 
@@ -169,6 +259,7 @@ def test_select_pixels_best_worst_random_disjoint():
 
 
 def test_select_pixels_zero_counts_select_nothing():
+    """Zero requested pixels return empty selections while the other categories keep their size."""
     rng        = np.random.default_rng(4)
     metric_map = rng.random((10, 10)).astype(np.float32)
 
@@ -186,6 +277,7 @@ def test_select_pixels_zero_counts_select_nothing():
 
 
 def test_flat_to_yx_roundtrip():
+    """Flat indices unravel to the expected (row, column) pairs for the given width."""
     width = 7
     flat  = np.array([0, 6, 7, 20], dtype=np.int64)
     yx    = Metrics._flat_to_yx(flat, width)
@@ -197,9 +289,10 @@ def test_flat_to_yx_roundtrip():
 
 
 def test_z_metrics_identical_perfect():
+    """Per-z MAE and RMSE vanish and R2 is one for identical curves."""
     rng   = np.random.default_rng(5)
     curve = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.3
-    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS)
+    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS, cpu_workers=2)
 
     z = m._z_metrics(curve, curve, suffix="gt")
 
@@ -209,6 +302,7 @@ def test_z_metrics_identical_perfect():
 
 
 def test_active_count_stats_identical_perfect_agreement():
+    """Identical parameters give exact scatterer counts, per-slot activity fractions and count accuracy."""
     H, W   = 6, 6
     params = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -217,7 +311,7 @@ def test_active_count_stats_identical_perfect_agreement():
     params[6] = 0.0
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=params.copy(), params_gt=params.copy())
-    out = Metrics(res, _x_axis(), N_GAUSSIANS)._active_count_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._active_count_stats()
 
     assert out["count_exact_frac"]      == pytest.approx(1.0)
     assert out["count_under_frac"]      == pytest.approx(0.0)
@@ -232,6 +326,7 @@ def test_active_count_stats_identical_perfect_agreement():
 
 
 def test_active_count_stats_per_slot_pred_is_permutation_invariant():
+    """Per-slot activity fractions are unchanged by permuting the predicted slots."""
     H, W = 5, 5
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -242,13 +337,14 @@ def test_active_count_stats_per_slot_pred_is_permutation_invariant():
     order = [2, 0, 1, 3, 4]
     pred  = _reorder_groups(gt, order)
 
-    out = Metrics(_make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt), _x_axis(), N_GAUSSIANS)._active_count_stats()
+    out = Metrics(_make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt), _x_axis(), N_GAUSSIANS, cpu_workers=2)._active_count_stats()
 
     for k in range(N_GAUSSIANS):
         assert out[f"slot_{k}_active_pred_frac"] == pytest.approx(out[f"slot_{k}_active_gt_frac"])
 
 
 def test_active_count_stats_undercount_when_pred_drops_slot():
+    """Dropping a predicted slot is reported as a full undercount with halved mean activity."""
     H, W = 4, 4
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -259,7 +355,7 @@ def test_active_count_stats_undercount_when_pred_drops_slot():
     pred[3] = 0.0
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS)._active_count_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._active_count_stats()
 
     assert out["count_under_frac"]       == pytest.approx(1.0)
     assert out["count_exact_frac"]       == pytest.approx(0.0)
@@ -269,12 +365,22 @@ def test_active_count_stats_undercount_when_pred_drops_slot():
 
 
 def _reorder_groups(params: np.ndarray, order: list) -> np.ndarray:
+    """Permutes the Gaussian slots of a parameter cube.
+
+    Args:
+        params : Parameter cube of shape (3 * n_slots, height, width).
+        order  : New slot order, as a permutation of range(n_slots).
+
+    Returns:
+        Parameter cube of the same shape with the slot triples reordered.
+    """
     K       = len(order)
     grouped = params.reshape(K, 3, *params.shape[1:])
     return grouped[order].reshape(K * 3, *params.shape[1:])
 
 
 def test_param_population_stats_active_inactive_global_means():
+    """Amplitude carries active, inactive and global statistics while centre and width are reported on active pixels only."""
     H, W = 4, 4
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -287,7 +393,7 @@ def test_param_population_stats_active_inactive_global_means():
     pred[1, :, :2] += 1.0
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS)._param_population_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._param_population_stats()
 
     assert out["slot_0_amp_active_gt_mean"]   == pytest.approx(2.0)
     assert out["slot_0_amp_inactive_gt_mean"] == pytest.approx(0.0)
@@ -311,6 +417,7 @@ def test_param_population_stats_active_inactive_global_means():
 
 
 def test_param_population_stats_on_nan_masked_ground_truth():
+    """NaN-masked inactive centres and widths leave the active and amplitude statistics finite."""
     H, W = 4, 4
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -326,7 +433,7 @@ def test_param_population_stats_on_nan_masked_ground_truth():
         gt[3 * k + 2][inactive] = np.nan
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS)._param_population_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._param_population_stats()
 
     assert out["slot_0_mu_active_gt_mean"]  == pytest.approx(10.0)
     assert out["slot_0_sig_active_gt_mean"] == pytest.approx(4.0)
@@ -338,6 +445,7 @@ def test_param_population_stats_on_nan_masked_ground_truth():
 
 
 def test_param_population_stats_pred_is_permutation_invariant():
+    """Per-slot parameter statistics are unchanged by permuting the predicted slots."""
     H, W = 5, 5
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -349,7 +457,7 @@ def test_param_population_stats_pred_is_permutation_invariant():
     pred  = _reorder_groups(gt, order)
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS)._param_population_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._param_population_stats()
 
     for k in range(3):
         for param in ("amp", "mu", "sig"):
@@ -357,11 +465,23 @@ def test_param_population_stats_pred_is_permutation_invariant():
 
 
 def _matched(pred, gt, n_gaussians=N_GAUSSIANS, tol=5.0):
+    """Computes the Hungarian-matched Gaussian metrics for a prediction and its ground truth.
+
+    Args:
+        pred        : Predicted parameter cube of shape (3 * n_gaussians, z, width).
+        gt          : Ground-truth parameter cube of the same shape.
+        n_gaussians : Number of Gaussian slots.
+        tol         : Matching tolerance on the Gaussian centre, in metres.
+
+    Returns:
+        Mapping of matched-metric name to value.
+    """
     res = _make_result(np.zeros((N_Z, *pred.shape[1:]), np.float32), np.zeros((N_Z, *pred.shape[1:]), np.float32), params_pred=pred, params_gt=gt)
-    return Metrics(res, _x_axis(), n_gaussians)._matched_gaussian_metrics(match_tol=tol)
+    return Metrics(res, _x_axis(), n_gaussians, cpu_workers=2).matched_gaussian_metrics(match_tol=tol)
 
 
 def test_matched_identical_is_perfect():
+    """Identical parameters give zero matched errors with unit recall and precision."""
     H, W   = 6, 6
     params = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -380,6 +500,7 @@ def test_matched_identical_is_perfect():
 
 
 def test_matched_is_invariant_to_pred_slot_permutation():
+    """Matched errors and recall are unchanged by permuting the predicted slots."""
     rng    = np.random.default_rng(21)
     H, W   = 8, 8
     params = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
@@ -405,6 +526,7 @@ def test_matched_is_invariant_to_pred_slot_permutation():
 
 
 def test_matched_recall_penalises_filler_far_from_gt():
+    """A second prediction placed outside the tolerance halves recall and precision on two-scatterer pixels."""
     H, W = 4, 4
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
     pred = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
@@ -423,6 +545,7 @@ def test_matched_recall_penalises_filler_far_from_gt():
 
 
 def test_matched_amp_error_over_matched_pairs():
+    """Matched amplitude MAE and RMSE average only over the matched pairs."""
     H, W = 4, 4
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
     pred = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
@@ -442,13 +565,14 @@ def test_matched_amp_error_over_matched_pairs():
 
 @pytest.mark.dataset
 def test_metrics_identical_scene_parameter_window_is_perfect(parameters):
+    """Curves rendered from scene parameters score perfectly against themselves."""
     params      = np.asarray(parameters[:, :16, :16], dtype=np.float32)
     z_axis      = _x_axis(40)
     n_gaussians = params.shape[0] // 3
     curve       = _curves_from_params(params, z_axis, n_gaussians)
 
     res = _make_result(curve, curve, params_pred=params.copy(), params_gt=params.copy())
-    m   = Metrics(res, z_axis, n_gaussians)
+    m   = Metrics(res, z_axis, n_gaussians, cpu_workers=2)
 
     metrics = m.compute(param_space=True)
 
@@ -459,6 +583,7 @@ def test_metrics_identical_scene_parameter_window_is_perfect(parameters):
 
 @pytest.mark.dataset
 def test_metrics_perturbed_scene_window_is_worse(parameters):
+    """Stronger perturbation of scene-parameter curves raises MSE and lowers R2."""
     rng         = np.random.default_rng(11)
     params      = np.asarray(parameters[:, :16, :16], dtype=np.float32)
     z_axis      = _x_axis(40)
@@ -468,8 +593,8 @@ def test_metrics_perturbed_scene_window_is_worse(parameters):
     pred_small = gt + 0.001 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
     pred_large = gt + 0.200 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
 
-    m_small = Metrics(_make_result(pred_small, gt), z_axis, n_gaussians)
-    m_large = Metrics(_make_result(pred_large, gt), z_axis, n_gaussians)
+    m_small = Metrics(_make_result(pred_small, gt), z_axis, n_gaussians, cpu_workers=2)
+    m_large = Metrics(_make_result(pred_large, gt), z_axis, n_gaussians, cpu_workers=2)
 
     s = m_small.compute(param_space=False)
     l = m_large.compute(param_space=False)
@@ -478,12 +603,28 @@ def test_metrics_perturbed_scene_window_is_worse(parameters):
     assert s["overall_r2_gt"] > l["overall_r2_gt"]
 
 
+@pytest.mark.dataset
+def test_reduced_comparison_identical_reduced_zero_improvement(parameters):
+    """A reduced baseline equal to the prediction yields zero improvement and a matching cube shape."""
+    params = np.asarray(parameters[:, :12, :12], dtype=np.float32)
+    z_axis = _x_axis(40)
+    gt     = _curves_from_params(params, z_axis, N_GAUSSIANS)
+    pred   = gt.copy()
+
+    m    = Metrics(_make_result(pred, gt), z_axis, N_GAUSSIANS, cpu_workers=2)
+    comp = m.reduced_comparison(gt.copy())
+
+    assert comp.metrics["improvement_pixel_mse_mean"] == pytest.approx(0.0, abs=1e-6)
+    assert comp.reduced_norm.shape == gt.shape
+
+
 def test_label_quality_perfect_fit_gives_r2_one():
+    """Labels identical to the raw tomogram score a unit R2 map with no pixel below one half."""
     rng    = np.random.default_rng(0)
     curves = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
     result = _make_result(curves, curves)
 
-    r2_map, stats = Metrics(result, _x_axis(), N_GAUSSIANS).label_quality(curves.copy())
+    r2_map, stats = Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(curves.copy())
 
     assert r2_map.shape == (4, 3)
     assert np.allclose(r2_map, 1.0, atol=1e-5)
@@ -492,20 +633,165 @@ def test_label_quality_perfect_fit_gives_r2_one():
 
 
 def test_label_quality_noisier_labels_score_lower():
+    """Noisier labels score a lower mean label R2 against the same raw tomogram."""
     rng   = np.random.default_rng(1)
     raw   = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
     clean = raw + rng.normal(0.0, 0.01, size=raw.shape).astype(np.float32)
     noisy = raw + rng.normal(0.0, 0.60, size=raw.shape).astype(np.float32)
 
-    _map_clean, stats_clean = Metrics(_make_result(clean, clean), _x_axis(), N_GAUSSIANS).label_quality(raw)
-    _map_noisy, stats_noisy = Metrics(_make_result(noisy, noisy), _x_axis(), N_GAUSSIANS).label_quality(raw)
+    _map_clean, stats_clean = Metrics(_make_result(clean, clean), _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(raw)
+    _map_noisy, stats_noisy = Metrics(_make_result(noisy, noisy), _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(raw)
 
     assert stats_clean["label_r2_mean"] > stats_noisy["label_r2_mean"]
 
 
 def test_label_quality_shape_mismatch_raises():
+    """A raw cube whose spatial shape differs from the labels raises ValueError."""
     curves = np.ones((N_Z, 4, 3), dtype=np.float32)
     result = _make_result(curves, curves)
 
     with pytest.raises(ValueError):
-        Metrics(result, _x_axis(), N_GAUSSIANS).label_quality(np.ones((N_Z, 5, 3), dtype=np.float32))
+        Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(np.ones((N_Z, 5, 3), dtype=np.float32))
+
+
+def test_roughness_map_is_zero_for_a_linear_ramp():
+    """A linear z ramp has zero second-difference roughness."""
+    ramp = np.linspace(0.0, 1.0, N_Z, dtype=np.float32).reshape(-1, 1, 1) * np.ones((1, 3, 2), dtype=np.float32)
+
+    assert Metrics.roughness_map(ramp).shape == (3, 2)
+    assert np.allclose(Metrics.roughness_map(ramp), 0.0, atol=1e-10)
+
+
+def test_roughness_map_grows_with_bin_to_bin_jitter():
+    """Alternating bin-to-bin jitter is rougher than a flat profile."""
+    smooth = np.zeros((N_Z, 2, 2), dtype=np.float32)
+    jitter = np.tile(np.array([1.0, -1.0], dtype=np.float32), N_Z // 2).reshape(-1, 1, 1) * np.ones((1, 2, 2), dtype=np.float32)
+
+    assert Metrics.roughness_map(jitter).mean() > Metrics.roughness_map(smooth).mean()
+
+
+def test_roughness_metrics_report_unit_ratio_for_identical_curves():
+    """Identical curves give a roughness ratio of one and no excess-roughness pixels."""
+    z_axis = _x_axis()
+    params = _gaussian_params(seed=1)
+    curves = _curves_from_params(params, z_axis, N_GAUSSIANS)
+
+    metrics = Metrics(_make_result(curves.copy(), curves), z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=False)
+
+    assert metrics["roughness_ratio"]       == pytest.approx(1.0, rel=1e-6)
+    assert metrics["roughness_excess_frac"] == pytest.approx(0.0)
+
+
+def test_roughness_ratio_exceeds_one_when_the_prediction_carries_jitter():
+    """Adding z jitter to the prediction drives the roughness ratio and excess fraction up."""
+    z_axis = _x_axis()
+    params = _gaussian_params(seed=2)
+    gt     = _curves_from_params(params, z_axis, N_GAUSSIANS)
+
+    jitter = np.tile(np.array([1.0, -1.0], dtype=np.float32), N_Z // 2).reshape(-1, 1, 1)
+    pred   = gt + 0.2 * jitter
+
+    metrics = Metrics(_make_result(pred, gt), z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=False)
+
+    assert metrics["roughness_ratio"] > 2.0
+    assert metrics["roughness_excess_frac"] > 0.5
+
+
+def test_slot_organization_can_be_switched_off():
+    """Disabling slot organisation drops its metrics while the matched metrics remain."""
+    z_axis = _x_axis()
+    params = _gaussian_params(seed=4)
+    curves = _curves_from_params(params, z_axis, N_GAUSSIANS)
+    result = _make_result(curves.copy(), curves, params_pred=params.copy(), params_gt=params)
+
+    with_slots    = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=True, slot_organization=True)
+    without_slots = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=True, slot_organization=False)
+
+    assert "slot_usage_entropy" in with_slots
+    assert "slot_usage_entropy" not in without_slots
+    assert "matched_mu_mae"     in without_slots
+
+
+def _legacy_cubes(seed: int = 0, n_slices: int = 3) -> tuple:
+    """Draws an estimate/reference cube pair whose slices hold the 27-pixel legacy window.
+
+    Args:
+        seed     : Seed of the random generator.
+        n_slices : Extent of the last cube axis.
+
+    Returns:
+        Tuple of estimate and reference cubes, each of shape (32, 32, n_slices).
+    """
+    rng      = np.random.default_rng(seed)
+    estimate = rng.uniform(0.0, 1.0, (32, 32, n_slices))
+
+    return estimate, estimate + 0.1 * rng.standard_normal((32, 32, n_slices))
+
+
+def test_legacy_ssim_identical_cubes_score_one():
+    """Identical cubes score SSIM 1 on every slice of the legacy sweep."""
+    estimate, _ = _legacy_cubes()
+
+    values = LegacySsim(num_workers=1).curve(estimate, estimate.copy())
+
+    assert values.shape == (3,)
+    assert np.allclose(values, 1.0)
+
+
+def test_legacy_ssim_matches_the_paper_convention_per_slice():
+    """Each slice reproduces skimage SSIM at window 27 with the col taken from the estimate."""
+    from skimage.metrics import structural_similarity as sk_ssim
+
+    estimate, _ = _legacy_cubes(seed=1)
+    reference   = 5.0 * estimate + 0.1 * np.random.default_rng(2).standard_normal(estimate.shape)
+
+    values = LegacySsim(num_workers=1).curve(estimate, reference)
+
+    for i in range(estimate.shape[2]):
+        est_slice = estimate[:, :, i].astype(np.float64)
+        ref_slice = reference[:, :, i].astype(np.float64)
+        est_range = float(est_slice.max() - est_slice.min())
+        ref_range = float(ref_slice.max() - ref_slice.min())
+        expected  = sk_ssim(est_slice, ref_slice, data_range=est_range, win_size=27)
+        deviant   = sk_ssim(est_slice, ref_slice, data_range=ref_range, win_size=27)
+
+        assert values[i] == pytest.approx(expected, abs=1e-12)
+        assert abs(values[i] - deviant) > 1e-6
+
+
+def test_legacy_ssim_smoothing_changes_the_score():
+    """A uniform filter of size 3 shifts the score of a noisy pair away from the unsmoothed value."""
+    estimate, reference = _legacy_cubes(seed=3, n_slices=1)
+
+    raw      = LegacySsim(smooth_size=1, num_workers=1).curve(estimate, reference)
+    smoothed = LegacySsim(smooth_size=3, num_workers=1).curve(estimate, reference)
+
+    assert abs(smoothed[0] - raw[0]) > 1e-4
+
+
+def test_legacy_ssim_mean_summarises_the_curve():
+    """The mean entry point equals the average of the per-slice curve."""
+    estimate, reference = _legacy_cubes(seed=4)
+
+    curve = LegacySsim(num_workers=1).curve(estimate, reference)
+
+    assert LegacySsim.mean(curve) == pytest.approx(float(np.mean(curve)))
+
+
+def test_legacy_ssim_mean_ignores_non_finite_slices():
+    """A degenerate slice scoring NaN drops out of the mean instead of poisoning it."""
+    curve = np.array([0.4, np.nan, 0.6])
+
+    assert LegacySsim.mean(curve) == pytest.approx(0.5)
+    assert np.isnan(LegacySsim.mean(np.array([np.nan, np.nan])))
+
+
+def test_legacy_ssim_shape_mismatch_raises():
+    """Cubes of different shapes or wrong rank are rejected."""
+    estimate, _ = _legacy_cubes()
+
+    with pytest.raises(ValueError):
+        LegacySsim().curve(estimate, estimate[:, :, :2])
+
+    with pytest.raises(ValueError):
+        LegacySsim().curve(estimate[:, :, 0], estimate[:, :, 0])
