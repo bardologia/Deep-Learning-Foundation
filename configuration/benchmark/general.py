@@ -117,17 +117,8 @@ class InferenceQueueConfig:
         save_cubes               : Whether reconstructed tomographic cubes are saved.
         stitch_window            : Window applied when stitching overlapping patches.
         cube_dtype               : NumPy dtype name used when writing cubes.
-        render_amp_floor         : Amplitude below which scatterers are hidden in renders.
+        render_amp_floor         : Amplitude below which components are hidden in renders.
         active_amp_thr           : Physical amplitude at or above which a Gaussian slot counts as active in the Hungarian slot matching, metrics, failure modes, stratified errors, normalization audit and report figures.
-        compute_reduced          : Whether the reduced metric summary is computed.
-        reduced_effort           : Parallelism effort level for the reduced tomography.
-        reduced_cache_subdir     : Subdirectory caching reduced tomography products.
-        reduced_env_name         : Conda environment providing PyRAT for the reduced run.
-        reduced_pyrat_dir        : PyRAT source directory, or None to use the default.
-        compute_legacy_ssim      : Whether the legacy paper-parity SSIM sweep of the raw prediction against the raw full-stack Capon tomogram runs.
-        compute_data_consistency : Whether measurement-domain consistency metrics run.
-        physics_floor            : Numerical floor added to physics denominators.
-        phase_multilook          : Boxcar window side used when multilooking phase.
         compute_flip_consistency : Whether flip-equivariance metrics run.
         compute_stratified       : Whether metrics are stratified by scene strata.
         extract_curve_params     : Whether Gaussians are refitted to predicted curves.
@@ -136,9 +127,9 @@ class InferenceQueueConfig:
         n_worst_profiles         : Worst-reconstructed profiles plotted per run.
         n_random_profiles        : Randomly drawn profiles plotted per run.
         profile_seed             : Seed for the random profile draw.
-        n_range_slices           : Cube slices plotted along range.
-        n_azimuth_slices         : Cube slices plotted along azimuth.
-        n_elevation_slices       : Cube slices plotted along elevation.
+        n_col_slices             : Cube slices plotted along the columns.
+        n_row_slices             : Cube slices plotted along the rows.
+        n_z_slices               : Cube slices plotted along z.
         gif_axes                 : Cube axes animated in the GIF exports.
         gif_fps                  : Frames per second of the GIF exports.
         gif_max_frames           : Maximum frames per GIF export.
@@ -166,12 +157,6 @@ class InferenceQueueConfig:
     cube_dtype       : str   = "float32"
     render_amp_floor : float = 0.0
     active_amp_thr   : float = 1e-4
-
-    compute_reduced      : bool        = True
-    reduced_effort       : str         = "high"
-    reduced_cache_subdir : str         = "data"
-    reduced_env_name     : str         = "stetools"
-    reduced_pyrat_dir    : Path | None = None
 
     compute_flip_consistency : bool = False
     compute_stratified       : bool = True

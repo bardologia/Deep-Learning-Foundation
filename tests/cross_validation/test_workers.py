@@ -313,7 +313,7 @@ def test_training_worker_rejects_unknown_type(test_data_dir):
         FoldTrainingWorker(config, run_tag="rt").run(0)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_dual_fold_run_name_carries_trunks_and_routing(test_data_dir):
     """Verifies a dual fold run name carries both trunks, the routing tag and the fold index."""
     worker = FoldTrainingWorker(worker_config(test_data_dir, "dual"), run_tag="rt")
@@ -325,21 +325,21 @@ def test_dual_fold_run_name_carries_trunks_and_routing(test_data_dir):
     assert name.endswith("_fold_1")
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_dual_model_config_binds_both_trunks(test_data_dir):
     """Verifies the dual model config binds the parameter and existence trunks and inputs."""
     config                          = worker_config(test_data_dir, "dual")
     config.dual.existence_backbone  = "unet"
-    config.dual.existence_input     = ["ifg"]
+    config.dual.existence_input     = ["derived"]
 
     model_config = FoldTrainingWorker(config, run_tag="rt")._dual_model_config()
 
     assert model_config.params_backbone    == "unet_skip"
     assert model_config.existence_backbone == "unet"
-    assert model_config.existence_input    == ("ifg",)
+    assert model_config.existence_input    == ("derived",)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_dual_model_config_rejects_trunk_keys_in_model_overrides(test_data_dir):
     """Verifies trunk keys passed through model_overrides are rejected."""
     config                  = worker_config(test_data_dir, "dual")
@@ -349,7 +349,7 @@ def test_dual_model_config_rejects_trunk_keys_in_model_overrides(test_data_dir):
         FoldTrainingWorker(config, run_tag="rt")._dual_model_config()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_ae_fold_entry_carries_the_cross_validated_profile_augmentation(test_data_dir):
     """Verifies the profile-augmentation recipe of the sweep reaches the fold entry config."""
     config                                  = worker_config(test_data_dir, "profile_autoencoder")
@@ -360,7 +360,7 @@ def test_ae_fold_entry_carries_the_cross_validated_profile_augmentation(test_dat
     assert entry.profile_augmentation is config.autoencoder.profile_augmentation
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_ae_fold_pipeline_samples_with_the_cross_validated_profile_augmentation(test_data_dir, tmp_path):
     """Verifies the forwarded augmentation reaches the profile dataset every fold trains on."""
     from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
@@ -379,11 +379,11 @@ def test_ae_fold_pipeline_samples_with_the_cross_validated_profile_augmentation(
     assert pipeline.dataset_config.augmentation.noise_std == 0.02
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_jepa_fold_entry_carries_the_cross_validated_input_channels(test_data_dir, tmp_path):
     """Verifies the channel set the sweep records reaches the JEPA fold entry config."""
     config       = jepa_worker_config(test_data_dir, tmp_path)
-    config.input = InputConfig(use_primary=True, use_secondaries=False, use_interferograms=False, use_dem=True)
+    config.input = InputConfig(use_primary=True, use_secondaries=False, use_derived=False, use_aux=True)
 
     entry = FoldTrainingWorker(config, run_tag="rt")._jepa_entry_config("fold_0", 3)
 
@@ -457,7 +457,7 @@ def test_inference_worker_builds_run_directory(test_data_dir, tmp_path, monkeypa
     assert captured["config"].output_subdir is None
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_worker_runs_every_configured_split(test_data_dir, tmp_path, monkeypatch):
     """Verifies inference runs once per configured split in order."""
     config                    = worker_config(test_data_dir)
@@ -484,7 +484,7 @@ def test_inference_worker_runs_every_configured_split(test_data_dir, tmp_path, m
     assert ran == ["val", "test"]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_path, monkeypatch):
     """Verifies a split already stamped complete is skipped when resuming."""
     config                    = worker_config(test_data_dir)
@@ -516,7 +516,7 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
     assert done.exists()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_worker_routes_autoencoders_to_their_pipelines(test_data_dir, tmp_path, monkeypatch):
     """Verifies autoencoder folds route to their own inference pipelines."""
     import pipelines.image_autoencoder.inference.pipeline   as image_ae_module

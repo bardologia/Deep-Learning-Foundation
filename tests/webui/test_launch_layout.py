@@ -93,108 +93,18 @@ def test_sweep_loss_choices_match_the_component_catalog():
     assert choices == set(LossComponentCatalog.names())
 
 
-def test_legacy_mode_preset_pins_every_loss_term_flag():
-    """The legacy preset enables only the legacy parameter loss term, selects sorted ground-truth matching and enables a same-loss curriculum swap at epoch 30 so the best-checkpoint baseline resets past the early mask collapse."""
-    preset = LaunchLayout.LEGACY_MODE["preset"]
-
-    for term in LOSS_TERMS:
-        expected = "True" if term.name == "param_legacy" else "False"
-        assert preset[f"curriculum.complete.{term.use_flag}"] == expected
-
-    assert preset["curriculum.complete.param_matching"] == "sorted_gt"
-    assert preset["curriculum.enabled"]    == "True"
-    assert preset["curriculum.swap_epoch"] == "30"
-    assert not any(key.startswith("curriculum.warmup.") for key in preset)
 
 
-def test_legacy_mode_preset_pins_the_legacy_normalization():
-    """The legacy preset pins the legacy input selection, fixed normalization modes, clamp setting and amplitude floors."""
-    preset = LaunchLayout.LEGACY_MODE["preset"]
-
-    assert preset["input.use_primary"]                   == "False"
-    assert preset["input.use_secondaries"]               == "True"
-    assert preset["input.secondaries_representation"]    == "mag_only"
-    assert preset["input.use_derived"]            == "True"
-    assert preset["input.derived_representation"] == "angle_only"
-    assert preset["input.use_aux"]                       == "False"
-
-    assert preset["normalization.chan_mag"]   == "fixed_log1p"
-    assert preset["normalization.pass_phase"] == "fixed_angle_01"
-    assert preset["normalization.derived_mag"]    == "fixed_log1p"
-    assert preset["normalization.derived_phase"]  == "fixed_angle_01"
-    assert preset["normalization.out_amp"]    == "fixed_bounds"
-    assert preset["normalization.out_mu"]     == "fixed_bounds"
-    assert preset["normalization.out_sigma"]  == "fixed_bounds"
-
-    assert preset["normalization.clamp_output"] == "False"
-    assert "normalization.clamp_leaky_slope" not in preset
-
-    assert preset["curriculum.complete.amp_zero_thr"] == "0.001"
-    assert preset["inference.render_amp_floor"]       == "0.001"
-    assert preset["inference.active_amp_thr"]         == "0.001"
-    assert preset["inference.checkpoint_name"]        == "best_model.pt"
 
 
-def test_legacy_mode_preset_pins_the_legacy_optimization():
-    """The legacy preset pins the legacy schedule, clipping, epoch count, patch geometry and per-group learning rate and weight decay."""
-    preset = LaunchLayout.LEGACY_MODE["preset"]
-
-    assert preset["training.warmup_enabled"]      == "False"
-    assert preset["training.clip_mode"]           == "disabled"
-    assert preset["training.scheduler_type"]      == "constant"
-    assert preset["training.scale_lr_with_batch"] == "False"
-    assert preset["training.epochs"]              == "300"
-    assert preset["training.patch_size"]          == "(64, 64)"
-    assert preset["training.patch_stride"]        == "(32, 32)"
-
-    overrides = ast.literal_eval(preset["model_overrides"])
-    assert overrides["all_groups_lr"] == 1e-5
-    assert overrides["all_groups_wd"] == 0.0
 
 
-def test_legacy_mode_preset_pins_the_legacy_architecture():
-    """The legacy preset selects the plain UNet with a conv head and the original feature widths, dropout, normalization and bias settings."""
-    preset = LaunchLayout.LEGACY_MODE["preset"]
-
-    assert preset["backbone_name"] == "unet"
-    assert preset["backbone_head"] == "conv"
-
-    overrides = ast.literal_eval(preset["model_overrides"])
-    assert overrides["features"]          == [64, 128, 256, 512]
-    assert overrides["bottleneck_factor"] == 2
-    assert overrides["dropout"]           == 0.0
-    assert overrides["normalization"]     == "none"
-    assert overrides["conv_bias"]         is True
 
 
-def test_normalization_ladder_starts_at_the_legacy_mode_preset():
-    """The normalization trial ladder starts from the same modes the legacy preset pins."""
-    preset = LaunchLayout.LEGACY_MODE["preset"]
-    trials = BackboneEntryConfig().normalization_trials
-
-    for norm_field in ("chan_mag", "derived_phase", "out_amp", "out_mu", "out_sigma"):
-        assert getattr(trials, f"initial_{norm_field}") == preset[f"normalization.{norm_field}"]
 
 
-def test_legacy_mode_ships_with_the_backbone_training_layout():
-    """The backbone training layout carries the legacy mode block with its preset."""
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(BackboneEntryConfig())]
-    layout = LaunchLayout().build("train_backbone", leaves)
-
-    assert layout["legacy"] == LaunchLayout.LEGACY_MODE
-    assert layout["legacy"]["preset"]["curriculum.complete.use_param_legacy"] == "True"
-    assert layout["legacy"]["preset"]["backbone_name"] == "unet"
 
 
-def test_legacy_mode_with_unknown_paths_is_rejected():
-    """A legacy preset naming a config path that does not exist fails validation."""
-    engine = LaunchLayout()
-    layout = engine._expand("train_backbone")
-    layout["legacy"]["preset"]["curriculum.complete.use_param_l2"] = "False"
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(BackboneEntryConfig())]
-
-    with pytest.raises(LayoutError):
-        engine._validate("train_backbone", layout, leaves)
 
 
 def test_dual_trunk_choices_match_the_backbone_registry():
@@ -280,21 +190,6 @@ def test_follow_infer_map_covers_every_standalone_inference_family():
     expected = {key: key.replace("train_", "infer_") for key in layouts if key.startswith("train_") and key.replace("train_", "infer_") in layouts}
 
     assert pairs == expected
-
-
-def test_inject_external_params_layout_claims_every_config_field_exactly_once():
-    """The external parameter injection layout claims each field of its entry config exactly once."""
-    leaves = [{"path": path} for path, _value in ConfigCli._leaves(InjectExternalParamsEntryConfig())]
-
-    LaunchLayout().build("inject_external_params", leaves)
-
-
-def test_channel_order_choices_match_every_permutation():
-    """All six channel order options are accepted by the channel order parser."""
-    for order in LaunchLayout.CH_CHANNEL_ORDER["options"]:
-        ChannelOrder.positions(order)
-
-    assert len(LaunchLayout.CH_CHANNEL_ORDER["options"]) == 6
 
 
 def test_compare_runs_layout_claims_every_config_field_exactly_once():

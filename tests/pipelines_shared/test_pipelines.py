@@ -353,23 +353,3 @@ def test_backbone_preparation_threads_the_training_resume_flag(tmp_path, monkeyp
     assert _CapturingDatasetPipeline.captured["resume"] is True
 
 
-def test_unrolled_pipeline_threads_the_training_resume_flag(tmp_path, monkeypatch):
-    """The unrolled dataset construction hands training.resume to the dataset pipeline."""
-    import pipelines.unrolled.training.pipeline as module
-    monkeypatch.setattr(module, "DatasetPipeline", _CapturingDatasetPipeline)
-
-    geometry = SimpleNamespace(height_axis_convention="height")
-    config   = SimpleNamespace(
-        seed     = 1,
-        training = SimpleNamespace(resume=True),
-        geometry = SimpleNamespace(resolved=lambda dataset_path, secondary_labels: geometry),
-        paths    = SimpleNamespace(dataset_path=tmp_path),
-    )
-
-    pipeline         = module.UnrolledTrainingPipeline.__new__(module.UnrolledTrainingPipeline)
-    pipeline.config  = config
-    pipeline.factory = SimpleNamespace(training_dataset_config=lambda: SimpleNamespace(n_gaussians=None, input_config=None, x_axis=None), _secondary_labels=lambda: ())
-
-    pipeline._build_dataset_pipeline(tmp_path, _logger(tmp_path, "unrolled_resume"), SimpleNamespace(n_default_gaussians=3, x_min=-5.0, x_max=25.0))
-
-    assert _CapturingDatasetPipeline.captured["resume"] is True

@@ -86,7 +86,7 @@ def test_forward_finite(name, make_input):
     assert torch.isfinite(y).all()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_forward_on_a_real_interferogram_window(interferograms):
     """Verifies the UNet backbone runs on a real interferogram window with the expected shape."""
     model, config = _build("unet")

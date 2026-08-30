@@ -195,7 +195,7 @@ def _evaluate(run, pixel_mse=None):
     """
     evaluator = JepaEmbeddingEvaluator(run, SilentLogger())
     n_K       = run.n_gaussians
-    x         = np.asarray(run.x_axis, dtype=np.float32).reshape(1, 1, -1, 1, 1)
+    x         = np.asarray(run.z_axis, dtype=np.float32).reshape(1, 1, -1, 1, 1)
 
     jepa        = run.model.module.jepa
     autoencoder = jepa.profile_autoencoder

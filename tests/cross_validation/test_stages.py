@@ -297,7 +297,7 @@ def test_inference_stage_requeues_run_with_a_missing_split_on_resume(tmp_path, t
     assert (fold_dir / "inference" / "stamp_val").exists()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_inference_stage_purges_unfinished_stamp_on_resume(tmp_path, test_data_dir):
     """Verifies an unstamped inference directory is deleted and the fold requeued on resume."""
     config  = data_config(tmp_path, test_data_dir, resume=True)

@@ -1,7 +1,6 @@
 """Tests for the backbone and dual training pipelines.
 
 Covers the end-to-end run on real preprocessing data (checkpoint, metadata and config
-artifacts, per-pixel physics geometry, the overfit-check gate and its abort path) and the
 patch-squaring rule applied for backbones that only accept square inputs.
 """
 
@@ -92,34 +91,6 @@ def test_training_pipeline_end_to_end_produces_checkpoint(test_data_dir, params_
     assert (run_directory / "meta").is_dir()
     assert len(train_losses) == 1
     assert val_losses is not None
-
-
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_training_pipeline_runs_per_pixel_physics_geometry(test_data_dir, params_dir, tmp_path):
-    """Verifies the covariance term builds a three-channel per-pixel geometry field and the run completes."""
-    dataset_config = _dataset_config(test_data_dir, params_dir)
-    trainer_config = _trainer_config(test_data_dir, params_dir, tmp_path)
-
-    trainer_config.curriculum.complete.use_moments    = True
-    trainer_config.curriculum.complete.weight_covariance_match = 1.0
-    trainer_config.geometry.height_axis_convention             = "z"
-
-    pipeline = TrainingPipeline(
-        trainer_config = trainer_config,
-        dataset_config = dataset_config,
-        backbone_name  = "resunet",
-        model_config   = None,
-        seed           = 0,
-        run_name       = "pipeline_physics",
-    )
-
-    train_losses, val_losses, best_val = pipeline.run(probe_config=None)
-
-    assert pipeline.dataset_pipeline.geometry_field is not None
-    assert pipeline.dataset_pipeline.geometry_field.n_tracks == 3
-    assert (pipeline.run_metadata.run_directory / "best_model.pt").exists()
-    assert len(train_losses) == 1
 
 
 @pytest.mark.dataset

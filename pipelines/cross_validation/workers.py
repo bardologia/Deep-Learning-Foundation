@@ -342,7 +342,6 @@ class FoldTrainingWorker(CrossValidationWorker):
             ae_model_name        = ae.ae_model_name,
             model_overrides      = cv.model_overrides,
             ae_loss              = ae.ae_loss,
-            geometry             = cv.geometry,
             paths                = cv.paths,
             training             = cv.training,
             overfit_check        = cv.overfit_check,

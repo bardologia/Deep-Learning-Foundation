@@ -260,11 +260,11 @@ def test_inference_regions_cover_untrimmed_blocks():
         test_region = planner.inference_region(fold_index, "test")
         val_region  = planner.inference_region(fold_index, "val")
 
-        assert (test_region.azimuth_start, test_region.azimuth_end) == planner.blocks[plan.test_block]
-        assert (val_region.azimuth_start,  val_region.azimuth_end)  == planner.blocks[plan.val_block]
+        assert (test_region.row_start, test_region.row_end) == planner.blocks[plan.test_block]
+        assert (val_region.row_start,  val_region.row_end)  == planner.blocks[plan.val_block]
         assert test_region.contains(plan.split_regions.regions("test")[0])
         assert val_region.contains(plan.split_regions.regions("val")[0])
-        assert (test_region.range_start, test_region.range_end) == (500, 1000)
+        assert (test_region.col_start, test_region.col_end) == (500, 1000)
 
 
 def test_inference_regions_tile_the_fold_window_without_gaps():
@@ -394,7 +394,7 @@ def test_factory_fold_inference_config_sets_split_and_region(test_data_dir):
     assert inference.split           == "test"
     assert inference.output_subdir   is None
     assert inference.run_directory   == run_dir
-    assert inference.region_override == [1000, 1200, crop.range_start, crop.range_end]
+    assert inference.region_override == [1000, 1102, crop.col_start, crop.col_end]
 
 
 def stamp_inference(base: Path, name: str, split: str) -> Path:

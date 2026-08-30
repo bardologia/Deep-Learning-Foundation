@@ -164,7 +164,7 @@ def test_default_training_configuration_builds_all_three_splits(test_data_dir, p
 
     factory        = ConfigFactory(benchmark)
     dataset_config = factory.training_dataset_config()
-    trainer_config = SimpleNamespace(gaussian=factory.gaussian_config())
+    trainer_config = SimpleNamespace(gaussian=factory.gaussian_config(), training=SimpleNamespace(resume=False))
     logger         = Logger(log_dir=str(tmp_path / "logs"), name="synthetic_prep", level="ERROR")
 
     prep = BackboneDatasetPreparation(dataset_config, trainer_config, tmp_path, logger, seed=0)

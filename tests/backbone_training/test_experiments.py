@@ -307,8 +307,8 @@ def test_secondary_exhaustive_enumerates_all_combinations_of_exact_size():
     assert len(plans) == 15
     assert len(set(selections)) == len(selections)
     assert all(len(selection) == 2 for selection in selections)
-    assert selections[0]  == ("PS04", "PS06")
-    assert selections[-1] == ("PS12", "PS14")
+    assert selections[0]  == ("CH01", "CH02")
+    assert selections[-1] == ("CH05", "CH06")
     assert planner.summary()["Total runs"] == 15
 
 
@@ -354,9 +354,9 @@ def test_input_planner_default_catalog_covers_the_stack_grid():
     plans = dict(planner.plan())
 
     bases = ["amp-allsec-noderived", "noamp-allsec-derived", "amp-allsec-derived", "amp-redsec-derived", "amp-redsec-noderived", "noamp-redsec-derived"]
-    assert list(plans) == [f"in-{base}-{aux}" for base in bases for aux in ("nodem", "aux")]
+    assert list(plans) == [f"in-{base}-{aux}" for base in bases for aux in ("noaux", "aux")]
 
-    amp_all = plans["in-amp-allsec-noderived-nodem"]
+    amp_all = plans["in-amp-allsec-noderived-noaux"]
     assert amp_all["input.use_primary"]        is True
     assert amp_all["input.use_secondaries"]    is True
     assert amp_all["input.use_derived"] is False
@@ -889,7 +889,7 @@ def test_normalization_planner_skips_noop_rung():
 
 def test_normalization_planner_rejects_all_noop_ladder():
     """Verifies a ladder whose steps are all no-ops is rejected."""
-    trials = NormalizationTrialsConfig(final_pass_mag="fixed_log1p", final_ifg_phase="fixed_angle_01", final_out_amp="fixed_bounds", final_out_mu="fixed_bounds", final_out_sigma="fixed_bounds", final_dem="zscore")
+    trials = NormalizationTrialsConfig(final_chan_mag="fixed_log1p", final_derived_phase="fixed_angle_01", final_out_amp="fixed_bounds", final_out_mu="fixed_bounds", final_out_sigma="fixed_bounds", final_aux="zscore")
 
     with pytest.raises(ValueError, match="nothing under test"):
         NormalizationTrialPlanner(trials, PRESET_NAMES)
@@ -901,148 +901,28 @@ def test_input_planner_rejects_empty_trials():
         InputTrialPlanner({}, CANDIDATES)
 
 
-def test_physics_planner_crosses_components_and_weights():
-    """Verifies the physics planner emits one curriculum-enabled run per component and weight."""
-    trials  = PhysicsTrialsConfig(components=["coherence_resyn", "capon_cycle"], weights=[0.01, 0.05], include_baseline=False)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    plans = planner.plan()
-    names = [name for name, _ in plans]
-
-    assert len(plans) == 4
-    assert names == [
-        "phys-coherence_resyn-w0.01",
-        "phys-coherence_resyn-w0.05",
-        "phys-capon_cycle-w0.01",
-        "phys-capon_cycle-w0.05",
-    ]
-    assert planner.summary()["Total runs"] == 4
-
-    overrides = dict(plans)["phys-capon_cycle-w0.05"]
-    assert overrides["curriculum.enabled"]                     is True
-    assert overrides["curriculum.complete.use_capon_cycle"]    is True
-    assert overrides["curriculum.complete.weight_capon_cycle"] == 0.05
 
 
-def test_physics_planner_neutralizes_untested_terms():
-    """Verifies the physics planner zeroes every warmup term and every untested complete term."""
-    trials  = PhysicsTrialsConfig(components=["coherence_resyn"], weights=[0.1], include_baseline=False)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    overrides = planner.plan()[0][1]
-
-    assert overrides["curriculum.inherit"] is False
-
-    for component in PhysicsLossTrialPlanner.COMPONENTS:
-        assert overrides[f"curriculum.warmup.use_{component}"]    is False
-        assert overrides[f"curriculum.warmup.weight_{component}"] == 0.0
-
-    for component in set(PhysicsLossTrialPlanner.COMPONENTS) - {"coherence_resyn"}:
-        assert overrides[f"curriculum.complete.use_{component}"]    is False
-        assert overrides[f"curriculum.complete.weight_{component}"] == 0.0
 
 
-def test_physics_planner_prepends_baseline_run():
-    """Verifies the physics planner prepends a run with no physics term active."""
-    trials  = PhysicsTrialsConfig(components=["total_power"], weights=[0.01], include_baseline=True)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    plans = planner.plan()
-
-    assert [name for name, _ in plans] == [
-        "phys-baseline",
-        "phys-total_power-w0.01",
-    ]
-    assert planner.summary()["Total runs"] == 2
-
-    baseline = dict(plans)["phys-baseline"]
-    assert baseline["curriculum.enabled"] is True
-    assert not any(key.startswith("curriculum.complete.use_") and value is True for key, value in baseline.items())
 
 
-def test_physics_planner_default_config_covers_recommended_terms():
-    """Verifies the default physics sweep covers the baseline plus the recommended physics terms."""
-    planner = PhysicsLossTrialPlanner(PhysicsTrialsConfig())
-
-    plans = planner.plan()
-
-    assert len(plans) == 7
-    assert "phys-baseline" in dict(plans)
-    assert f"phys-coherence_resyn-w{AblationCatalog.PHYSICS_WEIGHT:g}"  in dict(plans)
-    assert f"phys-moments-w{AblationCatalog.PHYSICS_WEIGHT:g}" in dict(plans)
 
 
-def test_physics_planner_rejects_empty_components():
-    """Verifies an empty physics component list is rejected."""
-    with pytest.raises(ValueError, match="at least one"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=[], weights=[0.1]))
 
 
-def test_physics_planner_rejects_unknown_component():
-    """Verifies a component outside the physics term set is rejected."""
-    with pytest.raises(ValueError, match="smoothness_tv"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["smoothness_tv"], weights=[0.1]))
 
 
-def test_physics_planner_rejects_duplicate_components():
-    """Verifies a repeated physics component is rejected."""
-    with pytest.raises(ValueError, match="unique"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments", "moments"], weights=[0.1]))
 
 
-def test_physics_planner_rejects_empty_weights():
-    """Verifies an empty physics weight list is rejected."""
-    with pytest.raises(ValueError, match="weight"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments"], weights=[]))
 
 
-def test_physics_planner_rejects_non_positive_weights():
-    """Verifies a zero or negative physics weight is rejected."""
-    with pytest.raises(ValueError, match="positive"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments"], weights=[0.1, 0.0]))
 
 
-def test_physics_planner_rejects_duplicate_weights():
-    """Verifies a repeated physics weight is rejected."""
-    with pytest.raises(ValueError, match="unique"):
-        PhysicsLossTrialPlanner(PhysicsTrialsConfig(components=["moments"], weights=[0.1, 0.1]))
 
 
-def test_physics_plan_round_trips_through_config_cli():
-    """Verifies physics overrides applied through ConfigCli produce the intended curriculum stages."""
-    trials  = PhysicsTrialsConfig(components=["coherence_resyn", "moments"], weights=[0.05], include_baseline=True)
-    planner = PhysicsLossTrialPlanner(trials)
-
-    def _apply(overrides: dict):
-        cli   = ConfigCli(BackboneEntryConfig())
-        trial = cli.apply(ConfigCli.to_argv(overrides) + ["--trial"])
-        CurriculumInheritance(trial.curriculum, default_curriculum(), cli.overrides).apply()
-        return trial
-
-    plans = dict(planner.plan())
-
-    baseline = _apply({**plans["phys-baseline"], "run_name": "phys-baseline", "logdir": "/tmp/phys"})
-    assert baseline.curriculum.enabled                       is True
-    assert baseline.curriculum.complete.use_coherence_resyn  is False
-    assert baseline.curriculum.complete.use_moments is False
-
-    tested = _apply({**plans["phys-coherence_resyn-w0.05"], "run_name": "phys-coherence_resyn-w0.05", "logdir": "/tmp/phys"})
-    assert tested.curriculum.enabled                         is True
-    assert tested.curriculum.complete.use_coherence_resyn    is True
-    assert tested.curriculum.complete.weight_coherence_resyn == 0.05
-    assert tested.curriculum.complete.use_moments   is False
-    assert tested.curriculum.warmup.use_coherence_resyn      is False
-    assert tested.curriculum.warmup.weight_coherence_resyn   == 0.0
 
 
-def test_physics_planner_paths_are_entry_config_leaves():
-    """Verifies every physics override path resolves to a leaf of the backbone entry config."""
-    planner = PhysicsLossTrialPlanner(PhysicsTrialsConfig())
-    leaves  = {path for path, _ in ConfigCli._leaves(BackboneEntryConfig())}
-
-    unknown = [path for _, overrides in planner.plan() for path in overrides if path not in leaves]
-
-    assert unknown == []
 
 
 def test_pair_planner_crosses_components_and_weights():
@@ -1232,7 +1112,7 @@ def test_log_energy_planner_sweeps_weights_with_baseline():
     for stage in ("warmup", "complete"):
         assert baseline[f"curriculum.{stage}.use_log_energy_curve"]    is False
         assert baseline[f"curriculum.{stage}.weight_log_energy_curve"] == 0.0
-    assert "curriculum.complete.use_covariance_match" not in baseline
+    assert "curriculum.complete.use_moments" not in baseline
 
 
 def test_log_energy_planner_replace_covariance_strips_it_from_every_arm():
@@ -1242,8 +1122,8 @@ def test_log_energy_planner_replace_covariance_strips_it_from_every_arm():
 
     for _name, overrides in planner.plan():
         for stage in ("warmup", "complete"):
-            assert overrides[f"curriculum.{stage}.use_covariance_match"]    is False
-            assert overrides[f"curriculum.{stage}.weight_covariance_match"] == 0.0
+            assert overrides[f"curriculum.{stage}.use_moments"]    is False
+            assert overrides[f"curriculum.{stage}.weight_moments"] == 0.0
 
 
 def test_log_energy_planner_rejects_bad_weights():
@@ -1277,14 +1157,12 @@ def test_log_energy_plan_round_trips_through_config_cli():
     assert baseline.curriculum.complete.use_log_energy_curve is False
     assert baseline.curriculum.complete.use_cosine_curve     is True
     assert baseline.curriculum.complete.weight_cosine_curve  == AblationCatalog.COSINE_WEIGHT
-    assert baseline.curriculum.complete.use_covariance_match is True
 
     tested = _apply({**plans["logE-w0.25"], "run_name": "logE-w0.25", "logdir": "/tmp/logE"})
     assert tested.curriculum.warmup.use_log_energy_curve      is True
     assert tested.curriculum.warmup.weight_log_energy_curve   == 0.25
     assert tested.curriculum.complete.use_log_energy_curve    is True
     assert tested.curriculum.complete.weight_log_energy_curve == 0.25
-    assert tested.curriculum.complete.use_covariance_match    is True
 
 
 def test_log_energy_planner_paths_are_entry_config_leaves():
@@ -1496,7 +1374,7 @@ def test_input_from_labels_uses_full_stack():
 
     assert len(plans) == 12
 
-    overrides = plans["in-amp-allsec-noderived-nodem"]
+    overrides = plans["in-amp-allsec-noderived-noaux"]
     assert overrides["input.use_derived"] is False
     assert len(overrides["paths.secondary_labels"]) == len(planner.candidates) >= 1
 

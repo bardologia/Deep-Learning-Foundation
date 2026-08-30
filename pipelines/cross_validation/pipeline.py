@@ -123,7 +123,7 @@ class CrossValidationPipeline(StagedPipeline):
                 "Training type"    : self.config.training_type,
                 "Model"            : FoldFamily.model_label(self.config),
                 "Folds"            : self.config.folds.n_folds,
-                "Azimuth extent"   : f"[{self.config.folds.azimuth_start}, {self.config.folds.azimuth_end})",
+                "Row extent"       : f"[{self.config.folds.row_start}, {self.config.folds.row_end})",
                 "Inference splits" : ", ".join(self.config.inference_splits),
                 "GPUs"             : self.config.gpus,
                 "Resume"           : self.config.resume,
@@ -142,9 +142,9 @@ class CrossValidationPipeline(StagedPipeline):
                 train_regions = plan.split_regions.regions("train")
                 rows.append({
                     "Fold"  : plan.fold_index,
-                    "Test"  : f"[{plan.split_regions.regions('test')[0].azimuth_start}, {plan.split_regions.regions('test')[0].azimuth_end})",
-                    "Val"   : f"[{plan.split_regions.regions('val')[0].azimuth_start}, {plan.split_regions.regions('val')[0].azimuth_end})",
-                    "Train" : ", ".join(f"[{r.azimuth_start}, {r.azimuth_end})" for r in train_regions),
+                    "Test"  : f"[{plan.split_regions.regions('test')[0].row_start}, {plan.split_regions.regions('test')[0].row_end})",
+                    "Val"   : f"[{plan.split_regions.regions('val')[0].row_start}, {plan.split_regions.regions('val')[0].row_end})",
+                    "Train" : ", ".join(f"[{r.row_start}, {r.row_end})" for r in train_regions),
                 })
             self.logger.metrics_table(rows, ["Fold", "Test", "Val", "Train"])
 

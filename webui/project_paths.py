@@ -149,8 +149,6 @@ class ProjectPaths:
         "tune"                            : "experiments",
         "tune_dataloader"                 : "experiments",
         "analyze_param_extraction"        : "analysis",
-        "analyze_normalization"           : "analysis",
-        "analyze_symbolic"                : "analysis",
         "compare_trials"                  : "analysis",
         "compare_param_extraction_trials" : "analysis",
         "compare_runs"                    : "analysis",

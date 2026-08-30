@@ -49,8 +49,6 @@ DEFER_HEAVY_IMPORTS = (
     "tune_dataloader",
     "extract_params",
     "analyze_param_extraction",
-    "analyze_normalization",
-    "analyze_symbolic",
     "export_tensorboard_plots",
     "collect_reports",
     "mail_experiment_reports",
@@ -62,8 +60,6 @@ CLI_MODULES = (
     "infer_image_autoencoder",
     "infer_dual",
     "analyze_param_extraction",
-    "analyze_normalization",
-    "analyze_symbolic",
     "generate_dataset",
     "extract_params",
     "tune",
@@ -84,9 +80,8 @@ ENTRY_CONFIGS = {
     "infer_image_autoencoder"         : ("configuration.inference",          "ImageAeInferenceEntryConfig"),
     "infer_dual"                      : ("configuration.inference",          "DualInferenceEntryConfig"),
     "extract_params"                  : ("configuration.param_extraction", "ExtractParamsEntryConfig"),
+    "generate_dataset"                : ("configuration.synthesis",       "GenerateDatasetEntryConfig"),
     "analyze_param_extraction"        : ("configuration.param_extraction",      "ParamExtractionInferenceConfig"),
-    "analyze_normalization"           : ("configuration.normalization.analysis", "NormalizationAnalysisConfig"),
-    "analyze_symbolic"                : ("configuration.symbolic_regression.analysis", "SymbolicRegressionConfig"),
     "tune"                            : ("configuration.tuning",                       "TuningEntryConfig"),
     "tune_dataloader"                 : ("configuration.benchmark.dataloader_tuning",  "DataLoaderTuningEntryConfig"),
     "benchmark"                       : ("configuration.benchmark",                    "BenchmarkConfig"),
@@ -236,7 +231,7 @@ def test_trials_entries_hand_their_script_to_their_launcher(name, module_path, c
     assert captured["entry_script"] == _script_path(name)
 
 
-@pytest.mark.parametrize("name", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder", "train_unrolled", "train_dual"))
+@pytest.mark.parametrize("name", ("train_backbone", "train_jepa", "train_profile_autoencoder", "train_image_autoencoder", "train_dual"))
 def test_train_main_defers_heavy_imports(name, tmp_path):
     """Importing a training entry loads no torch, pysr, pipelines or models module."""
     script = _script_path(name)
@@ -247,7 +242,7 @@ def test_train_main_defers_heavy_imports(name, tmp_path):
     assert result.stdout.strip() == "[]"
 
 
-@pytest.mark.parametrize("name", ("pre_process", "tune_dataloader", "extract_params"))
+@pytest.mark.parametrize("name", ("generate_dataset", "tune_dataloader", "extract_params"))
 def test_entry_pins_the_environment_before_the_numeric_stack_loads(name, tmp_path):
     """EnvironmentPinner runs before numpy, torch, scipy, jax, pipelines or models are imported."""
     script = _script_path(name)

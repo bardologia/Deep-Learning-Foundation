@@ -143,23 +143,6 @@ def test_patchdataset_no_nan_in_any_sample(derived, parameters):
         assert np.all(np.isfinite(y))
 
 
-@pytest.mark.dataset
-def test_patchdataset_attaches_aligned_kz_field(derived, parameters):
-    """Setting a kz field adds a third sample element patched on the same grid."""
-    ds, patcher = _backbone_dataset(derived, parameters, split_name="val")
-
-    n_tracks    = 5
-    kz          = np.random.default_rng(0).standard_normal((n_tracks, 24, 24)).astype(np.float32)
-    ds.kz_field = kz
-
-    sample = ds[0]
-
-    assert len(sample) == 3
-
-    x, y, kz_patch = sample
-
-    assert kz_patch.shape == (n_tracks, 8, 8)
-    np.testing.assert_array_equal(kz_patch, patcher.extract(kz, 0))
 
 
 @pytest.mark.dataset
