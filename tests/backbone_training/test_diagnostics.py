@@ -1,3 +1,9 @@
+"""Tests covering training diagnostics: parameter sampling, example selection, figures and slot vitals.
+
+Reconstruction figures are checked against a hand-built loader whose targets populate the
+single, overlapping, separated and distant Gaussian categories.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -9,22 +15,33 @@ from tests.backbone_training._helpers        import build_loss, valid_param_tens
 
 
 class FigureTracker:
+    """Tracker recording logged figures and histograms instead of writing them out.
+
+    Attributes:
+        figures    : Recorded (tag, figure, step) triples in logging order.
+        histograms : Recorded (tag, values, step) triples in logging order.
+    """
     def __init__(self):
+        """Initializes empty figure and histogram records."""
         self.figures    = []
         self.histograms = []
 
     def log_figure(self, tag, figure, step=None):
+        """Records a figure under its tag and step."""
         self.figures.append((tag, figure, step))
 
     def log_histogram(self, tag, values, step=None):
+        """Records a histogram value array under its tag and step."""
         self.histograms.append((tag, values, step))
 
 
 def _phys_params(batch=2, n_gaussians=2, hw=5, seed=0):
+    """Returns valid physical parameters of shape (batch, 3 * n_gaussians, hw, hw)."""
     return valid_param_tensor(batch, n_gaussians, hw, hw, seed=seed)
 
 
 def test_sampler_inactive_until_begin():
+    """The sampler only collects between begin and end."""
     sampler = ParamSampler(params_per_gaussian=3)
 
     assert sampler.active is False
@@ -37,6 +54,7 @@ def test_sampler_inactive_until_begin():
 
 
 def test_sampler_collects_active_values_per_param():
+    """Active slots contribute one amplitude, centre and width value per pixel."""
     sampler = ParamSampler(params_per_gaussian=3)
     sampler.begin(1e-3)
     sampler.observe(_phys_params())
@@ -49,6 +67,7 @@ def test_sampler_collects_active_values_per_param():
 
 
 def test_sampler_masks_inactive_slots():
+    """Slots with zeroed amplitude are excluded from the collected values."""
     sampler = ParamSampler(params_per_gaussian=3)
     params  = _phys_params()
 
@@ -63,6 +82,7 @@ def test_sampler_masks_inactive_slots():
 
 
 def test_sampler_empty_when_all_slots_inactive():
+    """All-inactive parameters yield no histograms."""
     sampler = ParamSampler(params_per_gaussian=3)
 
     sampler.begin(1e-3)
@@ -72,6 +92,7 @@ def test_sampler_empty_when_all_slots_inactive():
 
 
 def test_sampler_subsamples_to_batch_cap():
+    """A batch larger than the per-batch cap is subsampled to it."""
     sampler = ParamSampler(params_per_gaussian=3)
     sampler.begin(1e-3)
     sampler.observe(_phys_params(batch=4, n_gaussians=2, hw=32))
@@ -82,6 +103,7 @@ def test_sampler_subsamples_to_batch_cap():
 
 
 def test_sampler_stops_at_total_cap():
+    """Collection stops once the total value cap is reached."""
     sampler = ParamSampler(params_per_gaussian=3)
     sampler.begin(1e-3)
 
@@ -95,6 +117,7 @@ def test_sampler_stops_at_total_cap():
 
 
 def test_sampler_end_clears_store():
+    """Ending the sampling window clears the collected values."""
     sampler = ParamSampler(params_per_gaussian=3)
     sampler.begin(1e-3)
     sampler.observe(_phys_params())
@@ -104,6 +127,7 @@ def test_sampler_end_clears_store():
 
 
 def test_loss_feeds_active_sampler():
+    """The loss forwards denormalized parameters to the sampler only while it is active."""
     sampler = ParamSampler(params_per_gaussian=3)
     loss    = build_loss(n_gaussians=2, sampler=sampler)
     pred    = valid_param_tensor(2, 2, 5, 5, seed=1)
@@ -118,12 +142,20 @@ def test_loss_feeds_active_sampler():
 
 
 def _set_gaussian(tgt, sample, h, w, slot, amp, mu, sigma):
+    """Writes an (amplitude, centre in metres, width in metres) triple into slot of one target pixel."""
     tgt[sample, 3 * slot + 0, h, w] = amp
     tgt[sample, 3 * slot + 1, h, w] = mu
     tgt[sample, 3 * slot + 2, h, w] = sigma
 
 
 def _category_loader(hw=8):
+    """Builds a two-batch loader whose targets populate every example category.
+
+    Returns:
+        List of (images, targets) pairs with images of shape (2, 2, hw, hw) and
+        targets of shape (2, 6, hw, hw), holding single, overlapping, distant and
+        separated two-Gaussian pixels in that sample order.
+    """
     gen  = torch.Generator().manual_seed(0)
     imgs = torch.randn(4, 2, hw, hw, generator=gen)
     tgt  = torch.zeros(4, 6, hw, hw)
@@ -157,6 +189,7 @@ def _category_loader(hw=8):
 
 
 def _single_only_loader(hw=8):
+    """Returns a one-batch loader whose targets hold single-Gaussian pixels only."""
     gen  = torch.Generator().manual_seed(1)
     imgs = torch.randn(1, 2, hw, hw, generator=gen)
     tgt  = torch.zeros(1, 6, hw, hw)
@@ -169,6 +202,7 @@ def _single_only_loader(hw=8):
 
 
 def test_selector_finds_all_categories():
+    """The selector assigns the expected pixels to the single, overlapping, separated and distant categories."""
     criterion = build_loss(n_gaussians=2)
     selector  = ExampleSelector(params_per_gaussian=3, amp_zero_thr=1e-3)
     selected  = selector.select(_category_loader(), criterion.norm_stats.denormalize_output)
@@ -180,6 +214,7 @@ def test_selector_finds_all_categories():
 
 
 def test_figures_capture_reference_once():
+    """A second capture leaves the first reference images and pixels in place."""
     figs      = ReconstructionFigures(FigureTracker(), torch.device("cpu"))
     criterion = build_loss(n_gaussians=2)
 
@@ -194,6 +229,7 @@ def test_figures_capture_reference_once():
 
 
 def test_figures_log_noop_without_reference():
+    """Logging before any reference capture emits no figure."""
     tracker = FigureTracker()
     figs    = ReconstructionFigures(tracker, torch.device("cpu"))
 
@@ -203,6 +239,7 @@ def test_figures_log_noop_without_reference():
 
 
 def test_figures_log_emits_one_figure_per_example():
+    """One figure per selected example is logged, tagged by category and rank at the given epoch."""
     tracker   = FigureTracker()
     figs      = ReconstructionFigures(tracker, torch.device("cpu"))
     criterion = build_loss(n_gaussians=2)
@@ -219,6 +256,7 @@ def test_figures_log_emits_one_figure_per_example():
 
 
 def test_figures_ylim_fixed_across_epochs():
+    """The y-limits are fixed at capture time and survive a much larger prediction."""
     tracker   = FigureTracker()
     figs      = ReconstructionFigures(tracker, torch.device("cpu"))
     criterion = build_loss(n_gaussians=2)
@@ -238,6 +276,7 @@ def test_figures_ylim_fixed_across_epochs():
 
 
 def test_figures_partial_categories_keep_available_examples():
+    """Categories with no matching pixel are dropped while the populated ones still log."""
     tracker   = FigureTracker()
     figs      = ReconstructionFigures(tracker, torch.device("cpu"))
     criterion = build_loss(n_gaussians=2)
@@ -251,6 +290,7 @@ def test_figures_partial_categories_keep_available_examples():
 
 
 def test_figures_disable_when_no_category_matches():
+    """A reference with no matching category disables figure logging."""
     tracker   = FigureTracker()
     figs      = ReconstructionFigures(tracker, torch.device("cpu"))
     criterion = build_loss(n_gaussians=2)
@@ -266,10 +306,22 @@ def test_figures_disable_when_no_category_matches():
 
 
 def _vitals(n_k: int = 2) -> "SlotVitals":
+    """Returns slot vitals for three-parameter Gaussian slots."""
     return SlotVitals(params_per_gaussian=3)
 
 
 def _phys(amps: list[float], H: int = 2, W: int = 2) -> torch.Tensor:
+    """Builds a physical parameter tensor with one amplitude per slot.
+
+    Args:
+        amps : Amplitude of each Gaussian slot.
+        H    : Azimuth extent, in pixels.
+        W    : Range extent, in pixels.
+
+    Returns:
+        Tensor of shape (1, 3 * len(amps), H, W) with a centre of 10 metres and a
+        width of 3 metres on every slot.
+    """
     n_k  = len(amps)
     phys = torch.zeros(1, n_k * 3, H, W)
 
@@ -282,6 +334,7 @@ def _phys(amps: list[float], H: int = 2, W: int = 2) -> torch.Tensor:
 
 
 def test_slot_vitals_inactive_until_begin():
+    """Observations before begin produce no scalars."""
     vitals = _vitals()
     vitals.observe(_phys([1.0, 1.0]))
 
@@ -289,6 +342,7 @@ def test_slot_vitals_inactive_until_begin():
 
 
 def test_slot_vitals_active_fractions_and_amp_means():
+    """Active fractions and amplitude means are reported per slot."""
     vitals = _vitals()
     vitals.begin(1e-3)
     vitals.observe(_phys([2.0, 0.0]))
@@ -302,6 +356,7 @@ def test_slot_vitals_active_fractions_and_amp_means():
 
 
 def test_slot_vitals_entropy_is_low_when_one_slot_dominates():
+    """Usage entropy is one for balanced slots and zero when a single slot carries every activation."""
     balanced = _vitals()
     balanced.begin(1e-3)
     balanced.observe(_phys([1.0, 1.0]))
@@ -315,6 +370,7 @@ def test_slot_vitals_entropy_is_low_when_one_slot_dominates():
 
 
 def test_slot_vitals_accumulates_gradient_norms_per_slot():
+    """Gradient norms accumulate across observations per slot and reset once read."""
     vitals = _vitals()
 
     grad          = torch.zeros(1, 6, 2, 2)
@@ -330,7 +386,21 @@ def test_slot_vitals_accumulates_gradient_norms_per_slot():
     assert vitals.gradient_scalars() == {}
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="the device check needs a CUDA tensor")
+def test_slot_vitals_accumulates_gradient_norms_on_the_grad_device():
+    """Gradient accumulation stays on the device of the incoming gradient."""
+    vitals = _vitals()
+
+    grad = torch.ones(1, 6, 2, 2, device="cuda")
+
+    vitals.observe_gradient(grad)
+
+    assert vitals._grad_sum.device.type == "cuda"
+    assert vitals.gradient_scalars()["slot_vitals/grad_norm/slot_0"] == pytest.approx(12.0 ** 0.5)
+
+
 def test_slot_vitals_end_resets_validation_state():
+    """Ending the validation window clears the collected slot scalars."""
     vitals = _vitals()
     vitals.begin(1e-3)
     vitals.observe(_phys([1.0, 1.0]))

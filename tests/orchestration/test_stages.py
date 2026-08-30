@@ -1,3 +1,5 @@
+"""Tests covering the queued training and inference stages: item ordering, resume semantics against completion markers, purging of unfinished output, and derived run paths."""
+
 from __future__ import annotations
 
 import json
@@ -14,10 +16,12 @@ from tests.conftest import SilentLogger
 
 @pytest.fixture
 def logger():
+    """Returns a logger that discards every message."""
     return SilentLogger()
 
 
 def _config(tmp_path: Path, resume: bool = False) -> SimpleNamespace:
+    """Builds a stage config with two devices, a run log base under tmp_path, and the given resume flag."""
     return SimpleNamespace(
         gpus            = [0, 1],
         gpus_file       = "",
@@ -30,16 +34,19 @@ def _config(tmp_path: Path, resume: bool = False) -> SimpleNamespace:
 
 
 def _mark_complete(directory: Path) -> None:
+    """Stamps a completion marker on a directory, creating it if needed."""
     directory.mkdir(parents=True, exist_ok=True)
     CompletionMarker.stamp(directory, {"stage": "test"})
 
 
 def _mark_inference_complete(directory: Path, split: str) -> None:
+    """Stamps an inference completion marker recording the split it covers."""
     directory.mkdir(parents=True, exist_ok=True)
     CompletionMarker.stamp(directory, {"stage": "inference", "split": split})
 
 
 def _ran_result(name: str, gpu: int = 0, status: str = "DONE", returncode: int = 0) -> dict:
+    """Returns a queue result dict for a job of the given name, status, and return code."""
     return {
         "name"       : name,
         "gpu"        : gpu,
@@ -51,7 +58,14 @@ def _ran_result(name: str, gpu: int = 0, status: str = "DONE", returncode: int =
 
 
 def _patch_queue(stage, recorder: list):
+    """Replaces the stage's queue runner with one that records dispatched job names and reports success.
+
+    Args:
+        stage    : Stage whose queue call is replaced.
+        recorder : List appended with the job-name list of every dispatch.
+    """
     def fake_run_queue(jobs):
+        """Records the dispatched job names and reports every job as done."""
         recorder.append([job.name for job in jobs])
         return [_ran_result(job.name) for job in jobs]
 
@@ -59,6 +73,7 @@ def _patch_queue(stage, recorder: list):
 
 
 def test_training_runs_all_items_in_declared_order(tmp_path, logger):
+    """Verifies training dispatches every item in declaration order."""
     items = ["m_c", "m_a", "m_b"]
     stage = QueuedTrainingStage(config=_config(tmp_path), entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
 
@@ -72,10 +87,12 @@ def test_training_runs_all_items_in_declared_order(tmp_path, logger):
 
 
 def test_training_results_ordered_by_items_not_completion(tmp_path, logger):
+    """Verifies results are re-ordered to match the item list, not completion order."""
     items = ["x", "y", "z"]
     stage = QueuedTrainingStage(config=_config(tmp_path), entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
 
     def shuffled_run_queue(jobs):
+        """Returns results in an order that does not match the item list."""
         return [_ran_result("z"), _ran_result("x"), _ran_result("y")]
 
     stage._run_queue = shuffled_run_queue
@@ -85,6 +102,7 @@ def test_training_results_ordered_by_items_not_completion(tmp_path, logger):
 
 
 def test_training_writes_results_json(tmp_path, logger):
+    """Verifies the stage persists its results to the results JSON in item order."""
     items = ["a", "b"]
     stage = QueuedTrainingStage(config=_config(tmp_path), entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
     _patch_queue(stage, [])
@@ -96,6 +114,7 @@ def test_training_writes_results_json(tmp_path, logger):
 
 
 def test_training_skips_completed_items_on_resume(tmp_path, logger):
+    """Verifies resume dispatches only unfinished items and reports the cached ones without a duration."""
     items  = ["done_model", "todo_model"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -117,6 +136,7 @@ def test_training_skips_completed_items_on_resume(tmp_path, logger):
 
 
 def test_training_checkpoint_without_marker_is_not_finished(tmp_path, logger):
+    """Verifies a checkpoint without a completion marker does not count as finished."""
     items  = ["m"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -133,6 +153,7 @@ def test_training_checkpoint_without_marker_is_not_finished(tmp_path, logger):
 
 
 def test_training_purges_unfinished_run_dir_on_resume(tmp_path, logger):
+    """Verifies an unfinished run directory is deleted before the item is re-dispatched."""
     items  = ["m"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -152,6 +173,7 @@ def test_training_purges_unfinished_run_dir_on_resume(tmp_path, logger):
 
 
 def test_training_no_resume_ignores_completion_marker_and_keeps_dir(tmp_path, logger):
+    """Verifies resume off re-runs a completed item and leaves its directory in place."""
     items  = ["m"]
     config = _config(tmp_path, resume=False)
     stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -168,6 +190,7 @@ def test_training_no_resume_ignores_completion_marker_and_keeps_dir(tmp_path, lo
 
 
 def test_training_job_command_carries_run_metadata(tmp_path, logger):
+    """Verifies the training job command carries the worker mode, model name, and run tag."""
     stage = QueuedTrainingStage(config=_config(tmp_path), entry_script=Path("entry.py"), run_tag="rt", items=["mod"], logger=logger)
     job   = stage._job("mod")
 
@@ -181,6 +204,7 @@ def test_training_job_command_carries_run_metadata(tmp_path, logger):
 
 
 def test_inference_skips_items_without_completed_training(tmp_path, logger):
+    """Verifies inference skips items whose training never completed."""
     items = ["trained", "interrupted"]
     stage = QueuedInferenceStage(config=_config(tmp_path), entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
 
@@ -204,6 +228,7 @@ def test_inference_skips_items_without_completed_training(tmp_path, logger):
 
 
 def test_inference_reuses_existing_inference_on_resume(tmp_path, logger):
+    """Verifies resume reuses an inference output already stamped for the requested split."""
     items  = ["model"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedInferenceStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -222,6 +247,7 @@ def test_inference_reuses_existing_inference_on_resume(tmp_path, logger):
 
 
 def test_inference_for_another_split_is_not_reused(tmp_path, logger):
+    """Verifies an inference stamped for a different split is re-run."""
     items  = ["model"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedInferenceStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -238,6 +264,7 @@ def test_inference_for_another_split_is_not_reused(tmp_path, logger):
 
 
 def test_inference_unfinished_output_is_not_reused_and_gets_purged(tmp_path, logger):
+    """Verifies an unmarked inference directory is purged and the item re-dispatched."""
     items  = ["model"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedInferenceStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -258,6 +285,7 @@ def test_inference_unfinished_output_is_not_reused_and_gets_purged(tmp_path, log
 
 
 def test_inference_no_resume_reruns_despite_existing_inference(tmp_path, logger):
+    """Verifies resume off re-runs inference while leaving the prior output directory."""
     items  = ["model"]
     config = _config(tmp_path, resume=False)
     stage  = QueuedInferenceStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -274,6 +302,7 @@ def test_inference_no_resume_reruns_despite_existing_inference(tmp_path, logger)
 
 
 def test_inference_mixed_skip_cached_pending(tmp_path, logger):
+    """Verifies pending, cached, and untrained items are dispatched, reused, and skipped respectively."""
     items  = ["pending", "cached", "skipped"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedInferenceStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -298,6 +327,7 @@ def test_inference_mixed_skip_cached_pending(tmp_path, logger):
 
 
 def test_no_pending_items_does_not_invoke_queue(tmp_path, logger):
+    """Verifies the queue is never invoked when every item is already complete."""
     items  = ["only"]
     config = _config(tmp_path, resume=True)
     stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
@@ -312,6 +342,7 @@ def test_no_pending_items_does_not_invoke_queue(tmp_path, logger):
 
 
 def test_run_dir_derived_from_config_and_run_tag(tmp_path, logger):
+    """Verifies the run directory and results path follow the config log base and the run tag."""
     config = _config(tmp_path)
     stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="myrun", items=["a"], logger=logger)
 

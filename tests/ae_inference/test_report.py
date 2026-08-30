@@ -1,3 +1,9 @@
+"""Tests for the markdown inference reports of the image and profile autoencoder families.
+
+Covers the shared report base, the per-family title and metric sections, and that the
+figures section appears only when figures were produced.
+"""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -10,10 +16,12 @@ from pipelines.profile_autoencoder.inference.report import ProfileAeReport
 
 
 def _region():
+    """Returns a split region stub reporting a (start, end) tuple."""
     return SimpleNamespace(as_tuple=lambda: (0, 64))
 
 
 def _metrics():
+    """Returns a minimal metric mapping with reconstruction errors and the mean embedding norm."""
     return {
         "mse_mean"            : 0.5,
         "mae_mean"            : 0.25,
@@ -22,6 +30,7 @@ def _metrics():
 
 
 def _image_run():
+    """Returns an image autoencoder run stub with the architecture, split and checkpoint fields the report reads."""
     return SimpleNamespace(
         ae_name                     = "conv_ae",
         embedding_dim               = 32,
@@ -35,6 +44,7 @@ def _image_run():
 
 
 def _profile_run():
+    """Returns a profile autoencoder run stub, its elevation axis spanning 40 bins."""
     return SimpleNamespace(
         ae_name                     = "mlp_ae",
         embedding_dim               = 16,
@@ -47,11 +57,13 @@ def _profile_run():
 
 
 def test_image_and_profile_reports_share_base():
+    """Both autoencoder reports derive from InferenceReportBase."""
     assert issubclass(ImageAeReport, InferenceReportBase)
     assert issubclass(ProfileAeReport, InferenceReportBase)
 
 
 def test_image_report_assembles_with_title_and_metrics(tmp_path):
+    """The image report writes its title and metric table, and omits the figures section when there are none."""
     report = ImageAeReport(tmp_path, _image_run(), config=None, metrics=_metrics(), figures={}, report_path=tmp_path / "report.md")
 
     out  = report.assemble()
@@ -64,6 +76,7 @@ def test_image_report_assembles_with_title_and_metrics(tmp_path):
 
 
 def test_profile_report_assembles_with_title_and_metrics(tmp_path):
+    """The profile report writes its title, the profile length derived from the elevation axis, and the metric table."""
     report = ProfileAeReport(tmp_path, _profile_run(), config=None, metrics=_metrics(), figures={}, report_path=tmp_path / "report.md")
 
     out  = report.assemble()
@@ -76,6 +89,7 @@ def test_profile_report_assembles_with_title_and_metrics(tmp_path):
 
 
 def test_report_writes_figure_section_when_present(tmp_path):
+    """A supplied figure adds the figures section with its captioned entry."""
     figures = {"error_histogram": [tmp_path / "error_histogram.png"]}
     report  = ImageAeReport(tmp_path, _image_run(), config=None, metrics=_metrics(), figures=figures, report_path=tmp_path / "report.md")
 

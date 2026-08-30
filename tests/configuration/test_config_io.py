@@ -1,3 +1,10 @@
+"""Tests for persisting and reloading model configurations.
+
+Covers the backbone, profile-autoencoder and image-autoencoder config IO helpers:
+the round trip of every registered config, the head recovered alongside it, and
+the failure modes when the stored file is missing.
+"""
+
 from __future__ import annotations
 
 import dataclasses
@@ -22,6 +29,7 @@ IMAGE_CASES    = [pytest.param(name, id=name) for name in IMAGE_AE_CONFIG_REGIST
 
 @pytest.mark.parametrize("name", BACKBONE_CASES)
 def test_backbone_config_io_round_trips(tmp_path, name):
+    """Verifies a saved backbone config reloads with its type, registry name and non-excluded fields intact."""
     config = BACKBONE_CONFIG_REGISTRY[name]()
     BackboneModelConfigIO.save(config, name, tmp_path)
 
@@ -39,6 +47,7 @@ def test_backbone_config_io_round_trips(tmp_path, name):
 
 @pytest.mark.parametrize("head", ["multihead", "per_gaussian", "set_pred"])
 def test_backbone_config_io_round_trips_the_head_into_a_loadable_model(tmp_path, head):
+    """Verifies the persisted head rebuilds a model whose state dict accepts the trained weights."""
     from models.backbone import get_backbone
 
     trained, config = get_backbone("unet", head=head, features=[8, 16], bottleneck_factor=1)
@@ -53,6 +62,7 @@ def test_backbone_config_io_round_trips_the_head_into_a_loadable_model(tmp_path,
 
 @pytest.mark.parametrize("name", PROFILE_CASES)
 def test_profile_ae_config_io_round_trips(tmp_path, name):
+    """Verifies a saved profile-autoencoder config reloads identically."""
     config = PROFILE_AE_CONFIG_REGISTRY[name]()
     ProfileAutoencoderConfigIO.save(config, name, tmp_path)
 
@@ -64,6 +74,7 @@ def test_profile_ae_config_io_round_trips(tmp_path, name):
 
 @pytest.mark.parametrize("name", IMAGE_CASES)
 def test_image_ae_config_io_round_trips(tmp_path, name):
+    """Verifies a saved image-autoencoder config reloads identically."""
     config = IMAGE_AE_CONFIG_REGISTRY[name]()
     ImageAutoencoderConfigIO.save(config, name, tmp_path)
 
@@ -74,15 +85,18 @@ def test_image_ae_config_io_round_trips(tmp_path, name):
 
 
 def test_config_io_exists_false_when_missing(tmp_path):
+    """Verifies existence is False for a directory holding no stored config."""
     assert BackboneModelConfigIO.exists(tmp_path) is False
 
 
 def test_config_io_load_missing_raises(tmp_path):
+    """Verifies loading from a directory without a stored config raises."""
     with pytest.raises(FileNotFoundError):
         BackboneModelConfigIO.load(tmp_path)
 
 
 def test_backbone_config_io_normalizes_name(tmp_path):
+    """Verifies a differently cased model name resolves to the right config class while the raw name is preserved."""
     config = BACKBONE_CONFIG_REGISTRY["resunet"]()
     BackboneModelConfigIO.save(config, "ResUNet", tmp_path)
 
@@ -92,6 +106,7 @@ def test_backbone_config_io_normalizes_name(tmp_path):
 
 
 def test_backbone_config_io_excludes_shape_logger_types(tmp_path):
+    """Verifies the shape-logger types are excluded from the persisted payload."""
     config = BACKBONE_CONFIG_REGISTRY["unet"]()
     BackboneModelConfigIO.save(config, "unet", tmp_path)
 

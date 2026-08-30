@@ -1,3 +1,5 @@
+"""Tests for the profile autoencoder log1p normalizer and its fitted statistics."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,6 +16,7 @@ from tools.monitoring.logger import Logger
 
 
 def test_roundtrip_numpy():
+    """Normalizing then denormalizing a numpy profile recovers the original curve."""
     norm  = ProfileNormalizer(ProfileStats(loc=0.3, scale=0.7))
     curve = np.abs(np.random.default_rng(0).standard_normal(150)).astype(np.float32) * 5.0
 
@@ -23,6 +26,7 @@ def test_roundtrip_numpy():
 
 
 def test_roundtrip_torch():
+    """Normalizing then denormalizing a torch profile recovers the original curve."""
     norm  = ProfileNormalizer(ProfileStats(loc=0.1, scale=1.3))
     curve = torch.abs(torch.randn(150)) * 4.0
 
@@ -32,6 +36,7 @@ def test_roundtrip_torch():
 
 
 def test_normalized_output_matches_log1p_formula():
+    """Profile normalization equals (log1p(x) - loc) / scale."""
     norm  = ProfileNormalizer(ProfileStats(loc=0.2, scale=0.5))
     curve = np.abs(np.random.default_rng(1).standard_normal(64)).astype(np.float32)
 
@@ -42,6 +47,7 @@ def test_normalized_output_matches_log1p_formula():
 
 
 def test_scale_floor_applied_for_zero_scale():
+    """A zero fitted scale is raised to the scale floor, keeping the inverse finite."""
     norm = ProfileNormalizer(ProfileStats(loc=0.0, scale=0.0))
 
     assert norm.scale == ProfileNormalizer.SCALE_FLOOR
@@ -49,6 +55,7 @@ def test_scale_floor_applied_for_zero_scale():
 
 
 def test_normalize_dtype_is_float32_numpy():
+    """Normalizing a float64 profile returns float32."""
     norm = ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0))
     out  = norm.normalize(np.ones(10, dtype=np.float64))
 
@@ -58,6 +65,7 @@ def test_normalize_dtype_is_float32_numpy():
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_fit_real_profiles_finite_and_roundtrip(parameters, tmp_path):
+    """Statistics fitted on real profiles are finite, respect the scale floor, and round-trip."""
     params = [np.ascontiguousarray(np.asarray(parameters[:, :40, :40]))]
     z_axis = np.linspace(0.0, 1.0, 150, dtype=np.float32)
     logger = Logger(log_dir=str(tmp_path / "logs"), name="prof_norm", level="ERROR")

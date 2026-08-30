@@ -1,3 +1,9 @@
+"""Tests covering patch windows, cube stitching and the inference predictor loop.
+
+The predictor cases build a tiny UNet run over a synthetic patch grid and check the
+stitched curve and parameter cubes, the CPU render worker and the result-window budget.
+"""
+
 from __future__ import annotations
 
 import types
@@ -25,12 +31,27 @@ PATCH       = 16
 
 
 class _IdentityNormalizer:
+    """Normalizer stub that leaves denormalized outputs untouched."""
     @staticmethod
     def denormalize_output(t):
+        """Returns the tensor unchanged."""
         return t
 
 
 def _build_run(n_rows: int, n_cols: int, in_channels: int = 4):
+    """Builds a synthetic inference run over a single-batch patch grid.
+
+    Args:
+        n_rows        : Row size of the crop region, in pixels.
+        n_cols        : Range size of the crop region, in pixels.
+        in_channels : Number of input channels fed to the backbone.
+
+    Returns:
+        Namespace holding the wrapped model, the patch grid, a one-batch loader of
+        images of shape (n_patches, in_channels, PATCH, PATCH) paired with
+        ground-truth parameter maps of shape (n_patches, OUT_CH, PATCH, PATCH), and
+        the crop region the patches cover.
+    """
     region = CropRegion(row_start=0, row_end=n_rows, col_start=0, col_end=n_cols)
     patch  = Patcher.build(spatial_size=(n_rows, n_cols), patch_size=(PATCH, PATCH), stride=(PATCH, PATCH), use_symmetric_padding=True)
     grid   = patch.grid
@@ -71,6 +92,7 @@ def _build_run(n_rows: int, n_cols: int, in_channels: int = 4):
 
 
 def _make_predictor(tmp_path, run) -> Predictor:
+    """Returns a predictor writing into a fresh inference metadata tree under tmp_path."""
     cfg  = InferenceConfig(run_directory=tmp_path, output_subdir="pred", device="cpu")
     meta = InferenceMetadata(cfg)
     meta.create_dirs()
@@ -87,23 +109,27 @@ def _make_predictor(tmp_path, run) -> Predictor:
 
 
 def test_make_patch_window_uniform():
+    """Uniform windows are all-ones over the patch shape."""
     w = CubeStitcher.make_patch_window((4, 4), kind="uniform")
     assert w.shape == (4, 4)
     assert np.allclose(w, 1.0)
 
 
 def test_make_patch_window_hann_is_positive_and_bell():
+    """Hann windows stay strictly positive and peak at the patch centre."""
     w = CubeStitcher.make_patch_window((8, 8), kind="hann")
     assert np.all(w >= 1e-3)
     assert w[4, 4] > w[0, 0]
 
 
 def test_make_patch_window_unknown_raises():
+    """An unknown window kind is rejected."""
     with pytest.raises(ValueError, match="Unknown window"):
         CubeStitcher.make_patch_window((4, 4), kind="bogus")
 
 
 def test_cube_stitcher_single_patch_reconstructs():
+    """A single uniform-weighted patch stitches back to the original cube."""
     patch = Patcher.build(spatial_size=(8, 8), patch_size=(8, 8), stride=(8, 8), use_symmetric_padding=False)
     grid  = patch.grid
 
@@ -118,6 +144,7 @@ def test_cube_stitcher_single_patch_reconstructs():
 
 
 def test_select_stitcher_takes_nearest_patch_centre():
+    """Overlapping patches are resolved by the nearest patch centre."""
     patcher = Patcher.build(spatial_size=(8, 12), patch_size=(8, 8), stride=(4, 4), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -133,6 +160,7 @@ def test_select_stitcher_takes_nearest_patch_centre():
 
 
 def test_select_stitcher_single_patch_is_exact():
+    """Nearest-centre selection is exact for a lone covering patch."""
     patcher = Patcher.build(spatial_size=(8, 8), patch_size=(8, 8), stride=(8, 8), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -146,6 +174,7 @@ def test_select_stitcher_single_patch_is_exact():
 
 
 def test_cube_stitcher_rectangular_patches_reconstruct():
+    """Hann-weighted overlapping rectangular patches reconstruct the source cube."""
     patcher = Patcher.build(spatial_size=(8, 24), patch_size=(8, 12), stride=(8, 6), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -162,6 +191,7 @@ def test_cube_stitcher_rectangular_patches_reconstruct():
 
 
 def test_select_stitcher_rectangular_patches_reconstruct():
+    """Nearest-centre selection reconstructs the source cube from rectangular patches."""
     patcher = Patcher.build(spatial_size=(12, 8), patch_size=(6, 8), stride=(3, 8), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -178,6 +208,7 @@ def test_select_stitcher_rectangular_patches_reconstruct():
 
 
 def test_select_stitcher_raises_on_uncovered_pixels():
+    """Finalizing a cube with pixels no patch covered raises."""
     patcher = Patcher.build(spatial_size=(8, 12), patch_size=(8, 8), stride=(4, 4), use_symmetric_padding=False)
     grid    = patcher.grid
 
@@ -189,6 +220,7 @@ def test_select_stitcher_raises_on_uncovered_pixels():
 
 
 def test_cpu_worker_render_floor_drops_weak_components():
+    """Components below the amplitude floor vanish from the rendered curves while staying in the parameter cube."""
     z_axis = np.linspace(0.0, 40.0, 32).astype(np.float32)
 
     pred       = np.zeros((1, 6, 4, 4), dtype=np.float32)
@@ -212,7 +244,29 @@ def test_cpu_worker_render_floor_drops_weak_components():
     assert masked[2][0, 3, 0, 0] == pytest.approx(5e-4)
 
 
+def test_result_window_is_bounded_by_the_byte_budget(tmp_path):
+    """The result window follows the byte budget, clamped to at least one task and at most the patch count."""
+    run       = _build_run(n_az=16, n_rg=16)
+    predictor = _make_predictor(tmp_path, run)
+    predictor.cpu_workers = 8
+
+    params = [np.zeros((4, OUT_CH, PATCH, PATCH), dtype=np.float32)]
+
+    channels       = 2 * N_ELEV + 2 * (3 * N_GAUSSIANS)
+    bytes_per_task = 4 * channels * PATCH * PATCH * 4
+
+    predictor.RESULT_BUDGET_BYTES = 3 * bytes_per_task
+    assert predictor._result_window(params) == 3
+
+    predictor.RESULT_BUDGET_BYTES = bytes_per_task // 4
+    assert predictor._result_window(params) == 1
+
+    predictor.RESULT_BUDGET_BYTES = 1000 * bytes_per_task
+    assert predictor._result_window(params) == 16
+
+
 def test_predictor_run_inference_shapes(tmp_path):
+    """Inference returns finite cubes shaped to the crop region and the z axis."""
     run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
 
@@ -228,6 +282,7 @@ def test_predictor_run_inference_shapes(tmp_path):
 
 
 def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
+    """Ground-truth curves render the analytic Gaussian of the ground-truth parameters."""
     run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
 
@@ -241,8 +296,9 @@ def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
 
 
 def test_predictor_offsets_from_region(tmp_path):
-    region           = CropRegion(row_start=100, row_end=116, col_start=50, col_end=66)
-    run              = _build_run(n_rows=16, n_cols=16)
+    """Result offsets are taken from the split-region start indices."""
+    region = CropRegion(row_start=100, row_end=116, col_start=50, col_end=66)
+    run    = _build_run(n_rows=16, n_cols=16)
     run.split_region = region
 
     predictor = _make_predictor(tmp_path, run)

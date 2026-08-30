@@ -1,3 +1,9 @@
+"""Tests for the JEPA coupling modes and target providers.
+
+Covers CouplingMode rejecting unknown kinds, freezing versus finetuning an encoder, the optimizer
+parameter groups each mode contributes, and TargetProvider producing differentiable or detached
+targets without mutating the online encoder."""
+
 from __future__ import annotations
 
 import copy
@@ -10,15 +16,18 @@ from pipelines.jepa.training.coupling import CouplingMode, TargetProvider
 
 
 def make_encoder():
+    """Returns a one-layer convolutional encoder used as a coupling target."""
     return nn.Sequential(nn.Conv2d(2, 2, kernel_size=1))
 
 
 def test_coupling_mode_rejects_unknown_kind():
+    """An unrecognised coupling kind raises ValueError."""
     with pytest.raises(ValueError):
         CouplingMode("scratch", "profile autoencoder")
 
 
 def test_coupling_mode_frozen_disables_grad_and_eval():
+    """Frozen coupling clears requires_grad on every parameter and puts the encoder in eval mode."""
     mode    = CouplingMode("frozen", "profile autoencoder")
     encoder = make_encoder()
     mode.apply(encoder)
@@ -29,6 +38,7 @@ def test_coupling_mode_frozen_disables_grad_and_eval():
 
 
 def test_coupling_mode_finetune_enables_grad():
+    """Finetune coupling leaves every parameter trainable."""
     mode    = CouplingMode("finetune", "profile autoencoder")
     encoder = make_encoder()
     mode.apply(encoder)
@@ -38,6 +48,7 @@ def test_coupling_mode_finetune_enables_grad():
 
 
 def test_coupling_mode_param_groups_empty_when_frozen():
+    """A frozen encoder contributes no optimizer parameter groups."""
     mode    = CouplingMode("frozen", "profile autoencoder")
     encoder = make_encoder()
     mode.apply(encoder)
@@ -46,6 +57,7 @@ def test_coupling_mode_param_groups_empty_when_frozen():
 
 
 def test_coupling_mode_param_groups_carry_lr_and_wd_when_finetune():
+    """A finetuned encoder contributes one named group carrying the given learning rate and weight decay."""
     mode    = CouplingMode("finetune", "profile autoencoder")
     encoder = make_encoder()
     mode.apply(encoder)
@@ -60,6 +72,7 @@ def test_coupling_mode_param_groups_carry_lr_and_wd_when_finetune():
 
 
 def test_target_provider_live_is_differentiable():
+    """The live provider returns a target that still carries gradient."""
     encoder  = make_encoder()
     provider = TargetProvider("live")
     curve    = torch.randn(1, 2, 3, 3, requires_grad=True)
@@ -70,6 +83,7 @@ def test_target_provider_live_is_differentiable():
 
 
 def test_target_provider_stopgrad_detaches_target():
+    """The stopgrad provider returns a target detached from the graph."""
     encoder  = make_encoder()
     provider = TargetProvider("stopgrad")
     curve    = torch.randn(1, 2, 3, 3, requires_grad=True)
@@ -80,6 +94,7 @@ def test_target_provider_stopgrad_detaches_target():
 
 
 def test_target_provider_rejects_unknown_kind():
+    """Unrecognised provider kinds raise ValueError."""
     with pytest.raises(ValueError):
         TargetProvider("ema")
 
@@ -88,6 +103,7 @@ def test_target_provider_rejects_unknown_kind():
 
 
 def test_target_provider_does_not_mutate_online_encoder():
+    """Computing a target leaves every encoder weight unchanged."""
     encoder  = make_encoder()
     provider = TargetProvider("stopgrad")
     snapshot = copy.deepcopy(encoder.state_dict())

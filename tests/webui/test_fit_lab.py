@@ -1,3 +1,9 @@
+"""Tests for the Fit Lab dataset browser, tomogram loading and Gaussian fitting.
+
+Covers dataset discovery, asynchronous cube loading, PNG preview maps, fit request
+validation and the JAX-backed multi-Gaussian fit across its parameter-freezing modes.
+"""
+
 from __future__ import annotations
 
 import importlib.util
@@ -35,6 +41,14 @@ BASE_CONFIG = {
 
 
 def _make_dataset(root: Path) -> Path:
+    """Writes a synthetic dataset whose tomogram holds one Gaussian per pixel.
+
+    Args:
+        root : Directory the dataset folder is created inside.
+
+    Returns:
+        Path of the dataset directory holding data/ and meta/ subfolders.
+    """
     dataset = root / "ds"
     (dataset / "data").mkdir(parents=True)
     (dataset / "meta").mkdir()
@@ -53,6 +67,7 @@ def _make_dataset(root: Path) -> Path:
 
 
 def _load(lab: FitLab, dataset: Path) -> None:
+    """Starts a dataset load and blocks until the lab reports the ready state."""
     assert lab.start_load(str(dataset))["ok"]
     deadline = time.time() + 30
     while lab.load_status()["state"] == "loading" and time.time() < deadline:
@@ -62,6 +77,7 @@ def _load(lab: FitLab, dataset: Path) -> None:
 
 
 def _fit(lab: FitLab, body: dict) -> dict:
+    """Starts a fit, waits for completion and returns the fit result payload."""
     assert lab.start_fit(body)["ok"]
     deadline = time.time() + 120
     while lab.fit_status()["state"] == "fitting" and time.time() < deadline:
@@ -72,6 +88,7 @@ def _fit(lab: FitLab, body: dict) -> dict:
 
 
 def test_datasets_listing(tmp_path):
+    """Dataset listing finds children of a parent path, accepts a dataset path directly and rejects blank or missing paths."""
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 
@@ -87,6 +104,7 @@ def test_datasets_listing(tmp_path):
 
 
 def test_load_meta_and_maps(tmp_path):
+    """A loaded dataset reports cube dimensions and height range, and renders SLC and peak PNG maps sized (az, rg)."""
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 
@@ -104,6 +122,7 @@ def test_load_meta_and_maps(tmp_path):
 
 
 def test_load_error_on_missing_cube(tmp_path):
+    """Loading a directory without cube_full.npy ends in the error state naming the missing file."""
     lab = FitLab(WebLogger())
     assert lab.start_load(str(tmp_path))["ok"]
 
@@ -117,6 +136,7 @@ def test_load_error_on_missing_cube(tmp_path):
 
 
 def test_fit_request_validation(tmp_path):
+    """Fit requests are rejected when no dataset is loaded, pixels are empty, out of bounds or too many, or the config misses keys or names an unknown mode or oversized k_max."""
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 
@@ -138,6 +158,7 @@ def test_fit_request_validation(tmp_path):
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_fit_recovers_synthetic_gaussian(tmp_path):
+    """The fit returns one row per k with full-length curves, a penalised score of mse plus lambda_k times k, and recovers the injected Gaussian mean."""
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 
@@ -167,6 +188,7 @@ def test_fit_recovers_synthetic_gaussian(tmp_path):
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_fit_modes_share_kernel(tmp_path):
+    """Freeing amplitude and mean alongside sigma never yields a worse MSE than the sigma-only mode."""
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 
@@ -184,6 +206,7 @@ def test_fit_modes_share_kernel(tmp_path):
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_fit_composition_freezes_sigma(tmp_path):
+    """The amp_mu mode leaves every fitted sigma at the initialiser value derived from the height spacing."""
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 

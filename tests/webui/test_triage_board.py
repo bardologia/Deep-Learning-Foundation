@@ -1,3 +1,4 @@
+"""Tests covering the triage board: worst-block ranking, thumbnails, profiles and annotations."""
 from __future__ import annotations
 
 import json
@@ -6,19 +7,25 @@ from types   import SimpleNamespace
 
 import numpy as np
 
-from triage_board import TriageBoard, TriageStore
-from web_logger   import WebLogger
+from catalog_roots import CatalogRoots
+from triage_board   import TriageBoard, TriageStore
+from web_logger     import WebLogger
 
 
 N_ROWS, N_COLS = 48, 32
 
 
-def _board(tmp_path: Path) -> TriageBoard:
+def _board(tmp_path: Path, opened: Path | None = None) -> TriageBoard:
+    """Builds a triage board whose catalog roots point at the given directory."""
     paths = SimpleNamespace(logs_dir=tmp_path / "logs")
-    return TriageBoard(paths, WebLogger())
+    roots = CatalogRoots()
+
+    roots.open(str(opened if opened is not None else tmp_path))
+    return TriageBoard(paths, roots, WebLogger())
 
 
 def _stamp(tmp_path: Path, with_modes: bool = True, with_aux: bool = True) -> Path:
+    """Writes an inference stamp with a per-pixel error cube and optional mode and auxiliary layers."""
     stamp = tmp_path / "run" / "inference" / "stamp"
     cubes = stamp / "cubes"
     cubes.mkdir(parents=True)
@@ -40,6 +47,7 @@ def _stamp(tmp_path: Path, with_modes: bool = True, with_aux: bool = True) -> Pa
 
 
 def test_cases_rank_the_worst_block_first(tmp_path):
+    """The block with the largest mean error ranks first and carries its mode, failure fraction and auxiliary value."""
     stamp = _stamp(tmp_path)
     out   = _board(tmp_path).cases(str(stamp), top_n=10)
 
@@ -57,6 +65,7 @@ def test_cases_rank_the_worst_block_first(tmp_path):
 
 
 def test_cases_without_optional_layers_still_work(tmp_path):
+    """Ranking still works when the failure-mode and auxiliary cubes are absent."""
     stamp = _stamp(tmp_path, with_modes=False, with_aux=False)
     out   = _board(tmp_path).cases(str(stamp), top_n=5)
 
@@ -67,6 +76,7 @@ def test_cases_without_optional_layers_still_work(tmp_path):
 
 
 def test_cases_require_the_error_cube(tmp_path):
+    """A stamp without the per-pixel error cube is reported as an error."""
     stamp = tmp_path / "run" / "inference" / "empty"
     (stamp / "cubes").mkdir(parents=True)
 
@@ -76,7 +86,25 @@ def test_cases_require_the_error_cube(tmp_path):
     assert "pixel_mse" in out["error"]
 
 
+def test_every_read_refuses_a_stamp_outside_the_opened_roots(tmp_path):
+    """Cases, thumbnails and profiles all refuse a stamp outside the opened catalog roots."""
+    inside  = _stamp(tmp_path / "opened")
+    outside = _stamp(tmp_path / "elsewhere")
+    _curves(outside)
+
+    board = _board(tmp_path, opened=tmp_path / "opened")
+    cases = board.cases(str(outside))
+
+    assert cases["ok"] is False
+    assert "outside every catalogued runs root" in cases["error"]
+    assert board.thumb(str(outside), az0=0, rg0=0) is None
+    assert board.profile(str(outside), az=0, rg=0)["ok"] is False
+
+    assert board.cases(str(inside))["ok"] is True
+
+
 def test_annotations_persist_and_clear(tmp_path):
+    """An annotation survives a reload and an empty verdict clears it."""
     stamp = _stamp(tmp_path)
     board = _board(tmp_path)
 
@@ -94,6 +122,7 @@ def test_annotations_persist_and_clear(tmp_path):
 
 
 def test_unknown_verdict_is_rejected(tmp_path):
+    """An unrecognised verdict is refused by the store."""
     store = TriageStore(tmp_path / "logs" / "triage")
 
     out = store.annotate("cube", "0_0", "who knows", "")
@@ -102,6 +131,7 @@ def test_unknown_verdict_is_rejected(tmp_path):
 
 
 def _curves(stamp: Path, n_z: int = 6) -> None:
+    """Writes predicted and ground-truth curve cubes plus the z axis metadata."""
     cubes = stamp / "cubes"
     rng   = np.random.default_rng(0)
 
@@ -112,6 +142,7 @@ def _curves(stamp: Path, n_z: int = 6) -> None:
 
 
 def test_thumb_renders_a_png_crop(tmp_path):
+    """A block thumbnail is returned as PNG bytes."""
     stamp = _stamp(tmp_path)
     png   = _board(tmp_path).thumb(str(stamp), row0=0, col0=0)
 
@@ -120,6 +151,7 @@ def test_thumb_renders_a_png_crop(tmp_path):
 
 
 def test_thumb_refuses_bad_blocks(tmp_path):
+    """Out-of-bounds blocks and unknown stamps yield no thumbnail."""
     stamp = _stamp(tmp_path)
     board = _board(tmp_path)
 
@@ -128,6 +160,7 @@ def test_thumb_refuses_bad_blocks(tmp_path):
 
 
 def test_profile_returns_gt_and_prediction(tmp_path):
+    """A pixel profile returns the elevation axis with matching ground truth and prediction."""
     stamp = _stamp(tmp_path)
     _curves(stamp)
 
@@ -142,6 +175,7 @@ def test_profile_returns_gt_and_prediction(tmp_path):
 
 
 def test_profile_outside_region_fails(tmp_path):
+    """A pixel outside the inferred region is refused."""
     stamp = _stamp(tmp_path)
     _curves(stamp)
 
@@ -152,6 +186,7 @@ def test_profile_outside_region_fails(tmp_path):
 
 
 def test_profile_without_curves_fails_cleanly(tmp_path):
+    """A stamp without curve cubes fails instead of raising."""
     stamp = _stamp(tmp_path)
 
     out = _board(tmp_path).profile(str(stamp), row=0, col=0)

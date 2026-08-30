@@ -1,3 +1,9 @@
+"""Tests the per-epoch reduction of loss components by MetricAggregator.
+
+Covers averaging over batches, independent reduction of the monitor, occupancy,
+and physical channels, per-key batch counts for sparse keys, empty reductions,
+and tensor accumulation without eager conversion."""
+
 from __future__ import annotations
 
 import pytest
@@ -7,10 +13,22 @@ from tools.training.aggregation import MetricAggregator
 
 
 def _loss_dict(components, monitor, occupancy=None, physical=None):
+    """Builds the loss dictionary an aggregator consumes for one batch.
+
+    Args:
+        components : Loss component values keyed by name.
+        monitor    : Monitor-only values keyed by name.
+        occupancy  : Slot occupancy statistics keyed by name.
+        physical   : Physical-unit metrics keyed by name.
+
+    Returns:
+        The batch loss dictionary.
+    """
     return {"components": components, "monitor": monitor, "occupancy": occupancy or {}, "physical": physical or {}}
 
 
 def test_single_add_reduces_to_same_values():
+    """Verifies a single batch reduces to its own values."""
     agg = MetricAggregator()
     agg.add(_loss_dict({"a": 2.0}, {"m": 6.0}))
 
@@ -19,6 +37,7 @@ def test_single_add_reduces_to_same_values():
 
 
 def test_mean_over_multiple_batches():
+    """Verifies components and monitor values are averaged over the added batches."""
     agg = MetricAggregator()
     agg.add(_loss_dict({"a": 1.0}, {"m": 100.0}))
     agg.add(_loss_dict({"a": 3.0}, {"m": 200.0}))
@@ -29,6 +48,7 @@ def test_mean_over_multiple_batches():
 
 
 def test_occupancy_channel_reduces_independently():
+    """Verifies occupancy statistics are averaged in their own channel."""
     agg = MetricAggregator()
     agg.add(_loss_dict({}, {}, {"count/exact_frac": 0.4}))
     agg.add(_loss_dict({}, {}, {"count/exact_frac": 0.6}))
@@ -37,6 +57,7 @@ def test_occupancy_channel_reduces_independently():
 
 
 def test_disjoint_keys_average_over_their_own_batches():
+    """Verifies each key averages over the batches that carried it."""
     agg = MetricAggregator()
     agg.add(_loss_dict({"a": 2.0}, {}))
     agg.add(_loss_dict({"b": 4.0}, {}))
@@ -47,6 +68,7 @@ def test_disjoint_keys_average_over_their_own_batches():
 
 
 def test_sparse_occupancy_key_not_diluted_by_absent_batches():
+    """Verifies a key present in only some batches is not diluted by the others."""
     agg = MetricAggregator()
     agg.add(_loss_dict({}, {}, {"count/exact_frac": 0.5, "count/acc_gt3": 1.0}))
     agg.add(_loss_dict({}, {}, {"count/exact_frac": 0.5}))
@@ -58,11 +80,13 @@ def test_sparse_occupancy_key_not_diluted_by_absent_batches():
 
 
 def test_reduce_on_empty_returns_empty():
+    """Verifies reducing an aggregator with no batches returns an empty mapping."""
     agg = MetricAggregator()
     assert agg.reduce_components() == {}
 
 
 def test_int_values_coerced_to_float():
+    """Verifies integer inputs are accumulated as floats."""
     agg = MetricAggregator()
     agg.add(_loss_dict({"a": 2}, {"m": 8}))
 
@@ -71,6 +95,7 @@ def test_int_values_coerced_to_float():
 
 
 def test_tensor_values_accumulate_without_immediate_conversion():
+    """Verifies tensor values stay tensors, are detached, and still average correctly."""
     agg = MetricAggregator()
     agg.add(_loss_dict({"a": torch.tensor(2.0, requires_grad=True)}, {}))
     agg.add(_loss_dict({"a": torch.tensor(4.0)}, {}))
@@ -81,6 +106,7 @@ def test_tensor_values_accumulate_without_immediate_conversion():
 
 
 def test_physical_channel_reduces_independently():
+    """Verifies physical metrics are averaged in their own channel."""
     agg = MetricAggregator()
     agg.add(_loss_dict({}, {}, physical={"mu_mae": torch.tensor(2.0)}))
     agg.add(_loss_dict({}, {}, physical={"mu_mae": torch.tensor(4.0)}))

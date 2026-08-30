@@ -1,3 +1,9 @@
+"""Tests covering inference report payloads, metric taxonomy routing and markdown assembly.
+
+Metrics are produced from synthetic two-Gaussian curves so the assembled report can be
+checked section by section, including the optional extraction, JEPA and figure blocks.
+"""
+
 from __future__ import annotations
 
 import types
@@ -16,6 +22,16 @@ H           = W       = 6
 
 
 def _curves_from_params(params, z_axis, n_gaussians):
+    """Renders Gaussian mixture curves from a parameter cube.
+
+    Args:
+        params      : Parameter cube of shape (3 * n_gaussians, z, width) holding amplitude, centre in metres and width in metres per slot.
+        z_axis      : Z axis of shape (n_z,), in metres.
+        n_gaussians : Number of Gaussian slots to sum.
+
+    Returns:
+        Curve cube of shape (n_z, z, width).
+    """
     curve = np.zeros((z_axis.size, params.shape[1], params.shape[2]), dtype=np.float32)
     for k in range(n_gaussians):
         a   = np.maximum(params[3 * k], 0.0)[None]
@@ -27,6 +43,12 @@ def _curves_from_params(params, z_axis, n_gaussians):
 
 
 def _global_metrics():
+    """Computes a full metric dictionary from noisy predictions of synthetic curves.
+
+    Returns:
+        Mapping of metric name to value, covering curve, pixel, slot and parameter
+        families over a 6x6 patch with 12 elevation bins.
+    """
     rng    = np.random.default_rng(0)
     z_axis = np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
     params = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
@@ -55,7 +77,7 @@ def _global_metrics():
         params_gt          = params.copy(),
     )
 
-    m = Metrics(res, z_axis, N_GAUSSIANS)
+    m = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2)
     return m.compute(
         z_indices   = np.arange(N_Z),
         col_indices = np.arange(W),
@@ -65,6 +87,7 @@ def _global_metrics():
 
 
 def _run_stub():
+    """Returns a run stub carrying backbone name, channel counts, split region, grid and dataset config."""
     region = CropRegion(row_start=0, row_end=H, col_start=0, col_end=W)
     grid   = types.SimpleNamespace(number_of_patches=4, patch_size=(6, 6), stride=(6, 6))
     ds_cfg = types.SimpleNamespace(
@@ -88,6 +111,7 @@ def _run_stub():
 
 
 def _cfg_stub():
+    """Returns an inference config stub with plotting, slicing and device settings."""
     return types.SimpleNamespace(
         stitch_window=True, cube_dtype="float32", save_cubes=False, save_plots=True,
         save_animations=False, n_best_profiles=4, n_worst_profiles=4, n_random_profiles=4,
@@ -97,6 +121,7 @@ def _cfg_stub():
 
 
 def test_report_payload_run_summary_structure():
+    """The run-summary payload carries model name, slot count, elevation axis bounds and secondary labels."""
     run     = _run_stub()
     z_axis  = np.linspace(-20.0, 80.0, N_Z)
     payload = ReportPayloadBuilder.run_summary(run, z_axis)
@@ -110,6 +135,7 @@ def test_report_payload_run_summary_structure():
 
 
 def test_report_payload_inference_config_structure():
+    """The inference-config payload merges device, dataset batch size and figure settings."""
     payload = ReportPayloadBuilder.inference_config(_cfg_stub(), _run_stub())
 
     assert payload["device"]      == "cpu"
@@ -119,6 +145,7 @@ def test_report_payload_inference_config_structure():
 
 
 def test_report_assemble_writes_markdown(tmp_path):
+    """Assembling writes a markdown report with the run summary, headline and full-metric sections."""
     gm = _global_metrics()
 
     report = Report(
@@ -145,6 +172,7 @@ def test_report_assemble_writes_markdown(tmp_path):
 
 
 def test_report_includes_slot_occupancy_section(tmp_path):
+    """Slot-occupancy metrics produce their headline block and full-metric section."""
     gm = _global_metrics()
 
     report = Report(
@@ -168,6 +196,7 @@ def test_report_includes_slot_occupancy_section(tmp_path):
 
 
 def test_report_includes_param_population_section(tmp_path):
+    """Per-slot parameter statistics produce their headline block and full-metric section."""
     gm = _global_metrics()
 
     report = Report(
@@ -190,11 +219,49 @@ def test_report_includes_param_population_section(tmp_path):
     assert "3.9b Per-slot parameter statistics by activity" in "\n".join(lines)
 
 
+def _report_for(tmp_path, metrics):
+    """Builds a Report over the given metric dictionary with no figures attached.
+
+    Args:
+        tmp_path : Directory receiving the report.
+        metrics  : Global metric dictionary the report is assembled from.
+
+    Returns:
+        A Report ready to assemble or to query section by section.
+    """
+    return Report(
+        output_dir       = tmp_path,
+        run_summary      = ReportPayloadBuilder.run_summary(_run_stub(), np.linspace(-20.0, 80.0, N_ELEV)),
+        inference_config = ReportPayloadBuilder.inference_config(_cfg_stub(), _run_stub()),
+        checkpoint_meta  = {"epoch": 0, "best_epoch": 0, "best_val_loss": 1.0},
+        global_metrics   = metrics,
+        figure_paths     = {},
+        gif_paths        = {},
+        report_path      = tmp_path / "report.md",
+    )
+
+
+def test_report_includes_legacy_ssim_section_only_when_the_sweep_ran(tmp_path):
+    """The legacy paper SSIM subsection appears exactly when its metric key is present."""
+    gm = _global_metrics()
+
+    assert _report_for(tmp_path, gm)._build_legacy_ssim_headline() == []
+
+    with_legacy = dict(gm, legacy_ssim_status="computed", ssim_legacy_paper_mean=0.4321)
+    text        = "\n".join(_report_for(tmp_path, with_legacy)._build_legacy_ssim_headline())
+
+    assert "Legacy paper SSIM" in text
+    assert "raw full-stack Capon tomogram" in text
+    assert "0.4321" in text
+
+
 def _metric_group(key: str) -> str:
+    """Returns the taxonomy section title that claims the given metric key."""
     return next(title for title, match in Report._METRIC_TAXONOMY if match(key))
 
 
 def test_report_metric_taxonomy_routes_keys():
+    """Each metric family is routed to its taxonomy section."""
     assert _metric_group("gt_mean")                   == "3.1 Dataset statistics"
     assert _metric_group("curve_mse_gt")              == "3.2 Curve-level (GT)"
     assert _metric_group("pixel_mse_gt_mean")         == "3.3 Per-pixel (GT)"
@@ -214,6 +281,7 @@ def test_report_metric_taxonomy_routes_keys():
 
 
 def test_report_metric_sections_render_in_display_order():
+    """Taxonomy titles sort into the documented display order."""
     titles = sorted((title for title, _match in Report._METRIC_TAXONOMY), key=Report._section_order)
 
     assert titles[0]  == "3.1 Dataset statistics"
@@ -222,13 +290,25 @@ def test_report_metric_sections_render_in_display_order():
 
 
 def test_report_is_per_slice_ssim_classifier():
+    """Per-slice SSIM and z keys are separated from their summary counterparts."""
     assert Report._is_per_slice_ssim("ssim_gt_z_3")    is True
     assert Report._is_per_slice_ssim("z_mae_gt_7")     is True
     assert Report._is_per_slice_ssim("ssim_gt_z_mean") is False
     assert Report._is_per_slice_ssim("curve_mse_gt")      is False
 
 
+def test_report_is_reduced_key():
+    """Reduced-baseline and orientation keys are recognised, ground-truth curve keys are not."""
+    assert Report._is_reduced_key("curve_mse_red")  is True
+    assert Report._is_reduced_key("ssim_red_elev_3") is True
+    assert Report._is_reduced_key("pixel_mse_predn") is True
+    assert Report._is_reduced_key("reduced_orientation_corr_aligned") is True
+    assert Report._is_reduced_key("reduced_orientation_corr_flipped") is True
+    assert Report._is_reduced_key("curve_mse_gt")    is False
+
+
 def test_report_figure_sections_absent_without_figures(tmp_path):
+    """Figure sections are omitted when no figure paths are supplied."""
     report = Report(
         output_dir       = tmp_path,
         run_summary      = ReportPayloadBuilder.run_summary(_run_stub(), np.linspace(-20.0, 80.0, N_Z)),
@@ -249,6 +329,7 @@ def test_report_figure_sections_absent_without_figures(tmp_path):
 
 
 def test_report_full_metrics_excludes_per_slice(tmp_path):
+    """Per-slice SSIM entries are excluded from the full-metric tables."""
     gm = _global_metrics()
 
     report = Report(
@@ -267,3 +348,129 @@ def test_report_full_metrics_excludes_per_slice(tmp_path):
 
     assert "ssim_gt_z_0`" not in joined
     assert "3.1 Dataset statistics" in joined
+
+
+def _extraction_metrics():
+    """Returns global metrics extended with curve-extraction fit and measurement-floor values."""
+    gm = _global_metrics()
+
+    gm["params_source"]                  = "extracted"
+    gm["extract_fit_r2_mean"]            = 0.98
+    gm["extract_fit_r2_median"]          = 0.99
+    gm["extract_fit_r2_p5"]              = 0.91
+    gm["extract_floor_matched_mu_mae"]   = 0.12
+    gm["extract_floor_matched_sig_mae"]  = 0.08
+    gm["extract_floor_matched_amp_mae"]  = 0.03
+    gm["extract_floor_matched_recall"]   = 0.97
+
+    return gm
+
+
+def _jepa_metrics():
+    """Returns global metrics extended with the JEPA embedding, decode and chain diagnostics."""
+    gm = _global_metrics()
+
+    gm.update({
+        "jepa_embedding_mse"          : 0.02,
+        "jepa_embedding_rmse"         : 0.1414,
+        "jepa_embedding_nmse"         : 0.05,
+        "jepa_embedding_cosine"       : 0.97,
+        "jepa_embedding_dim_rmse_min" : 0.05,
+        "jepa_embedding_dim_rmse_max" : 0.30,
+        "jepa_embedding_dim_rmse_std" : 0.07,
+        "jepa_decode_mse_norm"        : 0.010,
+        "jepa_chain_mse_norm"         : 0.025,
+        "jepa_predictor_excess_mse"   : 0.015,
+        "jepa_decoder_floor_frac"     : 0.4,
+        "jepa_decode_amplification"   : 0.75,
+        "jepa_embedding_err_p95"      : 0.06,
+        "jepa_embedding_cosine_p5"    : 0.90,
+        "jepa_embedding_error_corr"   : 0.42,
+    })
+
+    return gm
+
+
+def _report_with(gm, tmp_path, figure_paths=None):
+    """Returns a report bound to the given metrics, figure paths and output directory."""
+    return Report(
+        output_dir       = tmp_path,
+        run_summary      = ReportPayloadBuilder.run_summary(_run_stub(), np.linspace(-20.0, 80.0, N_ELEV)),
+        inference_config = ReportPayloadBuilder.inference_config(_cfg_stub(), _run_stub()),
+        checkpoint_meta  = {"epoch": 3, "best_epoch": 2, "best_val_loss": 0.1},
+        global_metrics   = gm,
+        figure_paths     = figure_paths or {},
+        gif_paths        = {},
+        report_path      = tmp_path / "report.md",
+    )
+
+
+def test_report_includes_the_extraction_floor_section(tmp_path):
+    """Extraction metrics add the curve-parameter extraction and measurement-floor section."""
+    text = _report_with(_extraction_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
+
+    assert "Curve-parameter extraction and its measurement floor" in text
+    assert "measurement floor" in text
+    assert "Floor μ MAE" in text
+
+
+def test_cross_references_follow_the_extraction_section(tmp_path):
+    """Inserting the extraction section shifts the slot-occupancy anchor and the cross-references that point at it."""
+    plain = _report_with(_global_metrics(), tmp_path)
+    plain.assemble()
+
+    shifted = _report_with(_extraction_metrics(), tmp_path)
+    text    = shifted.assemble().read_text(encoding="utf-8")
+
+    assert plain._anchors["slot_occupancy"]   == "2.4"
+    assert shifted._anchors["extraction"]     == "2.4"
+    assert shifted._anchors["slot_occupancy"] == "2.5"
+
+    assert "§2.5 gives the corresponding emission fractions" in text
+    assert "§2.4 gives the corresponding emission fractions" not in text
+
+
+def test_report_omits_the_extraction_section_for_parameter_models(tmp_path):
+    """Runs without extraction metrics omit the extraction section."""
+    text = _report_with(_global_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
+
+    assert "Curve-parameter extraction" not in text
+
+
+def test_report_renders_the_deepened_jepa_headline(tmp_path):
+    """JEPA metrics render the predictor-excess, decoder-floor, amplification and error-correlation rows."""
+    text = _report_with(_jepa_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
+
+    assert "Predictor excess MSE"   in text
+    assert "Decoder floor fraction" in text
+    assert "Decode amplification"   in text
+    assert "Embedding-error corr"   in text
+
+
+def test_report_renders_the_roughness_section(tmp_path):
+    """The curve-smoothness section and its roughness ratio are always rendered."""
+    text = _report_with(_global_metrics(), tmp_path).assemble().read_text(encoding="utf-8")
+
+    assert "Curve smoothness" in text
+    assert "Roughness ratio"  in text
+
+
+def test_report_lists_the_embedding_figure_section(tmp_path):
+    """Embedding figure paths add the embedding-space diagnostics figure section."""
+    figures = {"embedding_error_map": [tmp_path / "err.png"], "embedding_chain_map": [tmp_path / "chain.png"]}
+
+    for path in (tmp_path / "err.png", tmp_path / "chain.png"):
+        path.write_bytes(b"")
+
+    text = _report_with(_jepa_metrics(), tmp_path, figures).assemble().read_text(encoding="utf-8")
+
+    assert "6c. Embedding-space diagnostics" in text
+    assert "6c.1 Per-pixel embedding error"  in text
+
+
+def test_report_taxonomy_routes_the_new_metric_families():
+    """Extraction and roughness keys route to their own taxonomy sections."""
+    assert _metric_group("extract_fit_r2_mean")          == "3.12b Curve-parameter extraction"
+    assert _metric_group("extract_floor_matched_mu_mae") == "3.12b Curve-parameter extraction"
+    assert _metric_group("params_source")                == "3.12b Curve-parameter extraction"
+    assert _metric_group("roughness_ratio")              == "3.12c Curve roughness"

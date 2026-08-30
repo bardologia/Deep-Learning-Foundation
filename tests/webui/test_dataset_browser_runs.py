@@ -1,3 +1,12 @@
+"""Tests for run discovery in the webui dataset browser.
+
+Covers recursive discovery of run directories at any depth, the relative names
+and checkpoint/inference flags reported for each, the pruning at run boundaries
+and skipping of hidden directories, the aggregate rows offered for multi-seed
+trials, the grouping listing that counts runs per parent directory, and the
+experiment listing that keeps only children holding a comparison directory.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,6 +16,13 @@ from web_logger      import WebLogger
 
 
 def _make_run(directory: Path, checkpoint: bool = False, inference: bool = False) -> None:
+    """Writes a minimal run directory.
+
+    Args:
+        directory  : Run directory to create, always given a meta model config.
+        checkpoint : Whether a best_model.pt placeholder is written.
+        inference  : Whether an inference subdirectory is created.
+    """
     (directory / "meta").mkdir(parents=True)
     (directory / "meta" / "model_config.json").write_text("{}")
     if checkpoint:
@@ -16,6 +32,7 @@ def _make_run(directory: Path, checkpoint: bool = False, inference: bool = False
 
 
 def test_runs_are_discovered_at_any_depth(tmp_path):
+    """Checks runs nested at different depths are all found and empty groups are ignored."""
     runs = tmp_path / "runs"
     _make_run(runs / "run_top", checkpoint=True)
     _make_run(runs / "group_a" / "run_a1")
@@ -30,6 +47,7 @@ def test_runs_are_discovered_at_any_depth(tmp_path):
 
 
 def test_run_names_are_relative_to_base_and_expose_flags(tmp_path):
+    """Checks run names are relative to the opened base and carry accurate checkpoint, inference and path fields."""
     runs = tmp_path / "runs"
     _make_run(runs / "group_a" / "run_a1")
     _make_run(runs / "group_a" / "deep" / "run_a2", checkpoint=True, inference=True)
@@ -44,6 +62,7 @@ def test_run_names_are_relative_to_base_and_expose_flags(tmp_path):
 
 
 def test_walk_prunes_at_run_boundary_and_skips_hidden(tmp_path):
+    """Checks the walk does not descend into meta or inference and ignores dot-prefixed directories."""
     runs = tmp_path / "runs"
     _make_run(runs / "run_top", inference=True)
     hidden = runs / ".hidden_run"
@@ -58,6 +77,7 @@ def test_walk_prunes_at_run_boundary_and_skips_hidden(tmp_path):
 
 
 def test_seed_units_are_offered_with_aggregate_flags(tmp_path):
+    """Checks multi-seed trials gain an aggregate row whose flags hold only when every seed qualifies."""
     runs = tmp_path / "runs"
     _make_run(runs / "group_a" / "trial_x" / "seed0", checkpoint=True, inference=True)
     _make_run(runs / "group_a" / "trial_x" / "seed1", checkpoint=True, inference=True)
@@ -76,6 +96,7 @@ def test_seed_units_are_offered_with_aggregate_flags(tmp_path):
 
 
 def test_seed_units_report_their_own_inference(tmp_path):
+    """Checks a trial with its own inference directory is distinguished from one that only has per-seed inference."""
     runs = tmp_path / "runs"
     _make_run(runs / "trial_x" / "seed0", inference=True)
     _make_run(runs / "trial_y" / "seed0", inference=True)
@@ -88,6 +109,7 @@ def test_seed_units_report_their_own_inference(tmp_path):
 
 
 def test_seed_unit_rows_precede_their_seed_runs(tmp_path):
+    """Checks the aggregate row is listed before the individual seed runs."""
     runs = tmp_path / "runs"
     _make_run(runs / "trial_x" / "seed0")
     _make_run(runs / "trial_x" / "seed1")
@@ -98,6 +120,7 @@ def test_seed_unit_rows_precede_their_seed_runs(tmp_path):
 
 
 def test_seed_units_absent_by_default_and_for_base_level_seeds(tmp_path):
+    """Checks aggregate rows appear only when requested and never for a seed sitting directly at the base."""
     runs = tmp_path / "runs"
     _make_run(runs / "trial_x" / "seed0")
     _make_run(runs / "seed0")
@@ -109,7 +132,26 @@ def test_seed_units_absent_by_default_and_for_base_level_seeds(tmp_path):
     assert unit_names    == ["seed0", "trial_x", "trial_x/seed0"]
 
 
+def test_params_listing_flags_runs_without_resolution_curves(tmp_path):
+    """Checks each parameter file reports whether its run directory holds the resolution curve archive."""
+    analysed = tmp_path / "params" / "run_analysed"
+    fresh    = tmp_path / "params" / "run_fresh"
+    analysed.mkdir(parents=True)
+    fresh.mkdir(parents=True)
+
+    (analysed / "parameters.npy").write_text("x")
+    (analysed / "resolution_curves.npz").write_text("x")
+    (fresh / "parameters.npy").write_text("x")
+
+    result = DatasetBrowser(WebLogger()).params(str(tmp_path))
+    flags  = {entry["name"]: entry["analysed"] for entry in result["files"]}
+
+    assert result["ok"] is True
+    assert flags == {"run_analysed/parameters.npy": True, "run_fresh/parameters.npy": False}
+
+
 def test_run_groups_lists_parent_dirs_of_runs_with_counts(tmp_path):
+    """Checks the group listing names each run parent with its run count and path, skipping top-level runs."""
     runs = tmp_path / "runs"
     _make_run(runs / "group_a" / "seed0")
     _make_run(runs / "group_a" / "seed1")
@@ -124,3 +166,32 @@ def test_run_groups_lists_parent_dirs_of_runs_with_counts(tmp_path):
     assert entries["group_a"]["n_runs"] == 2
     assert entries["group_b"]["n_runs"] == 1
     assert Path(entries["group_a"]["path"]) == runs / "group_a"
+
+
+def test_experiments_lists_direct_children_holding_the_comparison_dir(tmp_path):
+    """Checks the experiment listing keeps only direct children with a comparison directory and counts its stamps."""
+    experiments = tmp_path / "experiments"
+    (experiments / "exp_a" / "_comparison" / "stamp_1").mkdir(parents=True)
+    (experiments / "exp_a" / "_comparison" / "stamp_2").mkdir(parents=True)
+    (experiments / "exp_b" / "_comparison").mkdir(parents=True)
+    (experiments / "no_comparison" / "trial").mkdir(parents=True)
+    (experiments / "nested" / "exp_c" / "_comparison").mkdir(parents=True)
+    (experiments / ".hidden" / "_comparison").mkdir(parents=True)
+
+    result  = DatasetBrowser(WebLogger()).experiments(str(experiments), "_comparison")
+    entries = {entry["name"]: entry for entry in result["experiments"]}
+
+    assert result["ok"] is True
+    assert sorted(entries) == ["exp_a", "exp_b"]
+    assert entries["exp_a"]["n_comparisons"] == 2
+    assert entries["exp_b"]["n_comparisons"] == 0
+    assert Path(entries["exp_a"]["path"]) == experiments / "exp_a"
+
+
+def test_experiments_rejects_a_missing_root_or_blank_marker(tmp_path):
+    """Checks the experiment listing reports an error for a missing root and for an empty comparison dirname."""
+    experiments = tmp_path / "experiments"
+    (experiments / "exp_a" / "_comparison").mkdir(parents=True)
+
+    assert DatasetBrowser(WebLogger()).experiments(str(tmp_path / "missing"), "_comparison")["ok"] is False
+    assert DatasetBrowser(WebLogger()).experiments(str(experiments), " ")["ok"] is False

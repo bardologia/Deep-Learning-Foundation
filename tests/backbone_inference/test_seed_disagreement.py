@@ -1,3 +1,5 @@
+"""Tests covering per-pixel seed disagreement maps and their integration into the seed comparison."""
+
 from __future__ import annotations
 
 import json
@@ -18,6 +20,14 @@ N_Z, N_ROWS, N_COLS = 4, 3, 2
 
 
 def _params(*slots: tuple) -> np.ndarray:
+    """Builds a constant parameter cube from per-slot triples.
+
+    Args:
+        *slots : One (amplitude, centre in metres, width in metres) triple per slot.
+
+    Returns:
+        Parameter cube of shape (3 * n_slots, N_ROWS, N_COLS).
+    """
     cube = np.zeros((len(slots) * 3, N_ROWS, N_COLS), dtype=np.float32)
 
     for k, (amp, mu, sigma) in enumerate(slots):
@@ -29,6 +39,19 @@ def _params(*slots: tuple) -> np.ndarray:
 
 
 def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.ndarray, params_gt: np.ndarray | None = None, stamp: str = "stamp") -> Path:
+    """Writes a seed run directory with prediction cubes, metrics and a report.
+
+    Args:
+        group       : Directory holding the seed runs.
+        name        : Name of the seed run directory.
+        pred_curves : Predicted curve cube of shape (N_ELEV, N_AZ, N_RG).
+        params_pred : Predicted parameter cube of shape (3 * n_slots, N_AZ, N_RG).
+        params_gt   : Ground-truth parameter cube, defaulting to params_pred.
+        stamp       : Name of the inference output subdirectory.
+
+    Returns:
+        Path of the created run directory.
+    """
     run_dir   = group / name
     out_dir   = run_dir / "inference" / stamp
     cubes_dir = out_dir / "cubes"
@@ -46,7 +69,8 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
     return run_dir
 
 
-def _maps(group: Path, runs: list[Path], stamp: str = "stamp") -> SeedDisagreementMaps:
+def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: float = 1e-4) -> SeedDisagreementMaps:
+    """Returns a seed disagreement map builder over the given runs and inference stamp."""
     return SeedDisagreementMaps(
         group_dir        = group,
         run_dirs         = runs,
@@ -55,10 +79,12 @@ def _maps(group: Path, runs: list[Path], stamp: str = "stamp") -> SeedDisagreeme
         metrics_filename = "metrics.json",
         output_dir       = group / "inference" / "agg",
         logger           = SilentLogger(),
+        active_amp_thr   = active_amp_thr,
     )
 
 
 def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
+    """Returns a seed comparison config stub with disagreement computation on or off."""
     return SimpleNamespace(
         runs_dir             = str(runs_dir),
         group_tags           = [],
@@ -68,10 +94,12 @@ def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
         report_filename      = "report.md",
         compute_disagreement = compute_disagreement,
         cubes_subdir         = "cubes",
+        active_amp_thr       = 1e-4,
     )
 
 
 def test_identical_seeds_give_zero_disagreement(tmp_path):
+    """Seeds predicting the same cubes give zero standard deviation on every map."""
     group  = tmp_path / "group"
     curves = np.ones((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
@@ -91,6 +119,7 @@ def test_identical_seeds_give_zero_disagreement(tmp_path):
 
 
 def test_known_offsets_give_the_sample_std(tmp_path):
+    """Profile, amplitude, centre and width maps carry the sample standard deviation across seeds."""
     group    = tmp_path / "group"
     curves_a = np.zeros((N_Z, N_ROWS, N_COLS))
     curves_b = np.zeros((N_Z, N_ROWS, N_COLS))
@@ -117,7 +146,29 @@ def test_known_offsets_give_the_sample_std(tmp_path):
     assert np.allclose(sigma, 0.0)
 
 
+def test_risk_map_and_offsets_are_read_once_per_run(tmp_path, monkeypatch):
+    """The mean risk map and the region offsets are each read once per run."""
+    group  = tmp_path / "group"
+    curves = np.ones((N_ELEV, N_AZ, N_RG))
+    params = _params((1.0, 5.0, 2.0))
+    runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
+
+    maps  = _maps(group, runs)
+    calls = {"risk": 0, "offsets": 0}
+
+    mean_risk_map = maps._mean_risk_map
+    offsets       = maps._offsets
+
+    monkeypatch.setattr(maps, "_mean_risk_map", lambda: (calls.__setitem__("risk", calls["risk"] + 1), mean_risk_map())[1])
+    monkeypatch.setattr(maps, "_offsets",       lambda: (calls.__setitem__("offsets", calls["offsets"] + 1), offsets())[1])
+
+    maps.run()
+
+    assert calls == {"risk": 1, "offsets": 1}
+
+
 def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
+    """Pixels with fewer than two active seeds report NaN parameter disagreement."""
     group = tmp_path / "group"
 
     curves   = np.zeros((N_Z, N_ROWS, N_COLS))
@@ -139,6 +190,7 @@ def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
 
 
 def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
+    """Matching slots across seeds removes the disagreement caused by permuted slot order."""
     group  = tmp_path / "group"
     curves = np.ones((N_Z, N_ROWS, N_COLS))
 
@@ -160,7 +212,25 @@ def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
     assert np.allclose(np.load(cubes_dir / "seed_std_sigma.npy"), 0.0)
 
 
+def test_raised_active_threshold_masks_faint_slots(tmp_path):
+    """A configured threshold above a slot's amplitude removes it from the matched parameter maps."""
+    group  = tmp_path / "group"
+    curves = np.zeros((N_ELEV, N_AZ, N_RG))
+    faint  = _params((5e-4, 5.0, 2.0))
+    runs   = [_seed_run(group, f"seed{i}", curves, faint) for i in range(2)]
+
+    _maps(group, runs).run()
+    default_mu = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
+
+    _maps(group, runs, active_amp_thr=1e-3).run()
+    raised_mu = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
+
+    assert np.allclose(default_mu, 0.0)
+    assert np.all(np.isnan(raised_mu))
+
+
 def test_missing_cubes_raise(tmp_path):
+    """A run missing a prediction cube is rejected."""
     group = tmp_path / "group"
     runs  = [_seed_run(group, f"seed{i}", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0))) for i in range(2)]
 
@@ -171,6 +241,7 @@ def test_missing_cubes_raise(tmp_path):
 
 
 def test_shape_mismatch_raises(tmp_path):
+    """Runs whose cubes differ in spatial shape are rejected."""
     group = tmp_path / "group"
     run_a = _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
     run_b = _seed_run(group, "seed1", np.zeros((N_Z, N_ROWS + 1, N_COLS)), _params((1.0, 5.0, 2.0)))
@@ -182,6 +253,7 @@ def test_shape_mismatch_raises(tmp_path):
 
 
 def test_comparison_writes_maps_figures_and_report_section(tmp_path, monkeypatch):
+    """Enabling disagreement writes per-seed map cubes, aggregate figures and the report section with risk-coverage scalars."""
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"
@@ -209,6 +281,7 @@ def test_comparison_writes_maps_figures_and_report_section(tmp_path, monkeypatch
 
 
 def test_comparison_skips_disagreement_when_disabled(tmp_path, monkeypatch):
+    """Disabling disagreement leaves the report, payload and cube directories untouched."""
     monkeypatch.chdir(tmp_path)
 
     group = tmp_path / "runs" / "group"

@@ -1,3 +1,5 @@
+"""Tests for Gaussian mixture evaluation, curve reconstruction and parameter clamping."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,22 +16,26 @@ from tools.data.gaussians import (
 
 
 def test_head_total_channels():
+    """Verifies the head channel count is the parameter count times the Gaussian count."""
     assert GaussianHead.total_channels(3, 4) == 12
 
 
 def test_safe_sigma_sq_floor():
+    """Verifies a zero sigma is lifted to twice the squared sigma floor."""
     out = GaussianMixture.safe_sigma_sq(np.array([0.0]))
 
     assert out[0] == 2.0 * GaussianMixture.SIGMA_FLOOR ** 2
 
 
 def test_safe_sigma_sq_value():
+    """Verifies the safe denominator is twice the squared sigma."""
     out = GaussianMixture.safe_sigma_sq(np.array([3.0]))
 
     assert np.isclose(out[0], 18.0)
 
 
 def test_evaluate_batch_peak_at_mu():
+    """Verifies a single Gaussian peaks at its mean with its amplitude over the height axis."""
     h    = np.linspace(-10.0, 10.0, 201).astype(np.float32)
     amps = np.array([[2.0]], dtype=np.float32)
     mus  = np.array([[0.0]], dtype=np.float32)
@@ -43,6 +49,7 @@ def test_evaluate_batch_peak_at_mu():
 
 
 def test_evaluate_batch_sums_components():
+    """Verifies overlapping components add up at the sampled height."""
     h    = np.array([0.0], dtype=np.float32)
     amps = np.array([[1.0, 3.0]], dtype=np.float32)
     mus  = np.array([[0.0, 0.0]], dtype=np.float32)
@@ -54,6 +61,7 @@ def test_evaluate_batch_sums_components():
 
 
 def test_evaluate_slice_matches_manual():
+    """Verifies the single-height slice evaluation matches the analytic value per pixel."""
     params = np.zeros((6, 2, 2), dtype=np.float32)
     params[0] = 2.0
     params[1] = 1.0
@@ -65,6 +73,7 @@ def test_evaluate_slice_matches_manual():
 
 
 def test_evaluate_pixel_total_equals_sum_components():
+    """Verifies the per-pixel total equals the sum of its component curves."""
     params = np.array([2.0, 0.0, 1.5, 1.0, 5.0, 2.0], dtype=np.float32)
     h      = np.linspace(-5.0, 10.0, 60)
 
@@ -75,6 +84,7 @@ def test_evaluate_pixel_total_equals_sum_components():
 
 
 def test_evaluate_pixel_peak_values():
+    """Verifies the per-pixel curve peaks at the Gaussian amplitude."""
     params = np.array([3.0, 0.0, 1.0], dtype=np.float32)
     h      = np.linspace(-5.0, 5.0, 101)
 
@@ -84,6 +94,7 @@ def test_evaluate_pixel_peak_values():
 
 
 def test_reconstruct_batch_shape_and_dtype():
+    """Verifies batch reconstruction returns float32 curves of shape (batch, heights)."""
     gauss = np.zeros((4, 2, 3), dtype=np.float32)
     gauss[:, :, 0] = 1.0
     gauss[:, :, 2] = 1.0
@@ -96,6 +107,7 @@ def test_reconstruct_batch_shape_and_dtype():
 
 
 def test_reconstruct_batch_matches_the_torch_evaluator():
+    """Verifies the numpy batch reconstruction matches the torch curve evaluator."""
     rng   = np.random.default_rng(0)
     gauss = rng.uniform(-1.0, 3.0, size=(4, 2, 3)).astype(np.float32)
     x     = np.linspace(-3.0, 3.0, 32).astype(np.float32)
@@ -110,6 +122,7 @@ def test_reconstruct_batch_matches_the_torch_evaluator():
 
 
 def test_reconstructor_components_count():
+    """Verifies the component list has one curve per Gaussian on the sampling axis."""
     params = np.array([1.0, 0.0, 1.0, 2.0, 3.0, 1.0], dtype=np.float32)
     x      = np.linspace(-5.0, 5.0, 20)
 
@@ -120,6 +133,7 @@ def test_reconstructor_components_count():
 
 
 def test_gaussian_curve_shape():
+    """Verifies torch reconstruction returns curves of shape (batch, heights, azimuth, range)."""
     params = torch.zeros((2, 6, 4, 5))
     params[:, 0] = 1.0
     params[:, 2] = 1.0
@@ -133,6 +147,7 @@ def test_gaussian_curve_shape():
 
 
 def test_gaussian_curve_rejects_bad_channels():
+    """Verifies a channel count that is not a multiple of three is rejected."""
     params = torch.zeros((1, 4, 2, 2))
     x      = torch.linspace(-1.0, 1.0, 8)
 
@@ -141,6 +156,7 @@ def test_gaussian_curve_rejects_bad_channels():
 
 
 def test_gaussian_curve_peak_at_mu():
+    """Verifies the reconstructed curve peaks at the Gaussian amplitude."""
     params = torch.zeros((1, 3, 1, 1))
     params[0, 0, 0, 0] = 4.0
     params[0, 1, 0, 0] = 0.0
@@ -153,6 +169,7 @@ def test_gaussian_curve_peak_at_mu():
 
 
 def test_gaussian_clamp_amplitude_bounds():
+    """Verifies the clamp keeps the amplitude between zero and amp_max."""
     params = torch.zeros((1, 3, 1, 1))
     params[0, 0, 0, 0] = 100.0
     params[0, 2, 0, 0] = 5.0
@@ -165,6 +182,7 @@ def test_gaussian_clamp_amplitude_bounds():
 
 
 def test_gaussian_clamp_mean_bounds():
+    """Verifies the clamp keeps the mean inside the height axis in metres."""
     params = torch.zeros((1, 3, 1, 1))
     params[0, 1, 0, 0] = 999.0
     x = torch.linspace(0.0, 10.0, 11)
@@ -176,6 +194,7 @@ def test_gaussian_clamp_mean_bounds():
 
 
 def test_gaussian_clamp_sigma_floor():
+    """Verifies the clamp lifts sigma to half the height sampling step."""
     params = torch.zeros((1, 3, 1, 1))
     params[0, 2, 0, 0] = -50.0
     x      = torch.linspace(0.0, 10.0, 11)
@@ -187,6 +206,7 @@ def test_gaussian_clamp_sigma_floor():
 
 
 def test_gaussian_clamp_preserves_shape():
+    """Verifies the clamp leaves the parameter tensor shape unchanged."""
     params = torch.randn(2, 9, 3, 3)
     x      = torch.linspace(0.0, 20.0, 16)
 
@@ -196,6 +216,7 @@ def test_gaussian_clamp_preserves_shape():
 
 
 def test_gaussian_curve_matches_mixture_batch():
+    """Verifies the torch curve and the numpy mixture agree for the same parameters."""
     a, mu, sig = 2.0, 1.0, 1.5
     x_np   = np.linspace(-5.0, 8.0, 40).astype(np.float32)
 
@@ -212,6 +233,7 @@ def test_gaussian_curve_matches_mixture_batch():
 
 @pytest.mark.dataset
 def test_evaluate_slice_on_scene_parameters(parameters, param_extraction_meta):
+    """Verifies a scene parameter window evaluates to a finite non-negative z slice."""
     k_max  = param_extraction_meta["k_max"]
     params = np.asarray(parameters[:, :16, :16]).astype(np.float32)
 
@@ -224,6 +246,7 @@ def test_evaluate_slice_on_scene_parameters(parameters, param_extraction_meta):
 
 @pytest.mark.dataset
 def test_evaluate_pixel_on_scene_parameters(parameters, param_extraction_meta):
+    """Verifies a scene pixel's components sum to the finite total curve."""
     k_max  = param_extraction_meta["k_max"]
     h_min, h_max = param_extraction_meta["z_range"]
     h      = np.linspace(h_min, h_max, 100)
@@ -239,4 +262,5 @@ def test_evaluate_pixel_on_scene_parameters(parameters, param_extraction_meta):
 
 @pytest.mark.dataset
 def test_scene_parameters_channel_count(parameters, param_extraction_meta):
+    """Verifies the scene parameter map has three channels per extracted Gaussian."""
     assert parameters.shape[0] == param_extraction_meta["k_max"] * 3

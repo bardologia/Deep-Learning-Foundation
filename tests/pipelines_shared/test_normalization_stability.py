@@ -1,3 +1,5 @@
+"""Tests that the per-slot normalization strategies are the right choice and stable on real data."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -17,6 +19,14 @@ REL_AGREE_TOL = 0.05
 
 
 def _active(parameters):
+    """Returns the amplitude, mean, and sigma values of pixels whose amplitude exceeds AMP_THR.
+
+    Args:
+        parameters : Gaussian parameter cube of shape (3 * n_gaussians, azimuth, range), interleaved as amplitude, mean in metres, and sigma in metres.
+
+    Returns:
+        Tuple of the flattened active amplitude, mean, and sigma arrays.
+    """
     par = np.asarray(parameters)
     amp = par[0::3].astype(np.float64)
     mu  = par[1::3].astype(np.float64)
@@ -26,6 +36,7 @@ def _active(parameters):
 
 
 def _random_split_agreement(strat, vals, seed):
+    """Returns the relative loc and scale disagreement between two random halves of vals."""
     r         = np.random.default_rng(seed).random(vals.shape) < 0.5
     l1, s1    = strat.fit(vals[r])
     l2, s2    = strat.fit(vals[~r])
@@ -35,6 +46,7 @@ def _random_split_agreement(strat, vals, seed):
 
 
 def _channel_stats(slot_keys, pools):
+    """Returns channel statistics fitted from the per-slot strategies over the matching pools."""
     strategies = [ChannelStrategy.from_slot(k) for k in slot_keys]
     fits       = [strat.fit(pool) for strat, pool in zip(strategies, pools)]
     return ChannelStats(
@@ -47,6 +59,7 @@ def _channel_stats(slot_keys, pools):
 
 
 def test_heavy_tailed_channels_use_robust_iqr_log1p():
+    """Heavy-tailed magnitude and amplitude slots use robust IQR on log1p values."""
     for slot in ROBUST_LOG1P_SLOTS:
         strat = ChannelStrategy.from_slot(slot)
         assert strat.norm_method is NormMethod.ROBUST_IQR
@@ -54,6 +67,7 @@ def test_heavy_tailed_channels_use_robust_iqr_log1p():
 
 
 def test_mu_and_signed_channels_stay_zscore():
+    """The mean slot and the signed input slots use plain z-score normalization."""
     assert ChannelStrategy.from_slot("out/mu").norm_method is NormMethod.ZSCORE
     assert ChannelStrategy.from_slot("out/mu").apply_log1p is False
 
@@ -62,14 +76,28 @@ def test_mu_and_signed_channels_stay_zscore():
 
 
 def test_derived_phase_uses_fixed_div_pi():
+    """The derived phase slot uses the fixed division by pi."""
     strat = ChannelStrategy.from_slot("derived/phase")
     assert strat.norm_method is NormMethod.FIXED_DIV_PI
     assert strat.apply_log1p is False
 
 
 @pytest.mark.dataset
+def test_mu_robust_iqr_is_degenerate_which_is_why_mu_stays_zscore(parameters):
+    """Robust IQR collapses the mean scale on real data while z-score keeps it usable."""
+    _, mu, _ = _active(parameters)
+
+    _, robust_scale = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=False).fit(mu)
+    _, zscore_scale = ChannelStrategy.from_slot("out/mu").fit(mu)
+
+    assert robust_scale <= 1e-7
+    assert zscore_scale > 1.0
+
+
+@pytest.mark.dataset
 @pytest.mark.parametrize("role", ["amp", "mu", "sigma"])
 def test_output_stats_reproducible_across_random_halves(parameters, role):
+    """Output statistics agree within tolerance across random halves of real data."""
     amp, mu, sig = _active(parameters)
     vals  = {"amp": amp, "mu": mu, "sigma": sig}[role]
     slot  = {"amp": "out/amp", "mu": "out/mu", "sigma": "out/sigma"}[role]
@@ -83,8 +111,9 @@ def test_output_stats_reproducible_across_random_halves(parameters, role):
 
 @pytest.mark.dataset
 def test_input_magnitude_stats_reproducible_across_random_halves(primary, secondaries, derived):
-    chan_mag    = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
-    derived_mag = np.abs(np.asarray(derived)).ravel().astype(np.float64)
+    """Input magnitude statistics agree within tolerance across random halves of real data."""
+    chan_mag = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
+    derived_mag  = np.abs(np.asarray(derived)).ravel().astype(np.float64)
 
     for slot, vals in [("chan/mag", chan_mag), ("derived/mag", derived_mag)]:
         strat = ChannelStrategy.from_slot(slot)
@@ -95,6 +124,7 @@ def test_input_magnitude_stats_reproducible_across_random_halves(primary, second
 
 @pytest.mark.dataset
 def test_configured_robust_scales_are_nondegenerate_on_scene(parameters, primary, secondaries, derived, aux_full):
+    """Every configured robust slot fits a scale well above the floor on scene data."""
     amp, _, sig = _active(parameters)
     chan_mag    = np.abs(np.asarray(primary)).ravel().astype(np.float64)
     derived_mag = np.abs(np.asarray(derived)).ravel().astype(np.float64)
@@ -110,6 +140,7 @@ def test_configured_robust_scales_are_nondegenerate_on_scene(parameters, primary
 
 @pytest.mark.dataset
 def test_output_normalizer_round_trip_is_exact(parameters):
+    """Real output parameters round-trip through the fitted output normalizer."""
     par   = np.asarray(parameters)
     amp, mu, sig = _active(parameters)
     stats = _channel_stats(["out/amp", "out/mu", "out/sigma"], [amp, mu, sig])
@@ -126,9 +157,10 @@ def test_output_normalizer_round_trip_is_exact(parameters):
 
 @pytest.mark.dataset
 def test_input_normalizer_round_trip_is_exact(primary, derived, secondaries):
-    chan_mag    = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
-    derived_mag = np.abs(np.asarray(derived)).ravel().astype(np.float64)
-    stats       = _channel_stats(["chan/mag", "derived/mag"], [chan_mag, derived_mag])
+    """Real input magnitudes round-trip through the fitted input normalizer."""
+    chan_mag = np.concatenate([np.abs(np.asarray(primary)).ravel(), np.abs(np.asarray(secondaries)).ravel()]).astype(np.float64)
+    derived_mag  = np.abs(np.asarray(derived)).ravel().astype(np.float64)
+    stats    = _channel_stats(["chan/mag", "derived/mag"], [chan_mag, derived_mag])
 
     norm = Normalizer(Stats(input_stats=stats))
 
@@ -144,6 +176,7 @@ def test_input_normalizer_round_trip_is_exact(primary, derived, secondaries):
 
 
 def test_robust_iqr_scale_is_more_outlier_stable_than_zscore():
+    """Adding outliers shifts the robust IQR scale far less than the z-score scale."""
     rng  = np.random.default_rng(0)
     base = rng.normal(5.0, 1.0, size=20000)
 
@@ -162,6 +195,7 @@ def test_robust_iqr_scale_is_more_outlier_stable_than_zscore():
 
 
 def test_strategy_fit_rejects_empty_pool():
+    """Data-driven strategies reject an empty pool while the fixed pi strategy still fits."""
     import numpy as np
     import pytest as _pytest
 

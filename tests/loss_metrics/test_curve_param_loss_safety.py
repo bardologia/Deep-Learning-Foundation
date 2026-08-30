@@ -1,3 +1,10 @@
+"""Safety tests for the curve and parameter loss terms on real Gaussian parameter data.
+
+Each term is checked for a finite non-negative scalar forward value, a zero (or epsilon floor) at
+identity, monotonic growth with injected noise, finite non-zero gradients, determinism, and
+safety on all-zero curves. Also covers the active-slot masking of mu and sigma and the
+ground-truth mu sorting performed by ParamMatcher."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -20,19 +27,32 @@ PARAM_ALL              = ["param_l1", "param_huber", "param_mse", "tv"]
 
 
 def _axis():
+    """Returns the elevation axis of 150 bins spanning -20 to 80 metres."""
     return torch.linspace(-20.0, 80.0, 150, dtype=torch.float32)
 
 
 def _gt_params(parameters):
+    """Returns a 32x32 parameter crop of shape (2, 3 * n_gaussians, 32, 32) repeated over a batch of two."""
     crop = np.asarray(parameters[:, 400:432, 200:232]).copy()
     return torch.from_numpy(crop).unsqueeze(0).repeat(2, 1, 1, 1).float()
 
 
 def _curves(params):
+    """Returns the Gaussian mixture curves reconstructed from the parameter cube on the elevation axis."""
     return GaussianCurve.reconstruct(params, _axis(), PPG)
 
 
 def _pred_curves(gt_params, noise, seed=0):
+    """Returns a noisy, clamped, gradient-tracking parameter cube and the curves reconstructed from it.
+
+    Args:
+        gt_params : Ground-truth parameter cube of shape (batch, 3 * n_gaussians, height, width).
+        noise     : Standard deviation of the Gaussian perturbation added to every parameter.
+        seed      : Torch manual seed used for the perturbation.
+
+    Returns:
+        Tuple of the perturbed parameter cube and its reconstructed curve cube.
+    """
     torch.manual_seed(seed)
     p = gt_params + noise * torch.randn_like(gt_params)
     p = GaussianClamp.apply(p, z_axis=_axis(), amp_max=AMP_MAX, ppg=PPG, leaky_slope=0.01)
@@ -41,6 +61,19 @@ def _pred_curves(gt_params, noise, seed=0):
 
 
 def _curve(name, pc, target):
+    """Returns the named curve loss term evaluated between the predicted and target curve cubes.
+
+    Args:
+        name   : Term to evaluate, one of mse, l1, huber, charbonnier or cosine.
+        pc     : Predicted curve cube of shape (batch, n_elev, height, width).
+        target : Target curve cube of the same shape.
+
+    Returns:
+        Scalar loss tensor.
+
+    Raises:
+        ValueError : If the term name is unknown.
+    """
     if name == "mse":
         return CL.mse_diff(pc - target)
     if name == "l1":
@@ -56,12 +89,14 @@ def _curve(name, pc, target):
 
 
 def _gt5(parameters):
+    """Returns the ground-truth parameters regrouped to shape (batch, 5, 3, height, width)."""
     gt         = _gt_params(parameters)
     b, c, h, w = gt.shape
     return gt.reshape(b, c // PPG, PPG, h, w)
 
 
 def _weights(gt5):
+    """Returns per-parameter weights that zero mu and sigma wherever the slot amplitude is inactive."""
     active = (gt5[:, :, 0:1] > 1e-3).float()
     mask   = torch.ones_like(gt5)
     mask[:, :, 1:] = active.expand_as(gt5[:, :, 1:])
@@ -69,11 +104,26 @@ def _weights(gt5):
 
 
 def _pred5(gt5, noise, seed=0):
+    """Returns a noisy, gradient-tracking copy of the grouped ground-truth parameters."""
     torch.manual_seed(seed)
     return (gt5 + noise * torch.randn_like(gt5)).clone().requires_grad_(True)
 
 
 def _param(name, p, gt5, weights):
+    """Returns the named parameter loss term evaluated between the grouped prediction and ground truth.
+
+    Args:
+        name    : Term to evaluate, one of param_l1, param_huber, param_mse or tv.
+        p       : Predicted parameters of shape (batch, n_gaussians, 3, height, width).
+        gt5     : Ground-truth parameters of the same shape.
+        weights : Per-parameter weights broadcast over the same shape.
+
+    Returns:
+        Scalar loss tensor.
+
+    Raises:
+        ValueError : If the term name is unknown.
+    """
     if name == "param_l1":
         return PL.l1(p, gt5, weights, ["amp", "mu", "sigma"])[0]
     if name == "param_huber":
@@ -89,6 +139,7 @@ def _param(name, p, gt5, weights):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_forward_finite_nonnegative(parameters, name):
+    """Every curve term returns a finite non-negative scalar on real data."""
     gt     = _gt_params(parameters)
     target = _curves(gt)
     _, pc  = _pred_curves(gt, 0.2)
@@ -103,6 +154,7 @@ def test_curve_term_forward_finite_nonnegative(parameters, name):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ZERO_AT_IDENTITY)
 def test_curve_term_zero_when_prediction_equals_target(parameters, name):
+    """Curve terms that vanish at identity score zero when prediction equals target."""
     gt     = _gt_params(parameters)
     target = _curves(gt)
 
@@ -113,6 +165,7 @@ def test_curve_term_zero_when_prediction_equals_target(parameters, name):
 
 @pytest.mark.dataset
 def test_charbonnier_floors_at_eps_at_identity(parameters):
+    """The Charbonnier term floors at its epsilon rather than zero at identity."""
     gt     = _gt_params(parameters)
     target = _curves(gt)
 
@@ -124,6 +177,7 @@ def test_charbonnier_floors_at_eps_at_identity(parameters):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_monotonic_in_error(parameters, name):
+    """Every curve term grows as the injected parameter noise grows."""
     gt     = _gt_params(parameters)
     target = _curves(gt)
 
@@ -138,6 +192,7 @@ def test_curve_term_monotonic_in_error(parameters, name):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_gradient_finite_and_nonzero(parameters, name):
+    """Every curve term backpropagates a finite, non-zero gradient to the parameters."""
     gt     = _gt_params(parameters)
     target = _curves(gt)
     p, pc  = _pred_curves(gt, 0.2)
@@ -151,6 +206,7 @@ def test_curve_term_gradient_finite_and_nonzero(parameters, name):
 
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_finite_on_zero_curves(name):
+    """Every curve term stays finite on all-zero curves."""
     z = torch.zeros(2, 150, 8, 8)
 
     val = _curve(name, z, z)
@@ -162,6 +218,7 @@ def test_curve_term_finite_on_zero_curves(name):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", CURVE_ALL)
 def test_curve_term_deterministic(parameters, name):
+    """Evaluating a curve term twice on the same inputs gives the identical value."""
     gt     = _gt_params(parameters)
     target = _curves(gt)
     _, pc  = _pred_curves(gt, 0.2, seed=4)
@@ -174,6 +231,7 @@ def test_curve_term_deterministic(parameters, name):
 
 @pytest.mark.dataset
 def test_cosine_is_bounded(parameters):
+    """The cosine term stays within zero and two."""
     gt     = _gt_params(parameters)
     target = _curves(gt)
     _, pc  = _pred_curves(gt, 0.6)
@@ -184,6 +242,7 @@ def test_cosine_is_bounded(parameters):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", PARAM_ALL)
 def test_param_term_forward_finite_nonnegative(parameters, name):
+    """Every parameter term returns a finite non-negative scalar on real data."""
     gt5 = _gt5(parameters)
     w   = _weights(gt5)
     p   = _pred5(gt5, 0.2)
@@ -198,6 +257,7 @@ def test_param_term_forward_finite_nonnegative(parameters, name):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", ["param_l1", "param_huber", "param_mse"])
 def test_param_term_zero_when_prediction_equals_target(parameters, name):
+    """The fidelity parameter terms score zero when prediction equals ground truth."""
     gt5 = _gt5(parameters)
     w   = _weights(gt5)
 
@@ -208,6 +268,7 @@ def test_param_term_zero_when_prediction_equals_target(parameters, name):
 
 @pytest.mark.dataset
 def test_tv_zero_on_spatially_constant_map(parameters):
+    """Total variation vanishes on a spatially constant parameter map."""
     gt5      = _gt5(parameters)
     constant = torch.ones_like(gt5) * gt5.mean()
 
@@ -217,6 +278,7 @@ def test_tv_zero_on_spatially_constant_map(parameters):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", PARAM_ALL)
 def test_param_term_monotonic_in_error(parameters, name):
+    """Every parameter term grows as the injected parameter noise grows."""
     gt5 = _gt5(parameters)
     w   = _weights(gt5)
 
@@ -231,6 +293,7 @@ def test_param_term_monotonic_in_error(parameters, name):
 @pytest.mark.dataset
 @pytest.mark.parametrize("name", PARAM_ALL)
 def test_param_term_gradient_finite_and_nonzero(parameters, name):
+    """Every parameter term backpropagates a finite, non-zero gradient."""
     gt5 = _gt5(parameters)
     w   = _weights(gt5)
     p   = _pred5(gt5, 0.2)
@@ -244,6 +307,7 @@ def test_param_term_gradient_finite_and_nonzero(parameters, name):
 
 @pytest.mark.dataset
 def test_param_l1_returns_per_parameter_breakdown(parameters):
+    """The L1 parameter term reports a finite value for each of amplitude, mu and sigma."""
     gt5 = _gt5(parameters)
     w   = _weights(gt5)
     p   = _pred5(gt5, 0.3)
@@ -255,6 +319,7 @@ def test_param_l1_returns_per_parameter_breakdown(parameters):
 
 
 def test_param_l1_masks_out_inactive_gaussian_mu_sigma():
+    """With inactive slots masked, any mu and sigma prediction scores zero."""
     gt   = torch.zeros(1, 5, 3, 4, 4)
     mask = torch.ones_like(gt)
     mask[:, :, 1:] = 0.0
@@ -273,6 +338,7 @@ def test_param_l1_masks_out_inactive_gaussian_mu_sigma():
 
 
 def test_match_sorts_gt_by_mu_among_active():
+    """Matching sorts the active ground-truth slots into ascending mu order."""
     pred      = torch.randn(1, 5, 3, 4, 4)
     pred_phys = pred.clone()
 
@@ -289,6 +355,7 @@ def test_match_sorts_gt_by_mu_among_active():
 
 
 def test_match_gt_sort_is_idempotent():
+    """Matching an already-sorted ground truth leaves it unchanged."""
     pred    = torch.randn(1, 5, 3, 3, 3)
     gt      = torch.randn(1, 5, 3, 3, 3)
     gt_phys = torch.rand(1, 5, 3, 3, 3) + 0.5

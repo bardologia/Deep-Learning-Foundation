@@ -1,3 +1,9 @@
+"""Shared tiny architecture overrides for the backbone model-zoo tests.
+
+``SMALL_OVERRIDES`` shrinks each registered backbone to a size that trains and runs in
+seconds on CPU over a ``WINDOW`` by ``WINDOW`` patch.
+"""
+
 from __future__ import annotations
 
 WINDOW = 64

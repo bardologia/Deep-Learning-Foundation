@@ -1,3 +1,10 @@
+"""End-to-end tests of the backbone inference pipeline on the synthetic test scene.
+
+A miniature U-Net run is inferred over the test split, then re-inferred with a
+region override that extends the split outward, and the equal-spacing slice
+index helper is checked in isolation.
+"""
+
 from __future__ import annotations
 
 import json
@@ -6,110 +13,17 @@ import numpy as np
 import pytest
 import torch
 
-from configuration.dataset                      import DatasetConfig, InputConfig, OutputConfig, PatchConfig, SplitRegions
-from configuration.inference                    import InferenceConfig
-from configuration.normalization                import ChannelStats, OutputClampConfig
-from configuration.normalization.general        import ChannelStrategy, NormMethod
-from models                                     import BACKBONE_CONFIG_REGISTRY, get_backbone
-from pipelines.backbone.dataset.metadata_writer import MetadataWriter
-from pipelines.backbone.dataset.stats           import Stats
-from pipelines.backbone.inference.pipeline      import InferencePipeline
-from pipelines.shared.config.config_persistence import BackboneModelConfigIO
-from tools.data.io                              import FileIO
-from tools.data.regions                         import CropRegion
+from configuration.inference               import InferenceConfig
+from pipelines.backbone.inference.pipeline import InferencePipeline
 
-from configuration.synthesis import SynthesisConfig
-
-from tests.conftest import SilentLogger
-
-
-N_GAUSSIANS      = SynthesisConfig().k_max
-N_Z              = SynthesisConfig().profile_length
-SECONDARY_LABELS = ("CH01", "CH02", "CH03", "CH04")
-
-
-def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
-    return DatasetConfig(
-        preprocessing_run_directory = test_data_dir,
-        parameters_path             = params_dir / "parameters.npy",
-        split_regions               = SplitRegions(
-            train = CropRegion(row_start=1000, row_end=1096, col_start=500, col_end=596),
-            val   = CropRegion(row_start=1100, row_end=1196, col_start=500, col_end=596),
-            test  = CropRegion(row_start=1200, row_end=1296, col_start=500, col_end=596),
-        ),
-        secondary_labels = SECONDARY_LABELS,
-        patch            = PatchConfig(size=(64, 64), stride=(32, 32), use_symmetric_padding=True),
-        input_config     = InputConfig(),
-        output_config    = OutputConfig(),
-        batch_size       = 4,
-        num_workers      = 0,
-    )
-
-
-def _persist_stats(meta_dir, in_channels: int) -> None:
-    zscore = ChannelStrategy(NormMethod.ZSCORE)
-
-    stats = Stats(
-        input_stats  = ChannelStats(
-            loc        = [0.0] * in_channels,
-            scale      = [1.0] * in_channels,
-            names      = [f"in/{i}" for i in range(in_channels)],
-            strategies = [zscore] * in_channels,
-            clampable  = [False] * in_channels,
-        ),
-        output_stats = ChannelStats(
-            loc        = [0.0] * (3 * N_GAUSSIANS),
-            scale      = [1.0] * (3 * N_GAUSSIANS),
-            names      = [f"out/{i}" for i in range(3 * N_GAUSSIANS)],
-            strategies = [zscore] * (3 * N_GAUSSIANS),
-            clampable  = [True, False, True] * N_GAUSSIANS,
-        ),
-        clamp        = OutputClampConfig(),
-    )
-    stats.save(meta_dir)
-
-
-def _persist_model(run_dir, meta_dir, in_channels: int) -> None:
-    config                   = BACKBONE_CONFIG_REGISTRY["unet"]()
-    config.in_channels       = in_channels
-    config.out_channels      = 3 * N_GAUSSIANS
-    config.features          = [8, 16]
-    config.bottleneck_factor = 1
-
-    BackboneModelConfigIO.save(config, "unet", meta_dir)
-
-    torch.manual_seed(0)
-    model, _ = get_backbone("unet", config=config, in_channels=in_channels, out_channels=3 * N_GAUSSIANS)
-
-    z_axis = np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
-    torch.save(
-        {"params": model.state_dict(), "z_axis": z_axis, "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1},
-        run_dir / "best_model.pt",
-    )
-
-
-def _build_run_directory(tmp_path, test_data_dir, params_dir):
-    run_dir  = tmp_path / "run_unet_e2e"
-    meta_dir = run_dir / "meta"
-    meta_dir.mkdir(parents=True)
-
-    dataset_config = _dataset_config(test_data_dir, params_dir)
-    in_channels    = dataset_config.input_config.total_channels(0, len(SECONDARY_LABELS))
-
-    MetadataWriter(run_dir, logger=SilentLogger()).save_dataset_configuration(dataset_config)
-    FileIO.save_json({"model_name": "unet", "in_channels": in_channels, "out_channels": 3 * N_GAUSSIANS, "n_gaussians": N_GAUSSIANS}, meta_dir / "run_summary.json")
-    FileIO.save_json({"geometry": {"z_axis_convention": "height"}}, run_dir / "docs" / "trainer_config.json")
-
-    _persist_stats(meta_dir, in_channels)
-    _persist_model(run_dir, meta_dir, in_channels)
-
-    return run_dir
+from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, SECONDARY_LABELS, build_run_directory
 
 
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
-    run_dir = _build_run_directory(tmp_path, test_data_dir, params_dir)
+    """A full run writes the report, finite curve and physics metrics, per-track agreement and the saved cubes."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
 
     config = InferenceConfig(
         run_directory            = run_dir,
@@ -146,7 +60,59 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
     assert "unet" in report
 
 
+@pytest.mark.real_data
+@pytest.mark.slow
+def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params_dir):
+    """A region override widens the inferred area while the stored split region stays the reported core region."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+
+    config = InferenceConfig(
+        run_directory            = run_dir,
+        output_subdir            = "extended",
+        device                   = "cpu",
+        split                    = "test",
+        region_override          = [1180, 1296, 500, 596],
+        num_workers              = 0,
+        cpu_workers              = 2,
+        save_plots               = False,
+        save_animations          = False,
+        save_cubes               = True,
+    )
+
+    InferencePipeline(config).run()
+
+    output_dir = run_dir / "inference" / "extended"
+    metrics    = json.loads((output_dir / "metrics.json").read_text())
+
+    assert metrics["split_region"] == [1180, 1296, 500, 596]
+    assert metrics["core_region"]  == [1200, 1296, 500, 596]
+
+    assert np.load(output_dir / "cubes" / "pred_curves.npy").shape == (N_Z, 116, 96)
+    assert np.load(output_dir / "cubes" / "gt_curves.npy").shape   == (N_Z, 116, 96)
+
+
+@pytest.mark.real_data
+def test_region_override_must_contain_the_stored_split_region(tmp_path, test_data_dir, params_dir):
+    """A region override disjoint from the stored split region raises ValueError."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+
+    config = InferenceConfig(
+        run_directory   = run_dir,
+        output_subdir   = "shifted",
+        device          = "cpu",
+        split           = "test",
+        region_override = [1000, 1096, 500, 596],
+        num_workers     = 0,
+        save_plots      = False,
+        save_animations = False,
+    )
+
+    with pytest.raises(ValueError, match="must contain the stored"):
+        InferencePipeline(config).run()
+
+
 def test_equal_indices_are_unique_and_inside_the_axis():
+    """Equally spaced slice indices are unique and stay inside the axis for every axis and slice count."""
     for n_total in (7, 10, 64, 150):
         for n_slices in (1, 3, 5, n_total):
             indices = InferencePipeline._equal_indices(n_total, n_slices)

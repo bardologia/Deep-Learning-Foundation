@@ -101,24 +101,24 @@
       "num_parameters": 7811402
     },
     "hrnet": {
-      "signature": "b902697e6ec7e717a483434f7b315837e526973e2a683bc6734ac8c75027b38d",
-      "num_keys": 207,
-      "num_parameters": 3071816
+      "signature": "12e7f8d6d4db40acb5155e71a497528796d6d9650f2328592f151070f5f0e3b2",
+      "num_keys": 202,
+      "num_parameters": 3071814
     },
     "hrnet-multihead": {
-      "signature": "d5edbf0064235f86fc7aec126bfd129ea128321f40b3a94054afc349ce85579f",
-      "num_keys": 217,
-      "num_parameters": 3085496
+      "signature": "19de69e8e5b1f87ac9068c0c5287cd208c277cb2fbd92349f47ada99b4a6d3ab",
+      "num_keys": 212,
+      "num_parameters": 3085494
     },
     "hrnet-per_gaussian": {
-      "signature": "1d95ec164d95d1700ee7b999d66cf832f0d7057fd1910e4e8e8cedc4a855dfb9",
-      "num_keys": 213,
-      "num_parameters": 3080840
+      "signature": "3dbb0837f7a4440a7f131a3cf5dc576cf98bb4e3a52b9f57ed64b9bca0a0c72f",
+      "num_keys": 208,
+      "num_parameters": 3080838
     },
     "hrnet-set_pred": {
-      "signature": "ea61f7e93ab766df7f1509a18cb2d51059447e27b859e655315ef9507d103804",
-      "num_keys": 218,
-      "num_parameters": 3085596
+      "signature": "bf277567bc565e4c6c11195b4a7a81cd19802cf05dfb9e521e9caf40b9593e0a",
+      "num_keys": 213,
+      "num_parameters": 3085594
     },
     "linknet": {
       "signature": "94a3c26ff537d20742ab7d9a5699814725da67cdc95ee041f2e191139fa42488",
@@ -341,42 +341,42 @@
       "num_parameters": 31042922
     },
     "unet_skip": {
-      "signature": "473ddc27e4f4249de488f245c2250f95b2d7ab5d6ff620c90dc2f23f18eeac39",
-      "num_keys": 127,
-      "num_parameters": 32429384
+      "signature": "35b6c81e5144a70347ebe98d2bdf3f11ddf1e861343bb1d1f77f1f06ed49ddfd",
+      "num_keys": 122,
+      "num_parameters": 32429382
     },
     "unet_skip-multihead": {
-      "signature": "f8d78def56ba4480297be101e17d44041445da3032ffd9eaf478fa413fd5fbbc",
-      "num_keys": 137,
-      "num_parameters": 32435432
+      "signature": "3c2cb3d825bc935e674db4c9c6e9c821769227c8fe9ec51f8713d92962658c07",
+      "num_keys": 132,
+      "num_parameters": 32435430
     },
     "unet_skip-per_gaussian": {
-      "signature": "69555e15f998be9f0e36b5e90c310bfbba044496e99fd69c54e07e057ac60eff",
-      "num_keys": 133,
-      "num_parameters": 32433352
+      "signature": "16503dde9748acd7eba6ac43ff33fb57b4becd5d90082a5e8fb945250855a6b4",
+      "num_keys": 128,
+      "num_parameters": 32433350
     },
     "unet_skip-set_pred": {
-      "signature": "f3368b344cedceaa386121e64061322c5bf7f2c218759e63ef18279ee4957e68",
-      "num_keys": 138,
-      "num_parameters": 32435500
+      "signature": "a58a1091950d212fa8f0cecf6f43ee68b4b0c0844f3ddf26bfc9dc4a27229288",
+      "num_keys": 133,
+      "num_parameters": 32435498
     },
     "unetplusplus": {
-      "signature": "f8f5022cd742af636be4f3d0c519f09116fccfe75e69742c31313f811440b7de",
+      "signature": "673f065fb42f28e9979b59f91733928ab4ae922f33a1d1175afd192cad507e24",
       "num_keys": 190,
       "num_parameters": 31081214
     },
     "unetplusplus-multihead": {
-      "signature": "91f3d70490317aa120b92e09261af9baf5893265c9dc57ec217b38c1e4328df6",
+      "signature": "2f79e835af24e9c4c9d95b00e8f1133fbcedd7e05d4e9179df8c2059796cce65",
       "num_keys": 200,
       "num_parameters": 31085834
     },
     "unetplusplus-per_gaussian": {
-      "signature": "dd0bc664c1b61efecefece5b585f151c7a518bee284849808878b2f5cb1e6219",
+      "signature": "aedf809422229e7d2a748852b1d46808bd3aff512801ac9b4e74662d8ea98389",
       "num_keys": 196,
       "num_parameters": 31084238
     },
     "unetplusplus-set_pred": {
-      "signature": "c0fd3b6ab6eae1b4036e42f7b0f54978a1717d74f4d2f83db902c097c8dd7c32",
+      "signature": "2ecff2253fdec67a90dec649c0eae6cb05794cdda1e5206bed3dfea1f62494c7",
       "num_keys": 201,
       "num_parameters": 31085894
     },
@@ -467,9 +467,9 @@
   },
   "dual": {
     "dual_resunet": {
-      "signature": "29542bb0d72f16067dfcff801fa4c524bd39fb4b9de5ca90edfc5e36fe7bc7b9",
-      "num_keys": 263,
-      "num_parameters": 31181846
+      "signature": "808f966531e581a72ae2ad56edb04fd836bd96347b3f0217e941fbf77fc7c6a0",
+      "num_keys": 253,
+      "num_parameters": 31181810
     }
   }
 }

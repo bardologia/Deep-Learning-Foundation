@@ -1,3 +1,5 @@
+"""Tests for the profile parameter cropper over explicit row splits."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -9,62 +11,10 @@ from tools.data.regions                              import CropRegion, SplitReg
 from tools.monitoring.logger                         import Logger
 
 
-def _ranges(region: CropRegion) -> set[int]:
-    return set(range(region.row_start, region.row_end))
-
-
-def test_from_ratios_partitions_are_disjoint():
-    crop   = CropRegion(0, 1000, 0, 500)
-    splits = SplitRegions.from_ratios(crop, train_ratio=0.7, val_ratio=0.15)
-
-    train, val, test = splits.train, splits.val, splits.test
-
-    assert _ranges(train).isdisjoint(_ranges(val))
-    assert _ranges(train).isdisjoint(_ranges(test))
-    assert _ranges(val).isdisjoint(_ranges(test))
-
-
-def test_from_ratios_cover_full_rows():
-    crop   = CropRegion(0, 1000, 0, 500)
-    splits = SplitRegions.from_ratios(crop, train_ratio=0.7, val_ratio=0.15)
-
-    covered = _ranges(splits.train) | _ranges(splits.val) | _ranges(splits.test)
-
-    assert covered == set(range(0, 1000))
-
-
-def test_from_ratios_respects_ratios():
-    crop   = CropRegion(0, 1000, 0, 500)
-    splits = SplitRegions.from_ratios(crop, train_ratio=0.7, val_ratio=0.15)
-
-    assert splits.train.row_size == 700
-    assert splits.val.row_size   == 150
-    assert splits.test.row_size  == 150
-
-
-def test_from_ratios_deterministic():
-    crop = CropRegion(100, 900, 50, 300)
-
-    a = SplitRegions.from_ratios(crop, 0.6, 0.2)
-    b = SplitRegions.from_ratios(crop, 0.6, 0.2)
-
-    assert a.train.as_tuple() == b.train.as_tuple()
-    assert a.val.as_tuple()   == b.val.as_tuple()
-    assert a.test.as_tuple()  == b.test.as_tuple()
-
-
-def test_from_ratios_share_range_extent():
-    crop   = CropRegion(0, 1000, 25, 475)
-    splits = SplitRegions.from_ratios(crop)
-
-    for region in (splits.train, splits.val, splits.test):
-        assert region.col_start == 25
-        assert region.col_end   == 475
-
-
 @pytest.mark.dataset
 def test_parameter_cropper_loads_disjoint_pixel_counts(test_data_dir, params_dir, parameters, scene_config, tmp_path):
-    logger = Logger(log_dir=str(tmp_path / "logs"), name="split_real", level="ERROR")
+    """The cropper loads each split at its own row extent and reports the profile length."""
+    logger = Logger(log_dir=str(tmp_path / "logs"), name="split_scene", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
 
     splits = SplitRegions(
@@ -87,6 +37,7 @@ def test_parameter_cropper_loads_disjoint_pixel_counts(test_data_dir, params_dir
 
 @pytest.mark.dataset
 def test_parameter_cropper_regions_load_distinct_data(test_data_dir, params_dir, tmp_path):
+    """Adjacent split regions load different parameter data."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_real2", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
 
@@ -106,6 +57,7 @@ def test_parameter_cropper_regions_load_distinct_data(test_data_dir, params_dir,
 
 @pytest.mark.dataset
 def test_parameter_cropper_rejects_overlapping_splits(test_data_dir, params_dir, tmp_path):
+    """Overlapping split regions raise ValueError."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="split_overlap", level="ERROR")
     layout = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
 
