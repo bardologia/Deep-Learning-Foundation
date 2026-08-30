@@ -80,14 +80,14 @@ class EnvironmentPinner:
     def _stash_inherited_mask(cls) -> None:
         """Records the CUDA_VISIBLE_DEVICES this process inherited before the pin overwrites it.
 
-        The value is exported as TOMOSAR_INHERITED_CUDA_MASK, an empty string
+        The value is exported as MLTEMPLATE_INHERITED_CUDA_MASK, an empty string
         standing for an unset mask, so a fan-out parent's GpuQueue can hand
         each unit the environment the parent itself received instead of the
         parent's own single-device pin. Only the first pin records; later pins
         in the same process keep the original snapshot.
         """
-        if "TOMOSAR_INHERITED_CUDA_MASK" not in os.environ:
-            os.environ["TOMOSAR_INHERITED_CUDA_MASK"] = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        if "MLTEMPLATE_INHERITED_CUDA_MASK" not in os.environ:
+            os.environ["MLTEMPLATE_INHERITED_CUDA_MASK"] = os.environ.get("CUDA_VISIBLE_DEVICES", "")
 
     @classmethod
     def _mask_tokens(cls, gpu_ids: list) -> list:

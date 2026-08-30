@@ -16,6 +16,7 @@ from configuration.training.general.loss import LossConfig
 from pipelines.backbone.training.loss    import Loss
 from pipelines.backbone.training.trainer import Trainer
 from pipelines.shared.training.curriculum import CurriculumController
+from tools.training.checkpoint            import WeightSwa
 
 from tests.backbone_training._helpers import identity_normalizer, tiny_model, tiny_trainer_config, x_axis_numpy
 
@@ -120,6 +121,46 @@ def test_one_epoch_fit_writes_checkpoint(tmp_path):
     assert len(train_losses) == 1
     assert (tmp_path / "best_model.pt").exists()
     assert torch.isfinite(torch.tensor(best_val)).item()
+
+
+def test_trainer_builds_the_configured_optimizer_family(tmp_path):
+    """The optimizer type dispatches to SGD with the configured momentum and rejects unknown names."""
+    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+
+    config.optimizer.type     = "sgd"
+    config.optimizer.momentum = 0.8
+
+    logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_sgd", level="ERROR")
+    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+
+    assert isinstance(trainer.optimizer, torch.optim.SGD)
+    assert all(pg["momentum"] == 0.8 for pg in trainer.optimizer.param_groups)
+
+    config.optimizer.type = "lion"
+    with pytest.raises(ValueError, match="Unknown optimizer type"):
+        Trainer(tiny_model(2, 2)[0], model_cfg, x_axis_numpy(), config, tmp_path / "bad", logger, norm_stats=identity_normalizer(6), emit_docs=False)
+
+
+def test_swa_writes_averaged_checkpoint_and_marker(tmp_path):
+    """With SWA on from epoch one, training writes swa_model.pt and records its val loss in the marker."""
+    import json
+
+    trainer = _build_trainer(tmp_path, epochs=2)
+
+    trainer.config.training.use_swa = True
+    trainer.swa                     = WeightSwa(trainer.model, True)
+    trainer.swa_start_epoch         = 0
+
+    loader = _loader()
+    trainer.train(loader, loader, loader)
+
+    payload = torch.load(tmp_path / "swa_model.pt", map_location="cpu", weights_only=False)
+    marker  = json.loads((tmp_path / "complete.json").read_text())
+
+    assert payload["swa_epochs"] == 2
+    assert torch.isfinite(torch.tensor(payload["swa_val_loss"])).item()
+    assert marker["swa_val_loss"] == pytest.approx(payload["swa_val_loss"])
 
 
 def test_train_writes_final_model_checkpoint(tmp_path):
