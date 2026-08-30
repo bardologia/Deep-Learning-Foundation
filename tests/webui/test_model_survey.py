@@ -120,7 +120,7 @@ def test_survey_flips_noise_occlusion_and_erf_profiles():
     flips = {entry["flip"]: entry["delta_mse"] for entry in result["flips"]}
     assert flips["none"] == pytest.approx(0.0, abs=1e-12)
     assert flips["row"] == pytest.approx(0.0, abs=1e-10)
-    assert flips["range"]   == pytest.approx(0.0, abs=1e-10)
+    assert flips["col"] == pytest.approx(0.0, abs=1e-10)
 
     noise = result["noise"]
     assert noise[0]["value"]     == pytest.approx(0.0)

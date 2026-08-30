@@ -229,11 +229,10 @@ class DatasetBrowser:
         Returns:
             Dict with ``ok``, the dataset path, the ``params_root`` path and a
             ``files`` list of name/path/analysed entries relative to that root, where
-            ``analysed`` marks runs whose directory holds the resolution curve archive
+            ``analysed`` marks runs whose directory holds the metrics summary
             written by parameter-extraction inference; the list is empty when the
             params folder is absent.
         """
-        from pipelines.processing.param_extraction.resolution import ResolutionArtifactWriter
         dataset = self._directory(raw_dataset)
         if dataset is None:
             return {"ok": False, "error": f"not a directory: {raw_dataset}"}
@@ -247,7 +246,7 @@ class DatasetBrowser:
             files.append({
                 "name"     : str(path.relative_to(params_dir)),
                 "path"     : str(path),
-                "analysed" : (path.parent / ResolutionArtifactWriter.CURVES_FILENAME).is_file(),
+                "analysed" : (path.parent / "fit_metrics_summary.json").is_file(),
             })
 
         self.logger.info(f"params: found {len(files)} under {params_dir}")

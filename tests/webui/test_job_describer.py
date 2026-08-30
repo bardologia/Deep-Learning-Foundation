@@ -12,6 +12,14 @@ import pytest
 from job_describer import JobDescriber
 
 
+GENERATE_DATASET_LEAVES = [
+    {"path": "synthesis.output_directory", "value": "None"},
+    {"path": "synthesis.global_crop",      "value": "[0, 1512, 0, 1024]"},
+    {"path": "synthesis.k_max",            "value": "2"},
+    {"path": "synthesis.params_run_name",  "value": "None"},
+    {"path": "synthesis.seed",             "value": "0"},
+]
+
 BACKBONE_LEAVES = [
     {"path": "backbone_name",          "value": "resunet"},
     {"path": "backbone_head",          "value": "conv"},
@@ -135,22 +143,20 @@ def test_dual_lead_names_both_trunks_when_they_differ():
     assert "existence_backbone=" not in text
 
 
-def test_pre_process_shows_windows_and_stack_choices():
-    """Preprocessing is described by its windows, channel selection, polarisation and beamforming method, with no dataset when unnamed."""
-    text = _describer({"generate_dataset": PRE_PROCESS_LEAVES}).describe("generate_dataset", "python", {})
+def test_generate_dataset_shows_scene_shape_and_seed():
+    """Dataset synthesis is described by its crop, slot count and seed."""
+    text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {})
 
-    assert "windows [[20, 10]]" in text
-    assert "tracks *" in text
-    assert "pol hv" in text
-    assert "reference" in text
-    assert "dataset" not in text
+    assert "crop [0, 1512, 0, 1024]" in text
+    assert "K 2" in text
+    assert "seed 0" in text
 
 
-def test_pre_process_named_dataset_appears():
-    """An explicit dataset_name override is shown in the preprocessing description."""
-    text = _describer({"generate_dataset": PRE_PROCESS_LEAVES}).describe("generate_dataset", "python", {"dataset_name": "traunstein_w30_15"})
+def test_generate_dataset_output_override_appears():
+    """An explicit output directory override is shown as its tail."""
+    text = _describer({"generate_dataset": GENERATE_DATASET_LEAVES}).describe("generate_dataset", "python", {"synthesis.output_directory": "/data/scenes/synthetic_big"})
 
-    assert "dataset traunstein_w30_15" in text
+    assert "synthetic_big" in text
 
 
 def test_extract_params_empty_filter_reads_all_datasets():

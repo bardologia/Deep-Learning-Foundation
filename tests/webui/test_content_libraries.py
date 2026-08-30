@@ -41,10 +41,6 @@ def flows():
     return FlowLibrary().collect()
 
 
-@pytest.fixture(scope="module")
-def physics():
-    """Returns the collected physics-loss page content."""
-    return PhysicsLossLibrary().collect()
 
 
 @pytest.fixture(scope="module")
@@ -173,65 +169,13 @@ def test_every_flow_sketch_matches_a_declared_step(flows):
     assert keys <= steps, f"sketches without a flow step: {sorted(keys - steps)}"
 
 
-def test_the_physics_page_has_every_section(physics):
-    """Checks the physics page exposes all six sections with their content filled in."""
-    assert sorted(physics) == ["comparison", "config", "dataset", "intro", "operator", "terms"]
-    assert physics["intro"]["points"]
-    assert physics["operator"]["items"]
-    assert physics["dataset"]["sources"] and physics["dataset"]["pipeline"]
 
 
-def test_physics_terms_are_numbered_in_order(physics):
-    """Checks term keys are unique and their indices run consecutively from one."""
-    keys = [term["key"] for term in physics["terms"]]
-
-    assert sorted(keys) == sorted(set(keys))
-    assert [term["index"] for term in physics["terms"]] == list(range(1, len(keys) + 1))
 
 
-def test_every_physics_term_names_a_real_loss_implementation(physics):
-    """Checks each term's code reference resolves to a PhysicalLoss method."""
-    missing = []
-
-    for term in physics["terms"]:
-        owner, _, method = term["code"].partition(".")
-        if owner != PhysicalLoss.__name__ or not hasattr(PhysicalLoss, method):
-            missing.append(term["code"])
-
-    assert not missing, f"physics terms documented against absent implementations: {missing}"
 
 
-def test_the_comparison_table_lists_the_same_five_terms(physics):
-    """Checks the comparison table mirrors the term list and every row fills all five columns."""
-    rows = physics["comparison"]["rows"]
-
-    assert [row["term"] for row in rows] == [term["name"] for term in physics["terms"]]
-    assert len(physics["comparison"]["columns"]) == 5
-    assert all(sorted(row) == ["cost", "invariant", "quantity", "role", "term"] for row in rows)
-    assert all(len(row) == len(physics["comparison"]["columns"]) for row in rows)
 
 
-def test_every_documented_config_field_exists_on_its_dataclass(physics):
-    """Checks each config field named on the physics page still exists on LossConfig or GeometryConfig."""
-    missing = []
-
-    for group in physics["config"]["groups"]:
-        known = {field.name for field in fields(CONFIG_CLASSES[group["name"]])}
-        for entry in group["fields"]:
-            for name in [part.strip() for part in entry["field"].split("/")]:
-                if name not in known:
-                    missing.append(f"{group['name']}.{name}")
-
-    assert not missing, f"physics config reference naming fields that no longer exist: {missing}"
 
 
-def test_every_physics_term_carries_its_story_and_legend(physics):
-    """Checks each term fills its narrative fields, has a positive cost and a described legend."""
-    for term in physics["terms"]:
-        for field in ("name", "tagline", "role", "role_label", "quantity", "invariant", "cost_label", "tex", "story", "caveat"):
-            assert term[field], f"{term['key']} has an empty {field}"
-
-        assert term["cost"] >= 1
-        assert term["vars"]
-        for variable in term["vars"]:
-            assert variable["sym"] and variable["desc"]

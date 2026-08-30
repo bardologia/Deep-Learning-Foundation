@@ -98,7 +98,7 @@ def test_every_read_refuses_a_stamp_outside_the_opened_roots(tmp_path):
     assert cases["ok"] is False
     assert "outside every catalogued runs root" in cases["error"]
     assert board.thumb(str(outside), row0=0, col0=0) is None
-    assert board.profile(str(outside), az=0, rg=0)["ok"] is False
+    assert board.profile(str(outside), row=0, col=0)["ok"] is False
 
     assert board.cases(str(inside))["ok"] is True
 

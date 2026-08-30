@@ -132,7 +132,7 @@ def test_seed_units_absent_by_default_and_for_base_level_seeds(tmp_path):
     assert unit_names    == ["seed0", "trial_x", "trial_x/seed0"]
 
 
-def test_params_listing_flags_runs_without_resolution_curves(tmp_path):
+def test_params_listing_flags_runs_without_metrics_summary(tmp_path):
     """Checks each parameter file reports whether its run directory holds the resolution curve archive."""
     analysed = tmp_path / "params" / "run_analysed"
     fresh    = tmp_path / "params" / "run_fresh"
@@ -140,7 +140,7 @@ def test_params_listing_flags_runs_without_resolution_curves(tmp_path):
     fresh.mkdir(parents=True)
 
     (analysed / "parameters.npy").write_text("x")
-    (analysed / "resolution_curves.npz").write_text("x")
+    (analysed / "fit_metrics_summary.json").write_text("x")
     (fresh / "parameters.npy").write_text("x")
 
     result = DatasetBrowser(WebLogger()).params(str(tmp_path))

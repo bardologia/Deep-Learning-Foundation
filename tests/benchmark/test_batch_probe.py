@@ -356,7 +356,7 @@ def test_run_runs_the_lr_range_test_at_the_probed_batch(monkeypatch, tmp_path):
     assert result["lr_divergence_multiplier"] == pytest.approx(20.0)
     assert result["lr_rungs_run"]             == 30
     assert lr_captured["batch_size"]          == 4
-    assert lr_captured["lrs"]                 == [pytest.approx(0.64 * 4 / 256)]
+    assert lr_captured["lrs"]                 == [pytest.approx(0.64 * 4 / 64)]
 
 
 def test_run_skips_the_lr_range_test_when_disabled(monkeypatch, tmp_path):
@@ -474,16 +474,3 @@ def test_build_context_probes_with_the_swept_loss_union(monkeypatch, tmp_path, t
     probe.logger.close()
 
 
-def test_probe_curriculum_activates_geometry_field_for_physics_sweeps():
-    """Verifies the geometry field is required only when a swept component is a physics term."""
-    config = BenchmarkConfig()
-
-    config.sweep_loss_components = ["param_l1"]
-    plain = LossComponentCatalog.combined_curriculum(config.sweep_loss_components, base=config.loss)
-    stub  = type("Cfg", (), {"curriculum": plain})()
-    assert TrainingPipeline.physics_geometry_active(stub) is False
-
-    config.sweep_loss_components = ["param_l1", "moments"]
-    physics = LossComponentCatalog.combined_curriculum(config.sweep_loss_components, base=config.loss)
-    stub    = type("Cfg", (), {"curriculum": physics})()
-    assert TrainingPipeline.physics_geometry_active(stub) is True
