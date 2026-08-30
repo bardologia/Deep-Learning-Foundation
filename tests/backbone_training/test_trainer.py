@@ -245,6 +245,24 @@ def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
     assert result["avg_loss"]    == pytest.approx(2.0)
 
 
+def test_evaluate_weights_batches_by_sample_count(tmp_path):
+    """Verifies the evaluation average weights a partial final batch by its sample count, not like a full batch."""
+    trainer = _build_trainer(tmp_path)
+
+    gen    = torch.Generator().manual_seed(0)
+    imgs   = torch.randn(6, 2, 16, 16, generator=gen)
+    tgt    = torch.randn(6, 6, 16, 16, generator=gen)
+    loader = DataLoader(TensorDataset(imgs, tgt), batch_size=4)
+
+    trainer._eval_step = lambda batch: _loss_dict(1.0 if batch[0].shape[0] == 4 else 4.0)
+
+    result = trainer.evaluate(loader, epoch=0)
+
+    assert result["num_batches"] == 2
+    assert result["num_samples"] == 6
+    assert result["avg_loss"]    == pytest.approx((1.0 * 4 + 4.0 * 2) / 6)
+
+
 def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
     """Verifies evaluation reports zero batches and a NaN average when every batch is non-finite."""
     trainer = _build_trainer(tmp_path)
