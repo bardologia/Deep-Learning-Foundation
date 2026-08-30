@@ -1,3 +1,9 @@
+"""Figures comparing the number of active Gaussian slots per pixel against ground truth.
+
+Renders the two active-count maps of the inference report: a categorical agreement map
+(correct / under / over) and the signed count difference between prediction and labels.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,6 +21,8 @@ from tools.loss.param_loss                   import ParamMatcher
 
 
 class SlotPlotter(PlotTools):
+    """Draws per-pixel active-Gaussian-count maps for a stitched inference cube."""
+
     def plot_active_count_map(
         self,
         params_pred   : np.ndarray,
@@ -25,6 +33,20 @@ class SlotPlotter(PlotTools):
         col_offset    : int,
         amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
     ) -> List[Path]:
+        """Saves the active-count agreement map and the signed count-difference map.
+
+        Args:
+            params_pred   : Predicted Gaussian parameter cube of shape (3 * n_gaussians, azimuth, range), interleaved as (amplitude, mu, sigma) per slot.
+            params_gt     : Ground-truth Gaussian parameter cube in the same layout as params_pred.
+            n_gaussians   : Number of Gaussian slots to count over.
+            out_dir       : Directory the two PNG figures are written into.
+            az_offset     : Azimuth index of the first row of the cube, used for axis extents.
+            rg_offset     : Range index of the first column of the cube, used for axis extents.
+            amp_threshold : Amplitude above which a slot counts as active.
+
+        Returns:
+            Paths of the agreement map and the signed-difference map, in that order.
+        """
 
         gt_count   = np.zeros(params_gt  .shape[-2:], dtype=np.int32)
         pred_count = np.zeros(params_pred.shape[-2:], dtype=np.int32)

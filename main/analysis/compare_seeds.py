@@ -1,3 +1,8 @@
+"""Entry point aggregating existing per-seed inference results into seed-comparison reports.
+
+Reads only what previous inference runs left on disk: no model is re-evaluated.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +12,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the seed-comparison config and writes the per-group seed reports."""
     EnvironmentPinner.threads()
 
     from configuration.comparison import SeedComparisonConfig

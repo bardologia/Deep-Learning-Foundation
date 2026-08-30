@@ -1,3 +1,11 @@
+"""Fitting of the per-channel normalization statistics on the train split.
+
+Input channels are grouped by slot kind (amplitude, phase, real, imaginary, DEM) and
+pooled across passes and interferograms, so every channel of a kind shares one
+location and scale. Output channels are grouped by parameter role (amplitude, mu,
+sigma) and fitted over pixels whose Gaussian slot is active.
+"""
+
 from __future__ import annotations
 
 from typing import Optional
@@ -13,12 +21,22 @@ from pipelines.backbone.dataset.stats import Stats
 
 
 class StatsComputer:
+    """Fits the input and output normalization statistics of a backbone dataset."""
+
     @staticmethod
     def _parts(dataset) -> list:
+        """Returns the per-region parts of a dataset, or the dataset itself as a single part."""
         return list(dataset.parts) if hasattr(dataset, "parts") else [dataset]
 
     @staticmethod
     def _log_grouping(logger : Logger, label : str, group_keys : list[str]) -> None:
+        """Reports which channel indices fall into each normalization group.
+
+        Args:
+            logger     : Logger receiving the grouping table.
+            label      : Side being reported, "Input" or "Output".
+            group_keys : Group key of each channel, in channel order.
+        """
         if len(group_keys) == 0:
             logger.subsection(f"{label} grouping (0 groups, 0 channels)")
             return
@@ -37,6 +55,17 @@ class StatsComputer:
 
     @staticmethod
     def _sample_flat(flat: np.ndarray, budget: int, rng: np.random.Generator) -> np.ndarray:
+        """Draws at most budget values without replacement from a flat array.
+
+        Args:
+            flat   : One-dimensional array of candidate values.
+            budget : Maximum number of values to keep.
+            rng    : Generator drawing the subsample.
+
+        Returns:
+            The array itself when it fits in the budget, otherwise a random subsample of
+            shape (budget,).
+        """
         if flat.size <= budget:
             return np.asarray(flat)
 
@@ -50,6 +79,24 @@ class StatsComputer:
         strategies         : dict[str, ChannelStrategy],
         max_vals_per_group : int = 1_000_000,
     ) -> dict[str, np.ndarray]:
+        """Pools sampled channel values per input group across every region.
+
+        Only groups whose strategy needs data are collected; data-free strategies such as
+        fixed bounds are skipped.
+
+        Args:
+            parts              : Per-region datasets holding the complex stacks and the DEM.
+            input_config       : Selection and representation of the input groups.
+            group_keys         : Group key of each input channel, in channel order.
+            strategies         : Normalization strategy of each group.
+            max_vals_per_group : Total sample budget per group, split across channels and regions.
+
+        Returns:
+            One pooled float64 array of sampled values per group needing data.
+
+        Raises:
+            ValueError : If a group that needs data collected no sample at all.
+        """
 
         unique_groups  = list(dict.fromkeys(group_keys))
         group_channels = {g: [i for i, k in enumerate(group_keys) if k == g] for g in unique_groups}
@@ -103,6 +150,18 @@ class StatsComputer:
 
     @staticmethod
     def _fit_input(logger : Logger, group_keys : list[str], strategies : dict[str, ChannelStrategy], collected : dict[str, np.ndarray]) -> ChannelStats:
+        """Fits one location and scale per input group and broadcasts them to the channels.
+
+        Args:
+            logger     : Logger receiving the per-channel table and the degenerate-scale warning.
+            group_keys : Group key of each input channel, in channel order.
+            strategies : Normalization strategy of each group.
+            collected  : Pooled sample values of the groups needing data.
+
+        Returns:
+            Channel statistics with per-channel loc, scale, names and strategies, all
+            input channels marked as not clampable.
+        """
         unique_groups    = list(dict.fromkeys(group_keys))
         group_strategies = strategies
 
@@ -149,6 +208,23 @@ class StatsComputer:
         normalization      : NormalizationConfig = None,
         max_vals_per_group : int = 1_000_000,
     ) -> Stats:
+        """Fits the input-side normalization statistics on a dataset.
+
+        Args:
+            dataset            : Train-split dataset, either a PatchDataset or a MultiRegionDataset.
+            logger             : Logger receiving the strategy, grouping and per-channel tables.
+            input_config       : Selection and representation of the input groups.
+            n_secondaries      : Number of secondary passes in the stack.
+            n_interferograms   : Number of interferogram layers in the stack.
+            normalization      : Normalization configuration; defaults are used when omitted.
+            max_vals_per_group : Sample budget per channel group.
+
+        Returns:
+            Statistics carrying only the input half.
+
+        Raises:
+            ValueError : If the derived group keys do not match the dataset channel count.
+        """
 
         normalization = normalization if normalization is not None else NormalizationConfig()
         parts         = StatsComputer._parts(dataset)
@@ -203,6 +279,21 @@ class StatsComputer:
         output_config : "OutputConfig",
         n_gaussians   : int,
     ) -> ChannelStats:
+        """Fits one location and scale per parameter role and expands them per Gaussian slot.
+
+        Roles under a fixed-bounds strategy take their location and scale from the
+        configured per-slot bounds instead of the pooled values.
+
+        Args:
+            logger        : Logger receiving the role table, or None to stay silent.
+            role_pools    : Pooled active-pixel values keyed by "out/amp", "out/mu" and "out/sigma", with mu and sigma in metres.
+            output_config : Output configuration selecting the parameter channels and their strategies.
+            n_gaussians   : Number of Gaussian slots the output covers.
+
+        Returns:
+            Channel statistics named per slot and role, with amplitude and sigma channels
+            marked clampable.
+        """
 
         role_strat : dict[str, ChannelStrategy]     = {key: output_config.strategy_for(key) for key in role_pools}
         role_fit   : dict[str, tuple[float, float]] = {key: strat.fit(role_pools[key]) for key, strat in role_strat.items() if strat.norm_method is not NormMethod.FIXED_BOUNDS}
@@ -261,6 +352,19 @@ class StatsComputer:
 
     @staticmethod
     def _fixed_bound(strategy: ChannelStrategy, full_ch: int, n_gaussians: int) -> tuple[float, float]:
+        """Turns the configured fixed bounds of one parameter channel into a location and scale.
+
+        Args:
+            strategy    : Fixed-bounds strategy carrying the per-channel min and max lists.
+            full_ch     : Index of the channel in the full 3 * n_gaussians parameter stack.
+            n_gaussians : Number of Gaussian slots the bounds must cover.
+
+        Returns:
+            The (minimum, span) pair used as location and scale for that channel.
+
+        Raises:
+            ValueError : If the strategy carries no bounds, if the bound lists have the wrong length, or if a channel's maximum does not exceed its minimum.
+        """
         if strategy.bounds is None:
             raise ValueError("fixed_bounds strategy carries no bounds; resolve it through NormalizationConfig.strategy so the configured fixed_out_bounds are attached.")
 
@@ -284,6 +388,21 @@ class StatsComputer:
         amp_threshold : float = 1e-3,
         logger        : Optional[Logger] = None,
     ) -> Stats:
+        """Fits the output-side normalization statistics over the active Gaussian slots.
+
+        A slot contributes its amplitude, mu and sigma only at pixels where its amplitude
+        exceeds the activity threshold, so empty slots do not drag the statistics down.
+
+        Args:
+            dataset       : Train-split dataset, either a PatchDataset or a MultiRegionDataset.
+            n_gaussians   : Number of Gaussian slots to pool over.
+            output_config : Output configuration selecting the channels and their strategies.
+            amp_threshold : Amplitude above which a Gaussian slot counts as active.
+            logger        : Logger receiving the role table, or None to stay silent.
+
+        Returns:
+            Statistics carrying only the output half.
+        """
         regions = [part.gt_parameters for part in StatsComputer._parts(dataset)]
 
         amp_pool_vals : list[np.ndarray] = []
@@ -330,6 +449,21 @@ class StatsComputer:
         n_gaussians   : int,
         normalization : NormalizationConfig = None,
     ) -> Stats:
+        """Fits both halves of the normalization and merges them under the output clamp.
+
+        Args:
+            dataset          : Train-split dataset the statistics are fitted on.
+            logger           : Logger receiving the fitting tables.
+            input_config     : Selection and representation of the input groups.
+            output_config    : Output configuration selecting the parameter channels.
+            n_secondaries    : Number of secondary passes in the stack.
+            n_interferograms : Number of interferogram layers in the stack.
+            n_gaussians      : Number of Gaussian slots the output covers.
+            normalization    : Normalization configuration; defaults are used when omitted.
+
+        Returns:
+            The complete statistics of the run, input, output and clamp.
+        """
 
         normalization = normalization if normalization is not None else NormalizationConfig()
 

@@ -1,15 +1,40 @@
+"""Residual U-shaped backbones sharing one encoder-decoder skeleton.
+
+``ResUNet`` downsamples with strided residual blocks; ``UNetSkip`` keeps the blocks
+at stride one and pools instead. Both are the reference architectures of the project.
+"""
+
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
 
 from configuration.architectures import ResUNetConfig, UNetSkipConfig
-from ..blocks                    import build_upsample, initialize_weights
-from ..blocks                    import OutputHeadsMixin, ResidualConvBlock, match_spatial_size
+from ..blocks                    import FeatureGeometry, LayerFactory, OutputHeadsMixin, ResidualConvBlock
 
 
 class ResUNetBackbone(nn.Module, OutputHeadsMixin):
+    """Residual encoder-decoder trunk shared by ResUNet and UNetSkip.
+
+    Subclasses attach the output head and initialize the weights; this class only
+    provides the layers and the ``encode_decode`` path.
+
+    Attributes:
+        config             : Architecture configuration driving widths, depth and head choice.
+        downsample_mode    : Either ``stride`` or ``maxpool``, selecting how resolution drops.
+        embedding_channels : Channel width of the decoded embedding fed to the output head.
+    """
+
     def __init__(self, config, downsample: str = "stride"):
+        """Builds the residual encoder, the bottleneck and the concatenating decoder.
+
+        Args:
+            config     : Architecture configuration exposing ``features``, ``in_channels``, ``bottleneck_factor``, ``upsample_mode`` and the block hyperparameters.
+            downsample : Downsampling strategy, ``stride`` or ``maxpool``.
+
+        Raises:
+            ValueError : If ``features`` is empty or ``downsample`` is unknown.
+        """
         super().__init__()
         self.config          = config
         self.downsample_mode = downsample
@@ -26,12 +51,8 @@ class ResUNetBackbone(nn.Module, OutputHeadsMixin):
         self.downsample_layers = nn.ModuleList()
         channels = config.in_channels
         for index, feature_size in enumerate(feature_sizes):
-            if downsample == "stride":
-                stride     = 1 if index == 0 else 2
-                first_unit = index == 0
-            else:
-                stride     = 1
-                first_unit = False
+            stride     = 1 if downsample == "maxpool" or index == 0 else 2
+            first_unit = index == 0
 
             self.encoder_blocks.append(
                 ResidualConvBlock(
@@ -64,7 +85,7 @@ class ResUNetBackbone(nn.Module, OutputHeadsMixin):
         self.decoder_blocks  = nn.ModuleList()
         for index in range(len(reversed_features) - 1):
             self.upsample_layers.append(
-                build_upsample(
+                LayerFactory.build_upsample(
                     mode         = config.upsample_mode,
                     in_channels  = reversed_features[index],
                     out_channels = reversed_features[index + 1],
@@ -84,6 +105,14 @@ class ResUNetBackbone(nn.Module, OutputHeadsMixin):
         self.embedding_channels = feature_sizes[0]
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
+        """Returns the embedding at input resolution.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Embedding of shape (batch, embedding_channels, height, width).
+        """
         skip_connections: list[torch.Tensor] = []
         if self.downsample_mode == "stride":
             for encoder_block in self.encoder_blocks:
@@ -99,7 +128,7 @@ class ResUNetBackbone(nn.Module, OutputHeadsMixin):
 
         for upsample, decoder_block, skip in zip(self.upsample_layers, self.decoder_blocks, reversed(skip_connections)):
             x = upsample(x)
-            x = match_spatial_size(source=x, reference=skip)
+            x = FeatureGeometry.match_spatial_size(source=x, reference=skip)
             x = torch.cat([skip, x], dim=1)
             x = decoder_block(x)
 
@@ -107,22 +136,56 @@ class ResUNetBackbone(nn.Module, OutputHeadsMixin):
 
 
 class ResUNet(ResUNetBackbone):
+    """Residual U-Net that drops resolution with strided residual blocks."""
+
     def __init__(self, config: ResUNetConfig | None = None):
+        """Builds the strided residual trunk and its output head.
+
+        Args:
+            config : Architecture configuration; defaults to ``ResUNetConfig()``.
+        """
         super().__init__(config if config is not None else ResUNetConfig())
         self._build_output_head()
 
-        initialize_weights(module=self, mode=self.config.init_mode)
+        LayerFactory.initialize_weights(module=self, mode=self.config.init_mode)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Maps the input stack to per-pixel outputs through the configured head.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Tensor of shape (batch, out_channels, height, width) holding the
+            interleaved Gaussian parameters, or the raw embedding when the head
+            is ``none``.
+        """
         return self._head_forward(self.encode_decode(x))
 
 
 class UNetSkip(ResUNetBackbone):
+    """Residual U-Net that drops resolution with max pooling between stride-one blocks."""
+
     def __init__(self, config: UNetSkipConfig | None = None):
+        """Builds the pooled residual trunk and its output head.
+
+        Args:
+            config : Architecture configuration; defaults to ``UNetSkipConfig()``.
+        """
         super().__init__(config if config is not None else UNetSkipConfig(), downsample="maxpool")
         self._build_output_head()
 
-        initialize_weights(module=self, mode=self.config.init_mode)
+        LayerFactory.initialize_weights(module=self, mode=self.config.init_mode)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Maps the input stack to per-pixel outputs through the configured head.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Tensor of shape (batch, out_channels, height, width) holding the
+            interleaved Gaussian parameters, or the raw embedding when the head
+            is ``none``.
+        """
         return self._head_forward(self.encode_decode(x))

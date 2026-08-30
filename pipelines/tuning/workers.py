@@ -1,3 +1,10 @@
+"""Worker process running a share of one model's Optuna trials on a GPU.
+
+Builds the entry template and tuner for the configured training type, attaches
+a median pruner and a TPE sampler seeded per GPU, and optimizes the shared
+study opened from the run's SQLite storage.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,7 +24,21 @@ from tools.monitoring.logger                import Logger
 
 
 class TuningWorker:
+    """Runs one GPU's share of the trials of a single model's study.
+
+    Attributes:
+        tag     : Run tag naming the tuning directory.
+        config  : Tuning entry configuration.
+        run_dir : Directory holding the per-model worker logs and results.
+    """
+
     def __init__(self, tag: str, config) -> None:
+        """Resolves the run directory and quiets Optuna's own logging.
+
+        Args:
+            tag    : Run tag naming the tuning directory.
+            config : Tuning entry configuration.
+        """
         self.tag     = tag
         self.config  = config
         self.run_dir = Path(config.paths.log_base_dir) / tag
@@ -25,6 +46,7 @@ class TuningWorker:
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     def _ae_entry_template(self):
+        """Returns the profile-autoencoder entry config each trial deep-copies."""
         return ProfileAeEntryConfig(
             seed            = self.config.tuning.base_seed,
             pixel_subsample = self.config.pixel_subsample,
@@ -35,6 +57,7 @@ class TuningWorker:
         )
 
     def _image_ae_entry_template(self):
+        """Returns the image-autoencoder entry config each trial deep-copies."""
         return ImageAeEntryConfig(
             seed          = self.config.tuning.base_seed,
             ae_loss       = self.config.image_ae_loss,
@@ -45,26 +68,20 @@ class TuningWorker:
         )
 
     def _jepa_entry_template(self):
+        """Returns the JEPA entry config each trial deep-copies."""
         jepa = self.config.jepa
 
         return JepaEntryConfig(
-            seed                       = self.config.tuning.base_seed,
-            profile_autoencoder_logdir = jepa.profile_autoencoder_logdir,
-            profile_autoencoder_run    = jepa.profile_autoencoder_run,
-            profile_autoencoder_mode   = jepa.profile_autoencoder_mode,
-            image_autoencoder_logdir   = jepa.image_autoencoder_logdir,
-            image_autoencoder_run      = jepa.image_autoencoder_run,
-            image_autoencoder_mode     = jepa.image_autoencoder_mode,
-            target_provider            = jepa.target_provider,
-            embedding_loss             = jepa.embedding_loss,
-            param_loss                 = jepa.param_loss,
-            paths                      = self.config.paths,
-            training                   = self.config.training,
-            normalization              = self.config.normalization,
-            augmentation               = self.config.augmentation,
+            seed          = self.config.tuning.base_seed,
+            paths         = self.config.paths,
+            training      = self.config.training,
+            normalization = self.config.normalization,
+            augmentation  = self.config.augmentation,
+            **jepa.entry_kwargs(),
         )
 
     def _build_base_configs(self):
+        """Returns the (trainer config, dataset config) pair backbone trials copy."""
         factory = ConfigFactory(self.config)
 
         trainer_config            = factory.training_trainer_config(logdir=Path(self.config.paths.log_base_dir))
@@ -74,6 +91,16 @@ class TuningWorker:
         return trainer_config, dataset_config
 
     def _profile_ae_tuner(self, model_name: str, tune_cfg, logger: Logger):
+        """Builds the tuner optimizing a profile autoencoder.
+
+        Args:
+            model_name : Profile autoencoder model name.
+            tune_cfg   : Tuning settings.
+            logger     : Logger of this worker.
+
+        Returns:
+            The configured AeTuner.
+        """
         return AeTuner(
             model_name         = model_name,
             config_cls         = PROFILE_AE_CONFIG_REGISTRY[model_name],
@@ -85,6 +112,16 @@ class TuningWorker:
         )
 
     def _image_ae_tuner(self, model_name: str, tune_cfg, logger: Logger):
+        """Builds the tuner optimizing an image autoencoder.
+
+        Args:
+            model_name : Image autoencoder model name.
+            tune_cfg   : Tuning settings.
+            logger     : Logger of this worker.
+
+        Returns:
+            The configured AeTuner.
+        """
         return AeTuner(
             model_name         = model_name,
             config_cls         = IMAGE_AE_CONFIG_REGISTRY[model_name],
@@ -96,6 +133,16 @@ class TuningWorker:
         )
 
     def _jepa_tuner(self, model_name: str, tune_cfg, logger: Logger):
+        """Builds the tuner optimizing a JEPA backbone.
+
+        Args:
+            model_name : Composite ``<backbone>[-<head>]`` key.
+            tune_cfg   : Tuning settings.
+            logger     : Logger of this worker.
+
+        Returns:
+            The configured JepaTuner.
+        """
         return JepaTuner(
             model_name       = model_name,
             model_config_cls = BACKBONE_CONFIG_REGISTRY[ModelBuilder.split_key(model_name)[0]],
@@ -106,6 +153,16 @@ class TuningWorker:
         )
 
     def _backbone_tuner(self, model_name: str, tune_cfg, logger: Logger):
+        """Builds the tuner optimizing a supervised backbone.
+
+        Args:
+            model_name : Composite ``<backbone>[-<head>]`` key.
+            tune_cfg   : Tuning settings.
+            logger     : Logger of this worker.
+
+        Returns:
+            The configured Tuner.
+        """
         trainer_cfg, dataset_cfg = self._build_base_configs()
 
         return Tuner(
@@ -120,6 +177,19 @@ class TuningWorker:
         )
 
     def _build_tuner(self, model_name: str, tune_cfg, logger: Logger):
+        """Selects and builds the tuner matching the configured training type.
+
+        Args:
+            model_name : Model key to tune.
+            tune_cfg   : Tuning settings.
+            logger     : Logger of this worker.
+
+        Returns:
+            The tuner for this training type.
+
+        Raises:
+            ValueError : If the training type has no tuner.
+        """
         dispatch = {
             "backbone"            : self._backbone_tuner,
             "image_autoencoder"   : self._image_ae_tuner,
@@ -134,6 +204,15 @@ class TuningWorker:
         return dispatch[training_type](model_name, tune_cfg, logger)
 
     def run_worker(self, model_name: str, gpu_id: int, n_trials: int, study_name: str, storage_url: str) -> None:
+        """Optimizes this worker's share of a model's study on one GPU.
+
+        Args:
+            model_name  : Model key to tune.
+            gpu_id      : GPU index this worker owns; also offsets the sampler seed.
+            n_trials    : Trials this worker contributes.
+            study_name  : Name of the shared study to load.
+            storage_url : SQLAlchemy URL of the shared Optuna storage.
+        """
         tune_cfg      = self.config.tuning
         model_log_dir = str(self.run_dir / model_name / f"worker_gpu{gpu_id}")
         logger        = Logger(log_dir=model_log_dir, name=f"tune_worker_gpu{gpu_id}_{model_name}")

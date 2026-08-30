@@ -1,3 +1,5 @@
+"""Global gradient-norm monitoring and fixed or adaptive gradient clipping."""
+
 from __future__ import annotations
 
 import math
@@ -7,9 +9,39 @@ import torch
 
 
 class GradientClipper:
+    """Measures the global gradient norm each step and rescales it against a threshold.
+
+    The threshold is either fixed or derived from a rolling window of recorded
+    norms, as a percentile or a mean plus k standard deviations. Adaptive modes do
+    not clip until the window is full.
+
+    Attributes:
+        logger                  : Logger for warnings and mode reporting.
+        tracker                 : Experiment tracker receiving norm scalars and histograms.
+        param_groups            : Optimizer parameter groups whose norms are logged separately, or None.
+        mode                    : One of "disabled", "fixed", "adaptive_percentile", "adaptive_mean_std".
+        threshold               : Fixed clipping threshold, or None in adaptive modes.
+        window                  : Number of recorded steps in the adaptive window.
+        percentile              : Percentile of the window used as adaptive threshold.
+        mean_std_k              : Standard-deviation multiplier of the mean+k*std threshold.
+        epsilon                 : Denominator guard used when computing the rescaling factor.
+        hist_freq               : Number of recorded steps between gradient-norm histograms.
+        history                 : Recorded gradient norms, most recent last.
+        n_recorded              : Total number of recorded gradient norms.
+        EXPLODING_NORM_SENTINEL : Norm above which an alert is logged, independent of the clipping threshold.
+    """
+
     EXPLODING_NORM_SENTINEL = 100.0
 
     def __init__(self, config, logger, tracker, param_groups=None):
+        """Reads the clipper settings from the config and reports them.
+
+        Args:
+            config       : Training configuration exposing a gradient_clipper block.
+            logger       : Logger for the configuration table and warnings.
+            tracker      : Experiment tracker for scalars and histograms.
+            param_groups : Optimizer parameter groups for per-group norm logging, or None to log only the global norm.
+        """
         self.logger       = logger
         self.tracker      = tracker
         self.param_groups = param_groups
@@ -23,6 +55,7 @@ class GradientClipper:
         self.hist_freq  = config.gradient_clipper.log_histogram_freq
 
         self.history: list[float] = []
+        self.n_recorded           = 0
 
         self._adaptive_active_logged = False
 
@@ -49,6 +82,7 @@ class GradientClipper:
 
     @staticmethod
     def global_norm(model: torch.nn.Module) -> float:
+        """Returns the L2 norm over all parameter gradients of a model, or 0.0 when none exist."""
         grads = [p.grad.detach() for p in model.parameters() if p.grad is not None]
 
         if not grads:
@@ -60,6 +94,11 @@ class GradientClipper:
         return total_norm.item()
 
     def _log_group_norms(self, global_step: int) -> None:
+        """Logs the L2 gradient norm of each parameter group when several groups exist.
+
+        Args:
+            global_step : Optimizer step index the scalars are logged at.
+        """
         if self.param_groups is None or len(self.param_groups) <= 1:
             return
 
@@ -74,15 +113,27 @@ class GradientClipper:
             self.tracker.log_scalar(f"optim/grad_norm/{name}", group_norm, global_step)
 
     def _clip(self, model: torch.nn.Module, norm: float, max_norm: float) -> tuple[float, float]:
+        """Rescales the gradients in place so their norm does not exceed a threshold.
+
+        Args:
+            model    : Model whose gradients are scaled.
+            norm     : Current global gradient norm.
+            max_norm : Threshold the norm is scaled down to.
+
+        Returns:
+            Tuple of the norm before and after scaling.
+        """
         scale = min(1.0, max_norm / (norm + self.epsilon))
-        for p in model.parameters():
-            if p.grad is not None:
-                p.grad.detach().mul_(scale)
+        grads = [p.grad.detach() for p in model.parameters() if p.grad is not None]
+
+        if scale < 1.0 and grads:
+            torch._foreach_mul_(grads, scale)
 
         norm_after = norm * scale
         return norm, norm_after
 
     def _compute_adaptive_threshold(self) -> float | None:
+        """Returns the threshold implied by the rolling norm window, or None until it is full."""
         if len(self.history) < self.window:
             return None
 
@@ -95,6 +146,15 @@ class GradientClipper:
             return float(window_data.mean() + self.mean_std_k * window_data.std())
 
     def check_gradients(self, model: torch.nn.Module, global_step: int) -> bool:
+        """Returns whether any parameter gradient holds a NaN or Inf, warning on the first hit.
+
+        Args:
+            model       : Model whose named parameters are scanned.
+            global_step : Optimizer step index quoted in the warning.
+
+        Returns:
+            True when a non-finite gradient was found.
+        """
         has_invalid = False
         for name, param in model.named_parameters():
             if param.grad is not None:
@@ -106,6 +166,18 @@ class GradientClipper:
         return has_invalid
 
     def maybe_clip(self, model: torch.nn.Module, global_step: int):
+        """Measures the gradient norm, logs it and clips it when a threshold applies.
+
+        Args:
+            model       : Model whose gradients are measured and possibly rescaled.
+            global_step : Optimizer step index used for logging.
+
+        Returns:
+            The gradient norm before any clipping.
+
+        Raises:
+            FloatingPointError : If the gradient norm is non-finite, since rescaling cannot contain a NaN or Inf gradient.
+        """
         has_invalid = self.check_gradients(model, global_step) if self.tracker.debug else False
         norm        = GradientClipper.global_norm(model)
 
@@ -143,19 +215,36 @@ class GradientClipper:
         return norm_before
 
     def record(self, grad_norm_value: float, global_step: int):
-        self.history.append(float(grad_norm_value))
+        """Appends a gradient norm to the adaptive window and logs a histogram periodically.
 
-        if len(self.history) % self.hist_freq == 0:
+        Args:
+            grad_norm_value : Gradient norm of the step just taken.
+            global_step     : Optimizer step index the histogram is logged at.
+        """
+        self.history.append(float(grad_norm_value))
+        self.n_recorded += 1
+
+        if self.n_recorded % self.hist_freq == 0:
             self.tracker.log_histogram("optim/grad_norm_hist", np.asarray(self.history[-self.hist_freq:], dtype=np.float32), global_step)
 
     def state_dict(self) -> dict:
+        """Returns the trailing gradient-norm history and the recorded-step count."""
         keep = max(self.window, self.hist_freq)
-        return {"history": [float(v) for v in self.history[-keep:]]}
+        return {"history": [float(v) for v in self.history[-keep:]], "n_recorded": int(self.n_recorded)}
 
     def load_state_dict(self, state: dict) -> None:
+        """Restores the gradient-norm history after checking it is finite.
+
+        Args:
+            state : State dictionary produced by state_dict().
+
+        Raises:
+            FloatingPointError : If the saved history holds non-finite values, which would disable adaptive clipping for the rest of the run.
+        """
         history = [float(v) for v in state["history"]]
 
         if not all(math.isfinite(value) for value in history):
             raise FloatingPointError("The saved gradient-norm history holds non-finite values; that trainer state predates the non-finite gradient guard and would disable adaptive clipping for the rest of the run.")
 
-        self.history = history
+        self.history    = history
+        self.n_recorded = int(state["n_recorded"])

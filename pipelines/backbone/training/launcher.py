@@ -1,3 +1,10 @@
+"""Entry-point machinery for backbone training: single runs and GPU-fanned sweeps.
+
+Holds the single-run runner used by the training entry script, the scheduler
+that maps every backbone trial mode to its planner, and the launcher that
+decides between a single run and a sweep from the command line.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -8,53 +15,76 @@ from pathlib     import Path
 
 import torch
 
-from configuration.normalization               import Presets
-from configuration.training                    import BackboneEntryConfig, CurriculumInheritance, LossScaleProbeConfig, default_curriculum
-from configuration.training.general.loss       import ParamMatching
-from models                                    import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
-from pipelines.backbone.inference.pipeline     import InferencePipeline
-from pipelines.backbone.training.experiments   import AblationTrialPlanner, AugmentationTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, NormalizationTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
-from pipelines.backbone.training.pipeline      import TrainingPipeline
-from pipelines.shared.config.config_factory    import ConfigFactory
-from pipelines.shared.model.model_builder      import ModelBuilder
-from pipelines.shared.training.run_naming      import RunNaming
-from pipelines.shared.training.seed_sweep      import SeedFanoutScheduler, SeedSet, SeedSweepRunner
-from pipelines.shared.training.training_runner import SingleTrainRunner as BaseSingleTrainRunner
-from tools.data.gaussians                      import GaussianHead
-from tools.orchestration                       import ExperimentStage, GpuJob
-from tools.monitoring.logger                   import Logger
-from tools.runtime.config_cli                  import ConfigCli
-from tools.runtime.run_tag                     import RunTag
+from configuration.normalization                 import Presets
+from configuration.training                      import BackboneEntryConfig, CurriculumInheritance, default_curriculum
+from configuration.training.general.loss         import ParamMatching
+from configuration.training.general.optimization import ClipMode, WarmupMode
+from models                                      import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
+from pipelines.backbone.inference.pipeline       import InferencePipeline
+from pipelines.backbone.training.experiments     import AblationTrialPlanner, AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, NormalizationTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
+from pipelines.backbone.training.patch_report    import PatchTrialsReport
+from pipelines.backbone.training.pipeline        import TrainingPipeline
+from pipelines.shared.config.config_factory      import ConfigFactory
+from pipelines.shared.model.model_builder        import ModelBuilder
+from pipelines.shared.training.ddp_fanout        import DdpDispatch
+from pipelines.shared.training.run_naming        import RunNaming
+from pipelines.shared.training.seed_sweep        import SeedFanoutScheduler, SeedSet, SeedSweepRunner
+from pipelines.shared.training.training_runner   import RunDirectorySettledMarker, SingleTrainRunner as BaseSingleTrainRunner
+from pipelines.shared.training.trial_planners    import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
+from pipelines.shared.training.trial_sweep       import TrialSweepScheduler
+from tools.data.gaussians                        import GaussianHead
+from tools.runtime.config_cli                    import ConfigCli
+from tools.runtime.run_tag                       import RunTag
 
 
 class SingleTrainRunner(BaseSingleTrainRunner):
+    """Runs one backbone training unit and, optionally, its inference pass.
+
+    Attributes:
+        factory : Config factory deriving trainer, dataset and Gaussian configs from the resolved entry config.
+    """
 
     pipeline_class = TrainingPipeline
 
     def __init__(self, config) -> None:
+        """Stores the resolved entry config and its derived config factory."""
         super().__init__(config)
         self.factory = ConfigFactory(config)
 
     @property
     def model_name(self) -> str:
+        """The configured backbone name."""
         return self.config.backbone_name
 
     @property
     def model_head(self) -> str:
+        """The configured output head."""
         return self.config.backbone_head
 
     @property
     def label(self) -> str:
+        """The run-name label encoding backbone, head, curriculum, slot count and augmentation."""
         n_gaussians = self.factory.gaussian_config().n_default_gaussians
         return RunNaming.training_tag(self.model_name, self.model_head, self.config.curriculum, n_gaussians, self.config.augmentation)
 
     def _resolve_run_name(self) -> str:
+        """Returns the run directory name, combining the label with the run tag."""
         return RunNaming.compose(self.label, self.config.run_name or RunTag.now())
 
     def _model_config(self):
+        """Returns the backbone model config from the registry with the entry overrides applied."""
         return ModelBuilder.config_from_registry(self.config.backbone_name, self.config.model_overrides, head=self.config.backbone_head)
 
     def _pipeline(self, logdir) -> TrainingPipeline:
+        """Builds the training pipeline writing under `logdir`.
+
+        Args:
+            logdir : Directory the pipeline writes its run into.
+
+        Returns:
+            A training pipeline wired with the resolved trainer, dataset, model
+            and geometry configuration.
+        """
         trainer_config            = self.factory.training_trainer_config(logdir=logdir)
         trainer_config.curriculum = self.config.curriculum
 
@@ -72,23 +102,24 @@ class SingleTrainRunner(BaseSingleTrainRunner):
         )
 
     def _build_pretrain_trainer(self, logger):
+        """Returns the throwaway trainer, dataset and model used by the pretraining probes."""
         work_dir = self.run_directory / "pretrain" / "context"
 
         return self._pipeline(work_dir).build_pretrain_trainer(work_dir, logger)
 
-    def _probe_config(self) -> LossScaleProbeConfig:
-        return LossScaleProbeConfig(
-            enabled        = self.config.probe_enabled,
-            n_batches      = self.config.probe_n_batches,
-            reference      = self.config.probe_reference,
-            exit_after     = self.config.probe_exit_after,
-            enabled_losses = dict(self.config.probe_enabled_losses),
-        )
-
     def _inference_components(self):
+        """Returns the inference component overrides, None for the default backbone set."""
         return None
 
     def _run_inference(self, run_directory: Path):
+        """Frees GPU memory and runs the inference pipeline over the finished run.
+
+        Args:
+            run_directory : Training run directory holding the checkpoint.
+
+        Returns:
+            The inference pipeline result.
+        """
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -98,14 +129,22 @@ class SingleTrainRunner(BaseSingleTrainRunner):
         return InferencePipeline(inference_config, components=self._inference_components()).run()
 
     def run(self):
+        """Trains this unit unless already complete, then optionally runs inference.
+
+        Returns:
+            The training results, or None when a completed run directory let
+            training be skipped.
+        """
         self._resolve_run_directory()
 
         if self._build_unit_resume().skip_training():
             results = None
         else:
+            RunDirectorySettledMarker.write(self.run_directory)
+
             self._pretrain_preflight()
             pipeline = self._pipeline(self.config.logdir)
-            results  = pipeline.run(probe_config=self._probe_config(), resolved_entry_config=self.config)
+            results  = pipeline.run(probe_config=self.config.probe, resolved_entry_config=self.config)
 
         if (self.config.infer_after or self.config.infer_at_end) and not self.unit_resume.skip_inference(self.config.inference.split):
             self._run_inference(self.run_directory)
@@ -113,15 +152,28 @@ class SingleTrainRunner(BaseSingleTrainRunner):
         return results
 
 
-class TrainScheduler:
+class TrainScheduler(TrialSweepScheduler):
+    """Backbone trial scheduler mapping every backbone sweep mode to its planner.
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "normalization_trials", "ablation_features", "ablation_include_full", "infer_at_end", "gpus", "gpus_file", "poll_interval_s")
+    Attributes:
+        config             : Resolved backbone entry config.
+        entry_script       : Path to the training entry script the jobs re-invoke.
+        resume_plan        : Plan of already-completed units when resuming, else None.
+        runs_root          : Directory holding all run directories of this sweep.
+        log_dir            : Directory for the scheduler log and result JSONs.
+        results_path       : JSON file with the training job results.
+        infer_results_path : JSON file with the batched inference job results.
+        forward_overrides  : CLI overrides forwarded to each unit, scheduler-only fields removed.
+    """
+
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "normalization_trials", "ablation_features", "ablation_include_full", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     MODE_SUBDIRS = {
         "curriculum"    : "curriculum",
         "warmup"        : "warmup",
         "presence"      : "presence",
         "pair"          : "pair",
+        "log_energy"    : "log_energy",
         "secondary"     : "secondary",
         "patch"         : "patch",
         "input"         : "input",
@@ -129,33 +181,41 @@ class TrainScheduler:
         "reach"         : "reach",
         "head"          : "head",
         "augmentation"  : "augmentation",
+        "clamp"         : "clamp",
+        "stability"     : "stability",
+        "ema"           : "ema",
+        "amp"           : "amp",
         "normalization" : "normalization",
         "ablation"      : "ablation",
     }
 
-    def __init__(self, config, cli_overrides: dict, entry_script: Path) -> None:
-        self.config       = config
-        self.entry_script = Path(entry_script)
+    @property
+    def staged_inference(self) -> bool:
+        """Whether inference runs as a separate stage after all training units."""
+        return self.config.infer_at_end
 
-        if config.trials_mode not in self.MODE_SUBDIRS:
-            raise ValueError(f"Unknown trials_mode '{config.trials_mode}', expected one of {sorted(self.MODE_SUBDIRS)}")
-
-        self.runs_root          = Path(config.logdir) / self.MODE_SUBDIRS[config.trials_mode]
-        self.log_dir            = self.runs_root / "batch_train_logs"
-        self.results_path       = self.log_dir / "train_scheduler_results.json"
-        self.infer_results_path = self.log_dir / "infer_scheduler_results.json"
-
-        self.forward_overrides = {path: value for path, value in cli_overrides.items() if path.split(".")[0] not in self.SCHEDULER_FIELDS}
-
-        self.logger = Logger(log_dir=str(self.log_dir), name="train_scheduler")
-        self.stage  = ExperimentStage(config=config, run_tag="batch_train", logger=self.logger, entry_script=self.entry_script, run_dir=self.runs_root)
+    def _inference_rows(self) -> dict:
+        """Returns the per-unit and batched inference flags for the configuration table."""
+        return {
+            "Infer after"  : self.config.infer_after,
+            "Infer at end" : self.config.infer_at_end,
+        }
 
     def _out_channels(self) -> int:
+        """Returns the model output channel count implied by the dataset Gaussian head."""
         gaussian = ConfigFactory(self.config).gaussian_config()
 
         return GaussianHead.total_channels(gaussian.params_per_gaussian, gaussian.n_default_gaussians)
 
-    def planner(self):
+    def _build_planner(self):
+        """Builds the planner matching the configured trial mode.
+
+        Returns:
+            The planner instance for `config.trials_mode`.
+
+        Raises:
+            ValueError : If the mode is not one of the known trial modes.
+        """
         mode = self.config.trials_mode
         if mode == "curriculum":
             return CurriculumTrialPlanner(self.config.warmup_losses, self.config.complete_losses)
@@ -165,10 +225,12 @@ class TrainScheduler:
             return SlotPresenceTrialPlanner(self.config.presence_trials)
         if mode == "pair":
             return PairLossTrialPlanner(self.config.pair_trials)
+        if mode == "log_energy":
+            return LogEnergyTrialPlanner(self.config.log_energy_trials)
         if mode == "secondary":
             return SecondaryTrialPlanner.from_labels(self.config.secondary_trials, self.config.paths.secondary_labels)
         if mode == "patch":
-            return PatchSizeTrialPlanner(self.config.patch_trials)
+            return PatchSizeTrialPlanner(self.config.patch_trials, self.config.backbone_name, self.config.backbone_head, self.config.model_overrides, self.config.training)
         if mode == "input":
             return InputTrialPlanner.from_labels(self.config.input_trials, self.config.paths.secondary_labels)
         if mode == "context":
@@ -180,6 +242,14 @@ class TrainScheduler:
             return HeadMatchingTrialPlanner(self.config.head_trials, tuple(BACKBONE_CONFIG_REGISTRY), BACKBONE_HEADS, tuple(matching.value for matching in ParamMatching))
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
+        if mode == "clamp":
+            return ClampTrialPlanner(self.config.clamp_trials)
+        if mode == "stability":
+            return StabilityTrialPlanner(self.config.stability_trials, tuple(mode.value for mode in WarmupMode), tuple(mode.value for mode in ClipMode))
+        if mode == "ema":
+            return EmaTrialPlanner(self.config.ema_trials)
+        if mode == "amp":
+            return AmpTrialPlanner()
         if mode == "normalization":
             return NormalizationTrialPlanner(self.config.normalization_trials, tuple(Presets.names()))
         if mode == "ablation":
@@ -187,125 +257,47 @@ class TrainScheduler:
 
         raise ValueError(f"Unknown trials_mode '{mode}', expected one of {sorted(self.MODE_SUBDIRS)}")
 
-    def _seed_units(self, experiments: list[tuple[str, dict]], seeds: list[int]) -> list[tuple[str, dict]]:
-        if len(seeds) == 1:
-            return list(experiments)
-
-        return [(SeedSet.run_name(base, seed), {**overrides, "seed": seed, "seeds": (seed,)}) for base, overrides in experiments for seed in seeds]
-
-    def _job(self, run_name: str, overrides: dict) -> GpuJob:
-        batched = {"infer_after": False} if self.config.infer_at_end else {}
-        argv    = ConfigCli.to_argv({**self.forward_overrides, **overrides, **batched, "run_name": run_name, "logdir": str(self.runs_root)})
-
-        return GpuJob(
-            name     = run_name,
-            command  = [sys.executable, str(self.entry_script), "--trial"] + argv,
-            log_path = self.log_dir / f"{run_name}.log",
-        )
-
     def _model_key(self) -> str:
+        """Returns the backbone-and-head key of the base configuration."""
         return ModelBuilder.model_key(self.config.backbone_name, self.config.backbone_head)
 
-    def _inference_job(self, run_name: str, overrides: dict) -> GpuJob:
-        argv = ConfigCli.to_argv({**self.forward_overrides, **overrides, "infer_after": True, "resume": True, "run_name": run_name, "logdir": str(self.runs_root)})
+    def _write_mode_report(self) -> None:
+        """Writes the mode-specific sweep report, currently only for patch trials."""
+        if self.config.trials_mode != "patch":
+            return
 
-        return GpuJob(
-            name     = run_name,
-            command  = [sys.executable, str(self.entry_script), "--trial"] + argv,
-            log_path = self.log_dir / f"{run_name}_infer.log",
-        )
+        out_dir = self.runs_root / "report" / RunTag.now()
+        written = PatchTrialsReport(config=self.config, planner=self.planner(), model_label=self._model_key(), runs_root=self.runs_root, out_dir=out_dir, logger=self.logger).write_all()
 
-    def _run_inference_pass(self, units: list[tuple[str, dict]], training_results: list[dict]) -> list[dict]:
-        trained = {result["name"] for result in training_results if result["status"] == "DONE"}
-        todo    = [(run_name, overrides) for run_name, overrides in units if run_name in trained]
-
-        self.logger.section("Batched inference")
-        self.logger.kv_table({
-            "Eligible" : len(todo),
-            "Skipped"  : len(units) - len(todo),
-            "GPUs"     : self.config.gpus,
-            "Log dir"  : str(self.log_dir),
-        }, title="Configuration")
-
-        for run_name, _ in units:
-            if run_name not in trained:
-                self.logger.warning(f"{run_name}: training failed, inference skipped")
-
-        if not todo:
-            return []
-
-        jobs    = [self._inference_job(run_name, overrides) for run_name, overrides in todo]
-        names   = [run_name for run_name, _ in todo]
-        results = self.stage._order_results(self.stage._run_queue(jobs), names)
-
-        self.stage._write_results(results, self.infer_results_path)
-        return results
-
-    def run(self) -> None:
-        planner     = self.planner()
-        experiments = planner.plan()
-        seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
-        units       = self._seed_units(experiments, seeds)
-
-        self.logger.section(f"Training trials: {self.config.trials_mode}")
-        self.logger.kv_table({
-            "Model (base config)"  : f"{self._model_key()} (per-trial settings may override the backbone/head)",
-            "Mode"                 : self.config.trials_mode,
-            **planner.summary(),
-            "Trials"               : len(experiments),
-            "Seeds"                : seeds,
-            "GPU jobs"             : len(units),
-            "GPUs"                 : self.config.gpus,
-            "GPU pool file"        : str(self.stage.pool_file),
-            "Infer after"          : self.config.infer_after,
-            "Infer at end"         : self.config.infer_at_end,
-            "Unit resume"          : f"{self.config.resume} (reuse completed run dirs, delete unfinished ones)",
-            "Trainer resume"       : self.config.training.resume,
-            "Forwarded overrides (scheduler options excluded; per-trial settings win)" : self.forward_overrides or "—",
-            "Log dir"              : str(self.log_dir),
-        }, title="Configuration")
-
-        jobs    = [self._job(run_name, overrides) for run_name, overrides in units]
-        names   = [run_name for run_name, overrides in units]
-        results = self.stage._order_results(self.stage._run_queue(jobs), names)
-
-        self.stage._write_results(results, self.results_path)
-
-        infer_results = self._run_inference_pass(units, results) if self.config.infer_at_end else []
-
-        self.logger.section("Summary")
-        rows = [{"Trial": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in results]
-        self.logger.metrics_table(rows, columns=["Trial", "Status", "Duration"])
-
-        if infer_results:
-            self.logger.subsection("Batched inference")
-            infer_rows = [{"Trial": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in infer_results]
-            self.logger.metrics_table(infer_rows, columns=["Trial", "Status", "Duration"])
-
-        failed       = [r for r in results if r["status"] != "DONE"]
-        infer_failed = [r for r in infer_results if r["status"] != "DONE"]
-        self.stage._log_failures(failed + infer_failed)
-
-        self.logger.close()
-
-        problems = []
-        if failed:
-            problems.append(f"{len(failed)} of {len(results)} training trials failed")
-        if infer_failed:
-            problems.append(f"{len(infer_failed)} of {len(infer_results)} inference jobs failed")
-
-        if problems:
-            raise SystemExit("; ".join(problems) + f"; see {self.log_dir}")
+        self.logger.subsection("Patch sweep report")
+        for path in written:
+            self.logger.info(f"{path}")
 
 
 class BackboneTrainingLauncher:
+    """Command-line entry point dispatching between a single run and a sweep.
+
+    Attributes:
+        entry_script : Path to the training entry script, re-invoked per unit.
+    """
 
     def __init__(self, entry_script: Path) -> None:
+        """Stores the path of the entry script the launcher re-invokes."""
         self.entry_script = Path(entry_script)
 
-    def run(self, argv: list[str] | None = None) -> None:
-        argv = list(sys.argv[1:] if argv is None else argv)
+    def _configure(self, argv: list[str]):
+        """Parses argv into a resolved entry config and applies curriculum inheritance.
 
+        Args:
+            argv : Command-line arguments without the program name.
+
+        Returns:
+            A tuple of the resolved config and the CLI object holding the
+            override paths.
+
+        Raises:
+            SystemExit : If both `infer_after` and `infer_at_end` are set.
+        """
         cli    = ConfigCli(BackboneEntryConfig(), description="Train one backbone end to end, or fan out curriculum/warmup/secondary trials across GPUs")
         config = cli.apply(argv)
 
@@ -314,6 +306,26 @@ class BackboneTrainingLauncher:
         if config.infer_after and config.infer_at_end:
             raise SystemExit("infer_after and infer_at_end are mutually exclusive; infer_after runs inference inside each training job, infer_at_end batches inference after every training finishes")
 
+        return config, cli
+
+    def build_scheduler(self, argv: list[str]) -> TrainScheduler:
+        """Returns the sweep scheduler configured from `argv`, without running it."""
+        config, cli = self._configure(list(argv))
+        return TrainScheduler(config=config, cli_overrides=cli.overrides, entry_script=self.entry_script)
+
+    def run(self, argv: list[str] | None = None) -> None:
+        """Runs a single unit, a data-parallel run, a seed fan-out or a trial sweep, as the arguments dictate.
+
+        Args:
+            argv : Command-line arguments without the program name; defaults to the process arguments.
+
+        Raises:
+            ValueError : If `ddp` is combined with a trial unit, a trial sweep or a multi-seed fan-out, each of which already claims one GPU per unit.
+        """
+        argv = list(sys.argv[1:] if argv is None else argv)
+
+        config, cli = self._configure(argv)
+
         trial_parser = argparse.ArgumentParser(add_help=False)
         trial_parser.add_argument("--trial", action="store_true")
         trial, _ = trial_parser.parse_known_args(argv)
@@ -321,9 +333,14 @@ class BackboneTrainingLauncher:
         if trial.trial or not config.trials_enabled:
             seeds = SeedSet.resolve(config.seeds, config.seed)
 
-            if trial.trial or len(seeds) == 1:
+            if trial.trial:
+                DdpDispatch.reject_trials(config, trial_unit=True)
                 SeedSweepRunner(config, SingleTrainRunner).run()
+            elif len(seeds) == 1:
+                if not DdpDispatch.single_seed(config, cli.overrides, self.entry_script, SingleTrainRunner):
+                    SeedSweepRunner(config, SingleTrainRunner).run()
             else:
+                DdpDispatch.reject_seed_sweep(config, seeds)
                 SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, SingleTrainRunner, infer_at_end=config.infer_at_end).run()
             return
 

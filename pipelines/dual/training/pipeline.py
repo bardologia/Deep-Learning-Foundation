@@ -1,3 +1,11 @@
+"""Training pipeline of the dual-trunk model and its input-routing channel map.
+
+The channel map turns named input groups (interferometric pass channels,
+interferogram channels, the DEM elevation channel) into the channel indices
+each trunk reads, and the pipeline builds the two-trunk model on top of the
+backbone training pipeline.
+"""
+
 from __future__ import annotations
 
 from configuration.architectures                import DualResUNetConfig
@@ -9,12 +17,33 @@ from pipelines.shared.training.run_naming       import RunNaming
 
 
 class TrunkChannelMap:
+    """Maps named input channel groups onto the channel indices a trunk reads.
+
+    The groups are the sources of the assembled input stack: `pass` for the
+    primary and secondary single-look channels, `ifg` for the interferogram
+    channels, `dem` for the elevation channel. A selected group that carries
+    no channels under the active input configuration contributes nothing, so
+    `dem` may stay selected while `input.use_dem` is off.
+    """
 
     MAX_TRACKS = 64
-    GROUPS     = ("chan", "derived")
+    GROUPS     = ("chan", "derived", "aux")
 
     @classmethod
     def resolve(cls, input_config, in_channels: int, groups: tuple) -> tuple[int, ...]:
+        """Returns the indices of the input channels belonging to the given groups.
+
+        Args:
+            input_config : Dataset input configuration describing the stack layout.
+            in_channels  : Width of the assembled input stack.
+            groups       : Channel group names routed into the trunk.
+
+        Returns:
+            Channel indices into the input stack, in stack order.
+
+        Raises:
+            ValueError : If a group name is unknown or the selection is empty under the active input configuration.
+        """
         unknown = [group for group in groups if group not in cls.GROUPS]
         if unknown:
             raise ValueError(f"Unknown input groups {unknown}. Available: {list(cls.GROUPS)}")
@@ -29,6 +58,15 @@ class TrunkChannelMap:
 
     @classmethod
     def _channel_keys(cls, input_config, in_channels: int) -> list[str]:
+        """Returns the per-channel `source/slot_kind` keys of a stack of the given width.
+
+        Args:
+            input_config : Dataset input configuration describing the stack layout.
+            in_channels  : Width of the assembled input stack.
+
+        Raises:
+            ValueError : If no track count, or more than one, reproduces `in_channels` under the active input configuration.
+        """
         counts = [n for n in range(cls.MAX_TRACKS + 1) if input_config.total_channels(n, n) == in_channels]
         if len(counts) != 1:
             raise ValueError(f"Could not infer a unique track count from in_channels={in_channels} under the active input configuration")
@@ -37,6 +75,18 @@ class TrunkChannelMap:
 
     @classmethod
     def group_label(cls, groups: tuple) -> str:
+        """Returns the run-name label of a trunk input selection.
+
+        Args:
+            groups : Channel group names routed into the trunk.
+
+        Returns:
+            `full` when every group is selected, otherwise the selected groups
+            joined with `+` in canonical order.
+
+        Raises:
+            ValueError : If a group name is unknown or the selection is empty.
+        """
         unknown = [group for group in groups if group not in cls.GROUPS]
         if unknown:
             raise ValueError(f"Unknown input groups {unknown}. Available: {list(cls.GROUPS)}")
@@ -45,20 +95,30 @@ class TrunkChannelMap:
         if not ordered:
             raise ValueError("Cannot label an empty trunk input selection")
 
-        return "full" if ordered == cls.GROUPS else ordered[0]
+        return "full" if ordered == cls.GROUPS else "+".join(ordered)
 
 
 class DualTrainingPipeline(TrainingPipeline):
+    """Backbone training pipeline specialised for the two-trunk dual model."""
 
     MODEL_CONFIG_IO = DualModelConfigIO
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def _square_patch_backbones(self) -> list[str]:
+        """Returns both trunk backbone names, which decide whether patches must be squared."""
+        model_config = self.model_config if self.model_config is not None else DualResUNetConfig()
 
-        if self.dataset_config.input_config.use_aux:
-            raise ValueError("The dual model never uses the Aux channel; disable input.use_aux")
+        return [model_config.params_backbone, model_config.existence_backbone]
 
     def _build_model(self, in_channels: int, out_channels: int):
+        """Builds the dual model and logs the composition and parameter count of each arm.
+
+        Args:
+            in_channels  : Width of the assembled input stack.
+            out_channels : Width of the Gaussian-parameter output.
+
+        Returns:
+            The instantiated dual model and its resolved model configuration.
+        """
         model, model_cfg = super()._build_model(in_channels, out_channels)
 
         params_arm    = sum(p.numel() for name, p in model.named_parameters() if name.startswith(("trunk_params.", "gaussian_heads.")))
@@ -72,10 +132,17 @@ class DualTrainingPipeline(TrainingPipeline):
         return model, model_cfg
 
     def _architecture_label(self) -> str:
+        """Returns the run-name fragment combining both trunk backbones."""
         model_config = self.model_config if self.model_config is not None else DualResUNetConfig()
         return RunNaming.dual_model_tag(model_config.params_backbone, model_config.existence_backbone)
 
     def _model_overrides(self, in_channels: int, out_channels: int) -> dict:
+        """Returns the model constructor overrides, adding per-trunk channel routing and image sizing.
+
+        Args:
+            in_channels  : Width of the assembled input stack.
+            out_channels : Width of the Gaussian-parameter output.
+        """
         model_config = self.model_config if self.model_config is not None else DualResUNetConfig()
         input_config = self.dataset_config.input_config
 
@@ -88,4 +155,5 @@ class DualTrainingPipeline(TrainingPipeline):
         return overrides
 
     def _model_factory(self):
+        """Returns the dual model factory used to instantiate the architecture."""
         return get_dual

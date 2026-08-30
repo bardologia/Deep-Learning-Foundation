@@ -1,3 +1,10 @@
+"""Composite training loss over predicted Gaussian elevation profiles.
+
+Assembles curve-space and parameter-space terms into one weighted
+objective, tracks the inactive terms as monitoring values, and reports slot
+occupancy and physical parameter errors alongside the loss.
+"""
+
 from __future__ import annotations
 
 import torch
@@ -9,7 +16,36 @@ from tools.loss.param_loss                  import ParamLoss, ParamMatcher
 
 
 class Loss:
+    """Weighted sum of the enabled curve and parameter loss terms.
+
+    Predictions arrive as normalized Gaussian parameter maps; they are
+    denormalized, optionally clamped, matched against the ground-truth slots and
+    reconstructed into z profiles before the terms are evaluated.
+
+    Attributes:
+        z_axis          : The z sample positions, of shape (profile_length,).
+        gaussian_cfg    : Gaussian head configuration (parameters per Gaussian, axis bounds).
+        loss_cfg        : Active loss-stage configuration; swapped by the curriculum.
+        norm_stats      : Normalizer converting between normalized and physical parameters.
+        dx              : The z sample spacing.
+        log_all_losses  : Whether disabled terms are still evaluated for monitoring.
+        loss_generation : Counter incremented on every curriculum swap.
+    """
+
     def __init__(self, z_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, log_all_losses=False, sampler=None, slot_vitals=None):
+        """Builds the loss and logs its active terms.
+
+        Args:
+            z_axis         : The z sample positions, of shape (profile_length,).
+            logger         : Logger receiving the configuration tables.
+            tracker        : Metrics tracker used by the diagnostics hooks.
+            gaussian_cfg   : Gaussian head configuration.
+            loss_cfg       : Initial loss-stage configuration.
+            norm_stats     : Normalizer for the output parameter space.
+            log_all_losses : Whether to evaluate disabled terms for monitoring.
+            sampler        : Optional parameter histogram sampler observing predictions.
+            slot_vitals    : Optional per-slot diagnostics observer.
+        """
         self.z_axis          = z_axis
         self.logger          = logger
         self.tracker         = tracker
@@ -37,10 +73,17 @@ class Loss:
 
     @property
     def slot_presence_active(self) -> bool:
+        """Whether any presence-sensitive setting makes the occupancy statistics worth computing."""
         cfg = self.loss_cfg
         return bool(cfg.presence_balance or cfg.use_active_normalization or cfg.amp_focal_gamma > 0.0 or self.log_all_losses)
 
     def log_active_terms(self, cfg, title: str) -> None:
+        """Logs the enabled terms with their configured and weight-sum-normalized coefficients.
+
+        Args:
+            cfg   : Loss-stage configuration whose flags and weights are reported.
+            title : Table title.
+        """
         active     = [(term.name, float(getattr(cfg, term.weight_key))) for term in LOSS_TERMS if getattr(cfg, term.use_flag)]
         weight_sum = sum(weight for _name, weight in active)
 
@@ -55,6 +98,12 @@ class Loss:
             self.logger.subsection(f"The total loss is divided by the active weight sum ({weight_sum:g}); the Effective column is the coefficient actually applied.")
 
     def log_slot_presence_config(self, cfg, title: str) -> None:
+        """Logs the presence-balancing and amplitude-focal settings of a loss stage.
+
+        Args:
+            cfg   : Loss-stage configuration whose presence settings are reported.
+            title : Table title.
+        """
         self.logger.kv_table({
             "presence_balance"         : cfg.presence_balance,
             "active_weight"            : cfg.active_weight,
@@ -65,6 +114,15 @@ class Loss:
         }, title=title)
 
     def set_curriculum(self, complete_cfg, context: str = "curriculum swap") -> None:
+        """Replaces the active loss configuration and logs the new composition.
+
+        Args:
+            complete_cfg : Loss-stage configuration to switch to.
+            context      : Label describing why the swap happens, used in the log.
+
+        Raises:
+        """
+
         self.loss_cfg       = complete_cfg
         self.loss_generation += 1
 
@@ -76,9 +134,31 @@ class Loss:
         self.log_slot_presence_config(complete_cfg, title=f"Slot-Presence Loss Config ({context})")
 
     def reconstruct_gaussians(self, params: torch.Tensor) -> torch.Tensor:
+        """Renders physical Gaussian parameters into z profiles.
+
+        Args:
+            params : Physical Gaussian parameters of shape (batch, n_gaussians * params_per_gaussian, z, width).
+
+        Returns:
+            Reflectivity profiles of shape
+            (batch, profile_length, z, width), sampled on the z axis.
+        """
         return GaussianCurve.reconstruct(params, self.z_axis, self.gaussian_cfg.params_per_gaussian)
 
     def _param_term(self, matched, kind):
+        """Evaluates a parameter-space loss with presence, focal and per-parameter weighting.
+
+        Args:
+            matched : Tuple of normalized predictions, physical predictions, normalized targets and physical targets, each of shape (batch, n_gaussians, params_per_gaussian, height, width), already paired by the matcher.
+            kind    : One of 'l1', 'huber' or 'mse'.
+
+        Returns:
+            A tuple of the scalar loss and a dict of per-parameter L1 values;
+            the dict is empty for the huber and mse variants.
+
+        Raises:
+            ValueError : If `param_weights` does not hold one weight per Gaussian parameter, or `kind` is unknown.
+        """
         pred, pred_phys, gt, gt_phys = matched
         cfg = self.loss_cfg
         w   = torch.tensor(cfg.param_weights, dtype=pred.dtype, device=pred.device)
@@ -109,8 +189,16 @@ class Loss:
 
         raise ValueError(f"Unknown param_term kind: {kind!r}. Expected 'l1', 'huber', or 'mse'.")
 
-    @torch.no_grad()
     def _physical_errors(self, matched) -> dict:
+        """Reports mean absolute errors of the matched Gaussians in physical units.
+
+        Args:
+            matched : The matcher output; the physical prediction and target tensors have shape (batch, n_gaussians, params_per_gaussian, height, width).
+
+        Returns:
+            Dict with the amplitude MAE over all slots, and the mean and sigma
+            MAE in metres restricted to the slots the ground truth marks active.
+        """
         _, pred_phys, _, gt_phys = matched
 
         diff = (pred_phys - gt_phys).abs()
@@ -125,6 +213,22 @@ class Loss:
         }
 
     def _match_params(self, pred_gauss, gt_gauss, gt_phys_gauss, pred_phys_gauss):
+        """Pairs predicted with ground-truth Gaussian slots under the configured strategy.
+
+        Args:
+            pred_gauss      : Normalized predictions of shape (batch, n_gaussians * params_per_gaussian, height, width).
+            gt_gauss        : Normalized targets in the same layout.
+            gt_phys_gauss   : Physical targets in the same layout.
+            pred_phys_gauss : Physical predictions in the same layout.
+
+        Returns:
+            The matched normalized and physical prediction and target tensors,
+            each of shape
+            (batch, n_gaussians, params_per_gaussian, height, width).
+
+        Raises:
+            ValueError : If prediction and ground truth carry different slot counts.
+        """
         batch_size, num_channels, height, width = pred_gauss.shape
 
         ppg           = self.gaussian_cfg.params_per_gaussian
@@ -144,6 +248,18 @@ class Loss:
         return ParamMatcher.match(pred, pred_phys, gt, gt_phys, method=self.loss_cfg.param_matching.value, active_thr=self.loss_cfg.amp_zero_thr)
 
     def _prepare(self, pred_params, gt_params):
+        """Denormalizes, clamps and renders both predictions and targets.
+
+        Args:
+            pred_params : Raw model output of shape (batch, n_gaussians * params_per_gaussian, height, width).
+            gt_params   : Normalized target parameters in the same layout.
+
+        Returns:
+            Tuple of the re-normalized predictions, the physical predictions,
+            the physical targets, the predicted profiles and the target profiles;
+            the profile tensors have shape
+            (batch, profile_length, height, width).
+        """
         clamp_cfg   = self.norm_stats.stats.clamp
         leaky_slope = clamp_cfg.leaky_slope
 
@@ -171,10 +287,33 @@ class Loss:
 
     @torch.no_grad()
     def curves(self, pred_output, gt_params):
+        """Returns the predicted and expected elevation profiles for a batch.
+
+        Args:
+            pred_output : Raw model output of shape (batch, n_gaussians * params_per_gaussian, height, width).
+            gt_params   : Normalized target parameters in the same layout.
+
+        Returns:
+            The predicted and expected profiles, both of shape
+            (batch, profile_length, height, width).
+        """
         _, _, _, pred_curves, exp_curves = self._prepare(pred_output, gt_params)
         return pred_curves, exp_curves
 
     def _term_computes(self, cfg, diff, pred_curves, exp_curves, pred_params_norm, matched) -> dict:
+        """Builds the lazy evaluators of every loss term for one batch.
+
+        Args:
+            cfg              : Active loss-stage configuration supplying the term parameters.
+            diff             : Profile residual of shape (batch, profile_length, rows, cols), or None when no residual-based term is needed.
+            pred_curves      : Predicted profiles of shape (batch, profile_length, rows, cols).
+            exp_curves       : Expected profiles in the same layout.
+            pred_params_norm : Normalized predicted parameters of shape (batch, n_gaussians * params_per_gaussian, rows, cols).
+            matched          : Matcher output used by the parameter terms.
+
+        Returns:
+            Mapping of term name to a zero-argument callable returning the term value.
+        """
         lc = CurveLoss
         mc = MomentLoss
 
@@ -184,6 +323,7 @@ class Loss:
             "huber_curve"        : lambda: lc.huber_diff(diff, cfg.huber_delta),
             "charbonnier_curve"  : lambda: lc.charbonnier_diff(diff, cfg.charbonnier_eps),
             "cosine_curve"       : lambda: lc.cosine(pred_curves, exp_curves, axis=1),
+            "log_energy_curve"   : lambda: lc.log_energy(pred_curves, exp_curves, axis=1),
             "total_power_relerr" : lambda: mc.total_power(pred_curves, exp_curves, self.dx, cfg.power_floor),
             "moments"            : lambda: mc.moments(pred_curves, exp_curves, self.z_axis, self.dx, cfg.power_floor, cfg.moments_weights),
             "param_huber"        : lambda: self._param_term(matched, "huber")[0],
@@ -193,6 +333,17 @@ class Loss:
 
     @torch.no_grad()
     def _occupancy(self, pred_params_phys, gt_phys) -> dict:
+        """Reports how many Gaussian slots the prediction activates against the ground truth.
+
+        Args:
+            pred_params_phys : Physical predicted parameters of shape (batch, n_gaussians * params_per_gaussian, height, width).
+            gt_phys          : Physical target parameters in the same layout.
+
+        Returns:
+            Dict with overall and per-slot active fractions, the exact,
+            under- and over-count fractions, and the count accuracy conditioned
+            on each ground-truth scatterer count.
+        """
         cfg = self.loss_cfg
         ppg = self.gaussian_cfg.params_per_gaussian
         thr = cfg.amp_zero_thr
@@ -233,6 +384,21 @@ class Loss:
         return out
 
     def __call__(self, pred_output, gt_params):
+        """Evaluates the composite loss for one batch.
+
+        Enabled terms are summed with their weights and the total divided by the
+        weight sum; disabled terms are evaluated without gradients only when
+        `log_all_losses` is set, and land in the monitor dict.
+
+        Args:
+            pred_output : Raw model output of shape (batch, n_gaussians * params_per_gaussian, rows, cols).
+            gt_params   : Normalized target parameters in the same layout.
+
+        Returns:
+            Dict with the scalar `total_loss`, the weighted `components`, the
+            unweighted `monitor` values, the slot `occupancy` statistics and the
+            `physical` parameter errors.
+        """
         cfg = self.loss_cfg
 
         pred_params_norm, pred_params_phys, gt_phys, pred_curves, exp_curves = self._prepare(pred_output, gt_params)

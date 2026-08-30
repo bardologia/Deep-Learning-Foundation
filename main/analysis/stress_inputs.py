@@ -1,3 +1,9 @@
+"""Entry point stressing trained backbone runs with controlled input degradation.
+
+Sweeps additive noise, gain error, whole-track dropout and azimuth shifts, reporting
+curve-MSE against severity plus the noise sigma at which the loss doubles.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the robustness config and runs the degradation sweeps over the selected runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                        import RobustnessConfig
@@ -14,7 +21,7 @@ def main() -> None:
     from tools.runtime.config_cli                         import ConfigCli
     from tools.monitoring.logger                          import Logger
 
-    config = ConfigCli(RobustnessConfig(), description="Stress trained backbone runs with controlled input degradation: curve-MSE-vs-severity under gaussian noise on the normalized inputs and under whole-channel dropout (secondary + derived channels zeroed, averaged over random subsets); curves, JSON and a markdown report land inside each run directory").apply()
+    config = ConfigCli(RobustnessConfig(), description="Stress trained backbone runs with controlled input degradation: curve-MSE-vs-severity under gaussian noise (all channels, amplitude-only, derived-only), global gain error, whole-channel dropout (secondary + derived channels zeroed, averaged over random subsets) and row shift-equivariance error, with the noise-tolerance sigma at which the loss doubles; curves, JSON and a markdown report land inside each run directory").apply()
 
     logger = Logger(log_dir="logs", name="stress_inputs")
     RobustnessBatch(config, logger).run()

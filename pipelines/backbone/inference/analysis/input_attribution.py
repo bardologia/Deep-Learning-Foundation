@@ -1,7 +1,15 @@
+"""Attribution of a backbone's predictions to its input channels and tracks.
+
+Combines a cheap gradient attribution on probe windows with a causal occlusion test
+that zeroes single channels or whole tracks, compares the two rankings by Spearman
+correlation and writes the figures and markdown report.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -9,14 +17,28 @@ import torch
 from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import ModelDevice, PredictionCurves, ProbeWindows
 from tools.data.io                                   import FileIO
+from tools.metrics.scoring                           import RankCorrelation
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
 from tools.reporting.plotting                        import PlotBase
 
 
 class ChannelLabeler:
+    """Derives a human-readable label for every input channel of a run."""
 
     @staticmethod
     def build(run) -> list[str]:
+        """Builds the per-channel labels in the order the input tensor stacks them.
+
+        Args:
+            run : Loaded run exposing the dataset input configuration, the secondary labels and the input channel count.
+
+        Returns:
+            One label per input channel, naming the primary, each secondary track, each
+            interferogram and the DEM.
+
+        Raises:
+            ValueError : If the derived label count differs from the run's channel count.
+        """
         input_config = run.dataset.input_config
         labels       = []
 
@@ -43,10 +65,95 @@ class ChannelLabeler:
         return labels
 
 
+class ChannelGroups:
+    """Maps the input channels onto the primary, secondaries, interferograms and DEM groups."""
+
+    @staticmethod
+    def build(run) -> dict[str, list[int]]:
+        """Returns the channel indices of each enabled input group.
+
+        Args:
+            run : Loaded run exposing the dataset input configuration and the secondary count.
+
+        Returns:
+            Channel indices keyed by group name, in stacking order.
+
+        Raises:
+            ValueError : If the input configuration enables no group at all.
+        """
+        input_config = run.dataset.input_config
+        offset       = 0
+        groups       = {}
+
+        if input_config.use_primary:
+            per_pass          = input_config.primary_channels_per_pass
+            groups["primary"] = list(range(offset, offset + per_pass))
+            offset           += per_pass
+
+        if input_config.use_secondaries:
+            count                 = run.n_secondaries * input_config.secondaries_channels_per_pass
+            groups["secondaries"] = list(range(offset, offset + count))
+            offset               += count
+
+        if input_config.use_interferograms:
+            count                    = run.n_secondaries * input_config.interferograms_channels_per_pass
+            groups["interferograms"] = list(range(offset, offset + count))
+            offset                  += count
+
+        if input_config.use_dem:
+            groups["dem"] = [offset]
+            offset       += 1
+
+        if not groups:
+            raise ValueError("The input configuration enables no channel group; there is nothing to attribute")
+
+        return groups
+
+    @staticmethod
+    def of_channels(groups: dict[str, list[int]], n_channels: int) -> list[str]:
+        """Inverts the group map into a per-channel group name.
+
+        Args:
+            groups     : Channel indices keyed by group name.
+            n_channels : Total number of input channels that must be covered.
+
+        Returns:
+            The group name of each channel, in channel order.
+
+        Raises:
+            ValueError : If any channel belongs to no group.
+        """
+        by_channel = {}
+        for group, channels in groups.items():
+            for channel in channels:
+                by_channel[channel] = group
+
+        missing = [c for c in range(n_channels) if c not in by_channel]
+        if missing:
+            raise ValueError(f"Channels {missing} belong to no input group; the group derivation does not match the channel count")
+
+        return [by_channel[c] for c in range(n_channels)]
+
+
 class TrackChannels:
+    """Groups the input channels by the acquisition track they come from."""
 
     @staticmethod
     def build(run) -> list[list[int]]:
+        """Returns the channel indices contributed by each secondary track.
+
+        A track owns both its secondary channels and its interferogram channels, so
+        occluding the returned indices removes that acquisition entirely.
+
+        Args:
+            run : Loaded run exposing the dataset input configuration and the secondary count.
+
+        Returns:
+            One list of channel indices per secondary track.
+
+        Raises:
+            ValueError : If neither secondaries nor interferograms are enabled, leaving no track-owned channel to drop.
+        """
         input_config = run.dataset.input_config
         offset       = 0
 
@@ -75,18 +182,49 @@ class TrackChannels:
 
 
 class GradientAttribution:
+    """Attributes the model output to its input channels through input gradients.
+
+    Attributes:
+        model  : Model to differentiate.
+        window : Side of the probe windows, in pixels; the gradient targets the centre pixel.
+    """
 
     FAMILIES = ("amp", "mu", "sigma")
 
     def __init__(self, model, window: int) -> None:
+        """Stores the model and the probe-window size.
+
+        Args:
+            model  : Model whose input gradients are taken.
+            window : Side of the square probe windows in pixels.
+        """
         self.model  = model
         self.window = int(window)
 
-    def channel_importance(self, windows: torch.Tensor) -> dict[str, np.ndarray]:
+    def channel_importance(self, windows: torch.Tensor) -> dict[str, dict[str, np.ndarray]]:
+        """Measures the share of output sensitivity carried by each input channel.
+
+        For every probe window and every output family, the absolute gradient of the
+        summed centre-pixel prediction is accumulated per channel and normalized into a
+        share, then averaged over the windows.
+
+        Args:
+            windows : Probe windows of shape (probes, channels, window, window) in normalized input units.
+
+        Returns:
+            Per output family ("amp", "mu", "sigma"), a dictionary with the mean gradient
+            "share", its "share_std" across probes and the "grad_x_input" share, each an
+            array of shape (channels,).
+
+        Raises:
+            ValueError : If the gradient vanishes for every output family, meaning the output does not depend on the input.
+        """
         half       = self.window // 2
         device     = ModelDevice.of(self.model)
         n_channels = windows.shape[1]
-        totals     = {family: np.zeros(n_channels, dtype=np.float64) for family in self.FAMILIES}
+
+        grad_shares = {family: [] for family in self.FAMILIES}
+        gxi_shares  = {family: [] for family in self.FAMILIES}
 
         for p in range(windows.shape[0]):
             x = windows[p:p + 1].clone().to(device).requires_grad_(True)
@@ -96,27 +234,90 @@ class GradientAttribution:
                 target = y[0, f::3, half, half].abs().sum()
                 grad   = torch.autograd.grad(target, x, retain_graph=True)[0]
 
-                totals[family] += grad.abs().sum(dim=(0, 2, 3)).cpu().numpy()
+                grad_mass = grad.abs().sum(dim=(0, 2, 3)).cpu().numpy().astype(np.float64)
+                gxi_mass  = (grad * x).abs().sum(dim=(0, 2, 3)).detach().cpu().numpy().astype(np.float64)
 
-        live = [family for family in self.FAMILIES if totals[family].sum() > 0.0]
-        if not live:
+                if grad_mass.sum() > 0.0:
+                    grad_shares[family].append(grad_mass / grad_mass.sum())
+                if gxi_mass.sum() > 0.0:
+                    gxi_shares[family].append(gxi_mass / gxi_mass.sum())
+
+        if not any(grad_shares[family] for family in self.FAMILIES):
             raise ValueError("Gradient attribution is all zero for every output family; the model output does not depend on the input")
 
+        importance = {}
         for family in self.FAMILIES:
-            total = totals[family].sum()
-            totals[family] = totals[family] / total if total > 0.0 else np.full_like(totals[family], np.nan)
+            if grad_shares[family]:
+                stacked = np.stack(grad_shares[family])
+                share   = stacked.mean(axis=0)
+                spread  = stacked.std(axis=0)
+            else:
+                share  = np.full(n_channels, np.nan)
+                spread = np.full(n_channels, np.nan)
 
-        return totals
+            grad_x_input = np.stack(gxi_shares[family]).mean(axis=0) if gxi_shares[family] else np.full(n_channels, np.nan)
+
+            importance[family] = {"share": share, "share_std": spread, "grad_x_input": grad_x_input}
+
+        return importance
+
+    @classmethod
+    def combined(cls, importance: dict[str, dict[str, np.ndarray]], key: str) -> np.ndarray:
+        """Averages one attribution quantity across the output families.
+
+        Args:
+            importance : Per-family attribution as returned by channel_importance.
+            key        : Quantity to combine, "share" or "grad_x_input".
+
+        Returns:
+            Array of shape (channels,) averaged over the families that carry finite values.
+
+        Raises:
+            ValueError : If no family carries a finite value for that quantity.
+        """
+        stacked = np.stack([importance[family][key] for family in cls.FAMILIES])
+        live    = ~np.all(np.isnan(stacked), axis=1)
+
+        if not live.any():
+            raise ValueError(f"No output family carries a finite '{key}' attribution to combine")
+
+        return np.nanmean(stacked[live], axis=0)
 
 
 class ChannelOcclusion:
+    """Measures how much the predicted profile shifts when input channels are zeroed.
+
+    Attributes:
+        model    : Model being evaluated.
+        renderer : Renderer turning predicted Gaussian parameters into height profiles.
+    """
 
     def __init__(self, model, renderer: PredictionCurves) -> None:
+        """Stores the model and the curve renderer.
+
+        Args:
+            model    : Model to evaluate.
+            renderer : Renderer producing the profiles the shift is measured on.
+        """
         self.model    = model
         self.renderer = renderer
 
-    def deltas(self, loader, max_batches: int, n_channels: int) -> np.ndarray:
-        totals = np.zeros(n_channels, dtype=np.float64)
+    def deltas(self, loader, max_batches: int, channel_sets: list[list[int]]) -> np.ndarray:
+        """Returns the mean curve MSE increase caused by zeroing each channel set.
+
+        Args:
+            loader       : Dataloader supplying the evaluation batches.
+            max_batches  : Number of batches to average over.
+            channel_sets : Channel index sets to zero, one occlusion per set.
+
+        Returns:
+            Array of shape (len(channel_sets),) holding the mean squared profile
+            difference against the unoccluded prediction.
+
+        Raises:
+            ValueError : If the loader yields no batch within the budget.
+        """
+        totals = np.zeros(len(channel_sets), dtype=np.float64)
         count  = 0
 
         with torch.no_grad():
@@ -127,11 +328,11 @@ class ChannelOcclusion:
                 images      = batch[0]
                 base_curves = self.renderer.render(self.model(images))
 
-                for c in range(n_channels):
-                    occluded       = images.clone()
-                    occluded[:, c] = 0.0
-                    curves         = self.renderer.render(self.model(occluded))
-                    totals[c]     += float(((curves - base_curves) ** 2).mean())
+                for s, channels in enumerate(channel_sets):
+                    occluded              = images.clone()
+                    occluded[:, channels] = 0.0
+                    curves                = self.renderer.render(self.model(occluded))
+                    totals[s]            += float(((curves - base_curves) ** 2).mean())
 
                 count += 1
 
@@ -142,115 +343,336 @@ class ChannelOcclusion:
 
 
 class InputAttributionPlots(PlotBase):
+    """Figures of the channel and track attribution, coloured by input group."""
 
-    def channel_bars(self, values: np.ndarray, labels: list[str], ylabel: str, title: str, path: Path) -> Path:
+    GROUP_COLORS = {
+        "primary"        : PlotBase.OKABE_ITO[0],
+        "secondaries"    : PlotBase.OKABE_ITO[2],
+        "interferograms" : PlotBase.OKABE_ITO[1],
+        "dem"            : PlotBase.OKABE_ITO[4],
+    }
+
+    def channel_bars(self, values: np.ndarray, stds: np.ndarray | None, labels: list[str], channel_groups: list[str], xlabel: str, title: str, path: Path, percent: bool = True) -> Path:
+        """Draws a sorted horizontal bar chart of a per-channel attribution quantity.
+
+        Args:
+            values         : Attribution value of each channel, shape (channels,); non-finite entries are drawn as zero and annotated "n/a".
+            stds           : Matching spread of shape (channels,) drawn as error bars, or None.
+            labels         : Channel labels, in channel order.
+            channel_groups : Group name of each channel, driving the bar colour.
+            xlabel         : Axis label naming the quantity and its unit.
+            title          : Figure title.
+            path           : Output path of the figure.
+            percent        : Whether the values are shares to be shown as percentages.
+
+        Returns:
+            Path of the saved figure.
+        """
         self._apply_style()
 
-        fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.75))
-        ax.bar(range(values.size), values, color="#0072B2")
-        ax.set_xticks(range(values.size))
-        ax.set_xticklabels(labels, rotation=75, ha="right", fontsize=7)
-        ax.set_ylabel(ylabel)
+        finite = np.where(np.isfinite(values), values, 0.0)
+        order  = np.argsort(finite)
+        scale  = 100.0 if percent else 1.0
+
+        fig, ax = plt.subplots(figsize=(self.FULL_WIDTH * 1.15, max(2.4, 0.30 * len(labels) + 1.2)))
+        colors  = [self.GROUP_COLORS[channel_groups[i]] for i in order]
+        errors  = np.where(np.isfinite(stds[order]), stds[order], 0.0) * scale if stds is not None else None
+
+        ax.barh(range(len(order)), finite[order] * scale, xerr=errors, color=colors, error_kw={"elinewidth": 0.9, "ecolor": "0.3"})
+        ax.set_yticks(range(len(order)))
+        ax.set_yticklabels([labels[i] for i in order], fontsize=8)
+
+        span = float(finite.max() * scale) if finite.max() > 0 else 1.0
+        for row, i in enumerate(order):
+            text = "n/a" if not np.isfinite(values[i]) else (f"{values[i] * scale:.1f}%" if percent else f"{values[i]:.3g}")
+            ax.text(finite[i] * scale + 0.01 * span, row, text, va="center", fontsize=7, color="0.25")
+
+        present = [group for group in self.GROUP_COLORS if group in channel_groups]
+        ax.legend(handles=[mpatches.Patch(color=self.GROUP_COLORS[g], label=g) for g in present], loc="lower right", fontsize=8, framealpha=0.9)
+
+        ax.set_xlabel(xlabel)
         ax.set_title(title)
-        ax.grid(True, axis="y", alpha=0.3)
+        ax.set_xlim(0.0, span * 1.14)
+        ax.grid(True, axis="x", alpha=0.3)
+        fig.tight_layout()
+
+        return self._save(fig, path)
+
+    def track_bars(self, values: np.ndarray, track_labels: list[str], path: Path) -> Path:
+        """Draws the curve MSE increase caused by occluding each whole track.
+
+        Args:
+            values       : Occlusion delta of each track, shape (tracks,).
+            track_labels : Track labels, in track order.
+            path         : Output path of the figure.
+
+        Returns:
+            Path of the saved figure.
+        """
+        self._apply_style()
+
+        order = np.argsort(values)
+
+        fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.55))
+        ax.barh(range(len(order)), values[order], color=self.OKABE_ITO[1])
+        ax.set_yticks(range(len(order)))
+        ax.set_yticklabels([track_labels[i] for i in order], fontsize=8)
+
+        span = float(values.max()) if values.max() > 0 else 1.0
+        for row, i in enumerate(order):
+            ax.text(values[i] + 0.01 * span, row, f"{values[i]:.3g}", va="center", fontsize=7, color="0.25")
+
+        ax.set_xlabel("Curve MSE increase when the whole track is zeroed")
+        ax.set_title("Track occlusion impact")
+        ax.set_xlim(0.0, span * 1.14)
+        ax.grid(True, axis="x", alpha=0.3)
+        fig.tight_layout()
+
+        return self._save(fig, path)
+
+    def agreement_scatter(self, gradient: np.ndarray, occlusion: np.ndarray, labels: list[str], rho: float, path: Path) -> Path:
+        """Scatters the gradient channel ranking against the occlusion ranking.
+
+        Args:
+            gradient  : Combined gradient attribution of each channel, shape (channels,).
+            occlusion : Occlusion delta of each channel, shape (channels,).
+            labels    : Channel labels, in channel order.
+            rho       : Spearman correlation between the two rankings, shown in the title.
+            path      : Output path of the figure.
+
+        Returns:
+            Path of the saved figure.
+        """
+        self._apply_style()
+
+        grad_rank = RankCorrelation.ranks(gradient)
+        occl_rank = RankCorrelation.ranks(occlusion)
+
+        fig, ax = plt.subplots(figsize=self.figsize(self.FULL_WIDTH, aspect=0.85))
+        ax.scatter(grad_rank, occl_rank, s=26, color=self.OKABE_ITO[0], edgecolors="white", linewidths=0.5)
+        ax.plot([0, len(labels) - 1], [0, len(labels) - 1], color="0.4", linestyle="--", linewidth=0.9, label="perfect agreement")
+
+        for i in np.argsort(occlusion)[-3:]:
+            ax.annotate(labels[i], xy=(grad_rank[i], occl_rank[i]), xytext=(4, 4), textcoords="offset points", fontsize=7, color="0.25")
+
+        ax.set_xlabel("Channel rank by gradient attribution (0 = weakest)")
+        ax.set_ylabel("Channel rank by occlusion impact (0 = weakest)")
+        ax.set_title(f"Gradient vs occlusion rank agreement (Spearman ρ = {rho:.3f})")
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
         fig.tight_layout()
 
         return self._save(fig, path)
 
 
 class InputAttributionRun(AnalysisRun):
+    """Runs the gradient and occlusion attribution on a single training run."""
 
     SUMMARY_FILENAME = "input_attribution.json"
     REPORT_FILENAME  = "input_attribution.md"
 
-    def _gradient_importance(self, run) -> dict[str, np.ndarray]:
+    def _gradient_importance(self, run) -> dict[str, dict[str, np.ndarray]]:
+        """Assembles the probe windows of the split and runs the gradient attribution on them.
+
+        Args:
+            run : Loaded run bundling the model and the dataset.
+
+        Returns:
+            Per-family attribution as returned by GradientAttribution.channel_importance.
+        """
         probes  = ProbeWindows(run, self.config.window)
         centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
 
         return GradientAttribution(run.model.module, self.config.window).channel_importance(windows)
 
-    def _occlusion_deltas(self, run) -> np.ndarray | None:
+    def _occlusion(self, run, per_track: list[list[int]] | None) -> tuple[np.ndarray, np.ndarray | None] | tuple[None, None]:
+        """Runs the single-channel and whole-track occlusion tests when enabled.
+
+        Args:
+            run       : Loaded run bundling the model and the dataloader.
+            per_track : Channel indices of each track, or None when no track owns channels.
+
+        Returns:
+            A pair of the per-channel deltas of shape (channels,) and the per-track deltas
+            of shape (tracks,), the latter None when no track set was given. Both are None
+            when occlusion is disabled.
+        """
         if not self.config.occlude:
-            return None
+            return None, None
 
-        renderer = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
-        return ChannelOcclusion(run.model, renderer).deltas(run.loader, self.config.max_batches, run.in_channels)
+        renderer     = PredictionCurves(run.n_gaussians, run.x_axis, self.config.render_amp_floor)
+        occlusion    = ChannelOcclusion(run.model, renderer)
+        channel_sets = [[c] for c in range(run.in_channels)]
+        track_sets   = per_track if per_track is not None else []
 
-    def _render_figures(self, labels: list[str], importance: dict[str, np.ndarray], occlusion: np.ndarray | None) -> dict[str, Path]:
+        deltas = occlusion.deltas(run.loader, self.config.max_batches, channel_sets + track_sets)
+
+        channel_deltas = deltas[:run.in_channels]
+        track_deltas   = deltas[run.in_channels:] if track_sets else None
+
+        return channel_deltas, track_deltas
+
+    def _render_figures(self, labels, groups_by_channel, importance, occlusion, track_deltas, track_labels, spearman) -> dict[str, Path]:
+        """Renders the per-family, gradient-times-input, occlusion, agreement and track figures.
+
+        Args:
+            labels            : Channel labels, in channel order.
+            groups_by_channel : Group name of each channel.
+            importance        : Per-family gradient attribution.
+            occlusion         : Per-channel occlusion deltas, or None when occlusion is disabled.
+            track_deltas      : Per-track occlusion deltas, or None.
+            track_labels      : Track labels, in track order.
+            spearman          : Rank correlation between gradient and occlusion, or None.
+
+        Returns:
+            Figure paths keyed by figure name.
+        """
         plots   = InputAttributionPlots()
         figures = {}
 
-        for family, values in importance.items():
+        for family in GradientAttribution.FAMILIES:
+            entry = importance[family]
             figures[f"grad_{family}"] = plots.channel_bars(
-                values, labels,
-                ylabel = "Gradient attribution share",
+                entry["share"], entry["share_std"], labels, groups_by_channel,
+                xlabel = "Gradient attribution share [%] (± std across probes)",
                 title  = f"Input-channel attribution of predicted {family}",
                 path   = self.output_dir / "plots" / f"grad_{family}.png",
             )
 
+        figures["grad_x_input"] = plots.channel_bars(
+            GradientAttribution.combined(importance, "grad_x_input"), None, labels, groups_by_channel,
+            xlabel = "Gradient × input attribution share [%] (mean over output families)",
+            title  = "Input-channel attribution weighted by the input signal",
+            path   = self.output_dir / "plots" / "grad_x_input.png",
+        )
+
         if occlusion is not None:
             figures["occlusion"] = plots.channel_bars(
-                occlusion, labels,
-                ylabel = "Curve MSE vs baseline prediction",
-                title  = "Prediction shift when one input channel is zeroed",
-                path   = self.output_dir / "plots" / "occlusion.png",
+                occlusion, None, labels, groups_by_channel,
+                xlabel  = "Curve MSE increase when the channel is zeroed",
+                title   = "Prediction shift under single-channel occlusion",
+                path    = self.output_dir / "plots" / "occlusion.png",
+                percent = False,
             )
+            figures["agreement"] = plots.agreement_scatter(GradientAttribution.combined(importance, "share"), occlusion, labels, spearman, self.output_dir / "plots" / "agreement.png")
+
+        if track_deltas is not None:
+            figures["occlusion_tracks"] = plots.track_bars(track_deltas, track_labels, self.output_dir / "plots" / "occlusion_tracks.png")
 
         return figures
 
-    def _write_report(self, run, labels: list[str], importance: dict[str, np.ndarray], occlusion: np.ndarray | None, figures: dict[str, Path]) -> Path:
+    def _write_report(self, run, labels, groups_by_channel, importance, occlusion, track_deltas, track_labels, spearman, figures) -> Path:
+        """Writes the markdown report of the attribution.
+
+        Args:
+            run               : Loaded run, used for the backbone name in the title.
+            labels            : Channel labels, in channel order.
+            groups_by_channel : Group name of each channel.
+            importance        : Per-family gradient attribution.
+            occlusion         : Per-channel occlusion deltas, or None.
+            track_deltas      : Per-track occlusion deltas, or None.
+            track_labels      : Track labels, in track order.
+            spearman          : Rank correlation between gradient and occlusion, or None.
+            figures           : Figure paths keyed by figure name.
+
+        Returns:
+            Path of the written report.
+        """
         doc = MarkdownDoc(title=f"Input attribution: {run.backbone_name}")
         doc.paragraph(
             f"Gradient attribution on {self.config.n_row_probes * self.config.n_col_probes} probe windows of the '{self.config.split}' split: "
-            "the share of |∂ output / ∂ input| falling on each input channel, per output family. "
-            "Occlusion, when computed, is the mean shift of the predicted profile when one channel is zeroed in normalized units, which puts it at that channel's normalization location: the median of the log1p values for the amplitude channels, zero phase for the derived phase channels, the mean only for z-scored channels."
+            "the share of |∂ output / ∂ input| falling on each input channel, per output family, with the spread across probe windows. "
+            "Gradient × input weights the same sensitivities by the actual input signal, so channels that are sensitive but quiet rank lower. "
+            "Occlusion, when computed, is the mean shift of the predicted profile when one channel (or one whole channel) is zeroed in normalized units, "
+            "which puts it at that channel's normalization location: the median of the log1p values for the amplitude channels, zero phase for the "
+            "derived phase channels, the mean only for z-scored channels. Spearman ρ measures how well the cheap gradient ranking predicts the "
+            "causal occlusion ranking."
         )
 
-        header = ("Channel", "amp", "mu", "sigma") + (("occlusion MSE",) if occlusion is not None else ())
-        table  = MarkdownTable(header)
+        header = ("Channel", "Group", "amp %", "mu %", "sigma %", "g×i %")
+        if occlusion is not None:
+            header += ("occlusion MSE",)
+
+        table = MarkdownTable(header)
+        gxi   = GradientAttribution.combined(importance, "grad_x_input")
         for c, label in enumerate(labels):
-            row = [f"`{label}`"] + [f"{importance[family][c] * 100.0:.2f}%" for family in GradientAttribution.FAMILIES]
+            row = [f"`{label}`", groups_by_channel[c]]
+            for family in GradientAttribution.FAMILIES:
+                value = importance[family]["share"][c]
+                row.append(f"{value * 100.0:.2f}" if np.isfinite(value) else "n/a")
+            row.append(f"{gxi[c] * 100.0:.2f}" if np.isfinite(gxi[c]) else "n/a")
             if occlusion is not None:
                 row.append(f"{occlusion[c]:.4g}")
             table.add_row(*row)
         doc.table(table)
 
+        if spearman is not None:
+            doc.paragraph(f"Gradient vs occlusion rank agreement: Spearman ρ = {spearman:.3f}.")
+
+        if track_deltas is not None:
+            doc.heading("Track occlusion", level=2)
+            track_table = MarkdownTable(("Track", "Curve MSE increase"))
+            for label, value in zip(track_labels, track_deltas):
+                track_table.add_row(f"`{label}`", f"{value:.4g}")
+            doc.table(track_table)
+
+        doc.heading("Figures", level=2)
         for name, path in figures.items():
             doc.image(name, str(path.relative_to(self.output_dir)))
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
     def run(self) -> dict:
+        """Attributes this run's predictions to its input channels and tracks.
+
+        Returns:
+            Payload with the backbone name, the split, the channel labels and groups, the
+            per-family gradient attribution, the occlusion deltas per channel and per
+            track, and the gradient-occlusion Spearman correlation.
+        """
         FileIO.ensure_dirs(self.output_dir)
         PlotBase.use_style(self.config.figure_style)
 
-        run        = self._load_run()
-        labels     = ChannelLabeler.build(run)
-        importance = self._gradient_importance(run)
-        occlusion  = self._occlusion_deltas(run)
+        run               = self._load_run()
+        labels            = ChannelLabeler.build(run)
+        groups            = ChannelGroups.build(run)
+        groups_by_channel = ChannelGroups.of_channels(groups, run.in_channels)
+        importance        = self._gradient_importance(run)
 
-        figures = self._render_figures(labels, importance, occlusion)
+        input_config = run.dataset.input_config
+        has_tracks   = input_config.use_secondaries or input_config.use_interferograms
+        per_track    = TrackChannels.build(run) if has_tracks else None
+        track_labels = list(run.secondary_labels) if run.secondary_labels else [f"S{i}" for i in range(run.n_secondaries)]
+
+        occlusion, track_deltas = self._occlusion(run, per_track)
+        spearman                = RankCorrelation.spearman(GradientAttribution.combined(importance, "share"), occlusion) if occlusion is not None else None
+
+        figures = self._render_figures(labels, groups_by_channel, importance, occlusion, track_deltas, track_labels, spearman)
 
         payload = {
-            "backbone"  : run.backbone_name,
-            "split"     : self.config.split,
-            "channels"  : labels,
-            "gradient"  : {family: values.tolist() for family, values in importance.items()},
-            "occlusion" : occlusion.tolist() if occlusion is not None else None,
+            "backbone"        : run.backbone_name,
+            "split"           : self.config.split,
+            "channels"        : labels,
+            "channel_groups"  : groups_by_channel,
+            "gradient"        : {family: {key: values.tolist() for key, values in entry.items()} for family, entry in importance.items()},
+            "occlusion"       : occlusion.tolist() if occlusion is not None else None,
+            "occlusion_tracks": {label: float(value) for label, value in zip(track_labels, track_deltas)} if track_deltas is not None else None,
+            "spearman"        : spearman,
         }
         FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
-        report_path = self._write_report(run, labels, importance, occlusion, figures)
+        report_path = self._write_report(run, labels, groups_by_channel, importance, occlusion, track_deltas, track_labels, spearman, figures)
 
-        combined = np.nansum(np.stack([importance[family] for family in GradientAttribution.FAMILIES]), axis=0)
-        top      = labels[int(np.argmax(combined))]
-        self.logger.ok(f"{self.run_dir.name}: strongest attribution on '{top}' -> {report_path}")
+        combined = GradientAttribution.combined(importance, "share")
+        top      = labels[int(np.nanargmax(combined))]
+        self.logger.ok(f"{self.run_dir.name}: strongest attribution on '{top}'" + (f", grad-occlusion ρ {spearman:.2f}" if spearman is not None else "") + f" -> {report_path}")
 
         return payload
 
 
 class InputAttributionBatch(RunBatch):
+    """Runs the input attribution over every run matching the configured filter."""
 
     SELECTOR_ACTION = "attribute"
     SECTION_TITLE   = "Input attribution"

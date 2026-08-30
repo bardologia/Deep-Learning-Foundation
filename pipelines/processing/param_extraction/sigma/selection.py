@@ -1,3 +1,9 @@
+"""Model-order selection and kernel backend choice for sigma fitting.
+
+Picks the best number of Gaussians per pixel under a penalised-MSE criterion and
+decides between the jitted single-device and pmapped multi-device Adam kernels.
+"""
+
 from __future__ import annotations
 
 from typing import Dict, Tuple
@@ -12,11 +18,32 @@ from .kernels import PmapSigmaAdamKernel, SigmaAdamKernel
 
 
 class BestKSelector:
+    """Chooses the mixture order that minimises penalised reconstruction error.
+
+    Attributes:
+        k_max : Largest mixture order considered.
+    """
+
     def __init__(self, k_max : int, logger : Logger) -> None:
+        """Stores the selection ceiling and the logger.
+
+        Args:
+            k_max  : Largest mixture order considered.
+            logger : Logger used for section reporting.
+        """
         self.k_max  = k_max
         self.logger = logger
 
     def score(self, gpu_results : Dict[int, tuple], batch_tag : str = "") -> np.ndarray:
+        """Stacks the per-K fit errors into one array.
+
+        Args:
+            gpu_results : Mapping from K to a fit tuple whose fourth element is the per-pixel MSE of shape (N_act,).
+            batch_tag   : Label used in the log section header.
+
+        Returns:
+            Per-pixel MSE of shape (N_act, k_max) in float64.
+        """
         tag = f"{batch_tag} | " if batch_tag else ""
 
         self.logger.section(f"[{tag}Phase 3 — Best-K Selection]")
@@ -34,6 +61,22 @@ class BestKSelector:
         n_params_out  : int,
         batch_tag     : str = "",
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Selects the best K per pixel and assembles its flattened parameters.
+
+        Args:
+            gpu_results  : Mapping from K to (normalised amplitudes, means in metres, sigmas in metres, MSE).
+            mse_all      : Per-pixel MSE of shape (N_act, k_max).
+            scale_all    : Per-pixel peak scale of shape (N_act,) used to restore physical amplitudes.
+            lambda_k     : Penalty added per Gaussian in the selection criterion.
+            n_params_out : Flattened parameter count 3 * k_max.
+            batch_tag    : Label used in log lines.
+
+        Returns:
+            Tuple of the selected parameters of shape (N_act, n_params_out) with
+            amplitude, mean and sigma interleaved per Gaussian, the per-K MSE
+            and penalised MSE of shape (N_act, k_max), and the zero-based index
+            of the winning K of shape (N_act,).
+        """
 
         N_act = mse_all.shape[0]
         tag   = f"{batch_tag} | " if batch_tag else ""
@@ -65,7 +108,14 @@ class BestKSelector:
 
 
 class KernelBackendSelector:
+    """Picks the fitting kernel matching the available JAX devices."""
+
     def select(self) -> Tuple[object, int, str, list]:
+        """Returns the fitting kernel, device count, backend label and devices.
+
+        GPU devices are preferred over the default device list, and more than
+        one active device selects the pmapped kernel.
+        """
         gpu_devices    = [d for d in jax.devices() if d.platform in ("gpu", "cuda")]
         active_devices = gpu_devices if gpu_devices else jax.devices()
 

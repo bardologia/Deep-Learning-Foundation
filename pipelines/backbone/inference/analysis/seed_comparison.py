@@ -1,3 +1,10 @@
+"""Aggregation of seed replicas of one training into a mean +/- std report.
+
+Each seed keeps its own finished inference; this module resolves those inference
+directories, reduces their scalar metrics across seeds, and optionally attaches
+per-pixel seed-disagreement maps with risk-coverage and label-suspect analysis.
+"""
+
 from __future__ import annotations
 
 import os
@@ -14,11 +21,35 @@ from tools.runtime.run_tag                                   import RunTag
 
 
 class SeedInferenceResolver:
+    """Resolves which finished inference directory of a seed run to aggregate.
+
+    Attributes:
+        inference_subdir : Explicit inference subdirectory name, empty to take the latest.
+        metrics_filename : Metrics file whose presence marks an inference as finished.
+    """
+
     def __init__(self, inference_subdir: str, metrics_filename: str) -> None:
+        """Stores the inference selection rule.
+
+        Args:
+            inference_subdir : Explicit inference subdirectory name, or empty to pick the latest finished inference per run.
+            metrics_filename : Metrics filename marking a finished inference.
+        """
         self.inference_subdir = inference_subdir
         self.metrics_filename = metrics_filename
 
     def _explicit(self, inference_root: Path) -> Path:
+        """Returns the named inference subdirectory, requiring it to hold metrics.
+
+        Args:
+            inference_root : The run's inference directory.
+
+        Returns:
+            The requested inference directory.
+
+        Raises:
+            FileNotFoundError : If it holds no metrics file.
+        """
         candidate = inference_root / self.inference_subdir
         if not (candidate / self.metrics_filename).is_file():
             raise FileNotFoundError(f"No {self.metrics_filename} under {candidate}; the requested inference_subdir does not hold a finished inference for this run")
@@ -26,6 +57,17 @@ class SeedInferenceResolver:
         return candidate
 
     def _latest(self, inference_root: Path) -> Path:
+        """Returns the last finished inference directory by name order.
+
+        Args:
+            inference_root : The run's inference directory.
+
+        Returns:
+            The latest inference directory holding a metrics file.
+
+        Raises:
+            FileNotFoundError : If the run has no finished inference.
+        """
         candidates = sorted(d for d in inference_root.iterdir() if d.is_dir() and (d / self.metrics_filename).is_file()) if inference_root.is_dir() else []
         if not candidates:
             raise FileNotFoundError(f"No inference with {self.metrics_filename} under {inference_root}; infer this run before comparing its seeds")
@@ -33,6 +75,14 @@ class SeedInferenceResolver:
         return candidates[-1]
 
     def resolve(self, run_dir: Path) -> Path:
+        """Returns the inference directory of one seed run to aggregate.
+
+        Args:
+            run_dir : Directory of the seed training run.
+
+        Returns:
+            The selected inference directory.
+        """
         inference_root = Path(run_dir) / "inference"
 
         if self.inference_subdir:
@@ -42,7 +92,36 @@ class SeedInferenceResolver:
 
 
 class SeedComparisonReport:
+    """Reduces the metrics of one seed group to mean +/- std and writes the report.
+
+    Attributes:
+        group_dir        : Directory holding the seed runs.
+        run_dirs         : Seed run directories in aggregation order.
+        inference_dirs   : Inference directory chosen for each seed run.
+        metrics_filename : Metrics filename read per seed and written aggregated.
+        report_filename  : Filename of each seed's own report and of this report.
+        logger           : Logger for the written-artifact lines.
+        disagreement     : Seed-disagreement payload, or None when not computed.
+        output_dir       : Group-level inference directory receiving the aggregate.
+        seeds            : Seed labels, relative to the group directory.
+    """
+
     def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None) -> None:
+        """Binds the seed group and validates that at least two seeds are present.
+
+        Args:
+            group_dir        : Directory holding the seed runs.
+            run_dirs         : Seed run directories.
+            inference_dirs   : Inference directory chosen for each seed run.
+            output_subdir    : Name of the group-level output directory.
+            metrics_filename : Metrics filename read per seed.
+            report_filename  : Report filename of each seed and of this aggregate.
+            logger           : Logger for the written-artifact lines.
+            disagreement     : Payload from the seed-disagreement analysis, or None.
+
+        Raises:
+            ValueError : If fewer than two seed runs are given.
+        """
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
 
@@ -58,13 +137,24 @@ class SeedComparisonReport:
         self.seeds      = [str(d.relative_to(self.group_dir)) for d in self.run_dirs]
 
     def _load_metrics(self) -> list[dict]:
+        """Returns each seed's metrics dictionary, in seed order."""
         return [FileIO.load_json(inference_dir / self.metrics_filename) for inference_dir in self.inference_dirs]
 
     def _aggregate(self, per_seed: list[dict]) -> tuple[dict, dict]:
+        """Returns the across-seed means and sample standard deviations of every metric key."""
         keys = sorted({key for metrics in per_seed for key in metrics})
         return SeedAggregation.aggregate(per_seed, keys)
 
     def _write_metrics(self, means: dict, stds: dict) -> Path:
+        """Writes the aggregated metrics JSON for the seed group.
+
+        Args:
+            means : Across-seed mean per metric key.
+            stds  : Across-seed sample standard deviation per metric key.
+
+        Returns:
+            The written JSON path.
+        """
         payload = {
             "n_seeds"        : len(self.run_dirs),
             "seed_runs"      : {seed: str(run_dir) for seed, run_dir in zip(self.seeds, self.run_dirs)},
@@ -83,15 +173,18 @@ class SeedComparisonReport:
 
     @staticmethod
     def _fmt(value) -> str:
+        """Returns a scalar rendered for the markdown tables."""
         return ScalarFormatter.format_scalar(value, precision=6, adaptive=True)
 
     def _mean_std_cell(self, mean: float, std: float | None) -> str:
+        """Returns the "mean ± std" table cell, or the bare mean when no std exists."""
         if std is None:
             return self._fmt(mean)
 
         return f"{self._fmt(mean)} ± {self._fmt(std)}"
 
     def _build_seed_runs_section(self) -> list[str]:
+        """Returns the markdown lines listing each seed run and linking its own report."""
         out = ["\n## 1. Seed runs\n"]
 
         table = MarkdownTable(("Seed", "Run directory", "Inference", "Report"))
@@ -105,9 +198,20 @@ class SeedComparisonReport:
         return out
 
     def _grouped_keys(self, means: dict) -> list[tuple[str, list[str]]]:
+        """Returns the metric keys grouped into report subsections, with numbering stripped."""
         return [(title.split(" ", 1)[1], keys) for title, keys in Report.group_metric_keys(means)]
 
     def _build_metrics_section(self, per_seed: list[dict], means: dict, stds: dict) -> list[str]:
+        """Returns the markdown lines of the grouped aggregated-metrics tables.
+
+        Args:
+            per_seed : Each seed's raw metrics dictionary, in seed order.
+            means    : Across-seed mean per metric key.
+            stds     : Across-seed sample standard deviation per metric key.
+
+        Returns:
+            The markdown lines of the section.
+        """
         out = ["\n## 2. Aggregated metrics\n"]
         out.append(
             f"Every scalar metric aggregated over the {len(self.seeds)} seed runs: the cell is the across-seed mean, "
@@ -128,6 +232,7 @@ class SeedComparisonReport:
         return out
 
     def _build_disagreement_section(self) -> list[str]:
+        """Returns the markdown lines summarising the seed-disagreement maps and figures."""
         out = ["\n## 3. Seed disagreement maps\n"]
         out.append(
             "Per-pixel across-seed standard deviation of the model outputs, written as cubes into every seed's inference cube directory "
@@ -162,6 +267,16 @@ class SeedComparisonReport:
         return out
 
     def _write_report(self, per_seed: list[dict], means: dict, stds: dict) -> Path:
+        """Assembles and writes the markdown seed-comparison report.
+
+        Args:
+            per_seed : Each seed's raw metrics dictionary, in seed order.
+            means    : Across-seed mean per metric key.
+            stds     : Across-seed sample standard deviation per metric key.
+
+        Returns:
+            The written report path.
+        """
         lines = ["# ML Template Seed-Comparison Report", ""]
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")
@@ -179,6 +294,11 @@ class SeedComparisonReport:
         return path
 
     def run(self) -> Path:
+        """Aggregates the seed metrics and writes the metrics JSON and report.
+
+        Returns:
+            The written report path.
+        """
         FileIO.ensure_dirs(self.output_dir)
 
         per_seed     = self._load_metrics()
@@ -193,11 +313,32 @@ class SeedComparisonReport:
 
 
 class SeedComparison:
+    """Entry-level driver comparing the seed replicas of one or more run groups.
+
+    Attributes:
+        config   : Seed-comparison configuration.
+        runs_dir : Root directory holding the run groups.
+    """
+
     def __init__(self, config) -> None:
+        """Stores the configuration and resolves the runs root.
+
+        Args:
+            config : Seed-comparison configuration carrying group tags, inference selection, filenames and the disagreement toggle.
+        """
         self.config   = config
         self.runs_dir = Path(config.runs_dir)
 
     def _group_dirs(self) -> list[Path]:
+        """Returns the group directories to compare.
+
+        Returns:
+            One directory per configured group tag, or the runs root itself when
+            no tags are configured.
+
+        Raises:
+            FileNotFoundError : If a configured group tag has no directory.
+        """
         if self.config.group_tags:
             missing = [tag for tag in self.config.group_tags if not (self.runs_dir / tag).is_dir()]
             if missing:
@@ -207,9 +348,24 @@ class SeedComparison:
         return [self.runs_dir]
 
     def _output_subdir(self) -> str:
+        """Returns the group-level output directory name, defaulting to a fresh timestamp."""
         return self.config.output_subdir or self.config.inference_subdir or RunTag.now()
 
     def _compare_group(self, group_dir: Path, resolver: SeedInferenceResolver, output_subdir: str, logger: Logger) -> Path:
+        """Aggregates one group of seed runs, optionally with disagreement maps.
+
+        Args:
+            group_dir     : Directory holding the seed runs of one training.
+            resolver      : Resolver picking each seed's inference directory.
+            output_subdir : Name of the group-level output directory.
+            logger        : Logger for progress reporting.
+
+        Returns:
+            The written seed-comparison report path.
+
+        Raises:
+            ValueError : If the group holds fewer than two seed runs.
+        """
         run_dirs = sorted(RunDirectoryWalk.walk(group_dir))
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
@@ -226,6 +382,7 @@ class SeedComparison:
                 metrics_filename = self.config.metrics_filename,
                 output_dir       = group_dir / "inference" / output_subdir,
                 logger           = logger,
+                active_amp_thr   = self.config.active_amp_thr,
             ).run()
 
         return SeedComparisonReport(
@@ -240,6 +397,11 @@ class SeedComparison:
         ).run()
 
     def run(self) -> list[Path]:
+        """Compares the seeds of every configured group.
+
+        Returns:
+            The written report path of each group, in group order.
+        """
         with Logger(log_dir="logs", name="compare_seeds") as logger:
             logger.section("Seed comparison")
 

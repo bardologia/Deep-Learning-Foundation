@@ -1,4 +1,12 @@
+"""Assembly of the profile-autoencoder train, validation and test loaders.
+
+Crops the extracted parameter maps per split region, fits the normalisation
+statistics on the training split alone, and wraps the datasets into loaders.
+"""
+
 from __future__ import annotations
+
+import json
 
 from pathlib import Path
 from typing  import Optional, Tuple
@@ -11,17 +19,40 @@ from pipelines.profile_autoencoder.dataset.augmentation  import ProfileAugmenter
 from pipelines.profile_autoencoder.dataset.datasets      import ProfileDataset
 from pipelines.shared.dataset.loaders                    import Loader
 from tools.data.gaussians                                import GaussianAxis
-from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStatsComputer
+from tools.data.io                                       import FileIO
+from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStats, ProfileStatsComputer
 from pipelines.profile_autoencoder.dataset.splitting     import ParameterCropper
 from pipelines.shared.dataset.dataset_spatial            import Layout
 from tools.monitoring.logger                             import Logger
 
 
 class ProfileDatasetPipeline:
-    def __init__(self, config: ProfileDatasetConfig, training_run_directory: Path, logger: Logger | None = None, seed: int = 0) -> None:
+    """Builds the profile datasets and loaders for one training run.
+
+    Attributes:
+        config                 : Dataset configuration driving cropping and loader settings.
+        training_run_directory : Run directory logs and statistics are written under.
+        seed                   : Seed shared by augmentation, pixel selection and loader shuffling.
+        resume                 : Whether this run resumes an existing one, in which case the stored profile statistics must match instead of being overwritten.
+        layout                 : Spatial layout of the preprocessing run.
+        cropper                : Splits the parameter maps into per-split regions.
+        augmenter              : Augmentation applied to the training split.
+    """
+
+    def __init__(self, config: ProfileDatasetConfig, training_run_directory: Path, logger: Logger | None = None, seed: int = 0, resume: bool = False) -> None:
+        """Prepares the layout, cropper and augmenter for a training run.
+
+        Args:
+            config                 : Dataset configuration.
+            training_run_directory : Directory receiving logs and statistics.
+            logger                 : Logger to reuse; a run-scoped one is created when omitted.
+            seed                   : Seed shared by augmentation, selection and shuffling.
+            resume                 : Whether this run resumes an existing one, in which case the stored profile normalization statistics must match instead of being overwritten.
+        """
         self.config                 = config
         self.training_run_directory = Path(training_run_directory)
         self.seed                   = int(seed)
+        self.resume                 = bool(resume)
 
         log_dir = self.training_run_directory / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -41,12 +72,24 @@ class ProfileDatasetPipeline:
         })
 
     def _build_axis(self) -> Tuple[np.ndarray, int]:
+        """Returns the z axis of shape (H,) in metres and its length."""
         z_len  = self.cropper.profile_length()
         z_axis = GaussianAxis.build(self.config.x_min, self.config.x_max, z_len)
 
         return z_axis, z_len
 
     def _build_dataset(self, split_name: str, z_axis: np.ndarray, normalizer: Optional[ProfileNormalizer] = None, augmenter: Optional[ProfileAugmenter] = None) -> ProfileDataset:
+        """Loads one split's parameter regions and wraps them in a dataset.
+
+        Args:
+            split_name : "train", "val" or "test".
+            z_axis     : Z axis of shape (H,), in metres.
+            normalizer : Normalisation applied to each curve.
+            augmenter  : Augmentation applied when the split is "train".
+
+        Returns:
+            The dataset for the requested split.
+        """
         param_arrays = self.cropper.load_split(split_name)
 
         return ProfileDataset(
@@ -63,13 +106,56 @@ class ProfileDatasetPipeline:
             logger          = self.logger,
         )
 
+    def _persist_stats(self, stats: ProfileStats) -> None:
+        """Saves the fitted profile statistics, or checks them against a resumed run.
+
+        Args:
+            stats : Statistics fitted on the train split.
+
+        Raises:
+            ValueError : If the run resumes and the fitted statistics differ from those the restored checkpoint was trained under.
+        """
+        meta_directory = self.training_run_directory / "meta"
+        stats_path     = meta_directory / ProfileStats.FILENAME
+
+        if self.resume and stats_path.is_file():
+            stored = FileIO.load_json(stats_path)
+            fresh  = json.loads(json.dumps(stats.payload()))
+
+            if stored != fresh:
+                raise ValueError(f"Resuming this run would overwrite {stats_path} with different profile normalization statistics; the restored checkpoint was trained under the stored ones. Start a fresh run or drop the overrides that changed the fitted statistics.")
+
+            self.logger.info(f"Profile normalization stats match the resumed run: {stats_path}")
+            return
+
+        stats.save(meta_directory)
+        self.logger.info(f"Profile normalization stats saved: {meta_directory}")
+
     def _fit_normalizer(self, train_ds: ProfileDataset) -> ProfileNormalizer:
+        """Fits the normalisation statistics on the training split and persists them.
+
+        Args:
+            train_ds : Training dataset, sampled to estimate location and scale.
+
+        Returns:
+            A normaliser built from the fitted statistics.
+
+        Raises:
+            ValueError : If the run resumes and the fitted statistics differ from those the restored checkpoint was trained under.
+        """
         stats = ProfileStatsComputer.compute(train_ds, self.logger, max_samples=self.config.stats_max_samples)
-        stats.save(self.training_run_directory / "meta")
+        self._persist_stats(stats)
 
         return ProfileNormalizer(stats)
 
     def run(self) -> Tuple[Tuple[DataLoader, DataLoader, DataLoader], dict[str, ProfileDataset], np.ndarray, int, ProfileNormalizer]:
+        """Builds every split, fits the normaliser and returns the loaders.
+
+        Returns:
+            Tuple of the train, validation and test loaders, the datasets keyed
+            by split name, the z axis of shape (H,) in metres, its
+            length, and the fitted normaliser.
+        """
         z_axis, z_len = self._build_axis()
 
         train_ds   = self._build_dataset("train", z_axis)

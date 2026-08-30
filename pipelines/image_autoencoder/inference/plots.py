@@ -1,3 +1,10 @@
+"""Figures summarising image-autoencoder reconstruction quality on a split.
+
+Renders per-patch ground truth, reconstruction and absolute-error maps for the
+best, worst and randomly drawn patches, plus the per-channel error bars, the
+mean-intensity scatter and the latent-norm figure.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,11 +20,26 @@ from pipelines.autoencoder_common.inference.plots import AePlotsBase
 
 
 class ImageAePlots(AePlotsBase):
+    """Publication-quality figures for image-autoencoder inference."""
+
     INTENSITY_CMAP = "viridis"
     ERROR_CMAP     = "magma"
     ERROR_XLABEL   = r"$\log_{10}$ per-patch MSE"
 
     def _patch_triplet(self, gt: np.ndarray, pred: np.ndarray, mse: float, label: str, rank: int, figures_dir: Path) -> List[Path]:
+        """Saves the ground-truth, reconstruction and absolute-error maps of one patch.
+
+        Args:
+            gt          : Ground-truth channel of shape (azimuth, range), in intensity units.
+            pred        : Reconstruction of the same shape and units.
+            mse         : Mean squared error of the whole patch, shown in the error title.
+            label       : Selection the patch comes from, `best`, `worst` or `random`.
+            rank        : Zero-based position of the patch inside that selection.
+            figures_dir : Root directory the `reconstructions` subdirectory is written under.
+
+        Returns:
+            The three saved figure paths, ground truth first.
+        """
         stem = figures_dir / "reconstructions" / f"{label}_{rank + 1:02d}"
 
         vmin, vmax = self._shared_clim(gt, pred)
@@ -32,6 +54,19 @@ class ImageAePlots(AePlotsBase):
         return [gt_path, pred_path, err_path]
 
     def _reconstructions(self, gt, pred, mse, ranked, label, figures_dir) -> List[Path]:
+        """Saves the first-channel triplet of every selected patch.
+
+        Args:
+            gt          : Ground-truth patches of shape (n_patches, channels, azimuth, range).
+            pred        : Reconstructions of the same shape.
+            mse         : Per-patch mean squared error of shape (n_patches,).
+            ranked      : Patch indices to render, in the order they are ranked.
+            label       : Selection name used in filenames and titles.
+            figures_dir : Root directory of the figure tree.
+
+        Returns:
+            All saved figure paths, three per selected patch.
+        """
         paths = []
         for rank, idx in enumerate(ranked):
             paths.extend(self._patch_triplet(gt[idx, 0], pred[idx, 0], float(mse[idx]), label, rank, figures_dir))
@@ -39,6 +74,15 @@ class ImageAePlots(AePlotsBase):
         return paths
 
     def _channel_mse(self, channel_mse: List[float], figures_dir: Path) -> Path:
+        """Saves the per-channel reconstruction error as a bar chart.
+
+        Args:
+            channel_mse : Mean squared error of each input channel, in stack order.
+            figures_dir : Directory the figure is written to.
+
+        Returns:
+            Path of the saved figure.
+        """
         fig, ax = plt.subplots(figsize=(6.2, 4.0))
 
         channels = np.arange(len(channel_mse))
@@ -51,6 +95,21 @@ class ImageAePlots(AePlotsBase):
         return self._save(fig, figures_dir / "channel_mse.png")
 
     def _intensity_scatter(self, gt, pred, n_points, seed, figures_dir) -> Path:
+        """Saves reconstructed against true mean patch intensity, with the identity line.
+
+        Args:
+            gt          : Ground-truth patches of shape (n_patches, channels, azimuth, range).
+            pred        : Reconstructions of the same shape.
+            n_points    : Maximum number of patches drawn into the scatter.
+            seed        : Seed of the subsampling generator.
+            figures_dir : Directory the figure is written to.
+
+        Returns:
+            Path of the saved figure.
+
+        Raises:
+            ValueError : If the split produced no patches to plot.
+        """
         mean_gt   = gt.mean(axis=(1, 2, 3))
         mean_pred = pred.mean(axis=(1, 2, 3))
 
@@ -77,6 +136,18 @@ class ImageAePlots(AePlotsBase):
         return self._save(fig, figures_dir / "intensity_scatter.png")
 
     def compose(self, result, channel_mse: List[float], mse: np.ndarray, cfg, figures_dir: Path) -> Dict[str, List[Path]]:
+        """Renders every inference figure and returns their paths grouped by kind.
+
+        Args:
+            result      : Predictor result holding ground truth, reconstructions and embeddings.
+            channel_mse : Mean squared error of each input channel, in stack order.
+            mse         : Per-patch mean squared error of shape (n_patches,), used to rank the best and worst patches.
+            cfg         : Inference configuration giving the patch counts, the scatter point budget and the patch selection seed.
+            figures_dir : Root directory of the figure tree.
+
+        Returns:
+            Figure paths keyed by figure kind.
+        """
         gt   = result.gt
         pred = result.pred
 

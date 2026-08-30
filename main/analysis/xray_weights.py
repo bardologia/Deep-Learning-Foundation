@@ -1,3 +1,9 @@
+"""Entry point x-raying model checkpoints for structural weight pathologies.
+
+Scans a runs directory for checkpoints and reports dead weights, uniform layers and rank
+collapse inside each selected run directory.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the weight-xray config and analyses the selected checkpoints."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics import WeightXrayEntryConfig

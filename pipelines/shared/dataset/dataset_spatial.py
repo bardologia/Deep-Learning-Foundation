@@ -1,3 +1,5 @@
+"""Spatial layout of a preprocessing run: crop extent, artifacts and pass labels."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +12,26 @@ from tools.monitoring.logger import Logger
 
 
 class Layout:
+    """Reads dataset.json of a preprocessing run and resolves its artifact paths.
+
+    Attributes:
+        run_directory   : Root of the preprocessing run.
+        data_directory  : Sub-directory holding the generated arrays.
+        parameters_path : Path of the ground-truth Gaussian parameter array.
+        global_crop     : Azimuth/range crop the run was generated over.
+        tomogram_tag    : Tag identifying the tomographic focusing settings.
+        artifacts       : Mapping of artifact key to filename inside data/.
+        pass_labels     : Track labels of the SAR stack, or None when unavailable.
+    """
+
     def __init__(self, run_directory: Path, logger: Logger, parameters_path: Path) -> None:
+        """Loads the dataset layout and logs its crop extent and artifact tags.
+
+        Args:
+            run_directory   : Root of the preprocessing run.
+            logger          : Logger the layout summary is written to.
+            parameters_path : Path of the ground-truth Gaussian parameter array.
+        """
         self.run_directory   = Path(run_directory)
         self.logger          = logger
         self.data_directory  = self.run_directory / "data"
@@ -37,16 +58,34 @@ class Layout:
 
     @property
     def profile_length(self) -> int:
+        """Number of z bins per profile, read from the full cube's first axis."""
         cube = np.load(str(self.artifact_path("cube_full")), mmap_mode="r", allow_pickle=False)
         return int(cube.shape[0])
 
     def artifact_path(self, artifact_key: str) -> Path:
+        """Returns the file path of one dataset artifact.
+
+        Args:
+            artifact_key : Artifact name from dataset.json; the special key "parameters" resolves to the externally configured parameter file.
+        """
         if artifact_key == "parameters":
             return self.parameters_path
 
         return self.data_directory / self.artifacts[artifact_key]
 
     def secondary_indices(self, secondary_labels) -> list | None:
+        """Maps requested secondary pass labels onto track indices of the stack.
+
+        Args:
+            secondary_labels : Pass labels to use as secondaries, or None to keep the dataset's own secondary ordering.
+
+        Returns:
+            Track indices in the order the labels were requested, or None when no
+            labels were given.
+
+        Raises:
+            ValueError : The dataset records no pass labels, so labels cannot be resolved to indices.
+        """
         if secondary_labels is None:
             return None
 

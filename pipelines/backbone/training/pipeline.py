@@ -1,25 +1,44 @@
+"""End-to-end backbone training pipeline: dataset, model, gate check and trainer.
+
+Wires the patch dataset, the backbone under the configured head and the trainer
+together, persists the run metadata and configurations, and runs the overfit
+gate before the real training loop.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
 
-from configuration.dataset                      import DatasetConfig
-from configuration.training                     import BackboneTrainerConfig, OverfitCheckConfig
-from models                                     import get_backbone
-from pipelines.backbone.dataset.pipeline        import DatasetPipeline
-from pipelines.backbone.training.loss_terms     import LossComponentCatalog
-from pipelines.backbone.training.trainer        import Trainer
-from pipelines.shared.config.config_persistence import BackboneModelConfigIO
-from pipelines.shared.config.run_metadata       import TrainingRunMetadata
-from pipelines.shared.model.model_builder       import ModelBuilder
-from pipelines.shared.training.overfit_check    import OverfitCheck
-from tools.data.gaussians                       import GaussianAxis, GaussianHead
-from tools.runtime.config_cli                   import ConfigCli
-from tools.runtime.reproducibility              import Reproducibility
+from configuration.dataset                         import DatasetConfig
+from configuration.training                        import BackboneTrainerConfig, OverfitCheckConfig
+from models                                        import get_backbone
+from pipelines.backbone.dataset.pipeline           import DatasetPipeline
+from pipelines.backbone.training.loss_terms        import LossComponentCatalog
+from pipelines.backbone.training.trainer           import Trainer
+from pipelines.shared.config.config_persistence    import BackboneModelConfigIO
+from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
+from pipelines.shared.config.run_metadata          import TrainingRunMetadata
+from pipelines.shared.model.model_builder          import ModelBuilder
+from pipelines.shared.training.overfit_check       import OverfitCheck
+from tools.data.gaussians                          import GaussianAxis, GaussianHead
+from tools.runtime.reproducibility                 import Reproducibility
 
 
 class TrainingPipeline:
+    """Runs one backbone training job from dataset preparation to test metrics.
+
+    Attributes:
+        trainer_config : Trainer, curriculum, gaussian and geometry configuration.
+        dataset_config : Patch dataset configuration.
+        backbone_name  : Registered backbone architecture name.
+        model_config   : Resolved model configuration, or None to take registry defaults.
+        seed           : Seed applied to every random source of the run.
+        run_name       : Explicit run directory name, or None to derive one.
+        overfit_check  : Configuration of the pre-training overfit gate.
+        patch_size     : Patch size after the backbone's squaring requirement is applied.
+    """
 
     MODEL_CONFIG_IO = BackboneModelConfigIO
 
@@ -33,21 +52,63 @@ class TrainingPipeline:
         run_name       : str | None = None,
         overfit_check  : OverfitCheckConfig | None = None,
     ) -> None:
+        """Seeds the run and reconciles the patch geometry with the backbone requirements.
+
+        Args:
+            trainer_config : Trainer, curriculum, gaussian and geometry configuration.
+            dataset_config : Patch dataset configuration.
+            backbone_name  : Registered backbone architecture name.
+            model_config   : Resolved model configuration, or None for registry defaults.
+            seed           : Seed applied to every random source of the run.
+            run_name       : Explicit run directory name, or None to derive one.
+            overfit_check  : Overfit gate configuration; a default one when omitted.
+        """
 
         self.trainer_config = trainer_config
         self.dataset_config = dataset_config
         self.backbone_name  = backbone_name
         self.model_config   = model_config
-        self.patch_size     = dataset_config.patch.size
         self.seed           = seed
         self.run_name       = run_name
         self.overfit_check  = overfit_check if overfit_check is not None else OverfitCheckConfig()
+
+        patch                    = self.dataset_config.patch
+        patch.size, patch.stride = ModelBuilder.square_patch(self._square_patch_backbones(), patch.size, patch.stride)
+        self.patch_size          = patch.size
 
         Reproducibility.seed_everything(self.seed)
 
         self.dataset_config.n_gaussians = trainer_config.gaussian.n_default_gaussians
 
+    def _square_patch_backbones(self) -> list[str]:
+        """Returns the backbones whose square-patch requirement constrains the patch geometry."""
+        return [self.backbone_name]
+
+    @staticmethod
+    def physics_geometry_active(trainer_config) -> bool:
+        """Returns whether any curriculum stage enables a term that needs the geometry field.
+
+        Args:
+            trainer_config : Trainer configuration whose curriculum stages are inspected.
+
+        Returns:
+            True when coherence resynthesis, covariance matching or the reference
+            cycle is enabled in any active stage.
+        """
+        flags = ("use_coherence_resyn", "use_moments", "use_capon_cycle")
+
+        return any(getattr(cfg, flag) for cfg in trainer_config.curriculum.active_stages() for flag in flags)
+
     def _build_dataset_pipeline(self, run_directory: Path, logger) -> DatasetPipeline:
+        """Builds the patch dataset pipeline and derives the elevation axis from its profile length.
+
+        Args:
+            run_directory : Directory the dataset artefacts are written under.
+            logger        : Logger passed to the dataset pipeline.
+
+        Returns:
+            The configured dataset pipeline, not yet run.
+        """
         gaussian_cfg = self.trainer_config.gaussian
 
         dataset_pipeline = DatasetPipeline(
@@ -55,6 +116,9 @@ class TrainingPipeline:
             training_run_directory = Path(run_directory),
             logger                 = logger,
             seed                   = self.seed,
+            height_axis_convention = self.trainer_config.geometry.height_axis_convention,
+            build_geometry_field   = self.physics_geometry_active(self.trainer_config),
+            resume                 = self.trainer_config.training.resume,
         )
 
         self.dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, dataset_pipeline.layout.profile_length)
@@ -62,6 +126,18 @@ class TrainingPipeline:
         return dataset_pipeline
 
     def _run_overfit_check(self, train_dataset, in_channels: int, out_channels: int, z_axis) -> None:
+        """Runs the pre-training gate that must overfit a tiny subset before real training.
+
+        The gate trains a sanitized copy of the model on a single-stage loss with
+        active normalization disabled, so a failure points at the model or data
+        rather than the curriculum.
+
+        Args:
+            train_dataset : Training dataset the gate draws its samples from.
+            in_channels   : Model input channel count.
+            out_channels  : Model output channel count.
+            z_axis        : Z sample positions in metres, of shape (profile_length,).
+        """
         check = OverfitCheck(self.overfit_check, self.run_metadata.run_directory, self.logger)
         if not check.enabled:
             return
@@ -100,6 +176,15 @@ class TrainingPipeline:
         check.run(gate_trainer, train_dataset)
 
     def _build_model(self, in_channels: int, out_channels: int):
+        """Builds the backbone at the given widths and logs its architecture and size.
+
+        Args:
+            in_channels  : Model input channel count.
+            out_channels : Model output channel count.
+
+        Returns:
+            The model and its resolved model configuration.
+        """
         model, model_cfg = self._model_factory()(self.backbone_name, config=self.model_config, **self._model_overrides(in_channels, out_channels))
 
         n_total     = sum(p.numel() for p in model.parameters())
@@ -115,18 +200,36 @@ class TrainingPipeline:
         return model, model_cfg
 
     def _architecture_label(self) -> str:
+        """Returns the architecture name shown in the model log banner."""
         return self.backbone_name
 
     def _model_overrides(self, in_channels: int, out_channels: int) -> dict:
+        """Returns the channel widths plus any image-size override the backbone requires."""
         overrides = {"in_channels": in_channels, "out_channels": out_channels}
         overrides.update(ModelBuilder.image_size_override(self.backbone_name, self.patch_size))
 
         return overrides
 
     def _model_factory(self):
+        """Returns the factory that instantiates the architecture family of this pipeline."""
         return get_backbone
 
-    def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir: Path, logger, emit_docs: bool = True):
+    def _make_trainer(self, model, model_cfg, z_axis, norm_stats, run_dir: Path, logger, emit_docs: bool = True, writer=None):
+        """Builds the trainer driving the training loop.
+
+        Args:
+            model      : The backbone to train.
+            model_cfg  : Resolved model configuration.
+            z_axis     : Z sample positions in metres, of shape (profile_length,).
+            norm_stats : Normalizer of the dataset the model was fitted on.
+            run_dir    : Directory the trainer writes checkpoints and logs into.
+            logger     : Logger for the training loop.
+            emit_docs  : Whether the trainer writes the architecture documentation.
+            writer     : Optional TensorBoard writer.
+
+        Returns:
+            The configured trainer.
+        """
         return Trainer(
             model      = model,
             model_cfg  = model_cfg,
@@ -136,9 +239,19 @@ class TrainingPipeline:
             logger     = logger,
             norm_stats = norm_stats,
             emit_docs  = emit_docs,
+            writer     = writer,
         )
 
     def build_pretrain_trainer(self, work_dir: Path, logger):
+        """Builds a throwaway trainer over the probe-union loss for the pretraining probes.
+
+        Args:
+            work_dir : Scratch directory the probe artefacts are written into.
+            logger   : Logger for the probe run.
+
+        Returns:
+            Tuple of the trainer, the training dataset and the model.
+        """
         work_dir         = Path(work_dir)
         dataset_pipeline = self._build_dataset_pipeline(work_dir, logger)
 
@@ -158,6 +271,15 @@ class TrainingPipeline:
         return trainer, dataset, model
 
     def run(self, probe_config=None, resolved_entry_config=None):
+        """Prepares the data and model, runs the gate and trains, then saves test metrics.
+
+        Args:
+            probe_config          : Optional loss-scale probe configuration run before training.
+            resolved_entry_config : Optional resolved entry config persisted into the run's docs directory.
+
+        Returns:
+            The training results returned by the trainer.
+        """
         self.run_metadata = TrainingRunMetadata(
             trainer_config = self.trainer_config,
             model_name     = self.backbone_name,
@@ -167,9 +289,7 @@ class TrainingPipeline:
         self.logger = self.run_metadata.logger
 
         if resolved_entry_config is not None:
-            resolved_path = self.run_metadata.run_directory / "docs" / "resolved_entry_config.json"
-            ConfigCli.save_resolved(resolved_entry_config, resolved_path)
-            self.logger.info(f"Resolved entry config saved: {resolved_path}")
+            ResolvedEntryConfigWriter.save(resolved_entry_config, self.run_metadata.run_directory, self.logger)
 
         self.logger.section("[PyTorch Training Pipeline Execution]")
         self.logger.kv_table({
@@ -208,7 +328,7 @@ class TrainingPipeline:
         try:
             self._run_overfit_check(train_dataset, in_channels, out_channels, z_axis)
 
-            trainer = self._make_trainer(model, model_cfg, z_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger)
+            trainer = self._make_trainer(model, model_cfg, z_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger, writer=self.run_metadata.writer)
 
             trainer.maybe_run_loss_probe(train_loader, probe_config)
             results = trainer.train(train_loader, val_loader, test_loader)

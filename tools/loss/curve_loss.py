@@ -1,35 +1,105 @@
+"""Elementwise and shape-aware penalties over tomographic reflectivity curves.
+
+Collects the pointwise robust penalties applied to a prediction-minus-target
+residual, the second difference used as a smoothness regulariser, and the
+shape and energy terms comparing whole curves along the elevation axis.
+"""
+
 from __future__ import annotations
 
 import torch
 
 
 class CurveLoss:
+    """Stateless penalties over curve residuals and curve pairs."""
+
     @staticmethod
     def mse_diff(diff: torch.Tensor) -> torch.Tensor:
+        """Returns the mean squared value of a residual tensor of any shape."""
         return (diff * diff).mean()
 
     @staticmethod
     def l1_diff(diff: torch.Tensor) -> torch.Tensor:
+        """Returns the mean absolute value of a residual tensor of any shape."""
         return diff.abs().mean()
 
     @staticmethod
     def huber_diff(diff: torch.Tensor, delta: float) -> torch.Tensor:
+        """Returns the mean Huber penalty of a residual.
+
+        Args:
+            diff  : Residual tensor of any shape.
+            delta : Magnitude at which the penalty switches from quadratic to linear.
+
+        Returns:
+            Scalar mean penalty.
+        """
         abs_diff = diff.abs()
         val      = torch.where(abs_diff <= delta, 0.5 * diff * diff, delta * (abs_diff - 0.5 * delta))
         return val.mean()
 
     @staticmethod
     def charbonnier_diff(diff: torch.Tensor, eps: float) -> torch.Tensor:
+        """Returns the mean Charbonnier penalty of a residual.
+
+        Args:
+            diff : Residual tensor of any shape.
+            eps  : Smoothing constant that keeps the square root differentiable at zero.
+
+        Returns:
+            Scalar mean penalty.
+        """
         return torch.sqrt((diff * diff + eps * eps).clamp(min=eps * eps)).mean()
 
     @staticmethod
+    def second_difference(curve: torch.Tensor) -> torch.Tensor:
+        """Returns the discrete second difference along the elevation axis.
+
+        Args:
+            curve : Tensor of shape (batch, elevation, ...) sampled uniformly along dimension 1.
+
+        Returns:
+            Tensor of shape (batch, elevation - 2, ...) holding the second
+            difference at each interior sample.
+
+        Raises:
+            ValueError : If fewer than three samples are present along dim 1.
+        """
+        if curve.shape[1] < 3:
+            raise ValueError(f"Second difference needs at least 3 samples along dim 1, got {curve.shape[1]}.")
+
+        return curve[:, 2:] - 2.0 * curve[:, 1:-1] + curve[:, :-2]
+
+    @staticmethod
     def smooth_l1_diff(diff: torch.Tensor, beta: float) -> torch.Tensor:
+        """Returns the mean smooth-L1 penalty of a residual.
+
+        Args:
+            diff : Residual tensor of any shape.
+            beta : Magnitude below which the penalty is quadratic.
+
+        Returns:
+            Scalar mean penalty.
+        """
         abs_diff = diff.abs()
         val      = torch.where(abs_diff < beta, 0.5 * diff * diff / beta, abs_diff - 0.5 * beta)
         return val.mean()
 
     @staticmethod
     def cosine(pred: torch.Tensor, target: torch.Tensor, axis: int) -> torch.Tensor:
+        """Returns the mean cosine distance between curve shapes.
+
+        Curves whose target norm falls below 1e-3 are excluded, so the term
+        measures shape agreement only where the target carries energy.
+
+        Args:
+            pred   : Predicted curves with the elevation samples along axis.
+            target : Target curves of the same shape as pred.
+            axis   : Dimension holding the elevation samples.
+
+        Returns:
+            Scalar mean of 1 - cosine similarity over the valid curves.
+        """
         pred_norm   = torch.norm(pred,   dim=axis, keepdim=True)
         target_norm = torch.norm(target, dim=axis, keepdim=True)
 
@@ -42,8 +112,34 @@ class CurveLoss:
 
         return ((1.0 - sim) * valid).sum() / n
 
+    @staticmethod
+    def log_energy(pred: torch.Tensor, target: torch.Tensor, axis: int) -> torch.Tensor:
+        """Returns the mean absolute log-ratio of predicted to target curve energy.
+
+        Curves whose target norm falls below 1e-3 are excluded.
+
+        Args:
+            pred   : Predicted curves with the elevation samples along axis.
+            target : Target curves of the same shape as pred.
+            axis   : Dimension holding the elevation samples.
+
+        Returns:
+            Scalar mean of |log(||pred|| / ||target||)| over the valid curves.
+        """
+        pred_norm   = torch.norm(pred,   dim=axis)
+        target_norm = torch.norm(target, dim=axis)
+
+        valid = (target_norm > 1e-3).float()
+
+        ratio = torch.log((pred_norm + 1e-6) / (target_norm + 1e-6))
+        n     = valid.sum().clamp(min=1.0)
+
+        return (ratio.abs() * valid).sum() / n
+
 
 class MomentLoss:
+    """Moment-matching penalties comparing mass, mean and spread of profile pairs."""
+
     @staticmethod
     def masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         return (values * mask).sum() / mask.sum().clamp(min=1.0)

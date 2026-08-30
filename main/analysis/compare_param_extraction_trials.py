@@ -1,3 +1,9 @@
+"""Entry point comparing Gaussian-fit parameter-extraction trials of one params directory.
+
+Resolves the output directory (a fresh timestamp tag under ``_fit_comparison`` unless
+overridden) and drives ``ParamExtractionComparisonPipeline``.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -11,6 +17,7 @@ from tools.runtime.run_tag import RunTag
 
 
 def main() -> None:
+    """Runs the parameter-extraction trial comparison and logs the reports written."""
     EnvironmentPinner.threads()
 
     from configuration.comparison                                import ParamExtractionComparisonConfig

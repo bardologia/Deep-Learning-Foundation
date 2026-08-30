@@ -1,3 +1,5 @@
+"""Public re-exports of every model architecture configuration dataclass."""
+
 from configuration.architectures.backbone import (
     UNetConfig,
     ResUNetConfig,

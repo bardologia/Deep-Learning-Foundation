@@ -1,3 +1,9 @@
+"""Entry point mapping the curve-MSE loss landscape around trained backbone weights.
+
+Perturbs the weights along two filter-normalized random directions and writes 1D cuts, a
+2D log contour and a per-direction sharpness scalar into each run directory.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the landscape config and maps the loss surface of the selected runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                            import LossLandscapeConfig

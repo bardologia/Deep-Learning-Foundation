@@ -1,3 +1,9 @@
+"""Entry point that gathers inference reports of selected runs into one collector directory.
+
+Thin CLI wrapper: parses a ``ReportCollectionEntryConfig`` and hands it to
+``ReportCollectionBatch``, which does the scanning, selection and copying.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the report-collection config and runs the collection batch."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics        import ReportCollectionEntryConfig

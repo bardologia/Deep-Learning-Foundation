@@ -1,3 +1,9 @@
+"""Reconstruction metrics for the standalone profile autoencoder.
+
+Extends the shared autoencoder metrics with profile-specific shape, integrated
+power and peak-location errors, restricted to pixels carrying scatterers.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -6,17 +12,30 @@ from pipelines.autoencoder_common.inference.metrics import AeMetricsBase
 
 
 class ProfileAeMetrics(AeMetricsBase):
+    """Scores reconstructed z profiles against their ground truth.
+
+    Attributes:
+        z_axis       : Z axis of shape (H,), in metres.
+        amp_zero_thr : Amplitude above which a curve counts as active.
+        active       : Boolean mask of shape (n_curves,) marking active curves.
+    """
+
     def __init__(self, result, z_axis: np.ndarray, amp_zero_thr: float) -> None:
+        """Stores the reconstruction result and derives the activity mask.
+
+        Args:
+            result       : Reconstruction result holding ground truth, predictions and embeddings of shape (n_curves, H) and (n_curves, embedding_dim).
+            z_axis       : Z axis of shape (H,), in metres.
+            amp_zero_thr : Amplitude above which a curve counts as active.
+        """
         super().__init__(result)
 
         self.z_axis       = np.asarray(z_axis, dtype=np.float64)
         self.amp_zero_thr = amp_zero_thr
         self.active       = self.gt.max(axis=1) > self.amp_zero_thr
 
-    def per_curve_mse(self) -> np.ndarray:
-        return np.mean((self.pred - self.gt) ** 2, axis=1, dtype=np.float64)
-
     def _physical_errors(self) -> dict:
+        """Returns MSE, MAE, RMSE, max absolute error and R2 in physical units."""
         diff = self.pred - self.gt
         mean = float(np.mean(self.gt, dtype=np.float64))
 
@@ -25,7 +44,7 @@ class ProfileAeMetrics(AeMetricsBase):
 
         return {
             "mse_mean"           : float(np.mean(diff ** 2, dtype=np.float64)),
-            "mse_median"         : float(np.median(self.per_curve_mse())),
+            "mse_median"         : float(np.median(self.per_sample_mse())),
             "mae_mean"           : float(np.mean(np.abs(diff), dtype=np.float64)),
             "rmse"               : float(np.sqrt(np.mean(diff ** 2, dtype=np.float64))),
             "max_abs_error_mean" : float(np.mean(np.max(np.abs(diff), axis=1), dtype=np.float64)),
@@ -33,6 +52,7 @@ class ProfileAeMetrics(AeMetricsBase):
         }
 
     def _shape_errors(self) -> dict:
+        """Returns Pearson correlation and relative L2 error over active curves."""
         gt   = self.gt[self.active]
         pred = self.pred[self.active]
 
@@ -52,6 +72,11 @@ class ProfileAeMetrics(AeMetricsBase):
         }
 
     def _power_errors(self) -> dict:
+        """Returns integrated-power, peak-location and peak-amplitude errors.
+
+        Power is integrated over the elevation axis in metres, so the peak
+        location error is reported in metres.
+        """
         gt   = self.gt[self.active]
         pred = self.pred[self.active]
 
@@ -74,6 +99,7 @@ class ProfileAeMetrics(AeMetricsBase):
         }
 
     def compute(self) -> dict:
+        """Returns the full metric dictionary for the reconstructed split."""
         metrics = {
             "n_curves"         : int(self.gt.shape[0]),
             "n_active_curves"  : int(self.active.sum()),

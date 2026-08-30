@@ -1,3 +1,11 @@
+"""Publication-quality rendering of Optuna study diagnostics.
+
+Wraps Optuna's matplotlib visualizations, relabelling their generic axis titles
+with the concrete objective and decoding indexed-categorical parameter names,
+and saves one figure per file: study-level plots, one slice and rank plot per
+parameter, and pairwise contours over the most important parameters.
+"""
+
 from __future__ import annotations
 
 from itertools import combinations
@@ -13,6 +21,15 @@ from tools.reporting.plotting import PlotBase
 
 
 class StudyPlotter(PlotBase):
+    """Renders and saves the diagnostic plots of one Optuna study.
+
+    Attributes:
+        save_dpi           : Raster resolution of the saved figures.
+        CONTOUR_MAX_PARAMS : Upper bound on the parameters entering the pairwise contour plots, selected by importance.
+        OBJECTIVE_NAME     : Axis label replacing Optuna's generic objective title.
+        logger             : Logger receiving notes such as the contour parameter cut.
+    """
+
     save_dpi = 300
 
     CONTOUR_MAX_PARAMS = 8
@@ -20,14 +37,17 @@ class StudyPlotter(PlotBase):
     OBJECTIVE_NAME = "best validation loss under the trial's own objective (lower is better)"
 
     def __init__(self, logger) -> None:
+        """Stores the logger used while rendering."""
         self.logger = logger
 
     @staticmethod
     def _readable_param(name: str) -> str:
+        """Returns a parameter name with the ``__idx`` suffix spelled out."""
         return f"{name[:-5]} (choice index)" if name.endswith("__idx") else name
 
     @classmethod
     def _relabel_text(cls, text: str) -> str:
+        """Returns a label with the objective title and index suffixes rewritten."""
         if text == "Objective Value":
             return cls.OBJECTIVE_NAME
         if text.endswith("__idx"):
@@ -36,6 +56,11 @@ class StudyPlotter(PlotBase):
 
     @classmethod
     def _relabel_figure(cls, fig) -> None:
+        """Rewrites the axis labels, titles and tick labels of every subplot.
+
+        Args:
+            fig : Matplotlib figure produced by an Optuna visualization.
+        """
         for ax in fig.axes:
             ax.set_xlabel(cls._relabel_text(ax.get_xlabel()))
             ax.set_ylabel(cls._relabel_text(ax.get_ylabel()))
@@ -48,10 +73,12 @@ class StudyPlotter(PlotBase):
                     setter(relabel)
 
     def _save_study_figure(self, fig, path: Path) -> Path:
+        """Relabels a figure and saves it, returning the written path."""
         self._relabel_figure(fig)
         return self._save(fig, path)
 
     def _render_single(self, study: optuna.Study, out_dir: Path) -> list[Path]:
+        """Renders the study-level plots, one file each, and returns their paths."""
         saved = []
         for name, plotter in self._plotters(study).items():
             axes = plotter()
@@ -60,6 +87,15 @@ class StudyPlotter(PlotBase):
         return saved
 
     def _render_per_param(self, study: optuna.Study, out_dir: Path) -> list[Path]:
+        """Renders one slice and one rank plot per searched parameter.
+
+        Args:
+            study   : Study whose trials are plotted.
+            out_dir : Directory receiving the ``slice`` and ``rank`` subfolders.
+
+        Returns:
+            Paths of the saved figures.
+        """
         params = self._study_params(study)
         saved  = []
 
@@ -71,6 +107,15 @@ class StudyPlotter(PlotBase):
         return saved
 
     def _render_contours(self, study: optuna.Study, out_dir: Path) -> list[Path]:
+        """Renders one contour plot per pair of the selected parameters.
+
+        Args:
+            study   : Study whose trials are plotted.
+            out_dir : Directory receiving the ``contour`` subfolder.
+
+        Returns:
+            Paths of the saved figures.
+        """
         params = self._contour_params(study)
         saved  = []
 
@@ -81,6 +126,7 @@ class StudyPlotter(PlotBase):
         return saved
 
     def _plotters(self, study: optuna.Study) -> dict:
+        """Returns the study-level plot name to zero-argument renderer mapping."""
         return {
             "optimization_history" : lambda: ovm.plot_optimization_history(study, target_name=self.OBJECTIVE_NAME),
             "intermediate_values"  : lambda: ovm.plot_intermediate_values(study),
@@ -93,9 +139,19 @@ class StudyPlotter(PlotBase):
 
     @staticmethod
     def _study_params(study: optuna.Study) -> list[str]:
+        """Returns the sorted names of every parameter sampled in the study."""
         return sorted({p for t in study.trials for p in t.params})
 
     def _contour_params(self, study: optuna.Study) -> list[str]:
+        """Returns the parameters entering the contour grid, capped by importance.
+
+        Args:
+            study : Study whose parameters are considered.
+
+        Returns:
+            All searched parameters, or the most important
+            CONTOUR_MAX_PARAMS of them when the search space is larger.
+        """
         params = self._study_params(study)
         if len(params) <= self.CONTOUR_MAX_PARAMS:
             return params
@@ -106,6 +162,15 @@ class StudyPlotter(PlotBase):
         return sorted(top)
 
     def render(self, study: optuna.Study, out_dir: Path) -> list[Path]:
+        """Renders every study, per-parameter and contour plot into a directory.
+
+        Args:
+            study   : Study to visualize.
+            out_dir : Directory created for the figures.
+
+        Returns:
+            Paths of all saved figures.
+        """
         self._apply_style()
 
         out_dir = Path(out_dir)

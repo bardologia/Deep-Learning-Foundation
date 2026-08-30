@@ -1,3 +1,10 @@
+"""Draws how a set-prediction head organises its raw output slots.
+
+The figures show which slots the model actually uses, what parameter ranges each slot
+covers, and whether slot index tracks either the within-pixel μ ordering or the matched
+ground-truth index -- the signatures of slot collapse and of slot specialisation.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,6 +22,8 @@ from tools.metrics.slot_organization         import SlotOrganization
 
 
 class SlotOrganizationPlotter(PlotTools):
+    """Plots slot-usage, per-slot parameter distributions and slot-ordering matrices."""
+
     def plot_slot_usage(
         self,
         params_pred   : np.ndarray,
@@ -22,6 +31,17 @@ class SlotOrganizationPlotter(PlotTools):
         out_dir       : Path,
         amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
     ) -> List[Path]:
+        """Plots the fraction of pixels on which each raw output slot is active.
+
+        Args:
+            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            n_gaussians   : Gaussian count K.
+            out_dir       : Directory the figure is written into.
+            amp_threshold : Amplitude above which a slot counts as active.
+
+        Returns:
+            Single-element list holding the written figure path.
+        """
 
         usage   = SlotOrganization.usage_fractions(params_pred, n_gaussians, amp_threshold)
         entropy = SlotOrganization.usage_entropy(usage)
@@ -52,6 +72,21 @@ class SlotOrganizationPlotter(PlotTools):
         bins          : int   = 80,
         amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
     ) -> List[Path]:
+        """Plots one overlaid histogram per parameter, with a curve per raw slot over active pixels.
+
+        Amplitude is binned and drawn on a logarithmic axis; μ and σ use linear bins over
+        the central 99% of their values.
+
+        Args:
+            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            n_gaussians   : Gaussian count K.
+            out_dir       : Directory the figures are written into.
+            bins          : Number of histogram bins.
+            amp_threshold : Amplitude above which a slot counts as active.
+
+        Returns:
+            Paths of the written figures, one per parameter that had populated slots.
+        """
 
         amp_all = np.stack([params_pred[3 * k] for k in range(n_gaussians)], axis=0).reshape(n_gaussians, -1)
         active  = amp_all >= amp_threshold
@@ -112,6 +147,19 @@ class SlotOrganizationPlotter(PlotTools):
         out_dir       : Path,
         amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
     ) -> List[Path]:
+        """Plots the row-normalised matrix of raw slot index against within-pixel μ rank.
+
+        A diagonal matrix means the head emits its Gaussians in elevation order.
+
+        Args:
+            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            n_gaussians   : Gaussian count K.
+            out_dir       : Directory the figure is written into.
+            amp_threshold : Amplitude above which a slot counts as active.
+
+        Returns:
+            Single-element list holding the written figure path.
+        """
 
         counts = SlotOrganization.mu_rank_matrix(params_pred, n_gaussians, amp_threshold)
         diag   = SlotOrganization.diagonality(counts)
@@ -137,6 +185,21 @@ class SlotOrganizationPlotter(PlotTools):
         assignment    : np.ndarray | None    = None,
         amp_threshold : float                = ParamMatcher.ACTIVE_AMP_THR,
     ) -> List[Path]:
+        """Plots the row-normalised matrix of raw slot index against matched ground-truth index.
+
+        A diagonal matrix means each slot consistently claims the same GT scatterer.
+
+        Args:
+            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_gt     : Ground-truth parameter cube of the same shape.
+            n_gaussians   : Gaussian count K.
+            out_dir       : Directory the figure is written into.
+            assignment    : Precomputed predicted-to-GT assignment, or None to match here.
+            amp_threshold : Amplitude above which a slot counts as active.
+
+        Returns:
+            Single-element list holding the written figure path.
+        """
 
         counts = SlotOrganization.assignment_matrix(params_pred, params_gt, n_gaussians, amp_threshold, assignment=assignment)
         diag   = SlotOrganization.diagonality(counts)
@@ -154,6 +217,20 @@ class SlotOrganizationPlotter(PlotTools):
         return [path]
 
     def _matrix_panel(self, matrix: np.ndarray, title: str, x_label: str, y_label: str, diag: float, path: Path) -> Path:
+        """Renders a square annotated probability matrix with its diagonality in the title.
+
+        Args:
+            matrix  : Row-normalised matrix of shape (K, K).
+            title   : Panel title, appended with the diagonality score.
+            x_label : Horizontal axis label.
+            y_label : Vertical axis label.
+            diag    : Diagonality score in [0, 1] quoted in the title.
+            path    : Destination file path.
+
+        Returns:
+            The written file path.
+        """
+
         n = matrix.shape[0]
 
         fig, ax = plt.subplots(figsize=(4.8, 4.2))

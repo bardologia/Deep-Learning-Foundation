@@ -1,28 +1,48 @@
+"""Reliability of predicted scatterer amplitude as a presence score.
+
+Bins the active predicted Gaussians by amplitude and measures, per bin, the fraction that
+Hungarian-matched a ground-truth scatterer, so amplitude can be read as a detection
+confidence rather than only as a magnitude.
+"""
+
 from __future__ import annotations
 
 import numpy as np
 
-from pipelines.backbone.inference.failure_modes import FailureModes
-from pipelines.backbone.inference.stratified    import StratifiedErrors
+from tools.metrics.scoring import RankCorrelation
 
 
 class PresenceCalibration:
+    """Scores predicted-amplitude bins by the precision of the detections they contain.
+
+    Attributes:
+        N_BINS        : Number of quantile bins over predicted amplitude.
+        MIN_BIN_COUNT : Minimum predictions a bin needs before it is reported.
+        pairs         : Matched-pair arrays from FailureModes.pair_predictions.
+    """
 
     N_BINS        = 10
     MIN_BIN_COUNT = 30
 
-    def __init__(self, params_pred: np.ndarray, params_gt: np.ndarray, n_gaussians: int, assignment: np.ndarray | None = None) -> None:
-        self.params_pred = params_pred
-        self.params_gt   = params_gt
-        self.n_gaussians = int(n_gaussians)
-        self.assignment  = assignment
+    def __init__(self, pairs: dict) -> None:
+        """Stores the per-slot matched-pair arrays the calibration is computed from."""
+        self.pairs = pairs
 
     def run(self) -> tuple[list[dict], dict]:
-        pairs = FailureModes(self.params_pred, self.params_gt, self.n_gaussians, assignment=self.assignment).pair_predictions()
+        """Bins active predictions by amplitude and measures the match precision per bin.
 
-        active = pairs["act_pred"].reshape(-1)
-        amps   = pairs["amp_pred"].reshape(-1)[active]
-        hits   = pairs["pred_matched"].reshape(-1)[active].astype(np.float64)
+        Returns:
+            Tuple of the per-bin rows, each carrying "amp_mean", "n" and "precision", and the
+            scalar summary with overall precision, the Spearman correlation between amplitude
+            and match success, the precision of the lowest and highest bins, and the number of
+            scored predictions.
+
+        Raises:
+            ValueError : If too few active predictions exist, if the predicted amplitudes are effectively constant, or if no bin reaches MIN_BIN_COUNT.
+        """
+        active = self.pairs["act_pred"].reshape(-1)
+        amps   = self.pairs["amp_pred"].reshape(-1)[active]
+        hits   = self.pairs["pred_matched"].reshape(-1)[active].astype(np.float64)
 
         if amps.size < self.MIN_BIN_COUNT:
             raise ValueError(f"Only {amps.size} active predicted Gaussians; presence calibration needs at least {self.MIN_BIN_COUNT}")
@@ -49,7 +69,7 @@ class PresenceCalibration:
 
         scalars = {
             "presence_overall_precision" : float(hits.mean()),
-            "presence_rank_corr"         : StratifiedErrors._spearman(amps, hits),
+            "presence_rank_corr"         : RankCorrelation.spearman(amps, hits),
             "presence_precision_low"     : rows[0]["precision"],
             "presence_precision_high"    : rows[-1]["precision"],
             "presence_n_scored"          : float(amps.size),

@@ -1,8 +1,14 @@
+"""Log1p standardisation of elevation profiles and its persisted statistics.
+
+Fits the location and scale of log1p-compressed training curves, stores them
+next to the run metadata, and applies them in both directions at inference.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib     import Path
-from typing      import Optional
+from typing      import ClassVar, Optional
 
 import numpy as np
 import torch
@@ -16,24 +22,53 @@ from tools.monitoring.logger import Logger
 
 @dataclass
 class ProfileStats:
+    """Location and scale of log1p-compressed profile amplitudes.
+
+    Attributes:
+        FILENAME : File name of the persisted statistics inside a metadata directory.
+        loc      : Mean of the log1p-compressed training values.
+        scale    : Standard deviation of the log1p-compressed training values.
+    """
+
+    FILENAME : ClassVar[str] = "profile_normalization_stats.json"
+
     loc   : float
     scale : float
 
-    def save(self, directory: Path) -> Path:
-        directory = Path(directory)
-        out_path  = directory / "profile_normalization_stats.json"
-
-        payload = {
+    def payload(self) -> dict:
+        """Returns the JSON payload persisted for these statistics."""
+        return {
             "transform" : "log1p",
             "loc"       : self.loc,
             "scale"     : self.scale,
         }
 
-        return FileIO.save_json(payload, out_path, indent=4)
+    def save(self, directory: Path) -> Path:
+        """Writes the statistics as profile_normalization_stats.json.
+
+        Args:
+            directory : Metadata directory the file is written into.
+
+        Returns:
+            Path of the written JSON file.
+        """
+        return FileIO.save_json(self.payload(), Path(directory) / self.FILENAME, indent=4)
 
     @classmethod
     def load(cls, directory: Path, logger: Optional[Logger] = None) -> "ProfileStats":
-        path = Path(directory) / "profile_normalization_stats.json"
+        """Reads the statistics back from a metadata directory.
+
+        Args:
+            directory : Directory holding profile_normalization_stats.json.
+            logger    : Logger that reports the loaded values when given.
+
+        Returns:
+            The persisted `ProfileStats`.
+
+        Raises:
+            FileNotFoundError : If the statistics file is absent.
+        """
+        path = Path(directory) / cls.FILENAME
         if not path.exists():
             raise FileNotFoundError(f"Profile normalization stats not found at '{path}'.")
 
@@ -51,12 +86,24 @@ class ProfileStats:
 
 
 class ProfileStatsComputer:
+    """Estimates profile normalisation statistics from a training dataset."""
+
     @staticmethod
     def _sample_indices(dataset, max_samples: int) -> np.ndarray:
+        """Returns up to `max_samples` deterministic positions into the dataset."""
         return Sampler.deterministic_indices(len(dataset), max_samples)
 
     @staticmethod
     def _evaluate_curves(dataset, indices: np.ndarray) -> np.ndarray:
+        """Evaluates the Gaussian mixtures at the sampled dataset positions.
+
+        Args:
+            dataset : Profile dataset holding the parameter arrays.
+            indices : Positions into `dataset.index`.
+
+        Returns:
+            Raw curves of shape (len(indices), H).
+        """
         selected = dataset.index[indices]
 
         return GaussianMixture.evaluate_batch(
@@ -68,6 +115,16 @@ class ProfileStatsComputer:
 
     @staticmethod
     def compute(dataset, logger: Logger, max_samples: int = 100_000) -> ProfileStats:
+        """Fits the log1p location and scale over a sample of training curves.
+
+        Args:
+            dataset     : Training profile dataset.
+            logger      : Logger for the statistics table.
+            max_samples : Maximum number of curves sampled.
+
+        Returns:
+            Statistics with the scale floored at `ProfileNormalizer.SCALE_FLOOR`.
+        """
         logger.section("[Profile Normalization Statistics]")
 
         indices = ProfileStatsComputer._sample_indices(dataset, max_samples)
@@ -88,15 +145,37 @@ class ProfileStatsComputer:
 
 
 class ProfileNormalizer:
+    """Applies and inverts log1p standardisation of profile curves.
+
+    Attributes:
+        stats     : Statistics the transform was fitted with.
+        loc       : Location subtracted after log1p compression.
+        scale     : Standard deviation the compressed values are divided by.
+        inv_scale : Reciprocal of `scale`.
+    """
+
     SCALE_FLOOR = 1e-6
 
     def __init__(self, stats: ProfileStats) -> None:
+        """Stores the statistics with the scale floored away from zero.
+
+        Args:
+            stats : Fitted log1p location and scale.
+        """
         self.stats     = stats
         self.loc       = float(stats.loc)
         self.scale     = max(float(stats.scale), self.SCALE_FLOOR)
         self.inv_scale = 1.0 / self.scale
 
     def normalize(self, curve):
+        """Compresses and standardises a curve.
+
+        Args:
+            curve : Raw profile of shape (..., H) as a numpy array or torch tensor, in physical intensity units.
+
+        Returns:
+            The normalised profile with the same shape and container type.
+        """
         x   = Log1pTransform.compress(curve)
         out = (x - self.loc) * self.inv_scale
 
@@ -106,6 +185,14 @@ class ProfileNormalizer:
         return np.ascontiguousarray(out, dtype=np.float32)
 
     def denormalize(self, curve):
+        """Inverts `normalize`, returning physical intensity units.
+
+        Args:
+            curve : Normalised profile of shape (..., H) as a numpy array or torch tensor.
+
+        Returns:
+            The raw profile with the same shape and container type.
+        """
         x   = curve * self.scale + self.loc
         out = Log1pTransform.decompress(x)
 

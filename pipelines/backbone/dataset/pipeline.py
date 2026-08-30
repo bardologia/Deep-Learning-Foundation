@@ -1,4 +1,14 @@
+"""Dataset construction for backbone training runs.
+
+DatasetPipeline crops the preprocessing artifacts per split, cuts them into patches,
+fits the normalization on the train split, builds the dataloaders and writes the
+dataset metadata. BackboneDatasetPreparation wraps it for the training entry points
+and resolves the Gaussian profile axis.
+"""
+
 from __future__ import annotations
+
+import json
 
 from pathlib import Path
 from typing  import Optional, Tuple
@@ -6,10 +16,13 @@ from typing  import Optional, Tuple
 from torch.utils.data import DataLoader
 
 from configuration.dataset                      import DatasetConfig
+from tools.data.io                              import FileIO
+from tools.data.regions                         import CropRegion
 from pipelines.backbone.dataset.augmentation    import SpatialAugmenter
 from pipelines.backbone.dataset.datasets        import MultiRegionDataset, PatchDataset
 from pipelines.shared.dataset.loaders           import Loader
 from pipelines.backbone.dataset.normalizer      import Normalizer
+from pipelines.backbone.dataset.stats           import Stats
 from pipelines.backbone.dataset.stats_computer  import StatsComputer
 from pipelines.backbone.dataset.spatial         import Cropper, Patcher
 from pipelines.backbone.dataset.metadata_writer import MetadataWriter
@@ -19,10 +32,34 @@ from tools.monitoring.logger                    import Logger
 
 
 class DatasetPipeline:
-    def __init__(self, config : DatasetConfig, training_run_directory : Path, logger : Logger | None = None, seed : int = 0) -> None:
+    """Builds the train, validation and test dataloaders of a backbone training run.
+
+    Attributes:
+        config                 : Dataset configuration driving crops, patching, channels and normalization.
+        training_run_directory : Run directory receiving the stats and metadata files.
+        layout                 : Layout of the preprocessing artifacts this dataset is cut from.
+        cropper                : Loader of the per-split crops out of those artifacts.
+        metadata_writer        : Writer of the dataset, crop and patch metadata.
+        augmenter              : Augmenter applied to the train split.
+    """
+
+    def __init__(self, config : DatasetConfig, training_run_directory : Path, logger : Logger | None = None, seed : int = 0, resume : bool = False) -> None:
+        """Validates the split geometry and wires the crop, metadata and augmentation components.
+
+        Args:
+            config                 : Dataset configuration of the run.
+            training_run_directory : Directory the run writes its metadata into.
+            logger                 : Logger to use; a run-local dataset_pipeline logger is created when omitted.
+            seed                   : Seed of the augmentation generator and of the dataloader shuffling.
+            resume                 : Whether this run resumes an existing one, in which case the stored normalization statistics must match instead of being overwritten.
+
+        Raises:
+            ValueError : If 90-degree rotations are enabled together with a rectangular patch.
+        """
         self.config                 = config
         self.training_run_directory = Path(training_run_directory)
         self.seed                   = int(seed)
+        self.resume                 = bool(resume)
 
         log_dir = self.training_run_directory / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -60,9 +97,21 @@ class DatasetPipeline:
 
     @property
     def profile_length(self) -> int:
+        """Returns the number of z bins of the preprocessed profiles."""
         return self.layout.profile_length
 
     def _build_dataset(self, split_name : str, normalizer : Optional[Normalizer] = None):
+        """Builds the dataset of one split over its disjoint crop regions.
+
+        Args:
+            split_name : Split to build, one of "train", "val" or "test".
+            normalizer : Normalizer to attach; left unset for the train split, which is built before the statistics are fitted.
+
+        Returns:
+            A (dataset, patcher) pair. With a single region the dataset is a PatchDataset
+            and the second element its Patcher; with several regions it is a
+            MultiRegionDataset and a list of Patchers, one per region.
+        """
         regions  = self.config.split_regions.regions(split_name)
         parts    = []
         patchers = []
@@ -104,12 +153,47 @@ class DatasetPipeline:
 
         return MultiRegionDataset(parts), patchers
 
+    def _persist_stats(self, norm_stats) -> None:
+        """Saves the fitted normalization statistics, or checks them against a resumed run.
+
+        Args:
+            norm_stats : Statistics fitted on the train split.
+
+        Raises:
+            ValueError : If the run resumes and the fitted statistics differ from those the restored checkpoint was trained under.
+        """
+        meta_directory = self.training_run_directory / "meta"
+        stats_path     = meta_directory / Stats.FILENAME
+
+        if self.resume and stats_path.is_file():
+            stored = FileIO.load_json(stats_path)
+            fresh  = json.loads(json.dumps(norm_stats.payload()))
+
+            if stored != fresh:
+                raise ValueError(f"Resuming this run would overwrite {stats_path} with different normalization statistics; the restored checkpoint was trained under the stored ones. Start a fresh run or drop the overrides that changed the fitted statistics.")
+
+            self.logger.info(f"Normalization stats match the resumed run: {stats_path}")
+            return
+
+        norm_stats.save(meta_directory)
+        self.logger.info(f"Normalization stats saved: {meta_directory}")
+
     def _patch_grids(self, patcher):
+        """Returns the GridInfo of one Patcher, or the list of grids of several."""
         if isinstance(patcher, list):
             return [p.grid for p in patcher]
         return patcher.grid
 
     def run(self) -> Tuple[DataLoader, DataLoader, DataLoader, dict[str, PatchDataset]]:
+        """Builds the splits, fits the normalization and writes the dataset metadata.
+
+        The train split is built first and its statistics are fitted on it alone, then
+        shared with the validation and test splits.
+
+        Returns:
+            A tuple of the train, validation and test dataloaders and a dictionary of the
+            three datasets keyed by split name.
+        """
 
         train_ds, train_patcher = self._build_dataset("train")
 
@@ -124,8 +208,7 @@ class DatasetPipeline:
             normalization = self.config.normalization,
         )
 
-        norm_stats.save(self.training_run_directory / "meta")
-        self.logger.info(f"Normalization stats saved: {self.training_run_directory / 'meta'}")
+        self._persist_stats(norm_stats)
 
         normalizer          = Normalizer(norm_stats)
         train_ds.normalizer = normalizer
@@ -165,7 +248,24 @@ class DatasetPipeline:
 
 
 class BackboneDatasetPreparation:
+    """Runs the dataset pipeline for a training entry point and resolves the Gaussian axis.
+
+    Attributes:
+        dataset_config : Dataset configuration, mutated with the Gaussian count and z-axis.
+        trainer_config : Trainer configuration supplying the Gaussian bounds, the slot count and the training resume flag.
+        run_directory  : Training run directory.
+    """
+
     def __init__(self, dataset_config, trainer_config, run_directory, logger, seed) -> None:
+        """Stores the configurations and run context for the preparation step.
+
+        Args:
+            dataset_config : Dataset configuration of the run.
+            trainer_config : Trainer configuration carrying the Gaussian settings and the training resume flag.
+            run_directory  : Directory of the training run.
+            logger         : Logger passed through to the dataset pipeline.
+            seed           : Seed for augmentation and dataloader shuffling.
+        """
         self.dataset_config = dataset_config
         self.trainer_config = trainer_config
         self.run_directory  = Path(run_directory)
@@ -173,10 +273,16 @@ class BackboneDatasetPreparation:
         self.seed           = seed
 
     def run(self):
+        """Builds the dataloaders and the Gaussian height axis of the run.
+
+        Returns:
+            A tuple of the (train, val, test) dataloader triple, the datasets keyed by
+            split name, the Gaussian x-axis in metres and its length in bins.
+        """
         gaussian_cfg                    = self.trainer_config.gaussian
         self.dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
 
-        dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_directory, logger=self.logger, seed=self.seed)
+        dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_directory, logger=self.logger, seed=self.seed, resume=self.trainer_config.training.resume)
         z_len            = dataset_pipeline.profile_length
         z_axis           = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, z_len)
 

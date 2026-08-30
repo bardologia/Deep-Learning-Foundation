@@ -1,3 +1,11 @@
+"""Configuration for fitting Gaussian mixtures to tomographic elevation profiles.
+
+Covers the fit hyperparameters and Adam settings of the extraction itself, the
+sweep entry point that runs it over a dataset tree, the analysis entry point
+that reads the resulting parameter runs, and the injection of externally
+produced parameter cubes into the same layout.
+"""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +17,21 @@ from typing      import Optional, Tuple
 
 @dataclass
 class FitConfig:
+    """Hyperparameters of the per-pixel Gaussian mixture fit.
+
+    Attributes:
+        threshold_factor   : Fraction of the profile maximum below which samples are ignored.
+        truncation_index   : Elevation bin above which the profile is truncated.
+        k_max              : Maximum number of Gaussian components fitted per pixel.
+        lambda_k           : Penalty weight discouraging additional components.
+        prominence_frac    : Peak prominence, as a fraction of the profile range, required to seed a component.
+        sigma_init_divisor : Divisor turning a peak's half-width into the initial sigma in metres.
+        activity_threshold : Amplitude below which a fitted component counts as inactive.
+        fit_sigma          : Whether component widths are free parameters.
+        fit_amplitude      : Whether component amplitudes are free parameters.
+        fit_mean           : Whether component means are free parameters.
+    """
+
     threshold_factor   : float = 0.25
     truncation_index   : int   = 170
     k_max              : int   = 5
@@ -22,10 +45,27 @@ class FitConfig:
 
 
 class FitMode:
+    """Parser for the underscore-joined fit mode naming the free components.
+
+    Attributes:
+        COMPONENTS : Component names in the order the returned flags follow.
+    """
+
     COMPONENTS = ("sigma", "amp", "mu")
 
     @classmethod
     def free_flags(cls, mode: str) -> Tuple[bool, bool, bool]:
+        """Returns which of sigma, amplitude and mean are free in a fit mode.
+
+        Args:
+            mode : Distinct component names joined with "_", e.g. "sigma_amp_mu".
+
+        Returns:
+            One boolean per entry of `COMPONENTS`, True when that component is free.
+
+        Raises:
+            ValueError : If the mode is empty, repeats a component, or names an unknown one.
+        """
         parts = mode.split("_") if mode else []
 
         if not parts or len(set(parts)) != len(parts) or any(part not in cls.COMPONENTS for part in parts):
@@ -35,10 +75,27 @@ class FitMode:
 
 
 class ChannelOrder:
+    """Parser for the component ordering of an external parameter cube.
+
+    Attributes:
+        COMPONENTS : Component names in the canonical internal channel order.
+    """
+
     COMPONENTS = ("amp", "mu", "sigma")
 
     @classmethod
     def positions(cls, order: str) -> Tuple[int, int, int]:
+        """Returns where each canonical component sits in a foreign channel order.
+
+        Args:
+            order : Permutation of the component names joined with "_", e.g. "mu_sigma_amp".
+
+        Returns:
+            The source channel index of amplitude, mean and sigma, in that order.
+
+        Raises:
+            ValueError : If the string is not a permutation of `COMPONENTS`.
+        """
         parts = order.split("_") if order else []
 
         if sorted(parts) != sorted(cls.COMPONENTS):
@@ -49,10 +106,21 @@ class ChannelOrder:
 
 @dataclass
 class FitSettings:
+    """Wrapper exposing the fit mode implied by the fit toggles.
+
+    Attributes:
+        fit_config : Hyperparameters of the per-pixel Gaussian mixture fit.
+    """
+
     fit_config : FitConfig = field(default_factory=FitConfig)
 
     @property
     def free_parameters(self) -> Tuple[str, ...]:
+        """Names of the free components, in canonical order.
+
+        Raises:
+            ValueError : If no component is free.
+        """
         cfg   = self.fit_config
         flags = {"sigma": cfg.fit_sigma, "amp": cfg.fit_amplitude, "mu": cfg.fit_mean}
         names = tuple(name for name in FitMode.COMPONENTS if flags[name])
@@ -64,11 +132,33 @@ class FitSettings:
 
     @property
     def fitting_method(self) -> str:
+        """Identifier of the fit, joining the free components with the optimizer."""
         return "_".join(self.free_parameters) + "_adam"
 
 
 @dataclass
 class ExtractionConfig:
+    """Settings for one parameter-extraction run over a processed dataset.
+
+    The output directory name encodes the fit hyperparameters so that different
+    extractions of the same tomogram stay side by side.
+
+    Attributes:
+        processed_data_path  : Root of the processed dataset holding data/ and meta/.
+        pyrat_directory      : PyRAT source directory used to read the tomogram.
+        output_prefix        : Leading token of the parameter run directory name.
+        output_suffix        : Explicit suffix, or None to derive one from the fit settings.
+        height_range         : Elevation axis extent in metres, or None to read it from the dataset metadata.
+        fit_settings         : Fit hyperparameters and the implied fit mode.
+        parameter_workers    : CPU worker processes writing the parameter chunks.
+        range_batch_size     : Number of range lines loaded per batch.
+        gpu_pixel_batch_size : Number of pixels fitted per GPU batch.
+        adam_steps           : Adam iterations per pixel batch.
+        adam_lr              : Adam learning rate.
+        adam_b1              : Adam first-moment decay.
+        adam_b2              : Adam second-moment decay.
+    """
+
     processed_data_path : Path
     output_prefix       : str                           = "params"
     output_suffix       : Optional[str]                 = None
@@ -86,14 +176,17 @@ class ExtractionConfig:
 
     @property
     def data_directory(self) -> Path:
+        """Directory holding the processed tomogram arrays."""
         return Path(self.processed_data_path) / "data"
 
     @property
     def metadata_directory(self) -> Path:
+        """Directory holding the dataset metadata JSON files."""
         return Path(self.processed_data_path) / "meta"
 
     @property
     def output_suffix_value(self) -> str:
+        """Suffix identifying the fit, explicit or derived from the fit settings."""
         if self.output_suffix:
             return self.output_suffix
 
@@ -106,21 +199,33 @@ class ExtractionConfig:
 
     @property
     def output_subdir_name(self) -> str:
+        """Name of the parameter run directory under params/."""
         return f"{self.output_prefix}_{self.output_suffix_value}"
 
     @property
     def output_directory(self) -> Path:
+        """Directory this extraction writes its parameter run into."""
         return Path(self.processed_data_path) / "params" / self.output_subdir_name
 
     @property
     def parameters_npy_path(self) -> Path:
+        """Path of the fitted parameter cube written by this extraction."""
         return self.output_directory / "parameters.npy"
 
     @property
     def diagnostics_npz_path(self) -> Path:
+        """Path of the per-pixel fit diagnostics archive."""
         return self.output_directory / "fit_diagnostics.npz"
 
     def discover_cube_path(self) -> Path:
+        """Returns the path of the full cube to be fitted.
+
+        Returns:
+            Path of cube_full.npy inside the dataset data directory.
+
+        Raises:
+            FileNotFoundError : If the cube file is absent.
+        """
         cube_path = self.data_directory / "cube_full.npy"
 
         if not cube_path.is_file():
@@ -129,6 +234,17 @@ class ExtractionConfig:
         return cube_path
 
     def discover_z_range(self) -> Tuple[float, float]:
+        """Returns the z axis extent of the cube.
+
+        The configured override wins; otherwise the col is read from the
+        dataset config_state.json.
+
+        Returns:
+            The (minimum, maximum) z in metres.
+
+        Raises:
+            FileNotFoundError : If no override is set and the metadata does not carry a cube z col.
+        """
         if self.z_range is not None:
             return tuple(self.z_range)
 
@@ -147,6 +263,34 @@ class ExtractionConfig:
 
 @dataclass
 class ExtractParamsEntryConfig:
+    """Sweep settings for extracting parameters across a tree of datasets.
+
+    Each combination of k, lambda and fit mode becomes a separate extraction
+    run, fanned out over the configured GPUs.
+
+    Attributes:
+        dataset_base_path      : Root directory scanned for processed datasets.
+        dataset_filter         : Exact dataset directory names under the base path to select; empty selects every dataset.
+        pyrat_directory        : PyRAT source directory used to read the tomograms.
+        output_prefix          : Leading token of each parameter run directory name.
+        output_suffix          : Explicit suffix, or None to derive one per combination.
+        z_range           : Z axis extent in metres, or None to read it per dataset.
+        fit_k_values           : Maximum component counts swept.
+        fit_lambda_values      : Component-count penalty weights swept.
+        fit_modes              : Fit modes swept, each naming the free components.
+        fit_sigma_init_divisor : Divisor turning a peak half-width into the initial sigma in metres.
+        fit_threshold_factor   : Fraction of the profile maximum below which samples are ignored.
+        fit_truncation_index   : Z bin above which profiles are truncated.
+        fit_prominence_frac    : Peak prominence fraction required to seed a component.
+        fit_activity_threshold : Amplitude below which a fitted component counts as inactive.
+        adam_steps             : Adam iterations per pixel batch.
+        adam_lr                : Adam learning rate.
+        gpu_device_ids         : GPU device indices available to the extraction workers.
+        col_batch_size       : Number of col lines loaded per batch.
+        gpu_pixel_batch_size   : Number of pixels fitted per GPU batch.
+        parameter_workers      : CPU worker processes writing the parameter chunks.
+    """
+
     dataset_base_path : Path = Path("datasets")
     dataset_filter    : list = field(default_factory=list)
 
@@ -174,6 +318,14 @@ class ExtractParamsEntryConfig:
 
 @dataclass
 class ParamExtractionInferenceConfig:
+    """Settings for analysing already-extracted parameter runs.
+
+    Attributes:
+        params_dir : Root directory holding the datasets whose parameter runs are analysed.
+        run_tags   : Parameter run directory names to analyse; empty selects all.
+        make_plots : Whether the analysis figures are rendered.
+    """
+
     params_dir : Path = Path("datasets")
     run_tags   : list = field(default_factory=list)
 

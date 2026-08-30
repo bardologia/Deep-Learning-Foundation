@@ -1,3 +1,12 @@
+"""Per-pixel across-seed disagreement maps and their uncertainty diagnostics.
+
+Seed replicas inferred on the same region are compared pixelwise: the profile
+and GT-matched Gaussian parameters give across-seed standard-deviation maps,
+which are then used as a confidence signal for risk-coverage analysis and for
+flagging label suspects, pixels where the seeds agree with each other but not
+with the label.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,15 +15,31 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from tools.data.io                   import FileIO
+from tools.loss.param_loss           import ParamMatcher
 from tools.metrics.gaussian_matching import GaussianMatcher
+from tools.metrics.scoring           import RankCorrelation
 from tools.reporting.plotting        import PlotBase
 
 
 class SeedDisagreementPlots(PlotBase):
+    """Publication figures for disagreement maps and the risk-coverage curve."""
 
     CMAP = "inferno"
 
     def map_figure(self, data: np.ndarray, title: str, colorbar_label: str, row_offset: int, col_offset: int, path: Path) -> Path:
+        """Saves a spatial map in absolute scene pixel coordinates.
+
+        Args:
+            data           : Map of shape (row, col).
+            title          : Figure title.
+            colorbar_label : Colorbar label.
+            row_offset      : Row index of the map's first row in the full scene.
+            col_offset      : Range index of the map's first column in the full scene.
+            path           : Destination image path.
+
+        Returns:
+            The written figure path.
+        """
         H, W   = data.shape
         extent = [col_offset, col_offset + W, row_offset + H, row_offset]
 
@@ -30,6 +55,16 @@ class SeedDisagreementPlots(PlotBase):
         )
 
     def risk_coverage_curve(self, rows: list[dict], full_risk: float, path: Path) -> Path:
+        """Saves the risk-coverage curve under seed-disagreement confidence.
+
+        Args:
+            rows      : Coverage rows holding "coverage" and "risk".
+            full_risk : Mean pixel curve MSE at full coverage.
+            path      : Destination image path.
+
+        Returns:
+            The written figure path.
+        """
         self._apply_style()
 
         coverages = [row["coverage"] * 100.0 for row in rows]
@@ -48,12 +83,29 @@ class SeedDisagreementPlots(PlotBase):
 
 
 class LabelSuspects:
+    """Flags pixels where the seeds agree with each other but not with the label.
+
+    Attributes:
+        disagreement : Across-seed disagreement map of shape (azimuth, range).
+        risk         : Per-pixel error map of the same shape.
+        label_r2     : Label fit-quality map of the same shape, or None.
+    """
 
     STD_QUANTILE = 0.5
     ERR_QUANTILE = 0.9
     MIN_PIXELS   = 4
 
     def __init__(self, disagreement_map: np.ndarray, risk_map: np.ndarray, label_r2_map: np.ndarray | None = None) -> None:
+        """Binds the maps and checks that disagreement and risk share a shape.
+
+        Args:
+            disagreement_map : Across-seed std map of shape (azimuth, range).
+            risk_map         : Per-pixel curve MSE map of the same shape.
+            label_r2_map     : Per-pixel label fit R2 of the same shape, or None.
+
+        Raises:
+            ValueError : If the disagreement and risk maps differ in shape.
+        """
         self.disagreement = np.asarray(disagreement_map, dtype=np.float64)
         self.risk         = np.asarray(risk_map, dtype=np.float64)
         self.label_r2     = np.asarray(label_r2_map, dtype=np.float64) if label_r2_map is not None else None
@@ -62,6 +114,17 @@ class LabelSuspects:
             raise ValueError(f"Disagreement map {self.disagreement.shape} and risk map {self.risk.shape} disagree in shape")
 
     def run(self) -> tuple[np.ndarray, dict]:
+        """Flags low-disagreement, high-error pixels as label suspects.
+
+        Returns:
+            A tuple of the suspect mask of shape (azimuth, range) as uint8 and
+            the scalar summary holding the suspect count, fraction, both applied
+            quantile thresholds and, when a label R2 map exists, its mean over
+            suspects and overall.
+
+        Raises:
+            ValueError : If too few pixels have finite disagreement and error.
+        """
         both = np.isfinite(self.disagreement) & np.isfinite(self.risk)
         if both.sum() < self.MIN_PIXELS:
             raise ValueError(f"Label-suspect detection needs at least {self.MIN_PIXELS} pixels with finite disagreement and error")
@@ -90,27 +153,49 @@ class LabelSuspects:
 
 
 class RiskCoverage:
+    """Selective-prediction analysis using seed disagreement as the confidence score.
+
+    Attributes:
+        sorted_risk         : Per-pixel error of the finite pixels, most confident first.
+        sorted_disagreement : The matching disagreement values in the same order.
+    """
 
     COVERAGES  = tuple(np.round(np.linspace(0.05, 1.0, 20), 3))
     MIN_PIXELS = 4
 
     def __init__(self, disagreement_map: np.ndarray, risk_map: np.ndarray) -> None:
-        confidence = np.asarray(disagreement_map, dtype=np.float64).reshape(-1)
-        risk       = np.asarray(risk_map, dtype=np.float64).reshape(-1)
+        """Flattens both maps and orders the finite pixels by ascending disagreement.
 
-        if confidence.shape != risk.shape:
-            raise ValueError(f"Disagreement map ({confidence.size}) and risk map ({risk.size}) disagree in size")
+        Args:
+            disagreement_map : Across-seed std map of shape (azimuth, range).
+            risk_map         : Per-pixel curve MSE map of the same shape.
 
-        both = np.isfinite(confidence) & np.isfinite(risk)
+        Raises:
+            ValueError : If the maps differ in size or too few pixels are finite.
+        """
+        disagreement = np.asarray(disagreement_map, dtype=np.float64).reshape(-1)
+        risk         = np.asarray(risk_map, dtype=np.float64).reshape(-1)
+
+        if disagreement.shape != risk.shape:
+            raise ValueError(f"Disagreement map ({disagreement.size}) and risk map ({risk.size}) disagree in size")
+
+        both = np.isfinite(disagreement) & np.isfinite(risk)
         if both.sum() < self.MIN_PIXELS:
             raise ValueError(f"Risk-coverage needs at least {self.MIN_PIXELS} pixels with finite disagreement and error")
 
-        order = np.argsort(confidence[both], kind="stable")
+        order = np.argsort(disagreement[both], kind="stable")
 
-        self.sorted_risk       = risk[both][order]
-        self.sorted_confidence = confidence[both][order]
+        self.sorted_risk         = risk[both][order]
+        self.sorted_disagreement = disagreement[both][order]
 
     def curve(self) -> list[dict]:
+        """Builds the risk-coverage curve over the fixed coverage grid.
+
+        Returns:
+            One row per coverage level holding "coverage", the kept pixel count
+            "n", the mean "risk" among kept pixels and the disagreement
+            "threshold" at that coverage.
+        """
         n = self.sorted_risk.size
 
         rows = []
@@ -120,18 +205,23 @@ class RiskCoverage:
                 "coverage"  : float(coverage),
                 "n"         : keep,
                 "risk"      : float(self.sorted_risk[:keep].mean()),
-                "threshold" : float(self.sorted_confidence[keep - 1]),
+                "threshold" : float(self.sorted_disagreement[keep - 1]),
             })
 
         return rows
 
     def run(self) -> tuple[list[dict], dict]:
+        """Builds the risk-coverage curve and its summary scalars.
+
+        Returns:
+            A tuple of the coverage rows and the scalars holding the area under
+            the risk-coverage curve, the full-coverage risk, the risk at 50%
+            coverage and the disagreement-error Spearman correlation.
+        """
         rows      = self.curve()
         full_risk = rows[-1]["risk"]
 
-        rank_conf = np.argsort(np.argsort(self.sorted_confidence)).astype(np.float64)
-        rank_risk = np.argsort(np.argsort(self.sorted_risk)).astype(np.float64)
-        spearman  = float(np.corrcoef(rank_conf, rank_risk)[0, 1])
+        spearman = RankCorrelation.spearman(self.sorted_disagreement, self.sorted_risk)
 
         scalars = {
             "aurc"                  : float(np.mean([row["risk"] for row in rows])),
@@ -144,6 +234,20 @@ class RiskCoverage:
 
 
 class SeedDisagreementMaps:
+    """Builds, writes and summarises the across-seed disagreement maps of a group.
+
+    Attributes:
+        group_dir        : Directory holding the seed runs.
+        run_dirs         : Seed run directories in seed order.
+        inference_dirs   : Inference directory of each seed run.
+        cube_dirs        : Cube directory inside each seed's inference directory.
+        metrics_filename : Metrics filename carrying the split region.
+        output_dir       : Group-level directory receiving the artifacts.
+        active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active in the GT-matched slot alignment.
+        figures_dir      : Subdirectory receiving the rendered maps.
+        logger           : Logger for the written-artifact line.
+        seeds            : Seed labels, relative to the group directory.
+    """
 
     PROFILE_CUBE = "pred_curves.npy"
     PARAMS_CUBE  = "params_pred.npy"
@@ -158,25 +262,54 @@ class SeedDisagreementMaps:
         "seed_std_sigma"   : "Across-seed std of predicted sigma (GT-matched slots, z units)",
     }
 
-    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], cubes_subdir: str, metrics_filename: str, output_dir: Path, logger) -> None:
+    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], cubes_subdir: str, metrics_filename: str, output_dir: Path, logger, active_amp_thr: float = ParamMatcher.ACTIVE_AMP_THR) -> None:
+        """Binds the seed group and resolves its cube, output and figure directories.
+
+        Args:
+            group_dir        : Directory holding the seed runs.
+            run_dirs         : Seed run directories.
+            inference_dirs   : Inference directory of each seed run.
+            cubes_subdir     : Cube subdirectory name inside an inference directory.
+            metrics_filename : Metrics filename carrying the split region.
+            output_dir       : Group-level directory receiving the artifacts.
+            logger           : Logger for the written-artifact line.
+            active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active when matching predicted slots to the GT slots; must match the threshold the seeds' inference metrics used.
+        """
         self.group_dir        = Path(group_dir)
         self.run_dirs         = [Path(d) for d in run_dirs]
         self.inference_dirs   = [Path(d) for d in inference_dirs]
         self.cube_dirs        = [d / cubes_subdir for d in self.inference_dirs]
         self.metrics_filename = metrics_filename
         self.output_dir       = Path(output_dir)
+        self.active_amp_thr   = float(active_amp_thr)
         self.figures_dir      = self.output_dir / "figures" / "seed_disagreement"
         self.logger           = logger
 
         self.seeds = [str(d.relative_to(self.group_dir)) for d in self.run_dirs]
 
     def _validate_cubes(self) -> None:
+        """Checks that every seed saved the profile, parameter, GT and risk cubes.
+
+        Raises:
+            FileNotFoundError : If any required cube is missing for any seed.
+        """
         for cube_dir in self.cube_dirs:
             for name in (self.PROFILE_CUBE, self.PARAMS_CUBE, self.GT_CUBE, self.RISK_CUBE):
                 if not (cube_dir / name).is_file():
                     raise FileNotFoundError(f"{cube_dir / name} is missing; re-run inference with save_cubes enabled for every seed, or disable compute_disagreement")
 
     def _open_cubes(self, name: str) -> list[np.ndarray]:
+        """Memory-maps one cube per seed and checks they share a shape.
+
+        Args:
+            name : Cube filename inside each seed's cube directory.
+
+        Returns:
+            The memory-mapped cubes, in seed order.
+
+        Raises:
+            ValueError : If the seeds' cubes disagree on shape.
+        """
         cubes  = [np.load(cube_dir / name, mmap_mode="r") for cube_dir in self.cube_dirs]
         shapes = {cube.shape for cube in cubes}
         if len(shapes) != 1:
@@ -185,6 +318,14 @@ class SeedDisagreementMaps:
         return cubes
 
     def _offsets(self) -> tuple[int, int]:
+        """Returns the (azimuth, range) scene offsets of the split region.
+
+        Returns:
+            The azimuth and range start indices of the inferred region.
+
+        Raises:
+            KeyError : If the metrics file carries no split region.
+        """
         metrics = FileIO.load_json(self.inference_dirs[0] / self.metrics_filename)
         if "split_region" not in metrics:
             raise KeyError(f"{self.inference_dirs[0] / self.metrics_filename} has no split_region; re-run inference to regenerate it")
@@ -193,6 +334,11 @@ class SeedDisagreementMaps:
         return row_start, col_start
 
     def _profile_map(self) -> np.ndarray:
+        """Builds the across-seed std of the reconstructed profile, averaged over elevation.
+
+        Returns:
+            A float32 map of shape (azimuth, range).
+        """
         curves             = self._open_cubes(self.PROFILE_CUBE)
         n_z, n_rows, n_cols = curves[0].shape
 
@@ -204,6 +350,16 @@ class SeedDisagreementMaps:
         return (acc / n_z).astype(np.float32)
 
     def _masked_std(self, values: np.ndarray, active: np.ndarray) -> np.ndarray:
+        """Returns the across-seed sample std over the active seeds only.
+
+        Args:
+            values : Per-seed values of shape (seeds, azimuth, range).
+            active : Boolean mask of the same shape marking contributing seeds.
+
+        Returns:
+            A map of shape (azimuth, range), NaN where fewer than the minimum
+            number of seeds are active.
+        """
         n    = active.sum(axis=0)
         fill = np.where(active, values, 0.0)
         mean = np.divide(fill.sum(axis=0), n, out=np.zeros(n.shape, dtype=np.float64), where=n > 0)
@@ -213,14 +369,27 @@ class SeedDisagreementMaps:
         return np.sqrt(var)
 
     def _aligned_params(self) -> list[np.ndarray]:
+        """Matches each seed's predicted slots to the shared ground-truth slots.
+
+        Returns:
+            One array per seed of shape (3 * n_gaussians, azimuth, range), with
+            slots reordered so the same index means the same physical scatterer.
+        """
         preds   = self._open_cubes(self.PARAMS_CUBE)
         gt      = np.asarray(np.load(self.cube_dirs[0] / self.GT_CUBE), dtype=np.float32)
         n_k     = preds[0].shape[0] // 3
-        matcher = GaussianMatcher()
+        matcher = GaussianMatcher(amp_threshold=self.active_amp_thr)
 
         return [matcher.aligned_prediction(np.asarray(pred, dtype=np.float32), gt, n_k) for pred in preds]
 
     def _param_maps(self) -> dict[str, np.ndarray]:
+        """Builds the across-seed std maps of amplitude, mu and sigma over matched slots.
+
+        Returns:
+            Mapping from map name to a float32 map of shape (azimuth, range),
+            each the mean over contributing slots of the per-slot across-seed
+            std; mu and sigma are in metres.
+        """
         aligned          = self._aligned_params()
         n_ch, n_rows, n_cols = aligned[0].shape
         n_k              = n_ch // 3
@@ -252,6 +421,14 @@ class SeedDisagreementMaps:
         return maps
 
     def _write_maps(self, maps: dict[str, np.ndarray]) -> dict[str, list[str]]:
+        """Writes every disagreement map into every seed's cube directory.
+
+        Args:
+            maps : Mapping from map name to a map of shape (azimuth, range).
+
+        Returns:
+            Mapping from map name to the written cube paths, one per seed.
+        """
         written = {}
         for name, data in maps.items():
             paths = []
@@ -264,6 +441,14 @@ class SeedDisagreementMaps:
         return written
 
     def _summarize(self, maps: dict[str, np.ndarray]) -> dict:
+        """Reduces each map to mean, median and 95th percentile over its finite pixels.
+
+        Args:
+            maps : Mapping from map name to a map of shape (azimuth, range).
+
+        Returns:
+            The seed count plus per-map statistics, None where no pixel is finite.
+        """
         summary = {"n_seeds": len(self.seeds)}
         for name, data in maps.items():
             finite = data[np.isfinite(data)]
@@ -278,8 +463,17 @@ class SeedDisagreementMaps:
 
         return summary
 
-    def _render_figures(self, maps: dict[str, np.ndarray]) -> dict[str, Path]:
-        row_offset, col_offset = self._offsets()
+    def _render_figures(self, maps: dict[str, np.ndarray], offsets: tuple[int, int]) -> dict[str, Path]:
+        """Renders one figure per disagreement map.
+
+        Args:
+            maps    : Mapping from map name to a map of shape (row, col).
+            offsets : Row and col scene offsets of the split region.
+
+        Returns:
+            Mapping from map name to the written figure path.
+        """
+        row_offset, col_offset = offsets
         plots                = SeedDisagreementPlots()
 
         figures = {}
@@ -296,11 +490,23 @@ class SeedDisagreementMaps:
         return figures
 
     def _mean_risk_map(self) -> np.ndarray:
+        """Returns the seed-averaged per-pixel curve MSE map of shape (azimuth, range)."""
         risks = self._open_cubes(self.RISK_CUBE)
         return np.mean([np.asarray(risk, dtype=np.float64) for risk in risks], axis=0)
 
-    def _risk_coverage(self, maps: dict[str, np.ndarray], summary: dict, figures: dict[str, Path]) -> list[dict]:
-        rows, scalars = RiskCoverage(maps["seed_std_profile"], self._mean_risk_map()).run()
+    def _risk_coverage(self, maps: dict[str, np.ndarray], risk_map: np.ndarray, summary: dict, figures: dict[str, Path]) -> list[dict]:
+        """Runs the risk-coverage analysis, extending the summary and figures in place.
+
+        Args:
+            maps     : Disagreement maps; the profile map is used as the confidence score.
+            risk_map : Seed-averaged per-pixel error map of shape (azimuth, range).
+            summary  : Scalar summary extended with the risk-coverage scalars.
+            figures  : Figure mapping extended with the risk-coverage curve.
+
+        Returns:
+            The risk-coverage rows.
+        """
+        rows, scalars = RiskCoverage(maps["seed_std_profile"], risk_map).run()
 
         for key, value in scalars.items():
             summary[f"risk_coverage_{key}"] = value
@@ -310,18 +516,28 @@ class SeedDisagreementMaps:
         return rows
 
     def _label_r2_map(self) -> np.ndarray | None:
+        """Returns the label fit R2 map of shape (azimuth, range), or None when absent."""
         path = self.cube_dirs[0] / "label_r2.npy"
         return np.asarray(np.load(path), dtype=np.float64) if path.is_file() else None
 
-    def _flag_label_suspects(self, maps: dict[str, np.ndarray], summary: dict, figures: dict[str, Path]) -> None:
-        mask, scalars = LabelSuspects(maps["seed_std_profile"], self._mean_risk_map(), self._label_r2_map()).run()
+    def _flag_label_suspects(self, maps: dict[str, np.ndarray], risk_map: np.ndarray, offsets: tuple[int, int], summary: dict, figures: dict[str, Path]) -> None:
+        """Flags label suspects, writes the mask into every seed cube dir and renders it.
+
+        Args:
+            maps     : Disagreement maps; the profile map is used as the agreement signal.
+            risk_map : Seed-averaged per-pixel error map of shape (azimuth, range).
+            offsets  : Azimuth and range scene offsets of the split region.
+            summary  : Scalar summary extended with the label-suspect scalars.
+            figures  : Figure mapping extended with the suspect map.
+        """
+        mask, scalars = LabelSuspects(maps["seed_std_profile"], risk_map, self._label_r2_map()).run()
 
         summary.update(scalars)
 
         for cube_dir in self.cube_dirs:
             np.save(cube_dir / "label_suspect.npy", mask)
 
-        row_offset, col_offset    = self._offsets()
+        row_offset, col_offset     = offsets
         figures["label_suspect"] = SeedDisagreementPlots().map_figure(
             mask.astype(np.float64),
             title          = "Label suspects: seeds agree with each other, not with the label",
@@ -332,18 +548,27 @@ class SeedDisagreementMaps:
         )
 
     def run(self) -> dict:
+        """Builds every disagreement map and its diagnostics for the seed group.
+
+        Returns:
+            A payload holding the scalar "summary", the rendered "figures", the
+            "maps_written" cube paths per map and the "risk_coverage" rows.
+        """
         self._validate_cubes()
         FileIO.ensure_dirs(self.figures_dir)
 
         maps = {"seed_std_profile": self._profile_map()}
         maps.update(self._param_maps())
 
+        offsets  = self._offsets()
+        risk_map = self._mean_risk_map()
+
         written  = self._write_maps(maps)
         summary  = self._summarize(maps)
-        figures  = self._render_figures(maps)
-        coverage = self._risk_coverage(maps, summary, figures)
+        figures  = self._render_figures(maps, offsets)
+        coverage = self._risk_coverage(maps, risk_map, summary, figures)
 
-        self._flag_label_suspects(maps, summary, figures)
+        self._flag_label_suspects(maps, risk_map, offsets, summary, figures)
 
         self.logger.info(f"Seed-disagreement maps written into {len(self.cube_dirs)} seed cube dirs: {sorted(maps)}")
 

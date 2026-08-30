@@ -1,7 +1,12 @@
+"""Measurement of how well a DataLoader configuration keeps the GPU fed.
+
+Times the loader in isolation, the GPU compute ceiling on a fixed batch and the
+end-to-end training step, while sampling NVML utilisation, so that a sweep over
+batch sizes and worker counts can be judged as CPU-bound or GPU-bound.
+"""
 from __future__ import annotations
 
 import gc
-import math
 import os
 import threading
 import time
@@ -14,9 +19,20 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
+from tools.monitoring.logger import Logger
+
 
 @dataclass(frozen=True)
 class LoaderSpec:
+    """One DataLoader configuration under test.
+
+    Attributes:
+        batch_size         : Samples per batch.
+        num_workers        : Worker processes feeding the loader.
+        prefetch_factor    : Batches prefetched per worker; ignored when num_workers is 0.
+        pin_memory         : Whether host batches are pinned before transfer.
+        persistent_workers : Whether workers survive between epochs.
+    """
     batch_size         : int
     num_workers        : int
     prefetch_factor    : int  = 4
@@ -25,9 +41,11 @@ class LoaderSpec:
 
     @property
     def label(self) -> str:
+        """Filesystem-safe label encoding every field of the spec."""
         return f"bs{self.batch_size}_w{self.num_workers}_pf{self.prefetch_factor}_pin{int(self.pin_memory)}_persist{int(self.persistent_workers)}"
 
     def as_record(self) -> dict:
+        """Returns the spec as a record, zeroing the fields that workerless loaders ignore."""
         return {
             "batch_size"         : self.batch_size,
             "num_workers"        : self.num_workers,
@@ -38,19 +56,38 @@ class LoaderSpec:
 
 
 class GpuUtilizationSampler:
-    def __init__(self, gpu_index: Optional[int] = None, interval_s: float = 0.05) -> None:
+    """Background sampler of GPU utilisation and VRAM use through NVML.
+
+    Attributes:
+        logger     : Logger receiving NVML warnings.
+        interval_s : Seconds between samples.
+        gpu_index  : NVML index of the sampled device.
+    """
+    def __init__(self, logger: Logger, gpu_index: Optional[int] = None, interval_s: float = 0.05) -> None:
+        """Prepares a sampler for one device without starting it.
+
+        Args:
+            logger     : Logger receiving NVML warnings.
+            gpu_index  : NVML device index, or None to infer it from the environment.
+            interval_s : Seconds between samples.
+        """
+        self.logger     = logger
         self.interval_s = float(interval_s)
         self.gpu_index  = self._resolve_index(gpu_index)
 
-        self._handle       = None
-        self._nvml_ok      = False
-        self._stop_evt     = threading.Event()
-        self._thread       = None
-        self._util_samples = []
-        self._vram_samples = []
+        self._handle        = None
+        self._nvml_ok       = False
+        self._nvml_started  = False
+        self._stop_evt      = threading.Event()
+        self._thread        = None
+        self._util_samples  = []
+        self._vram_samples  = []
+        self._failed_reads  = 0
+        self._first_failure = None
 
     @staticmethod
     def _resolve_index(gpu_index: Optional[int]) -> int:
+        """Returns the NVML index to sample, from the argument, CUDA_VISIBLE_DEVICES or torch."""
         if gpu_index is not None:
             return int(gpu_index)
 
@@ -64,37 +101,61 @@ class GpuUtilizationSampler:
         return 0
 
     def start(self) -> None:
+        """Starts NVML and the sampling thread, warning and giving up if NVML is unavailable."""
         try:
             pynvml.nvmlInit()
-            self._handle  = pynvml.nvmlDeviceGetHandleByIndex(self.gpu_index)
-            self._nvml_ok = True
-        except Exception:
+            self._handle       = pynvml.nvmlDeviceGetHandleByIndex(self.gpu_index)
+            self._nvml_ok      = True
+            self._nvml_started = True
+        except Exception as error:
             self._nvml_ok = False
+            self.logger.warning(f"[GpuUtilizationSampler] NVML unavailable for GPU {self.gpu_index} ({type(error).__name__}: {error}); this sweep entry reports no GPU utilisation")
             return
 
-        self._util_samples = []
-        self._vram_samples = []
+        self._util_samples  = []
+        self._vram_samples  = []
+        self._failed_reads  = 0
+        self._first_failure = None
         self._stop_evt.clear()
 
         self._thread = threading.Thread(target=self._run, name="GpuUtilizationSampler", daemon=True)
         self._thread.start()
 
     def _run(self) -> None:
+        """Samples until the stop event is set."""
         while not self._stop_evt.is_set():
             self._sample()
             self._stop_evt.wait(self.interval_s)
 
     def _sample(self) -> None:
+        """Appends one utilisation percentage and VRAM reading, counting failed reads."""
         try:
             util = pynvml.nvmlDeviceGetUtilizationRates(self._handle)
             mem  = pynvml.nvmlDeviceGetMemoryInfo(self._handle)
 
             self._util_samples.append(float(util.gpu))
             self._vram_samples.append(float(mem.used) / (1024.0 ** 3))
-        except Exception:
-            pass
+        except Exception as error:
+            self._failed_reads += 1
+            if self._first_failure is None:
+                self._first_failure = f"{type(error).__name__}: {error}"
+
+    def _report_failures(self) -> None:
+        """Warns about failed or entirely absent NVML reads."""
+        if self._failed_reads:
+            self.logger.warning(f"[GpuUtilizationSampler] {self._failed_reads} NVML reads failed on GPU {self.gpu_index}, first as {self._first_failure}; the utilisation figures below cover only the successful reads")
+
+        if self._nvml_started and not self._util_samples:
+            self.logger.warning(f"[GpuUtilizationSampler] No NVML read succeeded on GPU {self.gpu_index}; utilisation and VRAM columns are NaN for this sweep entry")
 
     def stop(self) -> dict:
+        """Stops sampling and returns the utilisation summary.
+
+        Returns:
+            Mapping with the availability flag, mean and maximum GPU utilisation in
+            percent, peak VRAM in GiB and the number of successful samples; the
+            numeric fields are NaN when no read succeeded.
+        """
         if self._thread is not None:
             self._stop_evt.set()
             self._thread.join(timeout=max(self.interval_s * 4, 1.0))
@@ -103,9 +164,11 @@ class GpuUtilizationSampler:
         if self._nvml_ok:
             try:
                 pynvml.nvmlShutdown()
-            except Exception:
-                pass
+            except Exception as error:
+                self.logger.warning(f"[GpuUtilizationSampler] NVML shutdown failed on GPU {self.gpu_index} ({type(error).__name__}: {error})")
             self._nvml_ok = False
+
+        self._report_failures()
 
         if not self._util_samples:
             return {"gpu_available": False, "gpu_util_mean": float("nan"), "gpu_util_max": float("nan"), "vram_peak_gb": float("nan"), "gpu_n_samples": 0}
@@ -120,6 +183,14 @@ class GpuUtilizationSampler:
 
 
 class GpuFeedBenchmark:
+    """Times loader throughput, GPU compute ceiling and end-to-end steps for one spec.
+
+    Attributes:
+        dataset   : Dataset the loaders are built over.
+        model     : Model trained during the timed steps.
+        device    : Device the steps run on.
+        optimizer : AdamW optimizer driving the timed steps.
+    """
     def __init__(
         self,
         dataset        : Dataset,
@@ -127,6 +198,7 @@ class GpuFeedBenchmark:
         to_model_input : Callable[[object, torch.device], torch.Tensor],
         forward_loss   : Callable[[nn.Module, torch.Tensor], torch.Tensor],
         device         : torch.device,
+        logger         : Logger,
         use_amp        : bool          = False,
         seed           : int           = 0,
         warmup_batches : int           = 8,
@@ -134,11 +206,28 @@ class GpuFeedBenchmark:
         gpu_index      : Optional[int] = None,
         cpu_threads    : Optional[int] = None,
     ) -> None:
+        """Moves the model to the device and prepares the timing budget.
+
+        Args:
+            dataset        : Dataset the loaders iterate.
+            model          : Model whose training step defines the compute ceiling.
+            to_model_input : Callable turning a loader batch and a device into the model input tensor.
+            forward_loss   : Callable running the model on that tensor and returning a scalar loss.
+            device         : Device the steps run on.
+            logger         : Logger receiving NVML warnings.
+            use_amp        : Whether the forward pass runs under bfloat16 autocast.
+            seed           : Seed of the loader shuffling generator.
+            warmup_batches : Batches consumed before timing starts.
+            timed_batches  : Batches counted in each timing.
+            gpu_index      : NVML device index to sample, or None to infer it.
+            cpu_threads    : Torch intra-op thread count, or None to leave it untouched.
+        """
         self.dataset        = dataset
         self.model          = model.to(device)
         self.to_model_input = to_model_input
         self.forward_loss   = forward_loss
         self.device         = device
+        self.logger         = logger
         self.use_amp        = bool(use_amp)
         self.seed           = int(seed)
         self.warmup_batches = int(warmup_batches)
@@ -152,10 +241,12 @@ class GpuFeedBenchmark:
 
     @staticmethod
     def _worker_init(worker_id: int) -> None:
+        """Pins every DataLoader worker to a single torch thread."""
         torch.set_num_threads(1)
 
     @staticmethod
     def _iterate(loader: DataLoader, n_batches: int):
+        """Yields exactly n_batches batches, cycling the loader as often as needed."""
         produced = 0
         while produced < n_batches:
             for batch in loader:
@@ -167,6 +258,7 @@ class GpuFeedBenchmark:
                 raise RuntimeError("DataLoader produced zero batches; dataset smaller than one batch with drop_last=True")
 
     def _build_loader(self, spec: LoaderSpec) -> DataLoader:
+        """Builds a shuffled, drop-last DataLoader for one spec."""
         generator   = torch.Generator()
         generator.manual_seed(self.seed)
 
@@ -187,6 +279,7 @@ class GpuFeedBenchmark:
         return DataLoader(self.dataset, **loader_kwargs)
 
     def _measure_loader_only(self, loader: DataLoader, spec: LoaderSpec) -> float:
+        """Returns loader-only throughput in samples per second, with no model attached."""
         iterator = self._iterate(loader, self.warmup_batches + self.timed_batches)
 
         for _ in range(self.warmup_batches):
@@ -202,10 +295,12 @@ class GpuFeedBenchmark:
         return count * spec.batch_size / max(elapsed, 1e-9)
 
     def _reference_batch(self, loader: DataLoader) -> torch.Tensor:
+        """Returns one batch already converted to the model input tensor."""
         batch = next(self._iterate(loader, 1))
         return self.to_model_input(batch, self.device)
 
     def _train_step(self, model_input: torch.Tensor) -> torch.Tensor:
+        """Runs one optimizer step on a fixed input and returns the scalar loss tensor."""
         self.optimizer.zero_grad(set_to_none=True)
 
         with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
@@ -217,6 +312,7 @@ class GpuFeedBenchmark:
         return loss
 
     def _measure_compute_ceiling(self, reference_input: torch.Tensor, spec: LoaderSpec) -> float:
+        """Returns the GPU compute ceiling in samples per second, replaying one cached batch."""
         self.model.train()
 
         for _ in range(self.warmup_batches):
@@ -232,9 +328,19 @@ class GpuFeedBenchmark:
         return self.timed_batches * spec.batch_size / max(elapsed, 1e-9)
 
     def _measure_end_to_end(self, loader: DataLoader, spec: LoaderSpec) -> dict:
+        """Times full training steps and splits the step time into fetch and compute.
+
+        Args:
+            loader : Loader supplying the batches.
+            spec   : Configuration being measured, used to convert batches to samples.
+
+        Returns:
+            Mapping with end-to-end throughput in samples per second, the fraction of
+            step time spent waiting for data, and the NVML utilisation summary.
+        """
         self.model.train()
 
-        sampler = GpuUtilizationSampler(gpu_index=self.gpu_index)
+        sampler = GpuUtilizationSampler(logger=self.logger, gpu_index=self.gpu_index)
         sampler.start()
 
         self._synchronize()
@@ -273,10 +379,21 @@ class GpuFeedBenchmark:
         }
 
     def _synchronize(self) -> None:
+        """Blocks until queued CUDA work has finished, on CUDA devices only."""
         if self.device.type == "cuda":
             torch.cuda.synchronize(self.device)
 
     def measure(self, spec: LoaderSpec) -> dict:
+        """Measures one loader configuration end to end.
+
+        Args:
+            spec : Configuration to benchmark.
+
+        Returns:
+            Record holding the spec fields, loader-only and compute-ceiling
+            throughputs in samples per second, their ratio, the achieved compute
+            efficiency and the end-to-end measurements.
+        """
         loader = self._build_loader(spec)
 
         loader_only     = self._measure_loader_only(loader, spec)
@@ -306,12 +423,27 @@ class GpuFeedBenchmark:
 
 
 class DataLoaderSweep:
+    """Runs a list of loader specs, tolerating out-of-memory configurations.
+
+    Attributes:
+        benchmark : Benchmark used to measure each spec.
+        specs     : Configurations to measure, in order.
+        on_result : Callback invoked with each finished record, or None.
+    """
     def __init__(self, benchmark: GpuFeedBenchmark, specs: list[LoaderSpec], on_result: Optional[Callable[[dict], None]] = None) -> None:
+        """Stores the benchmark, the specs to run and the per-result callback.
+
+        Args:
+            benchmark : Benchmark used to measure each spec.
+            specs     : Configurations to measure, in order.
+            on_result : Callback invoked with each finished record, or None.
+        """
         self.benchmark = benchmark
         self.specs     = list(specs)
         self.on_result = on_result
 
     def _measure_spec(self, spec: LoaderSpec) -> Optional[dict]:
+        """Measures one spec, returning an 'oom' record instead of raising on out-of-memory."""
         try:
             record = self.benchmark.measure(spec)
             record["status"] = "ok"
@@ -326,6 +458,11 @@ class DataLoaderSweep:
             raise
 
     def run(self) -> list[dict]:
+        """Measures every spec in order.
+
+        Returns:
+            One record per spec, each carrying a 'status' of 'ok' or 'oom'.
+        """
         results = []
 
         for spec in self.specs:

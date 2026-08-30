@@ -1,3 +1,10 @@
+"""Fit-quality metrics for a Gaussian parameter-extraction run.
+
+Computes the per-pixel peak-to-floor contrast of the tomographic profiles, the per-pixel
+R-squared of the Gaussian reconstruction against the preprocessed profile, the activity
+and per-slot parameter maps, and the model-order selection diagnostics.
+"""
+
 from __future__ import annotations
 
 import gc
@@ -14,13 +21,42 @@ from tools.monitoring.logger  import Logger
 
 
 class ContrastEstimator:
+    """Measures the peak-to-floor contrast of tomographic profiles, in dB.
+
+    The floor is the mean of the lowest ``floor_fraction`` of the profile bins, so the
+    contrast is an uncalibrated proxy for profile SNR rather than a calibrated SNR.
+
+    Attributes:
+        logger         : Logger available to the estimator.
+        floor_fraction : Fraction of the lowest profile bins averaged into the floor.
+        col_chunk    : Number of col bins processed per streaming chunk.
+    """
+
     def __init__(self, logger : Logger, floor_fraction : float = 0.25, col_chunk : int = 512) -> None:
+        """Configures the contrast estimator.
+
+        Args:
+            logger         : Logger available to the estimator.
+            floor_fraction : Fraction of the lowest profile bins averaged into the floor.
+            col_chunk    : Number of col bins processed per streaming chunk.
+        """
         self.logger         = logger
         self.floor_fraction = floor_fraction
         self.col_chunk      = col_chunk
 
     @staticmethod
     def contrast_from_amplitude(amp : np.ndarray, floor_fraction : float) -> Tuple[np.ndarray, np.ndarray]:
+        """Returns the peak-to-floor contrast and the profile peak of an amplitude block.
+
+        Args:
+            amp            : Profile amplitude of shape (height, azimuth, range_chunk) or (height, ...), with the elevation axis first.
+            floor_fraction : Fraction of the lowest bins averaged into the floor.
+
+        Returns:
+            Tuple of the contrast in dB and the profile peak amplitude, both shaped like
+            ``amp`` with the elevation axis removed; contrast is NaN where the peak or
+            floor is not positive.
+        """
         n_floor = max(1, int(round(amp.shape[0] * floor_fraction)))
 
         peak  = amp.max(axis=0)
@@ -33,11 +69,20 @@ class ContrastEstimator:
         return contrast, peak.astype(np.float32)
 
     def chunk_contrast(self, amp : np.ndarray) -> np.ndarray:
+        """Returns the contrast in dB of one amplitude chunk of shape (height, azimuth, range)."""
         contrast, _ = self.contrast_from_amplitude(amp, self.floor_fraction)
 
         return contrast
 
     def run(self, cube : np.ndarray) -> np.ndarray:
+        """Computes the contrast map of a whole cube in column chunks.
+
+        Args:
+            cube : Complex cube of shape (n_z, rows, cols).
+
+        Returns:
+            Peak-to-floor contrast of shape (rows, cols), in dB.
+        """
         H, n_row, n_col    = cube.shape
         contrast_db = np.full((n_row, n_col), np.nan, dtype=np.float32)
 
@@ -53,12 +98,38 @@ class ContrastEstimator:
 
 
 class KSelectionDiagnostics:
+    """Quantifies how decisively the fitter picked the model order K at each pixel.
+
+    Attributes:
+        k_max               : Largest model order the fitter evaluated.
+        logger              : Logger available to the diagnostics.
+        ambiguity_threshold : Relative margin below which a pixel counts as ambiguous.
+    """
+
     def __init__(self, k_max : int, logger : Logger, ambiguity_threshold : float = 0.05) -> None:
+        """Configures the model-order diagnostics.
+
+        Args:
+            k_max               : Largest model order the fitter evaluated.
+            logger              : Logger available to the diagnostics.
+            ambiguity_threshold : Relative margin below which a pixel counts as ambiguous.
+        """
         self.k_max               = k_max
         self.logger              = logger
         self.ambiguity_threshold = ambiguity_threshold
 
     def _compute_margin_maps(self, penalised_per_k : np.ndarray, best_k_map : np.ndarray) -> Dict[str, np.ndarray]:
+        """Computes how far the winning model order sits from its competitors.
+
+        Args:
+            penalised_per_k : Penalised score of shape (k_max, azimuth, range).
+            best_k_map      : Selected model order of shape (azimuth, range); 0 marks inactive pixels.
+
+        Returns:
+            Mapping with the margins to K-1, K+1 and the runner-up, plus the runner-up
+            margin relative to the winning score, each of shape (azimuth, range) and NaN
+            where undefined.
+        """
         k_max  = penalised_per_k.shape[0]
         active = best_k_map > 0
         idx    = np.clip(best_k_map.astype(np.int64) - 1, 0, k_max - 1)
@@ -91,6 +162,16 @@ class KSelectionDiagnostics:
         }
 
     def _compute_per_k_summary(self, mse_per_k : np.ndarray, penalised_per_k : np.ndarray, best_k_map : np.ndarray) -> Dict[str, float]:
+        """Summarises the residual, penalty and win rate of each model order.
+
+        Args:
+            mse_per_k       : Residual MSE of shape (k_max, azimuth, range).
+            penalised_per_k : Penalised score of shape (k_max, azimuth, range).
+            best_k_map      : Selected model order of shape (azimuth, range); 0 marks inactive.
+
+        Returns:
+            Mapping from statistic name to scalar, keyed ``k{K}_...`` per model order.
+        """
         active   = best_k_map > 0
         n_active = int(active.sum())
         summary  : Dict[str, float] = {"n_active_pixels": float(n_active)}
@@ -116,6 +197,14 @@ class KSelectionDiagnostics:
         return summary
 
     def run(self, diagnostics : dict) -> Tuple[Dict[str, np.ndarray], Dict[str, float]]:
+        """Derives the margin maps and per-order summary from the fitter diagnostics.
+
+        Args:
+            diagnostics : Fitter diagnostics carrying ``mse_per_k``, ``penalised_per_k`` and ``best_k_map``.
+
+        Returns:
+            Tuple of the diagnostic map dictionary and the scalar summary dictionary.
+        """
         mse_per_k       = diagnostics["mse_per_k"].astype(np.float32, copy=False)
         penalised_per_k = diagnostics["penalised_per_k"].astype(np.float32, copy=False)
         best_k_map      = diagnostics["best_k_map"]
@@ -141,7 +230,30 @@ class KSelectionDiagnostics:
 
 
 class FittingMetricsCalculator:
+    """Scores a fitted parameter stack against the cube it was fitted to.
+
+    Attributes:
+        n_gaussians        : Number of Gaussian slots in the parameter stack.
+        logger             : Logger for the stage report.
+        threshold_factor   : Peak fraction below which profile bins were zeroed by the fitter.
+        truncation_index   : Z bin above which the profile was truncated by the fitter.
+        amp_threshold      : Amplitude above which a Gaussian slot counts as active.
+        col_chunk        : Number of col bins processed per streaming chunk.
+        contrast_estimator : Peak-to-floor contrast estimator.
+        k_diagnostics      : Model-order selection diagnostics.
+    """
+
     def __init__(self, n_gaussians : int, logger : Logger, threshold_factor : float, truncation_index : int, amp_threshold : float = 1e-3, col_chunk : int = 128) -> None:
+        """Configures the metrics calculator to mirror the fitter's preprocessing.
+
+        Args:
+            n_gaussians      : Number of Gaussian slots in the parameter stack.
+            logger           : Logger for the stage report.
+            threshold_factor : Peak fraction below which profile bins were zeroed.
+            truncation_index : Z bin above which the profile was truncated.
+            amp_threshold    : Amplitude above which a Gaussian slot counts as active.
+            col_chunk      : Number of col bins processed per streaming chunk.
+        """
         self.n_gaussians      = n_gaussians
         self.logger           = logger
         self.threshold_factor = threshold_factor
@@ -154,16 +266,38 @@ class FittingMetricsCalculator:
 
     @staticmethod
     def _open_cube(cube_path: Path) -> np.ndarray:
+        """Returns the cube of shape (n_z, rows, cols) as a read-only memory map."""
         return np.load(str(cube_path), mmap_mode="r", allow_pickle=False)
 
     @staticmethod
     def _build_z_axis(z_range: Tuple[float, float], n_z: int) -> np.ndarray:
+        """Returns the z axis of ``n_z`` samples spanning the z range."""
         return np.linspace(float(z_range[0]), float(z_range[1]), n_z, dtype=np.float32)
 
     def _reconstruct_slice(self, parameters_array : np.ndarray, h_val : float) -> np.ndarray:
+        """Evaluates the fitted mixture at one height.
+
+        Args:
+            parameters_array : Parameter block of shape (3 * n_gaussians, azimuth, range).
+            h_val            : Elevation the mixture is evaluated at, in metres.
+
+        Returns:
+            Mixture value of shape (azimuth, range).
+        """
         return GaussianMixture.evaluate_slice(parameters_array, h_val, self.n_gaussians)
 
     def _contrast_and_r2_maps(self, cube : np.ndarray, parameters_array : np.ndarray, z_axis : np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Streams the cube to build the contrast and reconstruction-quality maps.
+
+        Args:
+            cube             : Complex cube of shape (n_z, rows, cols).
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
+            z_axis           : The z axis of shape (n_z,).
+
+        Returns:
+            Tuple of the peak-to-floor contrast in dB and the per-pixel R-squared of the
+            mixture against the preprocessed profile, both of shape (rows, cols).
+        """
         H, n_row, n_col    = cube.shape
         contrast_db = np.full ((n_row, n_col), np.nan, dtype=np.float32)
         r2_map      = np.empty((n_row, n_col),         dtype=np.float32)
@@ -188,6 +322,14 @@ class FittingMetricsCalculator:
         return contrast_db, r2_map
 
     def _compute_activity_map(self, parameters_array: np.ndarray) -> np.ndarray:
+        """Counts the active Gaussian slots at each pixel.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+
+        Returns:
+            Number of slots above the amplitude threshold, of shape (azimuth, range).
+        """
         active = np.zeros(parameters_array.shape[1:], dtype=np.int32)
         for k in range(self.n_gaussians):
             active += (parameters_array[3 * k] >= self.amp_threshold).astype(np.int32)
@@ -195,6 +337,15 @@ class FittingMetricsCalculator:
         return active
 
     def _compute_per_gaussian_maps(self, parameters_array: np.ndarray) -> Dict[str, np.ndarray]:
+        """Splits the parameter stack into per-slot maps masked to active pixels.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+
+        Returns:
+            Mapping with ``amp_k``, ``mu_k`` (metres) and ``sigma_k`` (metres) maps of
+            shape (azimuth, range), NaN where the slot is inactive.
+        """
         maps: Dict[str, np.ndarray] = {}
         for k in range(self.n_gaussians):
             amp_k  = parameters_array[3 * k    ].astype(np.float32)
@@ -206,6 +357,15 @@ class FittingMetricsCalculator:
         return maps
 
     def _compute_mu_separation_maps(self, parameters_array: np.ndarray) -> Dict[str, np.ndarray]:
+        """Measures the height gap between adjacent Gaussian slots.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+
+        Returns:
+            Mapping with ``mu_sep_k_k+1`` maps of shape (azimuth, range) in metres, NaN
+            where either slot is inactive; empty when fewer than two slots exist.
+        """
         maps: Dict[str, np.ndarray] = {}
         if self.n_gaussians < 2:
             return maps
@@ -221,6 +381,16 @@ class FittingMetricsCalculator:
         return maps
 
     def _compute_global_summary(self, r2_map : np.ndarray, activity_map : np.ndarray) -> Dict[str, float]:
+        """Summarises fit quality and the distribution of active-slot counts.
+
+        Args:
+            r2_map       : Per-pixel R-squared of shape (azimuth, range), NaN where unfitted.
+            activity_map : Active-slot count of shape (azimuth, range).
+
+        Returns:
+            Mapping with pixel counts, R-squared moments and percentiles, and the
+            fraction of pixels carrying each active-slot count.
+        """
         r2_flat  = r2_map.reshape(-1).astype(np.float64)
         r2_valid = r2_flat[np.isfinite(r2_flat)]
         n_total  = int(r2_map.size)
@@ -228,6 +398,7 @@ class FittingMetricsCalculator:
         n_fitted = int((act_flat > 0).sum())
 
         def _pct(q: float) -> float:
+            """Returns the q-th percentile of the finite R-squared values, or NaN."""
             return float(np.percentile(r2_valid, q)) if r2_valid.size > 0 else float("nan")
 
         summary: Dict[str, float] = {
@@ -256,6 +427,18 @@ class FittingMetricsCalculator:
         return summary
 
     def _compute_snr_summary(self, snr_db_map : np.ndarray, r2_map : np.ndarray, best_k_map : Optional[np.ndarray], max_samples : int = 1_000_000) -> Dict[str, float]:
+        """Summarises the contrast distribution and its relation to fit quality.
+
+        Args:
+            snr_db_map  : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            r2_map      : Per-pixel R-squared of shape (azimuth, range).
+            best_k_map  : Selected model order of shape (azimuth, range), or None.
+            max_samples : Cap on the number of pixels used for the correlations.
+
+        Returns:
+            Mapping with contrast moments and percentiles, the Pearson and Spearman
+            correlation against R-squared, and the median contrast per selected order.
+        """
         snr = snr_db_map.reshape(-1).astype(np.float64)
         r2  = r2_map.reshape(-1).astype(np.float64)
         ok  = np.isfinite(snr) & np.isfinite(r2)
@@ -291,6 +474,19 @@ class FittingMetricsCalculator:
         return summary
 
     def run(self, parameters_array : np.ndarray, metadata : dict, cube_path : Path, diagnostics : Optional[dict] = None) -> dict:
+        """Computes every fit-quality map and summary for one parameter run.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, row, col).
+            metadata         : Run metadata carrying ``z_range`` in metres.
+            cube_path    : Path of the cube the fit was performed on.
+            diagnostics      : Fitter diagnostics; model-order metrics are skipped when absent.
+
+        Returns:
+            Dictionary with the R-squared, activity and contrast maps, the z
+            axis, the global, contrast and per-order summaries, and the per-slot,
+            separation and model-order maps.
+        """
         self.logger.section("[Fitting Metrics Calculation]")
 
         self.logger.subsection(f"Loading cube : {Path(cube_path).name}")
@@ -311,6 +507,10 @@ class FittingMetricsCalculator:
 
         self.logger.subsection("Computing activity and spatial parameter maps")
         activity_map = self._compute_activity_map(parameters_array)
+
+        self.logger.subsection("Masking R² to fitted pixels: pixels with no active Gaussian were never candidates for a fit")
+        r2_map = np.where(activity_map > 0, r2_map, np.nan).astype(np.float32)
+
         gauss_maps   = self._compute_per_gaussian_maps(parameters_array)
         sep_maps     = self._compute_mu_separation_maps(parameters_array)
         summary      = self._compute_global_summary(r2_map, activity_map)

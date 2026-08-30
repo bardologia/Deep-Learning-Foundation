@@ -1,3 +1,10 @@
+"""Composes the full backbone-inference figure set from a stitched inference result.
+
+The composer walks every optional evaluation carried on the `Result` (parameters,
+embedding maps) and writes one figure per
+file into the run's figures directory, returning the paths grouped by figure family.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +23,16 @@ from tools.monitoring.logger                         import Logger
 
 
 class FigureComposer:
+    """Writes every inference figure and animation for one backbone run.
+
+    Attributes:
+        plotter        : Bundle of per-family plotters (slice, param, slot, organization, stratified).
+        meta           : Run metadata holding the output directory layout.
+        logger         : Logger used to announce each figure family as it is written.
+        cfg            : Inference configuration selecting colormaps, slice counts and GIF settings.
+        full_norm_cube : Cached unit-area normalisation of the raw tomogram, built on first use.
+    """
+
     def __init__(
         self,
         plotter : Plotter,
@@ -23,13 +40,32 @@ class FigureComposer:
         logger  : Logger,
         cfg     : InferenceConfig,
     ) -> None:
+        """Stores the plotters, run metadata, logger and inference configuration.
 
-        self.plotter = plotter
-        self.meta    = meta
-        self.logger  = logger
-        self.cfg     = cfg
+        Args:
+            plotter : Plotter bundle providing the per-family plotting methods.
+            meta    : Inference metadata resolving the figure and animation directories.
+            logger  : Logger for per-family progress lines.
+            cfg     : Inference configuration.
+        """
+
+        self.plotter        = plotter
+        self.meta           = meta
+        self.logger         = logger
+        self.cfg            = cfg
+        self.full_norm_cube = None
 
     def _compose_input_channels(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes amplitude and interferometric-phase maps of the complex input stack.
+
+        Nothing is written when the run carries no complex inputs.
+
+        Args:
+            result       : Inference result supplying the azimuth and range offsets of the crop.
+            run          : Loaded run carrying the complex input stack of shape (channels, azimuth, range).
+            figure_paths : Mapping of figure family to written paths, extended in place.
+        """
+
         slice_plotter = self.plotter.slice
         meta          = self.meta
         logger        = self.logger
@@ -46,6 +82,16 @@ class FigureComposer:
             logger.subsection(f"Input channels : {len(figure_paths['input_channels'])} figures in {meta.figures_dir / 'input_channels'}")
 
     def _compose_profiles(self, result: Result, run, z_axis_np: np.ndarray, param_space: bool, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes predicted-vs-GT z profiles for best, worst and random pixels.
+
+        Args:
+            result       : Inference result carrying the predicted and GT curve cubes and per-pixel metrics.
+            run          : Loaded run supplying the Gaussian count and the raw cube curves.
+            z_axis_np    : Z axis in metres, of shape (n_z,).
+            param_space  : Whether predicted Gaussian parameters exist and should be drawn as components.
+            figure_paths : Mapping of figure family to written paths, extended in place.
+        """
+
         slice_plotter = self.plotter.slice
         meta          = self.meta
         logger        = self.logger
@@ -85,6 +131,16 @@ class FigureComposer:
             logger.subsection(f"Profiles ({tag:<6}) : {len(figure_paths[f'profiles_{tag}'])} figures in {meta.figures_dir / 'profiles'}")
 
     def _compose_pixel_maps(self, result: Result, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes the per-pixel metric maps, stratified error curves, failure-mode map and metric histograms.
+
+        Maps for label fit R², extraction fit R² and flip consistency are added only when
+        the corresponding evaluation ran.
+
+        Args:
+            result       : Inference result carrying the per-pixel metric maps of shape (azimuth, range).
+            figure_paths : Mapping of figure family to written paths, extended in place.
+        """
+
         slice_plotter = self.plotter.slice
         meta          = self.meta
         logger        = self.logger
@@ -98,6 +154,9 @@ class FigureComposer:
 
         if result.label_r2 is not None:
             pixel_map_specs.append(("label_r2_map", "label_r2", result.label_r2, "Label fit R² (GT curves vs raw cube)", "R²", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}))
+
+        if result.extract_r2 is not None:
+            pixel_map_specs.append(("extract_r2_map", "extract_r2", result.extract_r2, "Extraction fit R² (refit Gaussians vs predicted curve)", "R²", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}))
 
         if result.flip_consistency is not None:
             pixel_map_specs.append(("flip_consistency_map", "flip_consistency", result.flip_consistency, "Flip-equivariance disagreement (curve MSE)", "MSE", {"cmap": cfg.cmap_error, "log": True}))
@@ -155,59 +214,123 @@ class FigureComposer:
             meta.figures_dir / "histograms",
         )
 
+    def _compose_embedding_maps(self, result: Result, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes the JEPA embedding-error, cosine, decoder-floor and full-chain maps plus their histograms.
+
+        Returns immediately when the run carried no embedding evaluation.
+
+        Args:
+            result       : Inference result whose `embedding_maps` holds the per-pixel maps of shape (azimuth, range).
+            figure_paths : Mapping of figure family to written paths, extended in place.
+        """
+
+        if result.embedding_maps is None:
+            return
+
+        maps          = result.embedding_maps
+        slice_plotter = self.plotter.slice
+        cfg           = self.cfg
+        out_dir       = self.meta.figures_dir / "embedding"
+
+        specs = (
+            ("embedding_error_map",  "embedding_error",  maps.embedding_error,  "Per-pixel embedding MSE (predicted vs target embedding)", "MSE",    {"cmap": cfg.cmap_error, "log": True}),
+            ("embedding_cosine_map", "embedding_cosine", maps.embedding_cosine, "Per-pixel embedding cosine similarity",                   "cosine", {"cmap": "RdYlGn", "q_low": 2.0, "q_high": 98.0}),
+            ("embedding_decode_map", "decode_floor",     maps.decode_mse,       "Decoder-only MSE (decode(encode(GT)) vs GT, normalised)", "MSE",    {"cmap": cfg.cmap_error, "log": True}),
+            ("embedding_chain_map",  "chain_error",      maps.chain_mse,        "Full-chain MSE (decode(prediction) vs GT, normalised)",   "MSE",    {"cmap": cfg.cmap_error, "log": True}),
+        )
+
+        for key, fname, data, title, label, extra in specs:
+            figure_paths[key] = [slice_plotter.plot_pixel_metric_map(
+                metric_map = data,
+                title      = title,
+                label      = label,
+                out_path   = out_dir / f"{fname}.png",
+                az_offset  = result.azimuth_offset,
+                rg_offset  = result.range_offset,
+                **extra,
+            )]
+
+        figure_paths["embedding_histograms"] = slice_plotter.plot_metric_histograms(
+            {"embedding_error": maps.embedding_error, "embedding_cosine": maps.embedding_cosine},
+            out_dir / "histograms",
+        )
+
+        self.logger.subsection(f"Embedding maps : error, cosine, decoder floor, full chain written to {out_dir}")
+
     def _compose_param_plots(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes the Gaussian-parameter distributions, scatters, error maps, error histograms and active-count map.
+
+        Args:
+            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, azimuth, range).
+            run          : Loaded run supplying the Gaussian count K.
+            figure_paths : Mapping of figure family to written paths, extended in place.
+        """
+
         param_plotter = self.plotter.param
         slot_plotter  = self.plotter.slot
         meta          = self.meta
         logger        = self.logger
-        assignment    = result.assignment(run.n_gaussians) if result.params_gt is not None else None
+        assignment    = result.assignment(run.n_gaussians, self.cfg.active_amp_thr) if result.params_gt is not None else None
 
         figure_paths["param_distributions"] = param_plotter.plot_param_distributions(
-            params_pred = result.params_pred[: run.n_gaussians * 3],
-            params_gt   = (result.params_gt[: run.n_gaussians * 3] if result.params_gt is not None else None),
-            n_gaussians = run.n_gaussians,
-            out_dir     = meta.figures_dir / "param_distributions",
-            assignment  = assignment,
+            params_pred   = result.params_pred[: run.n_gaussians * 3],
+            params_gt     = (result.params_gt[: run.n_gaussians * 3] if result.params_gt is not None else None),
+            n_gaussians   = run.n_gaussians,
+            out_dir       = meta.figures_dir / "param_distributions",
+            assignment    = assignment,
+            amp_threshold = self.cfg.active_amp_thr,
         )
 
         figure_paths["param_scatter"] = param_plotter.plot_param_scatter(
-            params_pred = result.params_pred[: run.n_gaussians * 3],
-            params_gt   = result.params_gt  [: run.n_gaussians * 3],
-            n_gaussians = run.n_gaussians,
-            out_dir     = meta.figures_dir / "param_scatter",
-            assignment  = assignment,
+            params_pred   = result.params_pred[: run.n_gaussians * 3],
+            params_gt     = result.params_gt  [: run.n_gaussians * 3],
+            n_gaussians   = run.n_gaussians,
+            out_dir       = meta.figures_dir / "param_scatter",
+            assignment    = assignment,
+            amp_threshold = self.cfg.active_amp_thr,
         )
 
         figure_paths["param_error_maps"] = param_plotter.plot_param_error_maps(
-            params_pred = result.params_pred[: run.n_gaussians * 3],
-            params_gt   = result.params_gt  [: run.n_gaussians * 3],
-            n_gaussians = run.n_gaussians,
-            out_dir     = meta.figures_dir / "param_error_maps",
-            row_offset  = result.row_offset,
-            col_offset  = result.col_offset,
-            assignment  = assignment,
+            params_pred   = result.params_pred[: run.n_gaussians * 3],
+            params_gt     = result.params_gt  [: run.n_gaussians * 3],
+            n_gaussians   = run.n_gaussians,
+            out_dir       = meta.figures_dir / "param_error_maps",
+            row_offset     = result.row_offset,
+            col_offset     = result.col_offset,
+            assignment    = assignment,
+            amp_threshold = self.cfg.active_amp_thr,
         )
 
         figure_paths["param_error_hists"] = param_plotter.plot_param_error_hists(
-            params_pred = result.params_pred[: run.n_gaussians * 3],
-            params_gt   = result.params_gt  [: run.n_gaussians * 3],
-            n_gaussians = run.n_gaussians,
-            out_dir     = meta.figures_dir / "param_error_hists",
-            assignment  = assignment,
+            params_pred   = result.params_pred[: run.n_gaussians * 3],
+            params_gt     = result.params_gt  [: run.n_gaussians * 3],
+            n_gaussians   = run.n_gaussians,
+            out_dir       = meta.figures_dir / "param_error_hists",
+            assignment    = assignment,
+            amp_threshold = self.cfg.active_amp_thr,
         )
 
         figure_paths["active_count_map"] = slot_plotter.plot_active_count_map(
-            params_pred = result.params_pred[: run.n_gaussians * 3],
-            params_gt   = result.params_gt  [: run.n_gaussians * 3],
-            n_gaussians = run.n_gaussians,
-            out_dir     = meta.figures_dir / "slots",
-            row_offset  = result.row_offset,
-            col_offset  = result.col_offset,
+            params_pred   = result.params_pred[: run.n_gaussians * 3],
+            params_gt     = result.params_gt  [: run.n_gaussians * 3],
+            n_gaussians   = run.n_gaussians,
+            out_dir       = meta.figures_dir / "slots",
+            row_offset     = result.row_offset,
+            col_offset     = result.col_offset,
+            amp_threshold = self.cfg.active_amp_thr,
         )
 
         logger.subsection(f"Param plots : distributions, scatter, error maps, error histograms, active-count map written to {meta.figures_dir}")
 
     def _compose_slot_organization(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes the raw-slot usage bars, per-slot parameter distributions, μ-rank matrix and GT-assignment matrix.
+
+        Args:
+            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, azimuth, range).
+            run          : Loaded run supplying the Gaussian count K.
+            figure_paths : Mapping of figure family to written paths, extended in place.
+        """
+
         org_plotter = self.plotter.organization
         meta        = self.meta
         logger      = self.logger
@@ -217,16 +340,27 @@ class FigureComposer:
         params_pred = result.params_pred[: n_K * 3]
         params_gt   = result.params_gt  [: n_K * 3] if result.params_gt is not None else None
 
-        figure_paths["slot_usage"]      = org_plotter.plot_slot_usage(params_pred, n_K, out_dir)
-        figure_paths["slot_param_dist"] = org_plotter.plot_slot_param_distributions(params_pred, n_K, out_dir)
-        figure_paths["slot_mu_rank"]    = org_plotter.plot_mu_rank_matrix(params_pred, n_K, out_dir)
+        figure_paths["slot_usage"]      = org_plotter.plot_slot_usage(params_pred, n_K, out_dir, amp_threshold=self.cfg.active_amp_thr)
+        figure_paths["slot_param_dist"] = org_plotter.plot_slot_param_distributions(params_pred, n_K, out_dir, amp_threshold=self.cfg.active_amp_thr)
+        figure_paths["slot_mu_rank"]    = org_plotter.plot_mu_rank_matrix(params_pred, n_K, out_dir, amp_threshold=self.cfg.active_amp_thr)
 
         if params_gt is not None:
-            figure_paths["slot_assignment"] = org_plotter.plot_assignment_matrix(params_pred, params_gt, n_K, out_dir, assignment=result.assignment(n_K))
+            figure_paths["slot_assignment"] = org_plotter.plot_assignment_matrix(params_pred, params_gt, n_K, out_dir, assignment=result.assignment(n_K, self.cfg.active_amp_thr), amp_threshold=self.cfg.active_amp_thr)
 
         logger.subsection(f"Slot organization : usage, per-slot distributions, μ-rank and GT-assignment matrices written to {out_dir}")
 
     def _compose_slices(self, result: Result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes col, row and z slices twice: in denormalised intensity and in unit-area form.
+
+        Args:
+            result         : Inference result carrying the predicted and GT curve cubes of shape (n_z, row, col).
+            run            : Loaded run supplying the raw cube.
+            global_metrics : Metric dictionary holding the per-slice SSIM values keyed by axis and index.
+            z_axis_np      : Z axis in metres, of shape (n_z,).
+            indices        : Slice-index arrays produced by the pipeline, keyed by axis.
+            figure_paths   : Mapping of figure family to written paths, extended in place.
+        """
+
         meta   = self.meta
         logger = self.logger
         cfg    = self.cfg
@@ -250,9 +384,9 @@ class FigureComposer:
             figure_paths   = figure_paths,
         )
 
-        pred_norm = ProfileNormalizer.unit_area(result.pred_curves)
-        gt_norm   = ProfileNormalizer.unit_area(result.gt_curves)
-        full_norm = ProfileNormalizer.unit_area(run.full_curves)
+        pred_norm = result.pred_unit_area()
+        gt_norm   = result.gt_unit_area()
+        full_norm = self._full_unit_area(run)
 
         self._slice_set(
             pred_cube      = pred_norm,
@@ -294,6 +428,26 @@ class FigureComposer:
         full_title     : str,
         figure_paths   : Dict[str, List[Path]],
     ) -> None:
+        """Writes one slice figure per selected range, azimuth and elevation index for a single cube variant.
+
+        Args:
+            pred_cube      : Predicted cube of shape (n_elevation, azimuth, range).
+            gt_cube        : Ground-truth cube of the same shape as `pred_cube`.
+            full_cube      : Raw tomogram cube of the same shape, drawn as an extra reference panel.
+            result         : Inference result supplying the azimuth and range offsets of the crop.
+            x_axis_np      : Elevation axis in metres, of shape (n_elevation,).
+            indices        : Slice-index arrays keyed by axis.
+            global_metrics : Metric dictionary holding the per-slice SSIM values.
+            ssim_prefix    : Metric-key prefix selecting which SSIM series to annotate ("gt", "norm" or "red").
+            out_dir        : Directory the slice figures are written into.
+            stem_prefix    : Prefix prepended to each figure file stem.
+            group_suffix   : Suffix appended to the figure-family keys in `figure_paths`.
+            ref_title      : Panel title for the reference cube.
+            pred_title     : Panel title for the predicted cube.
+            err_title      : Panel title for the absolute-error panel.
+            full_title     : Panel title for the raw tomogram panel.
+            figure_paths   : Mapping of figure family to written paths, extended in place.
+        """
 
         slice_plotter = self.plotter.slice
         slice_col_idx = indices["slice_col_idx"]
@@ -346,6 +500,16 @@ class FigureComposer:
             )
 
     def _compose_ssim(self, result: Result, global_metrics: dict, z_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
+        """Writes the per-slice SSIM curves for both cube variants and the per-z metric curves.
+
+        Args:
+            result         : Inference result supplying the cube shape and crop offsets.
+            global_metrics : Metric dictionary holding the per-slice SSIM and per-z series.
+            z_axis_np      : Z axis in metres, of shape (n_z,).
+            indices        : Slice-index arrays keyed by axis.
+            figure_paths   : Mapping of figure family to written paths, extended in place.
+        """
+
         slice_plotter = self.plotter.slice
         meta          = self.meta
         logger        = self.logger
@@ -400,6 +564,19 @@ class FigureComposer:
         out_dir        : Path,
         figure_paths   : Dict[str, List[Path]],
     ) -> None:
+        """Writes one SSIM-versus-slice-index curve per axis for a single cube variant.
+
+        Args:
+            global_metrics : Metric dictionary holding the per-slice SSIM values.
+            indices        : Full index arrays for range, azimuth and elevation.
+            shape          : Cube shape (n_elevation, azimuth, range) the curves span.
+            offsets        : Crop offsets keyed "range" and "azimuth", added to the plotted indices.
+            ssim_prefix    : Metric-key prefix selecting which SSIM series to plot.
+            group_suffix   : Suffix appended to the figure-family keys in `figure_paths`.
+            series_label   : Legend label for the plotted series.
+            out_dir        : Directory the curves are written into.
+            figure_paths   : Mapping of figure family to written paths, extended in place.
+        """
 
         slice_plotter     = self.plotter.slice
         _N_z, _row, _col = shape
@@ -429,16 +606,34 @@ class FigureComposer:
         indices        : dict,
         param_space    : bool = True,
     ) -> Dict[str, List[Path]]:
+        """Composes every figure family available for this run and returns their paths.
+
+        Args:
+            result         : Inference result carrying the cubes, per-pixel maps and optional evaluations.
+            run            : Loaded run supplying the raw cube and the Gaussian count.
+            global_metrics : Metric dictionary written by the pipeline before plotting.
+            x_axis_np      : Elevation axis in metres, of shape (n_elevation,).
+            indices        : Slice-index arrays keyed by axis.
+            param_space    : Whether Gaussian-parameter figures should be produced.
+
+        Returns:
+            Mapping of figure-family name to the list of figure paths written for it.
+        """
 
         figure_paths: Dict[str, List[Path]] = {}
 
         self._compose_input_channels(result, run, figure_paths)
         self._compose_profiles(result, run, z_axis_np, param_space, figure_paths)
         self._compose_pixel_maps(result, figure_paths)
+        self._compose_embedding_maps(result, figure_paths)
 
         if param_space:
             self._compose_param_plots(result, run, figure_paths)
-            self._compose_slot_organization(result, run, figure_paths)
+
+            if result.params_source == "model":
+                self._compose_slot_organization(result, run, figure_paths)
+            else:
+                self.logger.subsection("Slot-organization figures skipped: the parameters were extracted from the predicted curves and sorted by position, so slot index carries no model-side meaning.")
 
         self._compose_slices(result, run, global_metrics, z_axis_np, indices, figure_paths)
         self._compose_ssim(result, global_metrics, z_axis_np, indices, figure_paths)
@@ -446,6 +641,17 @@ class FigureComposer:
         return figure_paths
 
     def animate(self, result: Result, run, z_axis_np: np.ndarray) -> Dict[str, Path]:
+        """Renders one walk-through GIF per configured axis over the predicted and GT cubes.
+
+        Args:
+            result    : Inference result carrying the predicted and GT curve cubes of shape (n_z, row, col).
+            run       : Loaded run supplying the raw cube.
+            z_axis_np : Z axis in metres, of shape (n_z,).
+
+        Returns:
+            Mapping of "walk_<axis>" to the written GIF path.
+        """
+
         cfg    = self.cfg
         meta   = self.meta
         logger = self.logger

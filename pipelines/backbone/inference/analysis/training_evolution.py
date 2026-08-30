@@ -1,3 +1,10 @@
+"""Animation of how a run's prediction at probe pixels evolves during training.
+
+Each saved epoch snapshot is reloaded into the trained model, evaluated at a set
+of probe pixels, and rendered as one GIF frame against the fixed ground-truth
+profile; the best weights are restored afterwards.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,8 +22,21 @@ from tools.reporting.plotting                        import PlotBase
 
 
 class EvolutionFrames(PlotBase):
+    """Renders single GIF frames comparing a predicted profile to ground truth."""
 
     def frame(self, z_axis: np.ndarray, gt_curve: np.ndarray, pred_curve: np.ndarray, epoch: int, ylim: float) -> Image.Image:
+        """Renders one animation frame for a probe pixel at one epoch.
+
+        Args:
+            z_axis     : Z axis in metres, shape (n_z,).
+            gt_curve   : Ground-truth amplitude profile, shape (n_z,).
+            pred_curve : Predicted amplitude profile, shape (n_z,).
+            epoch      : One-based epoch number of the snapshot.
+            ylim       : Upper amplitude limit held fixed across the animation.
+
+        Returns:
+            The rendered frame as an RGB image.
+        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=(5.0, 3.2), dpi=110)
@@ -37,11 +57,17 @@ class EvolutionFrames(PlotBase):
 
 
 class TrainingEvolutionRun(AnalysisRun):
+    """Builds per-pixel training-evolution GIFs from one run's epoch snapshots."""
 
     SUMMARY_FILENAME = "training_evolution.json"
     REPORT_FILENAME  = "training_evolution.md"
 
     def _snapshots(self) -> list[Path]:
+        """Returns the epoch snapshot checkpoints in epoch order.
+
+        Raises:
+            FileNotFoundError : If the run saved no epoch snapshots.
+        """
         snapshots = sorted((self.run_dir / "checkpoints").glob("epoch_*.pt"))
         if not snapshots:
             raise FileNotFoundError(f"No epoch snapshots under {self.run_dir / 'checkpoints'}; train with snapshot_every_n_epochs > 0 to record the trajectory")
@@ -49,19 +75,45 @@ class TrainingEvolutionRun(AnalysisRun):
         return snapshots
 
     def _batch_size(self) -> int:
+        """Returns the loader batch size, fixed at one probe window per forward pass."""
         return 1
 
     def _gt_curve(self, run, renderer: PredictionCurves, row: int, col: int) -> np.ndarray:
+        """Returns the ground-truth profile at one pixel, shape (n_z,).
+
+        Args:
+            run      : Loaded run providing the ground-truth Gaussian parameters.
+            renderer : Renderer producing profiles from parameters.
+            row       : Row index of the probe pixel.
+            col       : Range index of the probe pixel.
+        """
         params = np.asarray(run.dataset.gt_parameters[:, row, col], dtype=np.float64)
         return renderer.render(params.reshape(1, -1, 1, 1))[0, :, 0, 0]
 
     def _predict_centers(self, run, renderer: PredictionCurves, windows: torch.Tensor, centers_local: list[tuple[int, int]]) -> list[np.ndarray]:
+        """Predicts the profile at the centre of each probe window.
+
+        Args:
+            run           : Loaded run providing the model.
+            renderer      : Renderer producing profiles from parameters.
+            windows       : Probe windows of shape (probes, channels, window, window).
+            centers_local : Window-local (row, column) of each probe centre.
+
+        Returns:
+            One profile of shape (n_elevation,) per probe window.
+        """
         params = run.model(windows)
         curves = renderer.render(params)
 
         return [curves[index, :, cy, cx] for index, (cy, cx) in enumerate(centers_local)]
 
     def run(self) -> dict:
+        """Replays every epoch snapshot at the probe pixels and writes GIFs and report.
+
+        Returns:
+            The payload holding the backbone name, split, replayed epochs and the
+            probe pixel coordinates.
+        """
         FileIO.ensure_dirs(self.output_dir)
         PlotBase.use_style(self.config.figure_style)
 
@@ -122,6 +174,7 @@ class TrainingEvolutionRun(AnalysisRun):
 
 
 class TrainingEvolutionBatch(RunBatch):
+    """Builds training-evolution animations for every selected run."""
 
     SELECTOR_ACTION = "animate"
     SECTION_TITLE   = "Training evolution animation"

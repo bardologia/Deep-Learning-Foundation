@@ -1,3 +1,9 @@
+"""Registry of profile autoencoder architectures for tomographic curves.
+
+Maps architecture names to their model and configuration classes and exposes
+``get_profile_autoencoder`` for name-based construction.
+"""
+
 from configuration.architectures import ProfileAutoencoderBaseConfig, Conv1dAutoencoderConfig, MlpAutoencoderConfig, Transformer1dAutoencoderConfig, ResMlpAutoencoderConfig, TcnAutoencoderConfig, GruAutoencoderConfig, CnnAttnAutoencoderConfig
 from ..registry                  import RegistryFactory
 from .base                       import ProfileAutoencoderBase, ProfileAutoencoderBlocks

@@ -1,3 +1,5 @@
+"""Entry point attributing backbone predictions to their input channels."""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +9,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the CLI overrides and runs the gradient and occlusion attribution passes."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                               import InputAttributionConfig

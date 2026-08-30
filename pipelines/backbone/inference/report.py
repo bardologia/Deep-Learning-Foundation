@@ -1,3 +1,10 @@
+"""Markdown report assembling the results of a backbone inference run.
+
+Turns the run summary, the metric dictionary and the generated figures into the sectioned
+inference report: run configuration, headline metric tables with their interpretation,
+the full taxonomy of metric keys, and the figure galleries.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,8 +18,19 @@ from tools.runtime.run_tag     import RunTag
 
 
 class ReportPayloadBuilder:
+    """Collects the run and configuration payloads the report renders as tables."""
+
     @staticmethod
     def run_summary(run, z_axis_np: np.ndarray) -> Dict[str, Any]:
+        """Summarises the model, dataset, patch grid and chan selection of a run.
+
+        Args:
+            run       : Loaded run exposing the backbone, channel counts, split region and patch grid.
+            z_axis_np : Z axis in metres, of shape (n_z,).
+
+        Returns:
+            Serialisable summary consumed by the report's run-summary section.
+        """
         return {
             "model_name"        : run.backbone_name,
             "in_channels"       : run.in_channels,
@@ -34,6 +52,15 @@ class ReportPayloadBuilder:
 
     @staticmethod
     def inference_config(cfg, run) -> Dict[str, Any]:
+        """Collects the stitching, plotting, animation and device settings of the run.
+
+        Args:
+            cfg : Inference configuration of the run.
+            run : Loaded run, supplying the dataset batch size.
+
+        Returns:
+            Serialisable configuration snapshot consumed by the report's configuration table.
+        """
         return {
             "stitch_window"     : cfg.stitch_window,
             "cube_dtype"        : cfg.cube_dtype,
@@ -56,6 +83,22 @@ class ReportPayloadBuilder:
 
 
 class Report:
+    """Assembles the markdown inference report from payloads, metrics and figure paths.
+
+    Section numbers of the optional headline subsections are allocated as the subsections
+    are emitted, so cross-references between them stay correct when a subsection is absent.
+
+    Attributes:
+        report_path      : Destination path of the markdown file.
+        output_dir       : Directory the report and its relative asset links live in.
+        run_summary      : Run summary payload from ReportPayloadBuilder.run_summary.
+        inference_config : Configuration payload from ReportPayloadBuilder.inference_config.
+        checkpoint_meta  : Checkpoint epoch and best-validation-loss metadata.
+        global_metrics   : Flat metric dictionary of the run.
+        figure_paths     : Figure group name mapped to one path or a list of paths.
+        gif_paths        : Animation name mapped to its GIF path.
+        assets           : Helper rendering image links relative to the output directory.
+    """
 
     _DATASET_KEYS = frozenset({
         "gt_mean", "gt_std", "gt_max",
@@ -75,6 +118,18 @@ class Report:
         gif_paths        : Dict[str, Path],
         report_path      : Path,
     ) -> None:
+        """Stores the report payloads and resets the subsection numbering.
+
+        Args:
+            output_dir       : Directory the report and its assets live in.
+            run_summary      : Run summary payload.
+            inference_config : Inference configuration payload.
+            checkpoint_meta  : Checkpoint metadata with "epoch", "best_epoch" and "best_val_loss".
+            global_metrics   : Flat metric dictionary of the run.
+            figure_paths     : Figure group name mapped to one path or a list of paths.
+            gif_paths        : Animation name mapped to its GIF path.
+            report_path      : Destination path of the markdown file.
+        """
 
         self.report_path      = Path(report_path)
         self.output_dir       = Path(output_dir)
@@ -86,12 +141,17 @@ class Report:
         self.gif_paths        = gif_paths
         self.assets           = ReportAssets(self.output_dir)
 
+        self._subsection_index = 3
+        self._anchors: Dict[str, str] = {}
+
     @staticmethod
     def _fmt(v: Any) -> str:
+        """Returns a scalar formatted for a report cell at six significant digits."""
         return ScalarFormatter.format_scalar(v, precision=6, adaptive=True)
 
     @staticmethod
     def _kv_table(rows: List[Tuple[str, Any]], header: Tuple[str, str] = ("Key", "Value")) -> str:
+        """Renders key-value pairs as a two-column markdown table with the keys in code style."""
         table = MarkdownTable(header)
         for k, v in rows:
             table.add_row(f"`{k}`", Report._fmt(v))
@@ -99,6 +159,7 @@ class Report:
 
     @staticmethod
     def _dict_table(d: Dict[str, Any]) -> str:
+        """Renders a dictionary as a key-sorted two-column markdown table."""
         return Report._kv_table(sorted(d.items()))
 
     @staticmethod
@@ -106,6 +167,7 @@ class Report:
         rows   : List[Tuple[str, Any, str]],
         header : Tuple[str, str, str] = ("Metric", "Pred vs GT", "Description"),
     ) -> str:
+        """Renders metric, value and description triples as a three-column markdown table."""
         table = MarkdownTable(header)
         for label, gt_val, desc in rows:
             table.add_row(label, Report._fmt(gt_val), desc)
@@ -116,22 +178,23 @@ class Report:
         rows   : List[Tuple[str, Any, Any, str]],
         header : Tuple[str, str, str, str] = ("Metric", "GT", "Pred", "Description"),
     ) -> str:
+        """Renders metric rows carrying a ground-truth and a predicted value side by side."""
         table = MarkdownTable(header)
         for label, gt_val, pred_val, desc in rows:
             table.add_row(label, Report._fmt(gt_val), Report._fmt(pred_val), desc)
         return "\n".join(table.render())
 
-    _PER_SLICE_PREFIXES = (
-        "ssim_gt_z_",   "ssim_gt_col_",   "ssim_gt_row_",
-        "ssim_norm_z_", "ssim_norm_col_", "ssim_norm_row_",
-        "z_mae_gt_",  "z_rmse_gt_",  "z_r2_gt_",  "z_ce_gt_",
-    )
-
     @classmethod
     def _is_per_slice_ssim(cls, k: str) -> bool:
+        """Returns whether a metric key is a per-slice value excluded from the metric tables."""
         return any(k.startswith(prefix) and k[len(prefix):].lstrip("-").isdigit() for prefix in cls._PER_SLICE_PREFIXES)
 
     def _build_run_summary(self) -> List[str]:
+        """Builds section 1: model, dataset, inputs, checkpoint and inference configuration.
+
+        Returns:
+            Markdown lines of the run-summary section.
+        """
         rs  = self.run_summary
         cfg = self.inference_config
         ck  = self.checkpoint_meta
@@ -178,35 +241,41 @@ class Report:
 
         out.append("\n### 1.5 Inference configuration\n")
         out.append(self._kv_table([
-            ("device",            cfg["device"]),
-            ("batch_size",        cfg["batch_size"]),
-            ("num_workers",       cfg["num_workers"]),
-            ("stitch_window",     cfg["stitch_window"]),
-            ("cube_dtype",        cfg["cube_dtype"]),
-            ("save_cubes",        cfg["save_cubes"]),
-            ("save_plots",        cfg["save_plots"]),
-            ("save_animations",   cfg["save_animations"]),
-            ("n_best_profiles",   cfg["n_best_profiles"]),
-            ("n_worst_profiles",  cfg["n_worst_profiles"]),
-            ("n_random_profiles", cfg["n_random_profiles"]),
-            ("n_col_slices",      cfg["n_col_slices"]),
-            ("n_row_slices",      cfg["n_row_slices"]),
-            ("n_z_slices",        cfg["n_z_slices"]),
-            ("gif_axes",          cfg["gif_axes"]),
-            ("gif_fps",           cfg["gif_fps"]),
-            ("gif_max_frames",    cfg["gif_max_frames"]),
+            ("device",             cfg["device"]),
+            ("batch_size",         cfg["batch_size"]),
+            ("num_workers",        cfg["num_workers"]),
+            ("stitch_window",      cfg["stitch_window"]),
+            ("cube_dtype",         cfg["cube_dtype"]),
+            ("save_cubes",         cfg["save_cubes"]),
+            ("save_plots",         cfg["save_plots"]),
+            ("save_animations",    cfg["save_animations"]),
+            ("n_best_profiles",    cfg["n_best_profiles"]),
+            ("n_worst_profiles",   cfg["n_worst_profiles"]),
+            ("n_random_profiles",  cfg["n_random_profiles"]),
+            ("n_col_slices",     cfg["n_col_slices"]),
+            ("n_row_slices",   cfg["n_row_slices"]),
+            ("n_z_slices", cfg["n_z_slices"]),
+            ("gif_axes",           cfg["gif_axes"]),
+            ("gif_fps",            cfg["gif_fps"]),
+            ("gif_max_frames",     cfg["gif_max_frames"]),
         ]))
         out.append("")
 
         return out
 
     def _build_headline_metrics(self) -> List[str]:
+        """Builds section 2: curve, per-pixel, SSIM and per-z tables plus every optional subsection.
+
+        Returns:
+            Markdown lines of the headline-metrics section, with subsection numbers allocated
+            in emission order so cross-references resolve.
+        """
         gm  = self.global_metrics
         out = ["\n## 2. Headline metrics\n"]
 
         out.append("**Curve-level** (aggregated over the full stitched test cube)\n")
         out.append(self._three_col_table([
-            ("MSE",     gm["curve_mse_gt"],   "Mean squared error over all (z, row, col)"),
+            ("MSE",     gm["curve_mse_gt"],   "Mean squared error over all (elev, row, col)"),
             ("MAE",     gm["curve_mae_gt"],   "Mean absolute error"),
             ("RMSE",    gm["curve_rmse_gt"],  "Root mean squared error"),
             ("R\u00b2", gm["overall_r2_gt"],  "Global coefficient of determination"),
@@ -233,50 +302,110 @@ class Report:
 
         out.append("**SSIM** (denorm, mean over all slices of that axis)\n")
         out.append(self._three_col_table([
-            ("SSIM z mean",     gm["ssim_gt_z_mean"],    "H\u00d7W intensity-at-z-bin planes"),
-            ("SSIM range mean", gm["ssim_gt_col_mean"],   "n_z\u00d7H cross-sectional planes"),
-            ("SSIM row mean",   gm["ssim_gt_row_mean"], "n_z\u00d7W cross-sectional planes"),
+            ("SSIM elev mean",    gm["ssim_gt_z_mean"],    "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM range mean",   gm["ssim_gt_range_mean"],   "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean", gm["ssim_gt_azimuth_mean"], "n_z\u00d7W cross-sectional planes"),
         ]))
         out.append("")
 
         out.append("**SSIM** (unit-area normalised pred vs GT, mean over all slices of that axis)\n")
         out.append(self._three_col_table([
-            ("SSIM z mean",     gm["ssim_norm_z_mean"],    "H\u00d7W intensity-at-z-bin planes"),
-            ("SSIM range mean", gm["ssim_norm_col_mean"],   "n_z\u00d7H cross-sectional planes"),
-            ("SSIM row mean",   gm["ssim_norm_row_mean"], "n_z\u00d7W cross-sectional planes"),
+            ("SSIM elev mean",    gm["ssim_norm_elev_mean"],    "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM range mean",   gm["ssim_norm_range_mean"],   "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean", gm["ssim_norm_azimuth_mean"], "n_z\u00d7W cross-sectional planes"),
         ]))
         out.append("")
 
         out.append("**Per-z-bin** (mean over all z bins)\n")
         out.append(self._three_col_table([
-            ("MAE mean",           gm["z_mae_gt_mean"],   "Mean absolute error averaged over z"),
-            ("RMSE mean",          gm["z_rmse_gt_mean"],  "Root mean squared error averaged over z"),
-            ("R\u00b2 mean",       gm["z_r2_gt_mean"],    "Coefficient of determination averaged over z"),
-            ("Cross-entropy mean", gm["z_ce_gt_mean"],    "Cross-entropy (normalised profiles) averaged over z"),
+            ("MAE mean",           gm["elev_mae_gt_mean"],   "Mean absolute error averaged over z"),
+            ("RMSE mean",          gm["elev_rmse_gt_mean"],  "Root mean squared error averaged over z"),
+            ("R\u00b2 mean",       gm["elev_r2_gt_mean"],    "Coefficient of determination averaged over z"),
+            ("Cross-entropy mean", gm["elev_ce_gt_mean"],    "Cross-entropy (normalised profiles) averaged over z"),
         ]))
         out.append("")
 
         self._subsection_index = 3
+        self._anchors          = {}
 
+        out += self._build_extraction_headline()
         out += self._build_active_count_headline()
         out += self._build_param_population_headline()
         out += self._build_matched_headline()
         out += self._build_slot_organization_headline()
         out += self._build_jepa_headline()
+        out += self._build_roughness_headline()
 
         return out
 
-    def _next_subsection(self) -> str:
+    def _next_subsection(self, anchor: str) -> str:
+        """Allocates the next section-2 subsection number and registers it under an anchor."""
         self._subsection_index += 1
-        return f"2.{self._subsection_index}"
+        number                  = f"2.{self._subsection_index}"
+
+        self._anchors[anchor] = number
+
+        return number
+
+    def _reference(self, anchor: str, template: str) -> str:
+        """Fills a cross-reference template with an anchor's section number, or returns an empty string.
+
+        Args:
+            anchor   : Anchor registered by _next_subsection.
+            template : Template carrying a {section} placeholder.
+
+        Returns:
+            The rendered reference, or "" when the anchored subsection was not emitted.
+        """
+        if anchor not in self._anchors:
+            return ""
+
+        return template.format(section=self._anchors[anchor])
+
+    def _build_extraction_headline(self) -> List[str]:
+        """Builds the curve-parameter extraction subsection and its measurement floor.
+
+        Returns:
+            Markdown lines, empty unless the run's parameters were refitted from curves.
+        """
+        gm = self.global_metrics
+        if gm.get("params_source") != "extracted":
+            return []
+
+        out = [f"\n### {self._next_subsection('extraction')} Curve-parameter extraction and its measurement floor\n"]
+        out.append(
+            "This run predicts elevation curves, not Gaussian parameters, so every parameter-space number in "
+            "this report comes from refitting K Gaussians to the predicted curve. The same extractor was run on "
+            "the GT curves and scored against the exact GT parameters: that is the measurement floor, the error "
+            "the extraction alone produces when the curve is perfect. Read the matched errors in the parameter "
+            "sections against this floor, not against zero; a parameter error at the floor means the extraction "
+            "is the limit, not the model.\n"
+        )
+        out.append(self._three_col_table([
+            ("Fit R² mean",      gm["extract_fit_r2_mean"],           "Refit Gaussians vs the predicted curve they were fit to"),
+            ("Fit R² median",    gm["extract_fit_r2_median"],         "Median over pixels"),
+            ("Fit R² p5",        gm["extract_fit_r2_p5"],             "5th percentile (worst tail)"),
+            ("Floor μ MAE",      gm["extract_floor_matched_mu_mae"],  "Extractor on GT curves vs exact GT parameters"),
+            ("Floor σ MAE",      gm["extract_floor_matched_sig_mae"], "Extractor on GT curves vs exact GT parameters"),
+            ("Floor amp MAE",    gm["extract_floor_matched_amp_mae"], "Extractor on GT curves vs exact GT parameters"),
+            ("Floor recall",     gm["extract_floor_matched_recall"],  "Detection recall achievable by the extractor alone"),
+        ], header=("Metric", "Value", "Description")))
+        out.append("")
+
+        return out
 
     def _build_active_count_headline(self) -> List[str]:
+        """Builds the slot-occupancy subsection with per-slot and count-agreement tables.
+
+        Returns:
+            Markdown lines, empty unless occupancy metrics were computed.
+        """
         gm = self.global_metrics
         if "active_frac_gt" not in gm:
             return []
 
         n_K = self.run_summary["n_gaussians"]
-        out = [f"\n### {self._next_subsection()} Slot occupancy (GT vs Pred)\n"]
+        out = [f"\n### {self._next_subsection('slot_occupancy')} Slot occupancy (GT vs Pred)\n"]
         out.append(
             "Per-slot and overall fraction of pixels carrying an active Gaussian (amplitude above the active threshold), "
             "ground truth versus prediction, over the full stitched test cube. Because Hungarian matching "
@@ -314,12 +443,19 @@ class Report:
         return out
 
     def _build_param_population_headline(self) -> List[str]:
+        """Builds the per-slot parameter statistics split by ground-truth slot activity.
+
+        Returns:
+            Markdown lines with one table per slot, empty unless the population statistics exist.
+        """
         gm = self.global_metrics
         if "slot_0_amp_active_gt_mean" not in gm:
             return []
 
-        n_K = self.run_summary["n_gaussians"]
-        out = [f"\n### {self._next_subsection()} Per-slot parameter statistics (GT vs Pred, by activity)\n"]
+        n_K       = self.run_summary["n_gaussians"]
+        out       = [f"\n### {self._next_subsection('param_population')} Per-slot parameter statistics (GT vs Pred, by activity)\n"]
+        occupancy = self._reference("slot_occupancy", " \u2014 §{section} gives the corresponding emission fractions")
+
         out.append(
             "Mean ± std of each Gaussian parameter per GT slot, split by that slot's GT activity "
             "(amplitude above the active threshold): the active population, its inactive complement, and "
@@ -329,7 +465,7 @@ class Report:
             "position or width, and their inactive and global cells are therefore left empty rather than "
             "restated from the active population. Pred columns average the Hungarian-aligned emissions "
             "placed in this slot (as in §6); pixels where the model emitted no active Gaussian for the slot "
-            "carry no value and are excluded — §2.4 gives the corresponding emission fractions. The inactive "
+            f"carry no value and are excluded{occupancy}. The inactive "
             "Pred rows therefore characterise the model's false fires in slots the GT leaves empty.\n"
         )
 
@@ -355,12 +491,18 @@ class Report:
         return out
 
     def _build_matched_headline(self) -> List[str]:
+        """Builds the permutation-invariant matched-Gaussian error subsection.
+
+        Returns:
+            Markdown lines with the aggregate table and the breakdown by ground-truth count,
+            empty unless matched errors were computed.
+        """
         gm = self.global_metrics
         if "matched_mu_mae" not in gm:
             return []
 
         n_K = self.run_summary["n_gaussians"]
-        out = [f"\n### {self._next_subsection()} Permutation-invariant matched Gaussian errors\n"]
+        out = [f"\n### {self._next_subsection('matched_errors')} Permutation-invariant matched Gaussian errors\n"]
         out.append(
             "Each pixel's predicted Gaussians are Hungarian-matched to its GT Gaussians on |Δμ| before "
             "scoring, so the errors are independent of slot ordering. A match counts as a detection hit when "
@@ -395,12 +537,18 @@ class Report:
         return out
 
     def _build_slot_organization_headline(self) -> List[str]:
+        """Builds the emergent slot-organization subsection.
+
+        Returns:
+            Markdown lines covering usage entropy, mu-rank diagonality and slot-to-GT
+            alignment, empty unless those scalars were computed.
+        """
         gm = self.global_metrics
         if "slot_mu_rank_diag" not in gm:
             return []
 
         n_K = self.run_summary["n_gaussians"]
-        out = [f"\n### {self._next_subsection()} Slot internal organization (emergent)\n"]
+        out = [f"\n### {self._next_subsection('slot_organization')} Slot internal organization (emergent)\n"]
         out.append(
             "Training Hungarian-matches predicted slots to GT before scoring, so the loss is invariant to "
             "predicted slot ordering: the model gets no gradient fixing a role to an output channel. These "
@@ -423,11 +571,17 @@ class Report:
         return out
 
     def _build_jepa_headline(self) -> List[str]:
+        """Builds the JEPA embedding-space diagnostics subsection.
+
+        Returns:
+            Markdown lines separating the decoder reconstruction floor from the predictor's
+            own error, empty unless embedding metrics were computed.
+        """
         gm = self.global_metrics
         if "jepa_embedding_mse" not in gm:
             return []
 
-        out = [f"\n### {self._next_subsection()} JEPA embedding diagnostics\n"]
+        out = [f"\n### {self._next_subsection('jepa')} JEPA embedding diagnostics\n"]
         out.append(
             "The JEPA objective is measured directly in embedding space: the backbone's predicted profile "
             "embedding is compared against the checkpoint encoder's embedding of the GT curve, both in the "
@@ -435,11 +589,53 @@ class Report:
             "reconstruction floor; the full-chain error is the decoded prediction against the GT curve in "
             "normalised curve space, so chain − decoder gauges how much error the predictor itself adds.\n"
         )
+        rows = [
+            ("Embedding MSE",           gm["jepa_embedding_mse"],          "Predicted vs target embedding, normalised space"),
+            ("Embedding RMSE",          gm["jepa_embedding_rmse"],         "Per-component error spread; the scale a decoder must tolerate"),
+            ("Embedding NMSE",          gm["jepa_embedding_nmse"],         "Error power divided by target power, so scale-free across autoencoders"),
+            ("Embedding cosine",        gm["jepa_embedding_cosine"],       "Mean cosine similarity along the embedding dimension"),
+            ("Per-dim RMSE min",        gm["jepa_embedding_dim_rmse_min"], "Best-predicted embedding component"),
+            ("Per-dim RMSE max",        gm["jepa_embedding_dim_rmse_max"], "Worst-predicted embedding component"),
+            ("Per-dim RMSE std",        gm["jepa_embedding_dim_rmse_std"], "Spread across components; a large value means the error concentrates in a few directions"),
+            ("Decoder-only MSE (norm)", gm["jepa_decode_mse_norm"],        "decode(encode(GT)) vs GT, normalised curves"),
+            ("Full-chain MSE (norm)",   gm["jepa_chain_mse_norm"],         "decode(predicted embedding) vs GT, normalised curves"),
+            ("Predictor excess MSE",    gm["jepa_predictor_excess_mse"],   "Full chain minus decoder floor: the error the predictor itself adds"),
+            ("Decoder floor fraction",  gm["jepa_decoder_floor_frac"],     "Share of the chain error already present with a perfect embedding"),
+            ("Decode amplification",    gm["jepa_decode_amplification"],   "Curve MSE added per unit of embedding MSE; how harshly the decoder magnifies latent error"),
+            ("Embedding err p95",       gm["jepa_embedding_err_p95"],      "95th percentile of the per-pixel embedding MSE"),
+            ("Embedding cosine p5",     gm["jepa_embedding_cosine_p5"],    "5th percentile of the per-pixel cosine (worst tail)"),
+        ]
+
+        if "jepa_embedding_error_corr" in gm:
+            rows.append(("Embedding-error corr", gm["jepa_embedding_error_corr"], "Correlation of the per-pixel embedding error with the per-pixel curve MSE"))
+
+        out.append(self._three_col_table(rows, header=("Metric", "Value", "Description")))
+        out.append("")
+
+        return out
+
+    def _build_roughness_headline(self) -> List[str]:
+        """Builds the curve-smoothness subsection comparing predicted and label roughness.
+
+        Returns:
+            Markdown lines, empty unless roughness metrics were computed.
+        """
+        gm = self.global_metrics
+        if "roughness_ratio" not in gm:
+            return []
+
+        out = [f"\n### {self._next_subsection('roughness')} Curve smoothness\n"]
+        out.append(
+            "Mean squared second difference along elevation, which measures bin-to-bin jitter rather than "
+            "the size of the error. GT profiles are Gaussian mixtures and therefore smooth by construction, "
+            "so a ratio far above 1 means the prediction carries high-frequency structure the labels never had, "
+            "even when its MSE looks acceptable.\n"
+        )
         out.append(self._three_col_table([
-            ("Embedding MSE",           gm["jepa_embedding_mse"],    "Predicted vs target embedding, normalised space"),
-            ("Embedding cosine",        gm["jepa_embedding_cosine"], "Mean cosine similarity along the embedding dimension"),
-            ("Decoder-only MSE (norm)", gm["jepa_decode_mse_norm"],  "decode(encode(GT)) vs GT, normalised curves"),
-            ("Full-chain MSE (norm)",   gm["jepa_chain_mse_norm"],   "decode(predicted embedding) vs GT, normalised curves"),
+            ("Roughness (pred)",  gm["roughness_pred_mean"],   "Mean squared second difference of the predicted curves"),
+            ("Roughness (GT)",    gm["roughness_gt_mean"],     "Same statistic on the GT curves"),
+            ("Roughness ratio",   gm["roughness_ratio"],       "Pred over GT; 1 means the prediction is exactly as smooth as the labels"),
+            ("Excess fraction",   gm["roughness_excess_frac"], "Fraction of pixels whose prediction is over twice as rough as its GT"),
         ], header=("Metric", "Value", "Description")))
         out.append("")
 
@@ -452,6 +648,8 @@ class Report:
     _METRIC_TAXONOMY = (
         ("3.1 Dataset statistics",                               lambda k: k in Report._DATASET_KEYS or k.endswith("_status")),
         ("3.12 JEPA embedding diagnostics",                      lambda k: k.startswith("jepa_")),
+        ("3.12b Curve-parameter extraction",                     lambda k: k.startswith(("extract_", "params_source"))),
+        ("3.12c Curve roughness",                                lambda k: k.startswith("roughness_")),
         ("3.13 Label quality (GT fit vs raw cube)",              lambda k: k.startswith("label_")),
         ("3.14 Normalization & clamp health",                    lambda k: k.startswith(("norm_in_", "clamp_"))),
         ("3.15 Flip-equivariance consistency",                   lambda k: k.startswith("flip_")),
@@ -470,12 +668,22 @@ class Report:
 
     @staticmethod
     def _section_order(title: str) -> tuple:
+        """Returns the sort key of a section-3 title, splitting its number into digits and suffix."""
         number = title.split()[0].split(".")[1]
         digits = "".join(ch for ch in number if ch.isdigit())
         return (int(digits), number[len(digits):])
 
     @classmethod
     def group_metric_keys(cls, keys) -> List[Tuple[str, List[str]]]:
+        """Sorts metric keys into the report's metric taxonomy.
+
+        Args:
+            keys : Metric key names to classify.
+
+        Returns:
+            Non-empty (section title, sorted keys) pairs in section order; per-slice SSIM
+            keys and the payload keys rendered elsewhere are dropped.
+        """
         groups: Dict[str, List[str]] = {title: [] for title, _match in cls._METRIC_TAXONOMY}
 
         for key in sorted(keys):
@@ -489,6 +697,11 @@ class Report:
         return [(title, groups[title]) for title in ordered]
 
     def _build_full_metrics(self) -> List[str]:
+        """Builds section 3: every metric key, grouped by the taxonomy.
+
+        Returns:
+            Markdown lines of the full metric tables.
+        """
         gm  = self.global_metrics
         out = ["\n## 3. Full metric tables\n"]
 
@@ -500,6 +713,12 @@ class Report:
         return out
 
     def _section(self, out: List[str], groups) -> None:
+        """Appends a heading and its images for every figure group that has paths.
+
+        Args:
+            out    : Markdown lines appended to in place.
+            groups : (figure key, pre-numbered heading title) pairs.
+        """
         fp = self.figure_paths
 
         for key, title in groups:
@@ -508,6 +727,13 @@ class Report:
                 out += self.assets.images(key, fp[key])
 
     def _numbered_section(self, out: List[str], prefix: str, groups) -> None:
+        """Appends figure groups under consecutively numbered headings, skipping absent ones.
+
+        Args:
+            out    : Markdown lines appended to in place.
+            prefix : Heading number prefix the running index is appended to.
+            groups : (figure key, heading title) pairs.
+        """
         fp        = self.figure_paths
         available = [(key, title) for key, title in groups if fp.get(key)]
 
@@ -516,6 +742,11 @@ class Report:
             out += self.assets.images(key, fp[key])
 
     def _build_figures(self) -> List[str]:
+        """Builds the figure galleries: passes, profiles, metric maps, parameters, slices, SSIM and animations.
+
+        Returns:
+            Markdown lines of every figure section whose figures were produced.
+        """
         fp  = self.figure_paths
         gp  = self.gif_paths
         out = []
@@ -548,15 +779,16 @@ class Report:
             self._section(out, profile_groups)
 
         pixel_groups = (
-            ("pixel_mse_map",        "5.1 MSE map (log scale, pred vs GT)"),
-            ("pixel_r2_map",         "5.2 R\u00b2 map (pred vs GT)"),
-            ("pixel_peak_map",       "5.3 Peak-location error map (|\u0394 peak index|)"),
-            ("label_r2_map",         "5.4 Label fit R\u00b2 map (GT curves vs raw cube)"),
-            ("flip_consistency_map", "5.5 Flip-equivariance disagreement map"),
-            ("stratified_errors",    "5.6 Error stratified by scene covariates"),
-            ("failure_mode_map",     "5.7 Dominant failure mode per pixel"),
-            ("miss_by_separation",   "5.8 Miss rate by GT component separation"),
-            ("metric_histograms",    "5.9 Metric distributions"),
+            ("pixel_mse_map",       "5.1 MSE map (log scale, pred vs GT)"),
+            ("pixel_r2_map",        "5.2 R\u00b2 map (pred vs GT)"),
+            ("pixel_peak_map",      "5.3 Peak-location error map (|\u0394 peak index|)"),
+            ("label_r2_map",          "5.4 Label fit R\u00b2 map (GT curves vs raw cube)"),
+            ("flip_consistency_map",  "5.5 Flip-equivariance disagreement map"),
+            ("stratified_errors",     "5.6 Error stratified by scene covariates"),
+            ("failure_mode_map",      "5.7 Dominant failure mode per pixel"),
+            ("miss_by_separation",    "5.8 Miss rate by GT component separation"),
+            ("extract_r2_map",        "5.9 Extraction fit R\u00b2 map (refit Gaussians vs predicted curve)"),
+            ("metric_histograms",     "5.10 Metric distributions"),
         )
         if any(fp.get(key) for key, _title in pixel_groups):
             out.append("\n## 5. Per-pixel metric maps\n")
@@ -583,9 +815,28 @@ class Report:
                 "error maps (6.3) and error histograms (6.4) Hungarian-match predicted Gaussians to GT Gaussians "
                 "per pixel before scoring, and the active-count map (6.5) compares counts only. The error "
                 "histograms show the signed per-pixel error, so a shift away from the zero line reads directly "
-                "as parameter bias. For aggregate ordering-independent accuracy see §2.6.\n"
+                f"as parameter bias.{self._reference('matched_errors', ' For aggregate ordering-independent accuracy see §{section}.')}\n"
             )
             self._section(out, param_groups)
+
+        embedding_groups = (
+            ("embedding_error_map",  "6c.1 Per-pixel embedding error"),
+            ("embedding_cosine_map", "6c.2 Per-pixel embedding cosine similarity"),
+            ("embedding_decode_map", "6c.3 Decoder-only error (autoencoder floor)"),
+            ("embedding_chain_map",  "6c.4 Full-chain error (decoded prediction vs GT)"),
+            ("embedding_histograms", "6c.5 Embedding metric distributions"),
+        )
+        if any(fp.get(key) for key, _title in embedding_groups):
+            out.append("\n## 6c. Embedding-space diagnostics\n")
+            out.append(
+                "Where the JEPA prediction lives before it becomes a curve. The error map (6c.1) is the "
+                "per-pixel distance between the predicted embedding and the encoder's embedding of the GT "
+                "curve. Comparing the decoder-only map (6c.3) against the full-chain map (6c.4) separates the "
+                "autoencoder's own reconstruction floor from the error the predictor adds: pixels that are "
+                "bright in both are limited by the autoencoder, pixels bright only in 6c.4 are prediction "
+                "failures.\n"
+            )
+            self._section(out, embedding_groups)
 
         org_groups = [(key, title) for key, title in (
             ("slot_usage",      "Per-slot activation frequency"),
@@ -602,7 +853,7 @@ class Report:
                 "Usage shows per-slot activation; the per-slot distributions reveal whether each slot specialises "
                 "in a z (μ), width (σ) or amplitude band; the μ-rank and matched-GT matrices show whether "
                 "the channel index tracks z order (a diagonal means the model spontaneously emits slots "
-                "sorted by μ). See §2.7 for the scalar summaries.\n"
+                f"sorted by μ).{self._reference('slot_organization', ' See §{section} for the scalar summaries.')}\n"
             )
             self._numbered_section(out, "6b.", org_groups)
 
@@ -662,6 +913,11 @@ class Report:
         return out
 
     def assemble(self) -> Path:
+        """Writes the full markdown report to disk.
+
+        Returns:
+            Path of the written report.
+        """
         self.output_dir.mkdir(parents=True, exist_ok=True)
         report_path = self.report_path
 

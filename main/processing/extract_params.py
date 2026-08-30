@@ -1,3 +1,11 @@
+"""Command-line entry point for the Gaussian parameter-extraction sweep.
+
+Resolves the queue of preprocessed dataset directories, expands it into
+extraction groups over the requested K, lambda and fit-mode permutations, and
+runs ``ParamExtractionPipeline`` once per group so that each group shares a
+single tomogram load and peak initialisation.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -13,6 +21,12 @@ from tools.monitoring.logger        import Logger
 
 
 def main() -> None:
+    """Runs the parameter-extraction sweep over every queued dataset group.
+
+    Reads the entry configuration from the command line, pins the requested
+    GPUs, builds the extraction groups and executes them in sequence, logging
+    the saved output paths of every permutation.
+    """
     config = ConfigCli(ExtractParamsEntryConfig(), description="Gaussian parameter extraction sweep over datasets, K values, lambda values, and fit modes").apply()
 
     EnvironmentPinner.gpus(config.gpu_device_ids)
@@ -50,7 +64,7 @@ def main() -> None:
         for index, group in enumerate(groups):
             logger.section(f"[Group {index + 1}/{len(groups)}] {group.processed_data_path.name} :: k{group.k_max} ({len(group.configs)} permutations, one shared load + init)")
 
-            pipeline = ParamExtractionPipeline(group, peak_initialiser=peak_initialiser, kernel_backend=kernel_backend)
+            pipeline = ParamExtractionPipeline(group, peak_initialiser=peak_initialiser, kernel_backend=kernel_backend, entry_config=config)
             saved    = pipeline.run()
 
             for key, outputs in saved.items():

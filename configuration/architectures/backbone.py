@@ -1,3 +1,14 @@
+"""Architecture configuration dataclasses for the single-trunk backbone zoo.
+
+Each dataclass holds the structural hyperparameters of one backbone family
+together with its per-section learning rates and weight decays, the search
+spaces exposed to the hyperparameter tuner, and the mapping from an
+instantiated model to optimiser parameter groups. Backbones predict Gaussian
+scatterer parameters from tomographic SAR patches, so ``out_channels`` counts
+predicted values per pixel and ``params_per_gaussian`` how many of them
+describe a single Gaussian component.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,6 +18,24 @@ import torch.nn as nn
 
 @dataclass
 class UNetConfig:
+    """Configuration of the plain encoder-decoder U-Net backbone.
+
+    Attributes:
+        in_channels         : Number of input channels of the tomographic patch.
+        out_channels        : Number of predicted values per pixel.
+        params_per_gaussian : Values describing a single Gaussian scatterer.
+        head                : Name of the output head attached to the decoder.
+        features            : Channel width of each encoder stage, coarsening downwards.
+        bottleneck_factor   : Channel multiplier applied at the bottleneck.
+        dropout             : Dropout probability inside convolutional blocks.
+        activation          : Activation function name used throughout the network.
+        normalization       : Normalisation layer name used throughout the network.
+        upsample_mode       : Decoder upsampling operator.
+        conv_bias           : Whether convolutions carry a bias term.
+        init_mode           : Weight initialisation scheme name.
+        shape_logger_types  : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -38,6 +67,11 @@ class UNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -52,6 +86,11 @@ class UNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"          : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384], [64, 128, 256, 512, 1024]]},
             "bottleneck_factor" : {"type": "categorical",         "choices": [1, 2, 4]},
@@ -61,6 +100,15 @@ class UNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         return [g for g in [
             {'params': list(model.encoder.parameters()),     'lr': self.encoder_lr,     'weight_decay': self.encoder_wd,     'name': 'encoder'},
             {'params': list(model.bottleneck.parameters()),  'lr': self.bottleneck_lr,  'weight_decay': self.bottleneck_wd,  'name': 'bottleneck'},
@@ -71,6 +119,15 @@ class UNetConfig:
 
 @dataclass
 class ResUNetConfig:
+    """Configuration of the residual U-Net backbone, the project default.
+
+    Attributes:
+        features           : Channel width of each encoder stage, coarsening downwards.
+        bottleneck_factor  : Channel multiplier applied at the bottleneck.
+        upsample_mode      : Decoder upsampling operator.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -102,6 +159,11 @@ class ResUNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -116,6 +178,11 @@ class ResUNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"          : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "bottleneck_factor" : {"type": "categorical",         "choices": [1, 2, 4]},
@@ -125,6 +192,15 @@ class ResUNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.encoder_blocks.parameters())
         decoder_params = list(model.upsample_layers.parameters()) + list(model.decoder_blocks.parameters())
         return [g for g in [
@@ -137,6 +213,15 @@ class ResUNetConfig:
 
 @dataclass
 class UNetSkipConfig:
+    """Configuration of the U-Net variant with explicit downsample and skip layers.
+
+    Attributes:
+        features           : Channel width of each encoder stage, coarsening downwards.
+        bottleneck_factor  : Channel multiplier applied at the bottleneck.
+        upsample_mode      : Decoder upsampling operator.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -168,6 +253,11 @@ class UNetSkipConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -182,6 +272,11 @@ class UNetSkipConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"          : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "bottleneck_factor" : {"type": "categorical",         "choices": [1, 2, 4]},
@@ -191,6 +286,15 @@ class UNetSkipConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.encoder_blocks.parameters()) + list(model.downsample_layers.parameters())
         decoder_params = list(model.upsample_layers.parameters()) + list(model.decoder_blocks.parameters())
         return [g for g in [
@@ -203,6 +307,15 @@ class UNetSkipConfig:
 
 @dataclass
 class AttentionUNetConfig:
+    """Configuration of the U-Net whose skip connections pass through attention gates.
+
+    Attributes:
+        features                     : Channel width of each encoder stage, coarsening downwards.
+        attention_intermediate_ratio : Fraction of the skip channel count used as the internal width of each attention gate.
+        upsample_mode                : Decoder upsampling operator.
+        shape_logger_types           : Module types whose output shapes are logged.
+    """
+
     in_channels                  : int       = 1
     out_channels                 : int       = 6
     params_per_gaussian          : int       = 3
@@ -235,6 +348,11 @@ class AttentionUNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -249,6 +367,11 @@ class AttentionUNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"                     : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "bottleneck_factor"            : {"type": "categorical",         "choices": [1, 2, 4]},
@@ -259,6 +382,15 @@ class AttentionUNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
      
         encoder_params = (
             list(model.encoder_blocks.parameters()) +
@@ -281,6 +413,15 @@ class AttentionUNetConfig:
 
 @dataclass
 class UNetPlusPlusConfig:
+    """Configuration of the UNet++ backbone with nested dense skip pathways.
+
+    Attributes:
+        features           : Channel width of each encoder stage, coarsening downwards.
+        bottleneck_factor  : Channel multiplier applied at the deepest node.
+        upsample_mode      : Operator used to upsample nodes of the dense grid.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -310,6 +451,11 @@ class UNetPlusPlusConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -322,6 +468,11 @@ class UNetPlusPlusConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"          : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "bottleneck_factor" : {"type": "categorical",         "choices": [1, 2, 4]},
@@ -331,6 +482,15 @@ class UNetPlusPlusConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         head_ids = {id(p) for p in model.head_parameters()}
 
         encoder_params, dense_params, upsample_params = [], [], []
@@ -354,6 +514,15 @@ class UNetPlusPlusConfig:
 
 @dataclass
 class LinkNetConfig:
+    """Configuration of the LinkNet backbone with additive encoder-decoder links.
+
+    Attributes:
+        features                 : Channel width of each encoder stage, coarsening downwards.
+        initial_kernel_size      : Kernel size of the stem convolution.
+        decoder_bottleneck_ratio : Channel reduction factor inside each decoder stage.
+        shape_logger_types       : Module types whose output shapes are logged.
+    """
+
     in_channels              : int       = 1
     out_channels             : int       = 6
     params_per_gaussian      : int       = 3
@@ -383,6 +552,11 @@ class LinkNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -395,6 +569,11 @@ class LinkNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"                 : {"type": "indexed_categorical", "choices": [[64, 128, 256, 512], [152, 312, 624, 1248], [96, 192, 384, 768]]},
             "initial_kernel_size"      : {"type": "categorical",         "choices": [3, 5, 7]},
@@ -404,6 +583,15 @@ class LinkNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         return [g for g in [
             {'params': list(model.initial_conv.parameters()),   'lr': self.encoder_lr,     'weight_decay': self.encoder_wd,     'name': 'initial_conv'},
             {'params': list(model.encoder_stages.parameters()), 'lr': self.encoder_lr,     'weight_decay': self.encoder_wd,     'name': 'encoder'},
@@ -414,6 +602,22 @@ class LinkNetConfig:
 
 @dataclass
 class SwinUNetConfig:
+    """Configuration of the Swin-UNet backbone built from shifted-window transformers.
+
+    Attributes:
+        image_size            : Side length in pixels the input patch is resized to.
+        patch_size            : Side length of the tokens produced by patch embedding.
+        embedding_dim         : Token width of the first transformer stage.
+        depths                : Number of transformer blocks per encoder stage.
+        num_heads             : Attention heads per encoder stage.
+        window_size           : Side length of the local attention window in tokens.
+        mlp_ratio             : Hidden-to-token width ratio of the feed-forward blocks.
+        attention_dropout     : Dropout applied to attention weights.
+        ffn_activation        : Activation inside the feed-forward blocks.
+        stochastic_depth_rate : Maximum drop-path probability across blocks.
+        shape_logger_types    : Module types whose output shapes are logged.
+    """
+
     in_channels           : int       = 1
     out_channels          : int       = 6
     params_per_gaussian   : int       = 3
@@ -445,6 +649,11 @@ class SwinUNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -457,6 +666,11 @@ class SwinUNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "embedding_dim"         : {"type": "categorical", "choices": [40, 80, 120, 160]},
             "attention_dropout"     : {"type": "float",       "low": 0.0,  "high": 0.3},
@@ -465,6 +679,15 @@ class SwinUNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
      
         patch_embed_params = (
             list(model.patch_embed.parameters()) +
@@ -494,6 +717,22 @@ class SwinUNetConfig:
 
 @dataclass
 class TransUNetConfig:
+    """Configuration of the TransUNet backbone: a CNN encoder feeding a transformer bottleneck.
+
+    Attributes:
+        image_size            : Side length in pixels the input patch is resized to.
+        cnn_features          : Channel width of each convolutional encoder stage.
+        bottleneck_factor     : Channel multiplier applied before the transformer.
+        transformer_layers    : Number of transformer blocks in the bottleneck.
+        transformer_heads     : Attention heads per transformer block.
+        transformer_mlp_ratio : Hidden-to-token width ratio of the feed-forward blocks.
+        patch_size            : Token side length used when embedding the CNN feature map.
+        attention_dropout     : Dropout applied to attention weights.
+        ffn_activation        : Activation inside the feed-forward blocks.
+        stochastic_depth_rate : Maximum drop-path probability across blocks.
+        shape_logger_types    : Module types whose output shapes are logged.
+    """
+
     in_channels           : int       = 1
     out_channels          : int       = 6
     params_per_gaussian   : int       = 3
@@ -532,6 +771,11 @@ class TransUNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -544,6 +788,11 @@ class TransUNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "cnn_features"          : {"type": "indexed_categorical", "choices": [[16, 32, 64, 128], [32, 72, 136, 272], [32, 64, 128, 256]]},
             "transformer_layers"    : {"type": "categorical",         "choices": [2, 4, 6, 8]},
@@ -555,6 +804,15 @@ class TransUNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         
         cnn_encoder_params = (
             list(model.encoder_blocks.parameters()) +
@@ -588,6 +846,22 @@ class TransUNetConfig:
 
 @dataclass
 class UNETRConfig:
+    """Configuration of the UNETR backbone: a pure transformer encoder with a CNN decoder.
+
+    Attributes:
+        image_size            : Side length in pixels the input patch is resized to.
+        patch_size            : Side length of the tokens produced by patch embedding.
+        embedding_dim         : Token width of the transformer encoder.
+        transformer_layers    : Number of transformer blocks in the encoder.
+        transformer_heads     : Attention heads per transformer block.
+        transformer_mlp_ratio : Hidden-to-token width ratio of the feed-forward blocks.
+        decoder_features      : Channel width of each decoder stage, from deep to shallow.
+        attention_dropout     : Dropout applied to attention weights.
+        ffn_activation        : Activation inside the feed-forward blocks.
+        stochastic_depth_rate : Maximum drop-path probability across blocks.
+        shape_logger_types    : Module types whose output shapes are logged.
+    """
+
     in_channels           : int       = 1
     out_channels          : int       = 6
     params_per_gaussian   : int       = 3
@@ -625,6 +899,11 @@ class UNETRConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -637,6 +916,11 @@ class UNETRConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "embedding_dim"         : {"type": "categorical",         "choices": [256, 384, 544, 768]},
             "transformer_layers"    : {"type": "categorical",         "choices": [4, 6, 8, 12]},
@@ -647,6 +931,15 @@ class UNETRConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
        
         patch_embed_params = (
             list(model.patch_embedding.parameters()) +
@@ -677,6 +970,16 @@ class UNETRConfig:
 
 @dataclass
 class DeepLabV3PlusConfig:
+    """Configuration of the DeepLabV3+ backbone with an atrous spatial pyramid.
+
+    Attributes:
+        features           : Channel width of each encoder stage, coarsening downwards.
+        atrous_rates       : Dilation rates of the parallel ASPP branches.
+        aspp_lr            : Learning rate of the ASPP module.
+        aspp_wd            : Weight decay of the ASPP module.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -707,6 +1010,11 @@ class DeepLabV3PlusConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "aspp_lr"        : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -721,6 +1029,11 @@ class DeepLabV3PlusConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"      : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "atrous_rates"  : {"type": "indexed_categorical", "choices": [(1, 2, 4), (2, 4, 8), (1, 2, 4, 8)]},
@@ -729,6 +1042,15 @@ class DeepLabV3PlusConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.stem.parameters()) + list(model.encoder_stages.parameters())
         decoder_params = list(model.low_level_projection.parameters()) + list(model.decoder_blocks.parameters())
         return [g for g in [
@@ -741,6 +1063,21 @@ class DeepLabV3PlusConfig:
 
 @dataclass
 class SegFormerLiteConfig:
+    """Configuration of the lightweight SegFormer backbone with an all-MLP decoder.
+
+    Attributes:
+        embedding_dims        : Token width of each hierarchical encoder stage.
+        depths                : Number of transformer blocks per encoder stage.
+        num_heads             : Attention heads per encoder stage.
+        sr_ratios             : Spatial reduction factors of the efficient attention per stage.
+        mlp_ratio             : Hidden-to-token width ratio of the feed-forward blocks.
+        decoder_channels      : Common width the stage features are projected to before fusion.
+        attention_dropout     : Dropout applied to attention weights.
+        ffn_activation        : Activation inside the feed-forward blocks.
+        stochastic_depth_rate : Maximum drop-path probability across blocks.
+        shape_logger_types    : Module types whose output shapes are logged.
+    """
+
     in_channels           : int       = 1
     out_channels          : int       = 6
     params_per_gaussian   : int       = 3
@@ -772,6 +1109,11 @@ class SegFormerLiteConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -784,6 +1126,11 @@ class SegFormerLiteConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "embedding_dims"        : {"type": "indexed_categorical", "choices": [[32, 64, 160, 256], [40, 80, 192, 320], [64, 128, 320, 512]]},
             "depths"                : {"type": "indexed_categorical", "choices": [[2, 2, 2, 2], [2, 2, 4, 2], [3, 3, 6, 3]]},
@@ -793,6 +1140,15 @@ class SegFormerLiteConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.patch_embeddings.parameters()) + list(model.encoder_stages.parameters())
         decoder_params = list(model.decode_projections.parameters()) + list(model.fuse.parameters())
         return [g for g in [
@@ -804,6 +1160,19 @@ class SegFormerLiteConfig:
 
 @dataclass
 class ConvNeXtUNetConfig:
+    """Configuration of the U-Net whose stages are built from ConvNeXt blocks.
+
+    Attributes:
+        features              : Channel width of each encoder stage, coarsening downwards.
+        bottleneck_factor     : Channel multiplier applied at the bottleneck.
+        blocks_per_stage      : Number of ConvNeXt blocks in each stage.
+        ffn_ratio             : Hidden-to-input width ratio of the pointwise feed-forward path.
+        ffn_activation        : Activation inside the feed-forward path.
+        stochastic_depth_rate : Maximum drop-path probability across blocks.
+        layer_scale_init      : Initial value of the per-channel layer-scale weights.
+        shape_logger_types    : Module types whose output shapes are logged.
+    """
+
     in_channels           : int       = 1
     out_channels          : int       = 6
     params_per_gaussian   : int       = 3
@@ -835,6 +1204,11 @@ class ConvNeXtUNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -848,6 +1222,11 @@ class ConvNeXtUNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"              : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [48, 96, 192, 384], [64, 128, 256, 512]]},
             "blocks_per_stage"      : {"type": "categorical",         "choices": [1, 2, 3]},
@@ -857,6 +1236,15 @@ class ConvNeXtUNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.stem.parameters()) + list(model.encoder_stages.parameters()) + list(model.downsample_layers.parameters())
         decoder_params = list(model.upsample_layers.parameters()) + list(model.decoder_stages.parameters())
         return [g for g in [
@@ -869,6 +1257,15 @@ class ConvNeXtUNetConfig:
 
 @dataclass
 class DenseUNetConfig:
+    """Configuration of the U-Net built from densely connected convolution blocks.
+
+    Attributes:
+        growth_rate        : Channels added by each layer inside a dense block.
+        block_layers       : Number of layers in each encoder dense block.
+        bottleneck_layers  : Number of layers in the bottleneck dense block.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -900,6 +1297,11 @@ class DenseUNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -914,6 +1316,11 @@ class DenseUNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "growth_rate"       : {"type": "categorical",         "choices": [12, 16, 24, 32]},
             "block_layers"      : {"type": "indexed_categorical", "choices": [[4, 4, 4], [4, 5, 7], [5, 5, 5, 5]]},
@@ -923,6 +1330,15 @@ class DenseUNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.stem.parameters()) + list(model.dense_down.parameters()) + list(model.trans_down.parameters())
         decoder_params = list(model.trans_up.parameters()) + list(model.dense_up.parameters())
         return [g for g in [
@@ -935,6 +1351,15 @@ class DenseUNetConfig:
 
 @dataclass
 class HRNetLiteConfig:
+    """Configuration of the lightweight HRNet backbone keeping parallel resolution branches.
+
+    Attributes:
+        base_channels      : Channel width of the highest-resolution branch.
+        n_branches         : Number of parallel resolution branches.
+        blocks_per_stage   : Residual blocks per branch within a stage.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int   = 1
     out_channels        : int   = 6
     params_per_gaussian : int   = 3
@@ -964,6 +1389,11 @@ class HRNetLiteConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -976,6 +1406,11 @@ class HRNetLiteConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "base_channels"    : {"type": "categorical", "choices": [32, 48, 64]},
             "n_branches"       : {"type": "categorical", "choices": [2, 3, 4]},
@@ -985,6 +1420,15 @@ class HRNetLiteConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = (
             list(model.stem.parameters()) +
             list(model.transition_modules.parameters()) +
@@ -1000,6 +1444,15 @@ class HRNetLiteConfig:
 
 @dataclass
 class MultiResUNetConfig:
+    """Configuration of the MultiResUNet backbone with multi-scale blocks and residual paths.
+
+    Attributes:
+        features           : Channel width of each encoder stage, coarsening downwards.
+        bottleneck_factor  : Channel multiplier applied at the bottleneck.
+        upsample_mode      : Decoder upsampling operator.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -1031,6 +1484,11 @@ class MultiResUNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -1045,6 +1503,11 @@ class MultiResUNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"          : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "bottleneck_factor" : {"type": "categorical",         "choices": [1, 2]},
@@ -1054,6 +1517,15 @@ class MultiResUNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.encoder_blocks.parameters()) + list(model.downsample_layers.parameters()) + list(model.res_paths.parameters())
         decoder_params = list(model.upsample_layers.parameters()) + list(model.decoder_blocks.parameters())
         return [g for g in [
@@ -1066,6 +1538,15 @@ class MultiResUNetConfig:
 
 @dataclass
 class FPNNetConfig:
+    """Configuration of the feature-pyramid backbone with lateral top-down fusion.
+
+    Attributes:
+        features           : Channel width of each encoder stage, coarsening downwards.
+        pyramid_channels   : Common width of the lateral and smoothing convolutions.
+        segmentation_convs : Convolutions per pyramid level before fusion.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -1095,6 +1576,11 @@ class FPNNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "decoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -1107,6 +1593,11 @@ class FPNNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"           : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "pyramid_channels"   : {"type": "categorical",         "choices": [64, 128, 256]},
@@ -1116,6 +1607,15 @@ class FPNNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.encoder_blocks.parameters()) + list(model.downsample_layers.parameters())
         decoder_params = (
             list(model.lateral_convs.parameters()) +
@@ -1132,6 +1632,14 @@ class FPNNetConfig:
 
 @dataclass
 class U2NetLiteConfig:
+    """Configuration of the lightweight U2-Net backbone of nested RSU stages.
+
+    Attributes:
+        features           : Channel width of each RSU encoder stage, coarsening downwards.
+        rsu_heights        : Depth of the inner U-block at each stage.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -1162,6 +1670,11 @@ class U2NetLiteConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -1176,6 +1689,11 @@ class U2NetLiteConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"      : {"type": "indexed_categorical", "choices": [[32, 64, 128, 256], [64, 128, 256, 512], [48, 96, 192, 384]]},
             "rsu_heights"   : {"type": "indexed_categorical", "choices": [(4, 3, 2), (5, 4, 3), (6, 5, 4)]},
@@ -1184,6 +1702,15 @@ class U2NetLiteConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         return [g for g in [
             {'params': list(model.encoder_stages.parameters()), 'lr': self.encoder_lr,     'weight_decay': self.encoder_wd,     'name': 'encoder'},
             {'params': list(model.bridge.parameters()),         'lr': self.bottleneck_lr,  'weight_decay': self.bottleneck_wd,  'name': 'bridge'},
@@ -1194,6 +1721,18 @@ class U2NetLiteConfig:
 
 @dataclass
 class PixelMLPNetConfig:
+    """Configuration of the pixelwise MLP baseline with a one-pixel receptive field.
+
+    The trunk is a stack of 1x1 convolutions, so every output pixel depends only
+    on the co-located input pixel; it serves as the no-context reference point.
+
+    Attributes:
+        features           : Hidden width of each 1x1 convolution layer in the trunk.
+        trunk_lr           : Learning rate of the trunk.
+        trunk_wd           : Weight decay of the trunk.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -1219,6 +1758,11 @@ class PixelMLPNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "trunk_lr"       : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "output_head_lr" : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -1229,6 +1773,11 @@ class PixelMLPNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"      : {"type": "indexed_categorical", "choices": [[2048, 2048, 2048, 2048], [3200, 3200, 3200, 3200], [2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048]]},
             "activation"    : {"type": "categorical",         "choices": ["relu", "leaky_relu", "gelu", "silu"]},
@@ -1236,6 +1785,15 @@ class PixelMLPNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         return [g for g in [
             {'params': list(model.trunk.parameters()),       'lr': self.trunk_lr,       'weight_decay': self.trunk_wd,       'name': 'trunk'},
             {'params': model.head_parameters(),              'lr': self.output_head_lr, 'weight_decay': self.output_head_wd, 'name': 'output_head'},
@@ -1244,6 +1802,16 @@ class PixelMLPNetConfig:
 
 @dataclass
 class LocalCNNConfig:
+    """Configuration of the shallow local CNN baseline with a small fixed receptive field.
+
+    Attributes:
+        features           : Hidden width of each trunk convolution layer.
+        block_kernels      : Kernel size per trunk block; ``None`` uses the model default.
+        trunk_lr           : Learning rate of the trunk.
+        trunk_wd           : Weight decay of the trunk.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int              = 1
     out_channels        : int              = 6
     params_per_gaussian : int              = 3
@@ -1270,6 +1838,11 @@ class LocalCNNConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "trunk_lr"       : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "output_head_lr" : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -1280,6 +1853,11 @@ class LocalCNNConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "features"      : {"type": "indexed_categorical", "choices": [[512, 512], [1072, 1072], [1408, 1408]]},
             "activation"    : {"type": "categorical",         "choices": ["relu", "leaky_relu", "gelu", "silu"]},
@@ -1287,6 +1865,15 @@ class LocalCNNConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         return [g for g in [
             {'params': list(model.trunk.parameters()),       'lr': self.trunk_lr,       'weight_decay': self.trunk_wd,       'name': 'trunk'},
             {'params': model.head_parameters(),              'lr': self.output_head_lr, 'weight_decay': self.output_head_wd, 'name': 'output_head'},
@@ -1295,6 +1882,18 @@ class LocalCNNConfig:
 
 @dataclass
 class NAFNetConfig:
+    """Configuration of the NAFNet backbone built from nonlinear activation free blocks.
+
+    Attributes:
+        width              : Channel width of the highest-resolution stage.
+        enc_blocks         : Number of NAF blocks per encoder stage.
+        middle_blocks      : Number of NAF blocks in the middle stage.
+        dec_blocks         : Number of NAF blocks per decoder stage.
+        dw_expand          : Channel expansion of the depthwise convolution branch.
+        ffn_expand         : Channel expansion of the feed-forward branch.
+        shape_logger_types : Module types whose output shapes are logged.
+    """
+
     in_channels         : int       = 1
     out_channels        : int       = 6
     params_per_gaussian : int       = 3
@@ -1325,6 +1924,11 @@ class NAFNetConfig:
 
     @classmethod
     def tunable_lr_params(cls) -> dict:
+        """Returns the tuner search space for learning rates, weight decays and dropout.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "encoder_lr"     : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
             "bottleneck_lr"  : {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
@@ -1339,6 +1943,11 @@ class NAFNetConfig:
 
     @classmethod
     def tunable_arch_params(cls) -> dict:
+        """Returns the tuner search space for structural architecture fields.
+
+        Returns:
+            Mapping from field name to an Optuna-style sampling specification.
+        """
         return {
             "width"         : {"type": "categorical",         "choices": [16, 24, 32, 48]},
             "enc_blocks"    : {"type": "indexed_categorical", "choices": [[2, 2, 4, 8], [1, 1, 1, 28], [2, 2, 2, 2]]},
@@ -1348,6 +1957,15 @@ class NAFNetConfig:
         }
 
     def get_param_groups(self, model: nn.Module) -> list[dict]:
+        """Returns optimiser parameter groups with a learning rate per model section.
+
+        Args:
+            model : Instantiated backbone whose submodules supply the parameters.
+
+        Returns:
+            List of optimiser parameter-group dicts, each carrying ``params``,
+            ``lr``, ``weight_decay`` and a ``name``; empty groups are dropped.
+        """
         encoder_params = list(model.intro.parameters()) + list(model.encoder_stages.parameters()) + list(model.downsample_layers.parameters())
         decoder_params = list(model.upsample_layers.parameters()) + list(model.decoder_stages.parameters())
         return [g for g in [

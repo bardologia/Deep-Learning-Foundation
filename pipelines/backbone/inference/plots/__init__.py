@@ -1,3 +1,5 @@
+"""Publishes the backbone-inference plotters and the bundle that groups them."""
+
 from pipelines.backbone.inference.plots.base         import PlotTools
 from pipelines.backbone.inference.plots.slice        import SlicePlotter
 from pipelines.backbone.inference.plots.param        import ParamPlotter

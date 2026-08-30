@@ -1,3 +1,5 @@
+"""Registry of dual-trunk models and their configuration classes."""
+
 from configuration.architectures import DualResUNetConfig
 from ..registry                  import RegistryFactory
 from .dual_resunet               import DualResUNet

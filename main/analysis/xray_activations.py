@@ -1,3 +1,9 @@
+"""Entry point x-raying the activations of trained backbone runs on real data.
+
+Hooks every leaf module over a few batches and reports dead layers, dead channels and
+exploding or constant activations as depth profiles, histograms, JSON and markdown.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the activation-xray config and analyses the activations of the selected runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                             import ActivationXrayConfig

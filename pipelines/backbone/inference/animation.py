@@ -1,3 +1,10 @@
+"""Animated walks through predicted and ground-truth tomographic cubes.
+
+A cube pair is sliced along elevation, range or azimuth and each slice is
+rendered in a worker process as a side-by-side panel of ground truth,
+prediction and absolute error, then assembled into a GIF.
+"""
+
 from __future__ import annotations
 
 import os
@@ -17,10 +24,32 @@ from tqdm import tqdm
 
 from pipelines.backbone.inference.plots import PlotTools, Plotter
 from tools.monitoring.logger            import Logger
+from tools.reporting.plotting           import PlotBase
 
 
 @dataclass
 class FrameSpec:
+    """Everything one worker process needs to render a single GIF frame.
+
+    Attributes:
+        frame_order : Position of this frame in the animation.
+        n_frames    : Total number of frames, used for the progress bar.
+        gt          : Ground-truth slice of shape (rows, columns).
+        pred        : Predicted slice of the same shape.
+        vmin        : Lower intensity limit shared by the GT and prediction panels.
+        vmax        : Upper intensity limit shared by the GT and prediction panels.
+        emax_gt     : Upper limit of the absolute-error panel.
+        extent      : Axis extent of the slice in scene coordinates.
+        x_label     : Horizontal axis label.
+        y_label     : Vertical axis label.
+        cmap        : Colormap of the GT and prediction panels.
+        err_cmap    : Colormap of the error panel.
+        dpi         : Rendering resolution.
+        origin      : Image origin, "upper" or "lower".
+        title       : Figure title carrying the slice coordinate.
+        full        : Raw tomogram slice of the same shape, or None when not shown.
+    """
+
     frame_order : int
     n_frames    : int
     gt          : np.ndarray
@@ -40,6 +69,17 @@ class FrameSpec:
 
 
 class Animator:
+    """Renders cube-walk GIFs comparing predicted and ground-truth tomograms.
+
+    Attributes:
+        logger      : Logger for the configuration banner and written-GIF lines.
+        cmap        : Colormap of the GT and prediction panels.
+        err_cmap    : Colormap of the absolute-error panel.
+        dpi         : Rendering resolution of each frame.
+        fps         : Playback rate of the GIF.
+        max_frames  : Cap on the number of frames per GIF.
+        num_workers : Render worker processes, or None to size from the CPU count.
+    """
 
     def __init__(
         self,
@@ -52,6 +92,20 @@ class Animator:
         max_frames  : int = 150,
         num_workers : int | None = None,
     ) -> None:
+        """Stores the rendering settings and logs them.
+
+        Args:
+            logger      : Logger for the configuration banner and written-GIF lines.
+            cmap        : Colormap of the GT and prediction panels.
+            err_cmap    : Colormap of the absolute-error panel.
+            dpi         : Rendering resolution of each frame.
+            fps         : Playback rate of the GIF.
+            max_frames  : Cap on the number of frames per GIF; slices are subsampled evenly when the axis is longer.
+            num_workers : Render worker processes, or None to size from the CPU count.
+
+        Raises:
+            ValueError : If max_frames is below one.
+        """
         if max_frames < 1:
             raise ValueError(f"max_frames must be >= 1, got {max_frames}; use a large value instead of 0 to leave GIFs uncapped.")
 
@@ -72,6 +126,22 @@ class Animator:
         self.logger.subsection(f"CPU workers for rendering      : {num_workers if num_workers is not None else 'auto'} \n")
 
     def _build_axis(self, axis: str, cubes: tuple, z_axis: np.ndarray, row_offset: int, col_offset: int) -> dict:
+        """Builds the slicing and labelling recipe for one walk axis.
+
+        Args:
+            axis       : Walk axis, "z", "col" or "row".
+            cubes      : Cubes to slice, each of shape (n_z, rows, cols).
+            z_axis     : The z axis, shape (n_z,).
+            row_offset : Row index of the cube's first row in the full scene.
+            col_offset : Column index of the cube's first column in the full scene.
+
+        Returns:
+            A dict holding the slice count, the slicing callable, the axis extent,
+            both axis labels, the per-index title function and the image origin.
+
+        Raises:
+            ValueError : If the axis name is not one of the three supported walks.
+        """
         N_z, row, col = cubes[0].shape
         sort_idx = None
 
@@ -116,10 +186,12 @@ class Animator:
 
     @staticmethod
     def _slice_z(cubes: tuple, i: int) -> tuple:
+        """Returns the (row, col) slice of every cube at z bin i."""
         return tuple(cube[i] if cube is not None else None for cube in cubes)
 
     @staticmethod
     def _slice_col(cubes: tuple, sort_idx: np.ndarray | None, i: int) -> tuple:
+        """Returns the (z, row) slice of every cube at column i, z-sorted."""
         slices = tuple(cube[:, :, i] if cube is not None else None for cube in cubes)
         if sort_idx is not None:
             slices = tuple(s[sort_idx] if s is not None else None for s in slices)
@@ -127,12 +199,22 @@ class Animator:
 
     @staticmethod
     def _slice_row(cubes: tuple, sort_idx: np.ndarray | None, i: int) -> tuple:
+        """Returns the (z, col) slice of every cube at row i, z-sorted."""
         slices = tuple(cube[:, i, :] if cube is not None else None for cube in cubes)
         if sort_idx is not None:
             slices = tuple(s[sort_idx] if s is not None else None for s in slices)
         return slices
 
     def _render(self, specs: Iterator[FrameSpec], n_frames: int) -> dict[int, bytes]:
+        """Renders the frame specs in a process pool with a bounded submission window.
+
+        Args:
+            specs    : Frame specifications, consumed lazily.
+            n_frames : Total number of frames, for the progress bar and pool sizing.
+
+        Returns:
+            Mapping from frame order to the encoded PNG bytes.
+        """
         n_workers = self.num_workers if self.num_workers is not None else min(n_frames, os.cpu_count() or 1)
         window    = 2 * n_workers
         png_bytes: dict[int, bytes] = {}
@@ -158,6 +240,14 @@ class Animator:
 
     @staticmethod
     def _render_frame(spec: FrameSpec) -> tuple[int, bytes]:
+        """Renders one frame into PNG bytes inside a worker process.
+
+        Args:
+            spec : Frame specification holding the slices, limits and labels.
+
+        Returns:
+            A tuple of the frame order and the encoded PNG bytes.
+        """
         g, p = spec.gt, spec.pred
         eg   = np.abs(p - g)
 
@@ -198,6 +288,7 @@ class Animator:
 
     @staticmethod
     def _init_worker() -> None:
+        """Selects the headless matplotlib backend inside a render worker."""
         matplotlib.use("Agg")
 
     def _frame_specs(
@@ -210,6 +301,20 @@ class Animator:
         vmax          : float,
         emax_gt       : float,
     ) -> Iterator[FrameSpec]:
+        """Yields one frame specification per selected slice index.
+
+        Args:
+            frame_indices : Slice indices to render along the walk axis.
+            get_slice     : Callable returning the cube slices at one index.
+            axis_spec     : Axis recipe holding the extent, labels, origin and titles.
+            has_full      : Whether the raw tomogram cube is present as a third panel.
+            vmin          : Lower intensity limit shared by the GT and prediction panels.
+            vmax          : Upper intensity limit shared by the GT and prediction panels.
+            emax_gt       : Upper limit of the absolute-error panel.
+
+        Yields:
+            The frame specification of each slice, in animation order.
+        """
 
         n_frames = len(frame_indices)
 
@@ -250,8 +355,23 @@ class Animator:
         col_offset : int,
         full_cube  : np.ndarray | None = None,
     ) -> Path:
-        plt.rcParams.update(Plotter.SCIENTIFIC_RC)
-        plt.rcParams.update(Plotter.REPORT_RC)
+        """Renders and writes a GIF walking one axis of the prediction/GT cube pair.
+
+        Args:
+            pred_cube : Predicted cube of shape (n_elevation, azimuth, range).
+            gt_cube   : Ground-truth cube of the same shape.
+            axis      : Walk axis, "elevation", "range" or "azimuth".
+            out_path  : Destination GIF path.
+            x_axis    : Elevation axis in metres, shape (n_elevation,).
+            az_offset : Azimuth index of the cube's first row in the full scene.
+            rg_offset : Range index of the cube's first column in the full scene.
+            full_cube : Raw tomogram cube of the same shape shown as an extra panel, or None.
+
+        Returns:
+            The written GIF path.
+        """
+        plt.rcParams.update(PlotBase.SCIENTIFIC_RC)
+        plt.rcParams.update(PlotBase.STYLE_RC[PlotBase.style])
         plt.rcParams["figure.dpi"]  = self.dpi
         plt.rcParams["savefig.dpi"] = self.dpi
 

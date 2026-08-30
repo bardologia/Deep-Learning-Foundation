@@ -1,3 +1,10 @@
+"""Loading of a trained image-autoencoder run into an inference-ready bundle.
+
+Rebuilds the autoencoder from its persisted configuration, restores the
+checkpoint weights, and rebuilds the patch dataset and loader of the requested
+split from the run's own dataset-creation configuration.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,6 +24,22 @@ from tools.data.regions                         import CropRegion
 
 @dataclass
 class ImageAeRun:
+    """Everything inference needs from a trained image-autoencoder run.
+
+    Attributes:
+        model                       : Restored autoencoder in eval mode, on the inference device.
+        ae_name                     : Registered image-autoencoder architecture name.
+        embedding_dim               : Width of the latent embedding.
+        in_channels                 : Width of the input patch stack the dataset yields.
+        normalizer                  : Normalizer holding the training input statistics.
+        loader                      : Unshuffled loader over the requested split's patches.
+        split_name                  : Name of the split being inferred.
+        patch_size                  : Patch extent as (azimuth, range) in pixels.
+        checkpoint_meta             : Checkpoint metadata, including best epoch and loss.
+        preprocessing_run_directory : Directory of the preprocessing run the dataset was built from.
+        split_region                : Crop region of the split in the preprocessed scene.
+    """
+
     model                       : object
     ae_name                     : str
     embedding_dim               : int
@@ -31,7 +54,14 @@ class ImageAeRun:
 
 
 class ImageAeRunLoader(RunArtifactLoader):
+    """Restores a standalone image-autoencoder run from its artifact directory."""
+
     def _read_run_summary(self) -> dict:
+        """Returns the run summary, rejecting runs of any other model family.
+
+        Raises:
+            ValueError : If the run summary does not name the `image_ae` model.
+        """
         summary = self._read_json("run_summary.json")
 
         if str(summary.get("model_name")) != "image_ae":
@@ -40,12 +70,33 @@ class ImageAeRunLoader(RunArtifactLoader):
         return summary
 
     def _build_model(self, device: str):
+        """Builds the autoencoder from the persisted architecture configuration.
+
+        Args:
+            device : Torch device string the model is moved to.
+
+        Returns:
+            The model on the device, its registered architecture name and its
+            resolved configuration.
+        """
         ae_cfg, ae_name = ImageAutoencoderConfigIO.load(self.meta_directory)
         model, _        = get_image_autoencoder(ae_name, ae_cfg)
 
         return model.to(device), ae_name, ae_cfg
 
     def load(self, *, config: ImageAeInferenceConfig, device: str) -> ImageAeRun:
+        """Restores model, weights, normalization statistics and split loader of the run.
+
+        Args:
+            config : Inference configuration naming the checkpoint, split, batch size and worker count.
+            device : Torch device string the model is loaded onto.
+
+        Returns:
+            The assembled `ImageAeRun` bundle.
+
+        Raises:
+            ValueError : If the run is not an image-autoencoder run, or the rebuilt dataset yields a different input width than the run was trained on.
+        """
         self.logger.section("[Image AE Inference: Load Run]")
         self.logger.subsection(f"Run Directory : {self.run_directory} \n")
 
@@ -61,8 +112,8 @@ class ImageAeRunLoader(RunArtifactLoader):
         norm_stats             = Stats.load(self.meta_directory, self.logger)
         model, ae_name, ae_cfg = self._build_model(device)
 
-        ckpt_path               = self.run_directory / config.checkpoint_name
-        ckpt, z_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
+        ckpt_path                = self.run_directory / config.checkpoint_name
+        ckpt, _x_axis, ckpt_meta = self._load_checkpoint(ckpt_path, device)
 
         model.load_state_dict(ckpt["params"])
         model.eval()
@@ -70,7 +121,6 @@ class ImageAeRunLoader(RunArtifactLoader):
         dataset, grid, region, _global_crop, _arrays = self._build_dataset(
             dataset_config = dataset_config,
             split_name     = config.split,
-            z_axis         = z_axis,
             n_gaussians    = dataset_config.n_gaussians,
             norm_stats     = norm_stats,
             load_cube      = False,

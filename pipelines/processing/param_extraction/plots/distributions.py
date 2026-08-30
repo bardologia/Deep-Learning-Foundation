@@ -1,3 +1,9 @@
+"""Distribution figures for a parameter-extraction run.
+
+Covers the R-squared PDF and CDF, the per-slot amplitude, centroid and width
+distributions, their pairwise joint densities, and the model-order ambiguity spread.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,14 +22,44 @@ from tools.monitoring.logger  import Logger
 
 
 class DistributionPlotter(PlotBase):
+    """Renders the distribution figures of a fitted parameter stack.
+
+    Attributes:
+        n_gaussians   : Number of Gaussian slots in the parameter stack.
+        logger        : Logger for skip warnings.
+        amp_threshold : Amplitude above which a Gaussian slot counts as active.
+        fig_dpi       : Figure resolution used while rendering.
+        save_dpi      : Resolution the PNGs are written at.
+    """
+
     def __init__(self, n_gaussians : int, logger : Logger, amp_threshold : float, fig_dpi : int = 150, save_dpi : int = 300) -> None:
+        """Configures the distribution plotter.
+
+        Args:
+            n_gaussians   : Number of Gaussian slots in the parameter stack.
+            logger        : Logger for skip warnings.
+            amp_threshold : Amplitude above which a Gaussian slot counts as active.
+            fig_dpi       : Figure resolution used while rendering.
+            save_dpi      : Resolution the PNGs are written at.
+        """
         self.n_gaussians   = n_gaussians
         self.logger        = logger
         self.amp_threshold = amp_threshold
         self.fig_dpi       = fig_dpi
         self.save_dpi      = save_dpi
 
-    def _plot_r2_distribution(self, r2_map : np.ndarray, summary : dict, out_dir : Path) -> Dict[str, Path]:
+    def plot_r2_distribution(self, r2_map : np.ndarray, summary : dict, out_dir : Path) -> Dict[str, Path]:
+        """Saves the R-squared histogram with KDE and its empirical CDF.
+
+        Args:
+            r2_map  : Per-pixel R-squared of shape (azimuth, range), NaN where unfitted.
+            summary : Global summary carrying the R-squared mean, median and negative fraction.
+            out_dir : Directory the figures are written to.
+
+        Returns:
+            Mapping with the ``r2_pdf`` and ``r2_cdf`` figure paths; empty when no finite
+            value exists.
+        """
         flat  = r2_map.reshape(-1).astype(np.float64)
         valid = flat[np.isfinite(flat)]
 
@@ -52,7 +88,7 @@ class DistributionPlotter(PlotBase):
 
         ax.set_xlabel(r"coefficient of determination $R^2$")
         ax.set_ylabel(r"probability density")
-        ax.set_title(r"$R^2$ distribution across all pixels" + "\n" + stats_tx)
+        ax.set_title(r"$R^2$ distribution across fitted pixels" + "\n" + stats_tx)
         ax.legend(fontsize=8, framealpha=0.90, ncol=2)
         ax.grid(True, which="major", lw=0.3, alpha=0.40)
         fig.tight_layout()
@@ -80,7 +116,17 @@ class DistributionPlotter(PlotBase):
 
         return saved
 
-    def _plot_parameter_distributions(self, parameters_array : np.ndarray, out_dir : Path) -> Dict[str, Path]:
+    def plot_parameter_distributions(self, parameters_array : np.ndarray, out_dir : Path) -> Dict[str, Path]:
+        """Saves one violin figure per parameter family across the Gaussian slots.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            out_dir          : Directory the figures are written to.
+
+        Returns:
+            Mapping with the ``amp_dist``, ``mu_dist`` and ``sigma_dist`` figure paths,
+            omitting families with no active component.
+        """
         specs = [
             ("amp",   r"amplitude $A_k$",             "amp"),
             ("mu",    r"centroid $\mu_k$", "mu"),
@@ -131,7 +177,17 @@ class DistributionPlotter(PlotBase):
 
         return saved
 
-    def _plot_param_joint_distributions(self, parameters_array : np.ndarray, out_dir : Path) -> Dict[str, Path]:
+    def plot_param_joint_distributions(self, parameters_array : np.ndarray, out_dir : Path) -> Dict[str, Path]:
+        """Saves hexbin densities of the parameter pairs, pooling every slot.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            out_dir          : Directory the figures are written to.
+
+        Returns:
+            Mapping with the ``joint_mu_sigma``, ``joint_mu_amp`` and ``joint_sigma_amp``
+            figure paths; empty when no component is active.
+        """
         amp_pool : List[np.ndarray] = []
         mu_pool  : List[np.ndarray] = []
         sig_pool : List[np.ndarray] = []
@@ -175,7 +231,18 @@ class DistributionPlotter(PlotBase):
 
         return saved
 
-    def _plot_k_ambiguity_distribution(self, metrics_dict : dict, per_k_summary : dict, out_dir : Path) -> Dict[str, Path]:
+    def plot_k_ambiguity_distribution(self, metrics_dict : dict, per_k_summary : dict, out_dir : Path) -> Dict[str, Path]:
+        """Saves the relative selection-margin histogram and its split by selected order.
+
+        Args:
+            metrics_dict  : Metrics carrying ``k_relative_margin_map`` and ``best_k_map``.
+            per_k_summary : Per-order summary carrying the ambiguity threshold and fraction.
+            out_dir       : Directory the figures are written to.
+
+        Returns:
+            Mapping with the ``k_ambiguity_distribution`` and ``k_ambiguity_by_k`` figure
+            paths; empty when no finite margin exists.
+        """
         rel    = metrics_dict["k_relative_margin_map"].reshape(-1)
         best_k = metrics_dict["best_k_map"].reshape(-1)
         ok     = np.isfinite(rel)

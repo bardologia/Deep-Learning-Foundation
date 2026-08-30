@@ -1,3 +1,9 @@
+"""Channel representations of the complex SAR stack fed to the networks.
+
+Each pass of the stack is complex; a representation states how many real
+channels it becomes and how they are computed, from raw real/imaginary parts
+to magnitude with unit-norm phasors.
+"""
 from __future__ import annotations
 
 from enum import Enum
@@ -16,6 +22,12 @@ _CHANNELS_PER_SOURCE: dict[str, int] = {
 
 
 class Representation(Enum):
+    """Complex-to-real channel layout used to encode a SAR stack.
+
+    Members name the channel content per pass: raw real and imaginary parts,
+    magnitude with normalised real and imaginary parts, magnitude and phase angle,
+    or magnitude respectively phase alone.
+    """
     REAL_IMAG     = "real_imag"
     MAG_REAL_IMAG = "mag_real_imag"
     MAG_ANGLE     = "mag_angle"
@@ -25,10 +37,12 @@ class Representation(Enum):
 
     @property
     def channels_per_source(self) -> int:
+        """Number of real channels this representation produces per source."""
         return _CHANNELS_PER_SOURCE[self.value]
 
     @property
     def slot_kinds(self) -> list[str]:
+        """Per-channel kind tags naming what each channel of one pass holds."""
         return {
             Representation.REAL_IMAG     : ["raw_re_im",  "raw_re_im"],
             Representation.MAG_REAL_IMAG : ["mag",    "norm_re_im", "norm_re_im"],
@@ -39,6 +53,18 @@ class Representation(Enum):
         }[self]
 
     def channel_values(self, data: np.ndarray) -> list[np.ndarray]:
+        """Converts complex data into the real channels of this representation.
+
+        Args:
+            data : Complex array of any shape.
+
+        Returns:
+            One real array per channel, each of the same shape as data; magnitudes
+            are linear, angles are in radians and normalised parts are unit-norm.
+
+        Raises:
+            ValueError : If the representation is not handled.
+        """
         if self is Representation.MAG_ONLY:
             return [np.abs(data)]
 
@@ -64,6 +90,12 @@ class Representation(Enum):
         raise ValueError(f"Unsupported representation: {self}")
 
     def convert_into(self, out: np.ndarray, data: np.ndarray) -> None:
+        """Writes the channels of one source into an interleaved output array.
+
+        Args:
+            out  : Destination of shape (n_sources*channels_per_source, ...), source-major with the channels of a source strided by channels_per_source.
+            data : Complex data of shape (n_sources, ...).
+        """
         cpp      = _CHANNELS_PER_SOURCE[self.value]
         channels = self.channel_values(data)
 

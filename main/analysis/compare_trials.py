@@ -1,3 +1,9 @@
+"""Entry point comparing the inference results of several training trials side by side.
+
+Collects each trial's metrics with ``TrialCollector`` and renders the tables, image and
+GIF comparisons through ``TrialComparisonReport`` into a timestamped output directory.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -11,6 +17,7 @@ from tools.runtime.run_tag import RunTag
 
 
 def main() -> None:
+    """Collects the selected trials and writes the trial-comparison reports."""
     EnvironmentPinner.threads()
 
     from configuration.comparison            import TrialComparisonConfig
@@ -30,12 +37,13 @@ def main() -> None:
         logger.kv_table({
             "Runs dir"       : str(runs_dir),
             "Trials"         : len(config.run_tags),
+            "Split"          : config.inference_split,
             "Compare images" : config.compare_images,
             "Compare GIFs"   : config.compare_gifs,
             "Output dir"     : str(out_dir),
         }, title="Configuration")
 
-        collector = TrialCollector(runs_dir=runs_dir, run_tags=config.run_tags, logger=logger)
+        collector = TrialCollector(runs_dir=runs_dir, run_tags=config.run_tags, logger=logger, inference_split=config.inference_split)
         records   = collector.collect()
 
         report = TrialComparisonReport(

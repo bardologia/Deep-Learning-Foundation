@@ -1,3 +1,9 @@
+"""Entry point for K-fold cross-validation, in both scheduler and worker roles.
+
+Without ``--worker`` the process schedules every fold; with it, the same script is
+re-invoked per GPU to train or run inference for one fold and seed.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -10,6 +16,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def _scheduler() -> None:
+    """Applies curriculum inheritance and runs the cross-validation pipeline."""
     EnvironmentPinner.threads()
 
     from configuration.cross_validation      import CrossValidationConfig
@@ -26,27 +33,41 @@ def _scheduler() -> None:
     pipeline.run()
 
 
-def _worker(stage: str, fold_index: int, seed: int | None, split: str | None, gpu_id: int, run_tag: str, run_dir: str | None) -> None:
-    EnvironmentPinner.gpu(gpu_id)
+def _worker(stage: str, fold_index: int, seed: int | None, gpu_id: int, run_tag: str, run_dir: str | None) -> None:
+    """Trains or runs inference for one cross-validation fold on a single pinned GPU.
 
-    from configuration.cross_validation import CrossValidationConfig
-    from pipelines.cross_validation.workers                import FoldInferenceWorker, FoldTrainingWorker
-    from tools.runtime.config_cli                          import ConfigCli
+    Args:
+        stage      : ``train`` to fit the fold, anything else to run fold inference.
+        fold_index : Zero-based index of the fold to process.
+        seed       : Training seed for this fold, or None for the pipeline default.
+        gpu_id     : Index of the GPU this process is pinned to.
+        run_tag    : Tag of the cross-validation run whose resolved config is loaded.
+        run_dir    : Explicit run directory holding the resolved config, or None to derive it.
+    """
+    EnvironmentPinner.gpu(gpu_id, expandable_segments=True)
+
+    from configuration.cross_validation     import CrossValidationConfig
+    from pipelines.cross_validation.workers import FoldInferenceWorker, FoldTrainingWorker
+    from tools.runtime.config_cli           import ConfigCli
 
     config = ConfigCli.load_worker_config(CrossValidationConfig(), run_tag, run_dir)
 
     if stage == "train":
         FoldTrainingWorker(config=config, run_tag=run_tag).run(fold_index=fold_index, seed=seed)
     else:
-        FoldInferenceWorker(config=config, run_tag=run_tag).run(fold_index=fold_index, split=split, seed=seed)
+        FoldInferenceWorker(config=config, run_tag=run_tag).run(fold_index=fold_index, seed=seed)
 
 
 def main() -> None:
+    """Dispatches to the cross-validation scheduler or to a single fold worker.
+
+    Raises:
+        SystemExit : If ``--worker`` is given without both ``--fold`` and ``--run-tag``.
+    """
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--worker",  type=str, default=None, choices=["train", "infer"])
     parser.add_argument("--fold",    type=int, default=None)
     parser.add_argument("--seed",    type=int, default=None)
-    parser.add_argument("--split",   type=str, default=None)
     parser.add_argument("--gpu",     type=int, default=0)
     parser.add_argument("--run-tag", type=str, default=None)
     parser.add_argument("--run-dir", type=str, default=None)
@@ -55,9 +76,7 @@ def main() -> None:
     if args.worker:
         if args.fold is None or args.run_tag is None:
             sys.exit("ERROR: --worker requires --fold and --run-tag")
-        if args.worker == "infer" and args.split is None:
-            sys.exit("ERROR: --worker infer requires --split")
-        _worker(stage=args.worker, fold_index=args.fold, seed=args.seed, split=args.split, gpu_id=args.gpu, run_tag=args.run_tag, run_dir=args.run_dir)
+        _worker(stage=args.worker, fold_index=args.fold, seed=args.seed, gpu_id=args.gpu, run_tag=args.run_tag, run_dir=args.run_dir)
     else:
         _scheduler()
 

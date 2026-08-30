@@ -1,3 +1,9 @@
+"""Swin-UNet backbone: a symmetric U-shape built from shifted-window transformers.
+
+Patch merging halves the token grid down the encoder, patch expanding doubles it back
+up the decoder, and skip connections are concatenated then linearly projected.
+"""
+
 from __future__ import annotations
 
 import torch
@@ -5,10 +11,23 @@ import torch.nn as nn
 import torch.nn.functional as functional
 
 from configuration.architectures import SwinUNetConfig
-from ..blocks                    import DropPath, OutputHeadsMixin, build_activation, initialize_weights, match_spatial_size, scaled_dot_product, tokens_to_feature_map
+from ..blocks                    import AttentionMath, DropPath, FeatureGeometry, LayerFactory, OutputHeadsMixin
 
 
 class WindowAttention(nn.Module):
+    """Multi-head self-attention restricted to non-overlapping square windows.
+
+    A learned relative position bias is added to the attention logits, indexed by
+    the pairwise offsets inside a window.
+
+    Attributes:
+        window_size                  : Side length of the attention window, in tokens.
+        num_heads                    : Number of attention heads.
+        head_dim                     : Channel width per head.
+        scale                        : Scaling factor applied to the query-key products.
+        relative_position_bias_table : Learned bias per relative offset and head.
+    """
+
     def __init__(
         self,
         embedding_dim:     int,
@@ -17,6 +36,18 @@ class WindowAttention(nn.Module):
         dropout:           float = 0.0,
         attention_dropout: float = 0.0,
     ):
+        """Builds the projections and the relative position bias lookup.
+
+        Args:
+            embedding_dim     : Token width.
+            window_size       : Side length of the attention window, in tokens.
+            num_heads         : Number of attention heads.
+            dropout           : Dropout probability on the output projection.
+            attention_dropout : Dropout probability on the attention weights.
+
+        Raises:
+            ValueError : If ``embedding_dim`` is not divisible by ``num_heads``.
+        """
         super().__init__()
         if embedding_dim % num_heads != 0:
             raise ValueError(f"embedding_dim ({embedding_dim}) must be divisible by num_heads ({num_heads})")
@@ -47,6 +78,15 @@ class WindowAttention(nn.Module):
         self.register_buffer("relative_position_index", relative_position_index)
 
     def forward(self, x: torch.Tensor, attention_mask: torch.Tensor | None = None) -> torch.Tensor:
+        """Attends within each window, adding the relative position and shift biases.
+
+        Args:
+            x              : Windowed tokens of shape (batch * num_windows, window_size ** 2, embedding_dim).
+            attention_mask : Additive mask of shape (num_windows, window_size ** 2, window_size ** 2) that blocks attention across the cyclic-shift seam, or None for an unshifted block.
+
+        Returns:
+            Windowed tokens of the same shape as ``x``.
+        """
         batch_windows, sequence_length, embedding_dim = x.shape
         qkv = self.query_key_value(x)
         qkv = qkv.reshape(batch_windows, sequence_length, 3, self.num_heads, self.head_dim)
@@ -66,13 +106,22 @@ class WindowAttention(nn.Module):
             mask_bias      = mask_bias.reshape(batch_windows, 1, sequence_length, sequence_length)
             attention_bias = attention_bias + mask_bias
 
-        attended  = scaled_dot_product(query, key, value, self.scale, self.attention_dropout, attention_bias).transpose(1, 2)
+        attended  = AttentionMath.scaled_dot_product(query, key, value, self.scale, self.attention_dropout, attention_bias).transpose(1, 2)
         attended  = attended.reshape(batch_windows, sequence_length, embedding_dim)
         projected = self.output_projection(attended)
         return self.output_dropout(projected)
 
 
 class SwinTransformerBlock(nn.Module):
+    """Transformer block applying window attention, optionally on a cyclically shifted grid.
+
+    Attributes:
+        window_size   : Side length of the attention window, in tokens.
+        shift_size    : Cyclic shift applied before windowing; 0 for a plain window block.
+        embedding_dim : Token width.
+        mask_cache    : Attention masks keyed by padded grid shape and device.
+    """
+
     def __init__(
         self,
         embedding_dim:     int,
@@ -85,10 +134,24 @@ class SwinTransformerBlock(nn.Module):
         ffn_activation:    str   = "gelu",
         drop_path_rate:    float = 0.0,
     ):
+        """Builds the window attention and feed-forward sublayers.
+
+        Args:
+            embedding_dim     : Token width.
+            num_heads         : Number of attention heads.
+            window_size       : Side length of the attention window, in tokens.
+            shift_size        : Cyclic shift in tokens applied before windowing.
+            mlp_ratio         : Hidden width of the feed-forward branch as a multiple of ``embedding_dim``.
+            dropout           : Dropout probability in the attention output and feed-forward path.
+            attention_dropout : Dropout probability on the attention weights.
+            ffn_activation    : Activation name resolved by ``LayerFactory.build_activation``.
+            drop_path_rate    : Stochastic depth probability for both residual branches.
+        """
         super().__init__()
         self.window_size   = window_size
         self.shift_size    = shift_size
         self.embedding_dim = embedding_dim
+        self.mask_cache    = {}
 
         self.norm_1 = nn.LayerNorm(embedding_dim)
         self.attention = WindowAttention(
@@ -103,13 +166,33 @@ class SwinTransformerBlock(nn.Module):
         hidden_dim     = int(embedding_dim * mlp_ratio)
         self.feed_forward = nn.Sequential(
             nn.Linear(embedding_dim, hidden_dim),
-            build_activation(ffn_activation),
+            LayerFactory.build_activation(ffn_activation),
             nn.Dropout(dropout),
             nn.Linear(hidden_dim, embedding_dim),
             nn.Dropout(dropout),
         )
 
+    def _attention_mask(self, height, width, device):
+        """Returns the cached shift mask for a padded token grid, building it on first use."""
+        key = (height, width, str(device))
+        if key not in self.mask_cache:
+            self.mask_cache[key] = self._create_attention_mask(height, width, device)
+
+        return self.mask_cache[key]
+
     def _create_attention_mask(self, height, width, device):
+        """Builds the additive mask that keeps shifted windows from mixing across the seam.
+
+        Args:
+            height : Padded token grid height.
+            width  : Padded token grid width.
+            device : Device on which the mask is allocated.
+
+        Returns:
+            Additive mask of shape (num_windows, window_size ** 2, window_size ** 2)
+            holding 0 for allowed pairs and -100 for blocked ones, or None when the
+            block is unshifted.
+        """
         if self.shift_size == 0:
             return None
 
@@ -146,6 +229,19 @@ class SwinTransformerBlock(nn.Module):
         return attention_mask
 
     def forward(self, x: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        """Applies shifted-window attention and the feed-forward branch.
+
+        The token grid is padded up to a whole number of windows and cropped back
+        afterwards, so arbitrary grid sizes are accepted.
+
+        Args:
+            x      : Token sequence of shape (batch, height * width, embedding_dim).
+            height : Token grid height.
+            width  : Token grid width.
+
+        Returns:
+            Token sequence of the same shape as ``x``.
+        """
         batch_size, sequence_length, channels = x.shape
         x_2d = x.view(batch_size, height, width, channels)
 
@@ -169,7 +265,7 @@ class SwinTransformerBlock(nn.Module):
         windows = windows.permute(0, 1, 3, 2, 4, 5).contiguous()
         windows = windows.view(-1, self.window_size * self.window_size, channels)
 
-        attention_mask   = self._create_attention_mask(padded_height, padded_width, x.device)
+        attention_mask   = self._attention_mask(padded_height, padded_width, x.device)
         shortcut         = x
         attended_windows = self.attention(self.norm_1(windows), attention_mask)
 
@@ -197,12 +293,31 @@ class SwinTransformerBlock(nn.Module):
         return x
 
 class PatchMerging(nn.Module):
+    """Halves the token grid by concatenating 2x2 neighbourhoods and projecting them."""
+
     def __init__(self, input_dim: int, output_dim: int):
+        """Builds the normalization and linear reduction over the four merged tokens.
+
+        Args:
+            input_dim  : Token width before merging.
+            output_dim : Token width after merging.
+        """
         super().__init__()
         self.reduction = nn.Linear(4 * input_dim, output_dim, bias=False)
         self.norm      = nn.LayerNorm(4 * input_dim)
 
     def forward(self, x: torch.Tensor, height: int, width: int) -> tuple[torch.Tensor, int, int]:
+        """Merges 2x2 token neighbourhoods, padding odd grids first.
+
+        Args:
+            x      : Token sequence of shape (batch, height * width, input_dim).
+            height : Token grid height.
+            width  : Token grid width.
+
+        Returns:
+            Tuple of the merged tokens of shape (batch, new_height * new_width, output_dim)
+            and the halved grid height and width.
+        """
         batch_size, _, channels = x.shape
         x = x.view(batch_size, height, width, channels)
         if height % 2 != 0 or width % 2 != 0:
@@ -224,13 +339,37 @@ class PatchMerging(nn.Module):
 
 
 class PatchExpanding(nn.Module):
+    """Doubles the token grid by expanding each token into a 2x2 neighbourhood.
+
+    Attributes:
+        output_dim : Token width after expansion.
+    """
+
     def __init__(self, input_dim: int, output_dim: int):
+        """Builds the linear expansion and the closing normalization.
+
+        Args:
+            input_dim  : Token width before expansion.
+            output_dim : Token width after expansion.
+        """
         super().__init__()
         self.expand     = nn.Linear(input_dim, 4 * output_dim, bias=False)
         self.norm       = nn.LayerNorm(output_dim)
         self.output_dim = output_dim
 
     def forward(self, x: torch.Tensor, height: int, width: int) -> tuple[torch.Tensor, int, int]:
+        """Expands every token into four, doubling both grid axes.
+
+        Args:
+            x      : Token sequence of shape (batch, height * width, input_dim).
+            height : Token grid height.
+            width  : Token grid width.
+
+        Returns:
+            Tuple of the expanded tokens of shape
+            (batch, height * 2 * width * 2, output_dim) and the doubled grid height
+            and width.
+        """
         batch_size, _, _ = x.shape
         x = self.expand(x)
         x = x.view(batch_size, height, width, 4, self.output_dim)
@@ -243,6 +382,8 @@ class PatchExpanding(nn.Module):
 
 
 class SwinStage(nn.Module):
+    """Stack of Swin blocks alternating unshifted and shifted window attention."""
+
     def __init__(
         self,
         embedding_dim:     int,
@@ -255,6 +396,19 @@ class SwinStage(nn.Module):
         ffn_activation:    str                = "gelu",
         drop_path_rates:   list[float] | None = None,
     ):
+        """Builds ``depth`` blocks, shifting every second one by half a window.
+
+        Args:
+            embedding_dim     : Token width.
+            depth             : Number of blocks in the stage.
+            num_heads         : Number of attention heads per block.
+            window_size       : Side length of the attention window, in tokens.
+            mlp_ratio         : Hidden width of the feed-forward branch as a multiple of ``embedding_dim``.
+            dropout           : Dropout probability in the attention output and feed-forward path.
+            attention_dropout : Dropout probability on the attention weights.
+            ffn_activation    : Activation name used in the feed-forward branch.
+            drop_path_rates   : Per-block stochastic depth probabilities, or None for no drop path.
+        """
         super().__init__()
         self.blocks = nn.ModuleList()
         for block_index in range(depth):
@@ -275,13 +429,38 @@ class SwinStage(nn.Module):
             )
 
     def forward(self, x: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        """Runs every block of the stage in sequence.
+
+        Args:
+            x      : Token sequence of shape (batch, height * width, embedding_dim).
+            height : Token grid height.
+            width  : Token grid width.
+
+        Returns:
+            Token sequence of the same shape as ``x``.
+        """
         for block in self.blocks:
             x = block(x, height, width)
         return x
 
 
 class SwinUNet(nn.Module, OutputHeadsMixin):
+    """Swin-UNet backbone predicting per-pixel Gaussian mixture parameters.
+
+    Attributes:
+        config             : Architecture configuration driving widths, depths and head choice.
+        embedding_channels : Channel width of the decoded embedding fed to the output head.
+    """
+
     def __init__(self, config: SwinUNetConfig | None = None):
+        """Builds the patch embedding, the encoder and decoder stages and the output head.
+
+        Args:
+            config : Architecture configuration; defaults to ``SwinUNetConfig()``.
+
+        Raises:
+            ValueError : If ``patch_size`` or ``window_size`` is not positive, if ``depths`` is empty or differs in length from ``num_heads``, or if any stage width is not divisible by that stage's head count.
+        """
         super().__init__()
         if config is None:
             config = SwinUNetConfig()
@@ -382,12 +561,21 @@ class SwinUNet(nn.Module, OutputHeadsMixin):
         self.embedding_channels = dims[0]
         self._build_output_head()
 
-        initialize_weights(module=self, mode=config.init_mode)
+        LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
     def _head_activation(self) -> str:
+        """Returns the activation name used inside the output head."""
         return self.config.ffn_activation
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
+        """Returns the embedding at input resolution.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Embedding of shape (batch, embedding_channels, height, width).
+        """
         original_input = x
         x = self.patch_embed(x)
         batch_size, channels, grid_height, grid_width = x.shape
@@ -413,9 +601,9 @@ class SwinUNet(nn.Module, OutputHeadsMixin):
             x, height, width = upsample(x, height, width)
 
             if x.shape[1] != skip_tokens.shape[1]:
-                feature_map = tokens_to_feature_map(x, height, width)
-                skip_map    = tokens_to_feature_map(skip_tokens, skip_height, skip_width)
-                feature_map = match_spatial_size(source=feature_map, reference=skip_map)
+                feature_map = FeatureGeometry.tokens_to_feature_map(x, height, width)
+                skip_map    = FeatureGeometry.tokens_to_feature_map(skip_tokens, skip_height, skip_width)
+                feature_map = FeatureGeometry.match_spatial_size(source=feature_map, reference=skip_map)
                 height, width = skip_height, skip_width
                 x = feature_map.flatten(2).transpose(1, 2)
 
@@ -423,9 +611,19 @@ class SwinUNet(nn.Module, OutputHeadsMixin):
             x = skip_projection(x)
             x = decoder_stage(x, height, width)
 
-        feature_map = tokens_to_feature_map(x, height, width)
+        feature_map = FeatureGeometry.tokens_to_feature_map(x, height, width)
         feature_map = self.final_upsample(feature_map)
-        return match_spatial_size(source=feature_map, reference=original_input)
+        return FeatureGeometry.match_spatial_size(source=feature_map, reference=original_input)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Maps the input stack to per-pixel outputs through the configured head.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Tensor of shape (batch, out_channels, height, width) holding the
+            interleaved Gaussian parameters, or the raw embedding when the head
+            is ``none``.
+        """
         return self._head_forward(self.encode_decode(x))
