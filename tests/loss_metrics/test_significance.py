@@ -89,3 +89,22 @@ def test_significance_vs_leader_missing_leader_raises():
     """Verifies naming a leader absent from the per-seed data raises."""
     with pytest.raises(KeyError):
         SignificanceVsLeader().compute({"a": {"seed0": 1.0}}, "missing")
+
+
+def test_paired_test_reports_cohens_d():
+    """The paired effect size is the mean difference over the sample spread of the differences."""
+    a = [1.0, 2.0, 3.0, 4.0]
+    b = [0.5, 1.0, 2.0, 3.5]
+
+    outcome = PairedPermutationTest().test(a, b)
+    diffs   = np.array(a) - np.array(b)
+
+    assert outcome["cohen_d"] == pytest.approx(float(diffs.mean() / diffs.std(ddof=1)))
+
+
+def test_paired_test_cohens_d_none_on_constant_differences():
+    """A constant paired difference has zero spread, so the effect size is undefined."""
+    outcome = PairedPermutationTest().test([2.0, 3.0, 4.0], [1.0, 2.0, 3.0])
+
+    assert outcome["mean_diff"] == pytest.approx(1.0)
+    assert outcome["cohen_d"]   is None

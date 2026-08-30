@@ -186,6 +186,7 @@
       "summary": "Assembles the patch dataset and dataloaders from a preprocessed dataset run for backbone training and inference",
       "fields": {
         "preprocessing_run_directory": "path to the preprocessed run directory whose stack, parameters, and metadata the Layout loads from",
+        "fingerprint_dataset": "whether the training run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance; propagated from paths.fingerprint_dataset by the config factory",
         "split_regions": "SplitRegions of train/val/test CropRegion(s) partitioning the scene spatially before patching",
         "parameters_path": "optional override path to the run's extracted acquisition parameters file, left None it is never auto-derived from preprocessing_run_directory and Layout will fail to resolve it",
         "secondary_labels": "ordered tuple of secondary-channel identifiers to select from the stack, None keeps all available channels",
@@ -2556,6 +2557,20 @@
         "n_col_probes": "Number of probe pixels along range, spread evenly across the split region",
         "fps": "Frames per second of the rendered GIFs (one frame per epoch snapshot)",
         "figure_style": "PlotBase figure style the frames are rendered with (report or paper)"
+      }
+    },
+    "diagnostics::ResultTableEntryConfig": {
+      "summary": "Entry config that exports one table row per run with finished inference: a CSV with every scalar metric plus LaTeX and markdown tables with the selected columns",
+      "fields": {
+        "runs_dir": "Root directory scanned recursively for runs holding a finished inference; each run becomes one table row",
+        "run_filter": "Substrings a run's relative name must contain to be exported; empty exports every discovered run",
+        "inference_subdir": "Fixed inference stamp to read metrics from; empty picks each run's latest inference holding a metrics file",
+        "metrics_filename": "Metrics filename read inside the resolved inference stamp",
+        "metrics": "Metric keys forming the LaTeX and markdown columns, in order; empty renders every scalar key seen across the runs",
+        "sort_by": "Metric key the rows are ordered by; empty keeps discovery order",
+        "ascending": "Whether the sort_by ordering is ascending (best-first for losses) rather than descending",
+        "precision": "Significant digits used for the LaTeX and markdown cells; the CSV always keeps full precision",
+        "output_dir": "Directory receiving results_table.csv, results_table.tex and results_table.md"
       }
     },
     "diagnostics::PaperFigurePackConfig": {

@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from configuration.inference import InferenceConfig
-from tools.data.io           import FileIO
-from tools.runtime.run_tag   import RunTag
+from configuration.inference           import InferenceConfig
+from tools.data.io                     import FileIO
+from tools.runtime.environment_capture import EnvironmentCapture
+from tools.runtime.run_tag             import RunTag
 
 
 class InferenceMetadata:
@@ -46,7 +47,7 @@ class InferenceMetadata:
         return self.figures_dir / f"{name}.{ext}"
 
     def create_dirs(self) -> None:
-        """Creates the output, figure, animation, log and cube directories."""
+        """Creates the output, figure, animation, log and cube directories and records the environment snapshot."""
         FileIO.ensure_dirs(
             self.output_dir,
             self.figures_dir,
@@ -54,3 +55,4 @@ class InferenceMetadata:
             self.logs_dir,
             self.cube_dir,
         )
+        FileIO.save_json(EnvironmentCapture.snapshot(), self.output_dir / "environment.json")

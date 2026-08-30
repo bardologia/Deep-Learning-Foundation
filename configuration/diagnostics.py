@@ -806,3 +806,33 @@ class PaperFigurePackConfig:
     patterns : List[str] = field(default_factory=lambda: ["pixel_maps/*", "param_scatter/*", "stratified/*", "profiles/*", "data_consistency/*"])
 
     output_dir : Path = Path("results/paper_figures")
+
+
+@dataclass
+class ResultTableEntryConfig:
+    """Entry configuration exporting run metrics as CSV, LaTeX and markdown tables.
+
+    Attributes:
+        runs_dir         : Root directory holding the run folders.
+        run_filter       : Substrings selecting the runs to export; empty means all.
+        inference_subdir : Explicit inference stamp to read; empty picks each run's latest.
+        metrics_filename : File holding the per-run metrics inside an inference stamp.
+        metrics          : Metric keys forming the LaTeX and markdown columns; empty exports every scalar key.
+        sort_by          : Metric key ordering the rows; empty keeps discovery order.
+        ascending        : Whether the sort orders ascending.
+        precision        : Significant digits used in the LaTeX and markdown cells.
+        output_dir       : Destination directory of the written tables.
+    """
+
+    runs_dir   : Path      = Path("runs/backbone")
+    run_filter : List[str] = field(default_factory=list)
+
+    inference_subdir : str = ""
+    metrics_filename : str = "metrics.json"
+
+    metrics   : tuple = ()
+    sort_by   : str   = ""
+    ascending : bool  = True
+    precision : int   = 4
+
+    output_dir : Path = Path("results/tables")

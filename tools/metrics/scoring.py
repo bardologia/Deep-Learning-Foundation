@@ -48,6 +48,27 @@ class SeedAggregation:
         return mean, std
 
     @staticmethod
+    def confidence_interval(values: list[float], level: float = 0.95) -> tuple[float, float] | None:
+        """Returns the two-sided t-based confidence interval of the mean.
+
+        Args:
+            values : Per-seed metric values.
+            level  : Coverage of the interval, between zero and one.
+
+        Returns:
+            The (low, high) interval, or None for fewer than two values.
+        """
+        if len(values) < 2:
+            return None
+
+        from scipy import stats
+
+        mean = float(np.mean(values))
+        half = float(stats.t.ppf(0.5 + level / 2.0, len(values) - 1)) * float(np.std(values, ddof=1)) / math.sqrt(len(values))
+
+        return (mean - half, mean + half)
+
+    @staticmethod
     def aggregate(dicts: list[dict], keys: list[str]) -> tuple[dict, dict]:
         """Aggregates the requested metric keys across per-seed metric mappings.
 
@@ -71,6 +92,34 @@ class SeedAggregation:
             means[key], stds[key] = SeedAggregation.mean_std(values)
 
         return means, stds
+
+    @staticmethod
+    def intervals(dicts: list[dict], keys: list[str], level: float = 0.95) -> tuple[dict, dict]:
+        """Returns the confidence interval and finite-sample count per metric key.
+
+        Args:
+            dicts : One metric mapping per seed.
+            keys  : Metric keys to aggregate.
+            level : Coverage of the intervals, between zero and one.
+
+        Returns:
+            Tuple of the interval mapping (absent for keys with fewer than two finite values) and the finite-count mapping (absent for keys with none).
+        """
+        intervals, counts = {}, {}
+
+        for key in keys:
+            values = [FiniteScalar.coerce(d.get(key)) for d in dicts]
+            values = [value for value in values if value is not None]
+
+            if not values:
+                continue
+
+            counts[key] = len(values)
+            interval    = SeedAggregation.confidence_interval(values, level)
+            if interval is not None:
+                intervals[key] = interval
+
+        return intervals, counts
 
 
 class R2:

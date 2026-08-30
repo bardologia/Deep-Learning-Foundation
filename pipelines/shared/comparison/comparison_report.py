@@ -101,6 +101,14 @@ class ComparisonReportBase:
         mark = "*" if p < 0.05 else ""
         return f"{p:.3g}{mark}"
 
+    @staticmethod
+    def _effect_cell(entry: dict | None) -> str:
+        """Returns the paired Cohen's d cell, n/a when the effect size is undefined."""
+        if entry is None or entry.get("cohen_d") is None:
+            return "n/a"
+
+        return f"{entry['cohen_d']:.2f}"
+
     def _rank_section(self, entity: str, title: str, intro: str, metrics: list[tuple[str, str]], scored: list[TrialRecord]) -> list[str]:
         """Renders a flat ranking table with per-metric ranks and significance.
 
@@ -128,6 +136,7 @@ class ComparisonReportBase:
         header = ["#", entity, "Score", "Mean rank", "Wins", "Δ", *[label for _, label in metrics]]
         if significance is not None:
             header.append(f"p vs #1 ({metrics[0][1]})")
+            header.append(f"d vs #1 ({metrics[0][1]})")
 
         table = MarkdownTable(header)
 
@@ -143,6 +152,7 @@ class ComparisonReportBase:
 
             if significance is not None:
                 cells.append("—" if position == 1 else self._significance_cell(significance.get(name)))
+                cells.append("—" if position == 1 else self._effect_cell(significance.get(name)))
 
             table.add_row(
                 position,
