@@ -180,6 +180,11 @@ class ScriptCatalog:
             "category"  : "Analysis",
             "purpose"   : "Pack inference figures from selected runs into the publication figures directory under stable names (<run>__<figure-path>) with a JSON manifest of every source. Render in paper style first by running inference with figure_style=paper; the pack then feeds a paper directory without hand-copying.",
         },
+        "profile_training": {
+            "title"     : "Profile Training Steps",
+            "category"  : "Analysis",
+            "purpose"   : "Record full forward, backward and optimizer steps of one model family under torch.profiler: a chrome trace to open in chrome://tracing or Perfetto, a per-operator time table and a machine-readable summary of the top operators.",
+        },
         "export_result_tables": {
             "title"     : "Export Result Tables",
             "category"  : "Analysis",
@@ -218,6 +223,7 @@ class ScriptCatalog:
         "export_tensorboard_plots"        : "exports",
         "export_paper_figures"            : "exports",
         "export_result_tables"            : "exports",
+        "profile_training"                : "diagnostics",
         "collect_reports"                 : "exports",
         "mail_experiment_reports"         : "exports",
     }

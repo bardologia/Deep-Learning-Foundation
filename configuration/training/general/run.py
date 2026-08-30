@@ -71,6 +71,10 @@ class TrainingQueueConfig:
         log_all_losses              : Whether every loss term is logged, not just the total.
         log_debug                   : Whether per-step debug logging is emitted.
         use_amp                     : Whether mixed-precision autocast wraps the forward pass.
+        compile_model               : Whether the model forward is compiled with torch.compile.
+        compile_mode                : torch.compile mode: "default", "reduce-overhead" or "max-autotune".
+        channels_last               : Whether the model and 4-D batches use the channels_last memory format.
+        activation_checkpointing    : fnmatch patterns of submodule names wrapped in gradient checkpointing; empty disables it.
         gradient_accumulation_steps : Batches accumulated before an optimizer step.
         abort_on_nonfinite_loss     : Whether a NaN or inf loss aborts the run.
         use_ema                     : Whether an exponential moving average of the weights is tracked.
@@ -117,6 +121,10 @@ class TrainingQueueConfig:
     log_debug            : bool       = False
 
     use_amp                     : bool  = False
+    compile_model               : bool  = False
+    compile_mode                : str   = "default"
+    channels_last               : bool  = False
+    activation_checkpointing    : tuple = ()
     gradient_accumulation_steps : int   = 1
     abort_on_nonfinite_loss     : bool  = True
     use_ema                     : bool  = False

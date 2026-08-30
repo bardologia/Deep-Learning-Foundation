@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from tools.monitoring.tracker          import Tracker
 from tools.monitoring.resource_monitor import ResourceMonitor
 
+from tools.training.activation_checkpoint import ActivationCheckpointing
 from tools.training.aggregation      import MetricAggregator
 from tools.training.distributed      import DistributedContext
 from tools.training.scheduling       import Scheduler, Warmup
@@ -92,6 +93,16 @@ class BaseTrainer:
         self.model  = model.to(self.device)
         self.z_axis = torch.tensor(z_axis, device=self.device, dtype=torch.float32)
 
+        self.channels_last = config.training.channels_last
+        if self.channels_last:
+            self.model = self.model.to(memory_format=torch.channels_last)
+
+        if config.training.activation_checkpointing:
+            ActivationCheckpointing.apply(self.model, tuple(config.training.activation_checkpointing), self.logger)
+
+        if config.training.compile_model:
+            self.model.forward = torch.compile(self.model.forward, mode=config.training.compile_mode)
+
         self.distributed.broadcast_parameters(self.model)
 
         self.epochs                  = config.training.epochs
@@ -162,6 +173,9 @@ class BaseTrainer:
             "Validation frequency"     : f"every {self.validation_frequency} epochs",
             "Gradient accumulation"    : f"{self.accumulation_steps} batches per optimizer step",
             "AMP (bfloat16 autocast)"  : self.use_amp,
+            "torch.compile"            : f"enabled (mode {self.config.training.compile_mode})" if self.config.training.compile_model else "disabled",
+            "channels_last"            : self.channels_last,
+            "Activation checkpointing" : f"patterns {tuple(self.config.training.activation_checkpointing)}" if self.config.training.activation_checkpointing else "disabled",
             "EMA"                      : f"enabled (decay {self.ema.decay}, decay warmup {'min(decay, (1+t)/(10+t))' if self.ema.warmup else 'off'})" if self.ema.enabled else "disabled",
             "Restore best at end"      : self.restore_best,
             "Resume"                   : self.resume,
@@ -375,6 +389,13 @@ class BaseTrainer:
             "z_axis" : self.z_axis.cpu().numpy(),
         }
 
+    def _apply_memory_format(self, batch):
+        """Returns the batch with every 4-D tensor in channels_last layout, untouched when the toggle is off."""
+        if not self.channels_last:
+            return batch
+
+        return type(batch)(item.contiguous(memory_format=torch.channels_last) if torch.is_tensor(item) and item.dim() == 4 else item for item in batch)
+
     def micro_step(self, batch, window_len: int) -> tuple[dict, float]:
         """Runs one micro-batch under autocast, scales its loss by the accumulation window and backpropagates it.
 
@@ -386,6 +407,8 @@ class BaseTrainer:
             Tuple of the loss dictionary and the window-scaled loss as a float,
             NaN when the loss was non-finite and no backward pass ran.
         """
+        batch = self._apply_memory_format(batch)
+
         with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
             loss_dict = self._compute_loss(batch)
 
@@ -567,6 +590,8 @@ class BaseTrainer:
             _task = _prog.add_task(f"[section]Eval {stage}[/section] - epoch {epoch + 1}/{self.epochs}", total=len(loader))
 
             for batch in loader:
+                batch = self._apply_memory_format(batch)
+
                 with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16, enabled=self.use_amp):
                     loss_dict = self._eval_step(batch)
                 loss = loss_dict["total_loss"]

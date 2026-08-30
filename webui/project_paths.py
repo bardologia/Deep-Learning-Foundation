@@ -165,6 +165,7 @@ class ProjectPaths:
         "animate_training"                : "analysis",
         "export_paper_figures"            : "analysis",
         "export_result_tables"            : "analysis",
+        "profile_training"                : "analysis",
         "export_tensorboard_plots"        : "analysis",
         "collect_reports"                 : "analysis",
         "mail_experiment_reports"         : "analysis",
