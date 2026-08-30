@@ -43,8 +43,9 @@ class PairedPermutationTest:
             b : Metric values of the second trial, in the same seed order.
 
         Returns:
-            Mapping with the observed "mean_diff", the two-sided "p_value" and
-            the number of "n_pairs".
+            Mapping with the observed "mean_diff", the two-sided "p_value", the
+            number of "n_pairs" and "cohen_d", the paired effect size
+            mean_diff / std(diffs), None when the differences have zero spread.
 
         Raises:
             ValueError : If the samples are not one-dimensional and of equal length, or if fewer than two pairs are given.
@@ -59,6 +60,8 @@ class PairedPermutationTest:
 
         diffs    = a - b
         observed = diffs.mean()
+        spread   = float(diffs.std(ddof=1))
+        cohen_d  = float(observed / spread) if spread > 0.0 else None
 
         if a.size <= self.EXACT_MAX_PAIRS:
             signs = np.asarray(list(product((-1.0, 1.0), repeat=a.size)))
@@ -69,7 +72,7 @@ class PairedPermutationTest:
             perms = (signs * diffs).mean(axis=1)
             p     = float(((np.abs(perms) >= abs(observed) - 1e-15).sum() + 1) / (self.n_permutations + 1))
 
-        return {"mean_diff": float(observed), "p_value": p, "n_pairs": int(a.size)}
+        return {"mean_diff": float(observed), "p_value": p, "n_pairs": int(a.size), "cohen_d": cohen_d}
 
 
 class HolmBonferroni:
@@ -122,7 +125,7 @@ class SignificanceVsLeader:
 
         Returns:
             Mapping keyed by trial name with "p_value", "p_adjusted",
-            "n_pairs" and "mean_diff"; the first, second and fourth are None
+            "n_pairs", "mean_diff" and "cohen_d"; all but "n_pairs" are None
             when fewer than two shared seeds carry a value.
 
         Raises:
@@ -143,13 +146,13 @@ class SignificanceVsLeader:
             paired = [(values[seed], leader_values[seed]) for seed in common if values[seed] is not None and leader_values[seed] is not None]
 
             if len(paired) < 2:
-                results[name] = {"p_value": None, "p_adjusted": None, "n_pairs": len(paired), "mean_diff": None}
+                results[name] = {"p_value": None, "p_adjusted": None, "n_pairs": len(paired), "mean_diff": None, "cohen_d": None}
                 continue
 
             a, b          = zip(*paired)
             outcome       = self.test.test(list(a), list(b))
             raw[name]     = outcome["p_value"]
-            results[name] = {"p_value": outcome["p_value"], "p_adjusted": None, "n_pairs": outcome["n_pairs"], "mean_diff": outcome["mean_diff"]}
+            results[name] = {"p_value": outcome["p_value"], "p_adjusted": None, "n_pairs": outcome["n_pairs"], "mean_diff": outcome["mean_diff"], "cohen_d": outcome["cohen_d"]}
 
         for name, p_adj in HolmBonferroni.adjust(raw).items():
             results[name]["p_adjusted"] = p_adj

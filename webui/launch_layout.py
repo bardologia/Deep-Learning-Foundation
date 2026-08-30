@@ -1435,6 +1435,27 @@ class LaunchLayout:
                 ]},
             ],
         },
+        "export_result_tables": {
+            "sections": [
+                {"key": "config", "title": "Configuration", "panels": [
+                    {"kind": "fields", "groups": [
+                        {"title": "Runs", "fields": [
+                            "runs_dir",
+                            {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir"}},
+                            "inference_subdir",
+                            "metrics_filename",
+                        ]},
+                        {"title": "Table", "fields": [
+                            {"path": "metrics", "widget": {"kind": "multi", "placeholder": "add metric key, Enter"}},
+                            "sort_by",
+                            "ascending",
+                            {"path": "precision", "widget": {"kind": "number", "int": True, "min": 1, "max": 12, "presets": [3, 4, 6]}},
+                            "output_dir",
+                        ]},
+                    ]},
+                ]},
+            ],
+        },
         "collect_reports": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [

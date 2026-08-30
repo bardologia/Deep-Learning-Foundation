@@ -532,16 +532,18 @@ class Predictor:
         pixel_cos      = pixel_maps["cos"]
         pixel_peak_idx = pixel_maps["peak"].astype(np.int32)
 
+        self.cube_dir.mkdir(parents=True, exist_ok=True)
+        np.save(self.cube_dir / "pixel_mse.npy",  pixel_mse)
+        np.save(self.cube_dir / "pixel_mae.npy",  pixel_mae)
+        np.save(self.cube_dir / "pixel_r2.npy",   pixel_r2)
+        np.save(self.cube_dir / "pixel_cos.npy",  pixel_cos)
+        np.save(self.cube_dir / "pixel_peak.npy", pixel_peak_idx)
+
         if self.save_cubes:
             np.save(self.cube_dir / "pred_curves.npy", pred_curves_cube)
             np.save(self.cube_dir / "gt_curves.npy",   gt_curves_cube)
             np.save(self.cube_dir / "params_pred.npy", params_pred_cube)
             np.save(self.cube_dir / "params_gt.npy",   params_gt_cube)
-            np.save(self.cube_dir / "pixel_mse.npy",   pixel_mse)
-            np.save(self.cube_dir / "pixel_mae.npy",   pixel_mae)
-            np.save(self.cube_dir / "pixel_r2.npy",    pixel_r2)
-            np.save(self.cube_dir / "pixel_cos.npy",   pixel_cos)
-            np.save(self.cube_dir / "pixel_peak.npy",  pixel_peak_idx)
             for tmp in self.cube_dir.glob("_tmp_*.npy"):
                 tmp.unlink(missing_ok=True)
 

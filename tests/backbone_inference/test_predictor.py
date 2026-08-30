@@ -281,6 +281,20 @@ def test_predictor_run_inference_shapes(tmp_path):
     assert np.isfinite(result.pixel_mse).all()
 
 
+def test_predictor_writes_pixel_maps_without_save_cubes(tmp_path):
+    """The per-pixel error maps land on disk even when the heavy cubes are not saved."""
+    run       = _build_run(n_rows=16, n_cols=16)
+    predictor = _make_predictor(tmp_path, run)
+
+    predictor.run_inference()
+
+    for name in ("pixel_mse", "pixel_mae", "pixel_r2", "pixel_cos", "pixel_peak"):
+        saved = np.load(predictor.cube_dir / f"{name}.npy")
+        assert saved.shape == (16, 16)
+
+    assert not (predictor.cube_dir / "pred_curves.npy").exists()
+
+
 def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
     """Ground-truth curves render the analytic Gaussian of the ground-truth parameters."""
     run       = _build_run(n_rows=16, n_cols=16)

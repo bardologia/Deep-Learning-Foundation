@@ -122,6 +122,25 @@ def test_report_aggregates_mean_and_sample_std(tmp_path):
     assert "split" not in payload["mean"]
 
 
+def test_report_records_confidence_intervals_and_counts(tmp_path):
+    """The metrics payload carries a symmetric t-based 95% interval around the mean and the finite-sample count."""
+    group = tmp_path / "group"
+    runs  = [
+        _seed_run(group, "seed0", {"curve_mse_gt": 1.0}),
+        _seed_run(group, "seed1", {"curve_mse_gt": 3.0}),
+    ]
+
+    _report(group, runs).run()
+
+    payload  = json.loads((group / "inference" / "stamp" / "metrics.json").read_text(encoding="utf-8"))
+    low, high = payload["ci95"]["curve_mse_gt"]
+
+    assert payload["n"]["curve_mse_gt"] == 2
+    assert low < 2.0 < high
+    assert (low + high) / 2.0 == pytest.approx(2.0)
+    assert high - low == pytest.approx(2.0 * 12.7062, rel=1e-3)
+
+
 def test_report_markdown_has_per_seed_columns_stamps_and_links(tmp_path):
     """The markdown table lists per-seed columns, the inference stamp and relative links to per-seed reports."""
     group = tmp_path / "group"

@@ -180,6 +180,11 @@ class ScriptCatalog:
             "category"  : "Analysis",
             "purpose"   : "Pack inference figures from selected runs into the publication figures directory under stable names (<run>__<figure-path>) with a JSON manifest of every source. Render in paper style first by running inference with figure_style=paper; the pack then feeds a paper directory without hand-copying.",
         },
+        "export_result_tables": {
+            "title"     : "Export Result Tables",
+            "category"  : "Analysis",
+            "purpose"   : "Export one table row per run with finished inference: a CSV carrying every scalar metric at full precision, plus LaTeX (booktabs) and markdown tables with the selected metric columns at fixed precision, ready to paste into a paper.",
+        },
         "collect_reports": {
             "title"     : "Collect Reports",
             "category"  : "Analysis",
@@ -212,6 +217,7 @@ class ScriptCatalog:
         "animate_training"                : "diagnostics",
         "export_tensorboard_plots"        : "exports",
         "export_paper_figures"            : "exports",
+        "export_result_tables"            : "exports",
         "collect_reports"                 : "exports",
         "mail_experiment_reports"         : "exports",
     }

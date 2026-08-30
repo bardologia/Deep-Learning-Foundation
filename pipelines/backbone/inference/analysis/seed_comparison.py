@@ -140,17 +140,22 @@ class SeedComparisonReport:
         """Returns each seed's metrics dictionary, in seed order."""
         return [FileIO.load_json(inference_dir / self.metrics_filename) for inference_dir in self.inference_dirs]
 
-    def _aggregate(self, per_seed: list[dict]) -> tuple[dict, dict]:
-        """Returns the across-seed means and sample standard deviations of every metric key."""
-        keys = sorted({key for metrics in per_seed for key in metrics})
-        return SeedAggregation.aggregate(per_seed, keys)
+    def _aggregate(self, per_seed: list[dict]) -> tuple[dict, dict, dict, dict]:
+        """Returns the across-seed means, sample standard deviations, 95% confidence intervals and finite-sample counts of every metric key."""
+        keys        = sorted({key for metrics in per_seed for key in metrics})
+        means, stds = SeedAggregation.aggregate(per_seed, keys)
+        cis, counts = SeedAggregation.intervals(per_seed, keys)
 
-    def _write_metrics(self, means: dict, stds: dict) -> Path:
+        return means, stds, cis, counts
+
+    def _write_metrics(self, means: dict, stds: dict, cis: dict, counts: dict) -> Path:
         """Writes the aggregated metrics JSON for the seed group.
 
         Args:
-            means : Across-seed mean per metric key.
-            stds  : Across-seed sample standard deviation per metric key.
+            means  : Across-seed mean per metric key.
+            stds   : Across-seed sample standard deviation per metric key.
+            cis    : 95% t-based confidence interval of the mean per metric key.
+            counts : Number of seeds reporting a finite value per metric key.
 
         Returns:
             The written JSON path.
@@ -161,6 +166,8 @@ class SeedComparisonReport:
             "seed_inference" : {seed: inference_dir.name for seed, inference_dir in zip(self.seeds, self.inference_dirs)},
             "mean"           : means,
             "std"            : stds,
+            "ci95"           : {key: list(interval) for key, interval in cis.items()},
+            "n"              : counts,
         }
 
         if self.disagreement is not None:
@@ -201,13 +208,22 @@ class SeedComparisonReport:
         """Returns the metric keys grouped into report subsections, with numbering stripped."""
         return [(title.split(" ", 1)[1], keys) for title, keys in Report.group_metric_keys(means)]
 
-    def _build_metrics_section(self, per_seed: list[dict], means: dict, stds: dict) -> list[str]:
+    def _ci_cell(self, interval: tuple[float, float] | None) -> str:
+        """Returns the "[low, high]" interval cell, or a dash when no interval exists."""
+        if interval is None:
+            return "—"
+
+        return f"[{self._fmt(interval[0])}, {self._fmt(interval[1])}]"
+
+    def _build_metrics_section(self, per_seed: list[dict], means: dict, stds: dict, cis: dict, counts: dict) -> list[str]:
         """Returns the markdown lines of the grouped aggregated-metrics tables.
 
         Args:
             per_seed : Each seed's raw metrics dictionary, in seed order.
             means    : Across-seed mean per metric key.
             stds     : Across-seed sample standard deviation per metric key.
+            cis      : 95% confidence interval of the mean per metric key.
+            counts   : Number of seeds reporting a finite value per metric key.
 
         Returns:
             The markdown lines of the section.
@@ -215,16 +231,17 @@ class SeedComparisonReport:
         out = ["\n## 2. Aggregated metrics\n"]
         out.append(
             f"Every scalar metric aggregated over the {len(self.seeds)} seed runs: the cell is the across-seed mean, "
-            "the ± term the across-seed sample standard deviation (ddof = 1). Per-seed columns show each run's raw value.\n"
+            "the ± term the across-seed sample standard deviation (ddof = 1), the interval a t-based 95% confidence "
+            "interval of the mean, and n the number of seeds reporting a finite value. Per-seed columns show each run's raw value.\n"
         )
 
         for index, (title, keys) in enumerate(self._grouped_keys(means), start=1):
             out.append(f"\n### 2.{index} {title}\n")
 
-            table = MarkdownTable(("Metric", "Mean ± seed std", *self.seeds))
+            table = MarkdownTable(("Metric", "Mean ± seed std", "95% CI", "n", *self.seeds))
             for key in keys:
                 per_seed_cells = [self._fmt(metrics.get(key)) if metrics.get(key) is not None else None for metrics in per_seed]
-                table.add_row(f"`{key}`", self._mean_std_cell(means[key], stds.get(key)), *per_seed_cells)
+                table.add_row(f"`{key}`", self._mean_std_cell(means[key], stds.get(key)), self._ci_cell(cis.get(key)), str(counts.get(key, 0)), *per_seed_cells)
 
             out.append("\n".join(table.render()))
             out.append("")
@@ -266,13 +283,15 @@ class SeedComparisonReport:
 
         return out
 
-    def _write_report(self, per_seed: list[dict], means: dict, stds: dict) -> Path:
+    def _write_report(self, per_seed: list[dict], means: dict, stds: dict, cis: dict, counts: dict) -> Path:
         """Assembles and writes the markdown seed-comparison report.
 
         Args:
             per_seed : Each seed's raw metrics dictionary, in seed order.
             means    : Across-seed mean per metric key.
             stds     : Across-seed sample standard deviation per metric key.
+            cis      : 95% confidence interval of the mean per metric key.
+            counts   : Number of seeds reporting a finite value per metric key.
 
         Returns:
             The written report path.
@@ -280,10 +299,10 @@ class SeedComparisonReport:
         lines = ["# ML Template Seed-Comparison Report", ""]
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")
-        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's existing inference (no inference re-run). Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std.")
+        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's existing inference (no inference re-run). Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std with a 95% confidence interval.")
 
         lines += self._build_seed_runs_section()
-        lines += self._build_metrics_section(per_seed, means, stds)
+        lines += self._build_metrics_section(per_seed, means, stds, cis, counts)
 
         if self.disagreement is not None:
             lines += self._build_disagreement_section()
@@ -302,9 +321,11 @@ class SeedComparisonReport:
         FileIO.ensure_dirs(self.output_dir)
 
         per_seed     = self._load_metrics()
-        means, stds  = self._aggregate(per_seed)
-        metrics_path = self._write_metrics(means, stds)
-        report_path  = self._write_report(per_seed, means, stds)
+
+        means, stds, cis, counts = self._aggregate(per_seed)
+
+        metrics_path = self._write_metrics(means, stds, cis, counts)
+        report_path  = self._write_report(per_seed, means, stds, cis, counts)
 
         self.logger.info(f"Seed-comparison metrics : {metrics_path}")
         self.logger.info(f"Seed-comparison report  : {report_path}")
