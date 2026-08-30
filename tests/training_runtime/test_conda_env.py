@@ -6,7 +6,6 @@ environment and how it selects the first one that exists on disk.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest

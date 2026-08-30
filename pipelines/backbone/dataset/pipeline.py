@@ -17,7 +17,6 @@ from torch.utils.data import DataLoader
 
 from configuration.dataset                      import DatasetConfig
 from tools.data.io                              import FileIO
-from tools.data.regions                         import CropRegion
 from pipelines.backbone.dataset.augmentation    import SpatialAugmenter
 from pipelines.backbone.dataset.datasets        import MultiRegionDataset, PatchDataset
 from pipelines.shared.dataset.loaders           import Loader

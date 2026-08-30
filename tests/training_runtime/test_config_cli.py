@@ -89,7 +89,7 @@ def test_apply_bool_true_variants():
     for token in ("true", "1", "yes", "on"):
         cfg = _config()
         cfg.nested.enabled = False
-        ConfigCli(cfg).apply([f"--nested.enabled", token])
+        ConfigCli(cfg).apply(["--nested.enabled", token])
         assert cfg.nested.enabled is True
 
 

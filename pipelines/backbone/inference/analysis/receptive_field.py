@@ -185,7 +185,7 @@ class ErfComputation:
 
         return float(s0 + (q - m0) / (m1 - m0) * (s1 - s0))
 
-    def mass_within_2sigma(self, grad: np.ndarray, sigma_az: float, sigma_rg: float) -> float:
+    def mass_within_2sigma(self, grad: np.ndarray, sigma_row: float, sigma_col: float) -> float:
         """Returns the gradient-mass fraction inside the ±2σ box.
 
         A separable Gaussian ERF would place 0.911 of its mass there, so a smaller
@@ -193,17 +193,17 @@ class ErfComputation:
 
         Args:
             grad     : Gradient map of shape (window, window).
-            sigma_az : Azimuth spread in pixels.
-            sigma_rg : Range spread in pixels.
+            sigma_row : Row spread in pixels.
+            sigma_col : Column spread in pixels.
 
         Returns:
             The enclosed mass fraction in [0, 1].
         """
         center  = self.window // 2
-        half_az = min(int(round(2.0 * sigma_az)), center)
-        half_rg = min(int(round(2.0 * sigma_rg)), center)
+        half_row = min(int(round(2.0 * sigma_row)), center)
+        half_col = min(int(round(2.0 * sigma_col)), center)
 
-        box = grad[center - half_az:center + half_az + 1, center - half_rg:center + half_rg + 1]
+        box = grad[center - half_row:center + half_row + 1, center - half_col:center + half_col + 1]
         return float(box.sum() / grad.sum())
 
     def axis_profiles(self, grad: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -222,13 +222,13 @@ class ErfComputation:
         return grad.sum(axis=1) / total, grad.sum(axis=0) / total, offsets
 
     @staticmethod
-    def gaussian_mass(sides: np.ndarray, sigma_az: float, sigma_rg: float) -> np.ndarray:
+    def gaussian_mass(sides: np.ndarray, sigma_row: float, sigma_col: float) -> np.ndarray:
         """Returns the mass a separable Gaussian ERF places inside each window side.
 
         Args:
             sides    : Window sides in pixels, shape (n_sides,).
-            sigma_az : Azimuth spread in pixels.
-            sigma_rg : Range spread in pixels.
+            sigma_row : Row spread in pixels.
+            sigma_col : Column spread in pixels.
 
         Returns:
             The reference enclosed mass fraction per side, shape (n_sides,).
@@ -236,11 +236,11 @@ class ErfComputation:
         Raises:
             ValueError : If either sigma is not positive.
         """
-        if sigma_az <= 0.0 or sigma_rg <= 0.0:
-            raise ValueError(f"Gaussian mass reference needs positive sigmas, got ({sigma_az}, {sigma_rg})")
+        if sigma_row <= 0.0 or sigma_col <= 0.0:
+            raise ValueError(f"Gaussian mass reference needs positive sigmas, got ({sigma_row}, {sigma_col})")
 
         scale = 2.0 * math.sqrt(2.0)
-        return np.array([math.erf(s / (scale * sigma_az)) * math.erf(s / (scale * sigma_rg)) for s in sides])
+        return np.array([math.erf(s / (scale * sigma_row)) * math.erf(s / (scale * sigma_col)) for s in sides])
 
 
 class ReceptiveFieldPlots(PlotBase):
@@ -260,7 +260,7 @@ class ReceptiveFieldPlots(PlotBase):
 
         return levels
 
-    def _overlay_geometry(self, ax, grad: np.ndarray, sigma_az: float, sigma_rg: float) -> None:
+    def _overlay_geometry(self, ax, grad: np.ndarray, sigma_row: float, sigma_col: float) -> None:
         """Draws mass contours, 1σ/2σ ellipses and centre lines onto an ERF axis."""
         half    = grad.shape[0] // 2
         offsets = np.arange(grad.shape[0]) - half
@@ -273,7 +273,7 @@ class ReceptiveFieldPlots(PlotBase):
             ax.clabel(contour, fmt={level: levels[level] for level in ordered}, fontsize=7)
 
         for k, style in ((1.0, "-"), (2.0, ":")):
-            ax.add_patch(Ellipse((0.0, 0.0), width=2.0 * k * sigma_col, z=2.0 * k * sigma_row, fill=False, edgecolor="#56B4E9", linewidth=1.0, linestyle=style))
+            ax.add_patch(Ellipse((0.0, 0.0), width=2.0 * k * sigma_col, height=2.0 * k * sigma_row, fill=False, edgecolor="#56B4E9", linewidth=1.0, linestyle=style))
 
         ax.axhline(0.0, color="white", linewidth=0.5, alpha=0.4)
         ax.axvline(0.0, color="white", linewidth=0.5, alpha=0.4)
@@ -284,7 +284,7 @@ class ReceptiveFieldPlots(PlotBase):
         Args:
             grad       : Combined gradient map of shape (window, window).
             sigma_row   : Row spread in pixels.
-            sigma_col   : Range spread in pixels.
+            sigma_col   : Column spread in pixels.
             anisotropy : Ratio sigma_row / sigma_col.
             side_90    : Window side enclosing 90% of the mass, in pixels.
             path       : Destination image path.
@@ -305,21 +305,21 @@ class ReceptiveFieldPlots(PlotBase):
             vmax           = 0.0,
             extent         = [-half, half, half, -half],
             colorbar_label = "log10 normalized |∂y/∂x|",
-            text_overlay   = f"σ_az = {sigma_az:.2f} px\nσ_rg = {sigma_rg:.2f} px\nσ_az/σ_rg = {anisotropy:.2f}\ns90 = {side_90:.1f} px",
+            text_overlay   = f"σ_row = {sigma_row:.2f} px\nσ_col = {sigma_col:.2f} px\nσ_row/σ_col = {anisotropy:.2f}\ns90 = {side_90:.1f} px",
             path           = None,
         )
 
-        self._overlay_geometry(fig.axes[0], grad, sigma_az, sigma_rg)
+        self._overlay_geometry(fig.axes[0], grad, sigma_row, sigma_col)
         return self._save(fig, path)
 
-    def family_map(self, grad: np.ndarray, family: str, sigma_az: float, sigma_rg: float, path: Path) -> Path:
+    def family_map(self, grad: np.ndarray, family: str, sigma_row: float, sigma_col: float, path: Path) -> Path:
         """Saves the ERF map of one output family with its 90% mass contour.
 
         Args:
             grad     : Family gradient map of shape (window, window).
             family   : Output family name ("amp", "mu" or "sigma").
-            sigma_az : Azimuth spread in pixels.
-            sigma_rg : Range spread in pixels.
+            sigma_row : Row spread in pixels.
+            sigma_col : Column spread in pixels.
             path     : Destination image path.
 
         Returns:
@@ -338,7 +338,7 @@ class ReceptiveFieldPlots(PlotBase):
             vmax           = 0.0,
             extent         = [-half, half, half, -half],
             colorbar_label = "log10 normalized |∂y/∂x|",
-            text_overlay   = f"σ_az = {sigma_az:.2f} px\nσ_rg = {sigma_rg:.2f} px",
+            text_overlay   = f"σ_row = {sigma_row:.2f} px\nσ_col = {sigma_col:.2f} px",
             path           = None,
         )
 
@@ -474,9 +474,9 @@ class RunReceptiveField(AnalysisRun):
 
         sigma_spread = measures["probe_sigma_spread"]
         doc.kv_table({
-            "ERF sigma row"     : f"{measures['sigma_az_px']:.2f} px (± {sigma_spread['row_std']:.2f} across probes)",
-            "ERF sigma col"       : f"{measures['sigma_rg_px']:.2f} px (± {sigma_spread['range_std']:.2f} across probes)",
-            "Anisotropy σ_az/σ_rg"  : f"{measures['anisotropy']:.2f}",
+            "ERF sigma row"     : f"{measures['sigma_row_px']:.2f} px (± {sigma_spread['row_std']:.2f} across probes)",
+            "ERF sigma col"       : f"{measures['sigma_col_px']:.2f} px (± {sigma_spread['col_std']:.2f} across probes)",
+            "Anisotropy σ_row/σ_col"  : f"{measures['anisotropy']:.2f}",
             "s50 / s90 / s99"       : " / ".join(f"{measures['mass_sides'][key]:.1f} px" for key in ("50", "90", "99")),
             "Mass in ±2σ box"       : f"{measures['mass_within_2sigma'] * 100.0:.1f}% (Gaussian reference 91.1%)",
         })
@@ -488,7 +488,7 @@ class RunReceptiveField(AnalysisRun):
             if entry is None:
                 family_table.add_row(family, "no dependence", "no dependence")
             else:
-                family_table.add_row(family, f"{entry['sigma_az_px']:.2f} px", f"{entry['sigma_rg_px']:.2f} px")
+                family_table.add_row(family, f"{entry['sigma_row_px']:.2f} px", f"{entry['sigma_col_px']:.2f} px")
         doc.table(family_table)
 
         doc.heading("Gradient mass by window", level=2)
@@ -527,21 +527,21 @@ class RunReceptiveField(AnalysisRun):
         masses             = erf.mass_profile(grad)
         sides, fine        = erf.fine_mass_curve(grad)
         radii              = {q: erf.side_at_mass(sides, fine, q) for q in (0.50, 0.90, 0.99)}
-        anisotropy         = sigma_az / sigma_rg
-        within_2sigma      = erf.mass_within_2sigma(grad, sigma_az, sigma_rg)
-        az_prof, rg_prof, offsets = erf.axis_profiles(grad)
+        anisotropy         = sigma_row / sigma_col
+        within_2sigma      = erf.mass_within_2sigma(grad, sigma_row, sigma_col)
+        row_prof, col_prof, offsets = erf.axis_profiles(grad)
 
         families = {}
         for family in ErfComputation.FAMILIES:
             if maps[family] is None:
                 families[family] = None
             else:
-                fam_az, fam_rg   = erf.sigma(maps[family])
-                families[family] = {"sigma_az_px": fam_az, "sigma_rg_px": fam_rg}
+                fam_row, fam_col   = erf.sigma(maps[family])
+                families[family] = {"sigma_row_px": fam_row, "sigma_col_px": fam_col}
 
         measures = {
-            "sigma_az_px"        : sigma_az,
-            "sigma_rg_px"        : sigma_rg,
+            "sigma_row_px"        : sigma_row,
+            "sigma_col_px"        : sigma_col,
             "anisotropy"         : anisotropy,
             "mass_by_window"     : {str(w): mass for w, mass in sorted(masses.items())},
             "mass_sides"         : {f"{q * 100.0:.0f}": side for q, side in radii.items()},
@@ -549,7 +549,7 @@ class RunReceptiveField(AnalysisRun):
             "families"           : families,
             "probe_sigma_spread" : {
                 "row_std" : float(probe_sigmas[:, 0].std()),
-                "range_std"   : float(probe_sigmas[:, 1].std()),
+                "col_std"     : float(probe_sigmas[:, 1].std()),
             },
         }
 
@@ -559,12 +559,12 @@ class RunReceptiveField(AnalysisRun):
         figure_paths = {
             "erf_map"          : plots.erf_map(grad, sigma_row, sigma_col, anisotropy, radii[0.90], self.output_dir / "erf_map.png"),
             "mass_curve"       : plots.mass_curve(sides, fine, erf.gaussian_mass(sides, sigma_row, sigma_col), masses, radii, self.output_dir / "mass_curve.png"),
-            "profile_row"  : plots.axis_profile(offsets, az_prof, sigma_row, "row", self.output_dir / "profile_row.png"),
-            "profile_range"    : plots.axis_profile(offsets, rg_prof, sigma_col, "col", self.output_dir / "profile_range.png"),
+            "profile_row"  : plots.axis_profile(offsets, row_prof, sigma_row, "row", self.output_dir / "profile_row.png"),
+            "profile_range"    : plots.axis_profile(offsets, col_prof, sigma_col, "col", self.output_dir / "profile_range.png"),
         }
         for family in ErfComputation.FAMILIES:
             if maps[family] is not None:
-                figure_paths[f"erf_{family}"] = plots.family_map(maps[family], family, families[family]["sigma_az_px"], families[family]["sigma_rg_px"], self.output_dir / f"erf_{family}.png")
+                figure_paths[f"erf_{family}"] = plots.family_map(maps[family], family, families[family]["sigma_row_px"], families[family]["sigma_col_px"], self.output_dir / f"erf_{family}.png")
 
         self._write_summary(run, centers, measures)
         report_path = self._write_report(run, measures, masses, figure_paths)

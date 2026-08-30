@@ -7,7 +7,6 @@ the behaviour when the config resolver cannot answer.
 
 from __future__ import annotations
 
-import pytest
 
 from job_describer import JobDescriber
 

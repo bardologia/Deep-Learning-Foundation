@@ -800,6 +800,7 @@ def test_param_run_inference_pipeline_smoke(cube_full, parameters, fit_diagnosti
     assert all(p.is_file() for p in outputs["plots"].values())
 
     summary = json.loads((run_dir / "fit_metrics_summary.json").read_text())
+    assert isinstance(summary, dict) and summary
 
 
 @pytest.mark.slow

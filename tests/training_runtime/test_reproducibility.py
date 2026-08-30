@@ -9,7 +9,6 @@ from __future__ import annotations
 import random
 
 import numpy as np
-import pytest
 import torch
 
 from tools.runtime.reproducibility import Reproducibility, WorkerInitializer

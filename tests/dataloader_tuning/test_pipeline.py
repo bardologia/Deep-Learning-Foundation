@@ -8,7 +8,6 @@ and the end-to-end run that picks the highest-throughput configuration.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 import torch

@@ -379,7 +379,7 @@ class TrialComparisonReport(ComparisonReportBase):
         self.logger.section("Writing comparison reports")
 
         written = [self._write_overview(), self._write_metrics()]
-        self.logger.info(f"Overview and metrics written")
+        self.logger.info("Overview and metrics written")
 
         if self.compare_images:
             for subdir, title in self.FIGURE_SUBDIRS:

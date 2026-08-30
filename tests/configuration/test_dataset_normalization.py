@@ -7,7 +7,6 @@ overrides, the output clamp, and the serialization of channel statistics.
 
 from __future__ import annotations
 
-import dataclasses
 
 import pytest
 

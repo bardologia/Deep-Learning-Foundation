@@ -173,6 +173,10 @@ class _RecordingRunMetadata:
 
         type(self).instances.append(self)
 
+    def save_dataset_fingerprint(self, dataset_path, parameters_path, enabled=True):
+        """Accepts the provenance call without touching the filesystem."""
+        return None
+
     def __enter__(self):
         """Returns the instance itself as the context value."""
         return self
@@ -192,7 +196,7 @@ def test_run_closes_the_run_metadata_when_dataset_preparation_fails(tmp_path, mo
 
     pipeline                = TrainingPipeline.__new__(TrainingPipeline)
     pipeline.backbone_name  = "resunet"
-    pipeline.entry          = types.SimpleNamespace(run_name="jepa_test", seed=0)
+    pipeline.entry          = types.SimpleNamespace(run_name="jepa_test", seed=0, paths=types.SimpleNamespace(dataset_path=str(tmp_path), parameters_path=None, fingerprint_dataset=False))
     pipeline.trainer_config = types.SimpleNamespace(io=types.SimpleNamespace(logdir=str(tmp_path)))
 
     def _failing_prepare(run_directory, logger, seed):

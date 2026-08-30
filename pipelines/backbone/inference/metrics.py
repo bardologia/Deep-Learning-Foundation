@@ -18,7 +18,6 @@ from pathlib            import Path
 from typing             import Callable, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import numpy as np
-from scipy.ndimage   import uniform_filter
 from skimage.metrics import structural_similarity as ssim
 from tqdm            import tqdm
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 from fractions  import Fraction
 from itertools  import combinations
 from math       import comb
-from pathlib    import Path
 
 import numpy as np
 

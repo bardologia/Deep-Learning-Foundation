@@ -310,7 +310,7 @@ def test_context_manager_closes(tmp_path):
 def test_context_manager_logs_exception(tmp_path):
     """Verifies an exception escaping the context manager is recorded before the duration line."""
     with pytest.raises(RuntimeError):
-        with Logger(log_dir=str(tmp_path), name="exp_ctx_exc") as logger:
+        with Logger(log_dir=str(tmp_path), name="exp_ctx_exc"):
             raise RuntimeError("model diverged")
 
     contents = _read_log(tmp_path, "exp_ctx_exc")
@@ -330,7 +330,7 @@ def test_close_removes_all_handlers(tmp_path):
 
 def test_reinit_same_name_resets_handlers(tmp_path):
     """Verifies re-creating a logger under the same name leaves exactly two handlers."""
-    a = Logger(log_dir=str(tmp_path), name="dup")
+    Logger(log_dir=str(tmp_path), name="dup")
     b = Logger(log_dir=str(tmp_path), name="dup")
 
     assert len(b.logger.handlers) == 2

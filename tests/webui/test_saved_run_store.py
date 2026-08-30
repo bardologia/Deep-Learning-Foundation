@@ -128,7 +128,7 @@ def test_list_persists_across_instances(store, tmp_path):
 def test_list_orders_newest_first(store, tmp_path):
     """Listing orders entries by their saved_at timestamp, newest first."""
     older = store.save(_payload(name="older"))["entry"]
-    newer = store.save(_payload(name="newer"))["entry"]
+    store.save(_payload(name="newer"))
 
     stale = {**older, "saved_at": "2026-01-01T00:00:00"}
     (tmp_path / "logs" / "saved_runs" / f"{older['saved_id']}.json").write_text(json.dumps(stale) + "\n")

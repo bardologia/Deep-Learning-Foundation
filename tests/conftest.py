@@ -157,12 +157,6 @@ def make_file_logger(tmp_path: Path, name: str) -> Logger:
     return Logger(log_dir=str(tmp_path / "logs"), name=name)
 
 
-def _require_data():
-    """Skips the calling test when the real test_data/ tree is missing."""
-    if not _HAS_DATA:
-        pytest.skip("real data not present under test_data/")
-
-
 @pytest.fixture
 def logger_stub() -> SilentLogger:
     """Returns a no-op logger stub."""
