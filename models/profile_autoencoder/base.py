@@ -1,6 +1,6 @@
 """Shared building blocks and base class for profile autoencoders.
 
-Profile autoencoders compress the per-pixel elevation profile of a tomogram, so
+Profile autoencoders compress the per-pixel z profile of a cube, so
 every architecture works on tensors of shape (batch, profile_length, height,
 width) and flattens the spatial axes into a pixel batch before the 1-D body.
 """

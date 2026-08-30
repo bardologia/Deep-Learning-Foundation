@@ -1,4 +1,4 @@
-"""Configuration for training the 2D image autoencoder over SAR amplitude patches."""
+"""Configuration for training the 2D image autoencoder over amplitude patches."""
 
 from __future__ import annotations
 
@@ -35,10 +35,10 @@ class ImageAeTrainerConfig(SharedSubConfigInheritance):
     """Everything the image-autoencoder trainer needs, assembled from sub-configs.
 
     Attributes:
-        gaussian          : Gaussian label configuration describing the elevation grid.
+        gaussian          : Gaussian label configuration describing the z grid.
         image_autoencoder : Architecture config of the encoder/decoder pair.
         ae_loss           : Reconstruction loss settings.
-        geometry          : SAR acquisition geometry.
+        geometry          : Acquisition geometry.
         early_stopping    : Validation-loss stopping rule.
         warmup            : Learning-rate warmup ramp.
         scheduler         : Learning-rate schedule.
@@ -83,7 +83,7 @@ class ImageAeEntryConfig:
         ae_model_name   : Registry key of the image-autoencoder architecture.
         model_overrides : Architecture fields overridden on top of that default.
         ae_loss         : Reconstruction loss settings.
-        geometry        : SAR acquisition geometry.
+        geometry        : Acquisition geometry.
         paths           : Dataset and parameter-label locations.
         training        : Training schedule expanded into the trainer sub-configs.
         pretrain        : Batch-size and loader probes run before training.

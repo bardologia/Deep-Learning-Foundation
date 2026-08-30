@@ -12,11 +12,11 @@ from pathlib import Path
 
 
 class ProjectPaths:
-    """Resolved paths of a DLR-TomoSAR checkout plus its script and interpreter registry.
+    """Resolved paths of a ML-Template checkout plus its script and interpreter registry.
 
     Attributes:
         webui_root     : Directory holding this module and the static assets.
-        repo_root      : Root of the DLR-TomoSAR repository.
+        repo_root      : Root of the ML-Template repository.
         main_dir       : Directory holding the entry-point scripts.
         scripts_dir    : Directory holding the auxiliary scripts.
         config_dir     : Root of the configuration package.

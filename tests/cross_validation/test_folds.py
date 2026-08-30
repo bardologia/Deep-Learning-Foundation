@@ -1,4 +1,4 @@
-"""Tests for the azimuth-blocked fold planner, its guards and the fold naming helpers."""
+"""Tests for the row-blocked fold planner, its guards and the fold naming helpers."""
 
 from __future__ import annotations
 
@@ -36,13 +36,13 @@ def row_intervals(regions: list[CropRegion]) -> list[tuple[int, int]]:
 
 
 def test_block_count_equals_n_folds():
-    """Verifies the planner produces one azimuth block per fold."""
+    """Verifies the planner produces one row block per fold."""
     planner = make_planner(7)
     assert len(planner.blocks) == 7
 
 
 def test_blocks_partition_full_extent_contiguously():
-    """Verifies consecutive blocks touch and span the full azimuth extent."""
+    """Verifies consecutive blocks touch and span the full row extent."""
     planner = make_planner(5)
     bounds  = [planner.blocks[0][0]] + [end for _, end in planner.blocks]
 
@@ -55,7 +55,7 @@ def test_blocks_partition_full_extent_contiguously():
 
 
 def test_blocks_are_disjoint_and_cover_every_line():
-    """Verifies the blocks cover every azimuth line exactly once."""
+    """Verifies the blocks cover every row line exactly once."""
     planner = make_planner(8)
     covered = []
 
@@ -192,7 +192,7 @@ def test_plans_deterministic_across_calls():
 
 
 def test_test_blocks_across_folds_tile_the_extent():
-    """Verifies the test blocks of all folds tile the azimuth extent."""
+    """Verifies the test blocks of all folds tile the row extent."""
     planner   = make_planner(5)
     intervals = []
 
@@ -308,7 +308,7 @@ def test_rejects_fewer_than_three_folds():
 
 
 def test_rejects_extent_smaller_than_n_folds():
-    """Verifies an azimuth extent shorter than the fold count is rejected."""
+    """Verifies an row extent shorter than the fold count is rejected."""
     with pytest.raises(ValueError, match="smaller than n_folds"):
         FoldPlanner(make_config(5, row_start=1000, row_end=1003), col_start=0, col_end=10)
 

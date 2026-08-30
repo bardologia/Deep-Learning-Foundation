@@ -41,6 +41,16 @@ def test_input_config_defaults_channel_counts():
     assert cfg.derived_channels_per_source >= 0
 
 
+def test_input_config_named_constructors_build():
+    """Verifies the full_stack and no_stack constructors build and enable what their names promise."""
+    full  = InputConfig.full_stack()
+    empty = InputConfig.no_stack()
+
+    assert full.use_primary and full.use_secondaries and full.use_derived
+    assert not (empty.use_primary or empty.use_secondaries or empty.use_derived or empty.use_aux)
+    assert empty.total_channels(n_secondaries=4, n_derived=4) == 0
+
+
 def test_input_config_total_channels_consistent():
     """Verifies the total channel count equals the number of channel group keys."""
     cfg   = InputConfig(use_primary=True, use_secondaries=True, use_derived=True, use_aux=True)

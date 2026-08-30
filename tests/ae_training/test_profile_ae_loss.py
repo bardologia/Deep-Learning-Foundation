@@ -188,7 +188,7 @@ def test_sobolev_adds_component_and_weighted_total():
 
 
 def test_sobolev_zero_for_linear_residual():
-    """A constant-slope residual along the elevation axis leaves the Sobolev term at zero."""
+    """A constant-slope residual along the z axis leaves the Sobolev term at zero."""
     curve = _curve_pair()[1]
     ramp  = torch.linspace(0.0, 1.0, curve.shape[1]).view(1, -1, 1, 1)
     out   = Loss(ProfileAeLossConfig(use_sobolev=True, weight_sobolev=1.0))(curve + ramp, curve)

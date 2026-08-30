@@ -27,7 +27,7 @@ PARAM_ALL              = ["param_l1", "param_huber", "param_mse", "tv"]
 
 
 def _axis():
-    """Returns the elevation axis of 150 bins spanning -20 to 80 metres."""
+    """Returns the z axis of 150 bins spanning -20 to 80 metres."""
     return torch.linspace(-20.0, 80.0, 150, dtype=torch.float32)
 
 
@@ -38,7 +38,7 @@ def _gt_params(parameters):
 
 
 def _curves(params):
-    """Returns the Gaussian mixture curves reconstructed from the parameter cube on the elevation axis."""
+    """Returns the Gaussian mixture curves reconstructed from the parameter cube on the z axis."""
     return GaussianCurve.reconstruct(params, _axis(), PPG)
 
 

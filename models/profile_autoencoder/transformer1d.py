@@ -1,6 +1,6 @@
 """Profile autoencoder wrapping the whole profile in a single attention token.
 
-Each elevation profile is embedded into one token, passed through a stack of
+Each z profile is embedded into one token, passed through a stack of
 ``nn.TransformerEncoderLayer`` blocks, and projected to the latent code or back
 to profile length, so attention acts as a gated feed-forward refinement.
 """

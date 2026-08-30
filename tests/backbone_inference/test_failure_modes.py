@@ -1,7 +1,7 @@
 """Tests for the per-pixel failure-mode classification of predicted Gaussian mixtures.
 
 Checks that `FailureModes` labels each pixel as ok, missed, hallucinated, position,
-width or amplitude, and that the miss rate rises for closely spaced scatterers.
+width or amplitude, and that the miss rate rises for closely spaced components.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def test_hallucinated_component_is_flagged():
 
 
 def test_position_shift_within_tolerance_is_flagged_as_position():
-    """A matched scatterer displaced by 3 m is labelled \"position\"."""
+    """A matched component displaced by 3 m is labelled \"position\"."""
     gt   = _params([(1.0, 10.0, 3.0)])
     pred = _params([(1.0, 13.0, 3.0)])
 
@@ -100,7 +100,7 @@ def test_width_and_amplitude_errors_are_flagged():
 
 
 def test_missed_takes_priority_over_matched_errors():
-    """A missed scatterer outranks a position error on the same pixel."""
+    """A missed component outranks a position error on the same pixel."""
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = _params([(1.0, 13.0, 3.0), (0.0, 0.0, 0.0)])
 
@@ -110,7 +110,7 @@ def test_missed_takes_priority_over_matched_errors():
 
 
 def test_far_prediction_counts_as_miss_plus_hallucination():
-    """A scatterer predicted 40 m away counts as both a miss and a hallucination."""
+    """A component predicted 40 m away counts as both a miss and a hallucination."""
     gt   = _params([(1.0, 10.0, 3.0)])
     pred = _params([(1.0, 50.0, 3.0)])
 

@@ -207,7 +207,7 @@ class OutputClampConfig:
         ceil              : Upper bound of the clamped range.
         leaky_slope       : Slope kept outside the range for curve outputs.
         param_leaky_slope : Slope kept outside the range for Gaussian parameter outputs.
-        amp_max           : Upper bound applied to predicted scatterer amplitudes.
+        amp_max           : Upper bound applied to predicted component amplitudes.
     """
 
     enabled           : bool  = True
@@ -254,12 +254,12 @@ class NormalizationConfig:
         output_strategy         : Preset name applied to every output slot, or "per_slot".
         pass_mag                : Preset override for single-pass magnitude channels.
         pass_phase              : Preset override for single-pass phase channels.
-        ifg_mag                 : Preset override for interferogram magnitude channels.
-        ifg_phase               : Preset override for interferogram phase channels.
+        ifg_mag                 : Preset override for derived channel magnitude channels.
+        ifg_phase               : Preset override for derived channel phase channels.
         out_amp                 : Preset override for predicted Gaussian amplitudes.
         out_mu                  : Preset override for predicted Gaussian means in metres.
         out_sigma               : Preset override for predicted Gaussian widths in metres.
-        dem                     : Preset override for the DEM elevation channel in metres.
+        dem                     : Preset override for the auxiliary channel in metres.
         fixed_out_bounds_min    : Per-output-channel lower bounds used by the fixed_bounds preset.
         fixed_out_bounds_max    : Per-output-channel upper bounds used by the fixed_bounds preset.
         clamp_output            : Whether the output clamp is enabled.
@@ -267,7 +267,7 @@ class NormalizationConfig:
         clamp_ceil              : Upper bound of the output clamp.
         clamp_leaky_slope       : Leak slope outside the clamped range for curve outputs.
         param_clamp_leaky_slope : Leak slope outside the clamped range for parameter outputs.
-        amp_max                 : Upper bound applied to predicted scatterer amplitudes.
+        amp_max                 : Upper bound applied to predicted component amplitudes.
         SLOT_FIELDS             : Mapping from channel slot key to the field holding its override.
     """
 
@@ -312,7 +312,7 @@ class NormalizationConfig:
 
         Args:
             which    : Either "input" or "output", selecting the blanket strategy.
-            slot_key : Channel slot key such as "ifg/phase" or "out/sigma".
+            slot_key : Channel slot key such as "derived/phase" or "out/sigma".
 
         Returns:
             The ChannelStrategy for that slot, with fixed bounds filled in.

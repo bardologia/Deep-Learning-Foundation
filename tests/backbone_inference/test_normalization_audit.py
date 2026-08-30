@@ -2,7 +2,7 @@
 
 Input channels are scored for mean, spread and the fraction of samples beyond the
 normalized range, while predicted Gaussian parameters are scored for how often they sit
-on the amplitude ceiling, the elevation-axis edge or the sigma bounds.
+on the amplitude ceiling, the z-axis edge or the sigma bounds.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def _run(normalized_inputs: np.ndarray, n_gaussians: int = 1, amp_max: float = 2
         enabled           : Whether the output clamp is active.
 
     Returns:
-        Run stub with the dataset, the slot count and an elevation axis from -20 m to 80 m.
+        Run stub with the dataset, the slot count and an z axis from -20 m to 80 m.
     """
     clamp      = SimpleNamespace(enabled=enabled, floor=0.0, ceil=200.0, amp_max=amp_max)
     stats      = SimpleNamespace(clamp=clamp)

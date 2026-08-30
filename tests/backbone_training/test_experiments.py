@@ -235,7 +235,7 @@ def test_patch_planner_rejects_an_inadmissible_minimum():
     """Verifies a minimum that is not a multiple of the step is rejected."""
     planner = make_patch_planner(minimum=(20, 0))
 
-    with pytest.raises(ValueError, match="azimuth=20 is not a multiple"):
+    with pytest.raises(ValueError, match="row=20 is not a multiple"):
         planner.patch_sizes()
 
 
@@ -348,7 +348,7 @@ def test_secondary_rejects_too_many_secondaries():
 
 
 def test_input_planner_default_catalog_covers_the_stack_grid():
-    """Verifies the catalog input trials span the amplitude, interferogram, track-scope and DEM grid."""
+    """Verifies the catalog input trials span the amplitude, derived channel, track-scope and aux field grid."""
     planner = InputTrialPlanner(TrialCatalog.input_trials(), CANDIDATES)
 
     plans = dict(planner.plan())

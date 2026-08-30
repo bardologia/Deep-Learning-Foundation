@@ -65,7 +65,7 @@ class ErfComputation:
             keyed by output family plus "combined", each a (window, window) array
             of mean absolute input gradient, or None for a family the output does
             not depend on. The sigmas array has shape (valid_probes, 2), holding
-            (azimuth, range) Gaussian-equivalent sigmas in pixels.
+            (rows, cols) Gaussian-equivalent sigmas in pixels.
 
         Raises:
             ValueError : If the combined gradient map is identically zero.
@@ -112,7 +112,7 @@ class ErfComputation:
             grad : Gradient map of shape (window, window).
 
         Returns:
-            The (azimuth, range) standard deviations in input pixels.
+            The (rows, cols) standard deviations in input pixels.
         """
         center = self.window // 2
         coords = np.arange(self.window, dtype=np.float64)
@@ -213,7 +213,7 @@ class ErfComputation:
             grad : Gradient map of shape (window, window).
 
         Returns:
-            A tuple of the azimuth marginal, the range marginal and the pixel
+            A tuple of the row marginal, the range marginal and the pixel
             offsets relative to the window centre, each of shape (window,).
         """
         total   = grad.sum()
@@ -390,7 +390,7 @@ class ReceptiveFieldPlots(PlotBase):
             offsets   : Pixel offsets from the window centre, shape (window,).
             profile   : Normalized marginal gradient mass, shape (window,).
             sigma     : Spread along this axis in pixels.
-            axis_name : Axis label, "azimuth" or "range".
+            axis_name : Axis label, "row" or "range".
             path      : Destination image path.
 
         Returns:
@@ -474,7 +474,7 @@ class RunReceptiveField(AnalysisRun):
 
         sigma_spread = measures["probe_sigma_spread"]
         doc.kv_table({
-            "ERF sigma row"     : f"{measures['sigma_az_px']:.2f} px (± {sigma_spread['azimuth_std']:.2f} across probes)",
+            "ERF sigma row"     : f"{measures['sigma_az_px']:.2f} px (± {sigma_spread['row_std']:.2f} across probes)",
             "ERF sigma col"       : f"{measures['sigma_rg_px']:.2f} px (± {sigma_spread['range_std']:.2f} across probes)",
             "Anisotropy σ_az/σ_rg"  : f"{measures['anisotropy']:.2f}",
             "s50 / s90 / s99"       : " / ".join(f"{measures['mass_sides'][key]:.1f} px" for key in ("50", "90", "99")),
@@ -482,7 +482,7 @@ class RunReceptiveField(AnalysisRun):
         })
 
         doc.heading("Per-family ERF", level=2)
-        family_table = MarkdownTable(("Output family", "σ azimuth", "σ range"))
+        family_table = MarkdownTable(("Output family", "σ row", "σ range"))
         for family in ErfComputation.FAMILIES:
             entry = measures["families"][family]
             if entry is None:
@@ -548,7 +548,7 @@ class RunReceptiveField(AnalysisRun):
             "mass_within_2sigma" : within_2sigma,
             "families"           : families,
             "probe_sigma_spread" : {
-                "azimuth_std" : float(probe_sigmas[:, 0].std()),
+                "row_std" : float(probe_sigmas[:, 0].std()),
                 "range_std"   : float(probe_sigmas[:, 1].std()),
             },
         }
@@ -559,7 +559,7 @@ class RunReceptiveField(AnalysisRun):
         figure_paths = {
             "erf_map"          : plots.erf_map(grad, sigma_row, sigma_col, anisotropy, radii[0.90], self.output_dir / "erf_map.png"),
             "mass_curve"       : plots.mass_curve(sides, fine, erf.gaussian_mass(sides, sigma_row, sigma_col), masses, radii, self.output_dir / "mass_curve.png"),
-            "profile_azimuth"  : plots.axis_profile(offsets, az_prof, sigma_row, "row", self.output_dir / "profile_azimuth.png"),
+            "profile_row"  : plots.axis_profile(offsets, az_prof, sigma_row, "row", self.output_dir / "profile_row.png"),
             "profile_range"    : plots.axis_profile(offsets, rg_prof, sigma_col, "col", self.output_dir / "profile_range.png"),
         }
         for family in ErfComputation.FAMILIES:

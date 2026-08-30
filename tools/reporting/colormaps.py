@@ -1,4 +1,4 @@
-"""Cyclic phase colormap used for interferometric phase figures.
+"""Cyclic phase colormap used for derived phase figures.
 
 Holds the TAXI phase palette as explicit 8-bit channel tables and registers it
 with matplotlib on first use, so phase maps across the project share one scale.

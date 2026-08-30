@@ -1,6 +1,6 @@
 """Embedding-matching loss for JEPA runs coupled to a profile autoencoder.
 
-The backbone predicts an embedding of the elevation profile; the target branch
+The backbone predicts an embedding of the z profile; the target branch
 encodes the Gaussian-rendered ground-truth curve with the same autoencoder, and
 the loss compares the two normalized embeddings, optionally anchoring them by
 decoding the prediction back to curve space.
@@ -65,7 +65,7 @@ class Loss:
         """Sums the enabled embedding-space terms between prediction and target.
 
         Args:
-            z_hat  : Normalized predicted embedding of shape (batch, embedding_dim, azimuth, range).
+            z_hat  : Normalized predicted embedding of shape (batch, embedding_dim, rows, cols).
             z_star : Normalized target embedding of the same shape.
 
         Returns:
@@ -156,8 +156,8 @@ class Loss:
         """Gathers the masked pixels of a channel map into a pixel batch.
 
         Args:
-            t          : Map of shape (batch, channels, azimuth, range).
-            pixel_mask : Boolean mask of shape (batch, azimuth, range), True on the pixels kept.
+            t          : Map of shape (batch, channels, rows, cols).
+            pixel_mask : Boolean mask of shape (batch, rows, cols), True on the pixels kept.
 
         Returns:
             Tensor of shape (n_masked, channels, 1, 1) holding the kept pixels.
@@ -169,9 +169,9 @@ class Loss:
         """Evaluates the embedding-match loss for one batch.
 
         Args:
-            z_hat          : Raw predicted embedding from the backbone, of shape (batch, embedding_dim, azimuth, range).
-            gt_params_norm : Normalized ground-truth Gaussian parameters of shape (batch, params_per_gaussian * n_gaussians, azimuth, range).
-            pixel_mask     : Optional boolean mask of shape (batch, azimuth, range); when given, every term is evaluated on the True pixels only.
+            z_hat          : Raw predicted embedding from the backbone, of shape (batch, embedding_dim, rows, cols).
+            gt_params_norm : Normalized ground-truth Gaussian parameters of shape (batch, params_per_gaussian * n_gaussians, rows, cols).
+            pixel_mask     : Optional boolean mask of shape (batch, rows, cols); when given, every term is evaluated on the True pixels only.
 
         Returns:
             Dict with the scalar "total_loss", the per-term "components" dict, and

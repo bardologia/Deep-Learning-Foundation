@@ -1,6 +1,6 @@
 """Temporal convolutional profile autoencoder with exponentially dilated blocks.
 
-Dilations double with depth, so the receptive field over the elevation axis
+Dilations double with depth, so the receptive field over the z axis
 grows geometrically while the profile length stays fixed throughout the stack.
 """
 
@@ -27,7 +27,7 @@ class DilatedResidualBlock(nn.Module):
 
         Args:
             channels      : Channel width, identical on input and output.
-            kernel_size   : Convolution kernel length along the elevation axis.
+            kernel_size   : Convolution kernel length along the z axis.
             dilation      : Spacing between kernel taps.
             activation    : Name of the activation resolved by ``LayerFactory``.
             dropout       : Dropout probability between the two convolutions.
@@ -106,7 +106,7 @@ class TcnDecoder(nn.Module):
     """Dilated convolutional decoder expanding a latent code to a profile.
 
     Attributes:
-        length       : Profile length in elevation bins.
+        length       : Profile length in z bins.
         seq_channels : Channel width of the dilated stack.
         project      : Linear lift of the latent code to a full-length feature map.
         body         : Stack of dilated residual blocks with dilations 1, 2, 4, ...

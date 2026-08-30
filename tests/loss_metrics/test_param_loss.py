@@ -299,7 +299,7 @@ def test_presence_scale_default_is_identity():
 
 
 def test_focal_scale_downweights_easy_zeros():
-    """Verifies the focal scale is larger for a missed strong scatterer than for a missed negligible one."""
+    """Verifies the focal scale is larger for a missed strong component than for a missed negligible one."""
     amp_pred  = torch.zeros(1, 1, 1, 1, 1, dtype=torch.float64)
     amp_big   = torch.ones_like(amp_pred)
     amp_small = torch.full_like(amp_pred, 1e-3)

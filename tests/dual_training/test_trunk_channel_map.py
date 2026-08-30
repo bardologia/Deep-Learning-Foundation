@@ -1,7 +1,7 @@
 """Tests for mapping dual trunk input groups onto input stack channel indices.
 
-Covers the amplitude, interferogram and DEM blocks for various input
-configurations, multi-channel interferogram representations, the rejection of
+Covers the amplitude, derived channel and aux field blocks for various input
+configurations, multi-channel derived channel representations, the rejection of
 unknown or empty selections, and group labelling.
 """
 
@@ -42,7 +42,7 @@ def test_primary_and_ifgs_only_maps_after_primary():
 
 
 def test_dem_bearing_stack_routes_the_dem_only_where_requested():
-    """The trailing DEM channel reaches exactly the selections that name the dem group."""
+    """The trailing aux channel reaches exactly the selections that name the dem group."""
     input_config         = InputConfig.full_stack()
     input_config.use_aux = True
 
@@ -53,7 +53,7 @@ def test_dem_bearing_stack_routes_the_dem_only_where_requested():
 
 
 def test_dem_group_without_dem_channel_contributes_nothing():
-    """Selecting dem alongside other groups on a DEM-free stack changes nothing, alone it raises."""
+    """Selecting dem alongside other groups on a aux field-free stack changes nothing, alone it raises."""
     input_config = InputConfig.full_stack()
 
     assert TrunkChannelMap.resolve(input_config, in_channels=9, groups=("chan", "derived", "aux")) == tuple(range(9))

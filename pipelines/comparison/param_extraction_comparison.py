@@ -195,7 +195,7 @@ class ParamMetrics:
 
         Returns:
             A tuple (meta, summary, diagnostics, parameters) where parameters
-            is memory-mapped of shape (3 * k_max, azimuth, range), interleaving
+            is memory-mapped of shape (3 * k_max, rows, cols), interleaving
             amplitude, mean, and sigma per Gaussian slot.
         """
         meta        = FileIO.load_json(trial.run_dir / "param_extraction_meta.json")
@@ -210,9 +210,9 @@ class ParamMetrics:
 
         Args:
             trial       : Trial supplying the free-parameter count per Gaussian.
-            diagnostics : Loaded `fit_diagnostics.npz`, whose `mse_per_k` has shape (k_max, azimuth, range).
-            best_k      : Selected Gaussian count per pixel, shape (azimuth, range).
-            n_data      : Number of elevation bins each profile was fitted over.
+            diagnostics : Loaded `fit_diagnostics.npz`, whose `mse_per_k` has shape (k_max, rows, cols).
+            best_k      : Selected Gaussian count per pixel, shape (rows, cols).
+            n_data      : Number of z bins each profile was fitted over.
 
         Returns:
             Median BIC across pixels with a selected order and a non-degenerate
@@ -233,9 +233,9 @@ class ParamMetrics:
         """Returns the median nearest-neighbour spacing between active Gaussians.
 
         Args:
-            mus    : Gaussian centres in metres, shape (slots, azimuth, range).
+            mus    : Gaussian centres in metres, shape (slots, rows, cols).
             active : Whether each slot exceeds the activity threshold, same shape.
-            fitted : Whether a pixel received a fit, shape (azimuth, range).
+            fitted : Whether a pixel received a fit, shape (rows, cols).
 
         Returns:
             Median over sampled fitted pixels of the smallest gap in metres
@@ -262,12 +262,12 @@ class ParamMetrics:
         return float(np.median(nearest)) if nearest.size > 0 else float("nan")
 
     def _coherence(self, mus: np.ndarray, amplitudes: np.ndarray, fitted: np.ndarray) -> float:
-        """Returns the block standard deviation of the dominant scatterer height.
+        """Returns the block standard deviation of the dominant component height.
 
         Args:
-            mus        : Gaussian centres in metres, shape (slots, azimuth, range).
+            mus        : Gaussian centres in metres, shape (slots, rows, cols).
             amplitudes : Gaussian amplitudes, same shape; the largest one selects the dominant slot per pixel.
-            fitted     : Whether a pixel received a fit, shape (azimuth, range).
+            fitted     : Whether a pixel received a fit, shape (rows, cols).
 
         Returns:
             Median within-block standard deviation of the dominant height in
@@ -288,8 +288,8 @@ class ParamMetrics:
             meta        : Loaded extraction metadata, supplying the activity threshold.
             summary     : Loaded fit-metric summary with global and per-K sections.
             diagnostics : Loaded `fit_diagnostics.npz`.
-            parameters  : Fitted parameters of shape (3 * k_max, azimuth, range).
-            n_data      : Number of elevation bins each profile was fitted over.
+            parameters  : Fitted parameters of shape (3 * k_max, rows, cols).
+            n_data      : Number of z bins each profile was fitted over.
 
         Returns:
             Mapping of metric name to scalar covering fit quality, coverage,

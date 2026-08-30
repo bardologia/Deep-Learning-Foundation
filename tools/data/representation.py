@@ -1,4 +1,4 @@
-"""Channel representations of the complex SAR stack fed to the networks.
+"""Channel representations of the complex channel stack fed to the networks.
 
 Each pass of the stack is complex; a representation states how many real
 channels it becomes and how they are computed, from raw real/imaginary parts
@@ -22,7 +22,7 @@ _CHANNELS_PER_SOURCE: dict[str, int] = {
 
 
 class Representation(Enum):
-    """Complex-to-real channel layout used to encode a SAR stack.
+    """Complex-to-real channel layout used to encode a channel stack.
 
     Members name the channel content per pass: raw real and imaginary parts,
     magnitude with normalised real and imaginary parts, magnitude and phase angle,

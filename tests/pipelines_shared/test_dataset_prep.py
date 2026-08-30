@@ -15,14 +15,14 @@ from tools.monitoring.logger             import Logger
 
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
-    """Builds a small dataset config over the real test data with adjacent train, validation, and test azimuth strips.
+    """Builds a small dataset config over the real test data with adjacent train, validation, and test row strips.
 
     Args:
         test_data_dir : Preprocessing run directory.
         params_dir    : Directory holding parameters.npy.
 
     Returns:
-        Dataset config using 8x8 patches, magnitude inputs, and interferogram phase.
+        Dataset config using 8x8 patches, magnitude inputs, and derived channel phase.
     """
     ic = InputConfig(
         use_primary=True,        primary_representation=Representation.MAG_ONLY,

@@ -21,7 +21,7 @@ from pipelines.backbone.inference.plots.base import PlotTools
 
 
 class SlicePlotter(PlotTools):
-    """Plots elevation profiles, tomogram slices, per-pixel maps, histograms and metric curves."""
+    """Plots z profiles, cube slices, per-pixel maps, histograms and metric curves."""
 
     def plot_profiles(
         self,
@@ -38,25 +38,25 @@ class SlicePlotter(PlotTools):
         col_offset     : int,
         full_curves    : Optional[np.ndarray] = None,
     ) -> List[Path]:
-        """Plots one elevation profile per selected pixel, overlaying prediction, ground truth and components.
+        """Plots one z profile per selected pixel, overlaying prediction, ground truth and components.
 
         The classical baseline curve, when given, is rescaled to the GT peak because it
         carries no absolute intensity calibration.
 
         Args:
-            pred_curves    : Predicted cube of shape (n_elevation, azimuth, range).
+            pred_curves    : Predicted cube of shape (n_z, rows, cols).
             gt_curves      : Ground-truth cube of the same shape.
-            params_pred    : Predicted parameter cube of shape (3 * K, azimuth, range), or None to omit components.
-            x_axis         : Elevation axis in metres, of shape (n_elevation,).
-            pixels         : Selected (azimuth, range) index pairs of shape (n_pixels, 2).
+            params_pred    : Predicted parameter cube of shape (3 * K, rows, cols), or None to omit components.
+            x_axis         : Elevation axis in metres, of shape (n_z,).
+            pixels         : Selected (rows, cols) index pairs of shape (n_pixels, 2).
             tag            : Selection name ("best", "worst" or "random") used in the file names.
             out_dir        : Directory the figures are written into.
             n_gaussians    : Gaussian count K.
-            pixel_metrics  : Per-pixel maps keyed "mse", "mae", "r2" and "cos", each of shape (azimuth, range).
+            pixel_metrics  : Per-pixel maps keyed "mse", "mae", "r2" and "cos", each of shape (rows, cols).
             az_offset      : Azimuth index of the crop origin, added to the titles and file names.
             rg_offset      : Range index of the crop origin, added to the titles and file names.
             reduced_curves : Classical baseline cube of the same shape, or None.
-            full_curves    : Raw tomogram cube of the same shape, or None.
+            full_curves    : Raw cube of the same shape, or None.
 
         Returns:
             Paths of the written figures, one per selected pixel.
@@ -111,10 +111,10 @@ class SlicePlotter(PlotTools):
         q_low      : float = 1.0,
         q_high     : float = 99.0,
     ) -> Path:
-        """Maps a per-pixel metric over the scene in azimuth-range coordinates.
+        """Maps a per-pixel metric over the scene in row-range coordinates.
 
         Args:
-            metric_map : Per-pixel metric of shape (azimuth, range).
+            metric_map : Per-pixel metric of shape (rows, cols).
             title      : Panel title.
             label      : Colorbar label, suffixed with "[log10]" when `log` is set.
             out_path   : Destination file path.
@@ -163,22 +163,22 @@ class SlicePlotter(PlotTools):
         col_offset     : int,
         primary_label  : str = "primary",
     ) -> List[Path]:
-        """Plots the amplitude of every SAR pass and the phase of every interferogram in the input stack.
+        """Plots the amplitude of every channel and the phase of every derived channel in the input stack.
 
-        The stack is laid out as the primary, then the secondaries, then the interferograms
+        The stack is laid out as the primary, then the secondaries, then the derived channels
         formed against the primary.
 
         Args:
-            complex_inputs : Complex SAR stack of shape (channels, azimuth, range).
+            complex_inputs : Complex channel stack of shape (channels, rows, cols).
             n_secondaries  : Number of secondary tracks in the stack.
             labels         : Track labels of the secondaries, or None to number them.
             out_dir        : Directory the figures are written into.
             az_offset      : Azimuth index of the crop origin, used for the axis extent.
             rg_offset      : Range index of the crop origin, used for the axis extent.
-            primary_label  : Track label of the primary pass.
+            primary_label  : Track label of the primary channel.
 
         Returns:
-            Paths of the written figures: one amplitude map per pass and one phase map per interferogram.
+            Paths of the written figures: one amplitude map per pass and one phase map per derived channel.
         """
 
         H, W   = complex_inputs.shape[-2:]
@@ -211,10 +211,10 @@ class SlicePlotter(PlotTools):
         return paths
 
     def _amplitude_panel(self, channel: np.ndarray, title: str, path: Path, extent: list) -> Path:
-        """Renders the amplitude of one complex channel in greyscale with the standard SAR clim.
+        """Renders the amplitude of one complex channel in greyscale with the standard amplitude clim.
 
         Args:
-            channel : Complex channel of shape (azimuth, range).
+            channel : Complex channel of shape (rows, cols).
             title   : Panel title.
             path    : Destination file path.
             extent  : Axis extent as [x_min, x_max, y_min, y_max].
@@ -278,8 +278,8 @@ class SlicePlotter(PlotTools):
             ref_title  : Panel title for the reference.
             pred_title : Panel title for the prediction.
             err_title  : Panel title for the absolute error.
-            full_slice : Raw tomogram slice of the same shape, or None.
-            full_title : Panel title for the raw tomogram.
+            full_slice : Raw cube slice of the same shape, or None.
+            full_title : Panel title for the raw cube.
 
         Returns:
             Paths of the written panels.
@@ -349,17 +349,17 @@ class SlicePlotter(PlotTools):
         full_cube  : Optional[np.ndarray] = None,
         full_title : str = "Full cube (raw)",
     ) -> List[Path]:
-        """Plots a vertical tomogram slice at a fixed range or azimuth index.
+        """Plots a vertical cube slice at a fixed range or row index.
 
-        The elevation axis is sorted ascending before display, so the panels read bottom-up
+        The z axis is sorted ascending before display, so the panels read bottom-up
         in metres regardless of the stored bin order.
 
         Args:
-            pred_cube  : Predicted cube of shape (n_elevation, azimuth, range).
+            pred_cube  : Predicted cube of shape (n_z, rows, cols).
             gt_cube    : Reference cube of the same shape.
-            axis       : Axis held fixed, "range" or "azimuth".
+            axis       : Axis held fixed, "range" or "row".
             index      : Index along `axis` within the crop.
-            x_axis     : Elevation axis in metres, of shape (n_elevation,).
+            x_axis     : Elevation axis in metres, of shape (n_z,).
             out_dir    : Directory the panels are written into.
             stem       : File stem the panel kind is appended to.
             az_offset  : Azimuth index of the crop origin.
@@ -368,14 +368,14 @@ class SlicePlotter(PlotTools):
             ref_title  : Panel title for the reference.
             pred_title : Panel title for the prediction.
             err_title  : Panel title for the absolute error.
-            full_cube  : Raw tomogram cube of the same shape, or None.
-            full_title : Panel title for the raw tomogram.
+            full_cube  : Raw cube of the same shape, or None.
+            full_title : Panel title for the raw cube.
 
         Returns:
             Paths of the written panels.
 
         Raises:
-            ValueError : If `axis` is neither "range" nor "azimuth".
+            ValueError : If `axis` is neither "range" nor "row".
         """
 
         if axis == "col":
@@ -440,13 +440,13 @@ class SlicePlotter(PlotTools):
         full_cube  : Optional[np.ndarray] = None,
         full_title : str = "Full cube (raw)",
     ) -> List[Path]:
-        """Plots the horizontal intensity map of one elevation bin over the whole crop.
+        """Plots the horizontal intensity map of one z bin over the whole crop.
 
         Args:
-            pred_cube  : Predicted cube of shape (n_elevation, azimuth, range).
+            pred_cube  : Predicted cube of shape (n_z, rows, cols).
             gt_cube    : Reference cube of the same shape.
             elev_idx   : Elevation bin index to display.
-            x_axis     : Elevation axis in metres, of shape (n_elevation,), used for the title.
+            x_axis     : Elevation axis in metres, of shape (n_z,), used for the title.
             out_dir    : Directory the panels are written into.
             stem       : File stem the panel kind is appended to.
             az_offset  : Azimuth index of the crop origin, used for the axis extent.
@@ -455,8 +455,8 @@ class SlicePlotter(PlotTools):
             ref_title  : Panel title for the reference.
             pred_title : Panel title for the prediction.
             err_title  : Panel title for the absolute error.
-            full_cube  : Raw tomogram cube of the same shape, or None.
-            full_title : Panel title for the raw tomogram.
+            full_cube  : Raw cube of the same shape, or None.
+            full_title : Panel title for the raw cube.
 
         Returns:
             Paths of the written panels.
@@ -495,7 +495,7 @@ class SlicePlotter(PlotTools):
         stated in the title, so tails stay visible without stretching the axis.
 
         Args:
-            metric_arrays : Mapping of metric name to a per-pixel map of shape (azimuth, range).
+            metric_arrays : Mapping of metric name to a per-pixel map of shape (rows, cols).
             out_dir       : Directory the figures are written into.
 
         Returns:
@@ -543,7 +543,7 @@ class SlicePlotter(PlotTools):
 
         Args:
             global_metrics : Metric dictionary holding the per-slice SSIM values.
-            axis           : Axis name ("range", "azimuth" or "elev").
+            axis           : Axis name ("range", "row" or "elev").
             out_path       : Destination file path.
             n_slices       : Number of slices along the axis.
             slice_indices  : Slice indices within the crop, of shape (n_slices,).
@@ -586,13 +586,13 @@ class SlicePlotter(PlotTools):
         suffix         : str = "gt",
         series_label   : str = "pred × GT (Gaussian)",
     ) -> List[Path]:
-        """Plots MAE, RMSE, R² and cross-entropy against elevation, one figure per metric.
+        """Plots MAE, RMSE, R² and cross-entropy against z, one figure per metric.
 
         Args:
-            global_metrics : Metric dictionary holding the per-elevation series.
+            global_metrics : Metric dictionary holding the per-z series.
             out_dir        : Directory the figures are written into.
-            n_elev         : Number of elevation bins.
-            x_axis         : Elevation axis in metres, of shape (n_elevation,).
+            n_elev         : Number of z bins.
+            x_axis         : Elevation axis in metres, of shape (n_z,).
             suffix         : Metric-key suffix selecting the reference variant.
             series_label   : Legend label for the series.
 

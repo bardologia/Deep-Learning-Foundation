@@ -52,7 +52,7 @@ class DistributionPlotter(PlotBase):
         """Saves the R-squared histogram with KDE and its empirical CDF.
 
         Args:
-            r2_map  : Per-pixel R-squared of shape (azimuth, range), NaN where unfitted.
+            r2_map  : Per-pixel R-squared of shape (rows, cols), NaN where unfitted.
             summary : Global summary carrying the R-squared mean, median and negative fraction.
             out_dir : Directory the figures are written to.
 
@@ -120,7 +120,7 @@ class DistributionPlotter(PlotBase):
         """Saves one violin figure per parameter family across the Gaussian slots.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
             out_dir          : Directory the figures are written to.
 
         Returns:
@@ -181,7 +181,7 @@ class DistributionPlotter(PlotBase):
         """Saves hexbin densities of the parameter pairs, pooling every slot.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
             out_dir          : Directory the figures are written to.
 
         Returns:

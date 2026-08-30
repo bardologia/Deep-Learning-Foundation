@@ -1,4 +1,4 @@
-"""Configuration for fitting Gaussian mixtures to tomographic elevation profiles.
+"""Configuration for fitting Gaussian mixtures to volumetric z profiles.
 
 Covers the fit hyperparameters and Adam settings of the extraction itself, the
 sweep entry point that runs it over a dataset tree, the analysis entry point
@@ -141,11 +141,11 @@ class ExtractionConfig:
     """Settings for one parameter-extraction run over a processed dataset.
 
     The output directory name encodes the fit hyperparameters so that different
-    extractions of the same tomogram stay side by side.
+    extractions of the same cube stay side by side.
 
     Attributes:
         processed_data_path  : Root of the processed dataset holding data/ and meta/.
-        pyrat_directory      : PyRAT source directory used to read the tomogram.
+        pyrat_directory      : PyRAT source directory used to read the cube.
         output_prefix        : Leading token of the parameter run directory name.
         output_suffix        : Explicit suffix, or None to derive one from the fit settings.
         height_range         : Elevation axis extent in metres, or None to read it from the dataset metadata.
@@ -176,7 +176,7 @@ class ExtractionConfig:
 
     @property
     def data_directory(self) -> Path:
-        """Directory holding the processed tomogram arrays."""
+        """Directory holding the processed cube arrays."""
         return Path(self.processed_data_path) / "data"
 
     @property
@@ -271,7 +271,7 @@ class ExtractParamsEntryConfig:
     Attributes:
         dataset_base_path      : Root directory scanned for processed datasets.
         dataset_filter         : Exact dataset directory names under the base path to select; empty selects every dataset.
-        pyrat_directory        : PyRAT source directory used to read the tomograms.
+        pyrat_directory        : PyRAT source directory used to read the cubes.
         output_prefix          : Leading token of each parameter run directory name.
         output_suffix          : Explicit suffix, or None to derive one per combination.
         z_range           : Z axis extent in metres, or None to read it per dataset.

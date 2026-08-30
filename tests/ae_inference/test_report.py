@@ -44,7 +44,7 @@ def _image_run():
 
 
 def _profile_run():
-    """Returns a profile autoencoder run stub, its elevation axis spanning 40 bins."""
+    """Returns a profile autoencoder run stub, its z axis spanning 40 bins."""
     return SimpleNamespace(
         ae_name                     = "mlp_ae",
         embedding_dim               = 16,
@@ -76,7 +76,7 @@ def test_image_report_assembles_with_title_and_metrics(tmp_path):
 
 
 def test_profile_report_assembles_with_title_and_metrics(tmp_path):
-    """The profile report writes its title, the profile length derived from the elevation axis, and the metric table."""
+    """The profile report writes its title, the profile length derived from the z axis, and the metric table."""
     report = ProfileAeReport(tmp_path, _profile_run(), config=None, metrics=_metrics(), figures={}, report_path=tmp_path / "report.md")
 
     out  = report.assemble()

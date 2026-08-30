@@ -2,7 +2,7 @@
 
 On the input side it checks that the normalised channels still have roughly zero mean and
 unit standard deviation on this split; on the output side it counts how often predicted
-Gaussians are pinned against the amplitude ceiling, the σ bounds or the elevation-axis edge.
+Gaussians are pinned against the amplitude ceiling, the σ bounds or the z-axis edge.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ class NormalizationAudit:
     """Reports input-normalization drift and output-clamp saturation for one inference run.
 
     Attributes:
-        loaded         : Loaded run supplying the dataset, normalization statistics and elevation axis.
+        loaded         : Loaded run supplying the dataset, normalization statistics and z axis.
         result         : Inference result carrying the predicted parameter cube.
         active_amp_thr : Physical amplitude at or above which a predicted Gaussian slot counts as active.
     """
@@ -81,7 +81,7 @@ class NormalizationAudit:
     def output_health(self) -> Dict[str, float]:
         """Measures how often active predicted Gaussians sit on their clamp boundaries.
 
-        σ is bounded below by half an elevation step and above by half the axis span, and μ
+        σ is bounded below by half an z step and above by half the axis span, and μ
         counts as edge-pinned within a thousandth of the axis span of either end.
 
         Returns:

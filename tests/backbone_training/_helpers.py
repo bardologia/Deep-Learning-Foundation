@@ -1,6 +1,6 @@
 """Shared fixtures for the backbone training tests.
 
-Provides the elevation axis, normalizers with known statistics, geometry and Gaussian
+Provides the z axis, normalizers with known statistics, geometry and Gaussian
 configs, loss and model builders, parameter tensors and a scalar-recording tracker stub.
 """
 
@@ -27,12 +27,12 @@ X_LEN = 32
 
 
 def x_axis_tensor(length: int = X_LEN) -> torch.Tensor:
-    """Returns the elevation axis of shape (length,) spanning X_MIN to X_MAX, in metres."""
+    """Returns the z axis of shape (length,) spanning X_MIN to X_MAX, in metres."""
     return torch.linspace(X_MIN, X_MAX, length, dtype=torch.float32)
 
 
 def x_axis_numpy(length: int = X_LEN) -> np.ndarray:
-    """Returns the elevation axis of shape (length,) spanning X_MIN to X_MAX, in metres."""
+    """Returns the z axis of shape (length,) spanning X_MIN to X_MAX, in metres."""
     return np.linspace(X_MIN, X_MAX, length, dtype=np.float32)
 
 
@@ -99,7 +99,7 @@ def spock_normalizer() -> Normalizer:
 
 
 def gaussian_config(n_gaussians: int) -> GaussianConfig:
-    """Returns a Gaussian config with n_gaussians slots over the X_MIN to X_MAX elevation range."""
+    """Returns a Gaussian config with n_gaussians slots over the X_MIN to X_MAX z range."""
     return GaussianConfig(n_default_gaussians=n_gaussians, x_min=X_MIN, x_max=X_MAX)
 
 
@@ -110,7 +110,7 @@ def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all
         n_gaussians    : Number of Gaussian slots, setting the 3 * n_gaussians channels.
         loss_cfg       : Loss configuration, defaulting to parameter L1 with unit weight.
         log_all_losses : Whether every loss term is logged individually.
-        length         : Number of elevation bins on the axis.
+        length         : Number of z bins on the axis.
         sampler        : Optional parameter sampler fed with denormalized predictions.
         norm_stats     : Output normalizer, defaulting to the identity normalizer.
 
@@ -150,7 +150,7 @@ def valid_param_tensor(batch: int, n_gaussians: int, height: int, width: int, se
 
     Returns:
         Tensor of shape (batch, 3 * n_gaussians, height, width) with positive
-        amplitudes, centres inside the elevation range in metres and widths of at
+        amplitudes, centres inside the z range in metres and widths of at
         least 4 metres.
     """
     gen   = torch.Generator().manual_seed(seed)

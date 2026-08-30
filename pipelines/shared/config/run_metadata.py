@@ -135,7 +135,7 @@ class TrainingRunMetadata:
             model_name    : Architecture name the run trains.
             in_channels   : Number of input channels fed to the model.
             out_channels  : Number of channels the model predicts.
-            x_axis_length : Number of elevation bins on the reconstruction axis.
+            x_axis_length : Number of z bins on the reconstruction axis.
             n_gaussians   : Number of Gaussian components predicted per pixel; zero for models with no parametric head.
             seed          : Random seed the run was trained with.
         """

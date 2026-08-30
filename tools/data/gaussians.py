@@ -1,6 +1,6 @@
-"""Gaussian-mixture elevation profiles: evaluation, reconstruction and clamping.
+"""Gaussian-mixture z profiles: evaluation, reconstruction and clamping.
 
-The tomographic label of a pixel is a mixture of Gaussians over the elevation
+The volumetric label of a pixel is a mixture of Gaussians over the z
 axis, each component described by an amplitude, a mean height in metres and a
 width in metres. This module evaluates those mixtures in NumPy and torch,
 orders the slots and constrains predicted parameters to the physical axis.
@@ -14,15 +14,15 @@ import torch
 
 
 class GaussianAxis:
-    """Builds the elevation axis a Gaussian mixture is sampled on."""
+    """Builds the z axis a Gaussian mixture is sampled on."""
     @staticmethod
     def build(x_min: float, x_max: float, length: int) -> np.ndarray:
-        """Returns an evenly spaced elevation axis.
+        """Returns an evenly spaced z axis.
 
         Args:
-            x_min  : First elevation in metres.
-            x_max  : Last elevation in metres.
-            length : Number of elevation bins.
+            x_min  : First z in metres.
+            x_max  : Last z in metres.
+            length : Number of z bins.
 
         Returns:
             Elevation axis in metres of shape (length,).
@@ -31,7 +31,7 @@ class GaussianAxis:
 
 
 class GaussianMixture:
-    """Evaluation of Gaussian mixtures over an elevation axis, in NumPy.
+    """Evaluation of Gaussian mixtures over an z axis, in NumPy.
 
     Attributes:
         SIGMA_FLOOR : Smallest width in metres used in the exponent denominator.
@@ -50,7 +50,7 @@ class GaussianMixture:
 
     @classmethod
     def kernel(cls, amp: np.ndarray, mu: np.ndarray, sig: np.ndarray, x: np.ndarray) -> np.ndarray:
-        """Evaluates one Gaussian component on the given elevations.
+        """Evaluates one Gaussian component on the given zs.
 
         Args:
             amp : Component amplitude, broadcastable against x.
@@ -87,15 +87,15 @@ class GaussianMixture:
 
     @classmethod
     def evaluate_slice(cls, parameters_array: np.ndarray, h_val: float, n_gaussians: int) -> np.ndarray:
-        """Evaluates a parameter map at a single elevation.
+        """Evaluates a parameter map at a single z.
 
         Args:
-            parameters_array : Parameter cube of shape (3*n_gaussians, azimuth, range), interleaved as amplitude, mean in metres, width in metres per slot.
+            parameters_array : Parameter cube of shape (3*n_gaussians, rows, cols), interleaved as amplitude, mean in metres, width in metres per slot.
             h_val            : Elevation in metres to evaluate at.
             n_gaussians      : Number of mixture components to sum.
 
         Returns:
-            Mixture value per pixel of shape (azimuth, range).
+            Mixture value per pixel of shape (rows, cols).
         """
         reconstructed = np.zeros(parameters_array.shape[1:], dtype=np.float32)
 
@@ -165,7 +165,7 @@ class GaussianReconstructor:
 
 
 class GaussianCurve:
-    """Differentiable reconstruction of elevation curves from predicted parameter maps."""
+    """Differentiable reconstruction of z curves from predicted parameter maps."""
     @staticmethod
     def reconstruct(params: torch.Tensor, z_axis: torch.Tensor, ppg: int = 3) -> torch.Tensor:
         """Reconstructs the z curve of every pixel from a parameter map.
@@ -244,7 +244,7 @@ class GaussianHead:
 
 
 class GaussianClamp:
-    """Constrains predicted Gaussian parameters to the physical elevation axis."""
+    """Constrains predicted Gaussian parameters to the physical z axis."""
     @staticmethod
     def apply(
         params      : torch.Tensor,

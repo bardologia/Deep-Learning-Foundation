@@ -1,7 +1,7 @@
 """Curve-space predictor for JEPA runs, streaming patches into stitched cubes.
 
 The JEPA backbone predicts a profile-autoencoder embedding rather than Gaussian
-parameters, so inference decodes elevation curves directly and keeps only the
+parameters, so inference decodes z curves directly and keeps only the
 ground-truth Gaussian parameters alongside them.
 """
 
@@ -17,7 +17,7 @@ from tools.loss.param_loss                  import ParamMatcher
 
 
 class JepaCurvePredictor(Predictor):
-    """Predictor that stitches decoded elevation curves instead of Gaussian slots.
+    """Predictor that stitches decoded z curves instead of Gaussian slots.
 
     Attributes:
         embedding_evaluator : Optional accumulator fed the predicted embedding and decoded curve of each batch to score embedding error transfer; when None the model is called through its plain forward path.
@@ -48,11 +48,11 @@ class JepaCurvePredictor(Predictor):
         """Runs the wrapped module's embedding-aware forward pass on one batch.
 
         Args:
-            images : Input patch batch of shape (batch, channels, azimuth, range).
+            images : Input patch batch of shape (batch, channels, rows, cols).
 
         Returns:
             Tuple of decoded curves as a NumPy array of shape
-            (batch, elevation, azimuth, range), the normalized predicted embedding
+            (batch, z, rows, cols), the normalized predicted embedding
             tensor and the decoded normalized curve tensor.
         """
         wrapper = self.run.model
@@ -66,7 +66,7 @@ class JepaCurvePredictor(Predictor):
         """Runs the loader once, adding predicted and ground-truth patches to the stitchers.
 
         Ground-truth Gaussian parameters are denormalized, sorted by mean and
-        rendered to curves on the elevation axis so predictions and targets live
+        rendered to curves on the z axis so predictions and targets live
         in the same curve space.
 
         Args:
@@ -115,7 +115,7 @@ class JepaCurvePredictor(Predictor):
         """Sets mean and sigma to NaN wherever a ground-truth Gaussian slot is inactive.
 
         Args:
-            params_gt : Ground-truth parameter cube of shape (3 * n_gaussians, azimuth, range), ordered amplitude, mean, sigma per slot, in physical units (metres for mean and sigma).
+            params_gt : Ground-truth parameter cube of shape (3 * n_gaussians, rows, cols), ordered amplitude, mean, sigma per slot, in physical units (metres for mean and sigma).
 
         Returns:
             The same array with inactive slots' mean and sigma channels masked.
@@ -131,14 +131,14 @@ class JepaCurvePredictor(Predictor):
         """Computes per-pixel curve metrics, optionally saves cubes, and packs the result.
 
         Args:
-            pred_cube : Predicted curves of shape (elevation, azimuth, range).
-            gt_cube   : Ground-truth curves of shape (elevation, azimuth, range).
-            params_gt : Ground-truth Gaussian parameters of shape (3 * n_gaussians, azimuth, range), inactive slots already masked.
+            pred_cube : Predicted curves of shape (z, rows, cols).
+            gt_cube   : Ground-truth curves of shape (z, rows, cols).
+            params_gt : Ground-truth Gaussian parameters of shape (3 * n_gaussians, rows, cols), inactive slots already masked.
 
         Returns:
             Result carrying both cubes, the parameter cube, the per-pixel MSE, MAE,
-            R², cosine and peak-index maps of shape (azimuth, range), the cube
-            directory and the azimuth/range offsets of the inference split region.
+            R², cosine and peak-index maps of shape (rows, cols), the cube
+            directory and the row/col offsets of the inference split region.
         """
         pixel_maps     = Metrics.curve_pixel_metrics(pred_cube, gt_cube)
         pixel_mse      = pixel_maps["mse"]

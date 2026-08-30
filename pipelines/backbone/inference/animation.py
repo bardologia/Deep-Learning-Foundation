@@ -1,6 +1,6 @@
-"""Animated walks through predicted and ground-truth tomographic cubes.
+"""Animated walks through predicted and ground-truth volumetric cubes.
 
-A cube pair is sliced along elevation, range or azimuth and each slice is
+A cube pair is sliced along z, range or row and each slice is
 rendered in a worker process as a side-by-side panel of ground truth,
 prediction and absolute error, then assembled into a GIF.
 """
@@ -47,7 +47,7 @@ class FrameSpec:
         dpi         : Rendering resolution.
         origin      : Image origin, "upper" or "lower".
         title       : Figure title carrying the slice coordinate.
-        full        : Raw tomogram slice of the same shape, or None when not shown.
+        full        : Raw cube slice of the same shape, or None when not shown.
     """
 
     frame_order : int
@@ -69,7 +69,7 @@ class FrameSpec:
 
 
 class Animator:
-    """Renders cube-walk GIFs comparing predicted and ground-truth tomograms.
+    """Renders cube-walk GIFs comparing predicted and ground-truth cubes.
 
     Attributes:
         logger      : Logger for the configuration banner and written-GIF lines.
@@ -307,7 +307,7 @@ class Animator:
             frame_indices : Slice indices to render along the walk axis.
             get_slice     : Callable returning the cube slices at one index.
             axis_spec     : Axis recipe holding the extent, labels, origin and titles.
-            has_full      : Whether the raw tomogram cube is present as a third panel.
+            has_full      : Whether the raw cube is present as a third panel.
             vmin          : Lower intensity limit shared by the GT and prediction panels.
             vmax          : Upper intensity limit shared by the GT and prediction panels.
             emax_gt       : Upper limit of the absolute-error panel.
@@ -358,14 +358,14 @@ class Animator:
         """Renders and writes a GIF walking one axis of the prediction/GT cube pair.
 
         Args:
-            pred_cube : Predicted cube of shape (n_elevation, azimuth, range).
+            pred_cube : Predicted cube of shape (n_z, rows, cols).
             gt_cube   : Ground-truth cube of the same shape.
-            axis      : Walk axis, "elevation", "range" or "azimuth".
+            axis      : Walk axis, "z", "range" or "row".
             out_path  : Destination GIF path.
-            x_axis    : Elevation axis in metres, shape (n_elevation,).
+            x_axis    : Elevation axis in metres, shape (n_z,).
             row_offset : Row index of the cube first row in the full scene.
             col_offset : Column index of the cube first column in the full scene.
-            full_cube : Raw tomogram cube of the same shape shown as an extra panel, or None.
+            full_cube : Raw cube of the same shape shown as an extra panel, or None.
 
         Returns:
             The written GIF path.

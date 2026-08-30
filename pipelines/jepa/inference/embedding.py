@@ -1,7 +1,7 @@
 """Latent-space diagnostics of a JEPA run against the profile-autoencoder target.
 
 Accumulates, batch by batch, the discrepancy between the embedding the JEPA
-predictor infers from the SAR stack and the embedding the profile autoencoder
+predictor infers from the channel stack and the embedding the profile autoencoder
 produces from the ground-truth profile, then separates the curve error into the
 decoder's own reconstruction floor and the excess the predictor adds. Every
 per-pixel field is stitched back into scene maps on the inference patch grid.
@@ -23,10 +23,10 @@ class JepaEmbeddingMaps:
     """Stitched scene maps of the JEPA latent and curve diagnostics.
 
     Attributes:
-        embedding_error  : Mean squared embedding error per pixel, of shape (azimuth, range).
-        embedding_cosine : Cosine similarity between predicted and target embedding per pixel, of shape (azimuth, range).
-        decode_mse       : Decoder-only curve error per pixel in normalized profile units, of shape (azimuth, range).
-        chain_mse        : Full predictor-plus-decoder curve error per pixel in normalized profile units, of shape (azimuth, range).
+        embedding_error  : Mean squared embedding error per pixel, of shape (rows, cols).
+        embedding_cosine : Cosine similarity between predicted and target embedding per pixel, of shape (rows, cols).
+        decode_mse       : Decoder-only curve error per pixel in normalized profile units, of shape (rows, cols).
+        chain_mse        : Full predictor-plus-decoder curve error per pixel in normalized profile units, of shape (rows, cols).
     """
 
     def __init__(self, embedding_error: np.ndarray, embedding_cosine: np.ndarray, decode_mse: np.ndarray, chain_mse: np.ndarray) -> None:
@@ -99,9 +99,9 @@ class JepaEmbeddingEvaluator:
         autoencoder loses when it re-decodes its own encoding.
 
         Args:
-            z_hat_n     : Predicted normalized embeddings of shape (batch, embedding_dim, azimuth, range).
-            curve_n_hat : Decoded normalized profiles of shape (batch, height_bins, azimuth, range).
-            gt_curves   : Ground-truth profiles of shape (batch, height_bins, azimuth, range), in physical units.
+            z_hat_n     : Predicted normalized embeddings of shape (batch, embedding_dim, rows, cols).
+            curve_n_hat : Decoded normalized profiles of shape (batch, height_bins, rows, cols).
+            gt_curves   : Ground-truth profiles of shape (batch, height_bins, rows, cols), in physical units.
 
         Returns:
             Squared embedding error, embedding cosine similarity, decoder-only
@@ -128,9 +128,9 @@ class JepaEmbeddingEvaluator:
         """Adds one batch to the running sums, the per-dimension sums and the stitched maps.
 
         Args:
-            z_hat_n     : Predicted normalized embeddings of shape (batch, embedding_dim, azimuth, range).
-            curve_n_hat : Decoded normalized profiles of shape (batch, height_bins, azimuth, range).
-            gt_curves   : Ground-truth profiles of shape (batch, height_bins, azimuth, range), in physical units.
+            z_hat_n     : Predicted normalized embeddings of shape (batch, embedding_dim, rows, cols).
+            curve_n_hat : Decoded normalized profiles of shape (batch, height_bins, rows, cols).
+            gt_curves   : Ground-truth profiles of shape (batch, height_bins, rows, cols), in physical units.
         """
         with torch.no_grad():
             curves = torch.from_numpy(np.asarray(gt_curves, dtype=np.float32)).to(self.device)
@@ -229,7 +229,7 @@ class JepaEmbeddingEvaluator:
 
         Args:
             maps      : Stitched diagnostic maps.
-            pixel_mse : Per-pixel curve MSE map of shape (azimuth, range), or None when the pipeline did not produce one.
+            pixel_mse : Per-pixel curve MSE map of shape (rows, cols), or None when the pipeline did not produce one.
 
         Returns:
             The Pearson correlation under `jepa_embedding_error_corr`, empty when
@@ -280,7 +280,7 @@ class JepaEmbeddingEvaluator:
         """Closes the accumulation, reduces it to scalars, reports it and returns the results.
 
         Args:
-            pixel_mse : Per-pixel curve MSE map of shape (azimuth, range) the embedding error is correlated against, or None to skip the correlation.
+            pixel_mse : Per-pixel curve MSE map of shape (rows, cols) the embedding error is correlated against, or None to skip the correlation.
 
         Returns:
             The scalar diagnostics and the stitched diagnostic maps.

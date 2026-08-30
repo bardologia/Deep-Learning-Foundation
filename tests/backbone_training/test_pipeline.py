@@ -24,7 +24,7 @@ pytestmark = pytest.mark.usefixtures("force_cpu")
 
 
 def _dataset_config(test_data_dir, params_dir) -> DatasetConfig:
-    """Returns a small five-Gaussian dataset config over three adjacent azimuth split regions."""
+    """Returns a small five-Gaussian dataset config over three adjacent row split regions."""
     input_config = InputConfig(
         use_primary     = True, primary_representation        = Representation.MAG_ONLY,
         use_secondaries = True, secondaries_representation    = Representation.MAG_ONLY,

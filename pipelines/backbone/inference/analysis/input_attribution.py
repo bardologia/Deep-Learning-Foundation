@@ -34,7 +34,7 @@ class ChannelLabeler:
 
         Returns:
             One label per input channel, naming the primary, each secondary track, each
-            interferogram and the DEM.
+            derived channel and the aux field.
 
         Raises:
             ValueError : If the derived label count differs from the run's channel count.
@@ -66,7 +66,7 @@ class ChannelLabeler:
 
 
 class ChannelGroups:
-    """Maps the input channels onto the primary, secondaries, interferograms and DEM groups."""
+    """Maps the input channels onto the primary, secondaries, derived channels and aux field groups."""
 
     @staticmethod
     def build(run) -> dict[str, list[int]]:
@@ -97,7 +97,7 @@ class ChannelGroups:
 
         if input_config.use_derived:
             count                    = run.n_secondaries * input_config.derived_channels_per_source
-            groups["interferograms"] = list(range(offset, offset + count))
+            groups["derived"] = list(range(offset, offset + count))
             offset                  += count
 
         if input_config.use_aux:
@@ -142,7 +142,7 @@ class TrackChannels:
     def build(run) -> list[list[int]]:
         """Returns the channel indices contributed by each secondary track.
 
-        A track owns both its secondary channels and its interferogram channels, so
+        A track owns both its secondary channels and its derived channels, so
         occluding the returned indices removes that acquisition entirely.
 
         Args:
@@ -152,7 +152,7 @@ class TrackChannels:
             One list of channel indices per secondary track.
 
         Raises:
-            ValueError : If neither secondaries nor interferograms are enabled, leaving no track-owned channel to drop.
+            ValueError : If neither secondaries nor derived channels are enabled, leaving no track-owned channel to drop.
         """
         input_config = run.dataset.input_config
         offset       = 0
@@ -346,10 +346,10 @@ class InputAttributionPlots(PlotBase):
     """Figures of the channel and track attribution, coloured by input group."""
 
     GROUP_COLORS = {
-        "primary"        : PlotBase.OKABE_ITO[0],
-        "secondaries"    : PlotBase.OKABE_ITO[2],
-        "interferograms" : PlotBase.OKABE_ITO[1],
-        "aux"            : PlotBase.OKABE_ITO[4],
+        "primary"     : PlotBase.OKABE_ITO[0],
+        "secondaries" : PlotBase.OKABE_ITO[2],
+        "derived"     : PlotBase.OKABE_ITO[1],
+        "aux"         : PlotBase.OKABE_ITO[4],
     }
 
     def channel_bars(self, values: np.ndarray, stds: np.ndarray | None, labels: list[str], channel_groups: list[str], xlabel: str, title: str, path: Path, percent: bool = True) -> Path:

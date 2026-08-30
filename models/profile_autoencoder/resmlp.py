@@ -1,6 +1,6 @@
 """Profile autoencoder built from pre-norm residual MLP blocks.
 
-Each elevation profile is embedded into a hidden vector, refined by a stack of
+Each z profile is embedded into a hidden vector, refined by a stack of
 residual blocks, and projected to the latent code or back to profile length.
 """
 

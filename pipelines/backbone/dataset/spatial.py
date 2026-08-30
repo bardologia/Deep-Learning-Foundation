@@ -19,13 +19,13 @@ from pipelines.shared.dataset.dataset_spatial import Layout
 
 
 class Cropper:
-    """Loads the input stack, targets and optional DEM of one crop region.
+    """Loads the input stack, targets and optional aux field of one crop region.
 
     Attributes:
         layout            : Layout resolving the preprocessing artifact paths and the global crop.
         split_regions     : Crop regions of the train, validation and test splits.
-        secondary_indices : Indices of the selected secondary passes, or None for all passes.
-        secondary_labels  : Labels of the selected secondary passes, or None for all passes.
+        secondary_indices : Indices of the selected secondary channels, or None for all channels.
+        secondary_labels  : Labels of the selected secondary channels, or None for all channels.
     """
 
     def __init__(self, layout: Layout, split_regions: SplitRegions, logger: Logger, secondary_labels=None, input_config=None) -> None:
@@ -35,7 +35,7 @@ class Cropper:
             layout           : Layout of the preprocessing run to crop from.
             split_regions    : Crop regions of the splits, checked to sit inside the global crop.
             logger           : Logger receiving the crop tables.
-            secondary_labels : Labels of the secondary passes to keep, or None to keep all.
+            secondary_labels : Labels of the secondary channels to keep, or None to keep all.
             input_config     : Input configuration deciding which artifact groups are read; when None, every group is treated as enabled.
         """
         self.layout            = layout
@@ -73,7 +73,7 @@ class Cropper:
             raise ValueError(f"Parameters artifact {parameters_path} has spatial shape {tuple(parameters.shape[-2:])} but the preprocessing global crop is {expected} (row, col); the parameter extraction does not belong to this dataset crop.")
 
     def _to_local_slices(self, region: CropRegion) -> Tuple[slice, slice]:
-        """Returns the azimuth and range slices of a region inside the global crop arrays."""
+        """Returns the row and column slices of a region inside the global crop arrays."""
         return region.local_slices(self.layout.global_crop)
 
     def _select_channels(self, array: np.ndarray, row_slice: slice, col_slice: slice) -> np.ndarray:
@@ -85,7 +85,7 @@ class Cropper:
             col_slice : Range slice of the region.
 
         Returns:
-            The cropped array of shape (selected_passes, region_azimuth, region_range).
+            The cropped array of shape (selected_passes, region_row, region_range).
         """
         if self.secondary_indices is None:
             return array[..., row_slice, col_slice]
@@ -106,7 +106,7 @@ class Cropper:
             col_slice : Range slice of the region.
 
         Returns:
-            The cropped array of shape (selected_passes, region_azimuth, region_range), or
+            The cropped array of shape (selected_passes, region_row, region_range), or
             None when the group is disabled.
         """
         if not self._group_enabled(flag):
@@ -124,7 +124,7 @@ class Cropper:
             col_slice : Range slice of the region.
 
         Returns:
-            A tuple of the complex stack of shape (layers, region_azimuth, region_range),
+            A tuple of the complex stack of shape (layers, region_row, region_range),
             ordered primary, secondaries, derived, and the number of primary,
             secondary and derived layers it holds.
         """
@@ -163,8 +163,8 @@ class Cropper:
             col_slice : Range slice of the region.
 
         Returns:
-            A pair of the parameter array of shape (3 * gaussians, region_azimuth,
-            region_range) and the float32 Aux of shape (region_azimuth, region_range) in
+            A pair of the parameter array of shape (3 * gaussians, region_row,
+            region_range) and the float32 Aux of shape (region_row, region_range) in
             metres, or None when the Aux channel is disabled.
         """
         parameters       = np.load(str(self.layout.artifact_path("parameters")), mmap_mode="r", allow_pickle=False)
@@ -252,15 +252,15 @@ class GridInfo:
     """Geometry of the patch grid laid over one crop region.
 
     Attributes:
-        n_v                   : Number of patch rows along azimuth.
+        n_v                   : Number of patch rows along row.
         n_h                   : Number of patch columns along range.
         pad_top               : Padding added above the region, in pixels.
         pad_bot               : Padding added below the region, in pixels.
         pad_left              : Padding added left of the region, in pixels.
         pad_right             : Padding added right of the region, in pixels.
-        patch_size            : Patch extent as (azimuth, range) in pixels.
-        stride                : Grid step as (azimuth, range) in pixels.
-        spatial_size          : Region extent as (azimuth, range) in pixels, before padding.
+        patch_size            : Patch extent as (rows, cols) in pixels.
+        stride                : Grid step as (rows, cols) in pixels.
+        spatial_size          : Region extent as (rows, cols) in pixels, before padding.
         use_symmetric_padding : Whether border patches are mirror-padded instead of zero-padded.
     """
 
@@ -277,7 +277,7 @@ class GridInfo:
 
     @property
     def padding_vertical(self) -> int:
-        """Returns the total azimuth padding in pixels."""
+        """Returns the total row padding in pixels."""
         return self.pad_top + self.pad_bot
 
     @property
@@ -292,7 +292,7 @@ class GridInfo:
 
     @property
     def padded_size(self) -> Tuple[int, int]:
-        """Returns the (azimuth, range) extent of the region once padded."""
+        """Returns the (rows, cols) extent of the region once padded."""
         H, W = self.spatial_size
         return (H + self.padding_vertical, W + self.padding_horizontal)
 
@@ -325,7 +325,7 @@ class Patcher:
 
         Args:
             grid         : Geometry of the patch grid.
-            patch_coords : One entry per patch, each a tuple of the clipped azimuth start and stop, the clipped range start and stop, and either None or a (top, bottom, left, right, mode) padding specification.
+            patch_coords : One entry per patch, each a tuple of the clipped row start and stop, the clipped range start and stop, and either None or a (top, bottom, left, right, mode) padding specification.
         """
         self.grid          = grid
         self._patch_coords = patch_coords
@@ -338,9 +338,9 @@ class Patcher:
         around the region so no pixel is dropped at the borders.
 
         Args:
-            spatial_size          : Region extent as (azimuth, range) in pixels.
-            patch_size            : Patch extent as (azimuth, range) in pixels.
-            stride                : Grid step as (azimuth, range) in pixels.
+            spatial_size          : Region extent as (rows, cols) in pixels.
+            patch_size            : Patch extent as (rows, cols) in pixels.
+            stride                : Grid step as (rows, cols) in pixels.
             use_symmetric_padding : Whether border patches are mirror-padded rather than zero-padded.
 
         Returns:
@@ -404,7 +404,7 @@ class Patcher:
         """Cuts one patch out of a region array, padding it at the borders when needed.
 
         Args:
-            array : Region array whose last two axes are (azimuth, range).
+            array : Region array whose last two axes are (rows, cols).
             idx   : Patch index on the grid.
 
         Returns:

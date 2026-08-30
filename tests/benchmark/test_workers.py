@@ -386,9 +386,9 @@ def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir,
 
     config.paths.dataset_path     = test_data_dir
     config.paths.parameters_path  = params_dir / "parameters.npy"
-    config.training.train_azimuth = (1000, 1400)
-    config.training.val_azimuth   = (1400, 1700)
-    config.training.test_azimuth  = (1700, 2000)
+    config.training.train_rows = (1000, 1400)
+    config.training.val_rows   = (1400, 1700)
+    config.training.test_rows  = (1700, 2000)
     config.find_lr.enabled        = True
 
     worker = TrainingWorker(config, "tag")
@@ -419,9 +419,9 @@ def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config
 
     config.paths.dataset_path     = test_data_dir
     config.paths.parameters_path  = params_dir / "parameters.npy"
-    config.training.train_azimuth = (1000, 1400)
-    config.training.val_azimuth   = (1400, 1700)
-    config.training.test_azimuth  = (1700, 2000)
+    config.training.train_rows = (1000, 1400)
+    config.training.val_rows   = (1400, 1700)
+    config.training.test_rows  = (1700, 2000)
 
     worker = TrainingWorker(config, "tag")
     FileIO.save_json({"resunet-conv": {"status": "PASS", "batch_size": 500, "lr_multiplier": 0.25}}, worker.run_dir / "pipeline" / "max_batch.json")

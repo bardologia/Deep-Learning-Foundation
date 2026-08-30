@@ -1,6 +1,6 @@
 """Reassembly of trained JEPA runs for inference, in curve space and param space.
 
-A JEPA run predicts a profile-autoencoder embedding from the SAR stack, so
+A JEPA run predicts a profile-autoencoder embedding from the channel stack, so
 inference has to rebuild the backbone, the frozen profile autoencoder and, when
 the run used one, the image-autoencoder frontend from their persisted
 configurations. The curve loader wraps the chain into a module that decodes and
@@ -48,12 +48,12 @@ class JepaInferenceModel(nn.Module):
         """Predicts the profile of every pixel and exposes the intermediate latents.
 
         Args:
-            x : Input SAR stack of shape (batch, channels, azimuth, range).
+            x : Input channel stack of shape (batch, channels, rows, cols).
 
         Returns:
-            The denormalized profile of shape (batch, height_bins, azimuth,
+            The denormalized profile of shape (batch, height_bins, row,
             range), the predicted normalized embedding of shape
-            (batch, embedding_dim, azimuth, range), and the decoded profile still
+            (batch, embedding_dim, rows, cols), and the decoded profile still
             in normalized units.
         """
         autoencoder = self.jepa.profile_autoencoder
@@ -64,12 +64,12 @@ class JepaInferenceModel(nn.Module):
         return self.profile_normalizer.denormalize(curve_n), z_hat_n, curve_n
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the denormalized profile of shape (batch, height_bins, azimuth, range)."""
+        """Returns the denormalized profile of shape (batch, height_bins, rows, cols)."""
         return self.forward_with_embedding(x)[0]
 
 
 class JepaRunLoader(RunLoader):
-    """Restores a JEPA run as a curve predictor over the SAR stack."""
+    """Restores a JEPA run as a curve predictor over the channel stack."""
 
     def _validate_out_channels(self, out_channels: int, n_gaussians: int) -> None:
         """Checks that the persisted backbone width equals the profile embedding width.
@@ -106,7 +106,7 @@ class JepaRunLoader(RunLoader):
             backbone_name : Registered backbone architecture name.
             in_channels   : Input width the dataset yields.
             out_channels  : Output width recorded in the run summary.
-            patch_size    : Patch extent as (azimuth, range) in pixels.
+            patch_size    : Patch extent as (rows, cols) in pixels.
 
         Returns:
             The assembled JEPA module, its backbone widened to the profile
@@ -158,7 +158,7 @@ class JepaParamRunLoader(RunLoader):
             backbone_name : Registered backbone architecture name.
             in_channels   : Input width the dataset yields, consumed by the frontend.
             out_channels  : Width of the Gaussian-parameter output.
-            patch_size    : Patch extent as (azimuth, range) in pixels.
+            patch_size    : Patch extent as (rows, cols) in pixels.
 
         Returns:
             The JEPA module carrying the frontend and the backbone, with no

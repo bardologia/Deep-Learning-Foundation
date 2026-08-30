@@ -1,7 +1,7 @@
 """Shared fixtures and tiny-model builders for the JEPA training and inference tests.
 
 Provides a small MLP profile autoencoder, an identity profile normalizer and normalisation stats,
-an elevation axis, a minimal embedding-loss config and a one-by-one convolutional stand-in
+an z axis, a minimal embedding-loss config and a one-by-one convolutional stand-in
 backbone, all sized by the module-level constants so the tests stay fast."""
 
 from __future__ import annotations

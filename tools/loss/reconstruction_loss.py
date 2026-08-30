@@ -75,7 +75,7 @@ class ReconstructionLoss:
 
         Args:
             kind       : Penalty kind, one of ``KINDS``.
-            prediction : Reconstruction of shape (batch, elevation, ...).
+            prediction : Reconstruction of shape (batch, z, ...).
             target     : Target of the same shape.
             diff       : Precomputed residual ``prediction - target``.
 
@@ -100,7 +100,7 @@ class ReconstructionLoss:
         """Returns the weighted total and the component breakdown.
 
         Args:
-            prediction : Reconstruction of shape (batch, elevation, ...).
+            prediction : Reconstruction of shape (batch, z, ...).
             target     : Target of the same shape.
 
         Returns:
@@ -123,7 +123,7 @@ class ReconstructionLoss:
         """Evaluates the objective in the payload shape the trainers consume.
 
         Args:
-            prediction : Reconstruction of shape (batch, elevation, ...).
+            prediction : Reconstruction of shape (batch, z, ...).
             target     : Target of the same shape.
 
         Returns:

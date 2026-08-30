@@ -23,7 +23,7 @@ def make_planner(maximum: tuple[int, int] = (32, 16)) -> PatchSizeTrialPlanner:
     """Builds a step-8 planner capped at the given patch maximum.
 
     Args:
-        maximum : Largest (row, range) patch size in pixels.
+        maximum : Largest (rows, cols) patch size in pixels.
 
     Returns:
         Planner over the sweep-narrowed three-level unet.
@@ -36,9 +36,9 @@ def make_planner(maximum: tuple[int, int] = (32, 16)) -> PatchSizeTrialPlanner:
 
 def synthetic_loss(patch_size: tuple[int, int]) -> float:
     """Returns a quadratic test loss minimised at the synthetic optimal patch size."""
-    azimuth_opt, range_opt = OPTIMUM
+    row_opt, range_opt = OPTIMUM
     row,     range_len = patch_size
-    return 0.1 + 0.02 * ((row - azimuth_opt) / 32) ** 2 + 0.02 * ((range_len - range_opt) / 32) ** 2
+    return 0.1 + 0.02 * ((row - row_opt) / 32) ** 2 + 0.02 * ((range_len - range_opt) / 32) ** 2
 
 
 def populate_runs(runs_root: Path, planner: PatchSizeTrialPlanner, seeds: list[int] | None = None, drop_metrics: set[str] = frozenset()) -> None:

@@ -1,7 +1,7 @@
 """Robustness sweep of a trained backbone under controlled input degradations.
 
 Curve-MSE degradation is measured under additive input noise (globally or per
-channel family), global gain error, whole-track dropout, and circular azimuth
+channel family), global gain error, whole-track dropout, and circular row
 shifts that probe positional dependence of the dense per-pixel prediction.
 """
 
@@ -38,7 +38,7 @@ class RobustnessCore:
 
         Args:
             model    : Backbone model wrapper mapping an input batch to parameters.
-            renderer : Renderer producing elevation profiles from parameters.
+            renderer : Renderer producing z profiles from parameters.
             seed     : Seed for the noise and dropout random generator.
         """
         self.model    = model
@@ -49,7 +49,7 @@ class RobustnessCore:
         """Returns the mean curve MSE against ground truth after applying a perturbation.
 
         Args:
-            batches   : Pairs of an input batch of shape (batch, channels, height, width) and the ground-truth curves of shape (batch, n_elevation, height, width).
+            batches   : Pairs of an input batch of shape (batch, channels, height, width) and the ground-truth curves of shape (batch, n_z, height, width).
             transform : Callable mapping an input batch to its perturbed version.
 
         Returns:
@@ -161,9 +161,9 @@ class RobustnessCore:
         return rows
 
     def shift_consistency(self, batches: list, shifts: list[int]) -> list[dict]:
-        """Measures how far predictions deviate from exact azimuth-shift equivariance.
+        """Measures how far predictions deviate from exact row-shift equivariance.
 
-        The input is circularly shifted along azimuth and the equally shifted
+        The input is circularly shifted along row and the equally shifted
         baseline prediction is compared on the rows unaffected by the wrap.
 
         Args:
@@ -324,7 +324,7 @@ class RobustnessPlots(PlotBase):
         ax.axhline(ys[0], color="0.4", linestyle="--", linewidth=1.0, label="clean loss")
 
         ax.set_xticks(xs)
-        ax.set_xlabel("Tracks dropped (secondary + interferogram zeroed)")
+        ax.set_xlabel("Tracks dropped (secondary + derived channel zeroed)")
         ax.set_ylabel("Curve MSE")
         ax.set_yscale("log")
         ax.set_title("Degradation under track dropout (± spread across subsets)")
@@ -335,7 +335,7 @@ class RobustnessPlots(PlotBase):
         return self._save(fig, path)
 
     def shift_curve(self, rows: list[dict], clean: float, path: Path) -> Path:
-        """Saves the shift-equivariance error against azimuth shift.
+        """Saves the shift-equivariance error against row shift.
 
         Args:
             rows  : Shift rows holding "shift" in pixels and "mse".
@@ -375,11 +375,11 @@ class RobustnessRun(AnalysisRun):
 
         Args:
             run      : Loaded run providing the loader and normalizer.
-            renderer : Renderer producing elevation profiles from parameters.
+            renderer : Renderer producing z profiles from parameters.
 
         Returns:
             Pairs of an input batch of shape (batch, channels, height, width) and
-            ground-truth curves of shape (batch, n_elevation, height, width).
+            ground-truth curves of shape (batch, n_z, height, width).
 
         Raises:
             ValueError : If the loader yielded no batches.
@@ -404,8 +404,8 @@ class RobustnessRun(AnalysisRun):
         amplitude = groups.get("primary", []) + groups.get("secondaries", [])
         if amplitude:
             scopes["amplitude channels"] = amplitude
-        if "interferograms" in groups:
-            scopes["interferogram channels"] = groups["interferograms"]
+        if "derived" in groups:
+            scopes["derived"] = groups["derived"]
 
         return scopes
 
@@ -427,10 +427,10 @@ class RobustnessRun(AnalysisRun):
         doc.paragraph(
             f"Curve-MSE degradation on {self.config.max_batches} '{self.config.split}' batches under four controlled stresses. "
             f"Gaussian noise is added to the normalized inputs (averaged over {self.config.noise_draws} draws), either on all channels or restricted to one channel "
-            "family, which separates amplitude fragility from interferogram-phase fragility. The gain sweep scales every input by a global factor, probing calibration "
-            "error. Track dropout zeroes whole tracks (secondary and interferogram channels), averaged over up to "
+            "family, which separates amplitude fragility from derived-phase fragility. The gain sweep scales every input by a global factor, probing calibration "
+            "error. Track dropout zeroes whole tracks (secondary and derived channels), averaged over up to "
             f"{self.config.draws_per_count} random track subsets per count, capped at the number of distinct subsets; counts with a single possible subset report no spread. "
-            "Shift equivariance circularly shifts the input along azimuth and compares the equally shifted prediction on the unwrapped rows: a dense per-pixel model "
+            "Shift equivariance circularly shifts the input along row and compares the equally shifted prediction on the unwrapped rows: a dense per-pixel model "
             "should predict the same profile for the same pixel, so this error isolates positional dependence. "
             f"The noise tolerance is the interpolated sigma at which the loss doubles: σ {'≥' if tolerance['censored'] else '='} {tolerance['sigma']:.2f}."
         )

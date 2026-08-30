@@ -65,7 +65,7 @@ def test_low_amplitude_predictions_that_miss_reduce_low_bin_precision():
 
 
 def test_too_few_predictions_raise():
-    """Too few predicted scatterers to populate the bins raises."""
+    """Too few predicted components to populate the bins raises."""
     amp        = np.zeros((H, W))
     amp[0, :3] = 1.0
     mu         = np.full((H, W), 25.0)

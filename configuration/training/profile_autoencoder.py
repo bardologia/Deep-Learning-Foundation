@@ -1,4 +1,4 @@
-"""Configuration for training the 1D autoencoder over per-pixel elevation profiles."""
+"""Configuration for training the 1D autoencoder over per-pixel z profiles."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from configuration.training.general.trainer          import SharedSubConfigInher
 
 @dataclass
 class ProfileAeLossConfig:
-    """Summable reconstruction, shape, smoothness and latent-noise terms on the elevation profile.
+    """Summable reconstruction, shape, smoothness and latent-noise terms on the z profile.
 
     Each ``use_*`` flag enables one term and its ``weight_*`` scales that term in
     the total, mirroring the backbone loss shape so several penalties combine.
@@ -34,7 +34,7 @@ class ProfileAeLossConfig:
         use_charbonnier_curve    : Whether the Charbonnier reconstruction term is active.
         weight_charbonnier_curve : Weight of that term.
         charbonnier_eps          : Smoothing constant of the Charbonnier penalty.
-        use_cosine_curve         : Whether the cosine shape term over the elevation axis is active.
+        use_cosine_curve         : Whether the cosine shape term over the z axis is active.
         weight_cosine_curve      : Weight of that term.
         use_log_energy_curve     : Whether the log energy-ratio term is active.
         weight_log_energy_curve  : Weight of that term.
@@ -158,10 +158,10 @@ class ProfileAeTrainerConfig(SharedSubConfigInheritance):
     """Everything the profile-autoencoder trainer needs, assembled from sub-configs.
 
     Attributes:
-        gaussian         : Gaussian label configuration describing the elevation grid.
+        gaussian         : Gaussian label configuration describing the z grid.
         autoencoder      : Architecture config of the encoder/decoder pair.
         ae_loss          : Reconstruction, smoothness and latent-noise settings.
-        geometry         : SAR acquisition geometry.
+        geometry         : Acquisition geometry.
         early_stopping   : Validation-loss stopping rule.
         warmup           : Learning-rate warmup ramp.
         scheduler        : Learning-rate schedule.
@@ -204,14 +204,14 @@ class ProfileAeEntryConfig:
         seeds                : Seeds trained by the sweep.
         logdir               : Root directory the run folders are created under.
         pixel_subsample      : Fraction of scene pixels kept as training profiles.
-        keep_empty_frac      : Fraction of profiles with no scatterer kept in the sample.
+        keep_empty_frac      : Fraction of profiles with no component kept in the sample.
         amp_zero_thr         : Amplitude below which a profile counts as empty.
         stats_max_samples    : Profiles drawn when estimating normalization statistics.
         profile_augmentation : Augmentation applied to the sampled profiles.
         ae_model_name        : Registry key of the profile-autoencoder architecture.
         model_overrides      : Architecture fields overridden on top of that default.
         ae_loss              : Reconstruction, smoothness and latent-noise settings.
-        geometry             : SAR acquisition geometry.
+        geometry             : Acquisition geometry.
         encoder_lr           : Learning rate of the encoder parameter group.
         decoder_lr           : Learning rate of the decoder parameter group.
         encoder_wd           : Weight decay of the encoder parameter group.

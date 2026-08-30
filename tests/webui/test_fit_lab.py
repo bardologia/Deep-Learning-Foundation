@@ -1,4 +1,4 @@
-"""Tests for the Fit Lab dataset browser, tomogram loading and Gaussian fitting.
+"""Tests for the Fit Lab dataset browser, cube loading and Gaussian fitting.
 
 Covers dataset discovery, asynchronous cube loading, PNG preview maps, fit request
 validation and the JAX-backed multi-Gaussian fit across its parameter-freezing modes.
@@ -41,7 +41,7 @@ BASE_CONFIG = {
 
 
 def _make_dataset(root: Path) -> Path:
-    """Writes a synthetic dataset whose tomogram holds one Gaussian per pixel.
+    """Writes a synthetic dataset whose cube holds one Gaussian per pixel.
 
     Args:
         root : Directory the dataset folder is created inside.
@@ -104,7 +104,7 @@ def test_datasets_listing(tmp_path):
 
 
 def test_load_meta_and_maps(tmp_path):
-    """A loaded dataset reports cube dimensions and height range, and renders SLC and peak PNG maps sized (az, rg)."""
+    """A loaded dataset reports cube dimensions and height range, and renders complex and peak PNG maps sized (az, rg)."""
     dataset = _make_dataset(tmp_path)
     lab     = FitLab(WebLogger())
 

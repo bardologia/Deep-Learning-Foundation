@@ -172,8 +172,8 @@ def test_patchdataset_layer_mismatch_raises(derived, parameters):
 
 
 @pytest.mark.dataset
-def test_patchdataset_use_dem_without_dem_raises(derived, parameters):
-    """Requesting a Aux channel without supplying a Aux raises ValueError."""
+def test_patchdataset_use_aux_without_aux_raises(derived, parameters):
+    """Requesting the aux channel without supplying an aux field raises ValueError."""
     derived     = np.ascontiguousarray(np.asarray(derived[:3, :16, :16]))
     inputs  = np.concatenate([derived[:1], derived], axis=0)
     params  = np.ascontiguousarray(np.asarray(parameters[:, :16, :16]))
@@ -245,7 +245,7 @@ def _profile_dataset(parameters, tmp_path, **kw):
     """Builds a ProfileDataset over a 40x40 parameter crop on a 150-bin height axis.
 
     Args:
-        parameters : Gaussian parameter cube of shape (3 * n_gaussians, azimuth, range).
+        parameters : Gaussian parameter cube of shape (3 * n_gaussians, rows, cols).
         tmp_path   : Directory the logger writes into.
         **kw       : Overrides for the ProfileDataset keyword defaults.
 

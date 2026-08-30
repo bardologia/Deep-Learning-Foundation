@@ -151,7 +151,7 @@ def test_extractor_chunking_does_not_change_the_result():
     np.testing.assert_allclose(whole.fit_r2, chunked.fit_r2, rtol=1e-5, atol=1e-6)
 
 
-def test_extractor_rejects_a_mismatched_elevation_axis():
+def test_extractor_rejects_a_mismatched_z_axis():
     """Curves whose z length differs from the axis raise ValueError."""
     curves = np.zeros((N_Z + 1, 2, 2), dtype=np.float32)
 
@@ -292,7 +292,7 @@ def test_extracted_parameters_unlock_the_param_space_metrics(tmp_path):
     assert "slot_usage_entropy"     not in metrics
 
 
-def test_extractor_handles_a_descending_elevation_axis():
+def test_extractor_handles_a_descending_z_axis():
     """A descending z axis still recovers the true centre and width."""
     z_axis = _axis()[::-1].copy()
     amps   = np.ones((1, 2, 2), dtype=np.float32)

@@ -65,8 +65,8 @@ class PatchTrialsConfig:
     """Trial settings sweeping the training patch shape over a rectangular grid.
 
     Attributes:
-        minimum               : Smallest patch shape included, as (azimuth, range) pixels; 0 starts at one step.
-        maximum               : Largest patch shape included, as (azimuth, range) pixels.
+        minimum               : Smallest patch shape included, as (rows, cols) pixels; 0 starts at one step.
+        maximum               : Largest patch shape included, as (rows, cols) pixels.
         step                  : Spacing between consecutive patch lengths in pixels, or 0 to derive it from the backbone's encoder pyramid.
         stride_ratio          : Patch stride as a fraction of the patch length, per axis.
         constant_pixel_budget : Whether each trial's batch size is rescaled so every patch shape sees the same pixel count per optimizer step.
@@ -119,8 +119,8 @@ class ReachTrialsConfig:
 
     Attributes:
         rungs           : Per-rung architecture specifications from the trial catalogue.
-        patch_size      : Training patch shape as (range, azimuth) pixels.
-        patch_stride    : Patch stride as (range, azimuth) pixels.
+        patch_size      : Training patch shape as (range, row) pixels.
+        patch_stride    : Patch stride as (range, row) pixels.
         in_channels     : Number of input channels the rungs are sized for.
         match_tolerance : Allowed relative deviation between rung parameter counts.
     """

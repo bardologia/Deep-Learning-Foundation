@@ -94,7 +94,7 @@ class StratifiedErrorPlotter(PlotTools):
         )
 
     def plot_presence_reliability(self, rows: list[dict], out_path: Path) -> Path:
-        """Plots the share of predicted Gaussians matching a ground-truth scatterer per amplitude bin.
+        """Plots the share of predicted Gaussians matching a ground-truth component per amplitude bin.
 
         Args:
             rows     : Per-bin records carrying "amp_mean" and "precision" (a fraction in [0, 1]).
@@ -120,7 +120,7 @@ class StratifiedErrorPlotter(PlotTools):
         return self._save(fig, out_path)
 
     def plot_miss_by_separation(self, rows: list[dict], out_path: Path) -> Path:
-        """Plots the fraction of pixels with a missed scatterer against ground-truth scatterer separation.
+        """Plots the fraction of pixels with a missed component against ground-truth component separation.
 
         Args:
             rows     : Per-bin records carrying "center" (separation in metres) and "miss_rate" in [0, 1].

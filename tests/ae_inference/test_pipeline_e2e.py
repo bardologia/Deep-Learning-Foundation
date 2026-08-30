@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.dataset, pytest.mark.slow, pytest.mark.usefixtures("fo
 
 
 def _entry_config(test_data_dir, params_dir, tmp_path) -> ImageAeEntryConfig:
-    """Returns a one-epoch image autoencoder entry config over a small azimuth split of the test data."""
+    """Returns a one-epoch image autoencoder entry config over a small row split of the test data."""
     entry = ImageAeEntryConfig(run_name="e2e_image_ae", logdir=tmp_path)
 
     entry.paths.dataset_path    = test_data_dir
@@ -124,7 +124,7 @@ def test_image_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_pat
 
 
 def _profile_entry_config(test_data_dir, params_dir, tmp_path) -> ProfileAeEntryConfig:
-    """Returns a one-epoch profile autoencoder entry config over a subsampled azimuth split of the test data."""
+    """Returns a one-epoch profile autoencoder entry config over a subsampled row split of the test data."""
     entry = ProfileAeEntryConfig(run_name="e2e_profile_ae", logdir=tmp_path)
 
     entry.paths.dataset_path    = test_data_dir

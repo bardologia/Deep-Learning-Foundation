@@ -82,7 +82,7 @@ class AutoencoderTrainingPipeline:
         })
 
     def _prepare_data(self, run_directory, logger):
-        """Returns loaders, elevation axis, model dimension, datasets and metadata arguments; implemented by subclasses."""
+        """Returns loaders, z axis, model dimension, datasets and metadata arguments; implemented by subclasses."""
         raise NotImplementedError
 
     def _run_overfit_check(self, run_meta, logger, model_dim: int, z_axis, datasets) -> None:

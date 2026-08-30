@@ -2,7 +2,7 @@
 
 Covers component wiring, the adapter that decodes an embedding map into a denormalised profile
 cube, the loaders that rebuild a JepaModule from the persisted autoencoder and backbone configs
-and validate the head width, checkpoint loading with either a numpy or a tensor elevation axis,
+and validate the head width, checkpoint loading with either a numpy or a tensor z axis,
 and JepaCurvePredictor stitching predicted and ground-truth curve cubes, sorting and masking the
 ground-truth parameters, and feeding the embedding evaluator from a single forward pass."""
 
@@ -171,7 +171,7 @@ def test_wrap_model_returns_model_wrapper_with_curve_output():
 
 
 def test_load_checkpoint_round_trip_numpy_x_axis(tmp_path):
-    """A checkpoint holding a numpy elevation axis restores the axis as float32 along with the epoch metadata."""
+    """A checkpoint holding a numpy z axis restores the axis as float32 along with the epoch metadata."""
     module = build_inference_module()
     z_axis = np.linspace(-4.0, 4.0, PROFILE_LENGTH).astype(np.float32)
 
@@ -196,7 +196,7 @@ def test_load_checkpoint_round_trip_numpy_x_axis(tmp_path):
 
 
 def test_load_checkpoint_accepts_tensor_x_axis(tmp_path):
-    """A checkpoint holding a torch elevation axis restores it as an equal float32 array."""
+    """A checkpoint holding a torch z axis restores it as an equal float32 array."""
     module = build_inference_module()
     z_axis = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
 

@@ -3,7 +3,7 @@
 Resolves the queue of preprocessed dataset directories, expands it into
 extraction groups over the requested K, lambda and fit-mode permutations, and
 runs ``ParamExtractionPipeline`` once per group so that each group shares a
-single tomogram load and peak initialisation.
+single cube load and peak initialisation.
 """
 
 from __future__ import annotations

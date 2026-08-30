@@ -22,7 +22,7 @@ def _active(parameters):
     """Returns the amplitude, mean, and sigma values of pixels whose amplitude exceeds AMP_THR.
 
     Args:
-        parameters : Gaussian parameter cube of shape (3 * n_gaussians, azimuth, range), interleaved as amplitude, mean in metres, and sigma in metres.
+        parameters : Gaussian parameter cube of shape (3 * n_gaussians, rows, cols), interleaved as amplitude, mean in metres, and sigma in metres.
 
     Returns:
         Tuple of the flattened active amplitude, mean, and sigma arrays.

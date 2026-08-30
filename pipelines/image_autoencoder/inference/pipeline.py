@@ -37,7 +37,7 @@ class ImageAeInferencePipeline(AeInferencePipeline):
         return ImageAeMetrics(result)
 
     def _region_metrics(self, run) -> dict:
-        """Returns the crop region of the inferred split as `(azimuth_start, azimuth_end, range_start, range_end)`."""
+        """Returns the crop region of the inferred split as `(row_start, row_end, range_start, range_end)`."""
         return {"split_region": list(run.split_region.as_tuple())}
 
     def _metrics_summary(self, metrics: dict) -> dict:

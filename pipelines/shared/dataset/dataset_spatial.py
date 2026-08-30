@@ -19,9 +19,9 @@ class Layout:
         data_directory  : Sub-directory holding the generated arrays.
         parameters_path : Path of the ground-truth Gaussian parameter array.
         global_crop     : Azimuth/range crop the run was generated over.
-        tomogram_tag    : Tag identifying the tomographic focusing settings.
+        cube_tag    : Tag identifying the volumetric focusing settings.
         artifacts       : Mapping of artifact key to filename inside data/.
-        pass_labels     : Track labels of the SAR stack, or None when unavailable.
+        pass_labels     : Track labels of the channel stack, or None when unavailable.
     """
 
     def __init__(self, run_directory: Path, logger: Logger, parameters_path: Path) -> None:
@@ -74,7 +74,7 @@ class Layout:
         return self.data_directory / self.artifacts[artifact_key]
 
     def secondary_indices(self, secondary_labels) -> list | None:
-        """Maps requested secondary pass labels onto track indices of the stack.
+        """Maps requested secondary channel labels onto track indices of the stack.
 
         Args:
             secondary_labels : Pass labels to use as secondaries, or None to keep the dataset's own secondary ordering.

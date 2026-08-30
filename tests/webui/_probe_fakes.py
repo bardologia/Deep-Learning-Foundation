@@ -25,7 +25,7 @@ class BareModel(torch.nn.Module):
         self.tap = torch.nn.Identity()
 
     def forward(self, x):
-        """Returns Gaussian parameters of shape (batch, 3, row, range) from x of shape (batch, channels, row, range)."""
+        """Returns Gaussian parameters of shape (batch, 3, rows, cols) from x of shape (batch, channels, rows, cols)."""
         x          = self.tap(x)
         B, _, H, W = x.shape
         out        = torch.zeros(B, 3, H, W)
@@ -46,7 +46,7 @@ class TwoSlotModel(torch.nn.Module):
         self.tap = torch.nn.Identity()
 
     def forward(self, x):
-        """Returns Gaussian parameters of shape (batch, 6, row, range) from x of shape (batch, 2, row, range)."""
+        """Returns Gaussian parameters of shape (batch, 6, rows, cols) from x of shape (batch, 2, rows, cols)."""
         x          = self.tap(x)
         B, _, H, W = x.shape
         out        = torch.zeros(B, 6, H, W)
@@ -70,7 +70,7 @@ class AzShiftModel(torch.nn.Module):
         self.tap = torch.nn.Identity()
 
     def forward(self, x):
-        """Returns Gaussian parameters of shape (batch, 3, row, range), with the height channel read from the row-rolled input."""
+        """Returns Gaussian parameters of shape (batch, 3, rows, cols), with the height channel read from the row-rolled input."""
         x          = self.tap(x)
         B, _, H, W = x.shape
         out        = torch.zeros(B, 3, H, W)
@@ -94,7 +94,7 @@ class TinyConvModel(torch.nn.Module):
         self.head = torch.nn.Conv2d(8, 3, 1)
 
     def forward(self, x):
-        """Returns Gaussian parameters of shape (batch, 3, row, range) from x of shape (batch, 2, row, range)."""
+        """Returns Gaussian parameters of shape (batch, 3, rows, cols) from x of shape (batch, 2, rows, cols)."""
         return self.head(self.act(self.conv(x)))
 
 
@@ -110,13 +110,13 @@ class Wrapper:
         self.module = module
 
     def __call__(self, x):
-        """Runs the module on an array of shape (batch, channels, row, range).
+        """Runs the module on an array of shape (batch, channels, rows, cols).
 
         Args:
             x : Array-like input converted to float32.
 
         Returns:
-            Gaussian parameter array of shape (batch, 3 * slots, row, range).
+            Gaussian parameter array of shape (batch, 3 * slots, rows, cols).
         """
         with torch.no_grad():
             return self.module(torch.as_tensor(np.asarray(x, dtype=np.float32))).numpy()

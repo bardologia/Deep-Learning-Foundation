@@ -108,7 +108,7 @@ class FittingResultPlotter(PlotBase):
 
         Args:
             metrics_dict : Metric maps from the metrics stage.
-            r2_map       : Per-pixel R-squared of shape (azimuth, range).
+            r2_map       : Per-pixel R-squared of shape (rows, cols).
             activity_map : Active-slot count of the same shape.
             dirs         : Per-category output directories.
 
@@ -188,8 +188,8 @@ class FittingResultPlotter(PlotBase):
         """Saves the R-squared, per-slot and joint parameter distribution figures.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
-            r2_map           : Per-pixel R-squared of shape (azimuth, range).
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
+            r2_map           : Per-pixel R-squared of shape (rows, cols).
             summary          : Global summary from the metrics stage.
             dirs             : Per-category output directories.
 
@@ -214,7 +214,7 @@ class FittingResultPlotter(PlotBase):
 
         Args:
             metrics_dict : Metric maps and summaries from the metrics stage.
-            r2_map       : Per-pixel R-squared of shape (azimuth, range).
+            r2_map       : Per-pixel R-squared of shape (rows, cols).
             summary      : Global summary from the metrics stage.
             dirs         : Per-category output directories.
 

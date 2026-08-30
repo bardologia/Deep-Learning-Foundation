@@ -1,4 +1,4 @@
-"""Measures how far a backbone's predictions drift under azimuth and range flips.
+"""Measures how far a backbone's predictions drift under row and column flips.
 
 The model is applied to each patch and to its flipped copies; unflipping the outputs
 and comparing the rendered curves gives a per-pixel disagreement map that requires no
@@ -56,11 +56,11 @@ class FlipConsistencyEvaluator:
         """Predicts on the batch flipped along one spatial axis and unflips the output back.
 
         Args:
-            images : Input patch batch of shape (batch, channels, azimuth, range).
-            axis   : Tensor axis to flip, 2 for azimuth and 3 for range.
+            images : Input patch batch of shape (batch, channels, rows, cols).
+            axis   : Tensor axis to flip, 2 for row and 3 for range.
 
         Returns:
-            Model output realigned with the unflipped input, of shape (batch, out_channels, azimuth, range).
+            Model output realigned with the unflipped input, of shape (batch, out_channels, rows, cols).
         """
 
         flipped = torch.flip(images, dims=[axis])
@@ -72,10 +72,10 @@ class FlipConsistencyEvaluator:
         """Returns the mean over flip axes of the curve MSE between the base and flip-restored predictions.
 
         Args:
-            images : Input patch batch of shape (batch, channels, azimuth, range).
+            images : Input patch batch of shape (batch, channels, rows, cols).
 
         Returns:
-            Per-pixel disagreement of shape (batch, azimuth, range).
+            Per-pixel disagreement of shape (batch, rows, cols).
         """
 
         base_curves = self._curves(self.loaded.model(images))
@@ -91,7 +91,7 @@ class FlipConsistencyEvaluator:
         """Runs the flip evaluation over every patch and stitches the disagreement into one map.
 
         Returns:
-            Flip-equivariance disagreement map of shape (azimuth, range) covering the split region.
+            Flip-equivariance disagreement map of shape (rows, cols) covering the split region.
         """
 
         run      = self.loaded

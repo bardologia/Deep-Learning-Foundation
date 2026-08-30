@@ -1,8 +1,8 @@
 """Configuration for JEPA training, where a backbone predicts autoencoder embeddings.
 
 Couples a frozen or fine-tuned profile autoencoder (the target encoder for the
-elevation profiles) and an optional image autoencoder to the backbone that has to
-predict their latent codes from the SAR stack.
+z profiles) and an optional image autoencoder to the backbone that has to
+predict their latent codes from the channel stack.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ class EmbeddingLossConfig:
         variance_gamma               : Standard-deviation floor of the variance hinge.
         use_embedding_covariance     : Whether the off-diagonal covariance of the predicted embedding is penalised, decorrelating its dimensions.
         weight_embedding_covariance  : Weight of that covariance penalty.
-        use_curve_recon              : Whether the decoded elevation profile is compared to ground truth.
+        use_curve_recon              : Whether the decoded z profile is compared to ground truth.
         weight_curve_recon           : Weight of that decoded-profile penalty.
         curve_kind                   : Penalty family used on the decoded profile.
         huber_delta                  : Transition point of the Huber profile penalty.
@@ -287,7 +287,7 @@ class JepaTrainerConfig(SharedSubConfigInheritance):
     """Everything the JEPA trainer needs, with the coupled autoencoders resolved.
 
     Attributes:
-        gaussian                       : Gaussian label configuration describing the elevation grid.
+        gaussian                       : Gaussian label configuration describing the z grid.
         autoencoder                    : Architecture config of the profile autoencoder, or None.
         embedding_loss                 : Latent and decoded-profile loss settings.
         profile_autoencoder_mode       : Whether the profile encoder is frozen or fine-tuned.
@@ -391,7 +391,7 @@ class JepaEntryConfig:
         curriculum                 : Two-stage warmup schedule swapping to the main loss.
         masking                    : Context masking of the input patch in the embedding regime.
         probe                      : Pre-training probe measuring the raw magnitude of each loss term.
-        input                      : Input channel selection of the SAR stack.
+        input                      : Input channel selection of the channel stack.
         paths                      : Dataset and parameter-label locations.
         training                   : Training schedule expanded into the trainer sub-configs.
         pretrain                   : Batch-size and loader probes run before training.

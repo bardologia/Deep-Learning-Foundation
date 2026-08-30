@@ -34,7 +34,7 @@ class SlotOrganizationPlotter(PlotTools):
         """Plots the fraction of pixels on which each raw output slot is active.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figure is written into.
             amp_threshold : Amplitude above which a slot counts as active.
@@ -78,7 +78,7 @@ class SlotOrganizationPlotter(PlotTools):
         the central 99% of their values.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
             bins          : Number of histogram bins.
@@ -149,10 +149,10 @@ class SlotOrganizationPlotter(PlotTools):
     ) -> List[Path]:
         """Plots the row-normalised matrix of raw slot index against within-pixel μ rank.
 
-        A diagonal matrix means the head emits its Gaussians in elevation order.
+        A diagonal matrix means the head emits its Gaussians in z order.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figure is written into.
             amp_threshold : Amplitude above which a slot counts as active.
@@ -187,10 +187,10 @@ class SlotOrganizationPlotter(PlotTools):
     ) -> List[Path]:
         """Plots the row-normalised matrix of raw slot index against matched ground-truth index.
 
-        A diagonal matrix means each slot consistently claims the same GT scatterer.
+        A diagonal matrix means each slot consistently claims the same GT component.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figure is written into.

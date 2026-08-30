@@ -885,7 +885,7 @@ class OutputHeadsMixin:
         """Builds the per-slot parameter heads plus a per-slot existence gate.
 
         The gate blends each slot's amplitude towards the learned ``amp_off`` offset,
-        so an unused slot can be switched off rather than forced onto a scatterer.
+        so an unused slot can be switched off rather than forced onto a component.
         """
         self._build_per_gaussian_heads()
         self.existence_head = PixelMLP(self.embedding_channels, self.hidden_channels, self.n_gaussians, self._head_activation())

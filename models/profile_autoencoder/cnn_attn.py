@@ -1,6 +1,6 @@
 """Profile autoencoder combining a 1-D convolutional stem with self-attention.
 
-The encoder convolves each elevation profile, splits it into patch tokens and
+The encoder convolves each z profile, splits it into patch tokens and
 attends over them before mean-pooling to a latent code; the decoder broadcasts
 the code back to tokens and reassembles the profile from decoded patches.
 """
@@ -45,7 +45,7 @@ class CnnAttnPositional:
 
 
 class CnnAttnEncoder(nn.Module):
-    """Convolutional-stem transformer encoder over elevation profiles.
+    """Convolutional-stem transformer encoder over z profiles.
 
     Attributes:
         num_tokens : Number of patch tokens per profile.

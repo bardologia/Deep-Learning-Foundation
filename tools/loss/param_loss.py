@@ -1,4 +1,4 @@
-"""Slot matching and penalties for Gaussian scatterer parameter predictions.
+"""Slot matching and penalties for Gaussian component parameter predictions.
 
 Set prediction over Gaussian slots is permutation invariant, so predictions are
 first assigned to ground-truth slots per pixel, and only then compared with the
@@ -27,7 +27,7 @@ class ParamMatcher:
 
     @staticmethod
     def is_active(amplitude, thr: float = ACTIVE_AMP_THR):
-        """Returns whether an amplitude reaches the active-scatterer threshold.
+        """Returns whether an amplitude reaches the active-component threshold.
 
         Args:
             amplitude : Physical amplitude tensor or array of any shape.
@@ -40,11 +40,11 @@ class ParamMatcher:
 
     @staticmethod
     def _sort_gt(gt: torch.Tensor, gt_phys: torch.Tensor, active_thr: float) -> tuple[torch.Tensor, torch.Tensor]:
-        """Sorts ground-truth slots per pixel by ascending elevation, inactive slots last.
+        """Sorts ground-truth slots per pixel by ascending z, inactive slots last.
 
         Args:
             gt         : Normalised ground-truth parameters of shape (batch, gaussians, params, height, width).
-            gt_phys    : Physical-unit ground-truth parameters of the same shape, with amplitude at param index 0 and elevation mu in metres at param index 1.
+            gt_phys    : Physical-unit ground-truth parameters of the same shape, with amplitude at param index 0 and z mu in metres at param index 1.
             active_thr : Amplitude above which a ground-truth slot counts as active.
 
         Returns:
@@ -115,7 +115,7 @@ class ParamMatcher:
 
     @staticmethod
     def _match_hungarian(pred: torch.Tensor, pred_phys: torch.Tensor, gt: torch.Tensor, gt_phys: torch.Tensor, active_thr: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Sorts ground truth by elevation and then assigns predictions to it by minimum cost."""
+        """Sorts ground truth by z and then assigns predictions to it by minimum cost."""
         gt, gt_phys     = ParamMatcher._sort_gt(gt, gt_phys, active_thr)
         pred, pred_phys = ParamMatcher._assign_pred_to_gt(pred, pred_phys, gt, gt_phys, active_thr)
 
@@ -123,7 +123,7 @@ class ParamMatcher:
 
     @staticmethod
     def _match_sorted_gt(pred: torch.Tensor, pred_phys: torch.Tensor, gt: torch.Tensor, gt_phys: torch.Tensor, active_thr: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Sorts ground truth by elevation and leaves the predicted slot order untouched."""
+        """Sorts ground truth by z and leaves the predicted slot order untouched."""
         gt, gt_phys = ParamMatcher._sort_gt(gt, gt_phys, active_thr)
 
         return pred, pred_phys, gt, gt_phys
@@ -144,7 +144,7 @@ class ParamMatcher:
             pred_phys  : Physical-unit predicted parameters of the same shape.
             gt         : Normalised ground-truth parameters of the same shape.
             gt_phys    : Physical-unit ground-truth parameters of the same shape.
-            method     : Either "hungarian" for per-pixel minimum-cost assignment or "sorted_gt" for elevation-sorted ground truth only.
+            method     : Either "hungarian" for per-pixel minimum-cost assignment or "sorted_gt" for z-sorted ground truth only.
             active_thr : Amplitude above which a ground-truth slot counts as active.
 
         Returns:

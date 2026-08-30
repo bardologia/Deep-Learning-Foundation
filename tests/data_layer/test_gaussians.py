@@ -133,7 +133,7 @@ def test_reconstructor_components_count():
 
 
 def test_gaussian_curve_shape():
-    """Verifies torch reconstruction returns curves of shape (batch, heights, azimuth, range)."""
+    """Verifies torch reconstruction returns curves of shape (batch, heights, rows, cols)."""
     params = torch.zeros((2, 6, 4, 5))
     params[:, 0] = 1.0
     params[:, 2] = 1.0

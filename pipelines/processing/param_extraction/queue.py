@@ -1,7 +1,7 @@
 """Expands a parameter-extraction entry configuration into schedulable fit groups.
 
 Every dataset and k_max pairing becomes one group whose permutations over fit modes and
-model-order penalties share the tomogram load and the peak initialisation.
+model-order penalties share the cube load and the peak initialisation.
 """
 
 from __future__ import annotations

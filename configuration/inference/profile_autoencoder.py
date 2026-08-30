@@ -38,10 +38,10 @@ class ProfileAeInferenceConfig:
         log_level        : Logging verbosity for the inference logger.
         split            : Dataset split evaluated, typically "train", "val" or "test".
         checkpoint_name  : Checkpoint file name loaded from the run directory.
-        batch_size       : Number of elevation profiles per forward pass.
+        batch_size       : Number of z profiles per forward pass.
         num_workers      : Dataloader worker processes.
         pixel_subsample  : Fraction of pixels retained from the evaluated split.
-        keep_empty_frac  : Fraction of empty (no-scatterer) profiles retained.
+        keep_empty_frac  : Fraction of empty (no-component) profiles retained.
         save_plots       : Whether figures are written to disk.
         n_best_curves    : Number of best-reconstructed profiles plotted.
         n_worst_curves   : Number of worst-reconstructed profiles plotted.

@@ -151,7 +151,7 @@ class MetricsBarPlotter(PlotBase):
         """Saves the per-order residual spread, penalty decomposition and win rate.
 
         Args:
-            mse_per_k     : Residual MSE of shape (k_max, azimuth, range).
+            mse_per_k     : Residual MSE of shape (k_max, rows, cols).
             per_k_summary : Per-order summary carrying the mean MSE, penalty and win fraction.
             out_dir       : Directory the figures are written to.
 
@@ -218,7 +218,7 @@ class MetricsBarPlotter(PlotBase):
         """Saves the hexbin density of fit quality against profile contrast.
 
         Args:
-            snr_db_map : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            snr_db_map : Peak-to-floor contrast of shape (rows, cols), in dB.
             r2_map     : Per-pixel R-squared of the same shape, floored at -1 for plotting.
             out_dir    : Directory the figure is written to.
 
@@ -255,7 +255,7 @@ class MetricsBarPlotter(PlotBase):
         """Saves the contrast distribution split by selected model order.
 
         Args:
-            snr_db_map : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            snr_db_map : Peak-to-floor contrast of shape (rows, cols), in dB.
             best_k_map : Selected model order of the same shape.
             out_dir    : Directory the figure is written to.
 
@@ -283,7 +283,7 @@ class MetricsBarPlotter(PlotBase):
         """Saves the hexbin density of model-order ambiguity against profile contrast.
 
         Args:
-            snr_db_map     : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            snr_db_map     : Peak-to-floor contrast of shape (rows, cols), in dB.
             rel_margin_map : Relative selection margin of the same shape.
             out_dir        : Directory the figure is written to.
 
@@ -324,7 +324,7 @@ class MetricsBarPlotter(PlotBase):
         """Saves every figure relating profile contrast to fit quality and ambiguity.
 
         Args:
-            snr_db_map     : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            snr_db_map     : Peak-to-floor contrast of shape (rows, cols), in dB.
             r2_map         : Per-pixel R-squared of the same shape.
             best_k_map     : Selected model order of the same shape, or None to skip that split.
             rel_margin_map : Relative selection margin of the same shape, or None to skip.

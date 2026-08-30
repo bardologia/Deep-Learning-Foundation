@@ -1,7 +1,7 @@
 """Training pipeline and single-run entry runner for JEPA predictor runs.
 
 Imports one or both pretrained autoencoders from their run directories, checks
-that their input representation and elevation axis match the JEPA dataset, builds
+that their input representation and z axis match the JEPA dataset, builds
 the coupled module, and trains it through the shared training-run machinery.
 """
 
@@ -378,7 +378,7 @@ class TrainingPipeline:
 
     @staticmethod
     def _validate_profile_axis(ae_axis, jepa_axis, ckpt_path) -> None:
-        """Requires the checkpoint's elevation axis to match the JEPA dataset's.
+        """Requires the checkpoint's z axis to match the JEPA dataset's.
 
         Args:
             ae_axis   : Elevation axis in metres stored in the autoencoder checkpoint.

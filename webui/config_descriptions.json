@@ -209,7 +209,7 @@
         "p_amp_scale": "probability of multiplying the profile by a random amplitude factor drawn from amp_scale_range, 0.0 disables it",
         "amp_scale_range": "min/max multiplicative amplitude-scaling factor sampled uniformly when p_amp_scale triggers, default (0.9, 1.1)",
         "p_shift": "probability of shifting the profile along the z axis by a random offset, 0.0 disables it; the vacated bins are filled with zeros, so nothing wraps from one end of the axis to the other",
-        "max_shift": "maximum absolute shift in z-axis bins, sampled uniformly in -max_shift..max_shift when p_shift triggers; scatterers pushed past either end of the axis are dropped",
+        "max_shift": "maximum absolute shift in z-axis bins, sampled uniformly in -max_shift..max_shift when p_shift triggers; components pushed past either end of the axis are dropped",
         "p_flip": "probability of reversing the profile along the z axis, default 0.5",
         "p_noise": "probability of adding zero-mean Gaussian noise to the normalized curve fed to the encoder, 0.0 disables it; the reconstruction target stays the clean curve, so a positive value trains a denoising autoencoder",
         "noise_std": "standard deviation of the additive Gaussian noise, applied after normalization to the encoder input only"
@@ -1005,8 +1005,8 @@
     "training/backbone::PatchTrialsConfig": {
       "summary": "Rectangular patch-shape grid swept by the patch trials mode under a constant pixel budget",
       "fields": {
-        "minimum": "Smallest (row, range) patch shape included in pixels; 0 on an axis starts that axis at one admissible step",
-        "maximum": "Largest (row, range) patch shape included in pixels; each axis runs from its start to this bound in steps of the admissible step",
+        "minimum": "Smallest (rows, cols) patch shape included in pixels; 0 on an axis starts that axis at one admissible step",
+        "maximum": "Largest (rows, cols) patch shape included in pixels; each axis runs from its start to this bound in steps of the admissible step",
         "step": "Spacing between consecutive patch lengths in pixels, shared by both axes; 0 derives it from the backbone's encoder pyramid as 2^levels so every length stays divisible through all downsampling stages (verified one-halving-per-stage U-Nets only, others must set it explicitly)",
         "stride_ratio": "Patch stride as a fraction of the patch length per axis, valid range (0, 1]; 0.5 gives 50% overlap",
         "constant_pixel_budget": "When true, each trial's batch size and lr_reference_batch_size are rescaled together so batch x row x range matches the reference training.batch_size x training.patch_size pixels, keeping pixels per step and the batch-linear LR scale identical across patch shapes; the max-batch probe is disabled for every patch trial either way so the comparison stays controlled"
@@ -1016,8 +1016,8 @@
       "summary": "Size-matched architecture comparison at a fixed spatial reach: every rung trains on the same patch with the same parameter budget, so the only free variable left is the architecture",
       "fields": {
         "rungs": "Architectures compared one run each, every rung a dict of label, backbone and optional model-config overrides; defaults pair an eight-block local_cnn (3x3 ConvBlocks give a 4n+1 = 33x33 receptive field, width 479) against a default unet, both about 31.0 M parameters on the 32x32 patch that a 33x33 receptive field fully covers, with dropout and trunk weight decay pinned to the unet regime (0.15 / 1e-4) on both arms so regularization cannot confound the architecture comparison. Every backbone must exist in the backbone registry and the rungs must stay size matched to within match_tolerance",
-        "patch_size": "Patch size (row, range) in pixels shared by every rung, deliberately square and no larger than the local rung's receptive field so all arms reach the whole patch and reach cannot confound the architecture comparison",
-        "patch_stride": "Patch stride (row, range) in pixels shared by every rung; half of patch_size gives 50% overlap",
+        "patch_size": "Patch size (rows, cols) in pixels shared by every rung, deliberately square and no larger than the local rung's receptive field so all arms reach the whole patch and reach cannot confound the architecture comparison",
+        "patch_stride": "Patch stride (rows, cols) in pixels shared by every rung; half of patch_size gives 50% overlap",
         "in_channels": "Input channel count the planner builds each rung at when it counts parameters; validated loudly against the channels the input configuration and secondary selection actually produce, because training builds every arm at the dataset width and a mismatch would make the capacity check count the wrong first layer",
         "match_tolerance": "Largest fractional spread in parameter count tolerated across the rungs; the planner counts every rung at the configured head before launching and refuses the sweep beyond this, because an unmatched arm turns an architecture result into a capacity result"
       }
@@ -1247,7 +1247,7 @@
     "training/general/run::TrainingPathsConfig": {
       "summary": "Filesystem locations for a training run's dataset, ground-truth parameters, and secondary tracks",
       "fields": {
-        "dataset_path": "root directory of the preprocessed FSAR stack dataset (dataset.json, layout, geometry field)",
+        "dataset_path": "root directory of the preprocessed Fchannel stack dataset (dataset.json, layout, geometry field)",
         "parameters_path": "path to the .npy Gaussian ground-truth parameters produced by parameter extraction",
         "secondary_labels": "tuple of secondary-channel labels (e.g. CH01) selecting which channels join the primary track; empty/None uses all channels"
       }
@@ -1530,7 +1530,7 @@
         "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set, defaulting to save_cubes on and compute_reduced off for JEPA",
         "curriculum": "JepaCurriculumConfig warmup schedule swapping to the main loss at a fixed epoch",
         "probe": "LossScaleProbeConfig pre-training probe measuring the raw magnitude of each loss term of the active regime at unit weight",
-        "input": "InputConfig selecting which SAR stack channels feed the backbone or image autoencoder",
+        "input": "InputConfig selecting which channel stack channels feed the backbone or image autoencoder",
         "masking": "JepaMaskingConfig hiding part of each input patch in the embedding regime",
         "trials_enabled": "Enable the multi-trial GPU sweep (JepaTrialScheduler) instead of a single training run",
         "trials_mode": "Sweep dimension the trial scheduler varies: embedding, curve, masking, curriculum, coupling, ae_run, context, input, augmentation, normalization, ema, amp, or stability",

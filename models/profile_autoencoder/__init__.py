@@ -1,4 +1,4 @@
-"""Registry of profile autoencoder architectures for tomographic curves.
+"""Registry of profile autoencoder architectures for volumetric curves.
 
 Maps architecture names to their model and configuration classes and exposes
 ``get_profile_autoencoder`` for name-based construction.

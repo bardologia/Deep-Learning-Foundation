@@ -2,7 +2,7 @@
 
 Provides the pieces the receptive-field, attribution and activation analyses need: the
 device a model lives on, evenly spread square windows cut from the inference split, and
-rendering of predicted Gaussian parameters into elevation curves.
+rendering of predicted Gaussian parameters into z curves.
 """
 
 from __future__ import annotations
@@ -67,11 +67,11 @@ class ProbeWindows:
         """Assembles the model input tensor for every requested window centre.
 
         Args:
-            centers : Window centres as (azimuth, range) index pairs into the split region.
+            centers : Window centres as (rows, cols) index pairs into the split region.
 
         Returns:
             Batched model inputs of shape (n_centers, in_channels, window, window), built by
-            the dataset's own channel assembly from the complex stack and the DEM.
+            the dataset's own channel assembly from the complex stack and the aux field.
         """
         half    = self.window // 2
         aux     = self.run.dataset.aux
@@ -87,11 +87,11 @@ class ProbeWindows:
 
 
 class PredictionCurves:
-    """Renders predicted Gaussian parameters into elevation curves on a fixed axis.
+    """Renders predicted Gaussian parameters into z curves on a fixed axis.
 
     Attributes:
         n_gaussians      : Number of Gaussian slots read from the parameter tensor.
-        x_axis           : Elevation sampling axis in metres, of shape (n_elevation,).
+        x_axis           : Elevation sampling axis in metres, of shape (n_z,).
         render_amp_floor : Amplitude below which a Gaussian is suppressed before rendering.
     """
 
@@ -102,13 +102,13 @@ class PredictionCurves:
         self.render_amp_floor = float(render_amp_floor)
 
     def render(self, params: np.ndarray) -> np.ndarray:
-        """Reconstructs elevation curves from a batch of predicted Gaussian parameters.
+        """Reconstructs z curves from a batch of predicted Gaussian parameters.
 
         Args:
             params : Predicted parameters of shape (batch, channels, height, width), the first 3 * n_gaussians channels interleaving amplitude, mu in metres and sigma in metres.
 
         Returns:
-            Rendered curves of shape (batch, n_elevation, height, width).
+            Rendered curves of shape (batch, n_z, height, width).
         """
         n_K        = self.n_gaussians
         B, _, H, W = params.shape

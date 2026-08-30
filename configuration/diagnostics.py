@@ -391,7 +391,7 @@ class ReportMailEntryConfig:
     smtp_host      : str  = "smtp.gmail.com"
     smtp_port      : int  = 465
     password_env   : str  = "REPORT_MAIL_PASSWORD"
-    subject_prefix : str  = "TomoSAR experiment reports"
+    subject_prefix : str  = "ML-Template experiment reports"
     dry_run        : bool = False
 
     def experiment_label(self, experiment_dir: Path) -> str:

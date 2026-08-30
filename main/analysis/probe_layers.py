@@ -1,7 +1,7 @@
 """Entry point fitting linear layer probes on the features of trained backbone runs.
 
 Ridge readouts on sampled real pixels predict the ground-truth active Gaussian count and
-the dominant scatterer elevation, giving held-out R-squared as a function of depth.
+the dominant component z, giving held-out R-squared as a function of depth.
 """
 
 from __future__ import annotations

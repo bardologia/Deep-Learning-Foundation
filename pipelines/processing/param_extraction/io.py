@@ -130,7 +130,7 @@ class ParameterIO:
         """Saves the fitted parameter stack as a contiguous .npy file.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * k_max, azimuth, range), interleaved as amplitude, mean in metres and sigma in metres per slot.
+            parameters_array : Parameter stack of shape (3 * k_max, rows, cols), interleaved as amplitude, mean in metres and sigma in metres per slot.
             npy_path         : Destination .npy path.
 
         Returns:
@@ -144,7 +144,7 @@ class ParameterIO:
         return npy_path
 
     def load_params(self, npy_path : Path) -> np.ndarray:
-        """Loads a parameter stack of shape (3 * k_max, azimuth, range) as float32."""
+        """Loads a parameter stack of shape (3 * k_max, rows, cols) as float32."""
         self.logger.subsection("Loading saved parameters for metrics and plots")
         return np.load(str(npy_path)).astype(np.float32, copy=False)
 
@@ -152,7 +152,7 @@ class ParameterIO:
         """Saves the fit diagnostics arrays into a single .npz archive.
 
         Args:
-            diagnostics : Mapping from diagnostic name to array, such as the per-K MSE of shape (k_max, azimuth, range) and the selected-K map.
+            diagnostics : Mapping from diagnostic name to array, such as the per-K MSE of shape (k_max, rows, cols) and the selected-K map.
             npz_path    : Destination .npz path.
 
         Returns:

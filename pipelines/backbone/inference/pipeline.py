@@ -272,7 +272,7 @@ class InferencePipeline:
 
         Args:
             result           : Inference result supplying the GT curves, per-pixel maps and GT parameters.
-            reference_params : Parameters the extractor recovered from the GT curves, of shape (3 * K, row, range).
+            reference_params : Parameters the extractor recovered from the GT curves, of shape (3 * K, rows, cols).
             z_axis_np        : Z axis in metres, of shape (n_z,).
             n_gaussians      : Gaussian count K.
             cpu_workers      : Worker count for the metric computation.

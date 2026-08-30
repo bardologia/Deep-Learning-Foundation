@@ -85,7 +85,7 @@ class R2:
         Args:
             pred : Predicted values with the reduced dimension along axis.
             ref  : Reference values of the same shape.
-            axis : Dimension the residual and total sums are taken over, usually the elevation axis of a profile stack.
+            axis : Dimension the residual and total sums are taken over, usually the z axis of a profile stack.
 
         Returns:
             Float32 array with axis removed, holding 1 - SS_res / SS_tot.

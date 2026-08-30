@@ -29,7 +29,7 @@ class Trainer(AutoencoderTrainer):
         """Returns the reconstruction loss of one batch.
 
         Args:
-            batch : Dataset batch whose first element holds the normalized input patches of shape (batch, channels, azimuth, range).
+            batch : Dataset batch whose first element holds the normalized input patches of shape (batch, channels, rows, cols).
         """
         image        = batch[0].to(self.device)
         image_hat, _ = self.model.reconstruct(image)

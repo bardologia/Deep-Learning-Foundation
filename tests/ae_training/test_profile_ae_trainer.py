@@ -166,7 +166,7 @@ def test_fit_reduces_or_stable_loss(tmp_path):
 
 
 def test_checkpoint_saved_and_roundtrips(tmp_path):
-    """The checkpoint stores parameters, the elevation axis and the best validation loss, and reloads bit-identically."""
+    """The checkpoint stores parameters, the z axis and the best validation loss, and reloads bit-identically."""
     trainer, _ = _build_trainer(tmp_path, epochs=2)
     loader     = _loader()
 
@@ -188,7 +188,7 @@ def test_checkpoint_saved_and_roundtrips(tmp_path):
 
 
 def test_capture_state_contents(tmp_path):
-    """The captured state carries the epoch and the elevation axis."""
+    """The captured state carries the epoch and the z axis."""
     trainer, _ = _build_trainer(tmp_path)
 
     state = trainer.capture_state(epoch=2)

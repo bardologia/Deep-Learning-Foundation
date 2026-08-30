@@ -97,14 +97,14 @@ class RunArtifactLoader:
         )
 
     def _load_checkpoint(self, ckpt_path: Path, device: str) -> tuple[dict, np.ndarray, dict]:
-        """Loads a checkpoint together with its elevation axis and best-epoch scalars.
+        """Loads a checkpoint together with its z axis and best-epoch scalars.
 
         Args:
             ckpt_path : Path of the checkpoint file.
             device    : Torch device the tensors are mapped to.
 
         Returns:
-            Triple of the raw checkpoint dict, the elevation axis of shape
+            Triple of the raw checkpoint dict, the z axis of shape
             (x_axis_length,) in metres, and a metadata dict with the last epoch,
             the best validation loss and the best epoch.
 
@@ -148,7 +148,7 @@ class RunArtifactLoader:
             split_name      : Split to load ("train", "val", "test").
             n_gaussians     : Number of Gaussian components per pixel in the targets.
             norm_stats      : Normalization statistics fitted at training time.
-            load_cube   : Whether the full cube cube is loaded alongside the inputs, needed for curve-space metrics.
+            load_cube   : Whether the full cube is loaded alongside the inputs, needed for curve-space metrics.
             region_override : Wider crop replacing the stored split region, used to extend a cross-validation fold over its guard bands.
 
         Returns:

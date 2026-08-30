@@ -1,7 +1,7 @@
 """Training pipeline of the dual-trunk model and its input-routing channel map.
 
-The channel map turns named input groups (interferometric pass channels,
-interferogram channels, the DEM elevation channel) into the channel indices
+The channel map turns named input groups (primary and secondary channels,
+derived channels, the auxiliary channel) into the channel indices
 each trunk reads, and the pipeline builds the two-trunk model on top of the
 backbone training pipeline.
 """
@@ -19,11 +19,11 @@ from pipelines.shared.training.run_naming       import RunNaming
 class TrunkChannelMap:
     """Maps named input channel groups onto the channel indices a trunk reads.
 
-    The groups are the sources of the assembled input stack: `pass` for the
-    primary and secondary single-look channels, `ifg` for the interferogram
-    channels, `dem` for the elevation channel. A selected group that carries
-    no channels under the active input configuration contributes nothing, so
-    `dem` may stay selected while `input.use_dem` is off.
+    The groups are the sources of the assembled input stack: `chan` for the
+    primary and secondary channels, `derived` for the derived channels, `aux`
+    for the auxiliary channel. A selected group that carries no channels under
+    the active input configuration contributes nothing, so `aux` may stay
+    selected while `input.use_aux` is off.
     """
 
     MAX_TRACKS = 64

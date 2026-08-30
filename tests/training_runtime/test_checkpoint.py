@@ -2,7 +2,7 @@
 
 Covers the improvement comparison, the metadata written alongside the weights,
 exact restoration of the saved state, the reset triggered by a loss-generation
-change, and the numpy elevation axis produced by the real trainer."""
+change, and the numpy z axis produced by the real trainer."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class StubTrainer:
             epoch : Epoch index recorded in the payload.
 
         Returns:
-            Mapping with the epoch, the model parameters, and a five-point elevation axis.
+            Mapping with the epoch, the model parameters, and a five-point z axis.
         """
         return {
             "epoch"  : epoch,
@@ -153,9 +153,9 @@ def test_loss_generation_change_resets_baseline(tmp_path, logger, tracker):
 
 
 class NumpyAxisTrainer(StubTrainer):
-    """Trainer stub whose captured elevation axis is a numpy array."""
+    """Trainer stub whose captured z axis is a numpy array."""
     def capture_state(self, epoch: int) -> dict:
-        """Returns the checkpoint payload with the elevation axis as a numpy array.
+        """Returns the checkpoint payload with the z axis as a numpy array.
 
         Args:
             epoch : Epoch index recorded in the payload.
@@ -171,7 +171,7 @@ class NumpyAxisTrainer(StubTrainer):
 
 
 def test_restore_best_with_numpy_axis_like_real_trainer(tmp_path, logger, tracker):
-    """Verifies a numpy elevation axis survives save and restore as a numpy array."""
+    """Verifies a numpy z axis survives save and restore as a numpy array."""
     model   = _model()
     ckpt    = Checkpoint(logger, tracker, str(tmp_path / "best.pt"))
     trainer = NumpyAxisTrainer(model)

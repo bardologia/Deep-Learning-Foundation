@@ -213,8 +213,8 @@ def test_tolerance_sigma_interpolates_and_censors():
     assert censored["censored"] is True
 
 
-def test_track_channels_map_secondaries_and_interferograms():
-    """Each secondary track maps to its secondary and interferogram channel indices."""
+def test_track_channels_map_secondaries_and_derived_channels():
+    """Each secondary track maps to its secondary and derived channel indices."""
     input_config = SimpleNamespace(
         use_primary                     = True,
         use_secondaries                 = True,

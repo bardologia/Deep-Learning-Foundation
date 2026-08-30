@@ -85,7 +85,7 @@ class TrainingPipeline:
         return [self.backbone_name]
 
     def _build_dataset_pipeline(self, run_directory: Path, logger) -> DatasetPipeline:
-        """Builds the patch dataset pipeline and derives the elevation axis from its profile length.
+        """Builds the patch dataset pipeline and derives the z axis from its profile length.
 
         Args:
             run_directory : Directory the dataset artefacts are written under.

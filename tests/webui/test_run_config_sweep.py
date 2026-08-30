@@ -40,9 +40,7 @@ from web_logger             import WebLogger
 
 from tools.runtime.config_cli import ConfigCli
 
-_DISPATCH_ONLY = {"generate_tomogram", "generate_interferograms"}
-
-_ENTRY_KEYS = sorted(key for key in ProjectPaths.SCRIPT_DIRS if key not in _DISPATCH_ONLY)
+_ENTRY_KEYS = sorted(ProjectPaths.SCRIPT_DIRS)
 
 
 def _entry_config_class(key: str):

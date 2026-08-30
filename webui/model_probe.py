@@ -1,4 +1,4 @@
-"""Interactive single-pixel interrogation of a trained tomographic model.
+"""Interactive single-pixel interrogation of a trained volumetric model.
 
 Backs the web UI Microscope tab: loads a finished backbone or dual run in a
 background thread, then answers per-pixel questions about it: predicted
@@ -315,7 +315,7 @@ class ModelProbe:
         return self._window_at(self.loaded["run"], self.loaded["patch"], row, col)
 
     def _slots(self, params_center: np.ndarray) -> list[dict]:
-        """Unpacks a centre-pixel parameter vector into per-scatterer slot records.
+        """Unpacks a centre-pixel parameter vector into per-component slot records.
 
         Args:
             params_center : Flat parameter vector of shape (3 * n_gaussians,) laid out as amplitude, mu in metres and sigma in metres per slot.

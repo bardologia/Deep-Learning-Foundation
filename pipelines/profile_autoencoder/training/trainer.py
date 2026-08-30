@@ -13,7 +13,7 @@ from pipelines.profile_autoencoder.training.loss import Loss
 
 
 class Trainer(AutoencoderTrainer):
-    """Trains a profile autoencoder on noisy/clean elevation-profile pairs.
+    """Trains a profile autoencoder on noisy/clean z-profile pairs.
 
     Attributes:
         stage_name    : Label used by the shared trainer for progress reporting.
@@ -43,7 +43,7 @@ class Trainer(AutoencoderTrainer):
         """Reconstructs a batch of profiles and returns its loss dictionary.
 
         Args:
-            batch : Pair of tensors (noisy, clean), each of shape (batch, x_axis_length), holding the measured and ground-truth elevation profiles in normalized reflectivity units. Both are reshaped to (batch, x_axis_length, 1, 1) before the model call.
+            batch : Pair of tensors (noisy, clean), each of shape (batch, x_axis_length), holding the measured and ground-truth z profiles in normalized reflectivity units. Both are reshaped to (batch, x_axis_length, 1, 1) before the model call.
 
         Returns:
             Loss dictionary with key "total_loss" and a "components" sub-dict.
