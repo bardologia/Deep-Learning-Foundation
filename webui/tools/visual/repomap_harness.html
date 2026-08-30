@@ -7,17 +7,19 @@
   <style>
     html, body { margin: 0; background: var(--bg, #f2f3ef); }
     #rm { width: 100%; }
-    /* Faithful production scroll behavior by default. With ?fit the graph expands to full height
-       so a whole (even scrolling) diagram is captured in one screenshot. */
+    /* Faithful production scroll behavior by default. Under the fit class the graph expands to
+       full height so a whole (even scrolling) diagram is captured in one screenshot. */
     body.fit .rm-graph { max-height: none !important; min-height: 0 !important; overflow: visible !important; }
   </style>
 </head>
 <body>
   <div id="rm"></div>
+  <script src="../../static/js/api.js"></script>
+  <script src="../../static/js/shared_charts.js"></script>
   <script src="../../static/js/repomap.js"></script>
   <script>
     window.REDUCED_MOTION = true;
-    window.apiGet = async function () { return window.__RM_DATA__; };
+    window.Api.get = async function () { return window.__RM_DATA__; };
     window.renderDiagram = async function (folderMeta, diagram) {
       window.__RM_DATA__ = { folders: [ { folder: folderMeta.folder, title: folderMeta.title, blurb: folderMeta.blurb || "", diagrams: [ diagram ] } ] };
       const root = document.getElementById("rm");

@@ -1,3 +1,5 @@
+"""Web UI catalogue of the image autoencoder architectures and their defaults."""
+
 from __future__ import annotations
 
 from configuration.architectures import image_autoencoder
@@ -6,6 +8,12 @@ from model_library_base import ModelDefaultsLibrary
 
 
 class ImageAutoencoderModelLibrary(ModelDefaultsLibrary):
+    """Serves the image autoencoder family, its config defaults and field hints.
+
+    The class attributes bind each model key to its configuration dataclass and
+    vault note, list the architecture fields hidden from the launch panel, and
+    supply the one-line hint shown next to every exposed field.
+    """
 
     CONFIG_MODULE = image_autoencoder
 
@@ -28,7 +36,44 @@ class ImageAutoencoderModelLibrary(ModelDefaultsLibrary):
     FALLBACK_ACTIVATION    = "gelu"
     FALLBACK_NORMALIZATION = "batch"
 
+    ARCH_EXCLUDED = ("in_channels",)
+
+    ARCH_EXCLUDED_BY_MODEL = {
+        "dilated2d_ae" : ("downsample_factor", "depth"),
+        "vit_ae"       : ("downsample_factor", "base_channels"),
+    }
+
+    ARCH_HINTS = {
+        "embedding_dim"         : "channels of the spatial embedding; a coupled JEPA backbone consumes this stack as its input",
+        "embedding_norm"        : "normalization applied to the embedding channels",
+        "downsample_factor"     : "spatial reduction of the embedding grid relative to the input",
+        "base_channels"         : "channels of the first encoder stage",
+        "depth"                 : "number of stacked blocks or stages",
+        "activation"            : "nonlinearity used throughout the encoder and decoder",
+        "normalization"         : "feature normalization inside the convolutional blocks",
+        "dropout"               : "dropout probability inside the blocks",
+        "init_mode"             : "weight initialization scheme; default keeps the PyTorch layer defaults",
+        "encoder_lr"            : "learning rate of the encoder parameter group",
+        "decoder_lr"            : "learning rate of the decoder parameter group",
+        "encoder_wd"            : "weight decay of the encoder parameter group",
+        "decoder_wd"            : "weight decay of the decoder parameter group",
+        "upsample_mode"         : "decoder upsampling operator",
+        "stochastic_depth_rate" : "probability of dropping a residual branch during training",
+        "dilation_depth"        : "number of dilated stages; each doubles the dilation",
+        "patch_size"            : "pixels per token side before the attention stack",
+        "hidden_dim"            : "width of the transformer token embedding",
+        "num_heads"             : "attention heads per transformer block",
+        "mlp_ratio"             : "feed-forward width as a multiple of the token embedding",
+    }
+
     def _families(self) -> list[dict]:
+        """Returns the single image autoencoder family with one entry per model.
+
+        Returns:
+            A one-element list holding the family name, its blurb and the model
+            records (key, display name, skip and head labels, parameter count,
+            recommendation flag and the guidance on when to pick it).
+        """
         return [
             {
                 "family" : "Image autoencoder",

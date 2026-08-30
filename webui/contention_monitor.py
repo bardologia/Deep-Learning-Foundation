@@ -1,3 +1,12 @@
+"""Background watcher for machine contention caused by this user's processes.
+
+Samples kernel pressure-stall information, swap traffic, memory, disk statistics
+and a per-process sweep every few seconds, decides whether a resource is contended
+and what share of it this user holds, raises and clears alerts once a breach is
+sustained, flags processes whose RSS keeps climbing, and can fire an automatic nuke
+when severe self-caused contention persists.
+"""
+
 from __future__ import annotations
 
 import os
@@ -6,11 +15,35 @@ import time
 from collections import deque
 from datetime    import datetime
 
-from proc_stats import MemInfo, ProcStats
+from notifier   import JobNotifier
+from proc_stats import MemInfo, ProcStats, ProcSweep
 from web_logger import WebLogger
 
 
 class ContentionMonitor:
+    """Polls system pressure and reports how much of it this user is responsible for.
+
+    Attributes:
+        paths       : Project paths, used to find the block device backing the repository.
+        logger      : Web logger carrying the alerts to the console.
+        notifier    : Notifier the announced alerts and auto-nuke firings are pushed through.
+        nuke        : Object exposing `nuke()`, invoked when auto-nuke fires.
+        lock        : Guards the shared signal, alert and event state.
+        uid         : Numeric user id whose processes count as "mine".
+        clk         : Clock ticks per second, for converting jiffies to CPU percent.
+        page        : Page size in bytes, for converting swap counters to megabytes.
+        cores       : Logical CPU count used to normalise load and CPU share.
+        device      : Kernel name of the disk holding the repository, or None.
+        signals     : Most recent sample from `_sample`.
+        active      : Currently raised alerts keyed by resource kind.
+        events      : Bounded log of announced alerts and auto-nuke firings.
+        streaks     : Consecutive breach counts per resource kind.
+        announced   : Kinds whose alert has been surfaced to the user.
+        auto_nuke   : Whether the automatic nuke is armed.
+        nuke_streak : Consecutive samples of severe self-caused contention.
+        last_nuke   : Monotonic timestamp of the last auto-nuke, for the cooldown.
+        proc_hist   : Per-pid RSS history used for growth detection.
+    """
 
     INTERVAL            = 5.0
     SECTOR              = 512
@@ -33,16 +66,25 @@ class ContentionMonitor:
     LEAK_GROWTH_MBPM    = 120.0
     LEAK_RECENT_MB      = 60.0
 
-    def __init__(self, paths, logger: WebLogger, nuke) -> None:
-        self.paths  = paths
-        self.logger = logger
-        self.nuke   = nuke
-        self.lock   = threading.Lock()
-        self.uid    = os.getuid()
-        self.clk    = os.sysconf("SC_CLK_TCK")
-        self.page   = os.sysconf("SC_PAGE_SIZE")
-        self.cores  = os.cpu_count() or 1
-        self.device = self._resolve_device()
+    def __init__(self, paths, logger: WebLogger, notifier: JobNotifier, nuke) -> None:
+        """Reads the host constants and prepares empty sampling state.
+
+        Args:
+            paths    : Project paths whose repo root selects the monitored disk.
+            logger   : Web logger the alerts are written to.
+            notifier : Notifier the announced alerts and auto-nuke firings are pushed through.
+            nuke     : Killer object whose `nuke()` terminates this user's runs.
+        """
+        self.paths    = paths
+        self.logger   = logger
+        self.notifier = notifier
+        self.nuke     = nuke
+        self.lock     = threading.Lock()
+        self.uid      = os.getuid()
+        self.clk      = os.sysconf("SC_CLK_TCK")
+        self.page     = os.sysconf("SC_PAGE_SIZE")
+        self.cores    = os.cpu_count() or 1
+        self.device   = self._resolve_device()
 
         self.signals   = {}
         self.active    = {}
@@ -62,11 +104,20 @@ class ContentionMonitor:
         self.prev_t    = 0.0
 
     def start(self) -> None:
+        """Starts the daemon sampling thread and logs that the monitor is armed."""
         worker = threading.Thread(target=self._watch, name="ContentionMonitor", daemon=True)
         worker.start()
         self.logger.muted(f"contention monitor armed (device {self.device or 'n/a'}, share {self.SHARE:.0%})")
 
     def arm(self, value: bool) -> dict:
+        """Arms or disarms the automatic nuke and returns the refreshed state.
+
+        Args:
+            value : True to arm, False to disarm and reset the streak.
+
+        Returns:
+            The monitor state as returned by `state`.
+        """
         with self.lock:
             self.auto_nuke = bool(value)
             if not self.auto_nuke:
@@ -74,7 +125,22 @@ class ContentionMonitor:
         self.logger.warning(f"auto-nuke {'ARMED' if self.auto_nuke else 'disarmed'} (fires after {self.NUKE_SUSTAIN * self.INTERVAL:.0f}s of severe self-caused contention)")
         return self.state()
 
+    def mine_memory_share(self) -> float | None:
+        """Returns this user's share of used RAM in [0, 1], or None before the first sample."""
+        with self.lock:
+            signals = self.signals
+
+        if not signals:
+            return None
+        return signals["mem"]["mine_share"]
+
     def state(self) -> dict:
+        """Returns the monitor snapshot served to the web UI.
+
+        Returns:
+            Dictionary with the auto-nuke flag, the latest signals, the currently
+            active alerts and the recent event log.
+        """
         with self.lock:
             return {
                 "auto_nuke" : self.auto_nuke,
@@ -84,6 +150,7 @@ class ContentionMonitor:
             }
 
     def _watch(self) -> None:
+        """Samples and evaluates contention forever, logging and swallowing errors."""
         while True:
             time.sleep(self.INTERVAL)
             try:
@@ -95,6 +162,14 @@ class ContentionMonitor:
                 self.logger.error(f"contention monitor error: {exc}")
 
     def _sample(self) -> dict:
+        """Takes one contention sample and computes this user's share of each resource.
+
+        Returns:
+            Dictionary with the PSI averages, swap-in and swap-out rates in MB/s,
+            memory usage and this user's share of it, disk throughput and share,
+            load per core and CPU share, this user's process count and RAM in GB,
+            any RAM-growth candidate, and the machine's top memory consumer.
+        """
         now = time.monotonic()
         dt  = max(now - self.prev_t, 1e-6) if self.prev_t else self.INTERVAL
 
@@ -124,6 +199,12 @@ class ContentionMonitor:
         }
 
     def _read_psi(self) -> dict:
+        """Reads the 10-second pressure-stall averages for CPU, memory and I/O.
+
+        Returns:
+            Dictionary keyed "cpu", "mem" and "io", each with the "some" and "full"
+            avg10 percentages; zeros when /proc/pressure is unavailable.
+        """
         out = {}
         for resource in ("cpu", "memory", "io"):
             some, full = 0.0, 0.0
@@ -140,6 +221,15 @@ class ContentionMonitor:
         return out
 
     def _read_swap(self, dt: float) -> dict:
+        """Differentiates the vmstat swap counters into rates.
+
+        Args:
+            dt : Seconds elapsed since the previous sample.
+
+        Returns:
+            Dictionary with "in_mbs" and "out_mbs" in MB/s; zeros on the first
+            sample or when /proc/vmstat cannot be read.
+        """
         pin, pout = 0, 0
         try:
             for line in open("/proc/vmstat").read().splitlines():
@@ -160,6 +250,11 @@ class ContentionMonitor:
         return {"in_mbs": in_mbs, "out_mbs": out_mbs}
 
     def _read_memory(self) -> dict:
+        """Returns machine memory usage derived from MemTotal minus MemAvailable.
+
+        Returns:
+            Dictionary with "used_pct" and "used_gb"; zeros when meminfo is empty.
+        """
         info = MemInfo.fields()
         if not info:
             return {"used_pct": 0.0, "used_gb": 0.0}
@@ -170,6 +265,16 @@ class ContentionMonitor:
         return {"used_pct": (100.0 * used / total) if total else 0.0, "used_gb": used / (1024.0 ** 3)}
 
     def _read_disk(self, dt: float) -> dict:
+        """Differentiates the diskstats counters of the repository's device.
+
+        Args:
+            dt : Seconds elapsed since the previous sample.
+
+        Returns:
+            Dictionary with the device name, busy percentage, mean request latency
+            in milliseconds, and read, write and total throughput in MB/s; all zero
+            on the first sample or when the device cannot be read.
+        """
         empty = {"device": self.device, "util": 0.0, "await_ms": 0.0, "read_mbs": 0.0, "write_mbs": 0.0, "total_mbs": 0.0}
         if self.device is None:
             return empty
@@ -205,6 +310,13 @@ class ContentionMonitor:
         }
 
     def _diskstat_row(self):
+        """Returns the raw counters of the monitored device from /proc/diskstats.
+
+        Returns:
+            Tuple of reads completed, sectors read, milliseconds reading, writes
+            completed, sectors written, milliseconds writing and I/O ticks, or None
+            when the file is unreadable or the device is absent.
+        """
         try:
             lines = open("/proc/diskstats").read().splitlines()
         except OSError:
@@ -219,6 +331,21 @@ class ContentionMonitor:
         return None
 
     def _scan(self, now: float, dt: float) -> dict:
+        """Sweeps every process to total this user's memory, CPU and I/O usage.
+
+        Per-process memory is the attributed figure when available, which avoids
+        double-counting shared pages, and falls back to RSS otherwise. CPU and I/O
+        come from differencing the previous sample's per-pid counters.
+
+        Args:
+            now : Monotonic timestamp of this sample, used for growth history.
+            dt  : Seconds elapsed since the previous sample.
+
+        Returns:
+            Dictionary with this user's process count, memory in GB, CPU percent
+            summed across cores and I/O in MB/s, plus any RAM-growth candidate and
+            the machine's leading memory consumer.
+        """
         mine_mem = 0
         nproc    = 0
         per_mem  = {}
@@ -228,21 +355,11 @@ class ContentionMonitor:
         user_n   = {}
         top      = (0, None, "", self.uid)
 
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit():
-                continue
-            pid = int(entry)
-            try:
-                uid = os.stat(f"/proc/{pid}").st_uid
-            except OSError:
-                continue
-
-            stat = ProcStats.stat(pid)
-            if stat is None:
-                continue
-
-            attributed = ProcStats.attributed(pid)
-            proc_mem   = attributed if attributed is not None else stat["rss"]
+        for row in ProcSweep.rows():
+            pid      = row["pid"]
+            uid      = row["uid"]
+            stat     = row["stat"]
+            proc_mem = row["attributed"] if row["attributed"] is not None else stat["rss"]
 
             user_mem[uid] = user_mem.get(uid, 0) + proc_mem
             user_n  [uid] = user_n.get(uid, 0) + 1
@@ -269,6 +386,18 @@ class ContentionMonitor:
         return {"nproc": nproc, "mem_gb": mine_mem / (1024.0 ** 3), "cpu_pct": cpu_pct, "io_mbs": io_mbs, "leak": leak, "top": self._top_consumer(user_mem, user_n, top)}
 
     def _top_consumer(self, user_mem: dict, user_n: dict, top: tuple) -> dict | None:
+        """Describes the user holding the most memory and the single biggest process.
+
+        Args:
+            user_mem : Memory in bytes per uid.
+            user_n   : Process count per uid.
+            top      : Tuple of memory in bytes, pid, command and uid of the largest single process on the machine.
+
+        Returns:
+            Dictionary naming the leading user, their memory in GB and process
+            count, whether that user is this one, and the biggest process; None
+            when no processes were sampled.
+        """
         if not user_mem:
             return None
 
@@ -287,6 +416,23 @@ class ContentionMonitor:
         }
 
     def _growth_candidate(self, now: float, per_mem: dict, per_comm: dict) -> dict | None:
+        """Updates the per-process memory history and flags the worst steady grower.
+
+        A process qualifies when it holds at least LEAK_MEM_FLOOR_GB, has grown
+        faster than LEAK_GROWTH_MBPM over its whole window, and has also gained
+        LEAK_RECENT_MB over the most recent samples, so a one-off jump that has
+        since flattened is not reported.
+
+        Args:
+            now      : Monotonic timestamp of this sample.
+            per_mem  : Memory in bytes per pid for this user's processes.
+            per_comm : Command name per pid.
+
+        Returns:
+            Dictionary with the pid, command, current memory in GB, growth rate in
+            MB/min, total growth in GB, window length in minutes and a ready-made
+            message, or None when nothing qualifies.
+        """
         for pid in [p for p in self.proc_hist if p not in per_mem]:
             del self.proc_hist[pid]
         for pid, proc_mem in per_mem.items():
@@ -320,6 +466,11 @@ class ContentionMonitor:
         return best
 
     def _pid_io(self, pid: int) -> int:
+        """Returns a process's cumulative read plus write bytes, 0 if unreadable.
+
+        Args:
+            pid : Process id to read /proc/<pid>/io for.
+        """
         try:
             total = 0
             for line in open(f"/proc/{pid}/io").read().splitlines():
@@ -330,6 +481,16 @@ class ContentionMonitor:
             return 0
 
     def _evaluate(self, signals: dict) -> None:
+        """Turns one sample into breach, clear and ownership verdicts per resource.
+
+        Memory, disk and CPU each get a breach threshold, a hysteretic clear
+        threshold at CLEAR_MARGIN of it, and a check of whether this user holds at
+        least SHARE of the resource; a memory-growth candidate is tracked as its own
+        kind. Auto-nuke is then reconsidered.
+
+        Args:
+            signals : Sample dictionary as returned by `_sample`.
+        """
         psi  = signals["psi"]
         swap = signals["swap"]
         mem  = signals["mem"]
@@ -369,6 +530,12 @@ class ContentionMonitor:
         self._check_nuke()
 
     def _check_nuke(self) -> None:
+        """Fires the automatic nuke once severe self-caused contention persists.
+
+        Requires auto-nuke armed, NUKE_SUSTAIN consecutive samples with a danger
+        alert this user owns (leaks excluded), and NUKE_COOLDOWN seconds since the
+        previous firing. The outcome is logged and appended to the event log.
+        """
         with self.lock:
             if not self.auto_nuke:
                 self.nuke_streak = 0
@@ -398,8 +565,22 @@ class ContentionMonitor:
         with self.lock:
             self.events.append({"kind": "auto_nuke", "level": "danger", "message": message, "time": datetime.now().isoformat(timespec="seconds")})
         self.logger.error(message)
+        self.notifier.system_alert("auto-nuke fired", message, "urgent")
 
     def _track(self, kind: str, level: str, breached: bool, cleared: bool, mine: bool, message: str) -> None:
+        """Advances the streak for one resource and raises or drops its alert.
+
+        An alert is raised only after SUSTAIN consecutive breaches, and dropped only
+        once the signal falls back below the hysteretic clear threshold.
+
+        Args:
+            kind     : Resource key, one of "mem", "io", "cpu" or "leak".
+            level    : Severity of the alert, "warn" or "danger".
+            breached : Whether the breach thresholds are met in this sample.
+            cleared  : Whether the signal is back below the clear thresholds.
+            mine     : Whether this user holds the dominant share of the resource.
+            message  : Human-readable description shown with the alert.
+        """
         if breached:
             self.streaks[kind] = self.streaks.get(kind, 0) + 1
             if self.streaks[kind] >= self.SUSTAIN:
@@ -410,6 +591,18 @@ class ContentionMonitor:
                 self._drop(kind)
 
     def _raise(self, kind: str, level: str, mine: bool, message: str) -> None:
+        """Records or refreshes an alert, announcing it only when this user causes it.
+
+        A refreshed alert is announced again only when ownership flips to this user
+        or when its severity escalates to danger, so a standing alert stays quiet.
+        Every announcement is also pushed through the notifier.
+
+        Args:
+            kind    : Resource key the alert belongs to.
+            level   : Severity of the alert, "warn" or "danger".
+            mine    : Whether this user holds the dominant share of the resource.
+            message : Human-readable description shown with the alert.
+        """
         with self.lock:
             known = self.active.get(kind)
             if known is None:
@@ -427,8 +620,14 @@ class ContentionMonitor:
 
         if announce:
             self.logger.warning(f"neighbour impact: {message}")
+            self.notifier.system_alert(f"neighbour impact: {kind}", message, "high" if level == "danger" else "default")
 
     def _drop(self, kind: str) -> None:
+        """Clears an alert, logging the recovery only if it had been announced.
+
+        Args:
+            kind : Resource key whose alert is cleared.
+        """
         with self.lock:
             known     = self.active.pop(kind, None)
             announced = kind in self.announced
@@ -438,6 +637,15 @@ class ContentionMonitor:
             self.logger.muted(f"contention cleared: {kind}")
 
     def _resolve_device(self):
+        """Returns the kernel device name of the filesystem holding the repository.
+
+        Walks /proc/mounts for the longest mount point containing the repo root and
+        backed by a /dev node, then resolves that node through any symlink.
+
+        Returns:
+            Device name such as "nvme0n1p2", or None when no mount matches or
+            /proc/mounts is unreadable.
+        """
         target = self.paths.repo_root.resolve()
         best   = ("", None)
         try:

@@ -24,13 +24,18 @@ class FrameDumper {
 
   async sweep(page, screenshot) {
     const cv = page.locator("#cv");
+    let written = 0;
+
     for (let t = 0; t <= this.duration; t += this.step) {
       await page.evaluate(([k, tt]) => window.renderAt(k, tt), [this.key, t]);
       if (screenshot) {
         const name = `${this.key}_t${String(t.toFixed(1)).padStart(6, "0")}.png`;
         await cv.screenshot({ path: path.join(this.outDir, name) });
+        written += 1;
       }
     }
+
+    return written;
   }
 
   async orchestrate() {
@@ -52,8 +57,8 @@ class FrameDumper {
     const stats = await page.evaluate(() => window.eqStats());
     console.log(`eq sprites: ${stats.ready}/${stats.total} ready, ${stats.failed} failed`);
 
-    await this.sweep(page, true);
-    console.log(`wrote ${Math.floor(this.duration / this.step) + 1} frames to ${this.outDir}`);
+    const written = await this.sweep(page, true);
+    console.log(`wrote ${written} frames to ${this.outDir}`);
 
     await browser.close();
     fs.rmSync(stageDir, { recursive: true, force: true });
@@ -61,8 +66,16 @@ class FrameDumper {
 }
 
 const [animFile, key, dur, step, outDir] = process.argv.slice(2);
+const duration = parseFloat(dur);
+const stride   = parseFloat(step);
+
 if (!outDir) {
   console.error("usage: node dump_frames.js <process_anim.js> <scene-key> <duration-s> <step-s> <out-dir>");
   process.exit(1);
 }
-new FrameDumper(animFile, key, parseFloat(dur), parseFloat(step), outDir).orchestrate().catch(e => { console.error(e); process.exit(1); });
+if (!(Number.isFinite(duration) && duration > 0) || !(Number.isFinite(stride) && stride > 0)) {
+  console.error(`duration and step must be positive numbers, got duration=${dur} step=${step}`);
+  process.exit(1);
+}
+
+new FrameDumper(animFile, key, duration, stride, outDir).orchestrate().catch(e => { console.error(e); process.exit(1); });

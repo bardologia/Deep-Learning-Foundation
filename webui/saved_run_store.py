@@ -1,3 +1,9 @@
+"""On-disk store of reusable run definitions saved from the console launcher.
+
+Each saved run is one JSON file named after its identifier, holding the entry
+point, interpreter, config overrides, follow-up entry and detach flag.
+"""
+
 from __future__ import annotations
 
 import json
@@ -10,10 +16,19 @@ from web_logger import WebLogger
 
 
 class SavedRunStore:
+    """Persists, lists, reads and deletes saved run definitions.
+
+    Attributes:
+        paths     : Project paths providing the store directory and entry-point checks.
+        logger    : Console logger.
+        lock      : Guards the directory against concurrent readers and writers.
+        directory : Directory holding one JSON file per saved run.
+    """
 
     ID_PATTERN = re.compile(r"^[0-9a-f]{12}$")
 
     def __init__(self, paths, logger: WebLogger) -> None:
+        """Stores the paths and logger and creates the saved-runs directory."""
         self.paths     = paths
         self.logger    = logger
         self.lock      = threading.Lock()
@@ -21,6 +36,15 @@ class SavedRunStore:
         self.directory.mkdir(parents=True, exist_ok=True)
 
     def save(self, payload: dict) -> dict:
+        """Writes one saved run built from a launcher payload.
+
+        Args:
+            payload : Launcher form contents with `script_key`, `interpreter`, optional `title`, `name`, `overrides`, `follow_up` and `detach`.
+
+        Returns:
+            Result carrying the stored entry, or `ok` False with an error when the entry
+            point, follow-up entry or interpreter is missing or unknown.
+        """
         key = str(payload.get("script_key", ""))
         if not self.paths.has_script(key):
             return {"ok": False, "error": f"unknown script '{key}'"}
@@ -54,6 +78,7 @@ class SavedRunStore:
         return {"ok": True, "entry": entry}
 
     def list(self) -> dict:
+        """Returns every saved entry, newest first by save time and identifier."""
         with self.lock:
             entries = [json.loads(path.read_text(encoding="utf-8")) for path in self.directory.glob("*.json")]
 
@@ -61,6 +86,7 @@ class SavedRunStore:
         return {"saved": entries}
 
     def get(self, saved_id: str) -> dict | None:
+        """Returns one saved entry, or None when the identifier is malformed or absent."""
         if not self.ID_PATTERN.match(saved_id):
             return None
 
@@ -71,6 +97,7 @@ class SavedRunStore:
             return json.loads(path.read_text(encoding="utf-8"))
 
     def delete(self, saved_id: str) -> dict:
+        """Deletes one saved entry, or reports that it was not found."""
         if not self.ID_PATTERN.match(saved_id):
             return {"ok": False, "error": "saved run not found"}
 
@@ -85,4 +112,5 @@ class SavedRunStore:
         return {"ok": True}
 
     def _path(self, saved_id: str):
+        """Returns the JSON file path holding the saved run with this identifier."""
         return self.directory / f"{saved_id}.json"

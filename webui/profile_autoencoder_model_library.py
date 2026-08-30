@@ -1,3 +1,9 @@
+"""Model-zoo entry for the profile autoencoder family shown in the web UI.
+
+Maps each profile autoencoder key to its architecture config class, its vault
+note, and the curated blurbs and per-field hints the launch panels render.
+"""
+
 from __future__ import annotations
 
 from configuration.architectures import profile_autoencoder
@@ -6,6 +12,7 @@ from model_library_base import ModelDefaultsLibrary
 
 
 class ProfileAutoencoderModelLibrary(ModelDefaultsLibrary):
+    """Curated catalog of the seven profile autoencoder architectures."""
 
     CONFIG_MODULE      = profile_autoencoder
     NORMALIZATION_ATTR = "embedding_norm"
@@ -33,7 +40,35 @@ class ProfileAutoencoderModelLibrary(ModelDefaultsLibrary):
     FALLBACK_ACTIVATION    = "gelu"
     FALLBACK_NORMALIZATION = "none"
 
+    ARCH_EXCLUDED = ("profile_length", "encoder_lr", "decoder_lr", "encoder_wd", "decoder_wd")
+
+    ARCH_EXCLUDED_BY_MODEL = {
+        "transformer1d_ae" : ("num_heads",),
+    }
+
+    ARCH_HINTS = {
+        "embedding_dim"   : "size of the latent embedding; a coupled JEPA backbone later predicts this vector per pixel",
+        "embedding_norm"  : "normalization applied to the embedding before the decoder and before JEPA matching",
+        "activation"      : "nonlinearity used throughout the encoder and decoder",
+        "init_mode"       : "weight initialization scheme; default keeps the PyTorch layer defaults",
+        "hidden_dim"      : "width of the hidden layers",
+        "depth"           : "number of stacked blocks or layers",
+        "dropout"         : "dropout probability inside the blocks",
+        "seq_channels"    : "channels of the 1D convolutional stack",
+        "seq_kernel_size" : "kernel size of the 1D convolutions along the profile",
+        "num_heads"         : "attention heads per transformer block",
+        "patch_size"        : "profile bins per token before the attention stack",
+        "bidirectional"     : "sweep the profile in both directions",
+        "normalization"     : "normalization inside the encoder and decoder bodies; each family honors its supported modes and rejects the rest",
+        "pooling"           : "reduction of the sequence or tokens to the latent vector: avg, max, or learned attention",
+        "hidden_dims"       : "explicit per-layer hidden widths; leave empty to use depth copies of hidden_dim",
+        "seq_channels_list" : "explicit per-layer channel widths; leave empty to use depth copies of seq_channels",
+        "ffn_ratio"         : "feed-forward width as a multiple of the token width",
+        "pos_embedding"     : "positional embedding of the tokens: learned, sinusoidal, or none",
+    }
+
     def _families(self) -> list[dict]:
+        """Returns the single profile-autoencoder family with its member model cards."""
         return [
             {
                 "family" : "Profile autoencoder",
@@ -50,9 +85,9 @@ class ProfileAutoencoderModelLibrary(ModelDefaultsLibrary):
                         "when": "Exploits the local smoothness of the z profile. Stacked 1D convolutions over the range axis capture neighbouring-bin correlations before pooling to the embedding.",
                     },
                     {
-                        "key": "transformer1d_ae", "name": "Transformer1D Autoencoder", "skip": "Self-attention",
+                        "key": "transformer1d_ae", "name": "Transformer1D Autoencoder", "skip": "Single-token transformer",
                         "head": "Transformer to embedding", "params": "~1.89M", "recommended": False,
-                        "when": "Long-range dependencies along the profile. A self-attention encoder and decoder model interactions between distant z bins, at a higher parameter cost.",
+                        "when": "A transformer stack over one token: the whole profile is embedded into a single vector, so the attention layers reduce to normalized residual feed-forward blocks and no bin-to-bin mixing happens. Pick cnn_attn_ae for real multi-token attention along the profile.",
                     },
                     {
                         "key": "resmlp_ae", "name": "ResMLP Autoencoder", "skip": "Residual MLP",

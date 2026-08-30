@@ -1,3 +1,10 @@
+"""Curated catalogue of the single-trunk backbone zoo for the web UI.
+
+Maps every backbone key to its config dataclass and explanatory note, groups the
+models into families with selection guidance, and supplies the per-field hints the
+architecture panels show next to the tunable parameters.
+"""
+
 from __future__ import annotations
 
 from configuration.architectures import backbone
@@ -6,6 +13,7 @@ from model_library_base import ModelDefaultsLibrary
 
 
 class BackboneModelLibrary(ModelDefaultsLibrary):
+    """Backbone-family model library backing the web UI architecture panels."""
 
     CONFIG_MODULE = backbone
 
@@ -69,10 +77,69 @@ class BackboneModelLibrary(ModelDefaultsLibrary):
         "nafnet" : ("simplegate", "layer"),
     }
 
+    ARCH_EXCLUDED = ("in_channels", "out_channels", "params_per_gaussian", "head", "image_size")
+
+    ARCH_HINTS = {
+        "features"                     : "channel widths per encoder stage; depth follows the list length",
+        "bottleneck_factor"            : "bottleneck width as a multiple of the deepest encoder stage",
+        "dropout"                      : "dropout probability inside the convolutional blocks",
+        "activation"                   : "nonlinearity used throughout the trunk",
+        "normalization"                : "normalization layer between convolution and activation",
+        "upsample_mode"                : "decoder upsampling operator",
+        "conv_bias"                    : "bias terms on the convolutions; usually off when a normalization layer follows",
+        "init_mode"                    : "weight initialization scheme; default keeps the PyTorch layer defaults",
+        "attention_intermediate_ratio" : "attention gate bottleneck as a fraction of the skip channels",
+        "initial_kernel_size"          : "kernel size of the stem convolution",
+        "decoder_bottleneck_ratio"     : "channel reduction inside each decoder block",
+        "patch_size"                   : "pixels per token before the attention stack",
+        "embedding_dim"                : "token embedding width of the transformer encoder",
+        "embedding_dims"               : "token embedding width per encoder stage",
+        "depths"                       : "transformer blocks per encoder stage",
+        "num_heads"                    : "attention heads per stage",
+        "window_size"                  : "pixels per attention window",
+        "mlp_ratio"                    : "feed-forward width as a multiple of the embedding",
+        "attention_dropout"            : "dropout probability on the attention weights",
+        "ffn_activation"               : "nonlinearity inside the transformer feed-forward blocks",
+        "stochastic_depth_rate"        : "probability of dropping a residual block during training",
+        "cnn_features"                 : "channel widths of the convolutional encoder stages",
+        "transformer_layers"           : "number of transformer blocks",
+        "transformer_heads"            : "attention heads per transformer block",
+        "transformer_mlp_ratio"        : "transformer feed-forward width as a multiple of the embedding",
+        "decoder_features"             : "channel widths per decoder stage",
+        "atrous_rates"                 : "dilation rates of the parallel ASPP branches",
+        "sr_ratios"                    : "spatial reduction of keys and values per attention stage",
+        "decoder_channels"             : "channel width of the fused MLP decoder",
+        "blocks_per_stage"             : "convolutional blocks per stage",
+        "ffn_ratio"                    : "inverted bottleneck width as a multiple of the stage channels",
+        "layer_scale_init"             : "initial value of the per-channel residual scaling",
+        "growth_rate"                  : "channels added by every dense layer",
+        "block_layers"                 : "dense layers per encoder block",
+        "bottleneck_layers"            : "dense layers in the bottleneck block",
+        "base_channels"                : "channels of the full-resolution branch; lower branches scale from it",
+        "n_branches"                   : "number of parallel resolution branches",
+        "pyramid_channels"             : "channel width of every pyramid level",
+        "segmentation_convs"           : "convolutions per pyramid segmentation block",
+        "rsu_heights"                  : "depth of the nested U inside each stage, outermost first",
+        "block_kernels"                : "kernel size per trunk block; None keeps 3x3 everywhere",
+        "width"                        : "stem channel width; stages double it",
+        "enc_blocks"                   : "NAFBlocks per encoder stage",
+        "middle_blocks"                : "NAFBlocks in the bottleneck",
+        "dec_blocks"                   : "NAFBlocks per decoder stage",
+        "dw_expand"                    : "depthwise channel expansion inside each block",
+        "ffn_expand"                   : "feed-forward channel expansion inside each block",
+    }
+
     def _note_files(self) -> dict[str, str]:
+        """Returns the note filename per key, covering both backbones and heads."""
         return {**self.NOTE_FILES, **self.HEAD_NOTE_FILES}
 
     def heads(self) -> list[dict]:
+        """Returns the selectable output heads with their structure and use case.
+
+        Returns:
+            One entry per head with its config key, display name, a summary of the
+            projection it applies, whether it is the default, and when to pick it.
+        """
         return [
             {
                 "key": "conv", "name": "Conv", "structure": "Single conv projection",
@@ -97,6 +164,14 @@ class BackboneModelLibrary(ModelDefaultsLibrary):
         ]
 
     def _families(self) -> list[dict]:
+        """Returns the backbone zoo grouped into families, in display order.
+
+        Returns:
+            One entry per family with its name, a blurb, and its models; each model
+            carries the config key, display name, skip-connection and head style,
+            an approximate parameter count, whether it is recommended, and the
+            regime it is meant for.
+        """
         return [
             {
                 "family" : "CNN encoder-decoder",
@@ -115,7 +190,7 @@ class BackboneModelLibrary(ModelDefaultsLibrary):
                     {
                         "key": "unet_skip", "name": "UNet Skip", "skip": "Skip + residual",
                         "head": "Single 1x1 conv", "params": "~32.4M", "recommended": True,
-                        "when": "Continuity with checkpoints from the pre-correction ResUNet (residual blocks, MaxPool downsampling); keep it when older runs must stay loadable.",
+                        "when": "Pooling instead of strided convolution. Residual blocks at stride 1 with MaxPool downsampling, otherwise identical to ResUNet down to the first-unit stem; checkpoints saved before 2026-08-14 predate that stem and no longer load.",
                     },
                     {
                         "key": "attention_unet", "name": "Attention UNet", "skip": "Attention-gated concat",

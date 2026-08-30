@@ -11,9 +11,20 @@ PORT="${PORT:-8772}"
 OUT="${OUT:-/tmp/ml-template-ui}"
 LOG="/tmp/ml-template-webui-${PORT}.log"
 
-pkill -f "serve.py --port $PORT" 2>/dev/null || true
+if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
+  echo "PORT must be a number, got '$PORT'" >&2
+  exit 1
+fi
+if [ -z "$OUT" ] || [ "$OUT" = "/" ]; then
+  echo "OUT must be a non-root directory, got '$OUT'" >&2
+  exit 1
+fi
+
+PATTERN="serve\.py --port ${PORT}($| )"
+
+pkill -f "$PATTERN" 2>/dev/null || true
 for _ in $(seq 1 20); do
-  pgrep -f "serve.py --port $PORT" >/dev/null || break
+  pgrep -f "$PATTERN" >/dev/null || break
   sleep 0.1
 done
 

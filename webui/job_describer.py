@@ -1,3 +1,10 @@
+"""One-line human summaries of queued and running web UI jobs.
+
+Combines a script's resolved configuration with the launch overrides to produce
+a compact description ("single training · resunet-gaussian · dataset ... ")
+shown in the console, the launch queue and job notifications.
+"""
+
 from __future__ import annotations
 
 from project_paths          import ProjectPaths
@@ -5,6 +12,17 @@ from script_config_resolver import ScriptConfigResolver
 
 
 class JobDescriber:
+    """Renders a script launch into a short middot-separated summary line.
+
+    ``LEADS`` maps a script key to the method that builds its opening phrase
+    (training mode, model, benchmark type), ``SPECS`` lists the config paths
+    worth surfacing per script, and any override not consumed by either is
+    appended as a trailing ``path=value`` extra.
+
+    Attributes:
+        paths    : Project path registry used to check that a script exists.
+        resolver : Resolver returning the script's flattened config leaves.
+    """
 
     MAX_LENGTH    = 240
     MAX_EXTRAS    = 3
@@ -12,14 +30,14 @@ class JobDescriber:
     UNSET_VALUES  = ("", "None", "none", "null", "[]", "{}", "()")
 
     LEADS = {
-        "train_backbone"  : "_lead_train_backbone",
-        "train_dual"      : "_lead_train_dual",
-        "train_jepa"      : "_lead_train_jepa",
-        "benchmark"       : "_lead_benchmark",
-        "cross_validate"  : "_lead_cross_validate",
-        "sweep_patches"   : "_lead_sweep_patches",
-        "tune"            : "_lead_tune",
-        "tune_dataloader" : "_lead_tune_dataloader",
+        "train_backbone"            : "_lead_train_backbone",
+        "train_dual"                : "_lead_train_dual",
+        "train_jepa"                : "_lead_train_jepa",
+        "train_profile_autoencoder" : "_lead_train_profile_autoencoder",
+        "benchmark"                 : "_lead_benchmark",
+        "cross_validate"            : "_lead_cross_validate",
+        "tune"                      : "_lead_tune",
+        "tune_dataloader"           : "_lead_tune_dataloader",
     }
 
     SPECS = {
@@ -68,10 +86,11 @@ class JobDescriber:
             ("run",     "run_name",               "opt"),
         ],
         "train_jepa": [
-            ("dataset", "paths.dataset_path",     "opt_tail"),
-            ("epochs",  "training.epochs",        "text"),
-            ("run",     "run_name",               "opt"),
-            ("inference after", "infer_after",    "flag"),
+            ("dataset",          "paths.dataset_path",    "opt_tail"),
+            ("epochs",           "training.epochs",       "text"),
+            ("run",              "run_name",              "opt"),
+            ("inference after",  "infer_after",           "flag"),
+            ("inference at end", "infer_at_end",          "flag"),
         ],
         "infer_backbone": [
             ("root",   "runs_dir",        "opt_tail"),
@@ -107,12 +126,6 @@ class JobDescriber:
             ("gpus",  "gpus",    "list"),
             ("tag",   "run_tag", "opt"),
         ],
-        "sweep_patches": [
-            ("datasets", "dataset_filter", "list", "all datasets"),
-            ("grid max", "patch.maximum",  "text"),
-            ("seeds",    "seeds",          "list"),
-            ("tag",      "run_tag",        "opt"),
-        ],
         "tune": [
             ("trials",       "tuning.n_trials", "text"),
             ("epochs/trial", "tuning.n_epochs", "text"),
@@ -126,6 +139,14 @@ class JobDescriber:
         "analyze_param_extraction": [
             ("trials", "run_tags",   "list", "all trials"),
             ("root",   "params_dir", "opt_tail"),
+        ],
+        "analyze_normalization": [
+            ("dataset", "dataset_dir",     "opt_tail"),
+            ("params",  "parameters_path", "opt_tail"),
+        ],
+        "analyze_symbolic": [
+            ("dataset", "dataset_dir",     "opt_tail"),
+            ("params",  "parameters_path", "opt_tail"),
         ],
         "compare_trials": [
             ("runs", "run_tags", "list", "all runs"),
@@ -202,13 +223,35 @@ class JobDescriber:
             ("root", "runs_dir",      "opt_tail"),
             ("into", "collector_dir", "opt_tail"),
         ],
+        "mail_experiment_reports": [
+            ("experiments", "experiment_filter", "list", "all experiments"),
+            ("root",        "experiments_dir",   "opt_tail"),
+            ("to",          "recipient",         "opt"),
+        ],
     }
 
     def __init__(self, paths: ProjectPaths, resolver: ScriptConfigResolver) -> None:
+        """Binds the describer to a project path registry and a config resolver.
+
+        Args:
+            paths    : Project path registry used to look up script availability.
+            resolver : Resolver that flattens a script's config into leaves.
+        """
         self.paths    = paths
         self.resolver = resolver
 
     def _values(self, key: str, interpreter: str, overrides: dict) -> dict:
+        """Returns the effective config values, resolved defaults under the overrides.
+
+        Args:
+            key         : Script key to resolve.
+            interpreter : Python interpreter used to resolve the script config.
+            overrides   : Dotted config path to value pairs set at launch time.
+
+        Returns:
+            Mapping from dotted config path to stringified value; empty defaults
+            when the script is unknown or its config fails to resolve.
+        """
         values = {}
 
         if self.paths.has_script(key):
@@ -220,6 +263,15 @@ class JobDescriber:
         return values
 
     def _lead_train_backbone(self, values: dict, used: set) -> list[str]:
+        """Returns the training mode and backbone-head phrases for a backbone run.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            Non-empty lead phrases, e.g. ``["grid trials experiment", "resunet-gaussian"]``.
+        """
         used.update(("trials_enabled", "trials_mode", "backbone_name", "backbone_head"))
 
         mode  = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else "single training"
@@ -227,6 +279,18 @@ class JobDescriber:
         return [part for part in (mode, model) if part]
 
     def _lead_train_dual(self, values: dict, used: set) -> list[str]:
+        """Returns the training mode and dual-trunk phrases for a dual run.
+
+        The two trunk names collapse to one when the parameter and existence
+        backbones agree.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            Non-empty lead phrases for the summary line.
+        """
         used.update(("trials_enabled", "trials_mode", "model_name", "params_backbone", "existence_backbone"))
 
         mode      = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else "single training"
@@ -237,7 +301,20 @@ class JobDescriber:
         return [part for part in (mode, model) if part]
 
     def _lead_train_jepa(self, values: dict, used: set) -> list[str]:
-        used.update(("backbone_name", "backbone_head", "profile_autoencoder_run", "profile_autoencoder_mode", "image_autoencoder_run", "image_autoencoder_mode"))
+        """Returns the stage chain and autoencoder phrases for a JEPA run.
+
+        The stage chain lists image-AE, backbone and profile-AE according to
+        which autoencoder runs are configured, and each attached autoencoder
+        contributes its run tail and mode.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            Non-empty lead phrases for the summary line.
+        """
+        used.update(("trials_enabled", "trials_mode", "backbone_name", "backbone_head", "profile_autoencoder_run", "profile_autoencoder_mode", "image_autoencoder_run", "image_autoencoder_mode"))
 
         profile = values.get("profile_autoencoder_run", "")
         image   = values.get("image_autoencoder_run", "")
@@ -245,46 +322,142 @@ class JobDescriber:
         stages += ["backbone"]
         stages += ["profile-AE"] if self._is_set(profile) else []
 
-        parts = [" + ".join(stages), self._join(values, "backbone_name", "backbone_head")]
+        mode  = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else ""
+        parts = [mode, " + ".join(stages), self._join(values, "backbone_name", "backbone_head")]
         if self._is_set(profile):
             parts.append(f"profile-AE {self._tail(profile)} ({values.get('profile_autoencoder_mode', '')})")
         if self._is_set(image):
             parts.append(f"image-AE {self._tail(image)} ({values.get('image_autoencoder_mode', '')})")
         return [part for part in parts if part]
 
+    def _lead_train_profile_autoencoder(self, values: dict, used: set) -> list[str]:
+        """Returns the training mode and family phrases for a profile-autoencoder run.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            Non-empty lead phrases, e.g. ``["smoothness trials experiment", "mlp_ae"]``.
+        """
+        used.update(("trials_enabled", "trials_mode", "ae_model_name"))
+
+        mode  = f"{values.get('trials_mode', '')} trials experiment".strip() if self._truthy(values.get("trials_enabled", "")) else "single training"
+        model = values.get("ae_model_name", "")
+        return [part for part in (mode, model) if part]
+
     def _lead_benchmark(self, values: dict, used: set) -> list[str]:
+        """Returns the single phrase naming the benchmark's training type.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            A one-element list such as ``["backbone benchmark"]``.
+        """
         used.add("training_type")
         return [f"{values.get('training_type', '')} benchmark".strip()]
 
+    CV_MODEL_FIELDS = {
+        "dual"                : ("dual.params_backbone", "dual.existence_backbone"),
+        "profile_autoencoder" : ("autoencoder.ae_model_name",),
+        "image_autoencoder"   : ("image_autoencoder.ae_model_name",),
+    }
+
     def _lead_cross_validate(self, values: dict, used: set) -> list[str]:
+        """Returns the fold-count phrase and model name for a cross-validation run.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            Non-empty lead phrases, e.g. ``["5-fold cross-validation, dual", "dual resunet"]``.
+        """
         used.update(("training_type", "folds.n_folds", "backbone_name", "backbone_head"))
+        used.update(field for fields in self.CV_MODEL_FIELDS.values() for field in fields)
 
-        folds = values.get("folds.n_folds", "")
-        lead  = f"{folds}-fold cross-validation, {values.get('training_type', '')}".strip(", ") if folds else f"cross-validation, {values.get('training_type', '')}".strip(", ")
-        model = self._join(values, "backbone_name", "backbone_head")
-        return [part for part in (lead, model) if part]
+        training_type = values.get("training_type", "")
+        folds         = values.get("folds.n_folds", "")
+        lead          = f"{folds}-fold cross-validation, {training_type}".strip(", ") if folds else f"cross-validation, {training_type}".strip(", ")
 
-    def _lead_sweep_patches(self, values: dict, used: set) -> list[str]:
-        used.update(("backbone_name", "backbone_head"))
+        return [part for part in (lead, self._cross_validate_model(training_type, values)) if part]
 
-        model = self._join(values, "backbone_name", "backbone_head")
-        return [part for part in ("patch-size sweep", model) if part]
+    def _cross_validate_model(self, training_type: str, values: dict) -> str:
+        """Returns the model phrase matching a cross-validation training type.
+
+        Args:
+            training_type : One of the cross-validation training types, such as ``dual``, ``profile_autoencoder``, ``image_autoencoder`` or a backbone type.
+            values        : Effective config values keyed by dotted path.
+
+        Returns:
+            The model description, or an empty string when no model is set.
+        """
+        if training_type == "dual":
+            params    = values.get("dual.params_backbone", "")
+            existence = values.get("dual.existence_backbone", "")
+            trunks    = params if params == existence else ".".join(part for part in (params, existence) if part)
+            return f"dual {trunks}" if trunks else ""
+
+        if training_type in ("profile_autoencoder", "image_autoencoder"):
+            return values.get(self.CV_MODEL_FIELDS[training_type][0], "")
+
+        return self._join(values, "backbone_name", "backbone_head")
 
     def _lead_tune(self, values: dict, used: set) -> list[str]:
+        """Returns the Optuna search phrase carrying the tuned training type.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            A one-element list such as ``["Optuna search, backbone"]``.
+        """
         used.add("training_type")
         return [f"Optuna search, {values.get('training_type', '')}".strip(", ")]
 
     def _lead_tune_dataloader(self, values: dict, used: set) -> list[str]:
+        """Returns the feed tuner phrase carrying the tuning mode.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            A one-element list such as ``["feed tuner, throughput"]``.
+        """
         used.add("mode")
         return [f"feed tuner, {values.get('mode', '')}".strip(", ")]
 
     def _lead(self, key: str, values: dict, used: set) -> list[str]:
+        """Returns the lead phrases for a script, empty when it has no lead builder.
+
+        Args:
+            key    : Script key to look up in ``LEADS``.
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            Lead phrases produced by the script's builder method.
+        """
         builder = self.LEADS.get(key)
         if builder is None:
             return []
         return getattr(self, builder)(values, used)
 
     def _details(self, key: str, values: dict, used: set) -> list[str]:
+        """Returns the rendered detail phrases declared in ``SPECS`` for a script.
+
+        Args:
+            key    : Script key whose spec list is rendered.
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place with every path named by the spec.
+
+        Returns:
+            Rendered phrases for the fields that carry a displayable value.
+        """
         parts = []
         for entry in self.SPECS.get(key, []):
             label, path, kind = entry[0], entry[1], entry[2]
@@ -298,6 +471,17 @@ class JobDescriber:
         return parts
 
     def _render(self, label: str, value: str | None, kind: str, fallback: str | None) -> str | None:
+        """Returns one labelled phrase for a spec entry, or ``None`` when it is silent.
+
+        Args:
+            label    : Prefix shown before the value; empty renders the value alone.
+            value    : Stringified config value, or ``None`` when the path is absent.
+            kind     : Spec kind, one of ``flag``, ``list``, ``tail``, ``opt_tail``, ``opt`` or ``text``.
+            fallback : Text used for an unset list, e.g. ``"all runs"``.
+
+        Returns:
+            The phrase to append to the summary, or ``None`` to omit the field.
+        """
         if kind == "flag":
             return label if value is not None and self._truthy(value) else None
 
@@ -313,6 +497,18 @@ class JobDescriber:
         return self._labelled(label, self._compact(value))
 
     def _extras(self, overrides: dict, used: set) -> list[str]:
+        """Returns ``path=value`` phrases for overrides no lead or spec covered.
+
+        At most ``MAX_EXTRAS`` are listed, each value clipped to
+        ``MAX_EXTRA_LEN``, followed by a count of the remainder.
+
+        Args:
+            overrides : Dotted config path to value pairs set at launch time.
+            used      : Config paths already consumed by the lead and detail phrases.
+
+        Returns:
+            Extra phrases to append to the summary line.
+        """
         pending = [(path, str(value)) for path, value in overrides.items() if path not in used]
         parts   = [f"{path}={self._clip(self._compact(value), self.MAX_EXTRA_LEN)}" for path, value in pending[: self.MAX_EXTRAS]]
 
@@ -321,29 +517,59 @@ class JobDescriber:
         return parts
 
     def _truthy(self, value: str) -> bool:
+        """Returns whether the string spells an affirmative boolean."""
         return value.strip().lower() in ("true", "1", "yes", "on")
 
     def _is_set(self, value: str) -> bool:
+        """Returns whether the value differs from every empty marker in ``UNSET_VALUES``."""
         return value.strip() not in self.UNSET_VALUES
 
     def _compact(self, value: str) -> str:
+        """Returns the value stripped of quote characters and surrounding whitespace."""
         return value.replace("'", "").replace('"', "").strip()
 
     def _tail(self, value: str) -> str:
+        """Returns the last path component of a slash-separated path value."""
         return self._compact(value).rstrip("/").rsplit("/", 1)[-1]
 
     def _join(self, values: dict, first: str, second: str) -> str:
+        """Returns two config values hyphenated, or whichever one of them is set.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            first  : Path of the left-hand value.
+            second : Path of the right-hand value.
+
+        Returns:
+            ``"left-right"`` when both are present, otherwise the present one or
+            an empty string.
+        """
         left  = values.get(first, "")
         right = values.get(second, "")
         return f"{left}-{right}" if left and right else left or right
 
     def _labelled(self, label: str, value: str) -> str:
+        """Returns the value prefixed by its label, or bare when the label is empty."""
         return f"{label} {value}" if label else value
 
     def _clip(self, text: str, limit: int) -> str:
+        """Returns the text truncated to ``limit`` characters with an ellipsis."""
         return text if len(text) <= limit else text[: limit - 3] + "..."
 
     def describe(self, key: str, interpreter: str, overrides: dict | None) -> str:
+        """Returns the one-line summary of a script launch.
+
+        Sequences the lead phrase, the per-script detail fields and any leftover
+        overrides, joined by middots and clipped to ``MAX_LENGTH``.
+
+        Args:
+            key         : Script key being launched.
+            interpreter : Python interpreter used to resolve the script config.
+            overrides   : Dotted config path to value pairs set at launch time, or ``None`` when the script runs on its defaults.
+
+        Returns:
+            The summary line shown in the console, queue and notifications.
+        """
         overrides = dict(overrides or {})
         values    = self._values(key, interpreter, overrides)
         used      = set()
