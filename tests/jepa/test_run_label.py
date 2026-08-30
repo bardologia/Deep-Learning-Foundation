@@ -43,7 +43,7 @@ def _save_image_ae(tmp_path) -> None:
 
 def _runner(monkeypatch, config: JepaEntryConfig) -> SingleTrainRunner:
     """Returns a SingleTrainRunner with the config factory stubbed to five Gaussians."""
-    monkeypatch.setattr(jepa_pipeline, "ConfigFactory", lambda entry: SimpleNamespace(gaussian=lambda: SimpleNamespace(n_default_gaussians=5)))
+    monkeypatch.setattr(jepa_pipeline, "ConfigFactory", lambda entry: SimpleNamespace(gaussian_config=lambda: SimpleNamespace(n_default_gaussians=5)))
     return SingleTrainRunner(config)
 
 

@@ -71,19 +71,8 @@ def test_probe_respects_enabled_losses_override():
     assert probe.loss_cfg.use_mse_curve        is True
 
 
-def test_probe_leaves_legacy_term_off_by_default():
-    """Verifies the legacy parameter term stays off unless explicitly requested."""
-    probe = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False))
-
-    assert probe.loss_cfg.use_param_legacy is False
 
 
-def test_probe_enables_legacy_term_only_on_explicit_override():
-    """Verifies an explicit override switches the legacy parameter term on."""
-    overrides = {"use_param_legacy": True}
-    probe     = _probe(LossScaleProbeConfig(enabled=True, n_batches=2, exit_after=False, enabled_losses=overrides))
-
-    assert probe.loss_cfg.use_param_legacy is True
 
 
 def test_probe_runs_and_reports_suggested_weights():

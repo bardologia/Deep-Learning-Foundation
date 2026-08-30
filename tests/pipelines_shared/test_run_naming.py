@@ -50,11 +50,6 @@ def test_loss_tag_rejects_empty_loss():
         RunNaming.loss_tag(_loss())
 
 
-def test_loss_tag_names_the_legacy_term():
-    """The legacy parameter term is named in the loss tag."""
-    loss = _loss(use_param_legacy=True, weight_param_legacy=1.0, param_matching=ParamMatching.SORTED_GT)
-
-    assert RunNaming.loss_tag(loss) == "param_legacy_1"
 
 
 def test_matching_tag_names_the_strategy():

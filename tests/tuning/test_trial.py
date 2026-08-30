@@ -408,7 +408,7 @@ def test_jepa_tuner_space_uses_arch_params_only(fake_logger, tune_cfg, tmp_path,
     assert tuner.run_tag == "vit-conv-stopgrad-K_5-hv-none-pae_gru.frozen-emb_mse_1-curve_mse_1"
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_jepa_tuner_rejects_an_entry_it_cannot_name(fake_logger, tune_cfg, tmp_path, test_data_dir):
     """Verifies that an entry the run-name builder cannot describe raises ValueError."""
     with pytest.raises(ValueError, match="JEPA run naming requires"):

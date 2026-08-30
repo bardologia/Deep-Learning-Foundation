@@ -299,7 +299,7 @@ class LogEnergyTrialPlanner:
             raise ValueError(f"log_energy_trials.weights must be unique, got {self.trials.weights}")
 
     def summary(self) -> dict:
-        """Returns the swept weights, covariance replacement flag and run count."""
+        """Returns the swept weights, moments replacement flag and run count."""
         n_extras = 1 if self.trials.include_baseline else 0
 
         return {
@@ -310,7 +310,7 @@ class LogEnergyTrialPlanner:
         }
 
     def _neutral_overrides(self) -> dict:
-        """Returns overrides switching the log-energy term (and optionally covariance matching) off in both stages."""
+        """Returns overrides switching the log-energy term (and optionally the moments term) off in both stages."""
         overrides = {"curriculum.inherit": False}
 
         for stage in self.STAGES:
@@ -319,8 +319,8 @@ class LogEnergyTrialPlanner:
 
         if self.trials.replace_covariance:
             for stage in self.STAGES:
-                overrides[f"curriculum.{stage}.use_covariance_match"]    = False
-                overrides[f"curriculum.{stage}.weight_covariance_match"] = 0.0
+                overrides[f"curriculum.{stage}.use_moments"]    = False
+                overrides[f"curriculum.{stage}.weight_moments"] = 0.0
 
         return overrides
 

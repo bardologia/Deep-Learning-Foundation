@@ -805,17 +805,14 @@ class ExperimentBuilder {
   ];
 
   static PHYSICS_COMPONENTS = [
-    { key: "total_power",      label: "total power" },
-    { key: "moments",          label: "profile moments" },
-    { key: "coherence_resyn",  label: "coherence resyn" },
-    { key: "moments", label: "covariance match" },
-    { key: "capon_cycle",      label: "capon cycle" },
+    { key: "total_power", label: "total power" },
+    { key: "moments",     label: "profile moments" },
   ];
 
   static PAIR_COMPONENTS = [
     "mse_curve", "l1_curve", "huber_curve", "charbonnier_curve", "cosine_curve", "log_energy_curve",
-    "total_power_relerr", "moments", "coherence_resyn", "moments", "capon_cycle",
-    "param_huber", "param_mse", "param_legacy", "smoothness_tv", "param_l1",
+    "total_power_relerr", "moments",
+    "param_huber", "param_mse", "smoothness_tv", "param_l1",
   ];
 
   static SWEEPS = {

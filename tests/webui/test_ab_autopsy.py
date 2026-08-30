@@ -161,7 +161,7 @@ def test_profile_rejects_z_length_mismatch(tmp_path):
 def test_compare_refuses_a_stamp_outside_every_opened_root(tmp_path):
     """Checks compare rejects a stamp outside the catalogued roots while still allowing catalogued pairs."""
     stamp_a, stamp_b = _pair(tmp_path / "opened")
-    outside          = _stamp(tmp_path / "elsewhere", "run_x", np.full((N_AZ, N_RG), 0.1), rmse=0.3)
+    outside          = _stamp(tmp_path / "elsewhere", "run_x", np.full((N_ROWS, N_COLS), 0.1), rmse=0.3)
 
     autopsy = AbAutopsy(WebLogger())
     autopsy.runs(str(tmp_path / "opened"))
@@ -176,7 +176,7 @@ def test_compare_refuses_a_stamp_outside_every_opened_root(tmp_path):
 def test_profile_refuses_a_stamp_outside_every_opened_root(tmp_path):
     """Checks profile rejects a stamp outside the catalogued roots."""
     stamp_a, _ = _pair(tmp_path / "opened")
-    outside    = _stamp(tmp_path / "elsewhere", "run_x", np.full((N_AZ, N_RG), 0.1), rmse=0.3)
+    outside    = _stamp(tmp_path / "elsewhere", "run_x", np.full((N_ROWS, N_COLS), 0.1), rmse=0.3)
 
     autopsy = AbAutopsy(WebLogger())
     autopsy.runs(str(tmp_path / "opened"))

@@ -89,14 +89,13 @@ class JepaEmbeddingLossProbe(LossScaleProbe):
         return EmbeddingLoss(self.autoencoder, self.target_provider, self.loss_cfg, z_axis, self.norm_stats, self.ppg, self.profile_normalizer)
 
     @staticmethod
-    def _criterion_result(criterion, prediction, targets, kz_map) -> dict:
-        """Evaluates the embedding criterion, which takes no kz map.
+    def _criterion_result(criterion, prediction, targets) -> dict:
+        """Evaluates the embedding criterion.
 
         Args:
             criterion  : The unit-weight embedding loss under measurement.
             prediction : Raw predicted embedding batch.
             targets    : Normalized ground-truth parameter batch.
-            kz_map     : Ignored; the embedding loss uses no geometry.
 
         Returns:
             The criterion's loss dict.

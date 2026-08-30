@@ -84,21 +84,6 @@ class TrainingPipeline:
         """Returns the backbones whose square-patch requirement constrains the patch geometry."""
         return [self.backbone_name]
 
-    @staticmethod
-    def physics_geometry_active(trainer_config) -> bool:
-        """Returns whether any curriculum stage enables a term that needs the geometry field.
-
-        Args:
-            trainer_config : Trainer configuration whose curriculum stages are inspected.
-
-        Returns:
-            True when coherence resynthesis, covariance matching or the reference
-            cycle is enabled in any active stage.
-        """
-        flags = ("use_coherence_resyn", "use_moments", "use_capon_cycle")
-
-        return any(getattr(cfg, flag) for cfg in trainer_config.curriculum.active_stages() for flag in flags)
-
     def _build_dataset_pipeline(self, run_directory: Path, logger) -> DatasetPipeline:
         """Builds the patch dataset pipeline and derives the elevation axis from its profile length.
 
@@ -116,8 +101,6 @@ class TrainingPipeline:
             training_run_directory = Path(run_directory),
             logger                 = logger,
             seed                   = self.seed,
-            height_axis_convention = self.trainer_config.geometry.height_axis_convention,
-            build_geometry_field   = self.physics_geometry_active(self.trainer_config),
             resume                 = self.trainer_config.training.resume,
         )
 

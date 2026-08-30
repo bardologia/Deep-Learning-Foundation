@@ -246,7 +246,7 @@ class DualRoutingTrialPlanner:
         return {
             "params_input"    : list(spec["params"]),
             "existence_input" : list(spec["existence"]),
-            "input.use_dem"   : "dem" in spec["params"] or "dem" in spec["existence"],
+            "input.use_aux"   : "aux" in spec["params"] or "aux" in spec["existence"],
             "model_overrides" : {**self.model_overrides, **features},
         }
 

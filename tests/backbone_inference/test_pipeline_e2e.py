@@ -60,7 +60,7 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
     assert "unet" in report
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 @pytest.mark.slow
 def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params_dir):
     """A region override widens the inferred area while the stored split region stays the reported core region."""
@@ -91,7 +91,7 @@ def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params
     assert np.load(output_dir / "cubes" / "gt_curves.npy").shape   == (N_Z, 116, 96)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_region_override_must_contain_the_stored_split_region(tmp_path, test_data_dir, params_dir):
     """A region override disjoint from the stored split region raises ValueError."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)

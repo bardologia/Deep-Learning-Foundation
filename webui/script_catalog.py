@@ -100,16 +100,6 @@ class ScriptCatalog:
             "category"  : "Analysis",
             "purpose"   : "Recompute the Gaussian-fit metrics, summary, and diagnostic plots for one or more parameter-extraction trials, decoupled from the GPU fitting step.",
         },
-        "analyze_normalization": {
-            "title"     : "Analyze Normalization",
-            "category"  : "Analysis",
-            "purpose"   : "Pool every input and output channel slot of a dataset and one parameter-extraction run, evaluate every applicable normalization preset per slot, and report a recommended strategy with distributions, scores and stationarity probes.",
-        },
-        "analyze_symbolic": {
-            "title"     : "Symbolic Regression",
-            "category"  : "Analysis",
-            "purpose"   : "Run symbolic regression over one dataset and parameter run: certify the machinery by rediscovering the known TomoSAR laws, hunt unmodeled structure in known-law residuals, and benchmark closed-form inversion candidates, with a certification battery on every discovery.",
-        },
         "compare_trials": {
             "title"     : "Compare Trials",
             "category"  : "Analysis",
@@ -205,8 +195,6 @@ class ScriptCatalog:
     TOPICS = {
         "analyze_preprocessing"           : "trials",
         "analyze_param_extraction"        : "trials",
-        "analyze_normalization"           : "trials",
-        "analyze_symbolic"                : "trials",
         "compare_trials"                  : "trials",
         "compare_preprocessing_trials"    : "trials",
         "compare_param_extraction_trials" : "trials",
@@ -258,8 +246,6 @@ class ScriptCatalog:
             "purpose"  : "Re-render the diagnostic artifacts for a family of trials without re-running the heavy generation step. Pick the stage to analyze: Gaussian-fit parameter extraction.",
             "members"  : [
                 ("analyze_param_extraction",  "Param Extraction"),
-                ("analyze_normalization",     "Normalization"),
-                ("analyze_symbolic",          "Symbolic"),
             ],
         },
         "compare": {

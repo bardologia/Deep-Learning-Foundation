@@ -198,7 +198,7 @@ def test_environment_stamps_the_group_coordinates():
 
 def test_launch_restores_the_inherited_cuda_mask(tmp_path, monkeypatch):
     """A rank's environment carries the pre-pin mask, not the parent's single-device pin."""
-    monkeypatch.setenv("TOMOSAR_INHERITED_CUDA_MASK", "")
+    monkeypatch.setenv("MLTEMPLATE_INHERITED_CUDA_MASK", "")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
 
     captured = {}
@@ -214,7 +214,7 @@ def test_launch_restores_the_inherited_cuda_mask(tmp_path, monkeypatch):
     fanout._launch(0, gpu=1, port=29777, handles=[])
 
     assert "CUDA_VISIBLE_DEVICES" not in captured["env"]
-    assert "TOMOSAR_INHERITED_CUDA_MASK" not in captured["env"]
+    assert "MLTEMPLATE_INHERITED_CUDA_MASK" not in captured["env"]
     assert captured["env"][DistributedContext.RANK_VAR] == "0"
 
 
@@ -222,7 +222,7 @@ _STUB_ENTRY = """
 import os, sys, time
 from pathlib import Path
 
-rank    = int(os.environ["TOMOSAR_DDP_RANK"])
+rank    = int(os.environ["MLTEMPLATE_DDP_RANK"])
 mode    = Path(sys.argv[0]).with_name("mode.txt").read_text().strip()
 run_dir = Path(sys.argv[sys.argv.index("--logdir") + 1]) / sys.argv[sys.argv.index("--run_name") + 1]
 

@@ -72,8 +72,8 @@ def test_each_k_group_owns_its_extraction_log(tmp_path, monkeypatch):
 
     (tmp_path / "data").mkdir(parents=True)
     (tmp_path / "meta").mkdir(parents=True)
-    np.save(tmp_path / "data" / "tomogram_full.npy", np.zeros((2, 2, 4), dtype=np.float32))
-    (tmp_path / "meta" / "config_state.json").write_text(json.dumps({"tomogram_config": {"height_range": [-20.0, 80.0]}}), encoding="utf-8")
+    np.save(tmp_path / "data" / "cube_full.npy", np.zeros((2, 2, 4), dtype=np.float32))
+    (tmp_path / "meta" / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": [-20.0, 80.0]}}), encoding="utf-8")
 
     monkeypatch.setattr(pipeline_module, "ParameterExtractor", lambda **kwargs: None)
     monkeypatch.setattr(pipeline_module, "ParameterIO",        lambda **kwargs: None)
@@ -188,15 +188,17 @@ def test_sigma_guess_matches_the_initialiser_sigmas():
     """Verifies the standalone sigma guess equals the sigmas the peak initialiser emits and stays below the height step."""
     from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
 
-    height_axis = np.linspace(HEIGHT_RANGE[0], HEIGHT_RANGE[1], 150, dtype=np.float32)
+    z_axis = np.linspace(Z_RANGE[0], Z_RANGE[1], 150, dtype=np.float32)
     profiles    = np.zeros((4, 150), dtype=np.float32)
 
+    k = 5
+
     initialiser = PeakInitialiser(n_workers=1)
-    guess       = PeakInitialiser.sigma_guess(height_axis, K_MAX, 4.0)
-    _, _, sigs  = initialiser.run(profiles, height_axis, K_MAX, sigma_divisor=4.0)
+    guess       = PeakInitialiser.sigma_guess(z_axis, k, 4.0)
+    _, _, sigs  = initialiser.run(profiles, z_axis, k, sigma_divisor=4.0)
 
     assert np.allclose(sigs, np.float32(guess))
-    assert guess < float(height_axis[1] - height_axis[0])
+    assert guess < float(z_axis[1] - z_axis[0])
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
@@ -221,19 +223,19 @@ def test_clamped_sigma_init_divisor_is_reported(tmp_path):
             """Records a warning message."""
             self.warnings.append(message)
 
-    tomo_path = tmp_path / "tomo.npy"
-    np.save(tomo_path, np.zeros((150, 2, 2), dtype=np.float32))
+    cube_path = tmp_path / "tomo.npy"
+    np.save(cube_path, np.zeros((150, 2, 2), dtype=np.float32))
 
     recorder  = WarningRecorder()
     extractor = SigmaFittingExtractor(
         logger             = recorder,
         modes              = ["sigma"],
         lambda_values      = [LAMBDA_K],
-        k_max              = K_MAX,
+        k_max              = 5,
         sigma_init_divisor = 4.0,
         peak_initialiser   = PeakInitialiser(n_workers=1),
     )
-    extractor._prepare_data(tomo_path, HEIGHT_RANGE)
+    extractor._prepare_data(cube_path, Z_RANGE)
 
     assert any("sigma_init_divisor 4.0" in message for message in recorder.warnings)
 
@@ -322,8 +324,8 @@ def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
     amps     = rng.uniform(0.5, 1.0, size=(n_row, R)).astype(np.float32)
     cube     = layer[:, None, None] * amps[None, :, :]
 
-    tomo_path = tmp_path / "cube.npy"
-    np.save(tomo_path, cube)
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, cube)
 
     extractor = ParameterExtractor(
         logger               = logger,
@@ -341,7 +343,7 @@ def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
         gpu_pixel_batch_size = 64,
         init_workers         = 1,
     )
-    results = extractor.run(tomo_path, (-10.0, 30.0))
+    results = extractor.run(cube_path, (-10.0, 30.0))
 
     assert set(results) == {("sigma", 1e-2), ("sigma", 1e-1), ("sigma_amp", 1e-2), ("sigma_amp", 1e-1)}
     assert all(params.shape == (6, n_row, R) for params, _ in results.values())
@@ -591,8 +593,8 @@ def test_r2_statistics_ignore_never_fitted_pixels(logger, tmp_path):
     params[1, 0, 0] = 30.0
     params[2, 0, 0] = 6.0
 
-    tomo_path = tmp_path / "cube.npy"
-    np.save(tomo_path, cube)
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, cube)
 
     calc = FittingMetricsCalculator(
         n_gaussians      = K_MAX,
@@ -601,7 +603,7 @@ def test_r2_statistics_ignore_never_fitted_pixels(logger, tmp_path):
         truncation_index = TRUNCATION_INDEX,
         amp_threshold    = ACTIVITY_THRESH,
     )
-    out = calc.run(params, {"z_range": list(Z_RANGE)}, tomo_path)
+    out = calc.run(params, {"z_range": list(Z_RANGE)}, cube_path)
 
     r2_map  = out["r2_map"]
     summary = out["global_summary"]
@@ -635,8 +637,8 @@ def test_metrics_calculator_runs_on_window(cube_full, parameters, fit_diagnostic
     a0, a1, r0, r1 = 0, 48, 0, 48
 
     tomo_win  = np.array(cube_full[:, a0:a1, r0:r1])
-    tomo_path = tmp_path / "cube.npy"
-    np.save(tomo_path, tomo_win)
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, tomo_win)
 
     parw = np.ascontiguousarray(np.array(parameters[:, a0:a1, r0:r1]))
     diag = {
@@ -653,7 +655,7 @@ def test_metrics_calculator_runs_on_window(cube_full, parameters, fit_diagnostic
         truncation_index = TRUNCATION_INDEX,
         amp_threshold    = ACTIVITY_THRESH,
     )
-    out = calc.run(parw, small_metadata, tomo_path, diag)
+    out = calc.run(parw, small_metadata, cube_path, diag)
 
     assert out["r2_map"].shape       == (a1 - a0, r1 - r0)
     assert out["activity_map"].shape == (a1 - a0, r1 - r0)
@@ -686,8 +688,8 @@ def test_fitting_result_plotter_smoke(cube_full, parameters, fit_diagnostics, sm
     """Verifies the fitting result plotter writes every figure it reports."""
     a0, a1, r0, r1 = 0, 48, 0, 48
 
-    tomo_path = tmp_path / "cube.npy"
-    np.save(tomo_path, np.array(cube_full[:, a0:a1, r0:r1]))
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, np.array(cube_full[:, a0:a1, r0:r1]))
 
     parw = np.ascontiguousarray(np.array(parameters[:, a0:a1, r0:r1]))
     diag = {
@@ -704,7 +706,7 @@ def test_fitting_result_plotter_smoke(cube_full, parameters, fit_diagnostics, sm
         truncation_index = TRUNCATION_INDEX,
         amp_threshold    = ACTIVITY_THRESH,
     )
-    metrics_dict = calc.run(parw, small_metadata, tomo_path, diag)
+    metrics_dict = calc.run(parw, small_metadata, cube_path, diag)
 
     plotter = FittingResultPlotter(
         output_directory = tmp_path / "out",
@@ -717,7 +719,7 @@ def test_fitting_result_plotter_smoke(cube_full, parameters, fit_diagnostics, sm
         n_fits_per_k     = 2,
         amp_threshold    = ACTIVITY_THRESH,
     )
-    saved = plotter.run(parw, metrics_dict, small_metadata, tomo_path)
+    saved = plotter.run(parw, metrics_dict, small_metadata, cube_path)
 
     assert len(saved) > 0
     assert all(p.is_file() for p in saved.values())
@@ -753,41 +755,8 @@ def _params_with_empty_pixel(k_max):
     return params
 
 
-def test_pass_rug_legend_names_only_the_flights_present(logger):
-    """Verifies the chan rug legend lists one entry per flight, not per chan."""
-    import matplotlib.pyplot as plt
-    from pipelines.processing.param_extraction.plots import ResolutionPlotter
-
-    arrays = {
-        "channel_labels" : np.array(["XY07_PS01", "XY07_PS02", "ZZ09_PS03"]),
-        "pass_kz"     : np.array([0.5, 1.0, 2.0]),
-    }
-
-    fig, axes = plt.subplots()
-    ResolutionPlotter(logger=logger)._pass_rug(axes, arrays)
-    labels = [text.get_text() for text in axes.get_legend().get_texts()]
-    plt.close(fig)
-
-    assert labels == ["XY07 chan", "ZZ09 chan"]
 
 
-def _write_synthetic_geometry_field(dataset_dir):
-    """Writes a small three-channel GeometryField into the dataset meta directory."""
-    from tools.dataset.geometry_field import GeometryField
-
-    n_azimuth, n_range = 8, 6
-    field = GeometryField(
-        labels        = ["FL01_PS02", "CH01", "FL02_PS03"],
-        reference     = "FL01_PS02",
-        wavelength    = 0.2262,
-        row_start = 0,
-        col_start   = 0,
-        look_angle    = np.full(n_range, 0.6),
-        slant_range   = np.linspace(3600.0, 3900.0, n_range),
-        baseline_h    = np.vstack([np.zeros(n_azimuth), np.full(n_azimuth, 15.0), np.full(n_azimuth, 1.6)]),
-        baseline_v    = np.vstack([np.zeros(n_azimuth), np.full(n_azimuth, -1.0), np.full(n_azimuth, -0.3)]),
-    )
-    field.save(dataset_dir / "meta" / GeometryField.FILENAME)
 
 
 @pytest.mark.dataset
@@ -799,10 +768,9 @@ def test_param_run_inference_pipeline_smoke(cube_full, parameters, fit_diagnosti
     run_dir     = dataset_dir / "params" / "params_run"
     run_dir.mkdir(parents=True)
 
-    _write_synthetic_geometry_field(dataset_dir)
 
-    tomo_path = tmp_path / "cube.npy"
-    np.save(tomo_path, np.array(cube_full[:, a0:a1, r0:r1]))
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, np.array(cube_full[:, a0:a1, r0:r1]))
 
     np.save(run_dir / "parameters.npy", np.ascontiguousarray(np.array(parameters[:, a0:a1, r0:r1])))
     np.savez(
@@ -816,7 +784,7 @@ def test_param_run_inference_pipeline_smoke(cube_full, parameters, fit_diagnosti
     meta = {
         "parameters_npy"     : "parameters.npy",
         "diagnostics_npz"    : "fit_diagnostics.npz",
-        "source_cube"        : str(tomo_path),
+        "source_cube"        : str(cube_path),
         "z_range"            : list(Z_RANGE),
         "k_max"              : K_MAX,
         "activity_threshold" : ACTIVITY_THRESH,
@@ -828,14 +796,10 @@ def test_param_run_inference_pipeline_smoke(cube_full, parameters, fit_diagnosti
     outputs = ParamRunInferencePipeline(run_dir, logger, make_plots=True).run()
 
     assert (run_dir / "fit_metrics_summary.json").is_file()
-    assert (run_dir / "resolution_curves.npz").is_file()
     assert outputs["plots"]
     assert all(p.is_file() for p in outputs["plots"].values())
 
     summary = json.loads((run_dir / "fit_metrics_summary.json").read_text())
-    assert "resolution_summary" in summary
-    assert summary["resolution_summary"]["kz_optimum"] > 0.0
-    assert len(summary["resolution_summary"]["pass_ranking"]) == 2
 
 
 @pytest.mark.slow
@@ -845,8 +809,8 @@ def test_rerun_extractor_reproduces_best_k(cube_full, fit_diagnostics, logger, t
     """Verifies a fresh extraction agrees with the stored best-K map on at least 60 percent of active pixels."""
     a0, a1, r0, r1 = 0, 16, 0, 8
 
-    tomo_path = tmp_path / "cube.npy"
-    np.save(tomo_path, np.array(cube_full[:, a0:a1, r0:r1]))
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, np.array(cube_full[:, a0:a1, r0:r1]))
 
     extractor = ParameterExtractor(
         logger               = logger,
@@ -866,7 +830,7 @@ def test_rerun_extractor_reproduces_best_k(cube_full, fit_diagnostics, logger, t
         gpu_pixel_batch_size = 8192,
         init_workers         = 4,
     )
-    out, diag = extractor.run(tomo_path, Z_RANGE)[("sigma", LAMBDA_K)]
+    out, diag = extractor.run(cube_path, Z_RANGE)[("sigma", LAMBDA_K)]
 
     assert out.shape  == (3 * K_MAX, a1 - a0, r1 - r0)
     assert diag["best_k_map"].min() >= 0
@@ -888,8 +852,8 @@ def test_stage_save_persists_the_entry_config(tmp_path, monkeypatch):
 
     (tmp_path / "data").mkdir(parents=True)
     (tmp_path / "meta").mkdir(parents=True)
-    np.save(tmp_path / "data" / "tomogram_full.npy", np.zeros((2, 2, 4), dtype=np.float32))
-    (tmp_path / "meta" / "config_state.json").write_text(json.dumps({"tomogram_config": {"height_range": [-20.0, 80.0]}}), encoding="utf-8")
+    np.save(tmp_path / "data" / "cube_full.npy", np.zeros((2, 2, 4), dtype=np.float32))
+    (tmp_path / "meta" / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": [-20.0, 80.0]}}), encoding="utf-8")
 
     class _StubIO:
         """Parameter writer stand-in that echoes back the destination paths."""
@@ -913,7 +877,7 @@ def test_stage_save_persists_the_entry_config(tmp_path, monkeypatch):
             """Ignores the permutation configuration and logger."""
             pass
 
-        def save_run_metadata(self, npy_path, diag_path, tomogram_path, height_range):
+        def save_run_metadata(self, npy_path, diag_path, cube_path, z_range):
             """Returns the parameter path as the metadata location."""
             return npy_path
 

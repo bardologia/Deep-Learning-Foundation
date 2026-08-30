@@ -196,7 +196,7 @@ def make_preproc(base: Path, rng: np.random.Generator | None = None, with_full: 
     preproc = base / "preproc"
     (preproc / "data").mkdir(parents=True)
 
-    primary = rng.normal(size=(n_rows, N_COLS)) + 1j * rng.normal(size=(n_rows, N_COLS))
+    primary = rng.normal(size=(N_ROWS, N_COLS)) + 1j * rng.normal(size=(N_ROWS, N_COLS))
     np.save(preproc / "data" / "primary.npy", primary)
 
     artifacts = {"primary": "primary.npy"}
@@ -214,30 +214,13 @@ def make_preproc(base: Path, rng: np.random.Generator | None = None, with_full: 
     return preproc
 
 
-def make_stamp(run: Path, preproc: Path, rng: np.random.Generator, sources: tuple = ("pred", "gt"), x_min: float = -10.0, shape: tuple = (N_Z, N_ROWS, N_COLS), name: str = "stamp_1", region: list | None = None) -> Path:
-    """Writes an inference stamp with random curve cubes and its metrics file.
-
-    Args:
-        run     : Run directory receiving ``inference/<name>`` and ``meta``.
-        preproc : Preprocessing run the dataset config points back to.
-        rng     : Generator for the random curve cubes.
-        sources : Cube prefixes to write, each as ``<source>_curves.npy``.
-        x_min   : Lowest z of the z axis in metres.
-        shape   : Cube shape as (z, row, col).
-        name    : Stamp directory name.
-        region  : Split region as [row_start, az_end, col_start, rg_end]; defaults to the whole scene.
-
-    Returns:
-        Path of the created stamp directory.
-    """
+def make_stamp(run: Path, preproc: Path, rng: np.random.Generator, sources: tuple = ("pred", "gt"), x_min: float = -10.0, shape: tuple = (N_Z, N_ROWS, N_COLS), name: str = "stamp_1") -> Path:
     stamp = run / "inference" / name
     (stamp / "cubes").mkdir(parents=True)
-    (run / "meta").mkdir(parents=True, exist_ok=True)
-
-    region = [0, N_AZ, 0, N_RG] if region is None else region
+    (run / "meta").mkdir(parents=True)
 
     (run / "meta" / "dataset_creation_config.json").write_text(json.dumps({"preprocessing_run_directory": str(preproc)}))
-    (stamp / "metrics.json").write_text(json.dumps({"x_axis_min": x_min, "x_axis_max": 30.0, "split_region": region, "tracks": {"labels": ["T01", "T02"], "reference": "T01"}}))
+    (stamp / "metrics.json").write_text(json.dumps({"x_axis_min": x_min, "x_axis_max": 30.0, "split_region": [0, N_ROWS, 0, N_COLS]}))
 
     for source in sources:
         np.save(stamp / "cubes" / f"{source}_curves.npy", rng.random(shape).astype(np.float32))
@@ -265,66 +248,7 @@ def make_cube_run(base: Path, sources: tuple = ("pred", "gt"), with_full: bool =
     return stamp
 
 
-N_FOLDS, FOLD_AZ, FOLD_GAP = 3, 4, 1
-
-
-def make_cv_run(base: Path, splits: tuple = ("test",), seed: str | None = None, sources: tuple = ("pred", "gt"), with_params: tuple = (), with_metrics: bool = False, gap: int = FOLD_GAP) -> Path:
-    """Writes a cross-validation tree of N_FOLDS contiguous azimuth folds.
-
-    Each fold covers FOLD_AZ azimuth lines separated by ``gap`` guard lines, and
-    its cubes are filled with the constant fold index plus one so mosaics can be
-    checked pixel by pixel.
-
-    Args:
-        base         : Parent directory receiving the preprocessing and cross-validation trees.
-        splits       : Splits for which a completed stamp is written per fold.
-        seed         : Optional seed subdirectory inserted under each fold run.
-        sources      : Curve cube prefixes to write.
-        with_params  : Sources for which a constant parameter block is written.
-        with_metrics : Whether a constant pixel R2 map is written.
-        gap          : Guard lines between consecutive folds.
-
-    Returns:
-        Path of the cross-validation root directory.
-    """
-    rng      = np.random.default_rng(0)
-    span     = FOLD_AZ + gap
-    total_az = N_FOLDS * span - gap
-    preproc  = make_preproc(base, rng, n_az=total_az)
-    cv_root  = base / "cross_validation" / "20260810_120000"
-
-    (cv_root / "pipeline").mkdir(parents=True)
-
-    for index in range(N_FOLDS):
-        run_dir = cv_root / "folds" / f"resunet_a_fold_{index}"
-        if seed:
-            run_dir = run_dir / seed
-
-        az0 = index * span
-        for split in splits:
-            stamp = make_stamp(run_dir, preproc, rng, sources, name=f"stamp_{split}", shape=(N_ELEV, FOLD_AZ, N_RG), region=[az0, az0 + FOLD_AZ, 0, N_RG])
-            CompletionMarker.stamp(stamp, {"stage": "inference", "split": split})
-            np.save(stamp / "cubes" / "pred_curves.npy", np.full((N_ELEV, FOLD_AZ, N_RG), float(index + 1), dtype=np.float32))
-
-            for source in with_params:
-                np.save(stamp / "cubes" / f"params_{source}.npy", np.full((3 * N_SLOTS, FOLD_AZ, N_RG), float(index + 1), dtype=np.float32))
-
-            if with_metrics:
-                np.save(stamp / "cubes" / "pixel_r2.npy", np.full((FOLD_AZ, N_RG), float(index + 1), dtype=np.float32))
-
-    return cv_root
-
-
 def open_explorer(base: Path, expected: int | None = None) -> tuple[CubeExplorer, list[str]]:
-    """Lists the cubes under a directory and returns the explorer and their ids.
-
-    Args:
-        base     : Directory scanned for cubes.
-        expected : Asserted number of discovered cubes when given.
-
-    Returns:
-        Tuple of the explorer and the discovered cube ids.
-    """
     explorer = CubeExplorer(WebLogger())
     listing  = explorer.list_cubes(str(base))
 
@@ -336,16 +260,6 @@ def open_explorer(base: Path, expected: int | None = None) -> tuple[CubeExplorer
 
 
 def load_cube(explorer: CubeExplorer, cube_id: str, timeout: float = 30.0) -> dict:
-    """Starts a cube load and blocks until it reports ready.
-
-    Args:
-        explorer : Explorer performing the load.
-        cube_id  : Identifier of the cube to load.
-        timeout  : Maximum wait in seconds.
-
-    Returns:
-        Final load status payload.
-    """
     assert explorer.start_load(cube_id)["ok"]
 
     deadline = time.time() + timeout
@@ -358,15 +272,6 @@ def load_cube(explorer: CubeExplorer, cube_id: str, timeout: float = 30.0) -> di
 
 
 def loaded_cube(base: Path, **kwargs) -> tuple[CubeExplorer, str]:
-    """Builds a single cube run and returns the explorer with that cube loaded.
-
-    Args:
-        base     : Parent directory for the generated run.
-        **kwargs : Forwarded to ``make_cube_run``.
-
-    Returns:
-        Tuple of the explorer and the loaded cube id.
-    """
     make_cube_run(base, **kwargs)
     explorer, cube_ids = open_explorer(base, expected=1)
     load_cube(explorer, cube_ids[0])

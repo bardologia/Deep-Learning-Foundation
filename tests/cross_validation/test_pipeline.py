@@ -203,7 +203,7 @@ def test_pipeline_run_with_real_planner_and_fake_stages(tmp_path, test_data_dir,
     assert order.count("reports")  == 1
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_pipeline_prepare_stage_stops_before_training(tmp_path, test_data_dir, monkeypatch):
     """Verifies the prepare stage writes the resolved config without running any stage."""
     order = []
@@ -222,7 +222,7 @@ def test_pipeline_prepare_stage_stops_before_training(tmp_path, test_data_dir, m
     assert "training" not in state["stages"]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_pipeline_compare_stage_runs_reports_only(tmp_path, test_data_dir, monkeypatch):
     """Verifies the compare stage runs only the report stage."""
     order = []
@@ -241,7 +241,7 @@ def test_pipeline_compare_stage_runs_reports_only(tmp_path, test_data_dir, monke
     assert "training" not in state["stages"]
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_pipeline_rejects_an_unknown_stage(tmp_path, test_data_dir, monkeypatch):
     """Verifies an unknown stage name aborts the run."""
     install_fake_stages(monkeypatch, [])
@@ -254,7 +254,7 @@ def test_pipeline_rejects_an_unknown_stage(tmp_path, test_data_dir, monkeypatch)
         pipeline.run()
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_pipeline_rejects_an_unsupported_inference_split(tmp_path, test_data_dir, monkeypatch):
     """Verifies an inference split outside the supported set aborts sweep validation."""
     install_fake_stages(monkeypatch, [])

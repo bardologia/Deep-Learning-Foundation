@@ -235,11 +235,11 @@ def test_loss_unknown_curve_kind_raises(z_axis, norm_stats, profile_normalizer):
         loss(z_hat, gt)
 
 
-def test_loss_curve_sobolev_works_without_curve_recon(x_axis, norm_stats, profile_normalizer):
+def test_loss_curve_sobolev_works_without_curve_recon(z_axis, norm_stats, profile_normalizer):
     """The curve Sobolev term runs on its own, without a curve reconstruction term."""
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=False, use_curve_recon=False, use_curve_sobolev=True, weight_curve_sobolev=1.0)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
     z_hat, gt   = random_inputs()
 
     out = loss(z_hat, gt)
@@ -253,7 +253,7 @@ def test_loss_curve_sobolev_works_without_curve_recon(x_axis, norm_stats, profil
     assert torch.isfinite(z_hat.grad).all()
 
 
-def test_loss_curve_sobolev_scales_with_weight(x_axis, norm_stats, profile_normalizer):
+def test_loss_curve_sobolev_scales_with_weight(z_axis, norm_stats, profile_normalizer):
     """Tripling the Sobolev weight triples the total."""
     autoencoder = make_autoencoder("none")
     z_hat, gt   = random_inputs(requires_grad=False)
@@ -261,17 +261,17 @@ def test_loss_curve_sobolev_scales_with_weight(x_axis, norm_stats, profile_norma
     outs = {}
     for weight in (1.0, 3.0):
         emb_cfg      = EmbeddingLossConfig(use_embedding_mse=False, use_curve_recon=False, use_curve_sobolev=True, weight_curve_sobolev=weight)
-        loss         = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+        loss         = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
         outs[weight] = loss(z_hat, gt)["total_loss"].item()
 
     assert outs[3.0] == pytest.approx(3.0 * outs[1.0], rel=1e-6)
 
 
-def test_loss_curve_sobolev_joins_curve_recon(x_axis, norm_stats, profile_normalizer):
+def test_loss_curve_sobolev_joins_curve_recon(z_axis, norm_stats, profile_normalizer):
     """With both curve terms active the total is their weighted sum."""
     autoencoder = make_autoencoder("none")
     emb_cfg     = EmbeddingLossConfig(use_embedding_mse=False, use_curve_recon=True, weight_curve_recon=1.0, use_curve_sobolev=True, weight_curve_sobolev=2.0)
-    loss        = build_loss(autoencoder, x_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
+    loss        = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad")
     z_hat, gt   = random_inputs(requires_grad=False)
 
     out      = loss(z_hat, gt)

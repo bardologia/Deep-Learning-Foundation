@@ -1,6 +1,6 @@
 """Fold planning, naming, and configuration for k-fold cross-validation.
 
-Partitions the dataset azimuth extent into disjoint blocks, assigns one test
+Partitions the dataset row extent into disjoint blocks, assigns one test
 and one validation block per fold with a guard margin between neighbours, and
 derives the run names and per-fold configs each training family needs.
 """
@@ -110,8 +110,8 @@ class FoldPlan:
 
     Attributes:
         fold_index    : Zero-based index of the fold.
-        test_block    : Index of the azimuth block held out for testing.
-        val_block     : Index of the azimuth block used for validation.
+        test_block    : Index of the row block held out for testing.
+        val_block     : Index of the row block used for validation.
         train_blocks  : Indices of the remaining blocks used for training.
         split_regions : Guard-trimmed crop regions for train, val, and test.
     """
@@ -247,7 +247,7 @@ class FoldPlanner:
             split      : Either 'test' or 'val'.
 
         Returns:
-            The full azimuth block of the requested split.
+            The full row block of the requested split.
 
         Raises:
             ValueError : If the split holds no fold-specific region.
@@ -258,8 +258,8 @@ class FoldPlanner:
         if split not in self.INFERENCE_SPLITS:
             raise ValueError(f"inference regions exist for splits {sorted(self.INFERENCE_SPLITS)}; got '{split}'")
 
-        azimuth_start, azimuth_end = self.blocks[blocks[split]]
-        return CropRegion(azimuth_start, azimuth_end, self.range_start, self.range_end)
+        row_start, row_end = self.blocks[blocks[split]]
+        return CropRegion(row_start, row_end, self.col_start, self.col_end)
 
     def plan(self, fold_index: int) -> FoldPlan:
         """Builds the block assignment and crop regions of one fold.
@@ -422,7 +422,7 @@ class FoldConfigFactory(ConfigFactory):
         """Returns the fold planner, building it against the dataset crop on first use.
 
         Raises:
-            ValueError : If the configured fold azimuth window is not contained in the dataset global crop.
+            ValueError : If the configured fold row window is not contained in the dataset global crop.
         """
         if self._planner is None:
             crop  = self.global_crop()
@@ -444,7 +444,7 @@ class FoldConfigFactory(ConfigFactory):
 
         Returns:
             An inference config whose region override is the fold's untrimmed
-            azimuth block.
+            row block.
         """
         inference_config                 = self.inference_config(run_directory)
         inference_config.split           = split

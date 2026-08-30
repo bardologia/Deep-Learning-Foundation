@@ -379,7 +379,7 @@ def test_training_worker_scales_the_lr_from_the_measured_batch(config, test_data
     assert captured["dataset_config"].batch_size         == 500
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir, params_dir, monkeypatch):
     """Verifies the probed multiplier folds into the trainer LR scale on top of the batch rule."""
     from pipelines.benchmark.workers import TrainingWorker
@@ -412,7 +412,7 @@ def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir,
     assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / 256 * 0.25)
 
 
-@pytest.mark.real_data
+@pytest.mark.dataset
 def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config, test_data_dir, params_dir, monkeypatch):
     """Verifies a recorded multiplier is not applied while find_lr is off."""
     from pipelines.benchmark.workers import TrainingWorker

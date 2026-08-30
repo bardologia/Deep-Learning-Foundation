@@ -82,16 +82,6 @@ def test_derived_phase_uses_fixed_div_pi():
     assert strat.apply_log1p is False
 
 
-@pytest.mark.dataset
-def test_mu_robust_iqr_is_degenerate_which_is_why_mu_stays_zscore(parameters):
-    """Robust IQR collapses the mean scale on real data while z-score keeps it usable."""
-    _, mu, _ = _active(parameters)
-
-    _, robust_scale = ChannelStrategy(NormMethod.ROBUST_IQR, apply_log1p=False).fit(mu)
-    _, zscore_scale = ChannelStrategy.from_slot("out/mu").fit(mu)
-
-    assert robust_scale <= 1e-7
-    assert zscore_scale > 1.0
 
 
 @pytest.mark.dataset

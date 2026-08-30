@@ -100,8 +100,8 @@ class ChannelGroups:
             groups["interferograms"] = list(range(offset, offset + count))
             offset                  += count
 
-        if input_config.use_dem:
-            groups["dem"] = [offset]
+        if input_config.use_aux:
+            groups["aux"] = [offset]
             offset       += 1
 
         if not groups:
@@ -349,7 +349,7 @@ class InputAttributionPlots(PlotBase):
         "primary"        : PlotBase.OKABE_ITO[0],
         "secondaries"    : PlotBase.OKABE_ITO[2],
         "interferograms" : PlotBase.OKABE_ITO[1],
-        "dem"            : PlotBase.OKABE_ITO[4],
+        "aux"            : PlotBase.OKABE_ITO[4],
     }
 
     def channel_bars(self, values: np.ndarray, stds: np.ndarray | None, labels: list[str], channel_groups: list[str], xlabel: str, title: str, path: Path, percent: bool = True) -> Path:

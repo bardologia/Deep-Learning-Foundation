@@ -176,9 +176,9 @@ class SigmaFittingExtractor:
         mu_lower_j = jnp.float32(z_axis[0])
         mu_upper_j = jnp.float32(z_axis[-1])
 
-        sigma_guess = PeakInitialiser.sigma_guess(height_axis, self.k_max, self.sigma_init_divisor)
+        sigma_guess = PeakInitialiser.sigma_guess(z_axis, self.k_max, self.sigma_init_divisor)
         if sigma_guess < dh:
-            erasing_divisor = PeakInitialiser.sigma_base(height_axis, self.k_max) / dh
+            erasing_divisor = PeakInitialiser.sigma_base(z_axis, self.k_max) / dh
             self.logger.warning(f"sigma_init_divisor {self.sigma_init_divisor} places the initial sigma at {sigma_guess:.4f}, below the fit lower bound {dh:.4f}; the kernel clamps it, so every divisor above {erasing_divisor:.3f} starts this fit from the same sigma and produces identical parameters")
 
         self.logger.section("[Data Preparation]")
