@@ -281,7 +281,7 @@ class DatasetConfig:
 
     Attributes:
         preprocessing_run_directory : Directory holding the preprocessed scene.
-        split_regions               : Azimuth and range regions defining train, val and test.
+        split_regions               : Row and column regions defining train, val and test.
         parameters_path             : Directory holding the extracted Gaussian parameters.
         secondary_labels            : Track labels of the secondary channels to load.
         patch                       : Patch geometry.
@@ -295,7 +295,7 @@ class DatasetConfig:
         shuffle_train               : Whether the training split is shuffled.
         pin_memory                  : Whether loader batches are pinned for faster host-to-device copies.
         fingerprint_dataset         : Whether the run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance.
-        x_axis                      : Elevation axis samples in metres, of shape (n_z,).
+        x_axis                      : Z axis samples in metres, of shape (n_z,).
         n_gaussians                 : Number of Gaussian components predicted per pixel.
     """
 

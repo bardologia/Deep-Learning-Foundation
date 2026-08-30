@@ -32,7 +32,7 @@ class ProfileAeRun:
         model                       : The loaded autoencoder in eval mode.
         ae_name                     : Registry name of the autoencoder architecture.
         embedding_dim               : Latent dimensionality.
-        x_axis                      : Elevation axis of shape (H,), in metres.
+        x_axis                      : Z axis of shape (H,), in metres.
         normalizer                  : Log1p standardisation fitted during training.
         dataset                     : Dataset of the requested split.
         loader                      : Non-shuffling loader over that dataset.

@@ -381,8 +381,8 @@ class TrainingPipeline:
         """Requires the checkpoint's z axis to match the JEPA dataset's.
 
         Args:
-            ae_axis   : Elevation axis in metres stored in the autoencoder checkpoint.
-            jepa_axis : Elevation axis in metres produced by the JEPA dataset.
+            ae_axis   : Z axis in metres stored in the autoencoder checkpoint.
+            jepa_axis : Z axis in metres produced by the JEPA dataset.
             ckpt_path : Checkpoint path, quoted in the error message.
 
         Raises:

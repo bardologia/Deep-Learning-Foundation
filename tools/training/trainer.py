@@ -43,7 +43,7 @@ class BaseTrainer:
         run_dir      : Directory holding checkpoints, trainer state and completion markers.
         tracker      : Scalar/metric sink backed by the TensorBoard writer.
         model        : Module being trained, already moved to `device`.
-        x_axis       : Elevation sampling axis of shape (n_samples,), in metres.
+        x_axis       : Z sampling axis of shape (n_samples,), in metres.
         optimizer    : AdamW instance built over the subclass parameter groups.
         base_lrs     : Per-group learning rates after `optimizer.lr_scale` is applied.
         global_step  : Number of micro-batches processed so far.

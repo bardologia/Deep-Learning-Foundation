@@ -40,7 +40,7 @@ class SlotPlotter(PlotTools):
             params_gt     : Ground-truth Gaussian parameter cube in the same layout as params_pred.
             n_gaussians   : Number of Gaussian slots to count over.
             out_dir       : Directory the two PNG figures are written into.
-            az_offset     : Azimuth index of the first row of the cube, used for axis extents.
+            row_offset     : Row index of the first row of the cube, used for axis extents.
             rg_offset     : Range index of the first column of the cube, used for axis extents.
             amp_threshold : Amplitude above which a slot counts as active.
 

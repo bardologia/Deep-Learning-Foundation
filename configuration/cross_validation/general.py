@@ -49,7 +49,7 @@ class CrossValidationConfig:
         backbone_head     : Output head attached to the backbone.
         model_overrides   : Architecture config fields overridden per run.
         paths             : Dataset and run path configuration.
-        folds             : Azimuth fold definition.
+        folds             : Row fold definition.
         training          : Training queue settings shared by all folds.
         inference         : Inference queue settings.
         comparison        : Fold comparison report settings.

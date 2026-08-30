@@ -50,7 +50,7 @@ def _pipeline(cfg):
     pipe.trainer_config  = _trainer_config(cfg)
     pipe.autoencoder_cfg = cfg
     pipe.ae_model_name   = "conv2d_ae"
-    pipe.entry           = types.SimpleNamespace(run_name="image_ae_test", seed=0)
+    pipe.entry           = types.SimpleNamespace(run_name="image_ae_test", seed=0, paths=types.SimpleNamespace(dataset_path=".", parameters_path=None, fingerprint_dataset=False))
     return pipe
 
 
@@ -176,6 +176,10 @@ class _RecordingRunMetadata:
         self.closed        = False
 
         type(self).instances.append(self)
+
+    def save_dataset_fingerprint(self, dataset_path, parameters_path, enabled=True):
+        """Accepts the provenance call without touching the filesystem."""
+        return None
 
     def __enter__(self):
         """Returns the stub itself as the context manager value."""

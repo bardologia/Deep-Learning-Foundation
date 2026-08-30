@@ -362,7 +362,7 @@ class Animator:
             gt_cube   : Ground-truth cube of the same shape.
             axis      : Walk axis, "z", "range" or "row".
             out_path  : Destination GIF path.
-            x_axis    : Elevation axis in metres, shape (n_z,).
+            x_axis    : Z axis in metres, shape (n_z,).
             row_offset : Row index of the cube first row in the full scene.
             col_offset : Column index of the cube first column in the full scene.
             full_cube : Raw cube of the same shape shown as an extra panel, or None.

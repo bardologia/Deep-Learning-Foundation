@@ -168,7 +168,7 @@ class RobustnessCore:
 
         Args:
             batches : Input/ground-truth batch pairs as taken by the MSE helper.
-            shifts  : Azimuth shifts in pixels, each strictly inside the patch height.
+            shifts  : Row shifts in pixels, each strictly inside the patch height.
 
         Returns:
             One row per shift holding "shift" in pixels and "mse".
@@ -353,7 +353,7 @@ class RobustnessPlots(PlotBase):
         ax.axhline(clean, color="0.4", linestyle="--", linewidth=1.0, label="clean loss vs GT")
 
         ax.set_xticks([row["shift"] for row in rows])
-        ax.set_xlabel("Azimuth shift [px]")
+        ax.set_xlabel("Row shift [px]")
         ax.set_ylabel("Curve MSE between shifted predictions")
         ax.set_yscale("log")
         ax.set_title("Shift-equivariance error")
@@ -466,7 +466,7 @@ class RobustnessRun(AnalysisRun):
             doc.table(drop_table)
 
         doc.heading("Shift equivariance", level=2)
-        shift_table = MarkdownTable(("Azimuth shift [px]", "Consistency MSE"))
+        shift_table = MarkdownTable(("Row shift [px]", "Consistency MSE"))
         for row in results["shift"]:
             shift_table.add_row(str(row["shift"]), f"{row['mse']:.4g}")
         doc.table(shift_table)

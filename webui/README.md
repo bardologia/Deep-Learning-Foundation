@@ -39,7 +39,7 @@ talking to one group of JSON endpoints.
 | Pipelines | `#/pipelines` | `/api/pipelines` | The 15 pipelines as staged flows; each maps to the entry point that runs it. |
 | Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 13 folders and 29 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
 | Architectures | `#/architectures` | `/api/backbones`, `/api/profile-autoencoders`, `/api/image-autoencoders`, `/api/jepa-variants` | The 20 backbones across 5 families plus their 4 output heads and the autoencoder and JEPA variants, with selection guidance and per-model defaults. |
-| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 34 of them and folds the per-family variants into 4 groups (train, infer, analyze, compare). |
+| Scripts | `#/scripts` | `/api/scripts` | The entry points as cards. `ScriptCatalog` describes 37 of them and folds the per-family variants into 4 groups (train, infer, analyze, compare). |
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. |
 | Ablation | `#/ablation` | `/api/backbones`, `/api/run` | Reached from a script card. Picks the entry, the features to ablate and their order, then launches a cumulative loop that trains the full model and degrades one feature at a time down to the baseline. |
 | Saved | `#/saved` | `/api/saved-runs` | Configurations stored from launch pages, one JSON file each under `logs/saved_runs/`. Each card can be launched, queued or deleted. |

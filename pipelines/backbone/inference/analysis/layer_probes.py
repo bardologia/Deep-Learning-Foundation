@@ -184,7 +184,7 @@ class FeatureSampler:
         Args:
             stored : Activation of shape (B, C, h, w).
             b      : Batch index of each sampled pixel.
-            i      : Azimuth index of each sampled pixel on the input grid.
+            i      : Row index of each sampled pixel on the input grid.
             j      : Range index of each sampled pixel on the input grid.
             B      : Batch size of the forward pass.
             H      : Input patch height in pixels.

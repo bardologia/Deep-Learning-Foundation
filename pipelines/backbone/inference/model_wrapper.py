@@ -33,7 +33,7 @@ class ModelWrapper:
             device              : Torch device the inputs are moved to.
             params_per_gaussian : Number of parameters per Gaussian in the output channels.
             normalizer          : Normalizer inverting the output scaling, or None to skip denormalisation.
-            x_axis              : Elevation axis in metres, of shape (n_z,), bounding the μ clamp.
+            x_axis              : Z axis in metres, of shape (n_z,), bounding the μ clamp.
             amp_max             : Amplitude ceiling of the clamp, or None to leave outputs unclamped.
         """
 

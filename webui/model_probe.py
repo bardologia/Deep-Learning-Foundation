@@ -521,7 +521,7 @@ class ModelProbe:
 
         Args:
             params : Predicted parameters of shape (1, 3 * n_gaussians, patch_az, patch_rg).
-            row     : Azimuth index of the centre pixel in the split region.
+            row     : Row index of the centre pixel in the split region.
             col     : Range index of the centre pixel in the split region.
             cy     : Row of the centre pixel inside the patch.
             cx     : Column of the centre pixel inside the patch.

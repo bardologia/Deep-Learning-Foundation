@@ -25,7 +25,7 @@ class GaussianAxis:
             length : Number of z bins.
 
         Returns:
-            Elevation axis in metres of shape (length,).
+            Z axis in metres of shape (length,).
         """
         return np.linspace(x_min, x_max, length, dtype=np.float32)
 
@@ -56,7 +56,7 @@ class GaussianMixture:
             amp : Component amplitude, broadcastable against x.
             mu  : Component mean height in metres, broadcastable against x.
             sig : Component width in metres, broadcastable against x.
-            x   : Elevations in metres to evaluate on.
+            x   : Z positions in metres to evaluate on.
 
         Returns:
             Component values at x, with the broadcast shape of the inputs.
@@ -69,7 +69,7 @@ class GaussianMixture:
         """Evaluates a batch of mixtures on a shared z axis.
 
         Args:
-            z_axis : Elevations in metres of shape (n_bins,).
+            z_axis : Z positions in metres of shape (n_bins,).
             amps        : Amplitudes of shape (batch, n_gaussians).
             mus         : Mean z_values in metres of shape (batch, n_gaussians).
             sigs        : Widths in metres of shape (batch, n_gaussians).
@@ -91,7 +91,7 @@ class GaussianMixture:
 
         Args:
             parameters_array : Parameter cube of shape (3*n_gaussians, rows, cols), interleaved as amplitude, mean in metres, width in metres per slot.
-            h_val            : Elevation in metres to evaluate at.
+            h_val            : Z position in metres to evaluate at.
             n_gaussians      : Number of mixture components to sum.
 
         Returns:
@@ -110,7 +110,7 @@ class GaussianMixture:
 
         Args:
             params      : Flat parameter vector of length 3*n_gaussians, interleaved as amplitude, mean in metres, width in metres per slot.
-            z_axis : Elevations in metres of shape (n_bins,).
+            z_axis : Z positions in metres of shape (n_bins,).
             n_gaussians : Number of mixture components to sum.
 
         Returns:
@@ -136,7 +136,7 @@ class GaussianReconstructor:
 
         Args:
             gauss : Parameters of shape (batch, n_gaussians, 3), the last axis holding amplitude, mean in metres and width in metres.
-            x     : Elevations in metres, broadcastable against (batch, n_gaussians, n_bins).
+            x     : Z positions in metres, broadcastable against (batch, n_gaussians, n_bins).
 
         Returns:
             Summed profiles of shape (batch, n_bins), as float32.
@@ -172,7 +172,7 @@ class GaussianCurve:
 
         Args:
             params : Parameter map of shape (batch, ppg*n_gaussians, z, width), channel-interleaved as amplitude, mean in metres, width in metres.
-            z_axis : Elevations in metres of shape (n_bins,).
+            z_axis : Z positions in metres of shape (n_bins,).
             ppg    : Parameters per Gaussian.
 
         Returns:
@@ -260,7 +260,7 @@ class GaussianClamp:
 
         Args:
             params      : Parameter map of shape (batch, ppg*n_gaussians, z, width).
-            z_axis      : Elevations in metres of shape (n_bins,).
+            z_axis      : Z positions in metres of shape (n_bins,).
             amp_max     : Largest permitted amplitude.
             ppg         : Parameters per Gaussian.
             leaky_slope : Slope kept outside the bounds; 0.0 gives a hard clamp.
