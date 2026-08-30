@@ -30,14 +30,12 @@ from configuration.inference                import BackboneInferenceEntryConfig,
 from configuration.training                 import BackboneEntryConfig, DualEntryConfig, JepaEntryConfig, ProfileAeEntryConfig, ImageAeEntryConfig
 from configuration.tuning.general           import TuningEntryConfig
 from models.backbone                        import BACKBONE_MODEL_REGISTRY
-from pipelines.backbone.training.launcher            import TrainScheduler
 from pipelines.jepa.training.coupling                import TargetProvider
 from pipelines.jepa.training.experiments             import CouplingTrialPlanner, CurveTrialPlanner, JepaCurriculumTrialPlanner, MaskingTrialPlanner
 from pipelines.jepa.training.launcher                import JepaTrialScheduler
 from pipelines.profile_autoencoder.training.launcher import ProfileAeTrialScheduler
 from models.dual.dual_resunet               import DualResUNet
-from pipelines.backbone.training.loss_terms import LOSS_TERMS, LossComponentCatalog
-
+from pipelines.backbone.training.loss_terms import LossComponentCatalog
 from tests.webui.conftest import WEBUI_ROOT
 
 _TRAINING_PAGES = [

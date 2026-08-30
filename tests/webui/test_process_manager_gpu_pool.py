@@ -67,7 +67,7 @@ def test_launch_injects_a_per_job_pool_file_for_fan_out_scripts(manager):
         record = dict(manager.jobs[job_id])
 
     assert record["overrides"]["gpus_file"] == str(manager.paths.gpu_pools_dir / f"{job_id}.json")
-    assert f"--gpus_file" in record["command"]
+    assert "--gpus_file" in record["command"]
 
     manager.stop(job_id)
 

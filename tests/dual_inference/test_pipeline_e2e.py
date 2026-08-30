@@ -18,9 +18,6 @@ from pipelines.backbone.inference.pipeline     import InferencePipeline
 from pipelines.dual.inference.pipeline         import DUAL_INFERENCE_COMPONENTS
 from pipelines.dual.training.pipeline          import DualTrainingPipeline
 from pipelines.shared.inference.run_classifier import RunClassifier, RunType
-from configuration.synthesis                   import SynthesisConfig
-from tools.data.regions                        import CropRegion
-
 from tests.dual_training._helpers import N_GAUSSIANS, dual_dataset_config, dual_model_config, dual_trainer_config
 
 

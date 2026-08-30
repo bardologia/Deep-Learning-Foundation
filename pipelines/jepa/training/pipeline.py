@@ -527,7 +527,7 @@ class TrainingPipeline:
 
             profile_normalizer = self._profile_normalizer(run_meta.metadata_directory, logger)
 
-            self._run_overfit_check(run_meta, logger, datasets, x_len, x_axis, profile_normalizer)
+            self._run_overfit_check(run_meta, logger, datasets, z_len, z_axis, profile_normalizer)
 
             return self._train(run_meta, logger, model, backbone_cfg, z_axis, datasets, loaders, profile_normalizer)
 

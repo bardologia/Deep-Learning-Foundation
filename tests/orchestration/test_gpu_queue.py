@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.orchestration.gpu_queue import GpuJob, GpuPoolFile, GpuProgressFile, GpuQueue, GpuJobResult
+from tools.orchestration.gpu_queue import GpuJob, GpuProgressFile, GpuQueue, GpuJobResult
 
 from tests.conftest import SilentLogger
 

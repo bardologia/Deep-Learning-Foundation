@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install CPU torch and pinned dependencies
+        run: |
+          pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+          pip install "jax>=0.4.30" pytest==9.0.3 pyflakes==3.4.0
+
+      - name: Pyflakes
+        run: |
+          python -m pyflakes configuration tools models pipelines main webui scripts tests | grep -v "__init__.py" | grep -v "EventFileWriter" > pyflakes.txt || true
+          if [ -s pyflakes.txt ]; then cat pyflakes.txt; exit 1; fi
+
+      - name: Backend suite
+        run: python -m pytest tests --ignore=tests/webui -q
+
+      - name: Console suite
+        run: python -m pytest tests/webui -q

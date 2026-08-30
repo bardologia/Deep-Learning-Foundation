@@ -7,7 +7,6 @@ fields (logdir, epochs, warmup, abort flag, snapshot cadence, learning-rate batc
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 

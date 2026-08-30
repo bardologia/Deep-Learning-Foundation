@@ -216,7 +216,7 @@ class MaxBatchProbeBase:
             if result["status"] == "PASS" and self.config.find_lr.enabled:
                 result.update(self._find_lr(trainer, dataset, int(result["batch_size"])))
 
-            del trainer
+            trainer = None
             gc.collect()
             torch.cuda.empty_cache()
         except Exception:

@@ -8,7 +8,6 @@ masked run-name token.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 
 import pytest
 import torch
@@ -22,8 +21,7 @@ from pipelines.shared.training.run_naming import RunNaming
 from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStats
 
 from tests.jepa.conftest import EMBEDDING_DIM, N_GAUSSIANS, PROFILE_LENGTH, SPATIAL, IdentityNormStats, make_autoencoder
-from tests.jepa.test_trainer import build_module, make_trainer_shim
-
+from tests.jepa.test_trainer import make_trainer_shim
 
 def make_criterion(emb_cfg=None):
     """Returns an embedding criterion over the tiny autoencoder of the conftest."""

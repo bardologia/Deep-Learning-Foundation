@@ -10,15 +10,12 @@ from __future__ import annotations
 
 import io
 import json
-import math
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-from tools.runtime.completion import CompletionMarker
 
 REPO_ROOT  = Path(__file__).resolve().parents[2]
 WEBUI_ROOT = REPO_ROOT / "webui"

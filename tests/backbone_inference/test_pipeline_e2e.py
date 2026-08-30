@@ -11,13 +11,11 @@ import json
 
 import numpy as np
 import pytest
-import torch
 
 from configuration.inference               import InferenceConfig
 from pipelines.backbone.inference.pipeline import InferencePipeline
 
-from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, SECONDARY_LABELS, build_run_directory
-
+from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, build_run_directory
 
 @pytest.mark.dataset
 @pytest.mark.slow

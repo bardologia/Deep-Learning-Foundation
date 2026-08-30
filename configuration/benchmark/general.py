@@ -9,7 +9,6 @@ report.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from pathlib     import Path
 
 from configuration.dataset                      import AugmentationConfig, InputConfig
 from configuration.normalization.general        import NormalizationConfig

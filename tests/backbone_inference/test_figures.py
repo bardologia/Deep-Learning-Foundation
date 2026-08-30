@@ -116,17 +116,6 @@ def _result_and_metrics():
 
 
 
-def _track_profiles():
-    """Returns three-chan horizontal and vertical channel profiles in metres along row."""
-    along = np.linspace(0.0, 1.0, H, dtype=np.float32)
-    return TrackProfiles(
-        labels        = ["PS02", "CH01", "CH02"],
-        horizontal    = np.stack([along * k       for k in range(3)]).astype(np.float32),
-        vertical      = np.stack([along * k + 4.0 * k for k in range(3)]).astype(np.float32),
-        row_start = 0,
-    )
-
-
 def _run_stub():
     """Returns a run stub carrying the split region, full curves and channel geometry the composer reads."""
     region = CropRegion(row_start=0, row_end=H, col_start=0, col_end=W)

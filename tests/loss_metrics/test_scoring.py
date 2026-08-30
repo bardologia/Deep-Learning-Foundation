@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 
-from tools.metrics.scoring import FiniteScalar, MetricOrientation, R2, RankCorrelation, RelativeImprovement
+from tools.metrics.scoring import FiniteScalar, MetricOrientation, R2, RelativeImprovement
 
 
 def test_finite_scalar_accepts_floats_and_ints():

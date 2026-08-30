@@ -141,50 +141,6 @@ class ConfigFactory:
             curriculum = default_curriculum(),
         )
 
-    def unrolled_trainer_config(self, logdir: Path, params_per_gaussian: int) -> UnrolledTrainerConfig:
-        """Returns the unrolled trainer configuration for one benchmark run.
-
-        Args:
-            logdir              : Run directory the trainer writes its outputs to.
-            params_per_gaussian : Number of predicted parameters per Gaussian component (amplitude, mean, width, ...).
-
-        Returns:
-            Trainer configuration with mixed precision disabled and fixed-norm
-            gradient clipping, as required by the unrolled optimisation loop.
-        """
-        training         = self.config.training
-        scheduler_epochs = training.scheduler_epochs if training.scheduler_epochs is not None else training.epochs
-        lr_scale         = (training.batch_size / training.lr_reference_batch_size if training.scale_lr_with_batch else 1.0) * training.lr_multiplier
-
-        return UnrolledTrainerConfig(
-            params_per_gaussian   = params_per_gaussian,
-            curve_loss            = self.config.curve_loss,
-            measurement_noise_std = self.config.measurement_noise_std,
-            power_floor           = self.config.power_floor,
-
-            early_stopping   = EarlyStoppingConfig(patience=training.early_stop_patience, min_delta=training.early_stop_min_delta, restore_best=True),
-            warmup           = WarmupConfig(warmup_fraction=training.warmup_fraction, warmup_start_factor=0.1, warmup_enabled=training.warmup_enabled, warmup_mode="linear"),
-            scheduler        = SchedulerConfig(type="cosine_annealing", epochs=scheduler_epochs, eta_min=training.eta_min),
-            io               = IOConfig(logdir=str(logdir)),
-            optimizer        = OptimizerConfig(betas=(0.9, 0.999), eps=1e-8, lr_scale=lr_scale),
-            memory           = MemoryConfig(reserve_vram=training.reserve_vram, vram_keep_free_gb=training.vram_keep_free_gb),
-            gradient_clipper = GradientClipperConfig(clip_mode="fixed", max_grad_norm=training.max_grad_norm),
-
-            training = TrainingLoopConfig(
-                epochs                      = training.epochs,
-                validation_frequency        = training.validation_frequency,
-                use_amp                     = False,
-                gradient_accumulation_steps = training.gradient_accumulation_steps,
-                log_debug                   = training.log_debug,
-                abort_on_nonfinite_loss     = training.abort_on_nonfinite_loss,
-                use_ema                     = training.use_ema,
-                ema_decay                   = training.ema_decay,
-                ema_warmup                  = training.ema_warmup,
-                resume                      = training.resume,
-                snapshot_every_n_epochs     = training.snapshot_every_n_epochs,
-            ),
-        )
-
     def inference_config(self, run_directory: Path) -> InferenceConfig:
         """Returns the inference configuration for scoring one trained run.
 

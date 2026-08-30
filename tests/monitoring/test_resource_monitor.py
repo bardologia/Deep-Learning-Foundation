@@ -233,7 +233,7 @@ def test_check_warnings_triggers_on_low_thresholds():
     logger = CollectingLogger()
     m      = ResourceMonitor(cfg, logger=logger)
 
-    metrics = m.sample()
+    m.sample()
 
     assert any("RAM usage" in w for w in logger.warnings)
 
