@@ -836,3 +836,21 @@ class ResultTableEntryConfig:
     precision : int   = 4
 
     output_dir : Path = Path("results/tables")
+
+
+@dataclass
+class OnnxExportEntryConfig:
+    """Entry configuration exporting trained backbone checkpoints as ONNX graphs.
+
+    Attributes:
+        runs_dir      : Root directory holding the run folders.
+        run_filter    : Substrings selecting the runs to export; empty means all.
+        opset         : ONNX opset version the graph targets.
+        dynamic_batch : Whether the exported input and output keep a dynamic batch axis.
+    """
+
+    runs_dir   : Path      = Path("runs/backbone")
+    run_filter : List[str] = field(default_factory=list)
+
+    opset         : int  = 18
+    dynamic_batch : bool = True

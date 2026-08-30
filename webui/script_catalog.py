@@ -180,6 +180,11 @@ class ScriptCatalog:
             "category"  : "Analysis",
             "purpose"   : "Pack inference figures from selected runs into the publication figures directory under stable names (<run>__<figure-path>) with a JSON manifest of every source. Render in paper style first by running inference with figure_style=paper; the pack then feeds a paper directory without hand-copying.",
         },
+        "export_onnx": {
+            "title"     : "Export ONNX",
+            "category"  : "Analysis",
+            "purpose"   : "Rebuild each selected backbone run's model from its persisted config, load the best checkpoint and export the forward as an ONNX graph with a dynamic batch axis, plus a manifest tying the graph to its checkpoint. Needs the onnx package (pip install -e .[export]).",
+        },
         "profile_training": {
             "title"     : "Profile Training Steps",
             "category"  : "Analysis",
@@ -223,6 +228,7 @@ class ScriptCatalog:
         "export_tensorboard_plots"        : "exports",
         "export_paper_figures"            : "exports",
         "export_result_tables"            : "exports",
+        "export_onnx"                     : "exports",
         "profile_training"                : "diagnostics",
         "collect_reports"                 : "exports",
         "mail_experiment_reports"         : "exports",

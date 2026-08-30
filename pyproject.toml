@@ -26,6 +26,7 @@ dependencies    = [
 
 [project.optional-dependencies]
 fitting = ["jax>=0.4.30"]
+export  = ["onnx==1.22.0"]
 dev     = ["pytest==9.0.3", "pyflakes==3.4.0"]
 
 [tool.setuptools.packages.find]
