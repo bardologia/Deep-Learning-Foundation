@@ -86,17 +86,17 @@ class ChannelGroups:
         groups       = {}
 
         if input_config.use_primary:
-            per_pass          = input_config.primary_channels_per_pass
+            per_pass          = input_config.primary_channels_per_source
             groups["primary"] = list(range(offset, offset + per_pass))
             offset           += per_pass
 
         if input_config.use_secondaries:
-            count                 = run.n_secondaries * input_config.secondaries_channels_per_pass
+            count                 = run.n_secondaries * input_config.secondaries_channels_per_source
             groups["secondaries"] = list(range(offset, offset + count))
             offset               += count
 
-        if input_config.use_interferograms:
-            count                    = run.n_secondaries * input_config.interferograms_channels_per_pass
+        if input_config.use_derived:
+            count                    = run.n_secondaries * input_config.derived_channels_per_source
             groups["interferograms"] = list(range(offset, offset + count))
             offset                  += count
 
@@ -641,7 +641,7 @@ class InputAttributionRun(AnalysisRun):
         importance        = self._gradient_importance(run)
 
         input_config = run.dataset.input_config
-        has_tracks   = input_config.use_secondaries or input_config.use_interferograms
+        has_tracks   = input_config.use_secondaries or input_config.use_derived
         per_track    = TrackChannels.build(run) if has_tracks else None
         track_labels = list(run.secondary_labels) if run.secondary_labels else [f"S{i}" for i in range(run.n_secondaries)]
 

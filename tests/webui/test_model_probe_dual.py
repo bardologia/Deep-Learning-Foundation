@@ -95,7 +95,7 @@ def test_probe_loads_and_probes_a_dual_run_end_to_end(test_data_dir, params_dir,
 
     flips = probe.flips({"row": 3, "col": 4})
     assert flips["ok"] is True, flips.get("error")
-    assert [entry["flip"] for entry in flips["entries"]] == ["none", "row", "range", "both"]
+    assert [entry["flip"] for entry in flips["entries"]] == ["none", "row", "col", "both"]
     assert flips["entries"][0]["delta_mse"] == 0.0
 
     sweep = probe.sweep({"row": 3, "col": 4, "kind": "noise"})

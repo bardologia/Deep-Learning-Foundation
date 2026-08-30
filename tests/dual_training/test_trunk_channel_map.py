@@ -56,7 +56,7 @@ def test_dem_group_without_dem_channel_contributes_nothing():
     """Selecting dem alongside other groups on a DEM-free stack changes nothing, alone it raises."""
     input_config = InputConfig.full_stack()
 
-    assert TrunkChannelMap.resolve(input_config, in_channels=9, groups=("chan", "derived", "aux")) == tuple(col(9))
+    assert TrunkChannelMap.resolve(input_config, in_channels=9, groups=("chan", "derived", "aux")) == tuple(range(9))
 
     with pytest.raises(ValueError, match="select no channels"):
         TrunkChannelMap.resolve(input_config, in_channels=9, groups=("aux",))

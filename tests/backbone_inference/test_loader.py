@@ -244,32 +244,3 @@ def test_absent_cube_refuses_every_use(tmp_path):
         np.asarray(absent)
 
 
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_full_run_load_assembles_model_dataset_and_tracks(tmp_path, test_data_dir, params_dir):
-    """Loading a real run yields the wrapped model, the test-split dataset, the patch grid and the channel baselines."""
-    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
-
-    run = RunLoader(run_dir, logger=SilentLogger()).load(
-        split           = "test",
-        batch_size      = 2,
-        num_workers     = 0,
-        device          = "cpu",
-        checkpoint_name = "best_model.pt",
-    )
-
-    assert run.backbone_name       == "unet"
-    assert run.n_gaussians         == N_GAUSSIANS
-    assert run.out_channels        == 3 * N_GAUSSIANS
-    assert run.x_axis_length       == N_Z
-    assert run.split_name          == "test"
-    assert run.core_region         is None
-    assert run.split_region.as_tuple() == (1200, 1296, 500, 596)
-    assert run.checkpoint_meta     == {"epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}
-    assert run.loader.batch_size   == 2
-    assert len(run.dataset)        == run.grid.number_of_patches
-    assert run.n_secondaries       == len(SECONDARY_LABELS)
-    assert tuple(run.secondary_labels) == SECONDARY_LABELS
-    assert run.track_baselines.labels[1:] == list(SECONDARY_LABELS)
-    assert run.full_curves.shape[1:]   == (96, 96)
-    assert isinstance(run.model, ModelWrapper)

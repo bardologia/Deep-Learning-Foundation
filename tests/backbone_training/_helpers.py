@@ -98,12 +98,6 @@ def spock_normalizer() -> Normalizer:
     return normalizer
 
 
-def geometry_config(n_tracks: int = 3) -> GeometryConfig:
-    """Returns an L-band geometry config with n_tracks evenly spaced baselines, in metres."""
-    baselines = tuple(float(10 * i) for i in range(n_tracks))
-    return GeometryConfig(wavelength=0.23, slant_range=5000.0, baselines=baselines)
-
-
 def gaussian_config(n_gaussians: int) -> GaussianConfig:
     """Returns a Gaussian config with n_gaussians slots over the X_MIN to X_MAX elevation range."""
     return GaussianConfig(n_default_gaussians=n_gaussians, x_min=X_MIN, x_max=X_MAX)

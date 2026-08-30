@@ -184,6 +184,12 @@ class Report:
             table.add_row(label, Report._fmt(gt_val), Report._fmt(pred_val), desc)
         return "\n".join(table.render())
 
+    _PER_SLICE_PREFIXES = (
+        "ssim_gt_z_",   "ssim_gt_col_",   "ssim_gt_row_",
+        "ssim_norm_z_", "ssim_norm_col_", "ssim_norm_row_",
+        "z_mae_gt_",  "z_rmse_gt_",  "z_r2_gt_",  "z_ce_gt_",
+    )
+
     @classmethod
     def _is_per_slice_ssim(cls, k: str) -> bool:
         """Returns whether a metric key is a per-slice value excluded from the metric tables."""
@@ -302,26 +308,26 @@ class Report:
 
         out.append("**SSIM** (denorm, mean over all slices of that axis)\n")
         out.append(self._three_col_table([
-            ("SSIM elev mean",    gm["ssim_gt_z_mean"],    "H\u00d7W intensity-at-z-bin planes"),
-            ("SSIM range mean",   gm["ssim_gt_range_mean"],   "n_z\u00d7H cross-sectional planes"),
-            ("SSIM row mean", gm["ssim_gt_azimuth_mean"], "n_z\u00d7W cross-sectional planes"),
+            ("SSIM z mean",   gm["ssim_gt_z_mean"],   "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM col mean", gm["ssim_gt_col_mean"], "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean", gm["ssim_gt_row_mean"], "n_z\u00d7W cross-sectional planes"),
         ]))
         out.append("")
 
         out.append("**SSIM** (unit-area normalised pred vs GT, mean over all slices of that axis)\n")
         out.append(self._three_col_table([
-            ("SSIM elev mean",    gm["ssim_norm_elev_mean"],    "H\u00d7W intensity-at-z-bin planes"),
-            ("SSIM range mean",   gm["ssim_norm_range_mean"],   "n_z\u00d7H cross-sectional planes"),
-            ("SSIM row mean", gm["ssim_norm_azimuth_mean"], "n_z\u00d7W cross-sectional planes"),
+            ("SSIM z mean",   gm["ssim_norm_z_mean"],   "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM col mean", gm["ssim_norm_col_mean"], "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean", gm["ssim_norm_row_mean"], "n_z\u00d7W cross-sectional planes"),
         ]))
         out.append("")
 
         out.append("**Per-z-bin** (mean over all z bins)\n")
         out.append(self._three_col_table([
-            ("MAE mean",           gm["elev_mae_gt_mean"],   "Mean absolute error averaged over z"),
-            ("RMSE mean",          gm["elev_rmse_gt_mean"],  "Root mean squared error averaged over z"),
-            ("R\u00b2 mean",       gm["elev_r2_gt_mean"],    "Coefficient of determination averaged over z"),
-            ("Cross-entropy mean", gm["elev_ce_gt_mean"],    "Cross-entropy (normalised profiles) averaged over z"),
+            ("MAE mean",           gm["z_mae_gt_mean"],   "Mean absolute error averaged over z"),
+            ("RMSE mean",          gm["z_rmse_gt_mean"],  "Root mean squared error averaged over z"),
+            ("R\u00b2 mean",       gm["z_r2_gt_mean"],    "Coefficient of determination averaged over z"),
+            ("Cross-entropy mean", gm["z_ce_gt_mean"],    "Cross-entropy (normalised profiles) averaged over z"),
         ]))
         out.append("")
 

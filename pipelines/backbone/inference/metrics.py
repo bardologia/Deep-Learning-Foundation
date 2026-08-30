@@ -43,8 +43,8 @@ class Result:
         pixel_cosine       : Per-pixel curve cosine similarity of shape (azimuth, range).
         pixel_peak_err_idx : Per-pixel absolute peak-bin displacement of shape (azimuth, range).
         cube_directory     : Directory the stitched cubes were written to.
-        azimuth_offset     : Azimuth index of the crop origin in scene coordinates.
-        range_offset       : Range index of the crop origin in scene coordinates.
+        row_offset         : Row index of the crop origin in scene coordinates.
+        col_offset         : Column index of the crop origin in scene coordinates.
         params_pred        : Predicted Gaussian parameters of shape (3 * K, azimuth, range), or None.
         params_gt          : Ground-truth Gaussian parameters of the same shape, or None.
         params_source      : Whether the parameters came from the model ("model") or a curve refit ("extracted").

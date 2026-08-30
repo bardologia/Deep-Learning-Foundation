@@ -246,13 +246,13 @@ def test_cpu_worker_render_floor_drops_weak_components():
 
 def test_result_window_is_bounded_by_the_byte_budget(tmp_path):
     """The result window follows the byte budget, clamped to at least one task and at most the patch count."""
-    run       = _build_run(n_az=16, n_rg=16)
+    run       = _build_run(n_rows=16, n_cols=16)
     predictor = _make_predictor(tmp_path, run)
     predictor.cpu_workers = 8
 
     params = [np.zeros((4, OUT_CH, PATCH, PATCH), dtype=np.float32)]
 
-    channels       = 2 * N_ELEV + 2 * (3 * N_GAUSSIANS)
+    channels       = 2 * N_Z + 2 * (3 * N_GAUSSIANS)
     bytes_per_task = 4 * channels * PATCH * PATCH * 4
 
     predictor.RESULT_BUDGET_BYTES = 3 * bytes_per_task

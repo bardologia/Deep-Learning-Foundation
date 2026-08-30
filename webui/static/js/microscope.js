@@ -884,7 +884,7 @@ class MicroscopeView {
 
     this.refs.ablation.innerHTML = `<p class="cube-hint is-loading">re-running the model without each channel&hellip;</p>`;
 
-    const out = await Api.post("/api/probe/ablation", { az: this.pixel.az, rg: this.pixel.rg });
+    const out = await Api.post("/api/probe/ablation", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.ablToken) return;
 
     if (!out.ok) {
@@ -905,7 +905,7 @@ class MicroscopeView {
     this.refs.occlFacts.innerHTML = "";
     this.refs.occlusion.innerHTML = `<p class="cube-hint is-loading">sliding an occluder across the window&hellip;</p>`;
 
-    const out = await Api.post("/api/probe/occlusion", { az: this.pixel.az, rg: this.pixel.rg });
+    const out = await Api.post("/api/probe/occlusion", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.occlToken) return;
 
     if (!out.ok) {
@@ -937,7 +937,7 @@ class MicroscopeView {
     this.refs.fieldOver.innerHTML  = "";
     this.refs.fieldMaps.innerHTML  = `<p class="cube-hint is-loading">computing parameter fields&hellip;</p>`;
 
-    const out = await Api.post("/api/probe/fields", { az: this.pixel.az, rg: this.pixel.rg });
+    const out = await Api.post("/api/probe/fields", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.fieldsToken) return;
 
     if (!out.ok) {
@@ -1006,7 +1006,7 @@ class MicroscopeView {
     this.flipsData = null;
     this.refs.flipsFacts.innerHTML = `<span class="cube-hint is-loading">re-running the model on flipped windows&hellip;</span>`;
 
-    const out = await Api.post("/api/probe/flips", { az: this.pixel.az, rg: this.pixel.rg });
+    const out = await Api.post("/api/probe/flips", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.flipToken) return;
 
     if (!out.ok) {
@@ -1027,7 +1027,7 @@ class MicroscopeView {
 
   _renderFlipsChart(out) {
     const styles = MicroscopeView.FLIP_STYLES;
-    SharedCharts.lineChart(this.refs.flips, out.x_axis, out.entries.map((e) => ({ values: e.curve, ...styles[e.flip] })));
+    SharedCharts.lineChart(this.refs.flips, out.z_axis, out.entries.map((e) => ({ values: e.curve, ...styles[e.flip] })));
   }
 
   _loadFeatures() {
@@ -1056,7 +1056,7 @@ class MicroscopeView {
     this.refs.vitalsSum.innerHTML = `<span class="cube-hint is-loading">recording activation statistics&hellip;</span>`;
     this.refs.vitals.innerHTML    = "";
 
-    const out = await Api.post("/api/probe/vitals", { az: this.pixel.az, rg: this.pixel.rg });
+    const out = await Api.post("/api/probe/vitals", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.vitalsToken) return;
 
     if (!out.ok) {
@@ -1195,7 +1195,7 @@ class MicroscopeView {
       return;
     }
 
-    const key = [this.pixel.az, this.pixel.rg, this.wi.kind, this.wi.kind === "scale_channel" ? this.wi.channel : "all"].join(":");
+    const key = [this.pixel.row, this.pixel.col, this.wi.kind, this.wi.kind === "scale_channel" ? this.wi.channel : "all"].join(":");
     if (this.sweepData && this.sweepData.key === key) {
       this._renderSweepChart();
       return;
@@ -1205,7 +1205,7 @@ class MicroscopeView {
     this.refs.sweep.hidden = true;
     this.refs.sweepFacts.innerHTML = `<span class="cube-hint is-loading">sweeping perturbation strengths&hellip;</span>`;
 
-    const body = { az: this.pixel.az, rg: this.pixel.rg, kind: this.wi.kind };
+    const body = { row: this.pixel.row, col: this.pixel.col, kind: this.wi.kind };
     if (this.wi.kind === "scale_channel") body.channel = this.wi.channel;
 
     const out = await Api.post("/api/probe/sweep", body);

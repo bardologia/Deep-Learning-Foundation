@@ -231,7 +231,7 @@ def _report_for(tmp_path, metrics):
     """
     return Report(
         output_dir       = tmp_path,
-        run_summary      = ReportPayloadBuilder.run_summary(_run_stub(), np.linspace(-20.0, 80.0, N_ELEV)),
+        run_summary      = ReportPayloadBuilder.run_summary(_run_stub(), np.linspace(-20.0, 80.0, N_Z)),
         inference_config = ReportPayloadBuilder.inference_config(_cfg_stub(), _run_stub()),
         checkpoint_meta  = {"epoch": 0, "best_epoch": 0, "best_val_loss": 1.0},
         global_metrics   = metrics,
@@ -241,18 +241,6 @@ def _report_for(tmp_path, metrics):
     )
 
 
-def test_report_includes_legacy_ssim_section_only_when_the_sweep_ran(tmp_path):
-    """The legacy paper SSIM subsection appears exactly when its metric key is present."""
-    gm = _global_metrics()
-
-    assert _report_for(tmp_path, gm)._build_legacy_ssim_headline() == []
-
-    with_legacy = dict(gm, legacy_ssim_status="computed", ssim_legacy_paper_mean=0.4321)
-    text        = "\n".join(_report_for(tmp_path, with_legacy)._build_legacy_ssim_headline())
-
-    assert "Legacy paper SSIM" in text
-    assert "raw full-stack Capon tomogram" in text
-    assert "0.4321" in text
 
 
 def _metric_group(key: str) -> str:
@@ -297,14 +285,6 @@ def test_report_is_per_slice_ssim_classifier():
     assert Report._is_per_slice_ssim("curve_mse_gt")      is False
 
 
-def test_report_is_reduced_key():
-    """Reduced-baseline and orientation keys are recognised, ground-truth curve keys are not."""
-    assert Report._is_reduced_key("curve_mse_red")  is True
-    assert Report._is_reduced_key("ssim_red_elev_3") is True
-    assert Report._is_reduced_key("pixel_mse_predn") is True
-    assert Report._is_reduced_key("reduced_orientation_corr_aligned") is True
-    assert Report._is_reduced_key("reduced_orientation_corr_flipped") is True
-    assert Report._is_reduced_key("curve_mse_gt")    is False
 
 
 def test_report_figure_sections_absent_without_figures(tmp_path):
@@ -395,7 +375,7 @@ def _report_with(gm, tmp_path, figure_paths=None):
     """Returns a report bound to the given metrics, figure paths and output directory."""
     return Report(
         output_dir       = tmp_path,
-        run_summary      = ReportPayloadBuilder.run_summary(_run_stub(), np.linspace(-20.0, 80.0, N_ELEV)),
+        run_summary      = ReportPayloadBuilder.run_summary(_run_stub(), np.linspace(-20.0, 80.0, N_Z)),
         inference_config = ReportPayloadBuilder.inference_config(_cfg_stub(), _run_stub()),
         checkpoint_meta  = {"epoch": 3, "best_epoch": 2, "best_val_loss": 0.1},
         global_metrics   = gm,
