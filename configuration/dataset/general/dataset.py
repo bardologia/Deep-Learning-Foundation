@@ -294,6 +294,7 @@ class DatasetConfig:
         prefetch_factor             : Batches prefetched per worker.
         shuffle_train               : Whether the training split is shuffled.
         pin_memory                  : Whether loader batches are pinned for faster host-to-device copies.
+        fingerprint_dataset         : Whether the run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance.
         x_axis                      : Elevation axis samples in metres, of shape (n_z,).
         n_gaussians                 : Number of Gaussian components predicted per pixel.
     """
@@ -315,4 +316,6 @@ class DatasetConfig:
     pin_memory      : bool                 = True
     z_axis          : Optional[np.ndarray] = field(default=None, repr=False)
     n_gaussians     : int                  = 1
+
+    fingerprint_dataset : bool = True
 

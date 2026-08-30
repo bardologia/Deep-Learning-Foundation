@@ -146,3 +146,52 @@ def test_does_not_own_external_logger(trainer_config, tmp_path):
         meta.close()
     finally:
         logger.close()
+
+
+@pytest.mark.dataset
+def test_environment_snapshot_written_into_meta(metadata):
+    """meta/environment.json exists and names the torch version that created the run."""
+    import torch
+
+    payload = json.loads((metadata.metadata_directory / "environment.json").read_text())
+
+    assert payload["torch"] == torch.__version__
+    assert "gpus" in payload
+
+
+@pytest.mark.dataset
+def test_git_state_written_into_docs(metadata):
+    """docs/git_state.json records the commit and, when dirty, docs/git_diff.patch holds the changes."""
+    payload = json.loads((metadata.docs_directory / "git_state.json").read_text())
+
+    assert payload["commit"] == metadata.git_commit
+    assert isinstance(payload["dirty"], bool)
+    assert isinstance(payload["untracked"], list)
+
+    if payload["dirty"]:
+        assert (metadata.docs_directory / "git_diff.patch").exists() or payload["untracked"]
+
+
+@pytest.mark.dataset
+def test_dataset_fingerprint_hashes_the_data_files(metadata, test_data_dir):
+    """save_dataset_fingerprint writes one sha256 entry per data file plus the parameter labels."""
+    parameters = test_data_dir / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
+
+    out_path = metadata.save_dataset_fingerprint(test_data_dir, parameters)
+    payload  = json.loads(Path(out_path).read_text())
+
+    data_keys = {key for key in payload if key.startswith("data/")}
+
+    assert out_path == metadata.metadata_directory / "dataset_fingerprint.json"
+    assert data_keys
+    assert all(len(entry["sha256"]) == 64 and entry["bytes"] > 0 for entry in payload.values())
+    assert str(parameters) in payload or any(key.endswith("parameters.npy") for key in payload)
+
+
+@pytest.mark.dataset
+def test_dataset_fingerprint_disabled_writes_nothing(metadata, test_data_dir):
+    """save_dataset_fingerprint returns None and writes no file when the toggle is off."""
+    result = metadata.save_dataset_fingerprint(test_data_dir, None, enabled=False)
+
+    assert result is None
+    assert not (metadata.metadata_directory / "dataset_fingerprint.json").exists()

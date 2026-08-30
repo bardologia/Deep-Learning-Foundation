@@ -79,6 +79,7 @@ class ConfigFactory:
             prefetch_factor             = training.prefetch_factor,
             shuffle_train               = True,
             pin_memory                  = True,
+            fingerprint_dataset         = self.config.paths.fingerprint_dataset,
         )
 
     def gaussian_config(self) -> GaussianConfig:

@@ -18,8 +18,9 @@ from torch.utils.tensorboard                      import SummaryWriter
 
 from configuration.training                     import BackboneTrainerConfig
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO
-from tools.data.io                              import FileIO
+from tools.data.io                              import DatasetFingerprint, FileIO
 from tools.monitoring.logger                    import Logger
+from tools.runtime.environment_capture          import EnvironmentCapture
 from tools.runtime.git_state                    import GitState
 from tools.runtime.run_tag                      import RunTag
 
@@ -76,6 +77,7 @@ class TrainingRunMetadata:
         trainer_config.io.logdir = str(self.run_directory)
 
         self.git_commit = GitState.commit()
+        self._save_provenance()
 
         self._owns_logger = logger is None
         file_mode         = "a" if trainer_config.training.resume else "w"
@@ -96,6 +98,50 @@ class TrainingRunMetadata:
     def resolve_name(model_name: str, run_name: str | None) -> str:
         """Returns the explicit run name, or a timestamped name built from the model name."""
         return run_name or f"run_{model_name}_{RunTag.now()}"
+
+    def _save_provenance(self) -> None:
+        """Writes the environment snapshot and the git working-tree state of the run.
+
+        meta/environment.json records the interpreter, library and device state.
+        docs/git_state.json records the commit, dirty flag and untracked paths,
+        and docs/git_diff.patch holds the uncommitted tracked changes whenever
+        the working tree is dirty, so a dirty run stays reconstructable.
+        """
+        FileIO.save_json(EnvironmentCapture.snapshot(), self.metadata_directory / "environment.json")
+
+        state = GitState.dirty_state()
+        FileIO.save_json({"commit": self.git_commit, "dirty": state["dirty"], "untracked": state["untracked"]}, self.docs_directory / "git_state.json")
+
+        if state["dirty"] and state["diff"]:
+            (self.docs_directory / "git_diff.patch").write_text(state["diff"], encoding="utf-8")
+
+    def save_dataset_fingerprint(self, dataset_path, parameters_path, enabled: bool = True) -> Path | None:
+        """Hashes the dataset artifacts into meta/dataset_fingerprint.json.
+
+        Args:
+            dataset_path    : Dataset directory whose data/ files are hashed.
+            parameters_path : Parameter-label array hashed alongside, or None to hash the dataset files only.
+            enabled         : Whether fingerprinting runs at all.
+
+        Returns:
+            The written path, or None when fingerprinting is disabled.
+        """
+        if not enabled:
+            return None
+
+        dataset_path = Path(dataset_path)
+        files        = sorted(path for path in (dataset_path / "data").iterdir() if path.is_file())
+
+        if parameters_path is not None:
+            files.append(Path(parameters_path))
+
+        payload  = DatasetFingerprint.compute(dataset_path, files)
+        out_path = self.metadata_directory / "dataset_fingerprint.json"
+
+        FileIO.save_json(payload, out_path)
+        self.logger.info(f"Dataset fingerprint saved: {out_path}")
+
+        return out_path
 
     def __enter__(self) -> "TrainingRunMetadata":
         """Returns this metadata object for use in a with-statement."""

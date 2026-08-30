@@ -152,6 +152,8 @@ class AutoencoderTrainingPipeline:
         with TrainingRunMetadata(self.trainer_config, self.run_label, Path(self.trainer_config.io.logdir), self.entry.run_name) as run_meta:
             logger = run_meta.logger
 
+            run_meta.save_dataset_fingerprint(self.entry.paths.dataset_path, self.entry.paths.parameters_path, enabled=self.entry.paths.fingerprint_dataset)
+
             train_loader, val_loader, test_loader, z_axis, model_dim, datasets, metadata_args = self._prepare_data(run_meta.run_directory, logger)
 
             model = self._build_model(model_dim, self.autoencoder_cfg)

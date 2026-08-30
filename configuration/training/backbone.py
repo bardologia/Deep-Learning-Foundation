@@ -305,7 +305,6 @@ class BackboneTrainerConfig:
 
     Attributes:
         gaussian         : Layout of the predicted Gaussian mixture.
-        geometry         : Acquisition geometry used by the physics loss terms.
         early_stopping   : Patience and monitored metric for early stopping.
         warmup           : Learning-rate warmup schedule.
         scheduler        : Learning-rate scheduler settings.

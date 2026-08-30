@@ -517,6 +517,8 @@ class TrainingPipeline:
         with TrainingRunMetadata(self.trainer_config, self.backbone_name, Path(self.trainer_config.io.logdir), self.entry.run_name) as run_meta:
             logger = run_meta.logger
 
+            run_meta.save_dataset_fingerprint(self.entry.paths.dataset_path, self.entry.paths.parameters_path, enabled=self.entry.paths.fingerprint_dataset)
+
             loaders, datasets, z_axis, z_len = self._prepare_datasets(run_meta.run_directory, logger, self.entry.seed)
 
             model, backbone_cfg = self._build_module(datasets, z_len, z_axis, logger)
