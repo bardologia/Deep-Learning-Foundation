@@ -21,7 +21,7 @@ from pipelines.backbone.inference.model_wrapper      import ModelWrapper
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.config.config_persistence      import BackboneModelConfigIO
 
-from tests.backbone_inference._helpers import N_ELEV, N_GAUSSIANS, SECONDARY_LABELS, build_run_directory
+from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, SECONDARY_LABELS, build_run_directory
 from tests.conftest                    import SilentLogger
 from tests.models_backbone._helpers    import SMALL_OVERRIDES, WINDOW
 

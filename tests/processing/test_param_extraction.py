@@ -2,7 +2,7 @@
 
 Covers the extraction plan resolver, the JAX Adam fitting kernels and sigma
 initialiser, the model-order (K) selection diagnostics, the fitting metrics and
-plots, the kz resolution analysis, and the per-run inference pipeline.
+plots, and the per-run inference pipeline.
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from pipelines.processing.param_extraction.pipeline   import ParameterExtractor
 from pipelines.processing.param_extraction.inference  import ParamRunInferencePipeline
 from pipelines.processing.param_extraction.queue      import ExtractionPlanResolver
 from pipelines.processing.param_extraction.plots      import FittingResultPlotter
-from pipelines.processing.param_extraction.resolution import ActiveGaussianTable, KzCoherenceModel, ResolutionAnalyzer
 from tools.data.gaussians                             import GaussianMixture
 from tools.data.preprocessing                         import ProfilePreprocessor
 from tools.monitoring.logger                          import Logger
@@ -754,90 +753,6 @@ def _params_with_empty_pixel(k_max):
     return params
 
 
-def test_active_gaussian_table_drops_pixels_without_active_gaussians():
-    """Verifies the active-Gaussian table drops pixels without active components and reports positive extents."""
-    k_max = 2
-    table = ActiveGaussianTable(_params_with_empty_pixel(k_max), k_max, ACTIVITY_THRESH)
-
-    assert table.n_pixels     == 3
-    assert table.active.shape == (k_max, 3)
-    assert table.active.any(axis=0).all()
-
-    extents = table.vertical_extents()
-
-    assert extents.shape == (3,)
-    assert np.isfinite(extents).all()
-    assert (extents > 0.0).all()
-
-
-def test_kz_coherence_model_has_no_zero_weight_pixels_after_masking():
-    """Verifies modelled coherence magnitudes stay within [0, 1] and peak above 0.5 for every pixel."""
-    k_max = 2
-    table = ActiveGaussianTable(_params_with_empty_pixel(k_max), k_max, ACTIVITY_THRESH)
-
-    kz_grid    = np.linspace(0.1, 5.0, 32)
-    magnitudes = KzCoherenceModel(table).magnitudes(kz_grid, np.arange(table.n_pixels))
-
-    assert np.isfinite(magnitudes).all()
-    assert (magnitudes <= 1.0).all()
-    assert (magnitudes.max(axis=0) > 0.5).all()
-
-
-def _resolution_analyzer(tmp_path, logger):
-    """Returns a ResolutionAnalyzer over a 2x2 single-Gaussian parameter cube with sigmas 0.5 to 4 m."""
-    sigmas = np.array([0.5, 1.0, 2.0, 4.0], dtype=np.float32).reshape(1, 2, 2)
-    params = np.concatenate([np.ones((1, 2, 2), dtype=np.float32), np.zeros((1, 2, 2), dtype=np.float32), sigmas], axis=0)
-
-    return ResolutionAnalyzer(params, {"k_max": 1, "activity_threshold": ACTIVITY_THRESH}, tmp_path, logger, kz_grid_max=1.0, kz_grid_points=4)
-
-
-def test_aliasing_curve_matches_the_broadcast_fraction(tmp_path, logger):
-    """Verifies the aliasing curve equals the fraction of vertical extents exceeding the 2*pi/kz ambiguity z."""
-    analyzer          = _resolution_analyzer(tmp_path, logger)
-    fraction, extents = analyzer.aliasing_curve()
-
-    expected = (extents[None, :] > (2.0 * np.pi / analyzer.kz_grid)[:, None]).mean(axis=1)
-
-    assert fraction.dtype == np.float64
-    assert np.allclose(fraction, expected)
-
-
-@pytest.mark.parametrize("n_pixels", [250_000, 399_999, 400_001, 1_000_000])
-def test_pixel_subsample_never_exceeds_the_quantile_cap(tmp_path, logger, n_pixels):
-    """Verifies the pixel subsample stays within the quantile-computation cap for any pixel count."""
-    analyzer = _resolution_analyzer(tmp_path, logger)
-    analyzer.table.n_pixels = n_pixels
-
-    assert analyzer.pixel_subsample().shape[0] <= ResolutionAnalyzer.MAX_QUANTILE_PIXELS
-
-
-def test_pass_ranking_evaluates_exactly_and_ranks_a_below_floor_pass_last(tmp_path, logger):
-    """Verifies chan ranking matches the exact error model and a near-zero-baseline chan ranks last."""
-    analyzer      = _resolution_analyzer(tmp_path, logger)
-    pixel_indices = analyzer.pixel_subsample()
-    pass_table    = {"CH01": float(analyzer.kz_grid[-2]), "FL02_PS03": float(analyzer.kz_grid[0]) / 5.0}
-
-    ranked = analyzer.pass_ranking(pixel_indices, pass_table)
-
-    kz_values  = np.array(list(pass_table.values()), dtype=np.float64)
-    _, errors  = analyzer.error_samples(kz_values, pixel_indices)
-    expected   = np.median(errors, axis=1)
-
-    assert [row["label"] for row in ranked] == ["CH01", "FL02_PS03"]
-    assert ranked[0]["predicted_height_error"] == pytest.approx(float(expected[0]))
-    assert ranked[1]["predicted_height_error"] == pytest.approx(float(expected[1]))
-    assert ranked[1]["predicted_height_error"] > ranked[0]["predicted_height_error"]
-
-
-def test_pass_ranking_rejects_a_non_positive_kz(tmp_path, logger):
-    """Verifies chan ranking raises for a candidate whose mean absolute kz is zero."""
-    analyzer      = _resolution_analyzer(tmp_path, logger)
-    pixel_indices = analyzer.pixel_subsample()
-
-    with pytest.raises(ValueError, match="non-positive mean absolute kz"):
-        analyzer.pass_ranking(pixel_indices, {"FL01_PS09": 0.0})
-
-
 def test_pass_rug_legend_names_only_the_flights_present(logger):
     """Verifies the chan rug legend lists one entry per flight, not per chan."""
     import matplotlib.pyplot as plt
@@ -854,14 +769,6 @@ def test_pass_rug_legend_names_only_the_flights_present(logger):
     plt.close(fig)
 
     assert labels == ["XY07 chan", "ZZ09 chan"]
-
-
-def test_active_gaussian_table_all_empty_raises():
-    """Verifies an all-inactive parameter cube raises ValueError."""
-    k_max = 2
-
-    with pytest.raises(ValueError, match="No pixel carries an active Gaussian"):
-        ActiveGaussianTable(np.zeros((3 * k_max, 2, 2)), k_max, ACTIVITY_THRESH)
 
 
 def _write_synthetic_geometry_field(dataset_dir):

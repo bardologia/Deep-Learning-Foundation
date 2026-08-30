@@ -111,12 +111,12 @@ def _equivariant_curve_model(images: torch.Tensor) -> np.ndarray:
         images : Input windows of shape (batch, channels, H, W).
 
     Returns:
-        Curve cube of shape (batch, N_ELEV, H, W).
+        Curve cube of shape (batch, N_Z, H, W).
     """
     x      = images.numpy()
     curves = np.abs(x[:, 0:1]) + 0.5
 
-    return np.repeat(curves, N_ELEV, axis=1).astype(np.float32)
+    return np.repeat(curves, N_Z, axis=1).astype(np.float32)
 
 
 def _position_curve_model(images: torch.Tensor) -> np.ndarray:
@@ -126,11 +126,11 @@ def _position_curve_model(images: torch.Tensor) -> np.ndarray:
         images : Input windows of shape (batch, channels, H, W).
 
     Returns:
-        Curve cube of shape (batch, N_ELEV, H, W).
+        Curve cube of shape (batch, N_Z, H, W).
     """
     B      = images.shape[0]
     cols   = np.arange(W, dtype=np.float32)[None, None, None, :]
-    curves = np.broadcast_to(cols, (B, N_ELEV, H, W))
+    curves = np.broadcast_to(cols, (B, N_Z, H, W))
 
     return np.ascontiguousarray(curves, dtype=np.float32)
 

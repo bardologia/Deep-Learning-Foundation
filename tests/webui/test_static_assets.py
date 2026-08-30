@@ -42,7 +42,7 @@ def test_shared_helpers_load_before_their_users():
     assert loaded.index("shared_charts.js") < loaded.index("home.js")
     assert loaded.index("canvas_base.js") < loaded.index("gauges.js")
 
-    for user in ("equations.js", "physics_loss.js", "flow_view.js"):
+    for user in ("equations.js", "flow_view.js"):
         assert loaded.index("mathjax.js") < loaded.index(user)
 
 
@@ -67,8 +67,8 @@ def test_the_html_escaper_is_defined_once():
 
 
 def test_the_results_roots_are_declared_once():
-    """The results root path and its storage key are declared only in results_sources.js."""
-    holders = [path.name for path in JS_DIR.glob("*.js") if "/ste/rnd/User/vice_vi" in path.read_text()]
+    """The results root defaults and their storage key are declared only in results_sources.js."""
+    holders = [path.name for path in JS_DIR.glob("*.js") if "DEFAULT_RUNS" in path.read_text()]
     assert holders == ["results_sources.js"]
 
     readers = [path.name for path in JS_DIR.glob("*.js") if '"results-sources"' in path.read_text()]

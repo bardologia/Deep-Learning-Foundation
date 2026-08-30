@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from configuration.dataset             import DatasetConfig, InputConfig, PatchConfig, Representation, SplitRegions
-from configuration.sar.gaussian import GaussianConfig
+from configuration.dataset.gaussian import GaussianConfig
 from configuration.training.backbone   import BackboneTrainerConfig
 from models.dual                       import DUAL_CONFIG_REGISTRY
 from tools.data.regions                import CropRegion

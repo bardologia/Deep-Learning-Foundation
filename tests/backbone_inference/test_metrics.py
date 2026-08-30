@@ -13,7 +13,7 @@ import os
 import numpy as np
 import pytest
 
-from pipelines.backbone.inference.metrics import LegacySsim, Metrics, Result
+from pipelines.backbone.inference.metrics import Metrics, Result
 from tools.loss.param_loss                import ParamMatcher
 
 
@@ -168,7 +168,7 @@ def test_curve_pixel_metrics_cosine_orthogonal():
 def test_unit_area_cubes_are_normalised_once_and_shared():
     """Unit-area cubes are cached per side, are distinct objects, and integrate to one along elevation."""
     rng    = np.random.default_rng(5)
-    curve  = rng.random((N_ELEV, 4, 4)).astype(np.float32) + 0.1
+    curve  = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.1
     result = _make_result(curve.copy(), curve.copy())
 
     pred_norm = result.pred_unit_area()
@@ -183,7 +183,7 @@ def test_unit_area_cubes_are_normalised_once_and_shared():
 def test_ssim_pool_follows_the_configured_cpu_workers():
     """The worker count is taken from the configuration and capped at the CPU count."""
     rng   = np.random.default_rng(4)
-    curve = rng.random((N_ELEV, 4, 4)).astype(np.float32)
+    curve = rng.random((N_Z, 4, 4)).astype(np.float32)
     result = _make_result(curve, curve)
 
     assert Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=3).num_workers  == 3
@@ -728,70 +728,3 @@ def _legacy_cubes(seed: int = 0, n_slices: int = 3) -> tuple:
     return estimate, estimate + 0.1 * rng.standard_normal((32, 32, n_slices))
 
 
-def test_legacy_ssim_identical_cubes_score_one():
-    """Identical cubes score SSIM 1 on every slice of the legacy sweep."""
-    estimate, _ = _legacy_cubes()
-
-    values = LegacySsim(num_workers=1).curve(estimate, estimate.copy())
-
-    assert values.shape == (3,)
-    assert np.allclose(values, 1.0)
-
-
-def test_legacy_ssim_matches_the_paper_convention_per_slice():
-    """Each slice reproduces skimage SSIM at window 27 with the col taken from the estimate."""
-    from skimage.metrics import structural_similarity as sk_ssim
-
-    estimate, _ = _legacy_cubes(seed=1)
-    reference   = 5.0 * estimate + 0.1 * np.random.default_rng(2).standard_normal(estimate.shape)
-
-    values = LegacySsim(num_workers=1).curve(estimate, reference)
-
-    for i in range(estimate.shape[2]):
-        est_slice = estimate[:, :, i].astype(np.float64)
-        ref_slice = reference[:, :, i].astype(np.float64)
-        est_range = float(est_slice.max() - est_slice.min())
-        ref_range = float(ref_slice.max() - ref_slice.min())
-        expected  = sk_ssim(est_slice, ref_slice, data_range=est_range, win_size=27)
-        deviant   = sk_ssim(est_slice, ref_slice, data_range=ref_range, win_size=27)
-
-        assert values[i] == pytest.approx(expected, abs=1e-12)
-        assert abs(values[i] - deviant) > 1e-6
-
-
-def test_legacy_ssim_smoothing_changes_the_score():
-    """A uniform filter of size 3 shifts the score of a noisy pair away from the unsmoothed value."""
-    estimate, reference = _legacy_cubes(seed=3, n_slices=1)
-
-    raw      = LegacySsim(smooth_size=1, num_workers=1).curve(estimate, reference)
-    smoothed = LegacySsim(smooth_size=3, num_workers=1).curve(estimate, reference)
-
-    assert abs(smoothed[0] - raw[0]) > 1e-4
-
-
-def test_legacy_ssim_mean_summarises_the_curve():
-    """The mean entry point equals the average of the per-slice curve."""
-    estimate, reference = _legacy_cubes(seed=4)
-
-    curve = LegacySsim(num_workers=1).curve(estimate, reference)
-
-    assert LegacySsim.mean(curve) == pytest.approx(float(np.mean(curve)))
-
-
-def test_legacy_ssim_mean_ignores_non_finite_slices():
-    """A degenerate slice scoring NaN drops out of the mean instead of poisoning it."""
-    curve = np.array([0.4, np.nan, 0.6])
-
-    assert LegacySsim.mean(curve) == pytest.approx(0.5)
-    assert np.isnan(LegacySsim.mean(np.array([np.nan, np.nan])))
-
-
-def test_legacy_ssim_shape_mismatch_raises():
-    """Cubes of different shapes or wrong rank are rejected."""
-    estimate, _ = _legacy_cubes()
-
-    with pytest.raises(ValueError):
-        LegacySsim().curve(estimate, estimate[:, :, :2])
-
-    with pytest.raises(ValueError):
-        LegacySsim().curve(estimate[:, :, 0], estimate[:, :, 0])

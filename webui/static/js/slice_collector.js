@@ -55,19 +55,14 @@ class SliceCollectorView {
   }
 
   _runsBase() {
-    try {
-      const raw = JSON.parse(localStorage.getItem("results-sources") || "{}");
-      return raw.logs || ResultsView.DEFAULT_RUNS;
-    } catch (e) {
-      return ResultsView.DEFAULT_RUNS;
-    }
+    return ResultsSources.runs();
   }
 
   async _refresh() {
     this.refs.hint.hidden = false;
     this.refs.hint.textContent = "Loading saved cubes…";
 
-    const data = await window.apiGet(`/api/cubes?base=${encodeURIComponent(this._runsBase())}`);
+    const data = await Api.get(`/api/cubes?base=${encodeURIComponent(this._runsBase())}`);
     this.cubes = (data && data.cubes) || [];
     this.selected = this.selected.filter((id) => this.cubes.some((c) => c.id === id));
     this._renderStrip();
@@ -111,9 +106,9 @@ class SliceCollectorView {
     const need = this.selected.filter((id) => !this.infos.has(id));
     await Promise.all(
       need.map(async (id) => {
-        const info = await window.apiGet(`/api/slices/info?id=${encodeURIComponent(id)}`);
+        const info = await Api.get(`/api/slices/info?id=${encodeURIComponent(id)}`);
         if (info && info.ok) this.infos.set(id, info);
-        else window.toast((info && info.error) || "failed to read run info", "warn");
+        else Toast.show((info && info.error) || "failed to read run info", "warn");
       })
     );
   }
@@ -198,8 +193,8 @@ class SliceCollectorView {
         title.className = "sc-row__title";
         const pos       = axis === "col" ? `col ${col}` : `row ${row}`;
         title.innerHTML =
-          `${this._esc(axis)} cut &middot; ${this._esc(SliceCollectorView.LABELS[source])} ` +
-          `<span class="sc-row__sub">${this._esc(pos)} &middot; ${this._esc(this.space)}${clim ? " &middot; shared scale" : ""}</span>`;
+          `${SharedCharts.esc(axis)} cut &middot; ${SharedCharts.esc(SliceCollectorView.LABELS[source])} ` +
+          `<span class="sc-row__sub">${SharedCharts.esc(pos)} &middot; ${SharedCharts.esc(this.space)}${clim ? " &middot; shared scale" : ""}</span>`;
         row.appendChild(title);
 
         const track = document.createElement("div");
@@ -222,8 +217,8 @@ class SliceCollectorView {
           cap.className = "sc-cell__cap";
           cap.title = info.id;
           cap.innerHTML =
-            `<span class="sc-cell__run">${this._esc(info.run)}</span>` +
-            `<span class="sc-cell__stamp">${this._esc(info.stamp)}</span>`;
+            `<span class="sc-cell__run">${SharedCharts.esc(info.run)}</span>` +
+            `<span class="sc-cell__stamp">${SharedCharts.esc(info.stamp)}</span>`;
           cell.appendChild(cap);
 
           track.appendChild(cell);
@@ -274,7 +269,7 @@ class SliceCollectorView {
   async _collect() {
     const infos = this._activeInfos();
     if (!infos.length) {
-      window.toast("Select at least one run first.", "warn");
+      Toast.show("Select at least one run first.", "warn");
       return;
     }
     if (this.collecting) return;
@@ -295,21 +290,21 @@ class SliceCollectorView {
     this.refs.collectBtn.disabled = true;
     this.refs.msg.textContent = "rendering figures…";
 
-    const res = await window.apiPost("/api/slices/collect", body);
+    const res = await Api.post("/api/slices/collect", body);
 
     this.collecting = false;
     this.refs.collectBtn.disabled = false;
 
     if (!res.ok) {
       this.refs.msg.textContent = res.error || "collection failed";
-      window.toast(res.error || "collection failed", "warn");
+      Toast.show(res.error || "collection failed", "warn");
       return;
     }
 
     this.refs.msg.textContent = `${res.files.length} figures → ${res.dir}`;
     let note = `Collected ${res.files.length} slice figures from ${res.runs} runs`;
     if (res.missing && res.missing.length) note += ` · ${res.missing.length} run/source pairs skipped`;
-    window.toast(note, "ok");
+    Toast.show(note, "ok");
   }
 
   _num(input) {
@@ -317,9 +312,6 @@ class SliceCollectorView {
     return Number.isFinite(v) && v >= 0 ? v : 0;
   }
 
-  _esc(text) {
-    return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
 }
 
 window.SliceCollectorView = SliceCollectorView;

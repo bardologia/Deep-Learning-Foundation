@@ -24,13 +24,13 @@ from web_logger         import WebLogger
 
 
 LEAVES = {
-    "train_backbone"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "curriculum", "paths.log_base_dir": "/ste/rnd/User/vice_vi/ML-Template/runs/benchmark", "logdir": "/ste/rnd/User/vice_vi/ML-Template/runs/backbone"},
-    "infer_backbone"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "runs_dir": "/ste/rnd/User/vice_vi/ML-Template/runs"},
+    "train_backbone"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "training.seed": "0", "training.use_ema": "False", "trials_mode": "curriculum", "paths.log_base_dir": "runs/benchmark", "logdir": "runs/backbone"},
+    "infer_backbone"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "runs_dir": "runs"},
     "benchmark"                 : {"dataset_base_path": "/data", "dataset_filter": "", "training.seed": "0"},
-    "generate_dataset"               : {"runs_dir": "/ste/rnd/User/vice_vi/Dataset"},
-    "train_jepa"                : {"paths.dataset_path": "/data/default", "logdir": "/ste/rnd/User/vice_vi/ML-Template/runs/jepa", "model_overrides": "{}", "training.batch_size": "256", "curriculum.enabled": "False", "embedding_loss.use_embedding_mse": "True"},
-    "train_profile_autoencoder" : {"paths.dataset_path": "/data/default", "logdir": "/ste/rnd/User/vice_vi/ML-Template/runs/profile_autoencoder", "model_overrides": "{}", "training.batch_size": "8192", "ae_model_name": "mlp_ae", "ae_loss.use_mse_curve": "True"},
-    "cross_validate"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "/ste/rnd/User/vice_vi/ML-Template/runs/cross_validation", "training_type": "backbone", "training.batch_size": "256", "curriculum.enabled": "True", "jepa.curriculum.enabled": "False", "jepa.embedding_loss.use_embedding_mse": "True", "autoencoder.ae_model_name": "mlp_ae", "autoencoder.ae_loss.use_mse_curve": "True"},
+    "generate_dataset"               : {"runs_dir": "datasets"},
+    "train_jepa"                : {"paths.dataset_path": "/data/default", "logdir": "runs/jepa", "model_overrides": "{}", "training.batch_size": "256", "curriculum.enabled": "False", "embedding_loss.use_embedding_mse": "True"},
+    "train_profile_autoencoder" : {"paths.dataset_path": "/data/default", "logdir": "runs/profile_autoencoder", "model_overrides": "{}", "training.batch_size": "8192", "ae_model_name": "mlp_ae", "ae_loss.use_mse_curve": "True"},
+    "cross_validate"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training_type": "backbone", "training.batch_size": "256", "curriculum.enabled": "True", "jepa.curriculum.enabled": "False", "jepa.embedding_loss.use_embedding_mse": "True", "autoencoder.ae_model_name": "mlp_ae", "autoencoder.ae_loss.use_mse_curve": "True"},
 }
 
 
