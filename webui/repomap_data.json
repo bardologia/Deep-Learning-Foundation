@@ -818,7 +818,7 @@
             {
               "id": "cfg",
               "label": "DatasetConfig",
-              "module": "configuration/dataset.py",
+              "module": "configuration/dataset/__init__.py",
               "role": "config",
               "fn": "Declares split regions, input/output channel selection, patch size/stride, secondary labels and normalization settings for the dataset build.",
               "col": 0,
@@ -1091,7 +1091,7 @@
             {
               "id": "cfg",
               "label": "BackboneEntryConfig",
-              "module": "configuration/training.py",
+              "module": "configuration/training/__init__.py",
               "role": "config",
               "fn": "Resolved CLI config carrying backbone name, trainer/dataset/geometry/curriculum settings, overfit-check and probe knobs, and trial-sweep fields.",
               "col": 0,
@@ -1431,7 +1431,7 @@
             {
               "id": "cfg",
               "label": "InferenceConfig",
-              "module": "configuration/inference.py",
+              "module": "configuration/inference/__init__.py",
               "role": "config",
               "fn": "Selects run directory, split, checkpoint, stitching window, and toggles for cubes, plots and animations.",
               "col": 0,
@@ -1799,7 +1799,7 @@
             {
               "id": "trunks",
               "label": "BACKBONE_MODEL_REGISTRY trunks",
-              "module": "models/backbone.py",
+              "module": "models/backbone/__init__.py",
               "role": "model",
               "fn": "Any of the 20 zoo architectures can serve as either trunk; both default to unet_skip. Its encode_decode returns the decoder embedding because the trunk config is built headless.",
               "col": 3,
@@ -2346,7 +2346,7 @@
             {
               "id": "cfg",
               "label": "ProfileDatasetConfig",
-              "module": "configuration/dataset.py",
+              "module": "configuration/dataset/__init__.py",
               "role": "config",
               "fn": "Holds profile dataset settings: split regions, gaussian axis bounds, pixel subsample and keep-empty fractions, loader params and augmentation config.",
               "col": 0,
@@ -4128,7 +4128,7 @@
             {
               "id": "entry_cfg",
               "label": "BenchmarkConfig (entry config)",
-              "module": "configuration/benchmark.py",
+              "module": "configuration/benchmark/__init__.py",
               "role": "config",
               "fn": "Holds the paths, training, normalization and inference knobs for one run and feeds the factory.",
               "col": 0,
@@ -4956,7 +4956,7 @@
             {
               "id": "orch_cfg",
               "label": "pipeline config",
-              "module": "configuration/benchmark.py",
+              "module": "configuration/benchmark/__init__.py",
               "role": "config",
               "fn": "Supplies the run tag, log base directory and session/stage parameters for the orchestrators.",
               "col": 0,

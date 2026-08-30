@@ -40,7 +40,7 @@ class RunLauncher:
     def preferred_interpreter(self, script_key: str = "") -> str:
         """Returns the interpreter preferred for an entry point among the discovered ones."""
         interpreters = self.paths.discover_interpreters()
-        return self.paths.preferred_interpreter(interpreters)
+        return self.paths.preferred_interpreter(interpreters, script_key)
 
     def interpreter_error(self, interpreter: str) -> str:
         """Returns an error message when the interpreter is not one of the discovered ones."""

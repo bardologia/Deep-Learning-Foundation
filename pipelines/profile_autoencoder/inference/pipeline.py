@@ -60,7 +60,7 @@ class ProfileAeInferencePipeline(AeInferencePipeline):
 
     def _metrics_object(self, result, run) -> ProfileAeMetrics:
         """Returns the metrics calculator bound to this run's axis and threshold."""
-        return ProfileAeMetrics(result, run.x_axis, run.amp_zero_thr)
+        return ProfileAeMetrics(result, run.z_axis, run.amp_zero_thr)
 
     def _region_metrics(self, run) -> dict:
         """Returns the split crop regions as plain tuples for the metrics file."""

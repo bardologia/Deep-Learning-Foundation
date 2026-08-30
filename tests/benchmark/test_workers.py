@@ -409,7 +409,7 @@ def test_training_worker_applies_the_probed_lr_multiplier(config, test_data_dir,
 
     worker.run("resunet-conv")
 
-    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / 256 * 0.25)
+    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size * 0.25)
 
 
 @pytest.mark.dataset
@@ -441,7 +441,7 @@ def test_training_worker_ignores_the_multiplier_when_the_test_is_disabled(config
 
     worker.run("resunet-conv")
 
-    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / 256)
+    assert captured["trainer_config"].optimizer.lr_scale == pytest.approx(500 / config.training.lr_reference_batch_size)
 
 
 def test_training_entry_configs_carry_the_overfit_check(config):

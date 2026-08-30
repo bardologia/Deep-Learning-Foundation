@@ -511,7 +511,7 @@ def test_normalization_scheduler_plans_the_cumulative_ladder(tmp_path):
     assert plans["nrm-3-out_amp"]["normalization.out_sigma"]   == "fixed_bounds"
     assert plans["nrm-4-out_mu"]["normalization.out_mu"]       == "robust_iqr"
     assert plans["nrm-5-out_sigma"]["normalization.out_sigma"] == "robust_iqr_log1p"
-    assert plans["nrm-6-dem"]["normalization.dem"]             == "robust_iqr_log1p"
+    assert plans["nrm-6-aux"]["normalization.aux"]             == "robust_iqr_log1p"
 
 
 def test_scheduler_fans_out_one_gpu_job_per_trial_seed(tmp_path):

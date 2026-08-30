@@ -181,7 +181,7 @@ def test_profile_refuses_a_stamp_outside_every_opened_root(tmp_path):
     autopsy = AbAutopsy(WebLogger())
     autopsy.runs(str(tmp_path / "opened"))
 
-    out = autopsy.profile(str(outside), str(stamp_a), az=4, rg=5)
+    out = autopsy.profile(str(outside), str(stamp_a), row=4, col=5)
 
     assert out["ok"] is False
     assert "outside every catalogued runs root" in out["error"]

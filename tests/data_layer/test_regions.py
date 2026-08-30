@@ -105,6 +105,15 @@ def test_subdivide_wider_than_region():
 
 
 
+def _band_splits() -> SplitRegions:
+    """Returns three contiguous row bands partitioning a 1000 by 500 crop."""
+    return SplitRegions(
+        train = CropRegion(0,   700,  0, 500),
+        val   = CropRegion(700, 850,  0, 500),
+        test  = CropRegion(850, 1000, 0, 500),
+    )
+
+
 def test_as_list_wraps_single():
     """Verifies a single region is wrapped in a one-element list."""
     region = CropRegion(0, 10, 0, 10)

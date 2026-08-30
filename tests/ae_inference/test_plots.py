@@ -134,7 +134,7 @@ def test_latent_rgb_maps_write_one_image_per_region(tmp_path):
 
     paths = p._latent_rgb_maps(emb, pixel_index, regions, tmp_path)
 
-    assert [path.name for path in paths] == ["az0-4_rg0-5.png", "az10-12_rg0-5.png"]
+    assert [path.name for path in paths] == ["row0-4_col0-5.png", "row10-12_col0-5.png"]
     assert all(path.exists() for path in paths)
     assert all(path.parent.name == "latent_rgb_maps" for path in paths)
 

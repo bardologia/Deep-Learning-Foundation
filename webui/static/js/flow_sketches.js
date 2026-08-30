@@ -1017,20 +1017,6 @@ window.FLOW_SKETCHES = {
     anim: pulse,
   },
 
-  jep_ema: {
-    tip: "With an EMA target the target encoder slowly follows the online encoder at decay 0.996.",
-    build(svg) { svg.innerHTML = `
-      <rect x="34" y="56" width="44" height="40" rx="4" class="skl-pop f-cal"/>
-      <text x="56" y="80" text-anchor="middle" style="fill:#0b1014;font-size:8px">&#966;on</text>
-      <text x="56" y="110" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">online</text>
-      <path class="skl-dash c-faint" d="M80 76 L150 76 M143 71 L150 76 L143 81" style="fill:none"/>
-      <text x="115" y="66" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">1-&#964;</text>
-      <rect x="156" y="56" width="44" height="40" rx="4" class="skl-draw c-faint" style="fill:rgba(126,138,160,0.12)"/>
-      <text x="178" y="80" text-anchor="middle" style="fill:#7e8aa0;font-size:8px">&#966;ema</text>
-      <circle class="sk-live skl-pop f-mid" cx="150" cy="76" r="3.5"/>
-      <text x="178" y="112" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">&#964;=0.996</text>`; },
-    anim: pulse,
-  },
 
   jep_checkpoint: {
     tip: "Validation checkpoints the best epoch; early stopping reverts to it after the patience window.",
