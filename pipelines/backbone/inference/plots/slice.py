@@ -47,13 +47,13 @@ class SlicePlotter(PlotTools):
             pred_curves    : Predicted cube of shape (n_z, rows, cols).
             gt_curves      : Ground-truth cube of the same shape.
             params_pred    : Predicted parameter cube of shape (3 * K, rows, cols), or None to omit components.
-            x_axis         : Elevation axis in metres, of shape (n_z,).
+            x_axis         : Z axis in metres, of shape (n_z,).
             pixels         : Selected (rows, cols) index pairs of shape (n_pixels, 2).
             tag            : Selection name ("best", "worst" or "random") used in the file names.
             out_dir        : Directory the figures are written into.
             n_gaussians    : Gaussian count K.
             pixel_metrics  : Per-pixel maps keyed "mse", "mae", "r2" and "cos", each of shape (rows, cols).
-            az_offset      : Azimuth index of the crop origin, added to the titles and file names.
+            row_offset      : Row index of the crop origin, added to the titles and file names.
             rg_offset      : Range index of the crop origin, added to the titles and file names.
             reduced_curves : Classical baseline cube of the same shape, or None.
             full_curves    : Raw cube of the same shape, or None.
@@ -118,7 +118,7 @@ class SlicePlotter(PlotTools):
             title      : Panel title.
             label      : Colorbar label, suffixed with "[log10]" when `log` is set.
             out_path   : Destination file path.
-            az_offset  : Azimuth index of the crop origin, used for the axis extent.
+            row_offset  : Row index of the crop origin, used for the axis extent.
             rg_offset  : Range index of the crop origin, used for the axis extent.
             cmap       : Colormap name.
             log        : Whether to display the base-10 logarithm of the clipped values.
@@ -173,7 +173,7 @@ class SlicePlotter(PlotTools):
             n_secondaries  : Number of secondary tracks in the stack.
             labels         : Track labels of the secondaries, or None to number them.
             out_dir        : Directory the figures are written into.
-            az_offset      : Azimuth index of the crop origin, used for the axis extent.
+            row_offset      : Row index of the crop origin, used for the axis extent.
             rg_offset      : Range index of the crop origin, used for the axis extent.
             primary_label  : Track label of the primary channel.
 
@@ -359,10 +359,10 @@ class SlicePlotter(PlotTools):
             gt_cube    : Reference cube of the same shape.
             axis       : Axis held fixed, "range" or "row".
             index      : Index along `axis` within the crop.
-            x_axis     : Elevation axis in metres, of shape (n_z,).
+            x_axis     : Z axis in metres, of shape (n_z,).
             out_dir    : Directory the panels are written into.
             stem       : File stem the panel kind is appended to.
-            az_offset  : Azimuth index of the crop origin.
+            row_offset  : Row index of the crop origin.
             rg_offset  : Range index of the crop origin.
             ssim_value : SSIM of this slice annotated on the prediction panel, or None.
             ref_title  : Panel title for the reference.
@@ -445,11 +445,11 @@ class SlicePlotter(PlotTools):
         Args:
             pred_cube  : Predicted cube of shape (n_z, rows, cols).
             gt_cube    : Reference cube of the same shape.
-            elev_idx   : Elevation bin index to display.
-            x_axis     : Elevation axis in metres, of shape (n_z,), used for the title.
+            elev_idx   : Z bin index to display.
+            x_axis     : Z axis in metres, of shape (n_z,), used for the title.
             out_dir    : Directory the panels are written into.
             stem       : File stem the panel kind is appended to.
-            az_offset  : Azimuth index of the crop origin, used for the axis extent.
+            row_offset  : Row index of the crop origin, used for the axis extent.
             rg_offset  : Range index of the crop origin, used for the axis extent.
             ssim_value : SSIM of this slice annotated on the prediction panel, or None.
             ref_title  : Panel title for the reference.
@@ -592,7 +592,7 @@ class SlicePlotter(PlotTools):
             global_metrics : Metric dictionary holding the per-z series.
             out_dir        : Directory the figures are written into.
             n_elev         : Number of z bins.
-            x_axis         : Elevation axis in metres, of shape (n_z,).
+            x_axis         : Z axis in metres, of shape (n_z,).
             suffix         : Metric-key suffix selecting the reference variant.
             series_label   : Legend label for the series.
 

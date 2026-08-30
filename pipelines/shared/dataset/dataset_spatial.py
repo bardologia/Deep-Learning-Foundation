@@ -18,7 +18,7 @@ class Layout:
         run_directory   : Root of the preprocessing run.
         data_directory  : Sub-directory holding the generated arrays.
         parameters_path : Path of the ground-truth Gaussian parameter array.
-        global_crop     : Azimuth/range crop the run was generated over.
+        global_crop     : Row/range crop the run was generated over.
         cube_tag    : Tag identifying the volumetric focusing settings.
         artifacts       : Mapping of artifact key to filename inside data/.
         pass_labels     : Track labels of the channel stack, or None when unavailable.

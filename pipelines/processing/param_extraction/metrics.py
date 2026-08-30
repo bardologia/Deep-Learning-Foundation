@@ -279,7 +279,7 @@ class FittingMetricsCalculator:
 
         Args:
             parameters_array : Parameter block of shape (3 * n_gaussians, rows, cols).
-            h_val            : Elevation the mixture is evaluated at, in metres.
+            h_val            : Z position the mixture is evaluated at, in metres.
 
         Returns:
             Mixture value of shape (rows, cols).

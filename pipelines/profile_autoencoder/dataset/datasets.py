@@ -21,7 +21,7 @@ class ProfileDataset(Dataset):
     """Serves normalised z profiles rebuilt from Gaussian parameters.
 
     Attributes:
-        x_axis      : Elevation axis of shape (H,), in metres.
+        x_axis      : Z axis of shape (H,), in metres.
         n_gaussians : Number of Gaussians per pixel.
         split_name  : Split this dataset covers ("train", "val" or "test").
         amps        : Amplitudes of shape (n_pixels, n_gaussians).

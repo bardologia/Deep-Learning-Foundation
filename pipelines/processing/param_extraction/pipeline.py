@@ -58,7 +58,7 @@ class ParameterExtractor:
             lambda_values        : Model-order penalty weights to fit in parallel.
             k_max                : Largest model order the fitter evaluates.
             threshold_factor     : Peak fraction below which profile bins are zeroed.
-            truncation_index     : Elevation bin above which the profile is truncated.
+            truncation_index     : Z bin above which the profile is truncated.
             prominence_frac      : Minimum peak prominence, as a fraction of the profile peak.
             sigma_init_divisor   : Divisor applied to the initial Gaussian widths.
             activity_threshold   : Amplitude above which a slot counts as active.

@@ -91,7 +91,7 @@ class PredictionCurves:
 
     Attributes:
         n_gaussians      : Number of Gaussian slots read from the parameter tensor.
-        x_axis           : Elevation sampling axis in metres, of shape (n_z,).
+        x_axis           : Z sampling axis in metres, of shape (n_z,).
         render_amp_floor : Amplitude below which a Gaussian is suppressed before rendering.
     """
 

@@ -187,9 +187,9 @@ class Metrics:
 
     Attributes:
         result         : The inference result being scored.
-        x_axis         : Elevation axis in metres, of shape (n_z,).
+        x_axis         : Z axis in metres, of shape (n_z,).
         n_gaussians    : Gaussian count K.
-        x_step         : Elevation bin spacing in metres.
+        x_step         : Z bin spacing in metres.
         num_workers    : Process count used for the parallel SSIM sweep.
         active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active.
     """

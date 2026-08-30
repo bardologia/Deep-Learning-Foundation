@@ -526,7 +526,7 @@ class SeedDisagreementMaps:
         Args:
             maps     : Disagreement maps; the profile map is used as the agreement signal.
             risk_map : Seed-averaged per-pixel error map of shape (rows, cols).
-            offsets  : Azimuth and range scene offsets of the split region.
+            offsets  : Row and range scene offsets of the split region.
             summary  : Scalar summary extended with the label-suspect scalars.
             figures  : Figure mapping extended with the suspect map.
         """

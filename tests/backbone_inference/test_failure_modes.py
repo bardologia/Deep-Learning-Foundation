@@ -20,7 +20,7 @@ def _params(slots: list[tuple[float, float, float]], H_: int = H, W_: int = W) -
 
     Args:
         slots : One (amplitude, mu in metres, sigma in metres) triple per Gaussian slot.
-        H_    : Azimuth extent of the cube.
+        H_    : Row extent of the cube.
         W_    : Range extent of the cube.
 
     Returns:

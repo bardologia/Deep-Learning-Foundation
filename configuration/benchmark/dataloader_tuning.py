@@ -31,7 +31,7 @@ class DataLoaderTuningEntryConfig:
         refine             : Whether a second refinement pass runs around the best setting.
         save_figures       : Whether timing figures are written to the output directory.
         synthetic_samples  : Number of profiles in the synthetic fallback dataset.
-        synthetic_length   : Elevation samples per synthetic profile.
+        synthetic_length   : Z samples per synthetic profile.
         paths              : Dataset and run path configuration.
         output_dir         : Directory receiving the tuning report and figures.
     """

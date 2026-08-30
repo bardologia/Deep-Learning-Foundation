@@ -331,7 +331,7 @@ class ReceptiveFieldPlots(PlotBase):
         fig = self._imshow_figure(
             display,
             x_label        = "Range offset [px]",
-            y_label        = "Azimuth offset [px]",
+            y_label        = "Row offset [px]",
             title          = f"Effective receptive field of predicted {family}",
             cmap           = self._cmap_with_bad("inferno"),
             vmin           = -6.0,

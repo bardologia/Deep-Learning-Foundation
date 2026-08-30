@@ -435,7 +435,7 @@ class FigureComposer:
             gt_cube        : Ground-truth cube of the same shape as `pred_cube`.
             full_cube      : Raw cube of the same shape, drawn as an extra reference panel.
             result         : Inference result supplying the row and column offsets of the crop.
-            x_axis_np      : Elevation axis in metres, of shape (n_z,).
+            x_axis_np      : Z axis in metres, of shape (n_z,).
             indices        : Slice-index arrays keyed by axis.
             global_metrics : Metric dictionary holding the per-slice SSIM values.
             ssim_prefix    : Metric-key prefix selecting which SSIM series to annotate ("gt", "norm" or "red").
@@ -620,7 +620,7 @@ class FigureComposer:
             result         : Inference result carrying the cubes, per-pixel maps and optional evaluations.
             run            : Loaded run supplying the raw cube and the Gaussian count.
             global_metrics : Metric dictionary written by the pipeline before plotting.
-            x_axis_np      : Elevation axis in metres, of shape (n_z,).
+            x_axis_np      : Z axis in metres, of shape (n_z,).
             indices        : Slice-index arrays keyed by axis.
             param_space    : Whether Gaussian-parameter figures should be produced.
 

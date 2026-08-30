@@ -21,7 +21,7 @@ class FitConfig:
 
     Attributes:
         threshold_factor   : Fraction of the profile maximum below which samples are ignored.
-        truncation_index   : Elevation bin above which the profile is truncated.
+        truncation_index   : Z bin above which the profile is truncated.
         k_max              : Maximum number of Gaussian components fitted per pixel.
         lambda_k           : Penalty weight discouraging additional components.
         prominence_frac    : Peak prominence, as a fraction of the profile range, required to seed a component.
@@ -148,7 +148,7 @@ class ExtractionConfig:
         pyrat_directory      : PyRAT source directory used to read the cube.
         output_prefix        : Leading token of the parameter run directory name.
         output_suffix        : Explicit suffix, or None to derive one from the fit settings.
-        height_range         : Elevation axis extent in metres, or None to read it from the dataset metadata.
+        height_range         : Z axis extent in metres, or None to read it from the dataset metadata.
         fit_settings         : Fit hyperparameters and the implied fit mode.
         parameter_workers    : CPU worker processes writing the parameter chunks.
         range_batch_size     : Number of range lines loaded per batch.

@@ -85,7 +85,7 @@ def _gaussian_params(seed: int, height: int = 4, width: int = 3) -> np.ndarray:
 
     Args:
         seed   : Seed of the random generator.
-        height : Azimuth extent of the cube.
+        height : Row extent of the cube.
         width  : Range extent of the cube.
 
     Returns:

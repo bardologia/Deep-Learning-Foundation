@@ -144,7 +144,7 @@ def valid_param_tensor(batch: int, n_gaussians: int, height: int, width: int, se
     Args:
         batch       : Number of samples.
         n_gaussians : Number of Gaussian slots.
-        height      : Azimuth extent, in pixels.
+        height      : Row extent, in pixels.
         width       : Range extent, in pixels.
         seed        : Seed of the generator drawing the parameters.
 

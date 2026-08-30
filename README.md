@@ -42,9 +42,10 @@ first and then run the requirements file, which will leave the existing torch al
 
 The second pip line covers the optional extras declared in `pyproject.toml`: `fitting`
 installs `jax` for the Gaussian-fit kernels under
-`pipelines/processing/param_extraction/sigma/` and the console fit lab, and `dev`
-installs `pytest` and `pyflakes`. Everything else in the repository works without jax;
-the tests that need it skip themselves.
+`pipelines/processing/param_extraction/sigma/` and the console fit lab, `export`
+installs `onnx` for the ONNX export entry, and `dev` installs `pytest` and
+`pyflakes`. Everything else in the repository works without jax or onnx; the tests
+that need them skip themselves.
 
 Check the result:
 
@@ -169,7 +170,12 @@ carries its own settings:
 `resunet-set_pred-hungarian-K_2-hv-AB-param_l1_1-cosine_curve_0.05_20260805_004432`. It
 holds `best_model.pt`, `last.pt`, `complete.json`, TensorBoard events, the resolved entry
 config and model documentation under `docs/`, and the crop, patch, normalization and
-metric metadata under `meta/`.
+metric metadata under `meta/`. Every run also records its provenance: an environment
+snapshot (library versions, CUDA stack, GPUs) and sha256 hashes of the dataset
+artifacts under `meta/`, plus the git state under `docs/`, including the full diff
+whenever the working tree was dirty. With `--training.use_swa True` the last quarter
+of training (configurable) is additionally averaged into `swa_model.pt`, scored on
+validation with refreshed batch-norm statistics.
 
 Resume is driven by `complete.json`. `tools/training/trainer.py` writes the marker when
 training finishes, and with `--resume` (on by default) `UnitResume` reuses a run
@@ -211,7 +217,7 @@ the candidate list in `webui/run.sh` and `ProjectPaths.PRIORITY` in
 `webui/project_paths.py`; each launch page also has an interpreter picker filled from the
 conda envs the server discovers.
 
-The console lists the 34 `main/` entry points, renders each one's configuration fields as
+The console lists the 37 `main/` entry points, renders each one's configuration fields as
 typed controls, shows the exact command it will run, and streams the output back live. It
 also carries the run leaderboard, the results and cube browsers, the fit lab, the model
 microscope and server telemetry. `webui/README.md` documents every tab.
@@ -229,12 +235,15 @@ training entries themselves as `trials_mode=patch`, alongside the other fan-out 
 (losses, presence, pairs, secondaries, inputs, context, reach, heads, augmentation,
 clamp, stability, EMA, AMP and normalization ladders).
 
-Nineteen analysis entries under `main/analysis/` read finished runs rather than
-producing them: trial, seed and run comparisons, weight and activation x-rays, receptive
-field measurement, input attribution and stress tests, layer probes, representation
-comparison, loss-landscape maps, training animations, and the report, figure and
-TensorBoard exporters. Each one takes `--help-config` like everything else, and each one
-has a card in the console's Scripts tab.
+Twenty-two analysis entries under `main/analysis/` read finished runs rather than
+producing them: trial, seed and run comparisons (the seed comparison also reports 95%
+confidence intervals and scores the across-seed mean prediction as a deep ensemble),
+weight and activation x-rays, receptive field measurement, input attribution and
+stress tests, layer probes, representation comparison, loss-landscape maps, training
+animations, a torch.profiler capture of full training steps, and the report, figure,
+TensorBoard, result-table (CSV/LaTeX/markdown) and ONNX exporters. Each one takes
+`--help-config` like everything else, and each one has a card in the console's
+Scripts tab.
 
 ## Repository map
 

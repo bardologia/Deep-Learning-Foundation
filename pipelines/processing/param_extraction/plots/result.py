@@ -30,7 +30,7 @@ class FittingResultPlotter(PlotBase):
         n_gaussians          : Number of Gaussian slots in the parameter stack.
         logger               : Logger for the plotting report.
         threshold_factor     : Peak fraction below which profile bins were zeroed by the fitter.
-        truncation_index     : Elevation bin above which the profile was truncated by the fitter.
+        truncation_index     : Z bin above which the profile was truncated by the fitter.
         fig_dpi              : Figure resolution used while rendering.
         save_dpi             : Resolution the PNGs are written at.
         n_fits_per_k         : Number of example pixels sampled per selected model order.
@@ -60,7 +60,7 @@ class FittingResultPlotter(PlotBase):
             n_gaussians      : Number of Gaussian slots in the parameter stack.
             logger           : Logger for the plotting report.
             threshold_factor : Peak fraction below which profile bins were zeroed.
-            truncation_index : Elevation bin above which the profile was truncated.
+            truncation_index : Z bin above which the profile was truncated.
             fig_dpi          : Figure resolution used while rendering.
             save_dpi         : Resolution the PNGs are written at.
             n_fits_per_k     : Number of example pixels sampled per selected model order.

@@ -22,7 +22,7 @@ jobs:
         run: |
           pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
-          pip install "jax>=0.4.30" pytest==9.0.3 pyflakes==3.4.0
+          pip install "jax>=0.4.30" onnx==1.22.0 pytest==9.0.3 pyflakes==3.4.0
 
       - name: Pyflakes
         run: |

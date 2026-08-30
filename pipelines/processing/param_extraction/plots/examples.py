@@ -30,7 +30,7 @@ class ExampleFitPlotter(PlotBase):
         n_gaussians      : Number of Gaussian slots in the parameter stack.
         logger           : Logger for the plotting report.
         threshold_factor : Peak fraction below which profile bins were zeroed by the fitter.
-        truncation_index : Elevation bin above which the profile was truncated by the fitter.
+        truncation_index : Z bin above which the profile was truncated by the fitter.
         n_fits_per_k     : Number of example pixels sampled per selected model order.
         amp_threshold    : Amplitude above which a Gaussian component is drawn.
         fig_dpi          : Figure resolution used while rendering.
@@ -54,7 +54,7 @@ class ExampleFitPlotter(PlotBase):
             n_gaussians      : Number of Gaussian slots in the parameter stack.
             logger           : Logger for the plotting report.
             threshold_factor : Peak fraction below which profile bins were zeroed.
-            truncation_index : Elevation bin above which the profile was truncated.
+            truncation_index : Z bin above which the profile was truncated.
             n_fits_per_k     : Number of example pixels sampled per selected model order.
             amp_threshold    : Amplitude above which a Gaussian component is drawn.
             fig_dpi          : Figure resolution used while rendering.
@@ -219,7 +219,7 @@ class ExampleFitPlotter(PlotBase):
         Args:
             parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
             pixel_profiles   : Mapping from (rows, cols) to the raw and target profiles.
-            height_axis      : Elevation axis of shape (height,), in metres.
+            height_axis      : Z axis of shape (height,), in metres.
             pixels_by_k      : Sampled pixel indices per selected model order.
             r2_map           : Per-pixel R-squared of shape (rows, cols).
             out_dir          : Directory the per-order subdirectories are created under.

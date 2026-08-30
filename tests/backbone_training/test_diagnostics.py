@@ -315,7 +315,7 @@ def _phys(amps: list[float], H: int = 2, W: int = 2) -> torch.Tensor:
 
     Args:
         amps : Amplitude of each Gaussian slot.
-        H    : Azimuth extent, in pixels.
+        H    : Row extent, in pixels.
         W    : Range extent, in pixels.
 
     Returns:

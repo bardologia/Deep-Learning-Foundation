@@ -83,7 +83,7 @@ class Run:
         backbone_name    : Registry name of the backbone architecture.
         in_channels      : Number of input channels the model consumes.
         out_channels     : Number of output channels the model emits (3 * n_gaussians).
-        x_axis           : Elevation axis in metres, of shape (n_z,).
+        x_axis           : Z axis in metres, of shape (n_z,).
         x_axis_length    : Number of z bins.
         n_gaussians      : Gaussian count K the run was trained with.
         dataset_config   : Dataset-creation configuration restored from the run.

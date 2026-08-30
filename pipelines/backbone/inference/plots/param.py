@@ -402,7 +402,7 @@ class ParamPlotter(PlotTools):
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
-            az_offset     : Azimuth index of the crop origin, used for the axis extent.
+            row_offset     : Row index of the crop origin, used for the axis extent.
             rg_offset     : Range index of the crop origin, used for the axis extent.
             assignment    : Precomputed predicted-to-GT assignment, or None to match here.
             amp_threshold : Amplitude above which a slot counts as active.

@@ -43,7 +43,7 @@ class ProfileDatasetConfig:
 
     Attributes:
         preprocessing_run_directory : Directory holding the preprocessed scene.
-        split_regions               : Azimuth and range regions defining train, val and test.
+        split_regions               : Row and column regions defining train, val and test.
         parameters_path             : Directory holding the extracted Gaussian parameters.
         n_gaussians                 : Number of Gaussian components describing one profile.
         x_min                       : Lower bound of the z axis in metres.
