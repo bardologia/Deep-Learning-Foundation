@@ -2158,6 +2158,7 @@
         "metrics_filename": "Filename of the per-run metrics JSON read from each seed's inference directory and of the aggregate mean/std JSON written next to the report",
         "report_filename": "Filename of the generated seed-comparison markdown report, also used to link each seed's own report",
         "compute_disagreement": "Also compute per-pixel across-seed disagreement maps (profile, amplitude, mu, sigma std) from every seed's saved inference cubes, write them into each seed's cube directory as metric-map layers and render summary figures; requires save_cubes inference artifacts and raises when a seed lacks them",
+        "compute_ensemble": "Also average every seed's saved prediction cube into one deep-ensemble prediction and score it against the ground truth with the same cube-wide scalars, reported next to the per-seed mean; requires save_cubes inference artifacts and raises when a seed lacks them",
         "cubes_subdir": "Name of the cube subdirectory inside each seed's inference directory the disagreement maps are read from and written back into",
         "active_amp_thr": "Physical amplitude at or above which a Gaussian slot counts as active when matching each seed's predicted slots to the shared GT slots for the disagreement maps; must match the inference.active_amp_thr the seeds were scored with (1e-4 default, 1e-3 legacy preset)"
       }

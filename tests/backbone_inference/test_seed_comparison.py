@@ -7,9 +7,10 @@ import math
 from pathlib import Path
 from types   import SimpleNamespace
 
+import numpy as np
 import pytest
 
-from pipelines.backbone.inference.analysis.seed_comparison import SeedComparison, SeedComparisonReport, SeedInferenceResolver
+from pipelines.backbone.inference.analysis.seed_comparison import SeedComparison, SeedComparisonReport, SeedEnsembleEvaluation, SeedInferenceResolver
 
 from tests.conftest import SilentLogger
 
@@ -188,6 +189,7 @@ def _config(runs_dir: Path, group_tags: list[str], inference_subdir: str = "", o
         metrics_filename     = "metrics.json",
         report_filename      = "report.md",
         compute_disagreement = False,
+        compute_ensemble     = False,
         cubes_subdir         = "cubes",
     )
 
@@ -277,3 +279,63 @@ def test_comparison_output_gets_a_fresh_stamp_when_nothing_is_set(tmp_path, monk
 
     assert reports[0].parent.parent == group / "inference"
     assert reports[0].parent.name not in ("stamp", "")
+
+
+def _seed_cubes(run: Path, pred: "np.ndarray", gt: "np.ndarray", stamp: str = "stamp") -> None:
+    """Writes prediction and ground-truth cubes into a seed run's inference stamp."""
+    cube_dir = run / "inference" / stamp / "cubes"
+    cube_dir.mkdir(parents=True, exist_ok=True)
+    np.save(cube_dir / "pred_curves.npy", pred)
+    np.save(cube_dir / "gt_curves.npy", gt)
+
+
+def test_seed_ensemble_scores_the_mean_prediction(tmp_path):
+    """The ensemble scalars score the across-seed mean cube, beating two biased seeds."""
+    group = tmp_path / "group"
+    gt    = np.zeros((2, 4, 4), dtype=np.float32)
+
+    run_a = _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
+    run_b = _seed_run(group, "seed1", {"curve_mse_gt": 1.0})
+    _seed_cubes(run_a, gt + 1.0, gt)
+    _seed_cubes(run_b, gt - 1.0, gt)
+
+    scalars = SeedEnsembleEvaluation([run / "inference" / "stamp" / "cubes" for run in (run_a, run_b)], SilentLogger()).run()
+
+    assert scalars["n_seeds"]      == 2
+    assert scalars["curve_mse_gt"] == pytest.approx(0.0)
+    assert scalars["curve_mae_gt"] == pytest.approx(0.0)
+
+
+def test_seed_ensemble_raises_without_saved_cubes(tmp_path):
+    """A seed without saved prediction cubes fails loudly, naming the fix."""
+    group = tmp_path / "group"
+    run   = _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
+
+    with pytest.raises(FileNotFoundError, match="save_cubes"):
+        SeedEnsembleEvaluation([run / "inference" / "stamp" / "cubes"], SilentLogger()).run()
+
+
+def test_report_renders_the_ensemble_section(tmp_path):
+    """With an ensemble payload the report carries the section and the metrics JSON the scalars."""
+    group = tmp_path / "group"
+    runs  = [
+        _seed_run(group, "seed0", {"curve_mse_gt": 1.0}),
+        _seed_run(group, "seed1", {"curve_mse_gt": 3.0}),
+    ]
+
+    report = SeedComparisonReport(
+        group_dir        = group,
+        run_dirs         = runs,
+        inference_dirs   = [run / "inference" / "stamp" for run in runs],
+        output_subdir    = "stamp",
+        metrics_filename = "metrics.json",
+        report_filename  = "report.md",
+        logger           = SilentLogger(),
+        ensemble         = {"n_seeds": 2, "curve_mse_gt": 0.5},
+    )
+
+    text    = report.run().read_text(encoding="utf-8")
+    payload = json.loads((group / "inference" / "stamp" / "metrics.json").read_text(encoding="utf-8"))
+
+    assert "Seed ensemble" in text
+    assert payload["ensemble"]["curve_mse_gt"] == pytest.approx(0.5)

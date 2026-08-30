@@ -1141,6 +1141,7 @@ class LaunchLayout:
                         ]},
                         {"title": "Report", "fields": ["inference_subdir", "output_subdir", "metrics_filename", "report_filename"]},
                         {"title": "Disagreement maps", "fields": ["compute_disagreement", "cubes_subdir", "active_amp_thr"]},
+                        {"title": "Seed ensemble", "fields": ["compute_ensemble"]},
                     ]},
                 ]},
             ],
