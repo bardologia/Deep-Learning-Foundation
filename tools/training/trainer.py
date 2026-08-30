@@ -529,14 +529,22 @@ class BaseTrainer:
         self.tracker.log_scalar("throughput/data_wait_frac",   data_wait / elapsed,    epoch)
         self.tracker.log_scalar("controls/nonfinite_batches",  float(nonfinite_count), epoch)
 
+    @staticmethod
+    def _batch_size(batch) -> int:
+        """Returns the number of samples in one loader batch, read from its first tensor."""
+        return int(batch[0].shape[0])
+
     @torch.no_grad()
     def evaluate(self, loader: DataLoader, epoch: int, stage="val"):
         """Evaluates the model over a loader without gradients.
 
-        In a DDP group each rank evaluates its own shard and the loss sums are
-        reduced across ranks, so every rank returns the same average and all
-        checkpoint and early-stopping decisions stay identical. The aggregator
-        metrics remain rank-local.
+        The average is weighted by batch sample count, so the partial final
+        batch of a drop_last=False loader counts each sample once instead of
+        weighing a small batch like a full one. In a DDP group each rank
+        evaluates its own shard and the sample-weighted loss sums and counts
+        are reduced across ranks, so every rank returns exactly the
+        single-process average and all checkpoint and early-stopping decisions
+        stay identical. The aggregator metrics remain rank-local.
 
         Args:
             loader : Loader yielding evaluation batches.
@@ -544,16 +552,16 @@ class BaseTrainer:
             stage  : Metric stage label, "val" or "test".
 
         Returns:
-            Dictionary with "avg_loss" (NaN when no batch was accepted) and
-            "num_batches", the count of finite-loss batches.
+            Dictionary with "avg_loss" (the sample-weighted mean, NaN when no batch was accepted), "num_batches" (finite-loss batches) and "num_samples" (samples behind the mean).
 
         Raises:
             FloatingPointError : If a batch loss is non-finite and aborting is enabled.
         """
         self.model.eval()
 
-        loss_sum, n = 0.0, 0
-        aggregator  = MetricAggregator()
+        loss_sum, batch_count, sample_count = 0.0, 0, 0
+
+        aggregator = MetricAggregator()
 
         with self.logger.track(transient=True) as _prog:
             _task = _prog.add_task(f"[section]Eval {stage}[/section] - epoch {epoch + 1}/{self.epochs}", total=len(loader))
@@ -564,8 +572,10 @@ class BaseTrainer:
                 loss = loss_dict["total_loss"]
 
                 if torch.isfinite(loss):
-                    loss_sum += loss.item()
-                    n += 1
+                    batch_samples = self._batch_size(batch)
+                    loss_sum     += loss.item() * batch_samples
+                    batch_count  += 1
+                    sample_count += batch_samples
                     aggregator.add(loss_dict)
 
                 elif self.abort_on_nonfinite_loss:
@@ -576,12 +586,12 @@ class BaseTrainer:
 
                 _prog.advance(_task)
 
-        loss_sum, n = self.distributed.sum_scalars(loss_sum, float(n))
+        loss_sum, batch_count, sample_count = self.distributed.sum_scalars(loss_sum, float(batch_count), float(sample_count))
 
-        avg = loss_sum / n if n > 0 else float("nan")
+        avg = loss_sum / sample_count if sample_count > 0 else float("nan")
         self._log_epoch_metrics(stage, aggregator, epoch)
 
-        return {"avg_loss": avg, "num_batches": int(n)}
+        return {"avg_loss": avg, "num_batches": int(batch_count), "num_samples": int(sample_count)}
 
     def _log_epoch_metrics(self, stage: str, aggregator: MetricAggregator, epoch: int) -> None:
         """Logs the reduced loss terms, monitors, occupancy and parameter errors.
@@ -678,7 +688,7 @@ class BaseTrainer:
                 test = self.evaluate(test_loader, epoch, stage="test")
 
         self.tracker.log_scalar("loss/test", test["avg_loss"], epoch)
-        self.logger.subsection(f"Test : loss={test['avg_loss']:.4f}  (batches={test['num_batches']}, weights: {weights})")
+        self.logger.subsection(f"Test : loss={test['avg_loss']:.4f}  (batches={test['num_batches']}, samples={test['num_samples']}, weights: {weights})")
 
         return test
 
@@ -744,7 +754,7 @@ class BaseTrainer:
                                 val_loss = val["avg_loss"]
                                 self.checkpoint.step(val_loss, epoch, self)
 
-                            self.logger.subsection(f"Validation : loss={val_loss:.4f}  (batches={val['num_batches']})")
+                            self.logger.subsection(f"Validation : loss={val_loss:.4f}  (batches={val['num_batches']}, samples={val['num_samples']})")
                             self.tracker.log_scalar("loss/val", val_loss, epoch)
                             self.lr_scheduler.step(epoch)
                             stop = self.early_stopping(val_loss, epoch)
