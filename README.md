@@ -221,12 +221,15 @@ works, with plain text where the equations would be.
 
 ## 8. Experiments and analysis
 
-Five experiment entries under `main/experiments/` wrap the training loop:
+Four experiment entries under `main/experiments/` wrap the training loop:
 `benchmark.py` sweeps models, heads and losses; `cross_validate.py` runs k-fold over the
-scene; `sweep_patches.py` sweeps patch geometry; `tune.py` drives an Optuna study;
-`tune_dataloader.py` searches batch size, worker count and prefetch depth for throughput.
+scene; `tune.py` drives an Optuna study; `tune_dataloader.py` searches batch size,
+worker count and prefetch depth for throughput. Patch-shape sweeps run through the
+training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
+(losses, presence, pairs, secondaries, inputs, context, reach, heads, augmentation,
+clamp, stability, EMA, AMP and normalization ladders).
 
-Eighteen analysis entries under `main/analysis/` read finished runs rather than
+Nineteen analysis entries under `main/analysis/` read finished runs rather than
 producing them: trial, seed and run comparisons, weight and activation x-rays, receptive
 field measurement, input attribution and stress tests, layer probes, representation
 comparison, loss-landscape maps, training animations, and the report, figure and

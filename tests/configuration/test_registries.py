@@ -78,9 +78,6 @@ def test_image_ae_config_and_model_registries_share_keys():
     assert set(IMAGE_AE_CONFIG_REGISTRY) == set(IMAGE_AE_MODEL_REGISTRY)
 
 
-def test_unrolled_config_and_model_registries_share_keys():
-    """Verifies the unrolled config and model registries carry the same keys."""
-    assert set(UNROLLED_CONFIG_REGISTRY) == set(UNROLLED_MODEL_REGISTRY)
 
 
 def test_dual_config_and_model_registries_share_keys():

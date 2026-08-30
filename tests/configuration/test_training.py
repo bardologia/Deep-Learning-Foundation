@@ -207,14 +207,14 @@ def test_curriculum_inheritance_respects_explicit_warmup_overrides():
 def test_curriculum_inheritance_skips_fields_with_divergent_stage_defaults():
     """Verifies fields whose stage defaults differ are never inherited."""
     cfg       = default_curriculum()
-    overrides = {"curriculum.complete.use_moments": True, "curriculum.complete.weight_moments": 0.2}
+    overrides = {"curriculum.complete.presence_balance": False}
 
-    cfg.complete.weight_moments = 0.2
+    cfg.complete.presence_balance = False
 
     inherited = CurriculumInheritance(cfg, default_curriculum(), overrides).apply()
 
     assert inherited == {}
-    assert cfg.warmup.use_moments is False
+    assert cfg.warmup.presence_balance is False
 
 
 def test_curriculum_inheritance_disabled_by_inherit_flag():

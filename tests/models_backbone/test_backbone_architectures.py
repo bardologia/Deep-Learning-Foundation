@@ -8,6 +8,7 @@ parameter-group coverage, and architecture-specific validation rules.
 from __future__ import annotations
 
 import pytest
+import numpy as np
 import torch
 
 from models.backbone import BACKBONE_MODEL_REGISTRY, BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS, BACKBONE_IMAGE_SIZE_MODELS, get_backbone
@@ -87,10 +88,16 @@ def test_forward_finite(name, make_input):
 
 
 @pytest.mark.dataset
-def test_forward_on_a_real_interferogram_window(interferograms):
-    """Verifies the UNet backbone runs on a real interferogram window with the expected shape."""
+def test_forward_on_a_scene_derived_window(derived):
+    """Verifies the UNet backbone runs on a scene derived-channel window with the expected shape."""
     model, config = _build("unet")
-    x             = _input_window(interferograms, config.in_channels)
+
+    raw   = np.asarray(derived[:1, :WINDOW, :WINDOW])
+    mag   = np.abs(raw).astype(np.float32)
+    mean  = mag.mean(axis=(1, 2), keepdims=True)
+    std   = mag.std(axis=(1, 2), keepdims=True) + 1e-6
+    norm  = np.broadcast_to((mag - mean) / std, (config.in_channels, WINDOW, WINDOW))
+    x     = torch.from_numpy(np.repeat(norm[None, ...], BATCH, axis=0).copy()).to(DEVICE)
 
     with torch.no_grad():
         y = model(x)
