@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 import pipelines.dual.training.launcher as dual_launcher
+from configuration.synthesis                 import SynthesisConfig
 from configuration.training                  import DualEntryConfig, DualRatioTrialsConfig, DualRoutingTrialsConfig, dual_curriculum
 from configuration.training.backbone         import HeadMatchingTrialsConfig, ReachTrialsConfig
 from configuration.training.dual             import _default_dual_ratio_trials, _default_dual_routing_trials
@@ -59,32 +60,32 @@ def test_dual_routing_planner_default_catalog_covers_the_pairs_with_and_without_
     plans = dict(_planner().plan())
 
     pairs = ["full-full", "chan-full", "full-chan", "derived-full", "full-derived", "chan-derived", "derived-chan"]
-    assert list(plans) == [f"di-{pair}-{aux}" for pair in pairs for aux in ("nodem", "aux")]
+    assert list(plans) == [f"di-{pair}-{aux}" for pair in pairs for aux in ("noaux", "aux")]
 
     full    = ["chan", "derived"]
     chan    = ["chan"]
     derived = ["derived"]
 
-    assert plans["di-full-full-nodem"]["params_input"]    == full
-    assert plans["di-full-full-nodem"]["existence_input"] == full
+    assert plans["di-full-full-noaux"]["params_input"]    == full
+    assert plans["di-full-full-noaux"]["existence_input"] == full
     assert plans["di-full-full-aux"]["params_input"]      == full + ["aux"]
     assert plans["di-full-full-aux"]["existence_input"]   == full + ["aux"]
-    assert plans["di-chan-full-nodem"]["params_input"]    == channels
-    assert plans["di-chan-full-nodem"]["existence_input"] == full
-    assert plans["di-chan-full-aux"]["params_input"]      == channels + ["aux"]
+    assert plans["di-chan-full-noaux"]["params_input"]    == chan
+    assert plans["di-chan-full-noaux"]["existence_input"] == full
+    assert plans["di-chan-full-aux"]["params_input"]      == chan + ["aux"]
     assert plans["di-chan-full-aux"]["existence_input"]   == full + ["aux"]
-    assert plans["di-derived-chan-nodem"]["params_input"]     == derived
-    assert plans["di-derived-chan-nodem"]["existence_input"]  == channels
+    assert plans["di-derived-chan-noaux"]["params_input"]     == derived
+    assert plans["di-derived-chan-noaux"]["existence_input"]  == chan
     assert plans["di-derived-chan-aux"]["params_input"]       == derived + ["aux"]
-    assert plans["di-derived-chan-aux"]["existence_input"]    == channels + ["aux"]
+    assert plans["di-derived-chan-aux"]["existence_input"]    == chan + ["aux"]
 
 
 def test_dual_routing_planner_switches_the_dem_channel_with_the_selection():
-    """`input.use_dem` is on exactly when a trunk selects the aux group, aux variants routing it into both trunks."""
+    """`input.use_aux` is on exactly when a trunk selects the aux group, aux variants routing it into both trunks."""
     for run_name, overrides in _planner().plan():
         selected = "aux" in overrides["params_input"] or "aux" in overrides["existence_input"]
 
-        assert overrides["input.use_dem"] is selected
+        assert overrides["input.use_aux"] is selected
         assert selected == run_name.endswith("-aux")
 
         if selected:
@@ -177,14 +178,14 @@ def test_dual_trial_overrides_round_trip_through_the_cli():
     """Routing overrides survive conversion to argv and back through the config CLI."""
     plans = dict(_planner().plan())
 
-    config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(plans["di-full-ifg-dem"]))
+    config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(plans["di-full-derived-aux"]))
 
-    assert config.params_input    == ["pass", "ifg", "dem"]
-    assert config.existence_input == ["ifg", "dem"]
-    assert config.input.use_dem   is True
+    assert config.params_input    == ["chan", "derived", "aux"]
+    assert config.existence_input == ["derived", "aux"]
+    assert config.input.use_aux   is True
     assert config.model_overrides == {"params_features": PARITY_FEATURES, "existence_features": PARITY_FEATURES}
 
-    config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(plans["di-full-ifg-nodem"]))
+    config = ConfigCli(DualEntryConfig()).apply(ConfigCli.to_argv(plans["di-full-derived-noaux"]))
 
     assert config.params_input    == ["chan", "derived"]
     assert config.existence_input == ["derived"]
@@ -373,7 +374,7 @@ def test_dual_scheduler_plans_the_trunk_input_grid(tmp_path):
     plans = dict(scheduler.planner().plan())
 
     pairs = ["full-full", "chan-full", "full-chan", "derived-full", "full-derived", "chan-derived", "derived-chan"]
-    assert list(plans) == [f"di-{pair}-{aux}" for pair in pairs for aux in ("nodem", "aux")]
+    assert list(plans) == [f"di-{pair}-{aux}" for pair in pairs for aux in ("noaux", "aux")]
     assert plans["di-full-derived-aux"]["model_overrides"]["params_features"] == PARITY_FEATURES
 
 
@@ -392,7 +393,7 @@ def test_dual_scheduler_houses_ratio_runs_in_ratio_dir_and_plans_the_split_grid(
     planner = scheduler.planner()
     plans   = dict(planner.plan())
 
-    assert planner.out_channels == RATIO_OUT_CHANNELS
+    assert planner.out_channels == 3 * SynthesisConfig().k_max
     assert list(plans) == ["dr-50-50", "dr-60-40", "dr-70-30", "dr-80-20", "dr-90-10"]
     assert plans["dr-50-50"]["model_overrides"]["params_features"]    == PARITY_FEATURES
     assert plans["dr-50-50"]["model_overrides"]["existence_features"] == PARITY_FEATURES

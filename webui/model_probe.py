@@ -310,9 +310,9 @@ class ModelProbe:
         window = run.dataset.assemble_window(complex_window, aux_window)
         return window[None].astype(np.float32), row - top, col - left
 
-    def _window(self, az: int, rg: int) -> tuple[np.ndarray, int, int]:
+    def _window(self, row: int, col: int) -> tuple[np.ndarray, int, int]:
         """Returns the input window and centre offsets for a pixel of the loaded run."""
-        return self._window_at(self.loaded["run"], self.loaded["patch"], az, rg)
+        return self._window_at(self.loaded["run"], self.loaded["patch"], row, col)
 
     def _slots(self, params_center: np.ndarray) -> list[dict]:
         """Unpacks a centre-pixel parameter vector into per-scatterer slot records.
@@ -443,10 +443,10 @@ class ModelProbe:
         """Returns the model prediction at one pixel beside ground truth and raw data.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices.
+            body : Request payload with integer ``row`` and ``col`` pixel indices.
 
         Returns:
-            Payload with the height ``x_axis`` in metres, predicted ``slots`` and
+            Payload with the ``z_axis``, predicted ``slots`` and
             ``curve``, the ground-truth ``gt_slots``, ``gt_curve`` and Hungarian
             ``matches`` when parameters exist, the beamformed ``raw_curve``, and
             the ``fit`` summary; an error payload when no model is loaded or the
@@ -516,13 +516,13 @@ class ModelProbe:
 
         return {"png": self._field_png(cell, cmap, lo, hi), "min": float(cell.min()), "max": float(cell.max())}
 
-    def _error_map(self, params: np.ndarray, az: int, rg: int, cy: int, cx: int) -> np.ndarray | None:
+    def _error_map(self, params: np.ndarray, row: int, col: int, cy: int, cx: int) -> np.ndarray | None:
         """Returns the per-pixel curve MSE against ground truth over the patch.
 
         Args:
             params : Predicted parameters of shape (1, 3 * n_gaussians, patch_az, patch_rg).
-            az     : Azimuth index of the centre pixel in the split region.
-            rg     : Range index of the centre pixel in the split region.
+            row     : Azimuth index of the centre pixel in the split region.
+            col     : Range index of the centre pixel in the split region.
             cy     : Row of the centre pixel inside the patch.
             cx     : Column of the centre pixel inside the patch.
 
@@ -536,7 +536,7 @@ class ModelProbe:
             return None
 
         ph, pw    = params.shape[2], params.shape[3]
-        top, left = az - cy, rg - cx
+        top, left = row - cy, col - cx
         gt_window = np.asarray(gt[:, top:top + ph, left:left + pw], dtype=np.float32)[None]
 
         renderer    = self.loaded["renderer"]
@@ -549,7 +549,7 @@ class ModelProbe:
         """Returns the predicted parameter fields over the patch around a pixel.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices.
+            body : Request payload with integer ``row`` and ``col`` pixel indices.
 
         Returns:
             Payload with the patch ``center`` and size, per-slot amplitude, mu
@@ -564,8 +564,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg         = int(body["az"]), int(body["rg"])
-                window, cy, cx = self._window(az, rg)
+                row, col         = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
                 run    = self.loaded["run"]
                 params = run.model(window)
@@ -584,7 +584,7 @@ class ModelProbe:
                     })
 
                 activity  = ParamMatcher.is_active(params[0, 0::3]).sum(axis=0).astype(np.float32)
-                error_map = self._error_map(params, az, rg, cy, cx)
+                error_map = self._error_map(params, row, col, cy, cx)
 
                 return {
                     "ok"       : True,
@@ -702,7 +702,7 @@ class ModelProbe:
         """Returns input attribution for one pixel, per parameter family.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices and an optional ``slot`` (default -1, summing over all slots).
+            body : Request payload with integer ``row`` and ``col`` pixel indices and an optional ``slot`` (default -1, summing over all slots).
 
         Returns:
             Payload with the channel ``labels``, the patch ``center`` and size,
@@ -719,7 +719,7 @@ class ModelProbe:
                 n_k    = self.loaded["run"].n_gaussians
 
                 if not -1 <= slot < n_k:
-                    raise ValueError(f"slot {slot} is out of col; the model predicts {n_k} component slots (use -1 to sum over all of them)")
+                    raise ValueError(f"slot {slot} is out of range; the model predicts {n_k} component slots (use -1 to sum over all of them)")
 
                 window, cy, cx = self._window(row, col)
 
@@ -762,7 +762,7 @@ class ModelProbe:
         """Ranks input channels by the damage zeroing each one does at a pixel.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices.
+            body : Request payload with integer ``row`` and ``col`` pixel indices.
 
         Returns:
             Payload with the unperturbed ``base_power`` of the centre curve and
@@ -776,8 +776,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg         = int(body["az"]), int(body["rg"])
-                window, cy, cx = self._window(az, rg)
+                row, col         = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
                 run        = self.loaded["run"]
                 n_channels = window.shape[1]
@@ -819,10 +819,10 @@ class ModelProbe:
         unflipped curve.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices.
+            body : Request payload with integer ``row`` and ``col`` pixel indices.
 
         Returns:
-            Payload with the height ``x_axis`` in metres, the unflipped
+            Payload with the ``z_axis``, the unflipped
             ``base_power`` and one entry per flip carrying its ``slots``,
             ``curve`` and ``delta_mse`` against the unflipped curve; an error
             payload when no model is loaded or the pixel is invalid.
@@ -832,8 +832,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg         = int(body["az"]), int(body["rg"])
-                window, cy, cx = self._window(az, rg)
+                row, col         = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
                 run = self.loaded["run"]
 
@@ -858,7 +858,7 @@ class ModelProbe:
 
                 return {
                     "ok"         : True,
-                    "x_axis"     : [float(v) for v in run.x_axis],
+                    "z_axis"     : [float(v) for v in run.z_axis],
                     "base_power" : float((base_curve ** 2).mean()),
                     "entries"    : entries,
                 }
@@ -872,7 +872,7 @@ class ModelProbe:
         every tile is zeroed in turn across a single batched forward pass.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices.
+            body : Request payload with integer ``row`` and ``col`` pixel indices.
 
         Returns:
             Payload with the patch ``center`` and size, ``occluder`` and ``grid``
@@ -886,8 +886,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg         = int(body["az"]), int(body["rg"])
-                window, cy, cx = self._window(az, rg)
+                row, col         = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
                 run    = self.loaded["run"]
                 ph, pw = window.shape[2], window.shape[3]
@@ -986,7 +986,7 @@ class ModelProbe:
         """Traces the curve response as a perturbation strength is swept.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices, the ``kind`` to sweep, and ``channel`` for ``scale_channel``.
+            body : Request payload with integer ``row`` and ``col`` pixel indices, the ``kind`` to sweep, and ``channel`` for ``scale_channel``.
 
         Returns:
             Payload with the swept ``kind``, ``channel`` and its ``label``, the
@@ -1000,8 +1000,8 @@ class ModelProbe:
                 return {"ok": False, "error": "no model loaded"}
 
             try:
-                az, rg         = int(body["az"]), int(body["rg"])
-                window, cy, cx = self._window(az, rg)
+                row, col         = int(body["row"]), int(body["col"])
+                window, cy, cx = self._window(row, col)
 
                 kind    = body.get("kind", "")
                 channel = None
@@ -1048,10 +1048,10 @@ class ModelProbe:
         """Compares the pixel prediction before and after one chosen perturbation.
 
         Args:
-            body : Request payload with integer ``az`` and ``rg`` pixel indices and a ``perturbation`` spec accepted by ``_perturb``.
+            body : Request payload with integer ``row`` and ``col`` pixel indices and a ``perturbation`` spec accepted by ``_perturb``.
 
         Returns:
-            Payload with the height ``x_axis`` in metres, the ``base_slots`` and
+            Payload with the ``z_axis``, the ``base_slots`` and
             ``base_curve``, the ``perturbed_slots`` and ``perturbed_curve``, and
             the ``delta_mse`` between the two curves; an error payload when no
             model is loaded, the pixel is invalid or the perturbation is unknown.

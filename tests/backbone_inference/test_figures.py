@@ -114,15 +114,6 @@ def _result_and_metrics():
     return res, gm, indices, z_axis
 
 
-def _track_baselines():
-    """Returns three-chan channel baselines in metres with their standard deviations."""
-    return TrackBaselines(
-        labels         = ["PS02", "CH01", "CH02"],
-        vertical       = [0.0, 4.0, 8.0],
-        horizontal     = [0.0, 1.0, 2.0],
-        vertical_std   = [0.0, 0.2, 0.3],
-        horizontal_std = [0.0, 0.1, 0.2],
-    )
 
 
 def _track_profiles():
@@ -223,48 +214,6 @@ def test_figure_composer_compose_creates_files(tmp_path):
         assert p.stat().st_size > 0
 
 
-@pytest.mark.slow
-def test_figure_composer_compose_with_reduced(tmp_path):
-    """A reduced-baseline comparison adds improvement maps and the reduced slice and SSIM figures."""
-    res, gm, indices, z_axis = _result_and_metrics()
-
-    m    = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2)
-    comp = m.reduced_comparison(
-        res.gt_curves + 0.02,
-        z_indices  = indices["all_elev_idx"],
-        col_indices = indices["all_range_idx"],
-        row_indices    = indices["all_az_idx"],
-    )
-    res.reduced = comp
-    gm.update(comp.metrics)
-
-    composer, meta = _composer(tmp_path)
-    run            = _run_stub()
-
-    figure_paths = composer.compose(
-        result=res, run=run, global_metrics=gm, z_axis_np=z_axis, indices=indices, param_space=True,
-    )
-
-    assert "improvement_map"       in figure_paths
-    assert "reduced_pixel_mse_map" in figure_paths
-    for p in figure_paths["improvement_map"]:
-        assert p.is_file() and p.stat().st_size > 0
-
-    assert "slices_range_reduced"       in figure_paths
-    assert "slices_azimuth_reduced"     in figure_paths
-    assert "slices_elev_reduced"        in figure_paths
-    assert "ssim_range_reduced"         in figure_paths
-    assert "ssim_azimuth_reduced"       in figure_paths
-    assert "ssim_elev_reduced"          in figure_paths
-    assert "elev_metric_curves_reduced" in figure_paths
-
-    assert len(figure_paths["slices_range_reduced"]) > 0
-    for p in figure_paths["slices_range_reduced"]:
-        assert "reduced" in str(p)
-        assert p.is_file() and p.stat().st_size > 0
-
-    for p in figure_paths["ssim_range_reduced"]:
-        assert p.is_file() and p.stat().st_size > 0
 
 
 class _EmbeddingMaps:

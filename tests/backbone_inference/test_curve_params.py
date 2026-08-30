@@ -281,7 +281,7 @@ def test_extracted_parameters_unlock_the_param_space_metrics(tmp_path):
 
     pipeline._extract_curve_params(cfg, meta, run, result, z_axis, SilentLogger())
 
-    indices = {"all_elev_idx": np.arange(N_Z), "all_range_idx": np.arange(3), "all_az_idx": np.arange(4)}
+    indices = {"all_z_idx": np.arange(N_Z), "all_col_idx": np.arange(3), "all_row_idx": np.arange(4)}
     metrics = pipeline._evaluate_metrics(cfg, result, z_axis.astype(np.float64), run, meta, indices)
 
     assert metrics["params_source"] == "extracted"

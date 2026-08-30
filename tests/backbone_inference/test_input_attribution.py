@@ -199,11 +199,11 @@ def test_channel_labels_mismatch_raises():
 
 def test_channel_groups_partition_the_stack():
     """Channel groups partition the stack into contiguous index ranges and map back to per-channel names."""
-    run    = _labeled_run(use_dem=True)
+    run    = _labeled_run(use_aux=True)
     groups = ChannelGroups.build(run)
 
-    assert groups == {"primary": [0], "secondaries": [1, 2], "interferograms": [3, 4], "dem": [5]}
-    assert ChannelGroups.of_channels(groups, 6) == ["primary", "secondaries", "secondaries", "interferograms", "interferograms", "dem"]
+    assert groups == {"primary": [0], "secondaries": [1, 2], "interferograms": [3, 4], "aux": [5]}
+    assert ChannelGroups.of_channels(groups, 6) == ["primary", "secondaries", "secondaries", "interferograms", "interferograms", "aux"]
 
 
 def test_channel_groups_mismatch_raises():

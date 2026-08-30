@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from configuration.dataset             import DatasetConfig, InputConfig, PatchConfig, Representation, SplitRegions
 from configuration.dataset.gaussian import GaussianConfig
+from configuration.synthesis        import SynthesisConfig
 from configuration.training.backbone   import BackboneTrainerConfig
 from models.dual                       import DUAL_CONFIG_REGISTRY
 from tools.data.regions                import CropRegion
 
-from tests.backbone_training._helpers import geometry_config
 
 
-N_GAUSSIANS      = 5
+N_GAUSSIANS      = SynthesisConfig().k_max
 SECONDARY_LABELS = ("CH01", "CH02")
 
 
@@ -51,7 +51,6 @@ def dual_trainer_config(test_data_dir, params_dir, tmp_path) -> BackboneTrainerC
     config.training.epochs               = 1
     config.training.validation_frequency = 1
     config.resources.enabled             = False
-    config.geometry                      = geometry_config()
 
     config.curriculum.complete.use_param_l1    = True
     config.curriculum.complete.weight_param_l1 = 1.0

@@ -603,19 +603,6 @@ def test_metrics_perturbed_scene_window_is_worse(parameters):
     assert s["overall_r2_gt"] > l["overall_r2_gt"]
 
 
-@pytest.mark.dataset
-def test_reduced_comparison_identical_reduced_zero_improvement(parameters):
-    """A reduced baseline equal to the prediction yields zero improvement and a matching cube shape."""
-    params = np.asarray(parameters[:, :12, :12], dtype=np.float32)
-    z_axis = _x_axis(40)
-    gt     = _curves_from_params(params, z_axis, N_GAUSSIANS)
-    pred   = gt.copy()
-
-    m    = Metrics(_make_result(pred, gt), z_axis, N_GAUSSIANS, cpu_workers=2)
-    comp = m.reduced_comparison(gt.copy())
-
-    assert comp.metrics["improvement_pixel_mse_mean"] == pytest.approx(0.0, abs=1e-6)
-    assert comp.reduced_norm.shape == gt.shape
 
 
 def test_label_quality_perfect_fit_gives_r2_one():

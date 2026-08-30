@@ -44,8 +44,8 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
     Args:
         group       : Directory holding the seed runs.
         name        : Name of the seed run directory.
-        pred_curves : Predicted curve cube of shape (N_ELEV, N_AZ, N_RG).
-        params_pred : Predicted parameter cube of shape (3 * n_slots, N_AZ, N_RG).
+        pred_curves : Predicted curve cube of shape (N_Z, N_ROWS, N_COLS).
+        params_pred : Predicted parameter cube of shape (3 * n_slots, N_ROWS, N_COLS).
         params_gt   : Ground-truth parameter cube, defaulting to params_pred.
         stamp       : Name of the inference output subdirectory.
 
@@ -149,7 +149,7 @@ def test_known_offsets_give_the_sample_std(tmp_path):
 def test_risk_map_and_offsets_are_read_once_per_run(tmp_path, monkeypatch):
     """The mean risk map and the region offsets are each read once per run."""
     group  = tmp_path / "group"
-    curves = np.ones((N_ELEV, N_AZ, N_RG))
+    curves = np.ones((N_Z, N_ROWS, N_COLS))
     params = _params((1.0, 5.0, 2.0))
     runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
 
@@ -215,7 +215,7 @@ def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
 def test_raised_active_threshold_masks_faint_slots(tmp_path):
     """A configured threshold above a slot's amplitude removes it from the matched parameter maps."""
     group  = tmp_path / "group"
-    curves = np.zeros((N_ELEV, N_AZ, N_RG))
+    curves = np.zeros((N_Z, N_ROWS, N_COLS))
     faint  = _params((5e-4, 5.0, 2.0))
     runs   = [_seed_run(group, f"seed{i}", curves, faint) for i in range(2)]
 

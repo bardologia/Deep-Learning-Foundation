@@ -245,8 +245,8 @@ class FigureComposer:
                 title      = title,
                 label      = label,
                 out_path   = out_dir / f"{fname}.png",
-                az_offset  = result.azimuth_offset,
-                rg_offset  = result.range_offset,
+                row_offset = result.row_offset,
+                col_offset = result.col_offset,
                 **extra,
             )]
 
@@ -596,6 +596,14 @@ class FigureComposer:
                 prefix         = ssim_prefix,
                 series_label   = series_label,
             )]
+
+    def _full_unit_area(self, run) -> np.ndarray:
+        """Returns the raw cube normalised to unit area per profile, cached after the first call."""
+
+        if self.full_norm_cube is None:
+            self.full_norm_cube = ProfileNormalizer.unit_area(run.full_curves)
+
+        return self.full_norm_cube
 
     def compose(
         self,

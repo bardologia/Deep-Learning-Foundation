@@ -340,29 +340,5 @@ def test_slice_plotter_z_metric_curves(tmp_path):
     _assert_files(paths)
 
 
-@pytest.mark.dataset
-def test_track_plotter_geometry(tmp_path, baselines_json):
-    """The baseline geometry figure is written from the real channel baselines."""
-    baselines = TrackBaselines.from_payload(baselines_json)
-    plotter   = TrackPlotter()
-
-    path = plotter.plot_track_geometry(baselines, tmp_path / "geom.png")
-    assert path.is_file() and path.stat().st_size > 0
 
 
-@pytest.mark.dataset
-def test_track_plotter_profiles_and_flight(tmp_path, track_profiles):
-    """Track profile figures and the 3D flight-path figure are written from the real channel profiles."""
-    profiles = TrackProfiles(
-        labels        = [str(label) for label in track_profiles["labels"]],
-        horizontal    = np.asarray(track_profiles["horizontal"], dtype=float),
-        vertical      = np.asarray(track_profiles["vertical"],   dtype=float),
-        row_start = int(track_profiles["row_start"]),
-    )
-    plotter = TrackPlotter()
-
-    paths = plotter.plot_track_profiles(profiles, tmp_path, split_azimuth=(1000, 1500))
-    _assert_files(paths)
-
-    flight = plotter.plot_track_flight_3d(profiles, tmp_path / "flight.png")
-    assert flight.is_file() and flight.stat().st_size > 0

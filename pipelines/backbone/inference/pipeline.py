@@ -342,9 +342,6 @@ class InferencePipeline:
         if run.core_region is not None:
             global_metrics["core_region"] = list(run.core_region.as_tuple())
 
-        if run.channel_profiles is not None:
-            global_metrics["track_positions"] = run.channel_profiles.position_summary()
-
         Metrics.write_json(global_metrics, meta.metrics_path)
         return global_metrics
 
