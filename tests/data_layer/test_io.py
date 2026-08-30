@@ -153,3 +153,49 @@ def test_save_json_roundtrip_scene_layout(dataset_json, tmp_path):
     FileIO.save_json(dataset_json, path)
 
     assert FileIO.load_json(path) == dataset_json
+
+
+def test_dataset_fingerprint_digest_matches_hashlib(tmp_path):
+    """Verifies the digest equals a direct sha256 of the file bytes with the byte size."""
+    import hashlib
+
+    from tools.data.io import DatasetFingerprint
+
+    payload = b"0123456789" * 1000
+    path    = tmp_path / "block.npy"
+    path.write_bytes(payload)
+
+    digest = DatasetFingerprint.digest(path)
+
+    assert digest["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert digest["bytes"]  == len(payload)
+
+
+def test_dataset_fingerprint_keys_relative_to_root(tmp_path):
+    """Verifies files under the root are keyed relatively and outside files keep their absolute path."""
+    from tools.data.io import DatasetFingerprint
+
+    inside  = tmp_path / "data" / "primary.npy"
+    outside = tmp_path.parent / f"{tmp_path.name}_params.npy"
+    inside.parent.mkdir()
+    inside.write_bytes(b"a")
+    outside.write_bytes(b"b")
+
+    entries = DatasetFingerprint.compute(tmp_path, [inside, outside])
+
+    assert set(entries) == {"data/primary.npy", str(outside)}
+    assert entries["data/primary.npy"]["bytes"] == 1
+
+    outside.unlink()
+
+
+def test_dataset_fingerprint_changes_when_content_changes(tmp_path):
+    """Verifies two files of equal size but different content produce different hashes."""
+    from tools.data.io import DatasetFingerprint
+
+    a = tmp_path / "a.npy"
+    b = tmp_path / "b.npy"
+    a.write_bytes(b"xxxx")
+    b.write_bytes(b"xxxy")
+
+    assert DatasetFingerprint.digest(a)["sha256"] != DatasetFingerprint.digest(b)["sha256"]

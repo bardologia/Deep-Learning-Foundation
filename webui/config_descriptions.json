@@ -1247,9 +1247,10 @@
     "training/general/run::TrainingPathsConfig": {
       "summary": "Filesystem locations for a training run's dataset, ground-truth parameters, and secondary tracks",
       "fields": {
-        "dataset_path": "root directory of the preprocessed Fchannel stack dataset (dataset.json, layout, geometry field)",
+        "dataset_path": "root directory of the preprocessed channel-stack dataset (dataset.json, layout, geometry field)",
         "parameters_path": "path to the .npy Gaussian ground-truth parameters produced by parameter extraction",
-        "secondary_labels": "tuple of secondary-channel labels (e.g. CH01) selecting which channels join the primary track; empty/None uses all channels"
+        "secondary_labels": "tuple of secondary-channel labels (e.g. CH01) selecting which channels join the primary track; empty/None uses all channels",
+        "fingerprint_dataset": "whether the run hashes every dataset artifact (sha256) into meta/dataset_fingerprint.json, so the exact data behind a result stays provable after the generator is re-run; costs one linear read of the dataset at run start"
       }
     },
     "training/general/run::RunPathsConfig": {

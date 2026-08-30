@@ -27,14 +27,16 @@ class TrainingPathsConfig:
     """Locations of the preprocessed dataset and its Gaussian parameter labels.
 
     Attributes:
-        dataset_path     : Directory holding the preprocessed channel stack and metadata.
-        parameters_path  : Parameter array pairing Gaussian labels with that dataset.
-        secondary_labels : Track labels of the secondary channels fed to the model.
+        dataset_path        : Directory holding the preprocessed channel stack and metadata.
+        parameters_path     : Parameter array pairing Gaussian labels with that dataset.
+        secondary_labels    : Track labels of the secondary channels fed to the model.
+        fingerprint_dataset : Whether the run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance.
     """
 
-    dataset_path     : Path  = DEFAULT_DATASET_DIR
-    parameters_path  : Path  = DEFAULT_DATASET_DIR / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
-    secondary_labels : tuple = ("CH01", "CH02", "CH03", "CH04")
+    dataset_path        : Path  = DEFAULT_DATASET_DIR
+    parameters_path     : Path  = DEFAULT_DATASET_DIR / "params" / DEFAULT_PARAMS_RUN / "parameters.npy"
+    secondary_labels    : tuple = ("CH01", "CH02", "CH03", "CH04")
+    fingerprint_dataset : bool  = True
 
 
 @dataclass

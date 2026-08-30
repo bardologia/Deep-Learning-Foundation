@@ -223,11 +223,11 @@ class LaunchLayout:
             ]},
         ],
         "paths_rest": [
-            {"title": "Run paths", "fields": ["log_base_dir", "secondary_labels"]},
+            {"title": "Run paths", "fields": ["log_base_dir", "secondary_labels", "fingerprint_dataset"]},
         ],
 
         "paths_train": [
-            {"title": "Run paths", "fields": ["secondary_labels"]},
+            {"title": "Run paths", "fields": ["secondary_labels", "fingerprint_dataset"]},
         ],
         "input": [
             {"title": "Primary", "fields": [{"gate": "use_primary", "fields": ["primary_representation"]}]},
@@ -1088,6 +1088,7 @@ class LaunchLayout:
                             {"path": "paths.parameters_path", "widget": PICK_PARAMS},
                             "paths.log_base_dir",
                             "paths.secondary_labels",
+                            "paths.fingerprint_dataset",
                         ]},
                     ]},
                 ]},

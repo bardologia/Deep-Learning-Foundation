@@ -1,6 +1,7 @@
 """Filesystem helpers for run directories, JSON payloads and text metadata."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -63,3 +64,63 @@ class FileIO:
 
         return path
 
+
+
+class DatasetFingerprint:
+    """Content hashes of the dataset artifacts a run trained against.
+
+    Two runs claiming the same dataset path prove nothing once the generator
+    has been re-run; the sha256 digests recorded here make the claim testable.
+    """
+
+    CHUNK_BYTES = 1 << 22
+
+    @classmethod
+    def digest(cls, path: Path) -> dict:
+        """Returns the sha256 digest and byte size of one file.
+
+        Args:
+            path : File to hash.
+
+        Returns:
+            Mapping with "sha256" and "bytes".
+
+        Raises:
+            FileNotFoundError : If the file does not exist.
+        """
+        hasher = hashlib.sha256()
+        size   = 0
+
+        with open(path, "rb") as handle:
+            while True:
+                chunk = handle.read(cls.CHUNK_BYTES)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+                size += len(chunk)
+
+        return {"sha256": hasher.hexdigest(), "bytes": size}
+
+    @classmethod
+    def compute(cls, root: Path, files: list[Path]) -> dict:
+        """Hashes every given file and keys the digests by path relative to a root.
+
+        Args:
+            root  : Directory the recorded file keys are made relative to; files outside it keep their absolute path as key.
+            files : Files to hash, hashed in the given order.
+
+        Returns:
+            Mapping from relative file path to its digest entry.
+        """
+        root    = Path(root)
+        entries = {}
+
+        for path in files:
+            path = Path(path)
+            try:
+                key = str(path.relative_to(root))
+            except ValueError:
+                key = str(path)
+            entries[key] = cls.digest(path)
+
+        return entries

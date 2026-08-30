@@ -30,7 +30,7 @@ class TrainingPipeline:
     """Runs one backbone training job from dataset preparation to test metrics.
 
     Attributes:
-        trainer_config : Trainer, curriculum, gaussian and geometry configuration.
+        trainer_config : Trainer, curriculum and gaussian configuration.
         dataset_config : Patch dataset configuration.
         backbone_name  : Registered backbone architecture name.
         model_config   : Resolved model configuration, or None to take registry defaults.
@@ -55,7 +55,7 @@ class TrainingPipeline:
         """Seeds the run and reconciles the patch geometry with the backbone requirements.
 
         Args:
-            trainer_config : Trainer, curriculum, gaussian and geometry configuration.
+            trainer_config : Trainer, curriculum and gaussian configuration.
             dataset_config : Patch dataset configuration.
             backbone_name  : Registered backbone architecture name.
             model_config   : Resolved model configuration, or None for registry defaults.
@@ -273,6 +273,8 @@ class TrainingPipeline:
 
         if resolved_entry_config is not None:
             ResolvedEntryConfigWriter.save(resolved_entry_config, self.run_metadata.run_directory, self.logger)
+
+        self.run_metadata.save_dataset_fingerprint(self.dataset_config.preprocessing_run_directory, self.dataset_config.parameters_path, enabled=self.dataset_config.fingerprint_dataset)
 
         self.logger.section("[PyTorch Training Pipeline Execution]")
         self.logger.kv_table({

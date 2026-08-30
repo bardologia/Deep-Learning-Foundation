@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.data.io            import FileIO
-from tools.runtime.completion import CompletionMarker
-from tools.runtime.run_tag    import RunTag
+from tools.data.io                     import FileIO
+from tools.runtime.completion          import CompletionMarker
+from tools.runtime.environment_capture import EnvironmentCapture
+from tools.runtime.run_tag             import RunTag
 
 
 class CompletedInference:
@@ -83,5 +84,6 @@ class InferenceMetadata:
         self.report_path  = self.output_dir / paths.report_filename
 
     def create_dirs(self) -> None:
-        """Creates the stamp, figures and logs directories."""
+        """Creates the stamp, figures and logs directories and records the environment snapshot."""
         FileIO.ensure_dirs(self.output_dir, self.figures_dir, self.logs_dir)
+        FileIO.save_json(EnvironmentCapture.snapshot(), self.output_dir / "environment.json")
