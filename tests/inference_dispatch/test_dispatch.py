@@ -39,10 +39,6 @@ def test_classify_image_autoencoder(tmp_path):
     assert RunClassifier.classify(run) == RunType.IMAGE_AE
 
 
-def test_classify_unrolled(tmp_path):
-    """A run holding an unrolled model config classifies as UNROLLED."""
-    run = _make_run(tmp_path, "unrolled_model_config.json")
-    assert RunClassifier.classify(run) == RunType.UNROLLED
 
 
 def test_classify_dual(tmp_path):

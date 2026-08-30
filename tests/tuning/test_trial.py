@@ -405,7 +405,7 @@ def test_jepa_tuner_space_uses_arch_params_only(fake_logger, tune_cfg, tmp_path,
     )
 
     assert tuner.space   == FakeJepaConfig.tunable_arch_params()
-    assert tuner.run_tag == "vit-conv-stopgrad-K_5-hv-none-pae_gru.frozen-emb_mse_1-curve_mse_1"
+    assert tuner.run_tag == f"vit-conv-stopgrad-{SCENE_K_TAG}-hv-none-pae_gru.frozen-emb_mse_1-curve_mse_1"
 
 
 @pytest.mark.dataset

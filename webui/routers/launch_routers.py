@@ -183,7 +183,7 @@ class JobRouter(SubRouter):
         for record in local:
             record["tensorboard"] = self.launcher.tensorboard_capable(record["script"])
 
-        merged = local + self.cluster.list_jobs()
+        merged = list(local)
         merged.sort(key=lambda record: record["started"], reverse=True)
 
         exchange.send_json({"jobs": merged})

@@ -109,7 +109,7 @@ class ProjectPaths:
         missing = [name for name in self.REQUIRED_DIRS if not (self.repo_root / name).is_dir()]
 
         if missing:
-            raise ValueError(f"project root {self.repo_root} is not a DLR-TomoSAR repository: missing {', '.join(missing)}")
+            raise ValueError(f"project root {self.repo_root} is not an ML Template repository: missing {', '.join(missing)}")
 
     def tree_signature(self, paths) -> tuple:
         """Returns a cache key of (name, mtime_ns) pairs for the given paths.
