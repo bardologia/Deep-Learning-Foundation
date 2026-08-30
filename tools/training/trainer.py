@@ -26,7 +26,7 @@ from tools.training.distributed      import DistributedContext
 from tools.training.scheduling       import Scheduler, Warmup
 from tools.training.stopping         import EarlyStopping
 from tools.training.gradients        import GradientClipper
-from tools.training.checkpoint       import Checkpoint, TorchIO, TrainerState, WeightEma
+from tools.training.checkpoint       import Checkpoint, TorchIO, TrainerState, WeightEma, WeightSwa
 from tools.training.vram_reservation import VramReservation
 from tools.runtime.completion        import CompletionMarker
 
@@ -131,6 +131,8 @@ class BaseTrainer:
         self.grad_clipper     = GradientClipper(config=config, logger=self.logger, tracker=self.tracker, param_groups=self.optimizer.param_groups)
         self.checkpoint       = Checkpoint(self.logger, self.tracker, str(self.checkpoint_path))
         self.ema              = WeightEma(self.model, config.training.ema_decay, config.training.use_ema, config.training.ema_warmup)
+        self.swa              = WeightSwa(self.model, config.training.use_swa)
+        self.swa_start_epoch  = int(config.training.swa_start_fraction * self.epochs)
         self.resource_monitor = ResourceMonitor(config=config.resources, logger=self.logger, tracker=self.tracker, step_getter=lambda: self.global_step)
         self.vram_reservation = VramReservation(enabled=config.memory.reserve_vram, keep_free_gb=config.memory.vram_keep_free_gb, device=self.device, logger=self.logger)
 
@@ -183,7 +185,8 @@ class BaseTrainer:
             "DDP"                      : f"rank {self.distributed.rank + 1}/{self.distributed.world_size} (gradients averaged, val losses reduced across ranks)" if self.distributed.active else "off",
             "Debug logging"            : training.log_debug,
             "LR scale (batch-size rule)": f"x{self.config.optimizer.lr_scale:.4f} (from the micro-batch, ignores accumulation)",
-            "Optimizer"                : f"AdamW (default betas={tuple(self.config.optimizer.betas)}, eps={self.config.optimizer.eps:g}, weight_decay={self.config.optimizer.weight_decay:g}; per-group values below take precedence)",
+            "Optimizer"                : self._optimizer_banner(),
+            "SWA"                      : f"enabled (averaging from epoch {self.swa_start_epoch + 1})" if self.swa.enabled else "disabled",
             "VRAM reservation"         : f"{memory.reserve_vram} (keep free {memory.vram_keep_free_gb:g} GB)",
             "cudnn"                    : f"deterministic={torch.backends.cudnn.deterministic}, benchmark={torch.backends.cudnn.benchmark}",
         })
@@ -197,6 +200,16 @@ class BaseTrainer:
             })
 
         self.logger.metrics_table(rows, columns=["Group", "LR", "Weight decay"], title="Optimizer Param Groups (after lr_scale)")
+
+    def _optimizer_banner(self) -> str:
+        """Returns the one-line optimizer description for the loop-configuration table."""
+        cfg  = self.config.optimizer
+        kind = str(getattr(cfg, "type", "adamw"))
+
+        if kind in ("adamw", "adam"):
+            return f"{kind} (default betas={tuple(cfg.betas)}, eps={cfg.eps:g}, weight_decay={cfg.weight_decay:g}; per-group values below take precedence)"
+
+        return f"{kind} (momentum={cfg.momentum:g}, nesterov={cfg.nesterov}, weight_decay={cfg.weight_decay:g}; per-group values below take precedence)"
 
     def _build_param_groups(self) -> list[dict]:
         """Returns the optimizer parameter groups; implemented by subclasses.
@@ -325,25 +338,42 @@ class BaseTrainer:
         pass
 
     def _build_optimizer(self, param_groups: list[dict]):
-        """Returns an AdamW optimizer over the given groups, filling shared defaults.
+        """Returns the configured optimizer over the given groups, filling shared defaults.
 
         Args:
-            param_groups : Parameter groups from `_build_param_groups`; missing betas, eps and weight_decay entries are filled from the config.
+            param_groups : Parameter groups from `_build_param_groups`; missing family hyper-parameters are filled from the config.
 
         Returns:
-            The configured AdamW optimizer.
+            The configured optimizer of the family named by `optimizer.type`.
+
+        Raises:
+            ValueError : If the configured optimizer type names no known family.
         """
-        betas        = tuple(self.config.optimizer.betas)
-        eps          = self.config.optimizer.eps
-        weight_decay = self.config.optimizer.weight_decay
+        cfg  = self.config.optimizer
+        kind = str(getattr(cfg, "type", "adamw"))
 
         for pg in param_groups:
-            pg.setdefault("betas",        betas)
-            pg.setdefault("eps",          eps)
-            pg.setdefault("weight_decay", weight_decay)
+            pg.setdefault("weight_decay", cfg.weight_decay)
 
-        optimizer = optim.AdamW(param_groups)
-        return optimizer
+        if kind in ("adamw", "adam"):
+            for pg in param_groups:
+                pg.setdefault("betas", tuple(cfg.betas))
+                pg.setdefault("eps",   cfg.eps)
+            return optim.AdamW(param_groups) if kind == "adamw" else optim.Adam(param_groups)
+
+        if kind == "sgd":
+            for pg in param_groups:
+                pg.setdefault("momentum", cfg.momentum)
+                pg.setdefault("nesterov", cfg.nesterov and cfg.momentum > 0.0)
+            return optim.SGD(param_groups)
+
+        if kind == "rmsprop":
+            for pg in param_groups:
+                pg.setdefault("momentum", cfg.momentum)
+                pg.setdefault("eps",      cfg.eps)
+            return optim.RMSprop(param_groups)
+
+        raise ValueError(f"Unknown optimizer type '{kind}'; expected one of adamw, adam, sgd, rmsprop")
 
     def _update_optimizer(self, lrs: list[float]):
         """Writes new learning rates into the optimizer and logs the ones that changed.
@@ -717,6 +747,43 @@ class BaseTrainer:
 
         return test
 
+    def _finalize_swa(self, train_loader: DataLoader, val_loader: DataLoader, last_epoch: int) -> float | None:
+        """Refreshes, scores and saves the stochastic weight average when enabled.
+
+        The averaged weights are applied, the batch-norm running statistics are
+        re-estimated over one pass of the training loader, the averaged model is
+        scored on the validation split and written to swa_model.pt, and the live
+        model is restored with its original parameters and buffers.
+
+        Args:
+            train_loader : Loader driving the batch-norm refresh.
+            val_loader   : Loader scoring the averaged weights.
+            last_epoch   : Zero-based index of the last epoch that ran.
+
+        Returns:
+            The validation loss of the averaged weights, or None when SWA is off or averaged nothing.
+        """
+        if not self.swa.enabled or self.swa.n_averaged == 0:
+            if self.swa.enabled:
+                self.logger.warning(f"SWA averaged no epoch: the start epoch {self.swa_start_epoch + 1} lies past the last completed epoch {last_epoch + 1}; no swa_model.pt written")
+            return None
+
+        with self.swa.applied(self.model):
+            refreshed = WeightSwa.refresh_bn(self.model, train_loader, self._compute_loss)
+            swa_val   = self.evaluate(val_loader, last_epoch, stage="swa_val")
+            payload   = self.capture_state(last_epoch)
+
+        payload["swa_epochs"]   = self.swa.n_averaged
+        payload["swa_val_loss"] = swa_val["avg_loss"]
+
+        swa_path = Path(self.run_dir) / "swa_model.pt"
+        TorchIO.save_atomic(payload, swa_path)
+
+        self.tracker.log_scalar("loss/swa_val", swa_val["avg_loss"], last_epoch)
+        self.logger.subsection(f"SWA : val loss={swa_val['avg_loss']:.4f} over {self.swa.n_averaged} averaged epochs ({refreshed} BN modules refreshed) -> {swa_path}")
+
+        return float(swa_val["avg_loss"])
+
     def train(self, train_loader: DataLoader, val_loader: DataLoader, test_loader: DataLoader):
         """Runs the full training schedule and returns the loss history.
 
@@ -795,6 +862,9 @@ class BaseTrainer:
                         effective_lrs = self.lr_scheduler.effective_lrs()
                         self._update_optimizer(effective_lrs)
 
+                        if self.swa.enabled and epoch >= self.swa_start_epoch:
+                            self.swa.update(self.model)
+
                         TrainerState.save(self, epoch, self.state_path, loader_generator)
                         self._maybe_snapshot(epoch)
 
@@ -821,6 +891,8 @@ class BaseTrainer:
             TorchIO.save_atomic(final_payload, last_path)
             self.logger.subsection(f"Final checkpoint -> {last_path}")
 
+            swa_val_loss = self._finalize_swa(train_loader, val_loader, last_epoch)
+
             if self.restore_best:
                 self.checkpoint.restore_best(self.model, self.device)
 
@@ -833,6 +905,7 @@ class BaseTrainer:
                 "early_stopped"    : bool(stop),
                 "best_val_loss"    : float(self.checkpoint.best_val_loss),
                 "best_epoch"       : self.checkpoint.best_epoch + 1,
+                "swa_val_loss"     : swa_val_loss,
             })
 
             return self.train_losses, self.val_losses, self.checkpoint.best_val_loss

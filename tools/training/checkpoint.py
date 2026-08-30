@@ -251,6 +251,137 @@ class WeightEma:
         self.shadow      = {name: tensor.to(self.shadow[name].device).clone() for name, tensor in shadow.items()}
 
 
+class WeightSwa:
+    """Equal-weight running average of the model parameters from a start epoch.
+
+    Stochastic weight averaging: each update blends the current parameters into
+    the average with weight 1/(n+1), so every contributing epoch counts equally.
+    Applying the averaged weights also backs up and restores the module buffers,
+    because the batch-norm refresh that follows an application rewrites running
+    statistics that must not leak into the live model.
+
+    Attributes:
+        enabled    : Whether the average is maintained at all.
+        n_averaged : Number of parameter snapshots blended in so far.
+        shadow     : Averaged parameter tensors keyed by parameter name, empty when disabled.
+    """
+
+    def __init__(self, model, enabled: bool):
+        """Prepares the empty average over the model's named parameters.
+
+        Args:
+            model   : Model whose named parameters are averaged.
+            enabled : Whether SWA is active.
+        """
+        self.enabled    = bool(enabled)
+        self.n_averaged = 0
+        self.shadow     = {name: torch.zeros_like(p, device=p.device) for name, p in model.named_parameters()} if self.enabled else {}
+
+    @torch.no_grad()
+    def update(self, model) -> None:
+        """Blends the current model parameters into the running average."""
+        if not self.enabled:
+            return
+
+        self.n_averaged += 1
+        weight           = 1.0 / self.n_averaged
+
+        for name, p in model.named_parameters():
+            self.shadow[name].mul_(1.0 - weight).add_(p.detach(), alpha=weight)
+
+    @contextmanager
+    def applied(self, model):
+        """Temporarily swaps the averaged weights into a model, buffers included in the backup.
+
+        Args:
+            model : Model whose parameters are replaced and then restored.
+
+        Yields:
+            None, with the model holding the averaged weights inside the block.
+
+        Raises:
+            ValueError : If no snapshot has been averaged yet.
+        """
+        if not self.enabled:
+            yield
+            return
+
+        if self.n_averaged == 0:
+            raise ValueError("SWA has averaged no snapshot yet; the swa_start_fraction lies past the last completed epoch")
+
+        with torch.no_grad():
+            param_backup  = {name: p.detach().clone() for name, p in model.named_parameters()}
+            buffer_backup = {name: b.detach().clone() for name, b in model.named_buffers()}
+            for name, p in model.named_parameters():
+                p.copy_(self.shadow[name])
+
+        try:
+            yield
+        finally:
+            with torch.no_grad():
+                for name, p in model.named_parameters():
+                    p.copy_(param_backup[name])
+                for name, b in model.named_buffers():
+                    b.copy_(buffer_backup[name])
+
+    @staticmethod
+    @torch.no_grad()
+    def refresh_bn(model, loader, forward) -> int:
+        """Re-estimates every batch-norm running statistic under the current weights.
+
+        Args:
+            model   : Model whose _BatchNorm modules are reset and refreshed.
+            loader  : Loader whose batches drive the refresh, one full pass.
+            forward : Callable running the model on one loader batch, the trainer's loss step.
+
+        Returns:
+            The number of batch-norm modules refreshed; zero means the model has none and nothing ran.
+        """
+        bn_modules = [module for module in model.modules() if isinstance(module, torch.nn.modules.batchnorm._BatchNorm)]
+        if not bn_modules:
+            return 0
+
+        momenta = {}
+        for module in bn_modules:
+            module.reset_running_stats()
+            momenta[module] = module.momentum
+            module.momentum = None
+
+        was_training = model.training
+        model.train()
+
+        for batch in loader:
+            forward(batch)
+
+        for module, momentum in momenta.items():
+            module.momentum = momentum
+
+        model.train(was_training)
+
+        return len(bn_modules)
+
+    def state_dict(self) -> dict:
+        """Returns the averaged weights and the snapshot count for checkpointing."""
+        return {"shadow": self.shadow, "n_averaged": self.n_averaged}
+
+    def load_state_dict(self, state: dict) -> None:
+        """Restores the averaged weights onto their current devices.
+
+        Args:
+            state : State dictionary produced by state_dict().
+
+        Raises:
+            ValueError : If the saved state was produced with a different use_swa setting than the current one.
+        """
+        shadow = state["shadow"]
+
+        if self.enabled != bool(shadow):
+            raise ValueError("use_swa does not match the saved trainer state; resume with the same use_swa setting")
+
+        self.n_averaged = int(state["n_averaged"])
+        self.shadow     = {name: tensor.to(self.shadow[name].device).clone() for name, tensor in shadow.items()}
+
+
 class TrainerState:
     """Captures and restores the complete trainer state needed to resume a run.
 
@@ -313,6 +444,7 @@ class TrainerState:
             "model"          : trainer.model.state_dict(),
             "optimizer"      : trainer.optimizer.state_dict(),
             "ema"            : trainer.ema.state_dict(),
+            "swa"            : trainer.swa.state_dict(),
             "warmup"         : trainer.warmup.state_dict(),
             "scheduler"      : trainer.lr_scheduler.state_dict(),
             "early_stopping" : trainer.early_stopping.state_dict(),
@@ -352,6 +484,7 @@ class TrainerState:
         trainer.model.load_state_dict(state["model"])
         trainer.optimizer.load_state_dict(state["optimizer"])
         trainer.ema.load_state_dict(state["ema"])
+        trainer.swa.load_state_dict(state["swa"])
         trainer.warmup.load_state_dict(state["warmup"])
         trainer.lr_scheduler.load_state_dict(state["scheduler"])
         trainer.early_stopping.load_state_dict(state["early_stopping"])

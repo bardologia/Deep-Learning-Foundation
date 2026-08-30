@@ -21,9 +21,19 @@ class EnvironmentCapture:
     """Collects the interpreter, library and device state of the running process."""
 
     @staticmethod
-    def _gpu_entries() -> list[dict]:
+    def _cuda_visible() -> bool:
+        """Returns whether CUDA is usable with at least one visible device.
+
+        A process whose CUDA_VISIBLE_DEVICES masks every device reports CUDA as
+        available with a zero device count, and torch's cudnn version probe
+        crashes on that state, so both conditions are checked.
+        """
+        return torch.cuda.is_available() and torch.cuda.device_count() > 0
+
+    @classmethod
+    def _gpu_entries(cls) -> list[dict]:
         """Returns one entry per visible CUDA device, empty on CPU-only hosts."""
-        if not torch.cuda.is_available():
+        if not cls._cuda_visible():
             return []
 
         entries = []
@@ -37,10 +47,10 @@ class EnvironmentCapture:
             })
         return entries
 
-    @staticmethod
-    def _driver_version() -> str | None:
+    @classmethod
+    def _driver_version(cls) -> str | None:
         """Returns the NVIDIA driver version, or None on CPU-only hosts."""
-        if not torch.cuda.is_available():
+        if not cls._cuda_visible():
             return None
 
         import pynvml
@@ -67,7 +77,7 @@ class EnvironmentCapture:
             "scipy"                : scipy.__version__,
             "torch"                : torch.__version__,
             "torch_cuda_build"     : torch.version.cuda,
-            "cudnn"                : torch.backends.cudnn.version() if torch.cuda.is_available() else None,
+            "cudnn"                : torch.backends.cudnn.version() if cls._cuda_visible() else None,
             "cuda_visible_devices" : os.environ.get("CUDA_VISIBLE_DEVICES"),
             "driver_version"       : cls._driver_version(),
             "gpus"                 : cls._gpu_entries(),

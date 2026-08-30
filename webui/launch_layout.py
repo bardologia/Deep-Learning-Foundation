@@ -188,6 +188,12 @@ class LaunchLayout:
             ]},
             {"title": "Weight averaging", "fields": [
                 {"gate": "use_ema", "fields": ["ema_decay", "ema_warmup"]},
+                {"gate": "use_swa", "fields": [{"path": "swa_start_fraction", "widget": NUM_FRACTION}]},
+            ]},
+            {"title": "Optimizer", "fields": [
+                "optimizer_type",
+                {"path": "momentum", "widget": {"kind": "number", "min": 0, "max": 1, "step": 0.05, "presets": [0.0, 0.8, 0.9, 0.99]}},
+                "nesterov",
             ]},
             {"title": "LR warmup", "fields": [
                 {"gate": "warmup_enabled", "fields": [{"path": "warmup_fraction", "widget": NUM_WARMFRAC}, "warmup_mode", "warmup_poly_power"]},

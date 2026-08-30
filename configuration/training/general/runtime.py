@@ -56,6 +56,8 @@ class TrainingLoopConfig:
         use_ema                     : Whether an exponential moving average of the weights is tracked.
         ema_decay                   : Target decay rate of that moving average.
         ema_warmup                  : Whether the EMA decay ramps as min(decay, (1+t)/(10+t)) over the update count t.
+        use_swa                     : Whether an equal-weight stochastic average of the weights is tracked from the SWA start epoch.
+        swa_start_fraction          : Fraction of the epoch budget after which each finished epoch joins the stochastic weight average.
         resume                      : Whether training continues from the run's last checkpoint.
         snapshot_every_n_epochs     : Epoch interval between extra weight snapshots.
     """
@@ -74,6 +76,8 @@ class TrainingLoopConfig:
     use_ema                     : bool  = False
     ema_decay                   : float = 0.999
     ema_warmup                  : bool  = True
+    use_swa                     : bool  = False
+    swa_start_fraction          : float = 0.75
     resume                      : bool  = False
     snapshot_every_n_epochs     : int   = 0
 

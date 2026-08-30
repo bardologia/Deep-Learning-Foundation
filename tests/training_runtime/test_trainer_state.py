@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from tools.training.checkpoint import Checkpoint, TrainerState, WeightEma
+from tools.training.checkpoint import Checkpoint, TrainerState, WeightEma, WeightSwa
 from tools.training.gradients  import GradientClipper
 from tools.training.scheduling import Scheduler, Warmup
 from tools.training.stopping   import EarlyStopping
@@ -58,6 +58,7 @@ def _trainer(tmp_path, seed: int = 0) -> SimpleNamespace:
         model              = model,
         optimizer          = optimizer,
         ema                = WeightEma(model, decay=0.5, enabled=True, warmup=False),
+        swa                = WeightSwa(model, enabled=True),
         warmup             = warmup,
         lr_scheduler       = scheduler,
         early_stopping     = EarlyStopping(_stopping_config(), logger, tracker),
@@ -77,6 +78,7 @@ def _advance(trainer) -> None:
     trainer.model.linear.weight.grad = torch.ones_like(trainer.model.linear.weight)
     trainer.optimizer.step()
     trainer.ema.update(trainer.model)
+    trainer.swa.update(trainer.model)
 
     for _ in range(3):
         trainer.warmup.step()

@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib     import Path
 
-from configuration.training.general.optimization import ClipMode, SchedulerType, WarmupMode
+from configuration.training.general.optimization import ClipMode, OptimizerType, SchedulerType, WarmupMode
 
 
 DEFAULT_DATASET_DIR = Path("datasets/synthetic_small")
@@ -80,10 +80,15 @@ class TrainingQueueConfig:
         use_ema                     : Whether an exponential moving average of the weights is tracked.
         ema_decay                   : Target decay rate of that moving average.
         ema_warmup                  : Whether the EMA decay ramps as min(decay, (1+t)/(10+t)) over the update count t.
+        use_swa                     : Whether an equal-weight stochastic average of the weights is tracked from the SWA start epoch.
+        swa_start_fraction          : Fraction of the epoch budget after which each finished epoch joins the stochastic weight average.
         resume                      : Whether training continues from the run's last checkpoint.
         snapshot_every_n_epochs     : Epoch interval between extra weight snapshots.
         reserve_vram                : Whether spare VRAM is claimed up front to fence other jobs.
         vram_keep_free_gb           : Gigabytes deliberately left unreserved.
+        optimizer_type              : Optimizer family training runs on.
+        momentum                    : Momentum factor of the SGD and RMSprop families.
+        nesterov                    : Whether SGD uses Nesterov momentum.
         scale_lr_with_batch         : Whether the learning rate is scaled by batch ratio.
         lr_reference_batch_size     : Batch size the configured learning rate refers to.
         lr_multiplier               : Factor applied to every group learning rate on top of the batch-size rule, overwritten by the pre-training LR range test.
@@ -130,11 +135,17 @@ class TrainingQueueConfig:
     use_ema                     : bool  = False
     ema_decay                   : float = 0.999
     ema_warmup                  : bool  = True
+    use_swa                     : bool  = False
+    swa_start_fraction          : float = 0.75
     resume                      : bool  = False
     snapshot_every_n_epochs     : int   = 0
 
     reserve_vram      : bool  = False
     vram_keep_free_gb : float = 1.0
+
+    optimizer_type : OptimizerType = OptimizerType.ADAMW
+    momentum       : float         = 0.9
+    nesterov       : bool          = True
 
     scale_lr_with_batch     : bool  = True
     lr_reference_batch_size : int   = 64

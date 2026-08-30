@@ -120,7 +120,7 @@ class ConfigFactory:
             early_stopping = EarlyStoppingConfig(patience=training.early_stop_patience, min_delta=training.early_stop_min_delta, restore_best=True),
             warmup         = WarmupConfig(warmup_fraction=training.warmup_fraction, warmup_start_factor=0.1, warmup_enabled=training.warmup_enabled, warmup_mode=training.warmup_mode.value, warmup_poly_power=training.warmup_poly_power),
             scheduler      = SchedulerConfig(type=training.scheduler_type.value, epochs=scheduler_epochs, eta_min=training.eta_min, step_size=training.scheduler_step_size, gamma=training.scheduler_gamma, power=training.scheduler_power),
-            optimizer      = OptimizerConfig(betas=(0.9, 0.999), eps=1e-8, lr_scale=lr_scale),
+            optimizer      = OptimizerConfig(type=training.optimizer_type.value, betas=(0.9, 0.999), eps=1e-8, momentum=training.momentum, nesterov=training.nesterov, lr_scale=lr_scale),
             memory         = MemoryConfig(reserve_vram=training.reserve_vram, vram_keep_free_gb=training.vram_keep_free_gb),
 
             training = TrainingLoopConfig(
@@ -138,6 +138,8 @@ class ConfigFactory:
                 use_ema                     = training.use_ema,
                 ema_decay                   = training.ema_decay,
                 ema_warmup                  = training.ema_warmup,
+                use_swa                     = training.use_swa,
+                swa_start_fraction          = training.swa_start_fraction,
                 resume                      = training.resume,
                 snapshot_every_n_epochs     = training.snapshot_every_n_epochs,
             ),

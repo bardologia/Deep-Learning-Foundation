@@ -10,6 +10,15 @@ from dataclasses import dataclass
 from enum        import Enum
 
 
+class OptimizerType(Enum):
+    """Optimizer families selectable for a training run."""
+
+    ADAMW   = "adamw"
+    ADAM    = "adam"
+    SGD     = "sgd"
+    RMSPROP = "rmsprop"
+
+
 class SchedulerType(Enum):
     """Learning-rate schedule families selectable for a training run."""
 
@@ -41,18 +50,24 @@ class ClipMode(Enum):
 
 @dataclass
 class OptimizerConfig:
-    """AdamW hyper-parameters for the trained parameter groups.
+    """Optimizer family and hyper-parameters for the trained parameter groups.
 
     Attributes:
+        type         : Value of an `OptimizerType` naming the optimizer family.
         betas        : Adam exponential decay rates for the first and second moments.
-        eps          : Numerical stabiliser added to the denominator of the Adam update.
+        eps          : Numerical stabiliser added to the denominator of the adaptive updates.
         weight_decay : Decoupled weight decay coefficient.
+        momentum     : Momentum factor of the SGD and RMSprop families.
+        nesterov     : Whether SGD uses Nesterov momentum.
         lr_scale     : Multiplier applied to the base learning rate for this group.
     """
 
+    type         : str   = "adamw"
     betas        : tuple = (0.9, 0.999)
     eps          : float = 1e-8
     weight_decay : float = 0.1
+    momentum     : float = 0.9
+    nesterov     : bool  = True
     lr_scale     : float = 1.0
 
 

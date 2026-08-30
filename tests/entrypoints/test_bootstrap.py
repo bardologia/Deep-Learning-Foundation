@@ -34,7 +34,7 @@ THREAD_KEYS = (
 @pytest.fixture
 def clean_env(monkeypatch):
     """Returns the monkeypatch fixture with all thread and CUDA environment variables removed."""
-    for key in THREAD_KEYS + ("CUDA_VISIBLE_DEVICES", "PYTORCH_CUDA_ALLOC_CONF", "TOMOSAR_INHERITED_CUDA_MASK"):
+    for key in THREAD_KEYS + ("CUDA_VISIBLE_DEVICES", "PYTORCH_CUDA_ALLOC_CONF", "MLTEMPLATE_INHERITED_CUDA_MASK"):
         monkeypatch.delenv(key, raising=False)
     return monkeypatch
 
@@ -173,7 +173,7 @@ def test_pin_stashes_an_unset_inherited_mask_as_empty(clean_env):
     """Pinning on a bare machine records the absent inherited mask as an empty stash."""
     EnvironmentPinner.gpu(gpu_id=2)
 
-    assert os.environ["TOMOSAR_INHERITED_CUDA_MASK"] == ""
+    assert os.environ["MLTEMPLATE_INHERITED_CUDA_MASK"] == ""
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "2"
 
 
@@ -182,7 +182,7 @@ def test_pin_stashes_the_inherited_scheduler_mask(clean_env):
     clean_env.setenv("CUDA_VISIBLE_DEVICES", "2,3")
     EnvironmentPinner.gpu(gpu_id=1)
 
-    assert os.environ["TOMOSAR_INHERITED_CUDA_MASK"] == "2,3"
+    assert os.environ["MLTEMPLATE_INHERITED_CUDA_MASK"] == "2,3"
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "3"
 
 
@@ -192,5 +192,5 @@ def test_a_second_pin_keeps_the_first_stash(clean_env):
     EnvironmentPinner.gpus([0, 1])
     EnvironmentPinner.gpu(gpu_id=0)
 
-    assert os.environ["TOMOSAR_INHERITED_CUDA_MASK"] == "2,3"
+    assert os.environ["MLTEMPLATE_INHERITED_CUDA_MASK"] == "2,3"
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "2"
