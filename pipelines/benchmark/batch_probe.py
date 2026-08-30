@@ -308,7 +308,7 @@ class MaxBatchProbe(MaxBatchProbeBase):
 
         Args:
             trainer_config : Trainer configuration for the probe.
-            dataset_config : Dataset configuration supplying the elevation axis.
+            dataset_config : Dataset configuration supplying the z axis.
             model          : The probed model.
             model_cfg      : Resolved model configuration.
             dataset        : Training dataset supplying the normalizer.

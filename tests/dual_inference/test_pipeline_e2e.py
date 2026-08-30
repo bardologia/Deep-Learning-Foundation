@@ -2,7 +2,7 @@
 
 Covers the artefacts and metadata a dual run writes, the inference report,
 metrics and cubes derived from it, and the trunk channel routing over a
-DEM-bearing input stack.
+aux field-bearing input stack.
 """
 
 from __future__ import annotations

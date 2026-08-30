@@ -1,7 +1,7 @@
 """Layer-wise linear probes measuring where scene quantities become decodable.
 
 Ridge probes are fitted on the features of each layer to predict five ground-truth
-quantities of the tomographic scene, against an input-pixel baseline and a
+quantities of the volumetric scene, against an input-pixel baseline and a
 shuffled-target control, alongside the effective dimensionality of each layer.
 """
 
@@ -139,11 +139,11 @@ class FeatureSampler:
 
         Args:
             B : Batch size.
-            H : Patch height in azimuth pixels.
+            H : Patch height in row pixels.
             W : Patch width in range pixels.
 
         Returns:
-            Three index arrays of equal length holding the batch, azimuth and range
+            Three index arrays of equal length holding the batch, row and column
             coordinate of each drawn pixel.
         """
         n  = min(self.samples_per_batch, B * H * W)
@@ -283,10 +283,10 @@ class LayerProbeCore:
         """Derives the five per-pixel scene quantities from the ground-truth parameters.
 
         Args:
-            gt_phys : Ground-truth parameters in physical units of shape (batch, 3 * slots, azimuth, range), with mu and sigma in metres.
+            gt_phys : Ground-truth parameters in physical units of shape (batch, 3 * slots, rows, cols), with mu and sigma in metres.
 
         Returns:
-            Per-pixel maps of shape (batch, azimuth, range) keyed by target: the active
+            Per-pixel maps of shape (batch, rows, cols) keyed by target: the active
             Gaussian "count", the "dominant_mu" and "dominant_sigma" of the strongest slot
             (NaN where no slot is active), the "total_amp" over active slots and the
             binary "second_presence".
@@ -344,7 +344,7 @@ class LayerProbeCore:
         re-probed on permuted targets as a leakage control.
 
         Args:
-            batches : Pairs of an input batch of shape (batch, channels, azimuth, range) and its ground-truth parameters in physical units of shape (batch, 3 * slots, azimuth, range).
+            batches : Pairs of an input batch of shape (batch, channels, rows, cols) and its ground-truth parameters in physical units of shape (batch, 3 * slots, rows, cols).
 
         Returns:
             Dictionary with "layers", mapping each surviving layer to its channel count,
@@ -543,7 +543,7 @@ class LayerProbeRun(AnalysisRun):
 
         Returns:
             Pairs of a normalized input batch and its ground-truth parameters in physical
-            units of shape (batch, 3 * slots, azimuth, range).
+            units of shape (batch, 3 * slots, rows, cols).
 
         Raises:
             ValueError : If the loader yields no batch.

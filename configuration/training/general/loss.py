@@ -25,7 +25,7 @@ class ParamMatching(str, Enum):
 class LossConfig:
     """Enabled loss terms and their weights for one curriculum stage.
 
-    Curve terms compare the reconstructed elevation profile against the target
+    Curve terms compare the reconstructed z profile against the target
     profile; parameter terms compare matched Gaussian slots; physics terms
     compare quantities resynthesised into the measurement domain.
 
@@ -55,7 +55,7 @@ class LossConfig:
         param_matching           : Rule pairing predicted slots with ground-truth components.
         use_active_normalization : Whether parameter errors are averaged over active slots only.
         presence_balance         : Whether the per-slot presence loss is class-balanced.
-        active_weight            : Weight given to slots holding a scatterer.
+        active_weight            : Weight given to slots holding a component.
         inactive_weight          : Weight given to empty slots.
         amp_focal_gamma          : Focusing exponent of the amplitude focal weighting; 0 disables it.
         amp_focal_delta          : Amplitude scale of that focal weighting.

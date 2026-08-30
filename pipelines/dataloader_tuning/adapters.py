@@ -78,12 +78,12 @@ class FeedLosses:
 
 
 class SyntheticCurveDataset(Dataset):
-    """Three-Gaussian elevation profiles synthesised in process.
+    """Three-Gaussian z profiles synthesised in process.
 
     Attributes:
         n_samples      : Number of curves the dataset exposes.
-        profile_length : Number of elevation bins per curve.
-        x_axis         : Normalised elevation axis of shape (profile_length,).
+        profile_length : Number of z bins per curve.
+        x_axis         : Normalised z axis of shape (profile_length,).
         rng_seed       : Base seed; each index draws from `rng_seed + index`.
     """
 
@@ -92,7 +92,7 @@ class SyntheticCurveDataset(Dataset):
 
         Args:
             n_samples      : Number of curves the dataset exposes.
-            profile_length : Number of elevation bins per curve.
+            profile_length : Number of z bins per curve.
             seed           : Base seed for the per-item generators.
         """
         self.n_samples      = int(n_samples)

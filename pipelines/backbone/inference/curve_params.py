@@ -22,8 +22,8 @@ class CurveExtraction:
     """Gaussian parameters refitted onto a curve cube and their fit quality.
 
     Attributes:
-        params : Interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, row, range); mu and sigma in metres.
-        fit_r2 : Per-pixel coefficient of determination of the refit, shape (row, range).
+        params : Interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, rows, cols); mu and sigma in metres.
+        fit_r2 : Per-pixel coefficient of determination of the refit, shape (rows, cols).
     """
 
     params : np.ndarray
@@ -80,7 +80,7 @@ class CurveParamExtractor:
         """Flattens a curve cube into a per-pixel profile matrix.
 
         Args:
-            curves : Curve cube of shape (n_z, row, range).
+            curves : Curve cube of shape (n_z, rows, cols).
 
         Returns:
             Profiles of shape (pixels, n_z) as float32.
@@ -95,7 +95,7 @@ class CurveParamExtractor:
         return curves.reshape(n_z, -1).T.astype(np.float32, copy=False)
 
     def _peak_locations(self, profiles: np.ndarray) -> np.ndarray:
-        """Returns the peak elevations per slot in metres, shape (pixels, n_gaussians).
+        """Returns the peak zs per slot in metres, shape (pixels, n_gaussians).
 
         Args:
             profiles : Profiles of shape (pixels, n_z).
@@ -228,17 +228,17 @@ class CurveParamExtractor:
         return self._interleave(*parts), R2.pixel_map(rendered.T, profiles.T, axis=0)
 
     def _reshape_cube(self, flat_params: np.ndarray, spatial: tuple) -> np.ndarray:
-        """Returns the flat parameter matrix reshaped to (3 * n_gaussians, row, range)."""
+        """Returns the flat parameter matrix reshaped to (3 * n_gaussians, rows, cols)."""
         return flat_params.T.reshape(self.n_gaussians * 3, *spatial).astype(np.float32)
 
     def render(self, params: np.ndarray) -> np.ndarray:
         """Reconstructs the z profiles of a parameter cube.
 
         Args:
-            params : Interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, row, range).
+            params : Interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, rows, cols).
 
         Returns:
-            The curve cube of shape (n_z, row, range).
+            The curve cube of shape (n_z, rows, cols).
         """
         height, width = params.shape[1:]
         gauss         = params.reshape(1, self.n_gaussians, 3, height, width).astype(np.float32)
@@ -249,7 +249,7 @@ class CurveParamExtractor:
         """Refits Gaussian parameters onto every pixel of a curve cube.
 
         Args:
-            curves : Curve cube of shape (n_z, row, range).
+            curves : Curve cube of shape (n_z, rows, cols).
 
         Returns:
             The refitted parameters and the per-pixel fit R2.

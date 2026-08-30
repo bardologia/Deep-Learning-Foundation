@@ -160,7 +160,7 @@ def test_thumb_refuses_bad_blocks(tmp_path):
 
 
 def test_profile_returns_gt_and_prediction(tmp_path):
-    """A pixel profile returns the elevation axis with matching ground truth and prediction."""
+    """A pixel profile returns the z axis with matching ground truth and prediction."""
     stamp = _stamp(tmp_path)
     _curves(stamp)
 

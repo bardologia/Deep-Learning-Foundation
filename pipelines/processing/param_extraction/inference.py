@@ -1,6 +1,6 @@
 """Inference stage over fitted Gaussian parameter runs: metrics and plots.
 
-Scores a parameter-extraction run against the tomogram it was fitted to, analyses the
+Scores a parameter-extraction run against the cube it was fitted to, analyses the
 writes the summary JSON
 and figures. External parameter injections carry no fit diagnostics and are rejected.
 """
@@ -48,12 +48,12 @@ class ParamRunInferencePipeline:
         self.logger.subsection(f"Run directory : {self.run_dir}")
 
     def _load(self) -> tuple:
-        """Loads the run metadata, parameter stack, fit diagnostics and tomogram path.
+        """Loads the run metadata, parameter stack, fit diagnostics and cube path.
 
         Returns:
             Tuple of the metadata dictionary, the parameter stack of shape
-            (3 * k_max, azimuth, range), the diagnostics dictionary and the source
-            tomogram path.
+            (3 * k_max, rows, cols), the diagnostics dictionary and the source
+            cube path.
         """
         meta = self.parameter_io.load_metadata(self.run_dir / self.META_FILENAME)
 

@@ -1,4 +1,4 @@
-"""Tests covering the registry of elevation-profile autoencoders.
+"""Tests covering the registry of z-profile autoencoders.
 
 Every registered model is built at a tiny size and checked for reconstruction shape,
 latent dimensionality, gradient health, determinism, embedding normalisation, complete

@@ -1200,7 +1200,7 @@ class PatchSizeTrialPlanner:
         """Returns the admissible patch lengths in pixels along one axis.
 
         Args:
-            axis  : 0 for azimuth, 1 for range.
+            axis  : 0 for rows, 1 for cols.
             label : Axis name quoted in error messages.
 
         Returns:
@@ -1221,10 +1221,10 @@ class PatchSizeTrialPlanner:
         return list(range(start, self.trials.maximum[axis] + 1, step))
 
     def patch_sizes(self) -> tuple[list[int], list[int]]:
-        """Returns the admissible azimuth and range patch lengths in pixels.
+        """Returns the admissible row and column patch lengths in pixels.
 
         Returns:
-            Tuple of the azimuth lengths and the range lengths.
+            Tuple of the row lengths and the column lengths.
 
         Raises:
             ValueError : If their product yields fewer than two patch shapes.
@@ -1232,13 +1232,13 @@ class PatchSizeTrialPlanner:
         if self._patch_sizes is not None:
             return self._patch_sizes
 
-        azimuth_sizes = self._axis_sizes(0, "azimuth")
-        range_sizes   = self._axis_sizes(1, "range")
+        row_sizes = self._axis_sizes(0, "row")
+        col_sizes = self._axis_sizes(1, "col")
 
-        if len(azimuth_sizes) * len(range_sizes) < 2:
-            raise ValueError(f"The grid azimuth {azimuth_sizes} x range {range_sizes} yields {len(azimuth_sizes) * len(range_sizes)} patch shape; a sweep needs at least 2")
+        if len(row_sizes) * len(col_sizes) < 2:
+            raise ValueError(f"The grid rows {row_sizes} x cols {col_sizes} yields {len(row_sizes) * len(col_sizes)} patch shape; a sweep needs at least 2")
 
-        self._patch_sizes = (azimuth_sizes, range_sizes)
+        self._patch_sizes = (row_sizes, col_sizes)
 
         return self._patch_sizes
 
@@ -1252,7 +1252,7 @@ class PatchSizeTrialPlanner:
         scale is identical across patch shapes.
 
         Args:
-            patch_size : Patch geometry of this trial as (azimuth, range) in pixels.
+            patch_size : Patch geometry of this trial as (rows, cols) in pixels.
 
         Returns:
             The rescaling factor as an exact fraction.
@@ -1291,23 +1291,23 @@ class PatchSizeTrialPlanner:
 
     @staticmethod
     def run_name(patch_size: tuple[int, int]) -> str:
-        """Returns the trial run name encoding one (azimuth, range) patch shape."""
+        """Returns the trial run name encoding one (rows, cols) patch shape."""
         return f"p-{patch_size[0]:03d}x{patch_size[1]:03d}"
 
     def summary(self) -> dict:
         """Returns the patch step, both axis grids, the stride ratio and the budget switch."""
-        azimuth_sizes, range_sizes = self.patch_sizes()
+        row_sizes, col_sizes = self.patch_sizes()
 
         return {
             "Patch step"            : self.patch_step(),
-            "Azimuth sizes"         : azimuth_sizes,
-            "Range sizes"           : range_sizes,
+            "Row sizes"             : row_sizes,
+            "Col sizes"             : col_sizes,
             "Stride ratio"          : self.trials.stride_ratio,
             "Constant pixel budget" : self.trials.constant_pixel_budget,
         }
 
     def plan(self) -> list[tuple[str, dict]]:
-        """Returns one `(run_name, overrides)` pair per (azimuth, range) patch shape.
+        """Returns one `(run_name, overrides)` pair per (rows, cols) patch shape.
 
         Every trial pins the patch geometry and disables the max-batch probe so
         the comparison stays controlled; under the constant pixel budget the
@@ -1318,12 +1318,12 @@ class PatchSizeTrialPlanner:
         Raises:
             ValueError : If the grid yields fewer than two shapes, or if a shape cannot hold the pixel budget with whole batch sizes.
         """
-        azimuth_sizes, range_sizes = self.patch_sizes()
+        row_sizes, col_sizes = self.patch_sizes()
 
         plans = []
-        for azimuth in azimuth_sizes:
-            for range_size in range_sizes:
-                size   = (azimuth, range_size)
+        for row_size in row_sizes:
+            for col_size in col_sizes:
+                size   = (row_size, col_size)
                 stride = tuple(max(1, int(round(edge * self.trials.stride_ratio))) for edge in size)
 
                 overrides = {

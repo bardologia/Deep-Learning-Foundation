@@ -27,9 +27,9 @@ class TrainingPathsConfig:
     """Locations of the preprocessed dataset and its Gaussian parameter labels.
 
     Attributes:
-        dataset_path     : Directory holding the preprocessed SAR stack and metadata.
+        dataset_path     : Directory holding the preprocessed channel stack and metadata.
         parameters_path  : Parameter array pairing Gaussian labels with that dataset.
-        secondary_labels : Track labels of the secondary passes fed to the model.
+        secondary_labels : Track labels of the secondary channels fed to the model.
     """
 
     dataset_path     : Path  = DEFAULT_DATASET_DIR
@@ -53,7 +53,7 @@ class TrainingQueueConfig:
     """Flat training schedule a launcher expands into the trainer sub-configs.
 
     Groups the loop length, loader sizing, optimizer schedule, gradient clipping,
-    patching and the azimuth ranges that split the scene into train, validation
+    patching and the row ranges that split the scene into train, validation
     and test regions.
 
     Attributes:
@@ -94,12 +94,12 @@ class TrainingQueueConfig:
         clip_adaptive_window        : Recent gradient norms kept for the adaptive modes.
         clip_adaptive_percentile    : Percentile of that window used as threshold.
         clip_adaptive_mean_std_k    : Standard deviations above the window mean used.
-        patch_size                  : Patch extent in pixels as (azimuth, range).
-        patch_stride                : Step in pixels between neighbouring patches, (azimuth, range).
+        patch_size                  : Patch extent in pixels as (rows, cols).
+        patch_stride                : Step in pixels between neighbouring patches, (rows, cols).
         use_symmetric_padding       : Whether the scene is padded symmetrically before patching.
-        train_azimuth               : Azimuth line range in pixels assigned to training.
-        val_azimuth                 : Azimuth line range in pixels assigned to validation.
-        test_azimuth                : Azimuth line range in pixels assigned to testing.
+        train_rows                  : Row span in pixels assigned to training.
+        val_rows                    : Row span in pixels assigned to validation.
+        test_rows                   : Row span in pixels assigned to testing.
     """
 
     epochs               : int        = 60

@@ -1,4 +1,4 @@
-"""Vision-transformer image autoencoder over tomographic slice stacks.
+"""Vision-transformer image autoencoder over volumetric slice stacks.
 
 The encoder tokenises the input with a patch embedding, adds a depthwise
 convolutional positional term, and projects the transformer output to a latent

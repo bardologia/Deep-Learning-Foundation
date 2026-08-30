@@ -34,7 +34,7 @@ class ImageAeRun:
         normalizer                  : Normalizer holding the training input statistics.
         loader                      : Unshuffled loader over the requested split's patches.
         split_name                  : Name of the split being inferred.
-        patch_size                  : Patch extent as (azimuth, range) in pixels.
+        patch_size                  : Patch extent as (rows, cols) in pixels.
         checkpoint_meta             : Checkpoint metadata, including best epoch and loss.
         preprocessing_run_directory : Directory of the preprocessing run the dataset was built from.
         split_region                : Crop region of the split in the preprocessed scene.

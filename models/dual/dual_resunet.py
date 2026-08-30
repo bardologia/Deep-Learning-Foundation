@@ -1,4 +1,4 @@
-"""Dual-trunk model that separates scatterer parameters from scatterer existence.
+"""Dual-trunk model that separates component parameters from component existence.
 
 One backbone reads the input channels chosen for parameter regression, a second reads
 the channels chosen for the presence decision, and the set-prediction head gates each

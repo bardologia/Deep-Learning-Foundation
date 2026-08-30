@@ -27,7 +27,7 @@ CURVE_VALUES = {
 
 
 def make_planner() -> FoldPlanner:
-    """Returns a fold planner over a 1000-line azimuth window split into N_FOLDS blocks."""
+    """Returns a fold planner over a 1000-line row window split into N_FOLDS blocks."""
     config       = CrossValidationConfig()
     config.folds = FoldConfig(n_folds=N_FOLDS, row_start=1000, row_end=2000)
     return FoldPlanner(config, col_start=500, col_end=1000)

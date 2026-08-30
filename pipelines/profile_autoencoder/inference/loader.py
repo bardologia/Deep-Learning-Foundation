@@ -85,7 +85,7 @@ class ProfileAeRunLoader(RunArtifactLoader):
             normalizer     : Normalisation applied to each curve.
 
         Returns:
-            Tuple of the dataset, the elevation axis of shape (H,) in metres and
+            Tuple of the dataset, the z axis of shape (H,) in metres and
             its length.
         """
         layout  = Layout(dataset_config.preprocessing_run_directory, logger=self.logger, parameters_path=dataset_config.parameters_path)

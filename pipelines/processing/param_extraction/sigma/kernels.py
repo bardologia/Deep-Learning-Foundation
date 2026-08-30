@@ -1,4 +1,4 @@
-"""JAX Adam kernels that fit Gaussian mixtures to elevation profiles.
+"""JAX Adam kernels that fit Gaussian mixtures to z profiles.
 
 Provides the per-pixel loss and its `lax.scan` Adam loop, a single-device jitted
 kernel and a `pmap` variant that shards the pixel batch across several GPUs.

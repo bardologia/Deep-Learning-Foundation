@@ -33,7 +33,7 @@ class ModelWrapper:
             device              : Torch device the inputs are moved to.
             params_per_gaussian : Number of parameters per Gaussian in the output channels.
             normalizer          : Normalizer inverting the output scaling, or None to skip denormalisation.
-            x_axis              : Elevation axis in metres, of shape (n_elevation,), bounding the μ clamp.
+            x_axis              : Elevation axis in metres, of shape (n_z,), bounding the μ clamp.
             amp_max             : Amplitude ceiling of the clamp, or None to leave outputs unclamped.
         """
 
@@ -60,10 +60,10 @@ class ModelWrapper:
         """Inverts the output normalization and applies the physical Gaussian clamp.
 
         Args:
-            out : Raw model output of shape (batch, 3 * K, azimuth, range).
+            out : Raw model output of shape (batch, 3 * K, rows, cols).
 
         Returns:
-            Denormalised parameters of the same shape, with μ inside the elevation axis,
+            Denormalised parameters of the same shape, with μ inside the z axis,
             σ inside its physical bounds and amplitude below the ceiling when one is set.
         """
 
@@ -85,10 +85,10 @@ class ModelWrapper:
         """Predicts on a batch of input patches without tracking gradients.
 
         Args:
-            x : Normalised input patches of shape (batch, channels, azimuth, range).
+            x : Normalised input patches of shape (batch, channels, rows, cols).
 
         Returns:
-            Denormalised, clamped output of shape (batch, 3 * K, azimuth, range) on the CPU.
+            Denormalised, clamped output of shape (batch, 3 * K, rows, cols) on the CPU.
         """
 
         x_t = torch.from_numpy(np.asarray(x, dtype=np.float32)).to(self._device)

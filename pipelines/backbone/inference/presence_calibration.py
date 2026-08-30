@@ -1,7 +1,7 @@
-"""Reliability of predicted scatterer amplitude as a presence score.
+"""Reliability of predicted component amplitude as a presence score.
 
 Bins the active predicted Gaussians by amplitude and measures, per bin, the fraction that
-Hungarian-matched a ground-truth scatterer, so amplitude can be read as a detection
+Hungarian-matched a ground-truth component, so amplitude can be read as a detection
 confidence rather than only as a magnitude.
 """
 

@@ -30,7 +30,7 @@ class FigureComposer:
         meta           : Run metadata holding the output directory layout.
         logger         : Logger used to announce each figure family as it is written.
         cfg            : Inference configuration selecting colormaps, slice counts and GIF settings.
-        full_norm_cube : Cached unit-area normalisation of the raw tomogram, built on first use.
+        full_norm_cube : Cached unit-area normalisation of the raw cube, built on first use.
     """
 
     def __init__(
@@ -56,13 +56,13 @@ class FigureComposer:
         self.full_norm_cube = None
 
     def _compose_input_channels(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
-        """Writes amplitude and interferometric-phase maps of the complex input stack.
+        """Writes amplitude and derived-channel-phase maps of the complex input stack.
 
         Nothing is written when the run carries no complex inputs.
 
         Args:
-            result       : Inference result supplying the azimuth and range offsets of the crop.
-            run          : Loaded run carrying the complex input stack of shape (channels, azimuth, range).
+            result       : Inference result supplying the row and column offsets of the crop.
+            run          : Loaded run carrying the complex input stack of shape (channels, rows, cols).
             figure_paths : Mapping of figure family to written paths, extended in place.
         """
 
@@ -137,7 +137,7 @@ class FigureComposer:
         the corresponding evaluation ran.
 
         Args:
-            result       : Inference result carrying the per-pixel metric maps of shape (azimuth, range).
+            result       : Inference result carrying the per-pixel metric maps of shape (rows, cols).
             figure_paths : Mapping of figure family to written paths, extended in place.
         """
 
@@ -220,7 +220,7 @@ class FigureComposer:
         Returns immediately when the run carried no embedding evaluation.
 
         Args:
-            result       : Inference result whose `embedding_maps` holds the per-pixel maps of shape (azimuth, range).
+            result       : Inference result whose `embedding_maps` holds the per-pixel maps of shape (rows, cols).
             figure_paths : Mapping of figure family to written paths, extended in place.
         """
 
@@ -261,7 +261,7 @@ class FigureComposer:
         """Writes the Gaussian-parameter distributions, scatters, error maps, error histograms and active-count map.
 
         Args:
-            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, azimuth, range).
+            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, rows, cols).
             run          : Loaded run supplying the Gaussian count K.
             figure_paths : Mapping of figure family to written paths, extended in place.
         """
@@ -326,7 +326,7 @@ class FigureComposer:
         """Writes the raw-slot usage bars, per-slot parameter distributions, μ-rank matrix and GT-assignment matrix.
 
         Args:
-            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, azimuth, range).
+            result       : Inference result carrying the predicted and GT parameter cubes of shape (3 * K, rows, cols).
             run          : Loaded run supplying the Gaussian count K.
             figure_paths : Mapping of figure family to written paths, extended in place.
         """
@@ -428,14 +428,14 @@ class FigureComposer:
         full_title     : str,
         figure_paths   : Dict[str, List[Path]],
     ) -> None:
-        """Writes one slice figure per selected range, azimuth and elevation index for a single cube variant.
+        """Writes one slice figure per selected range, row and z index for a single cube variant.
 
         Args:
-            pred_cube      : Predicted cube of shape (n_elevation, azimuth, range).
+            pred_cube      : Predicted cube of shape (n_z, rows, cols).
             gt_cube        : Ground-truth cube of the same shape as `pred_cube`.
-            full_cube      : Raw tomogram cube of the same shape, drawn as an extra reference panel.
-            result         : Inference result supplying the azimuth and range offsets of the crop.
-            x_axis_np      : Elevation axis in metres, of shape (n_elevation,).
+            full_cube      : Raw cube of the same shape, drawn as an extra reference panel.
+            result         : Inference result supplying the row and column offsets of the crop.
+            x_axis_np      : Elevation axis in metres, of shape (n_z,).
             indices        : Slice-index arrays keyed by axis.
             global_metrics : Metric dictionary holding the per-slice SSIM values.
             ssim_prefix    : Metric-key prefix selecting which SSIM series to annotate ("gt", "norm" or "red").
@@ -445,7 +445,7 @@ class FigureComposer:
             ref_title      : Panel title for the reference cube.
             pred_title     : Panel title for the predicted cube.
             err_title      : Panel title for the absolute-error panel.
-            full_title     : Panel title for the raw tomogram panel.
+            full_title     : Panel title for the raw cube panel.
             figure_paths   : Mapping of figure family to written paths, extended in place.
         """
 
@@ -568,9 +568,9 @@ class FigureComposer:
 
         Args:
             global_metrics : Metric dictionary holding the per-slice SSIM values.
-            indices        : Full index arrays for range, azimuth and elevation.
-            shape          : Cube shape (n_elevation, azimuth, range) the curves span.
-            offsets        : Crop offsets keyed "range" and "azimuth", added to the plotted indices.
+            indices        : Full index arrays for range, row and z.
+            shape          : Cube shape (n_z, rows, cols) the curves span.
+            offsets        : Crop offsets keyed "range" and "row", added to the plotted indices.
             ssim_prefix    : Metric-key prefix selecting which SSIM series to plot.
             group_suffix   : Suffix appended to the figure-family keys in `figure_paths`.
             series_label   : Legend label for the plotted series.
@@ -620,7 +620,7 @@ class FigureComposer:
             result         : Inference result carrying the cubes, per-pixel maps and optional evaluations.
             run            : Loaded run supplying the raw cube and the Gaussian count.
             global_metrics : Metric dictionary written by the pipeline before plotting.
-            x_axis_np      : Elevation axis in metres, of shape (n_elevation,).
+            x_axis_np      : Elevation axis in metres, of shape (n_z,).
             indices        : Slice-index arrays keyed by axis.
             param_space    : Whether Gaussian-parameter figures should be produced.
 

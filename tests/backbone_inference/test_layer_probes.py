@@ -2,7 +2,7 @@
 
 Covers the cross-validated ridge probe, the participation-ratio geometry measure, and
 the probe core that hooks named layers, samples pixels from feature maps and scores
-scatterer count, presence and total amplitude against an input baseline and shuffled
+component count, presence and total amplitude against an input baseline and shuffled
 controls.
 """
 
@@ -77,7 +77,7 @@ class _TwoLayerNet(torch.nn.Module):
 
 
 def _batches(n: int = 3):
-    """Builds batches whose input encodes the scatterer count and whose labels follow it.
+    """Builds batches whose input encodes the component count and whose labels follow it.
 
     Args:
         n : Number of batches to build.
@@ -130,7 +130,7 @@ def _core(model, layers, samples: int = 256, seed: int = 0) -> LayerProbeCore:
 
 
 def test_probe_core_finds_the_informative_layer():
-    """The layer carrying the input decodes the scatterer count while the zero-fed layer does not."""
+    """The layer carrying the input decodes the component count while the zero-fed layer does not."""
     results = _core(_TwoLayerNet(), ["useful", "useless"]).collect(_batches())
 
     assert results["layers"]["useful"]["scores"]["count"]["mean"]  > 0.9

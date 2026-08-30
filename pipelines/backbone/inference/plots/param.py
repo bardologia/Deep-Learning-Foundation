@@ -55,14 +55,14 @@ class SlotAlignment:
         """Returns the slot-aligned prediction, reusing the cache when the same cubes come back.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             amp_threshold : Amplitude above which a slot counts as active.
             assignment    : Precomputed predicted-to-GT assignment, or None to match here.
 
         Returns:
-            Predicted parameters reordered into GT slot order, of shape (3 * K, azimuth, range).
+            Predicted parameters reordered into GT slot order, of shape (3 * K, rows, cols).
         """
 
         if self.n_gaussians == n_gaussians and self.amp_threshold == amp_threshold and self._is_same(self.params_pred, params_pred) and self._is_same(self.params_gt, params_gt):
@@ -108,7 +108,7 @@ class ParamPlotter(PlotTools):
         logarithmic bins.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             params_gt     : Ground-truth parameter cube of the same shape, or None.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
@@ -314,7 +314,7 @@ class ParamPlotter(PlotTools):
         jointly across the pair so the axes stay paired.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
@@ -398,7 +398,7 @@ class ParamPlotter(PlotTools):
         capped at the 99th percentile of the finite errors.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
@@ -465,7 +465,7 @@ class ParamPlotter(PlotTools):
         the absolute error; median and mean lines expose any systematic bias.
 
         Args:
-            params_pred   : Predicted parameter cube of shape (3 * K, azimuth, range).
+            params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.

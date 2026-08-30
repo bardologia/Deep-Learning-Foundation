@@ -1,6 +1,6 @@
 """Diagnostics of how a set-prediction head organises its Gaussian slots.
 
-Measures how often each slot is used, whether the slots specialise by elevation
+Measures how often each slot is used, whether the slots specialise by z
 rank, and how consistently they map onto ground-truth slots, which is how slot
 collapse is detected.
 """
@@ -14,7 +14,7 @@ from tools.metrics.gaussian_matching import GaussianMatcher
 
 
 class SlotOrganization:
-    """Slot usage, elevation-rank and assignment statistics of a prediction."""
+    """Slot usage, z-rank and assignment statistics of a prediction."""
 
     @staticmethod
     def usage_fractions(params_pred: np.ndarray, n_K: int, amp_threshold: float = ParamMatcher.ACTIVE_AMP_THR) -> np.ndarray:
@@ -55,7 +55,7 @@ class SlotOrganization:
 
     @staticmethod
     def mu_rank_matrix(params_pred: np.ndarray, n_K: int, amp_threshold: float = ParamMatcher.ACTIVE_AMP_THR) -> np.ndarray:
-        """Counts how often each slot takes each elevation rank among the active slots.
+        """Counts how often each slot takes each z rank among the active slots.
 
         Args:
             params_pred   : Predicted parameter maps of shape (n_K * 3, height, width).
@@ -64,7 +64,7 @@ class SlotOrganization:
 
         Returns:
             Float64 matrix of shape (n_K, n_K) whose entry (k, r) counts the
-            pixels where slot k is active and holds elevation rank r, ranks
+            pixels where slot k is active and holds z rank r, ranks
             ordered by ascending mu with inactive slots pushed to the end.
         """
         amp    = np.stack([params_pred[3 * k]     for k in range(n_K)], axis=0).reshape(n_K, -1)

@@ -27,7 +27,7 @@ def _logger(tmp_path, name) -> Logger:
 
 
 def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
-    """Returns a backbone dataset config over three contiguous azimuth splits of the test data."""
+    """Returns a backbone dataset config over three contiguous row splits of the test data."""
     ic = InputConfig(
         use_primary=True,        primary_representation=Representation.MAG_ONLY,
         use_secondaries=True,    secondaries_representation=Representation.MAG_ONLY,
@@ -115,7 +115,7 @@ def test_backbone_pipeline_rectangular_patches_yield_rectangular_batches(test_da
 @pytest.mark.dataset
 @pytest.mark.slow
 def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, params_dir, tmp_path):
-    """Disabling the primary and secondary groups loads only the interferogram layers."""
+    """Disabling the primary and secondary groups loads only the derived channel layers."""
     full    = _backbone_config(test_data_dir, params_dir)
     trimmed = _backbone_config(test_data_dir, params_dir)
 

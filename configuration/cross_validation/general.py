@@ -1,4 +1,4 @@
-"""Configuration of the spatial cross-validation experiment over azimuth folds."""
+"""Configuration of the spatial cross-validation experiment over row folds."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ class CrossValidationConfig:
         inference         : Inference queue settings.
         comparison        : Fold comparison report settings.
         input             : Input representation and channel selection.
-        geometry          : SAR acquisition geometry.
+        geometry          : Acquisition geometry.
         curriculum        : Loss curriculum applied in every fold.
         normalization     : Input and target normalisation settings.
         augmentation      : Training-time augmentation settings.

@@ -1,8 +1,8 @@
 """Tests for loading a trained backbone run back into an inference session.
 
-Covers checkpoint reading and elevation-axis coercion, the numpy-facing model wrapper,
+Covers checkpoint reading and z-axis coercion, the numpy-facing model wrapper,
 the inference output-path layout, rebuilding every registered backbone from its saved
-configuration, slot-count validation, the refusal of an unloaded tomogram, and a full
+configuration, slot-count validation, the refusal of an unloaded cube, and a full
 real-data run assembly.
 """
 

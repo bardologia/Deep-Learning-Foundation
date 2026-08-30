@@ -272,7 +272,7 @@ class ModelSurvey:
 
         Returns:
             Input stack of shape (1, channels, patch_height, patch_width) as
-            float32, built from the complex interferometric window and the Aux
+            float32, built from the complex derived-channel window and the Aux
             channel when the dataset carries one.
         """
         run    = self.loaded["run"]

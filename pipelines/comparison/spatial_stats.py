@@ -19,7 +19,7 @@ class SpatialDispersion:
         """Tiles a field into flattened square blocks.
 
         Args:
-            field : Per-pixel map of shape (azimuth, range).
+            field : Per-pixel map of shape (rows, cols).
             block : Side length in pixels of the square tiles; the trailing partial tiles are cropped away.
 
         Returns:
@@ -38,7 +38,7 @@ class SpatialDispersion:
         """Returns the median within-block coefficient of variation.
 
         Args:
-            field : Per-pixel map of shape (azimuth, range).
+            field : Per-pixel map of shape (rows, cols).
             block : Side length in pixels of the square tiles.
 
         Returns:
@@ -60,7 +60,7 @@ class SpatialDispersion:
         """Returns the median within-block standard deviation.
 
         Args:
-            field : Per-pixel map of shape (azimuth, range), in the field's own units (metres for a height map).
+            field : Per-pixel map of shape (rows, cols), in the field's own units (metres for a height map).
             block : Side length in pixels of the square tiles.
 
         Returns:
@@ -78,7 +78,7 @@ class SpatialDispersion:
         below exp(-1).
 
         Args:
-            field     : Per-pixel map of shape (azimuth, range).
+            field     : Per-pixel map of shape (rows, cols).
             axis      : Axis along which the correlation length is measured.
             max_lines : Maximum number of lines subsampled for the estimate.
 

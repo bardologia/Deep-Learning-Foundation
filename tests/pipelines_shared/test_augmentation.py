@@ -38,7 +38,7 @@ def test_spatial_identity_when_all_probabilities_zero(tmp_path):
 
 
 def test_spatial_flip_preserves_shape(tmp_path):
-    """Verifies flipping preserves the (channels, azimuth, range) shape of inputs and targets."""
+    """Verifies flipping preserves the (channels, rows, cols) shape of inputs and targets."""
     aug = _spatial(tmp_path, p_flip_h=1.0, p_flip_v=1.0, p_rot90=0.0, p_noise=0.0)
     x   = np.random.default_rng(0).standard_normal((4, 8, 8)).astype(np.float32)
     y   = np.random.default_rng(1).standard_normal((3, 8, 8)).astype(np.float32)

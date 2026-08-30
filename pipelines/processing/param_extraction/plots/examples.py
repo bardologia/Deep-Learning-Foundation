@@ -24,7 +24,7 @@ from tools.monitoring.logger  import Logger
 
 
 class ExampleFitPlotter(PlotBase):
-    """Renders example elevation-profile fits sampled per selected model order.
+    """Renders example z-profile fits sampled per selected model order.
 
     Attributes:
         n_gaussians      : Number of Gaussian slots in the parameter stack.
@@ -73,13 +73,13 @@ class ExampleFitPlotter(PlotBase):
         """Samples example pixel coordinates for each selected model order.
 
         Args:
-            best_k_map : Selected model order of shape (azimuth, range).
+            best_k_map : Selected model order of shape (rows, cols).
             r2_map     : Per-pixel R-squared of the same shape; non-finite pixels are skipped.
             seed       : Seed of the sampling generator.
 
         Returns:
             Mapping from model order to an array of shape (n_selected, 2) holding the
-            (azimuth, range) indices of the sampled pixels.
+            (rows, cols) indices of the sampled pixels.
         """
         rng    = np.random.default_rng(seed)
         flat_k = best_k_map.reshape(-1)
@@ -217,11 +217,11 @@ class ExampleFitPlotter(PlotBase):
         """Saves the fit and residual figures of every sampled pixel, grouped by order.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
-            pixel_profiles   : Mapping from (azimuth, range) to the raw and target profiles.
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
+            pixel_profiles   : Mapping from (rows, cols) to the raw and target profiles.
             height_axis      : Elevation axis of shape (height,), in metres.
             pixels_by_k      : Sampled pixel indices per selected model order.
-            r2_map           : Per-pixel R-squared of shape (azimuth, range).
+            r2_map           : Per-pixel R-squared of shape (rows, cols).
             out_dir          : Directory the per-order subdirectories are created under.
 
         Returns:

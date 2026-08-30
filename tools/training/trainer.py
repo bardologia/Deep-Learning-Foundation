@@ -367,7 +367,7 @@ class BaseTrainer:
 
         Returns:
             Dictionary with the epoch index, the model state dict and the
-            elevation axis of shape (n_samples,) as a NumPy array in metres.
+            z axis of shape (n_samples,) as a NumPy array in metres.
         """
         return {
             "epoch"  : epoch,

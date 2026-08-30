@@ -288,12 +288,12 @@ class EquationLibrary:
                 {
                     "title" : "Patch grid",
                     "tex"   : r"n_v = \left\lceil \frac{H - P_H}{s_v} \right\rceil + 1, \qquad n_h = \left\lceil \frac{W - P_W}{s_h} \right\rceil + 1, \qquad N_p = n_v \cdot n_h",
-                    "note"  : "Sliding-window tiling of the split region; a dimension no larger than the patch yields a single row or column. Patches and strides are rectangular (row, range) pairs, so the two axes tile independently.",
+                    "note"  : "Sliding-window tiling of the split region; a dimension no larger than the patch yields a single row or column. Patches and strides are rectangular (rows, cols) pairs, so the two axes tile independently.",
                     "vars"  : [
                         {"sym": r"n_v, n_h", "desc": "patch rows and columns"},
                         {"sym": r"H, W",     "desc": "spatial height and width of the split (pixels)"},
-                        {"sym": r"P_H, P_W", "desc": "patch size (row, range), default (64, 32)"},
-                        {"sym": r"s_v, s_h", "desc": "stride (row, range), default (32, 16)"},
+                        {"sym": r"P_H, P_W", "desc": "patch size (rows, cols), default (64, 32)"},
+                        {"sym": r"s_v, s_h", "desc": "stride (rows, cols), default (32, 16)"},
                         {"sym": r"N_p",      "desc": "total patch count"},
                     ],
                 },
@@ -1082,7 +1082,7 @@ class EquationLibrary:
                     "vars"  : [
                         {"sym": r"\hat{y}, y", "desc": "predicted and GT curve values"},
                         {"sym": r"N",          "desc": "number of z bins"},
-                        {"sym": r"h, w",       "desc": "pixel (row, range) indices"},
+                        {"sym": r"h, w",       "desc": "pixel (rows, cols) indices"},
                     ],
                 },
                 {
@@ -1113,7 +1113,7 @@ class EquationLibrary:
                         {"sym": r"\hat{Y}, Y", "desc": "predicted and GT spectrum cubes"},
                         {"sym": r"N_e",        "desc": "number of z bins"},
                         {"sym": r"A_z, R_g",   "desc": "row and range extents (pixels)"},
-                        {"sym": r"n, a, r",    "desc": "z, row, range indices"},
+                        {"sym": r"n, a, r",    "desc": "z, row, col indices"},
                     ],
                 },
                 {
@@ -1123,7 +1123,7 @@ class EquationLibrary:
                     "vars"  : [
                         {"sym": r"\hat{Y}, Y", "desc": "predicted and GT spectrum cubes"},
                         {"sym": r"\bar{Y}",    "desc": "global mean of the GT cube"},
-                        {"sym": r"n, a, r",    "desc": "z, row, range indices"},
+                        {"sym": r"n, a, r",    "desc": "z, row, col indices"},
                     ],
                 },
                 {

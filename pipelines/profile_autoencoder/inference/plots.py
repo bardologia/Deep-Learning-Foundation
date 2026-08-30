@@ -1,7 +1,7 @@
 """Publication figures for profile-autoencoder inference.
 
 Draws reconstruction overlays, error and power diagnostics, and latent RGB maps
-that place the sampled embeddings back onto the azimuth-range grid of each split
+that place the sampled embeddings back onto the row-col grid of each split
 region.
 """
 
@@ -144,15 +144,15 @@ class ProfileAePlots(AePlotsBase):
 
         return rows, local // region.col_size, local % region.col_size
 
-    def _latent_rgb_map(self, region: CropRegion, rgb: np.ndarray, rows: np.ndarray, row: np.ndarray, ranges: np.ndarray, components: np.ndarray, figures_dir: Path) -> Path:
+    def _latent_rgb_map(self, region: CropRegion, rgb: np.ndarray, rows: np.ndarray, row_pos: np.ndarray, col_pos: np.ndarray, components: np.ndarray, figures_dir: Path) -> Path:
         """Paints three latent components as RGB over one region's grid.
 
         Args:
             region      : The crop region being drawn.
             rgb         : Per-curve RGB triplets of shape (n_curves, 3) in [0, 1].
             rows        : Rows of `rgb` belonging to this region.
-            row     : Row positions of those rows within the region.
-            ranges      : Range positions of those rows within the region.
+            row_pos     : Row positions of those rows within the region.
+            col_pos     : Column positions of those rows within the region.
             components  : The three latent component indices being shown.
             figures_dir : Root figures directory.
 
@@ -160,7 +160,7 @@ class ProfileAePlots(AePlotsBase):
             The written figure path.
         """
         canvas                  = np.zeros((region.row_size, region.col_size, 3), dtype=np.float64)
-        canvas[row, ranges] = rgb[rows]
+        canvas[row_pos, col_pos] = rgb[rows]
         coverage                = rows.shape[0] / float(region.row_size * region.col_size)
 
         fig, ax = plt.subplots(figsize=(6.6, 4.6))
@@ -208,10 +208,10 @@ class ProfileAePlots(AePlotsBase):
         mapped  = 0
 
         for position, region in enumerate(regions):
-            rows, row, ranges = self._region_pixels(pixel_index, region, int(bounds[position]), int(bounds[position + 1]))
+            rows, row_pos, col_pos = self._region_pixels(pixel_index, region, int(bounds[position]), int(bounds[position + 1]))
             mapped               += rows.shape[0]
 
-            paths.append(self._latent_rgb_map(region, rgb, rows, row, ranges, components, figures_dir))
+            paths.append(self._latent_rgb_map(region, rgb, rows, row_pos, col_pos, components, figures_dir))
 
         if mapped != pixel_index.shape[0]:
             raise ValueError(f"the latent RGB map placed {mapped} of {pixel_index.shape[0]} pixels; the region order no longer matches the order the dataset stacked them in")

@@ -1,7 +1,7 @@
 """Reconstruction metrics for the standalone profile autoencoder.
 
 Extends the shared autoencoder metrics with profile-specific shape, integrated
-power and peak-location errors, restricted to pixels carrying scatterers.
+power and peak-location errors, restricted to pixels carrying components.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ class ProfileAeMetrics(AeMetricsBase):
     def _power_errors(self) -> dict:
         """Returns integrated-power, peak-location and peak-amplitude errors.
 
-        Power is integrated over the elevation axis in metres, so the peak
+        Power is integrated over the z axis in metres, so the peak
         location error is reported in metres.
         """
         gt   = self.gt[self.active]

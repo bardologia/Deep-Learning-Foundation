@@ -56,7 +56,7 @@ class AbsentCube:
         raise ValueError(f"Run '{self.run_directory}' was loaded with load_cube=False, so the raw cube was never read; {usage} needs it. Reload the run with load_cube=True.")
 
     def __getattr__(self, name: str):
-        """Refuses any non-dunder attribute access on the missing tomogram."""
+        """Refuses any non-dunder attribute access on the missing cube."""
 
         if name.startswith("__"):
             raise AttributeError(name)
@@ -64,12 +64,12 @@ class AbsentCube:
         self._refuse(f"attribute '{name}'")
 
     def __getitem__(self, index):
-        """Refuses indexing into the missing tomogram."""
+        """Refuses indexing into the missing cube."""
 
         self._refuse("indexing full_curves")
 
     def __array__(self, dtype=None, copy=None):
-        """Refuses conversion of the missing tomogram to a NumPy array."""
+        """Refuses conversion of the missing cube to a NumPy array."""
 
         self._refuse("converting full_curves to an array")
 
@@ -83,8 +83,8 @@ class Run:
         backbone_name    : Registry name of the backbone architecture.
         in_channels      : Number of input channels the model consumes.
         out_channels     : Number of output channels the model emits (3 * n_gaussians).
-        x_axis           : Elevation axis in metres, of shape (n_elevation,).
-        x_axis_length    : Number of elevation bins.
+        x_axis           : Elevation axis in metres, of shape (n_z,).
+        x_axis_length    : Number of z bins.
         n_gaussians      : Gaussian count K the run was trained with.
         dataset_config   : Dataset-creation configuration restored from the run.
         split_name       : Name of the split being inferred ("train", "val" or "test").
@@ -95,8 +95,8 @@ class Run:
         dataset          : Patch dataset yielding the normalised input windows.
         loader           : Sequential dataloader over `dataset`.
         checkpoint_meta  : Metadata payload stored alongside the checkpoint weights.
-        full_curves      : Raw tomogram of shape (n_elevation, azimuth, range), or a refusing placeholder.
-        complex_inputs   : Complex SAR stack of shape (channels, azimuth, range), or None.
+        full_curves      : Raw cube of shape (n_z, rows, cols), or a refusing placeholder.
+        complex_inputs   : Complex channel stack of shape (channels, rows, cols), or None.
         n_secondaries    : Number of secondary tracks in the input stack.
         secondary_labels : Track labels of the secondaries, or None when the full stack is used.
     """
@@ -169,7 +169,7 @@ class RunLoader(RunArtifactLoader):
             backbone_name : Registry name of the backbone architecture.
             in_channels   : Input-channel count to instantiate the model with.
             out_channels  : Output-channel count to instantiate the model with.
-            patch_size    : Patch shape (azimuth, range) used to derive any image-size override.
+            patch_size    : Patch shape (rows, cols) used to derive any image-size override.
 
         Returns:
             The instantiated backbone module, still on CPU and with random weights.
@@ -227,7 +227,7 @@ class RunLoader(RunArtifactLoader):
             num_workers     : Worker count for the dataloader.
             device          : Torch device string the model is moved to.
             checkpoint_name : File name of the checkpoint inside the run directory.
-            load_tomogram   : Whether to read the raw tomogram; when False `full_curves` refuses use.
+            load_cube   : Whether to read the raw cube; when False `full_curves` refuses use.
             region_override : Crop region replacing the split region, used for guard-extended inference.
 
         Returns:

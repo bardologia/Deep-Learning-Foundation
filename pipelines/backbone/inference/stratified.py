@@ -34,7 +34,7 @@ class StratifiedErrors:
         self.active_amp_thr = float(active_amp_thr)
 
     def _gt_active_count(self) -> np.ndarray:
-        """Returns the number of active ground-truth Gaussians per pixel, of shape (azimuth, range)."""
+        """Returns the number of active ground-truth Gaussians per pixel, of shape (rows, cols)."""
         params = np.asarray(self.result.params_gt, dtype=np.float64)
         n_k    = self.loaded.n_gaussians
         amps   = np.stack([params[3 * k] for k in range(n_k)])
@@ -45,7 +45,7 @@ class StratifiedErrors:
         """Collects every covariate map available for this run.
 
         Returns:
-            Mapping from covariate name to its map of shape (azimuth, range) and a flag
+            Mapping from covariate name to its map of shape (rows, cols) and a flag
             marking it as discrete, covering the ground-truth active count, primary
             amplitude, aux gradient magnitude and label fit R².
 
@@ -77,7 +77,7 @@ class StratifiedErrors:
         """Bins the error by covariate and summarises each bin by median and quartiles.
 
         Args:
-            cov      : Covariate map of shape (azimuth, range).
+            cov      : Covariate map of shape (rows, cols).
             err      : Per-pixel error map of the same shape.
             discrete : Whether to bin on distinct covariate values instead of quantile edges.
 

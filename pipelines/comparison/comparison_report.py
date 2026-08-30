@@ -156,7 +156,7 @@ class TrialComparisonReport(ComparisonReportBase):
         """Returns the markdown lines of every leaderboard section.
 
         Covers the headline metrics, the correlation-grouped variant, matched
-        precision and recall per ground-truth scatterer count, and the count
+        precision and recall per ground-truth component count, and the count
         calibration table.
         """
         scored = [r for r in self.records if r.metrics]
@@ -214,14 +214,14 @@ class TrialComparisonReport(ComparisonReportBase):
         return metrics
 
     def _bucket_indices(self, scored: list[TrialRecord], pattern: re.Pattern) -> list[int]:
-        """Returns the sorted scatterer counts present in the trials' metric keys.
+        """Returns the sorted component counts present in the trials' metric keys.
 
         Args:
             scored  : Trials carrying inference metrics.
-            pattern : Regex whose first group captures the scatterer count.
+            pattern : Regex whose first group captures the component count.
 
         Returns:
-            Ascending list of ground-truth scatterer counts k found in any trial.
+            Ascending list of ground-truth component counts k found in any trial.
         """
         buckets: set[int] = set()
         for r in scored:

@@ -1,6 +1,6 @@
 """Architecture configuration dataclasses for the 1D profile autoencoder family.
 
-Profile autoencoders compress a single reflectivity profile along the elevation
+Profile autoencoders compress a single reflectivity profile along the z
 axis to a low-dimensional embedding and reconstruct it. The base class holds
 the fields shared by every family and each subclass adds the fields specific to
 its encoder-decoder topology.
@@ -20,7 +20,7 @@ class ProfileAutoencoderBaseConfig:
     """Fields shared by every 1D profile autoencoder configuration.
 
     Attributes:
-        profile_length : Number of elevation samples in an input profile.
+        profile_length : Number of z samples in an input profile.
         embedding_dim  : Width of the latent representation.
         embedding_norm : Normalisation applied to the latent representation.
         activation     : Activation function name used throughout the network.
@@ -132,7 +132,7 @@ class Conv1dAutoencoderConfig(ProfileAutoencoderBaseConfig):
 
     Attributes:
         seq_channels      : Channel width of the convolutional stack.
-        seq_kernel_size   : Kernel size along the elevation axis.
+        seq_kernel_size   : Kernel size along the z axis.
         depth             : Number of convolution layers per encoder and decoder body.
         dropout           : Dropout probability between convolution layers.
         normalization     : Sequence normalization after each convolution, one of none or batchnorm.
@@ -239,7 +239,7 @@ class TcnAutoencoderConfig(ProfileAutoencoderBaseConfig):
 
     Attributes:
         seq_channels    : Channel width of the convolutional stack.
-        seq_kernel_size : Kernel size along the elevation axis.
+        seq_kernel_size : Kernel size along the z axis.
         depth           : Number of dilated convolution levels.
         dropout         : Dropout probability inside the blocks.
         normalization   : Sequence normalization between the dilated convolutions, one of none or batchnorm.
@@ -310,8 +310,8 @@ class CnnAttnAutoencoderConfig(ProfileAutoencoderBaseConfig):
 
     Attributes:
         seq_channels    : Channel width of the convolutional stem.
-        seq_kernel_size : Kernel size along the elevation axis.
-        patch_size      : Number of elevation samples pooled into one token.
+        seq_kernel_size : Kernel size along the z axis.
+        patch_size      : Number of z samples pooled into one token.
         hidden_dim      : Token width of the attention blocks.
         depth           : Number of attention blocks.
         num_heads       : Attention heads per block.

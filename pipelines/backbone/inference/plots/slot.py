@@ -36,7 +36,7 @@ class SlotPlotter(PlotTools):
         """Saves the active-count agreement map and the signed count-difference map.
 
         Args:
-            params_pred   : Predicted Gaussian parameter cube of shape (3 * n_gaussians, azimuth, range), interleaved as (amplitude, mu, sigma) per slot.
+            params_pred   : Predicted Gaussian parameter cube of shape (3 * n_gaussians, rows, cols), interleaved as (amplitude, mu, sigma) per slot.
             params_gt     : Ground-truth Gaussian parameter cube in the same layout as params_pred.
             n_gaussians   : Number of Gaussian slots to count over.
             out_dir       : Directory the two PNG figures are written into.

@@ -30,7 +30,7 @@ class ImageAePlots(AePlotsBase):
         """Saves the ground-truth, reconstruction and absolute-error maps of one patch.
 
         Args:
-            gt          : Ground-truth channel of shape (azimuth, range), in intensity units.
+            gt          : Ground-truth channel of shape (rows, cols), in intensity units.
             pred        : Reconstruction of the same shape and units.
             mse         : Mean squared error of the whole patch, shown in the error title.
             label       : Selection the patch comes from, `best`, `worst` or `random`.
@@ -57,7 +57,7 @@ class ImageAePlots(AePlotsBase):
         """Saves the first-channel triplet of every selected patch.
 
         Args:
-            gt          : Ground-truth patches of shape (n_patches, channels, azimuth, range).
+            gt          : Ground-truth patches of shape (n_patches, channels, rows, cols).
             pred        : Reconstructions of the same shape.
             mse         : Per-patch mean squared error of shape (n_patches,).
             ranked      : Patch indices to render, in the order they are ranked.
@@ -98,7 +98,7 @@ class ImageAePlots(AePlotsBase):
         """Saves reconstructed against true mean patch intensity, with the identity line.
 
         Args:
-            gt          : Ground-truth patches of shape (n_patches, channels, azimuth, range).
+            gt          : Ground-truth patches of shape (n_patches, channels, rows, cols).
             pred        : Reconstructions of the same shape.
             n_points    : Maximum number of patches drawn into the scatter.
             seed        : Seed of the subsampling generator.

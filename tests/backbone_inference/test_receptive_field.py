@@ -69,7 +69,7 @@ def test_conv3_mass_is_complete_inside_a_small_window():
 
 
 def test_wider_kernel_has_wider_sigma():
-    """A 9x9 kernel gives larger azimuth and range gradient sigmas than a 3x3 kernel."""
+    """A 9x9 kernel gives larger row and column gradient sigmas than a 3x3 kernel."""
     erf3 = ErfComputation(_ConvModel(3), WINDOW, [8])
     erf9 = ErfComputation(_ConvModel(9), WINDOW, [8])
 

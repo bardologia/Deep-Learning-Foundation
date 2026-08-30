@@ -1,4 +1,4 @@
-"""GPU-batched Gaussian-mixture fitting of tomographic elevation profiles.
+"""GPU-batched Gaussian-mixture fitting of volumetric z profiles.
 
 Drives the three-phase extraction loop: CPU peak initialisation, a JAX Adam
 kernel that fits every candidate mixture order K on device, and a background
@@ -28,7 +28,7 @@ from .selection   import BestKSelector, KernelBackendSelector
 
 
 class SigmaFittingExtractor:
-    """Fits Gaussian mixtures to every active pixel of a tomogram on GPU.
+    """Fits Gaussian mixtures to every active pixel of a cube on GPU.
 
     Attributes:
         modes         : Fit modes (see `FitMode`) deciding which of amplitude, mean and sigma are free parameters.
@@ -148,14 +148,14 @@ class SigmaFittingExtractor:
         cube_path : Path,
         z_range   : Tuple[float, float],
     ) -> tuple:
-        """Memory-maps the tomogram and derives the height axis and fit bounds.
+        """Memory-maps the cube and derives the height axis and fit bounds.
 
         Args:
-            tomogram_path : Path to a (height, azimuth, range) tomogram .npy.
-            height_range  : Lowest and highest elevation of the height axis, in metres.
+            cube_path : Path to a (height, rows, cols) cube .npy.
+            height_range  : Lowest and highest z of the height axis, in metres.
 
         Returns:
-            Tuple of memmapped tomogram, its H/Az/R sizes, the numpy and JAX
+            Tuple of memmapped cube, its H/Az/R sizes, the numpy and JAX
             height axes in metres, the sigma and mean clamp bounds in metres,
             and the flattened parameter count 3 * k_max.
         """
@@ -244,10 +244,10 @@ class SigmaFittingExtractor:
         """Loads one range batch and returns raw, peak-normalised profiles.
 
         Args:
-            tomogram_mmap : Memmapped complex tomogram of shape (H, Az, R).
+            cube_mmap : Memmapped complex cube of shape (H, Az, R).
             r_start       : First range bin of the batch.
             R             : Total number of range bins.
-            Az            : Number of azimuth lines.
+            Az            : Number of row lines.
             H             : Number of height bins.
 
         Returns:
@@ -463,7 +463,7 @@ class SigmaFittingExtractor:
             outputs      : Destination maps keyed by (mode, lambda_k).
             r_start      : First range bin of the batch.
             r_end        : Exclusive last range bin of the batch.
-            Az           : Number of azimuth lines.
+            Az           : Number of row lines.
             batch_tag    : Label used in log sections.
         """
 
@@ -533,14 +533,14 @@ class SigmaFittingExtractor:
         background so the GPU stays busy while results are written.
 
         Args:
-            tomogram_mmap : Memmapped complex tomogram of shape (H, Az, R).
+            cube_mmap : Memmapped complex cube of shape (H, Az, R).
             height_axis   : Height axis of shape (H,) in metres.
             height_ax_j   : Device copy of the height axis.
             sigma_lower_j : Lower sigma clamp in metres.
             sigma_upper_j : Upper sigma clamp in metres.
             mu_lower_j    : Lower mean clamp in metres.
             mu_upper_j    : Upper mean clamp in metres.
-            Az            : Number of azimuth lines.
+            Az            : Number of row lines.
             R             : Number of range bins.
             H             : Number of height bins.
             n_params_out  : Flattened parameter count 3 * k_max.
@@ -626,11 +626,11 @@ class SigmaFittingExtractor:
         cube_path : Path,
         z_range   : Tuple[float, float],
     ) -> Dict[tuple, Tuple[np.ndarray, Dict[str, np.ndarray]]]:
-        """Fits the whole tomogram and returns one parameter map per permutation.
+        """Fits the whole cube and returns one parameter map per permutation.
 
         Args:
-            tomogram_path : Path to a (height, azimuth, range) tomogram .npy.
-            height_range  : Lowest and highest elevation in metres.
+            cube_path : Path to a (height, rows, cols) cube .npy.
+            height_range  : Lowest and highest z in metres.
 
         Returns:
             Mapping from (mode, lambda_k) to a parameter map of shape

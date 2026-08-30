@@ -1,4 +1,4 @@
-"""Tests for the log1p amplitude compression used on SAR magnitudes.
+"""Tests for the log1p amplitude compression used on amplitude channels.
 
 Covers numpy and torch parity with log1p, clamping at the physical floor and
 ceiling, round-trip fidelity, the leaky-slope variants that keep gradients

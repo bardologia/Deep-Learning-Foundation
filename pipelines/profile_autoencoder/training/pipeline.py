@@ -93,14 +93,14 @@ class TrainingPipeline(AutoencoderTrainingPipeline):
         )
 
     def _prepare_data(self, run_directory, logger):
-        """Builds the profile loaders and elevation axis for a training run.
+        """Builds the profile loaders and z axis for a training run.
 
         Args:
             run_directory : Directory of the run being trained.
             logger        : Logger passed to the dataset pipeline.
 
         Returns:
-            Tuple of the train, validation and test loaders, the elevation axis
+            Tuple of the train, validation and test loaders, the z axis
             of shape (H,) in metres, its length, the datasets keyed by split,
             and the metadata payload for `_save_metadata`.
         """

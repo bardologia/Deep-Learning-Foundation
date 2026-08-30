@@ -1,8 +1,8 @@
-"""Elementwise and shape-aware penalties over tomographic reflectivity curves.
+"""Elementwise and shape-aware penalties over volumetric reflectivity curves.
 
 Collects the pointwise robust penalties applied to a prediction-minus-target
 residual, the second difference used as a smoothness regulariser, and the
-shape and energy terms comparing whole curves along the elevation axis.
+shape and energy terms comparing whole curves along the z axis.
 """
 
 from __future__ import annotations
@@ -53,13 +53,13 @@ class CurveLoss:
 
     @staticmethod
     def second_difference(curve: torch.Tensor) -> torch.Tensor:
-        """Returns the discrete second difference along the elevation axis.
+        """Returns the discrete second difference along the z axis.
 
         Args:
-            curve : Tensor of shape (batch, elevation, ...) sampled uniformly along dimension 1.
+            curve : Tensor of shape (batch, z, ...) sampled uniformly along dimension 1.
 
         Returns:
-            Tensor of shape (batch, elevation - 2, ...) holding the second
+            Tensor of shape (batch, z - 2, ...) holding the second
             difference at each interior sample.
 
         Raises:
@@ -93,9 +93,9 @@ class CurveLoss:
         measures shape agreement only where the target carries energy.
 
         Args:
-            pred   : Predicted curves with the elevation samples along axis.
+            pred   : Predicted curves with the z samples along axis.
             target : Target curves of the same shape as pred.
-            axis   : Dimension holding the elevation samples.
+            axis   : Dimension holding the z samples.
 
         Returns:
             Scalar mean of 1 - cosine similarity over the valid curves.
@@ -119,9 +119,9 @@ class CurveLoss:
         Curves whose target norm falls below 1e-3 are excluded.
 
         Args:
-            pred   : Predicted curves with the elevation samples along axis.
+            pred   : Predicted curves with the z samples along axis.
             target : Target curves of the same shape as pred.
-            axis   : Dimension holding the elevation samples.
+            axis   : Dimension holding the z samples.
 
         Returns:
             Scalar mean of |log(||pred|| / ||target||)| over the valid curves.

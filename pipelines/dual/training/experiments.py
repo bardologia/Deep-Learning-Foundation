@@ -234,9 +234,9 @@ class DualRoutingTrialPlanner:
     def _overrides(self, spec: dict) -> dict:
         """Returns the entry-config overrides routing the variant's channel groups into the two trunks.
 
-        The DEM input channel is switched on exactly when a trunk selects the
+        The aux field input channel is switched on exactly when a trunk selects the
         `dem` group, so a selected group always carries its channels and a
-        DEM-free variant cannot inherit the channel from the base config.
+        aux field-free variant cannot inherit the channel from the base config.
         """
         features = {
             "params_features"    : list(self.trials.params_features),

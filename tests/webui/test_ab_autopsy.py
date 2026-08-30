@@ -1,7 +1,7 @@
 """Tests for the A/B autopsy tab that compares two inference stamps.
 
 Covers metric ranking and error hotspot detection between two runs, per-pixel
-profile retrieval, the guards that reject mismatched regions or elevation axes,
+profile retrieval, the guards that reject mismatched regions or z axes,
 the containment check keeping stamps inside catalogued run roots, and the
 listing that admits only stamps carrying the cubes a comparison needs.
 """
@@ -130,7 +130,7 @@ def test_profile_returns_both_predictions(tmp_path):
 
 
 def test_profile_outside_region_fails(tmp_path):
-    """Checks an azimuth index beyond the scene is rejected."""
+    """Checks an row index beyond the scene is rejected."""
     stamp_a, stamp_b = _pair(tmp_path)
 
     assert _autopsy(tmp_path).profile(str(stamp_a), str(stamp_b), row=999, col=0)["ok"] is False

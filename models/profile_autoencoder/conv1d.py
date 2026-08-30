@@ -1,6 +1,6 @@
 """Profile autoencoder built from plain 1-D convolutions.
 
-The encoder convolves each elevation profile and pools it to a latent vector;
+The encoder convolves each z profile and pools it to a latent vector;
 the decoder projects the code back to a full-length feature sequence and
 convolves it down to a single reconstructed profile.
 """
@@ -98,7 +98,7 @@ class Conv1dDecoder(nn.Module):
     """1-D convolutional decoder expanding a latent code to a profile.
 
     Attributes:
-        length         : Profile length in elevation bins.
+        length         : Profile length in z bins.
         first_channels : Channel width the latent code is lifted to.
         project        : Linear lift of the latent code to a full-length feature map.
         body           : Convolution stack over the reversed encoder widths, ending in a single output channel.

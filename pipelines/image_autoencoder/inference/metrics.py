@@ -24,7 +24,7 @@ class ImageAeMetrics(AeMetricsBase):
         """Unpacks the predictor result and records the patch and channel counts.
 
         Args:
-            result : Predictor result whose `gt` and `pred` have shape (n_patches, channels, azimuth, range).
+            result : Predictor result whose `gt` and `pred` have shape (n_patches, channels, rows, cols).
         """
         super().__init__(result)
 

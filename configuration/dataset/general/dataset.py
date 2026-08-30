@@ -1,7 +1,7 @@
-"""Dataset configuration for the patch-based tomographic SAR training pipelines.
+"""Dataset configuration for the patch-based training pipelines.
 
-The dataclasses here describe which SAR channels form the network input, how
-Gaussian scatterer parameters are laid out in the target, how patches are cut
+The dataclasses here describe which input channels form the network input, how
+Gaussian component parameters are laid out in the target, how patches are cut
 from the scene, and how the loaders are parameterised.
 """
 
@@ -20,16 +20,16 @@ from tools.data.regions                  import SplitRegions
 
 @dataclass
 class InputConfig:
-    """Selection and complex representation of the SAR channels forming the input.
+    """Selection and complex representation of the input channels forming the input.
 
     Attributes:
-        use_primary                   : Whether the primary pass is part of the input stack.
-        primary_representation        : Complex-to-real representation of the primary pass.
-        use_secondaries               : Whether the secondary passes are part of the input stack.
-        secondaries_representation    : Complex-to-real representation of the secondary passes.
-        use_interferograms            : Whether interferograms are part of the input stack.
-        interferograms_representation : Complex-to-real representation of the interferograms.
-        use_dem                       : Whether the DEM elevation channel is appended.
+        use_primary                : Whether the primary channel is part of the input stack.
+        primary_representation     : Complex-to-real representation of the primary channel.
+        use_secondaries            : Whether the secondary channels are part of the input stack.
+        secondaries_representation : Complex-to-real representation of the secondary channels.
+        use_derived                : Whether derived channels are part of the input stack.
+        derived_representation     : Complex-to-real representation of the derived channels.
+        use_aux                    : Whether the auxiliary channel is appended.
     """
 
     use_primary            : bool           = True
@@ -45,7 +45,7 @@ class InputConfig:
 
     @classmethod
     def full_stack(cls) -> "InputConfig":
-        """Returns the standard configuration: primary and secondary magnitudes plus interferometric phase."""
+        """Returns the standard configuration: primary and secondary magnitudes plus derived phase."""
         return cls(
             use_primary     = True,  primary_representation        = Representation.MAG_ONLY,
             use_secondaries = True,  secondaries_representation    = Representation.MAG_ONLY,
@@ -55,21 +55,21 @@ class InputConfig:
     @classmethod
     def no_stack(cls) -> "InputConfig":
         """Returns a configuration with every input source disabled."""
-        return cls(use_primary=False, use_secondaries=False, use_interferograms=False, use_dem=False)
+        return cls(use_primary=False, use_secondaries=False, use_derived=False, use_aux=False)
 
     @property
     def primary_channels_per_source(self) -> int:
-        """Number of real channels contributed by the primary chan, zero if unused."""
+        """Number of real channels contributed by the primary channel, zero if unused."""
         return self.primary_representation.channels_per_source if self.use_primary else 0
 
     @property
     def secondaries_channels_per_source(self) -> int:
-        """Number of real channels contributed by each secondary chan, zero if unused."""
+        """Number of real channels contributed by each secondary channel, zero if unused."""
         return self.secondaries_representation.channels_per_source if self.use_secondaries else 0
 
     @property
     def derived_channels_per_source(self) -> int:
-        """Number of real channels contributed by each derived, zero if unused."""
+        """Number of real channels contributed by each derived channel, zero if unused."""
         return self.derived_representation.channels_per_source if self.use_derived else 0
 
     def total_channels(self, n_secondaries: int, n_derived: int) -> int:
@@ -77,7 +77,7 @@ class InputConfig:
 
         Args:
             n_secondaries    : Number of secondary channels available in the scene.
-            n_derived : Number of derived available in the scene.
+            n_derived : Number of derived channels available in the scene.
 
         Returns:
             Total number of real-valued input channels, Aux included when enabled.
@@ -94,7 +94,7 @@ class InputConfig:
 
         Args:
             n_secondaries    : Number of secondary channels available in the scene.
-            n_derived : Number of derived available in the scene.
+            n_derived : Number of derived channels available in the scene.
 
         Returns:
             One ``source/slot_kind`` key per channel of the assembled stack.
@@ -156,10 +156,10 @@ class InputConfig:
       
 @dataclass
 class OutputConfig:
-    """Layout and normalisation of the predicted Gaussian scatterer parameters.
+    """Layout and normalisation of the predicted Gaussian component parameters.
 
     Attributes:
-        ROLE_NAMES        : Parameter roles of one Gaussian: amplitude, mean elevation and standard deviation.
+        ROLE_NAMES        : Parameter roles of one Gaussian: amplitude, mean z and standard deviation.
         output_strategies : Normalisation strategy per output slot.
     """
 
@@ -245,8 +245,8 @@ class PatchConfig:
     """Geometry of the patches cut from the scene.
 
     Attributes:
-        size                  : Patch extent in pixels as (azimuth, range).
-        stride                : Step between consecutive patch origins in pixels, (azimuth, range).
+        size                  : Patch extent in pixels as (rows, cols).
+        stride                : Step between consecutive patch origins in pixels, (rows, cols).
         use_symmetric_padding : Whether the scene edges are padded symmetrically so every pixel is covered by a patch.
     """
 
@@ -283,7 +283,7 @@ class DatasetConfig:
         preprocessing_run_directory : Directory holding the preprocessed scene.
         split_regions               : Azimuth and range regions defining train, val and test.
         parameters_path             : Directory holding the extracted Gaussian parameters.
-        secondary_labels            : Track labels of the secondary passes to load.
+        secondary_labels            : Track labels of the secondary channels to load.
         patch                       : Patch geometry.
         input_config                : Input channel selection.
         output_config               : Target layout and normalisation.
@@ -294,7 +294,7 @@ class DatasetConfig:
         prefetch_factor             : Batches prefetched per worker.
         shuffle_train               : Whether the training split is shuffled.
         pin_memory                  : Whether loader batches are pinned for faster host-to-device copies.
-        x_axis                      : Elevation axis samples in metres, of shape (n_elevation,).
+        x_axis                      : Elevation axis samples in metres, of shape (n_z,).
         n_gaussians                 : Number of Gaussian components predicted per pixel.
     """
 

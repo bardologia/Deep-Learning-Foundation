@@ -1,6 +1,6 @@
 """Registry of the single-trunk backbone architectures and their configurations.
 
-Collects the twenty segmentation-style backbones used as tomographic profile
+Collects the twenty segmentation-style backbones used as volumetric profile
 predictors, pairs each with its configuration dataclass, and exposes the
 ``get_backbone`` factory built on top of those two registries. ``BACKBONE_HEADS``
 lists the selectable output heads and ``BACKBONE_IMAGE_SIZE_MODELS`` names the

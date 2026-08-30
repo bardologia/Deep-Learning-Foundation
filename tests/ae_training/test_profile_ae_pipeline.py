@@ -76,7 +76,7 @@ def _profile_config(tmp_path):
 
 
 def test_build_model_sets_profile_length():
-    """Building the model installs the number of elevation bins on the architecture config."""
+    """Building the model installs the number of z bins on the architecture config."""
     cfg  = _build_cfg()
     pipe = _pipeline(cfg)
 
@@ -163,10 +163,10 @@ def test_model_overrides_win_over_entry_learning_rates():
 
 
 class _CurveDataset(torch.utils.data.Dataset):
-    """Dataset of random elevation profiles returned as identical (input, target) pairs."""
+    """Dataset of random z profiles returned as identical (input, target) pairs."""
 
     def __init__(self, n=8):
-        """Draws n random curves of 16 elevation bins and disables augmentation."""
+        """Draws n random curves of 16 z bins and disables augmentation."""
         g = torch.Generator().manual_seed(0)
         self.curves    = torch.randn(n, PROFILE_LENGTH, generator=g)
         self.augmenter = None

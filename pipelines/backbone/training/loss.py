@@ -1,4 +1,4 @@
-"""Composite training loss over predicted Gaussian elevation profiles.
+"""Composite training loss over predicted Gaussian z profiles.
 
 Assembles curve-space and parameter-space terms into one weighted
 objective, tracks the inactive terms as monitoring values, and reports slot
@@ -287,7 +287,7 @@ class Loss:
 
     @torch.no_grad()
     def curves(self, pred_output, gt_params):
-        """Returns the predicted and expected elevation profiles for a batch.
+        """Returns the predicted and expected z profiles for a batch.
 
         Args:
             pred_output : Raw model output of shape (batch, n_gaussians * params_per_gaussian, height, width).
@@ -342,7 +342,7 @@ class Loss:
         Returns:
             Dict with overall and per-slot active fractions, the exact,
             under- and over-count fractions, and the count accuracy conditioned
-            on each ground-truth scatterer count.
+            on each ground-truth component count.
         """
         cfg = self.loss_cfg
         ppg = self.gaussian_cfg.params_per_gaussian

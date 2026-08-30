@@ -114,7 +114,7 @@ class InferenceQueueConfig:
         seed                     : Seed used for the random profile and slice selections.
         save_plots               : Whether per-run diagnostic plots are written.
         save_animations          : Whether GIF animations are written.
-        save_cubes               : Whether reconstructed tomographic cubes are saved.
+        save_cubes               : Whether reconstructed volumetric cubes are saved.
         stitch_window            : Window applied when stitching overlapping patches.
         cube_dtype               : NumPy dtype name used when writing cubes.
         render_amp_floor         : Amplitude below which components are hidden in renders.
@@ -222,7 +222,7 @@ class BenchmarkConfig:
         inference             : Inference queue settings.
         comparison            : Comparison report settings.
         input                 : Input representation and channel selection.
-        geometry              : SAR acquisition geometry.
+        geometry              : Acquisition geometry.
         normalization         : Input and target normalisation settings.
         augmentation          : Training-time augmentation settings.
         loss                  : Loss configuration applied to every benchmarked run.

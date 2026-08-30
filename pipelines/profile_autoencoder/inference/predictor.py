@@ -1,4 +1,4 @@
-"""Batched reconstruction of elevation profiles by a trained profile autoencoder.
+"""Batched reconstruction of z profiles by a trained profile autoencoder.
 
 Feeds normalised curves through the autoencoder and returns both normalised and
 denormalised ground truth and reconstructions together with the latent codes.
@@ -18,7 +18,7 @@ class ProfileAeResult(AeResult):
 
 
 class ProfileAePredictor(AeReconstructionPredictor):
-    """Reconstructs a split of elevation profiles batch by batch."""
+    """Reconstructs a split of z profiles batch by batch."""
 
     SECTION      = "[Profile AE Inference: Reconstruct]"
     RESULT_CLASS = ProfileAeResult

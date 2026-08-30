@@ -1,6 +1,6 @@
 """Entry point stressing trained backbone runs with controlled input degradation.
 
-Sweeps additive noise, gain error, whole-track dropout and azimuth shifts, reporting
+Sweeps additive noise, gain error, whole-track dropout and row shifts, reporting
 curve-MSE against severity plus the noise sigma at which the loss doubles.
 """
 

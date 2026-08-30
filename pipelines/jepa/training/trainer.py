@@ -45,10 +45,10 @@ class JepaModule(nn.Module):
         """Runs the backbone, first encoding the input with the image autoencoder if present.
 
         Args:
-            images : Input patch batch of shape (batch, channels, azimuth, range).
+            images : Input patch batch of shape (batch, channels, rows, cols).
 
         Returns:
-            Backbone output of shape (batch, out_channels, azimuth, range), holding
+            Backbone output of shape (batch, out_channels, rows, cols), holding
             either the profile embedding or the flattened Gaussian parameter slots.
         """
         if self.image_autoencoder is not None:
@@ -275,7 +275,7 @@ class Trainer(BaseTrainer):
         deterministic and comparable to an unmasked run.
 
         Args:
-            batch : Tuple of the input patch batch of shape (batch, channels, azimuth, range), the normalized ground-truth parameter batch, and, for the parameter loss, an optional per-pixel kz map in rad/m.
+            batch : Tuple of the input patch batch of shape (batch, channels, rows, cols), the normalized ground-truth parameter batch, and, for the parameter loss, an optional per-pixel kz map in rad/m.
 
         Returns:
             The criterion's loss dict for this batch.

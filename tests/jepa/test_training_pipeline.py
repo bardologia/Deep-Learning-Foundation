@@ -1,7 +1,7 @@
 """Tests for the JEPA training pipeline's validation gates and run bookkeeping.
 
 Covers autoencoder run-directory resolution, the head restriction under profile coupling,
-checkpoint presence checks, the head passed into the overfit gate, elevation-axis agreement when
+checkpoint presence checks, the head passed into the overfit gate, z-axis agreement when
 loading a pretrained profile autoencoder, and closing the run metadata when dataset preparation
 fails."""
 
@@ -106,7 +106,7 @@ def test_overfit_gate_backbone_config_carries_entry_head(tmp_path, monkeypatch):
 
 
 def _axis_pipeline(tmp_path):
-    """Returns a pipeline stub with a saved MLP autoencoder checkpoint on a unit elevation axis."""
+    """Returns a pipeline stub with a saved MLP autoencoder checkpoint on a unit z axis."""
     import torch
     from types import SimpleNamespace
 
@@ -130,7 +130,7 @@ def _axis_pipeline(tmp_path):
 
 
 def test_load_profile_autoencoder_rejects_axis_range_mismatch(tmp_path):
-    """An elevation axis spanning a different range than the checkpoint is rejected."""
+    """An z axis spanning a different range than the checkpoint is rejected."""
     pipe = _axis_pipeline(tmp_path)
 
     with pytest.raises(ValueError, match="z axis"):
@@ -138,7 +138,7 @@ def test_load_profile_autoencoder_rejects_axis_range_mismatch(tmp_path):
 
 
 def test_load_profile_autoencoder_rejects_axis_length_mismatch(tmp_path):
-    """An elevation axis of a different length than the checkpoint is rejected."""
+    """An z axis of a different length than the checkpoint is rejected."""
     pipe = _axis_pipeline(tmp_path)
 
     with pytest.raises(ValueError, match="z axis"):
@@ -146,7 +146,7 @@ def test_load_profile_autoencoder_rejects_axis_length_mismatch(tmp_path):
 
 
 def test_load_profile_autoencoder_accepts_matching_axis(tmp_path):
-    """A matching elevation axis loads the pretrained autoencoder."""
+    """A matching z axis loads the pretrained autoencoder."""
     pipe   = _axis_pipeline(tmp_path)
     loaded = pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32))
 

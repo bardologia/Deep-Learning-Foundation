@@ -29,12 +29,12 @@ class ConfigFactory:
         self.config = config
 
     def _secondary_labels(self) -> tuple | None:
-        """Returns the configured secondary pass labels as a tuple, or None when unset."""
+        """Returns the configured secondary channel labels as a tuple, or None when unset."""
         labels = self.config.paths.secondary_labels
         return tuple(labels) if labels else None
 
     def global_crop(self) -> CropRegion:
-        """Returns the global azimuth/range crop recorded by the preprocessing run."""
+        """Returns the global row/col crop recorded by the preprocessing run."""
         layout_path = Path(self.config.paths.dataset_path) / "data" / "dataset.json"
         layout      = FileIO.load_json(layout_path)
 
@@ -50,7 +50,7 @@ class ConfigFactory:
         return OutputConfig(output_strategies={key: norm.strategy("output", key) for key in ("out/amp", "out/mu", "out/sigma")})
 
     def split_regions(self) -> SplitRegions:
-        """Returns train/val/test crops: configured azimuth spans over the full range extent."""
+        """Returns train/val/test crops: configured row spans over the full range extent."""
         crop     = self.global_crop()
         training = self.config.training
 

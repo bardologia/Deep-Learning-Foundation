@@ -1,4 +1,4 @@
-"""Tests covering the registry of image autoencoders over interferogram patches.
+"""Tests covering the registry of image autoencoders over derived channel patches.
 
 Every registered model is built at a tiny size and checked for reconstruction shape,
 latent dimensionality, feature resizing, gradient health, determinism, degenerate

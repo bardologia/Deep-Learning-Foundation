@@ -1,6 +1,6 @@
 """Peak-based initial guesses for Gaussian-mixture profile fitting.
 
-Locates prominent peaks in each elevation profile with `scipy.signal.find_peaks`
+Locates prominent peaks in each z profile with `scipy.signal.find_peaks`
 and turns them into amplitude, mean and sigma starting points, optionally over a
 process pool.
 """

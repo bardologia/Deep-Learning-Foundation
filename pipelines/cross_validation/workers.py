@@ -408,7 +408,7 @@ class FoldInferenceWorker(CrossValidationWorker):
         logger.close()
 
     def _run_spatial(self, run_directory: Path, split: str, fold_index: int) -> None:
-        """Runs backbone-style inference restricted to the fold's azimuth block."""
+        """Runs backbone-style inference restricted to the fold's row block."""
         from pipelines.backbone.inference.pipeline           import InferencePipeline
         from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 

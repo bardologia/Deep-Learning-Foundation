@@ -1,7 +1,7 @@
 """Per-pixel colour maps for a parameter-extraction run.
 
 Renders the discrete model-order maps, the fit-quality map, the profile-contrast map and
-the masked per-slot parameter maps over the azimuth-range grid.
+the masked per-slot parameter maps over the row-col grid.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from tools.monitoring.logger  import Logger
 
 
 class SpatialMapPlotter(PlotBase):
-    """Renders the azimuth-range colour maps of a fitted parameter stack.
+    """Renders the row-range colour maps of a fitted parameter stack.
 
     Attributes:
         n_gaussians : Number of Gaussian slots, setting the discrete map levels.
@@ -89,7 +89,7 @@ class SpatialMapPlotter(PlotBase):
         """Saves one continuous colour map per requested key, sharing a colourbar label.
 
         Args:
-            maps_dict  : Mapping from key to a field of shape (azimuth, range).
+            maps_dict  : Mapping from key to a field of shape (rows, cols).
             keys       : Keys to plot, in order.
             map_titles : Figure titles aligned with ``keys``.
             group_name : Group name used in the skip warnings.

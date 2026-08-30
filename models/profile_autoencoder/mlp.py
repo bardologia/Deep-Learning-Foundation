@@ -1,6 +1,6 @@
 """Profile autoencoder built from per-pixel multilayer perceptrons.
 
-Both halves are stacks of 1x1 convolutions, so the whole elevation profile is
+Both halves are stacks of 1x1 convolutions, so the whole z profile is
 treated as the channel dimension and every pixel is compressed independently.
 """
 

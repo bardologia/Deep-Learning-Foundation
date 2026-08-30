@@ -32,8 +32,8 @@ class PatchTrialRecord:
 
     Attributes:
         name              : Base run name of the trial.
-        patch_size        : Patch geometry as (row, range) in pixels.
-        patch_stride      : Patch stride as (row, range) in pixels.
+        patch_size        : Patch geometry as (rows, cols) in pixels.
+        patch_stride      : Patch stride as (rows, cols) in pixels.
         batch_size        : Batch size the trial trained at, None when not overridden.
         status            : Aggregated run status: DONE, PARTIAL or MISSING.
         test_loss         : Seed-mean test loss at the restored best-validation checkpoint.
@@ -267,7 +267,7 @@ class PatchTrialPlots(PlotBase):
         Args:
             ax        : Matplotlib axes to draw on.
             records   : Records backing the curve.
-            axis      : 0 for row, 1 for range; selects the patch length used as abscissa.
+            axis      : 0 for rows, 1 for cols; selects the patch length used as abscissa.
             value_key : PatchTrialRecord attribute holding the mean.
             std_key   : PatchTrialRecord attribute holding the standard deviation.
             color     : Fill colour of the band.
@@ -288,7 +288,7 @@ class PatchTrialPlots(PlotBase):
         Args:
             title   : Figure title.
             records : Records of the sweep.
-            axis    : 0 for row, 1 for range.
+            axis    : 0 for rows, 1 for cols.
 
         Returns:
             Path of the written figure.
@@ -462,7 +462,7 @@ class PatchTrialsReport:
 
     @staticmethod
     def _patch_label(patch_size: tuple[int, int]) -> str:
-        """Formats an (row, range) pixel pair as an 'AxR' label."""
+        """Formats an (rows, cols) pixel pair as an 'AxR' label."""
         return f"{patch_size[0]}x{patch_size[1]}"
 
     def _summary_table(self, best: PatchTrialRecord | None) -> MarkdownTable:
@@ -542,7 +542,7 @@ class PatchTrialsReport:
         best                       = self._best(records)
         doc                        = MarkdownDoc("Patch-size sweep")
 
-        doc.paragraph("The same backbone is trained across every admissible combination of row and range patch lengths on the selected dataset, so the sweep shows how the held-out loss follows the receptive field along each axis.")
+        doc.paragraph("The same backbone is trained across every admissible combination of row and column patch lengths on the selected dataset, so the sweep shows how the held-out loss follows the receptive field along each axis.")
         doc.kv_table({
             "Model"          : self.model_label,
             "Dataset"        : Path(self.config.paths.dataset_path).name,

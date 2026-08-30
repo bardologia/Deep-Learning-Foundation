@@ -4,7 +4,7 @@ Each dataclass holds the structural hyperparameters of one backbone family
 together with its per-section learning rates and weight decays, the search
 spaces exposed to the hyperparameter tuner, and the mapping from an
 instantiated model to optimiser parameter groups. Backbones predict Gaussian
-scatterer parameters from tomographic SAR patches, so ``out_channels`` counts
+component parameters from multi-channel patches, so ``out_channels`` counts
 predicted values per pixel and ``params_per_gaussian`` how many of them
 describe a single Gaussian component.
 """
@@ -21,9 +21,9 @@ class UNetConfig:
     """Configuration of the plain encoder-decoder U-Net backbone.
 
     Attributes:
-        in_channels         : Number of input channels of the tomographic patch.
+        in_channels         : Number of input channels of the volumetric patch.
         out_channels        : Number of predicted values per pixel.
-        params_per_gaussian : Values describing a single Gaussian scatterer.
+        params_per_gaussian : Values describing a single Gaussian component.
         head                : Name of the output head attached to the decoder.
         features            : Channel width of each encoder stage, coarsening downwards.
         bottleneck_factor   : Channel multiplier applied at the bottleneck.

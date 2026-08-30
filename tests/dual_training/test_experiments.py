@@ -56,7 +56,7 @@ def _ratio_planner(trials_config=None, model_overrides=None, out_channels=RATIO_
 
 
 def test_dual_routing_planner_default_catalog_covers_the_pairs_with_and_without_dem():
-    """The default routing catalogue doubles every ordered trunk-input pair as a no-DEM and a with-DEM variant."""
+    """The default routing catalogue doubles every ordered trunk-input pair as a no-aux field and a with-aux field variant."""
     plans = dict(_planner().plan())
 
     pairs = ["full-full", "chan-full", "full-chan", "derived-full", "full-derived", "chan-derived", "derived-chan"]
@@ -364,7 +364,7 @@ def test_dual_scheduler_houses_runs_in_routing_dir(tmp_path):
 
 
 def test_dual_scheduler_plans_the_trunk_input_grid(tmp_path):
-    """The scheduler's routing planner emits the trunk-input trials, DEM-doubled, with parity ladders."""
+    """The scheduler's routing planner emits the trunk-input trials, aux field-doubled, with parity ladders."""
     config             = DualEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "routing"

@@ -105,7 +105,7 @@ def test_position_dependent_model_disagrees():
 
 
 def _equivariant_curve_model(images: torch.Tensor) -> np.ndarray:
-    """Predicts curves that copy the local input value into every elevation bin.
+    """Predicts curves that copy the local input value into every z bin.
 
     Args:
         images : Input windows of shape (batch, channels, H, W).

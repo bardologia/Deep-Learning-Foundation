@@ -1,8 +1,8 @@
 """Tests for the metric layer of backbone inference.
 
-Covers per-pixel and scalar curve metrics, elevation-resolved metrics, active-slot
+Covers per-pixel and scalar curve metrics, z-resolved metrics, active-slot
 counting and per-slot parameter populations, Hungarian-matched Gaussian metrics and
-their permutation invariance, label quality against the raw tomogram, curve roughness,
+their permutation invariance, label quality against the raw cube, curve roughness,
 and the switches that gate parameter-space and slot-organisation metrics.
 """
 
@@ -30,8 +30,8 @@ def _make_result(pred_curves, gt_curves, params_pred=None, params_gt=None) -> Re
     """Builds a Result whose pixel maps are derived from the given curve cubes.
 
     Args:
-        pred_curves : Predicted profiles of shape (n_elevation, height, width).
-        gt_curves   : Ground-truth profiles of shape (n_elevation, height, width).
+        pred_curves : Predicted profiles of shape (n_z, height, width).
+        gt_curves   : Ground-truth profiles of shape (n_z, height, width).
         params_pred : Optional predicted parameter cube of shape (3 * n_gaussians, height, width).
         params_gt   : Optional ground-truth parameter cube of the same shape.
 
@@ -166,7 +166,7 @@ def test_curve_pixel_metrics_cosine_orthogonal():
 
 
 def test_unit_area_cubes_are_normalised_once_and_shared():
-    """Unit-area cubes are cached per side, are distinct objects, and integrate to one along elevation."""
+    """Unit-area cubes are cached per side, are distinct objects, and integrate to one along z."""
     rng    = np.random.default_rng(5)
     curve  = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.1
     result = _make_result(curve.copy(), curve.copy())
@@ -302,7 +302,7 @@ def test_z_metrics_identical_perfect():
 
 
 def test_active_count_stats_identical_perfect_agreement():
-    """Identical parameters give exact scatterer counts, per-slot activity fractions and count accuracy."""
+    """Identical parameters give exact component counts, per-slot activity fractions and count accuracy."""
     H, W   = 6, 6
     params = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
 
@@ -526,7 +526,7 @@ def test_matched_is_invariant_to_pred_slot_permutation():
 
 
 def test_matched_recall_penalises_filler_far_from_gt():
-    """A second prediction placed outside the tolerance halves recall and precision on two-scatterer pixels."""
+    """A second prediction placed outside the tolerance halves recall and precision on two-component pixels."""
     H, W = 4, 4
     gt   = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
     pred = np.zeros((N_GAUSSIANS * 3, H, W), dtype=np.float32)
@@ -606,7 +606,7 @@ def test_metrics_perturbed_scene_window_is_worse(parameters):
 
 
 def test_label_quality_perfect_fit_gives_r2_one():
-    """Labels identical to the raw tomogram score a unit R2 map with no pixel below one half."""
+    """Labels identical to the raw cube score a unit R2 map with no pixel below one half."""
     rng    = np.random.default_rng(0)
     curves = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
     result = _make_result(curves, curves)
@@ -620,7 +620,7 @@ def test_label_quality_perfect_fit_gives_r2_one():
 
 
 def test_label_quality_noisier_labels_score_lower():
-    """Noisier labels score a lower mean label R2 against the same raw tomogram."""
+    """Noisier labels score a lower mean label R2 against the same raw cube."""
     rng   = np.random.default_rng(1)
     raw   = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
     clean = raw + rng.normal(0.0, 0.01, size=raw.shape).astype(np.float32)

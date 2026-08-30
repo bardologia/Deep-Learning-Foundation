@@ -307,7 +307,7 @@ class AttentionSummary:
         """Summarizes a spatial attention gate.
 
         Args:
-            gate_map : Gate activations of shape (batch, channels, azimuth, range).
+            gate_map : Gate activations of shape (batch, channels, rows, cols).
 
         Returns:
             Dictionary with the "mean" and "std" gate weight, the "frac_active" fraction
@@ -337,7 +337,7 @@ class AttentionCapturePlots(PlotBase):
         """Draws the batch-mean map of one attention gate.
 
         Args:
-            gate  : Mean gate weights of shape (azimuth, range), on the gate's own grid.
+            gate  : Mean gate weights of shape (rows, cols), on the gate's own grid.
             name  : Qualified module name of the gate.
             stats : Gate statistics used for the overlay text.
             path  : Output path of the figure.

@@ -2,7 +2,7 @@
 
 Collects capped samples of the physical Gaussian parameters for histograms, tracks per-slot
 occupancy, amplitude and gradient magnitude to expose slot collapse, and logs reconstructed
-elevation profiles for a fixed set of validation pixels chosen to span the scatterer
+z profiles for a fixed set of validation pixels chosen to span the component
 configurations of interest.
 """
 
@@ -220,10 +220,10 @@ class SlotVitals:
 
 
 class ExampleSelector:
-    """Picks validation pixels spanning the scatterer configurations worth watching.
+    """Picks validation pixels spanning the component configurations worth watching.
 
-    Candidates are classified from the ground-truth parameters into one-scatterer pixels and
-    three two-scatterer regimes distinguished by the separation of the two strongest
+    Candidates are classified from the ground-truth parameters into one-component pixels and
+    three two-component regimes distinguished by the separation of the two strongest
     Gaussians relative to their widths, and by their amplitude ratio.
 
     Attributes:
@@ -387,7 +387,7 @@ class ExampleSelector:
 
 
 class ReconstructionFigures:
-    """Logs predicted-versus-label elevation profiles for a fixed set of validation pixels.
+    """Logs predicted-versus-label z profiles for a fixed set of validation pixels.
 
     The reference pixels and their y limits are captured once, so the figures logged each
     epoch are directly comparable over training.
@@ -524,7 +524,7 @@ class ReconstructionFigures:
 
         Args:
             model     : Model evaluated on the cached reference inputs.
-            criterion : Training criterion supplying the curve reconstruction and the elevation axis.
+            criterion : Training criterion supplying the curve reconstruction and the z axis.
             epoch     : Epoch the figures are logged under.
         """
         if self._images is None:

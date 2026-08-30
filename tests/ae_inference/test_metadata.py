@@ -1,6 +1,6 @@
 """Tests that the image and profile autoencoder inference stacks share one base implementation.
 
-Covers the metadata directory layout each family derives, the checkpoint elevation-axis
+Covers the metadata directory layout each family derives, the checkpoint z-axis
 guard of the profile run loader, and that a failing pipeline stage still closes its logger.
 """
 
@@ -61,7 +61,7 @@ def test_create_dirs(tmp_path):
 
 
 def test_x_axis_validation_rejects_a_shifted_axis_of_equal_length(tmp_path):
-    """The elevation axis guard rejects an axis shifted in metres even at equal bin count."""
+    """The z axis guard rejects an axis shifted in metres even at equal bin count."""
     axis    = np.linspace(0.0, 30.0, 16).astype(np.float32)
     shifted = axis + 5.0
 
@@ -72,7 +72,7 @@ def test_x_axis_validation_rejects_a_shifted_axis_of_equal_length(tmp_path):
 
 
 def test_x_axis_validation_rejects_a_different_bin_count(tmp_path):
-    """The elevation axis guard rejects an axis with a different number of bins."""
+    """The z axis guard rejects an axis with a different number of bins."""
     with pytest.raises(ValueError, match="z axis"):
         ProfileAeRunLoader._validate_x_axis(
             np.linspace(0.0, 30.0, 16).astype(np.float32),

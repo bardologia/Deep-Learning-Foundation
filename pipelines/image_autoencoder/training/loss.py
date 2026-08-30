@@ -11,7 +11,7 @@ class Loss(ReconstructionLoss):
     Only the elementwise penalties of the shared objective are admissible here:
     the shape, energy and smoothness kinds reduce along axis 1, which is the
     channel axis of a (batch, channels, height, width) patch stack rather than
-    an elevation axis, so they are rejected.
+    an z axis, so they are rejected.
 
     Attributes:
         KINDS : Reconstruction penalty kinds the image autoencoder accepts.

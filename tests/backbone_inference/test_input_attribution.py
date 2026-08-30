@@ -156,7 +156,7 @@ def _labeled_run(use_aux: bool = False) -> SimpleNamespace:
     """Builds a run stub whose input configuration describes a primary, two secondaries and two derived.
 
     Args:
-        use_aux : Whether a Aux channel is appended to the input stack.
+        use_aux : Whether an aux channel is appended to the input stack.
 
     Returns:
         Run stub with the input configuration, the secondary labels and the total channel count.
@@ -202,8 +202,8 @@ def test_channel_groups_partition_the_stack():
     run    = _labeled_run(use_aux=True)
     groups = ChannelGroups.build(run)
 
-    assert groups == {"primary": [0], "secondaries": [1, 2], "interferograms": [3, 4], "aux": [5]}
-    assert ChannelGroups.of_channels(groups, 6) == ["primary", "secondaries", "secondaries", "interferograms", "interferograms", "aux"]
+    assert groups == {"primary": [0], "secondaries": [1, 2], "derived": [3, 4], "aux": [5]}
+    assert ChannelGroups.of_channels(groups, 6) == ["primary", "secondaries", "secondaries", "derived", "derived", "aux"]
 
 
 def test_channel_groups_mismatch_raises():

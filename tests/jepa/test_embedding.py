@@ -28,7 +28,7 @@ class _FakeProfileAe:
 
     Attributes:
         embedding_dim  : Number of leading curve samples kept as the embedding.
-        profile_length : Length of the elevation axis the decoder pads back out to.
+        profile_length : Length of the z axis the decoder pads back out to.
     """
     def __init__(self, embedding_dim: int):
         """Stores the embedding width used to truncate curves."""
@@ -39,7 +39,7 @@ class _FakeProfileAe:
         return z
 
     def encode(self, curve):
-        """Returns the leading embedding_dim elevation samples of the curve."""
+        """Returns the leading embedding_dim z samples of the curve."""
         return curve[:, : self.embedding_dim]
 
     def decode(self, z):
@@ -187,7 +187,7 @@ def _evaluate(run, pixel_mse=None):
     """Runs the evaluator over the fake run's loader and returns its metrics and maps.
 
     Args:
-        run       : Fake run namespace carrying the model, loader, dataset, grid and elevation axis.
+        run       : Fake run namespace carrying the model, loader, dataset, grid and z axis.
         pixel_mse : Optional per-pixel curve error map of shape (height, width) to correlate against.
 
     Returns:

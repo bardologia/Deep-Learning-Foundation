@@ -1,4 +1,4 @@
-"""Torch datasets serving patched SAR stacks and Gaussian parameter targets.
+"""Torch datasets serving patched channel stacks and Gaussian parameter targets.
 
 PatchDataset assembles the configured input representation for one crop region and
 MultiRegionDataset concatenates several such regions into a single split.
@@ -26,8 +26,8 @@ class PatchDataset(Dataset):
     real-valued representation, augments the train split and normalizes both sides.
 
     Attributes:
-        inputs                 : Complex SAR stack of shape (layers, azimuth, range) for this region.
-        gt_parameters          : Ground-truth Gaussian parameters of shape (3 * n_gaussians, azimuth, range).
+        inputs                 : Complex channel stack of shape (layers, rows, cols) for this region.
+        gt_parameters          : Ground-truth Gaussian parameters of shape (3 * n_gaussians, rows, cols).
         grid                   : Patcher defining the patch grid and padding over the region.
         normalizer             : Normalizer applied to inputs and targets; may be assigned after construction.
         input_channels         : Number of channels the assembled input tensor carries.
@@ -54,20 +54,20 @@ class PatchDataset(Dataset):
         """Validates the stack layout against the input configuration and selects the target channels.
 
         Args:
-            inputs           : Complex SAR stack of shape (n_primary + n_secondaries + n_interferograms, azimuth, range).
-            gt_parameters    : Ground-truth parameters of shape (3 * available_gaussians, azimuth, range), ordered amplitude, mu (metres), sigma (metres) per Gaussian slot.
+            inputs           : Complex channel stack of shape (n_primary + n_secondaries + n_derived, rows, cols).
+            gt_parameters    : Ground-truth parameters of shape (3 * available_gaussians, rows, cols), ordered amplitude, mu (metres), sigma (metres) per Gaussian slot.
             grid             : Patcher supplying the patch coordinates and padding.
-            input_config     : Selection and representation of the primary, secondaries, interferograms and DEM.
+            input_config     : Selection and representation of the primary, secondaries, derived channels and aux field.
             output_config    : Selection of the ground-truth parameter channels.
             split_name       : Split this dataset belongs to; augmentation runs only for "train".
-            n_secondaries    : Number of secondary passes carried by the stack.
-            n_interferograms : Number of interferogram layers carried by the stack.
+            n_secondaries    : Number of secondary channels carried by the stack.
+            n_derived : Number of derived channel layers carried by the stack.
             n_primary        : Number of primary layers carried by the stack.
             normalizer       : Normalizer for inputs and targets; may be attached later.
             n_gaussians      : Number of Gaussian slots the output configuration indexes.
             augmenter        : Augmenter applied to train patches, or None to disable augmentation.
-            dem              : Optional DEM of shape (azimuth, range) in metres.
-            kz_field         : Optional per-pixel kz field of shape (tracks, azimuth, range) in rad/m.
+            dem              : Optional aux field of shape (rows, cols) in metres.
+            kz_field         : Optional per-pixel kz field of shape (channels, rows, cols) in rad/m.
 
         Raises:
             ValueError : If the stack layer count disagrees with the declared composition, if the input configuration requests a group the stack does not carry, or if n_gaussians indexes parameter channels beyond those provided.

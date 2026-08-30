@@ -2,7 +2,7 @@
 
 Covers histogram binning, the per-domain error labels, the latent RGB encoding of the three
 highest-variance embedding components, and the mapping of flat pixel indices back onto the
-azimuth-range grid of each split region.
+row-col grid of each split region.
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ def test_latent_rgb_scatter_saves_a_file(tmp_path):
 
 
 def test_region_pixels_invert_the_row_major_stacking():
-    """Flat pixel indices are split by region and inverted into per-region azimuth and range coordinates."""
+    """Flat pixel indices are split by region and inverted into per-region row and column coordinates."""
     p       = ProfileAePlots()
     regions = [CropRegion(0, 4, 0, 5), CropRegion(10, 12, 0, 5)]
     bounds  = p._region_bounds(regions)
@@ -112,21 +112,21 @@ def test_region_pixels_invert_the_row_major_stacking():
     assert list(bounds) == [0, 20, 30]
 
     pixel_index           = np.array([0, 7, 19, 20, 26], dtype=np.int64)
-    rows, azimuth, ranges = p._region_pixels(pixel_index, regions[0], int(bounds[0]), int(bounds[1]))
+    rows, row_pos, col_pos  = p._region_pixels(pixel_index, regions[0], int(bounds[0]), int(bounds[1]))
 
     assert list(rows)    == [0, 1, 2]
-    assert list(azimuth) == [0, 1, 3]
-    assert list(ranges)  == [0, 2, 4]
+    assert list(row_pos) == [0, 1, 3]
+    assert list(col_pos) == [0, 2, 4]
 
-    rows, azimuth, ranges = p._region_pixels(pixel_index, regions[1], int(bounds[1]), int(bounds[2]))
+    rows, row_pos, col_pos  = p._region_pixels(pixel_index, regions[1], int(bounds[1]), int(bounds[2]))
 
     assert list(rows)    == [3, 4]
-    assert list(azimuth) == [0, 1]
-    assert list(ranges)  == [0, 1]
+    assert list(row_pos) == [0, 1]
+    assert list(col_pos) == [0, 1]
 
 
 def test_latent_rgb_maps_write_one_image_per_region(tmp_path):
-    """One latent RGB map is written per split region, named by its azimuth and range bounds."""
+    """One latent RGB map is written per split region, named by its row and column bounds."""
     p           = ProfileAePlots()
     regions     = [CropRegion(0, 4, 0, 5), CropRegion(10, 12, 0, 5)]
     pixel_index = np.arange(30, dtype=np.int64)

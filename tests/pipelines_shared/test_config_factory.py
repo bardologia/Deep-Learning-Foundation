@@ -70,7 +70,7 @@ def test_empty_secondary_labels_become_none(test_data_dir, params_dir):
 
 @pytest.mark.dataset
 def test_benchmark_input_config_representations(test_data_dir, params_dir):
-    """Verifies the benchmark inputs use magnitudes for tracks and phase for interferograms."""
+    """Verifies the benchmark inputs use magnitudes for tracks and phase for derived channels."""
     factory = _factory(test_data_dir, params_dir)
     ic      = factory.benchmark_input_config()
 
@@ -81,7 +81,7 @@ def test_benchmark_input_config_representations(test_data_dir, params_dir):
 
 @pytest.mark.dataset
 def test_training_dataset_config_split_regions_share_global_range(test_data_dir, params_dir):
-    """Verifies the train, validation, and test regions share the global range extent and carry the configured azimuth spans."""
+    """Verifies the train, validation, and test regions share the global range extent and carry the configured row spans."""
     factory = _factory(test_data_dir, params_dir)
     crop    = factory.global_crop()
     cfg     = factory.training_dataset_config()

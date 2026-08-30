@@ -1,4 +1,4 @@
-"""Log1p standardisation of elevation profiles and its persisted statistics.
+"""Log1p standardisation of z profiles and its persisted statistics.
 
 Fits the location and scale of log1p-compressed training curves, stores them
 next to the run metadata, and applies them in both directions at inference.

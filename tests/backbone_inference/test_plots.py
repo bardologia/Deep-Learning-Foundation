@@ -2,7 +2,7 @@
 
 Covers the composed `Plotter` facade and its shared drawing tools, the parameter
 distribution, scatter, error-map and error-histogram figures with their single slot
-matching per cube, the slot-occupancy map, the slice and tomogram figures, and the track
+matching per cube, the slot-occupancy map, the slice and cube figures, and the track
 geometry and flight-path figures.
 """
 
@@ -185,7 +185,7 @@ def test_param_scatter_r2_value_exact():
 
 
 def test_slot_plotter_active_count_map(tmp_path):
-    """The active-scatterer count map is written."""
+    """The active-component count map is written."""
     params  = _params()
     plotter = SlotPlotter()
     paths   = plotter.plot_active_count_map(

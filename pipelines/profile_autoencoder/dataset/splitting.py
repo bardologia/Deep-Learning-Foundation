@@ -41,7 +41,7 @@ class ParameterCropper:
         self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Rows", "Cols"])
 
     def profile_length(self) -> int:
-        """Returns the number of elevation bins of the preprocessing run."""
+        """Returns the number of z bins of the preprocessing run."""
         return self.layout.profile_length
 
     def load_split(self, split_name: str) -> list[np.ndarray]:
@@ -52,7 +52,7 @@ class ParameterCropper:
 
         Returns:
             One contiguous array per region, each of shape
-            (3 * n_gaussians, azimuth, range).
+            (3 * n_gaussians, rows, cols).
         """
         regions    = self.split_regions.regions(split_name)
         parameters = np.load(str(self.layout.artifact_path("parameters")), mmap_mode="r", allow_pickle=False)

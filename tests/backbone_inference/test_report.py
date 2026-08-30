@@ -47,7 +47,7 @@ def _global_metrics():
 
     Returns:
         Mapping of metric name to value, covering curve, pixel, slot and parameter
-        families over a 6x6 patch with 12 elevation bins.
+        families over a 6x6 patch with 12 z bins.
     """
     rng    = np.random.default_rng(0)
     z_axis = np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
@@ -121,7 +121,7 @@ def _cfg_stub():
 
 
 def test_report_payload_run_summary_structure():
-    """The run-summary payload carries model name, slot count, elevation axis bounds and secondary labels."""
+    """The run-summary payload carries model name, slot count, z axis bounds and secondary labels."""
     run     = _run_stub()
     z_axis  = np.linspace(-20.0, 80.0, N_Z)
     payload = ReportPayloadBuilder.run_summary(run, z_axis)

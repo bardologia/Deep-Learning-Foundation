@@ -1,8 +1,8 @@
-"""Tests for the CurveLoss elevation-profile terms.
+"""Tests for the CurveLoss z-profile terms.
 
 Covers the difference-based terms (MSE, L1, Huber, Charbonnier, smooth L1) against their
 definitions, the shape-only cosine term and the scale-sensitive log-energy term that complements
-it, gradient flow, scalar reduction, behaviour on a real tomogram window, and the second
+it, gradient flow, scalar reduction, behaviour on a real cube window, and the second
 difference used by the Sobolev regulariser."""
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ def test_curve_losses_on_scene_cube(cube_full):
 
 
 def test_second_difference_zero_on_linear_profile():
-    """A linear elevation ramp has a vanishing second difference."""
+    """A linear z ramp has a vanishing second difference."""
     ramp  = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
     curve = ramp.view(1, 8, 1, 1).expand(2, 8, 4, 4)
 
@@ -239,6 +239,6 @@ def test_second_difference_matches_manual():
 
 
 def test_second_difference_short_profile_raises():
-    """A profile shorter than three elevation bins raises ValueError."""
+    """A profile shorter than three z bins raises ValueError."""
     with pytest.raises(ValueError, match="at least 3"):
         CurveLoss.second_difference(torch.zeros(1, 2, 1, 1))

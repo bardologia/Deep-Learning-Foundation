@@ -28,7 +28,7 @@ def _probe(n_slots: int = 1, with_gt: bool = True) -> ModelProbe:
     """Returns a ModelProbe holding a fake loaded run.
 
     Args:
-        n_slots : Number of Gaussian scatterer slots the fake model predicts.
+        n_slots : Number of Gaussian component slots the fake model predicts.
         with_gt : Whether the fake run carries ground-truth parameters.
 
     Returns:
@@ -84,7 +84,7 @@ def test_predict_reports_fit_and_hungarian_matches():
 
 
 def test_predict_matches_cover_every_active_gt_slot():
-    """With two scatterers every ground-truth slot is matched to a distinct predicted slot."""
+    """With two components every ground-truth slot is matched to a distinct predicted slot."""
     result = _probe(n_slots=2).predict({"row": 10, "col": 8})
 
     match = result["matches"]
@@ -179,8 +179,8 @@ def test_attribution_concentrates_on_the_used_channel():
     assert families["mu"]["cells"][1] is None
 
 
-def test_attribution_per_slot_isolates_each_scatterers_inputs():
-    """Per-slot attribution isolates each scatterer's channel, while the combined request splits the share between them."""
+def test_attribution_per_slot_isolates_each_components_inputs():
+    """Per-slot attribution isolates each component's channel, while the combined request splits the share between them."""
     probe = _probe(n_slots=2)
 
     slot0    = probe.attribution({"row": 10, "col": 8, "slot": 0})
@@ -298,7 +298,7 @@ def test_flips_report_zero_deltas_for_a_pointwise_model():
 
 
 def test_flips_expose_a_row_asymmetric_model():
-    """A model shifting along azimuth shows a non-zero delta for the azimuth and both flips only."""
+    """A model shifting along row shows a non-zero delta for the row and both flips only."""
     probe = _probe()
     probe.loaded["run"].model = Wrapper(AzShiftModel())
 

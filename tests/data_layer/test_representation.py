@@ -2,7 +2,7 @@
 
 Covers channel counts, slot-kind labelling, per-mode channel semantics
 (magnitude, unit real/imag, phase angle), zero-magnitude safety, pass
-interleaving, and agreement with numpy on real SAR windows.
+interleaving, and agreement with numpy on real scene windows.
 """
 
 from __future__ import annotations

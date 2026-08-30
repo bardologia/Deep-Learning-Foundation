@@ -1,4 +1,4 @@
-"""Command-line entry point that starts the DLR-TomoSAR control console."""
+"""Command-line entry point that starts the ML-Template control console."""
 
 from __future__ import annotations
 

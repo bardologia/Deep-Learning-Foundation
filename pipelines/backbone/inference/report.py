@@ -380,7 +380,7 @@ class Report:
 
         out = [f"\n### {self._next_subsection('extraction')} Curve-parameter extraction and its measurement floor\n"]
         out.append(
-            "This run predicts elevation curves, not Gaussian parameters, so every parameter-space number in "
+            "This run predicts z curves, not Gaussian parameters, so every parameter-space number in "
             "this report comes from refitting K Gaussians to the predicted curve. The same extractor was run on "
             "the GT curves and scored against the exact GT parameters: that is the measurement floor, the error "
             "the extraction alone produces when the curve is perfect. Read the matched errors in the parameter "
@@ -632,7 +632,7 @@ class Report:
 
         out = [f"\n### {self._next_subsection('roughness')} Curve smoothness\n"]
         out.append(
-            "Mean squared second difference along elevation, which measures bin-to-bin jitter rather than "
+            "Mean squared second difference along z, which measures bin-to-bin jitter rather than "
             "the size of the error. GT profiles are Gaussian mixtures and therefore smooth by construction, "
             "so a ratio far above 1 means the prediction carries high-frequency structure the labels never had, "
             "even when its MSE looks acceptable.\n"

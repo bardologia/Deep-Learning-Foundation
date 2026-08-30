@@ -279,7 +279,7 @@ class AutopsyRouter(SubRouter):
         exchange.send_result(result)
 
     def profile(self, exchange: HttpExchange) -> None:
-        """Answers with both runs' profiles at the given azimuth/range pixel."""
+        """Answers with both runs' profiles at the given row/col pixel."""
         result = self.autopsy.profile(
             a   = exchange.text("a"),
             b   = exchange.text("b"),

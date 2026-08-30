@@ -1,4 +1,4 @@
-"""Tests covering Gaussian parameter extraction from tomographic profiles.
+"""Tests covering Gaussian parameter extraction from volumetric profiles.
 
 Covers the extraction plan resolver, the JAX Adam fitting kernels and sigma
 initialiser, the model-order (K) selection diagnostics, the fitting metrics and
@@ -384,7 +384,7 @@ def _z_axis(H):
 
 @pytest.mark.dataset
 def test_parameters_layout(parameters, param_extraction_meta):
-    """Verifies the stored parameter cube has 3*K channels over the full azimuth/range grid."""
+    """Verifies the stored parameter cube has 3*K channels over the full row/col grid."""
     assert param_extraction_meta["k_max"] == K_MAX
     assert parameters.shape[0]            == 3 * K_MAX
     assert parameters.shape[1:]           == (SCENE.row_size, SCENE.col_size)

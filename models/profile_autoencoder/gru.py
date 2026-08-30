@@ -1,8 +1,8 @@
 """Recurrent profile autoencoder built on gated recurrent units.
 
-The encoder reads each elevation profile bin by bin and projects the final
+The encoder reads each z profile bin by bin and projects the final
 hidden state to a latent code; the decoder broadcasts that code across the
-profile length and unrolls a GRU to emit one amplitude per elevation bin.
+profile length and unrolls a GRU to emit one amplitude per z bin.
 """
 
 from __future__ import annotations
@@ -15,13 +15,13 @@ from models.profile_autoencoder.base import ProfileAutoencoderBase, ProfileAutoe
 
 
 class GruEncoder(nn.Module):
-    """GRU encoder mapping an elevation profile to a latent code.
+    """GRU encoder mapping an z profile to a latent code.
 
     Attributes:
         num_layers : Number of stacked GRU layers.
         directions : Two when the GRU is bidirectional, one otherwise.
         hidden_dim : Hidden width of each GRU direction.
-        rnn        : The recurrent stack reading one elevation bin per step.
+        rnn        : The recurrent stack reading one z bin per step.
         head       : Linear projection of the final hidden state to the latent dim.
     """
 
@@ -63,14 +63,14 @@ class GruEncoder(nn.Module):
 
 
 class GruDecoder(nn.Module):
-    """GRU decoder unrolling a latent code into an elevation profile.
+    """GRU decoder unrolling a latent code into an z profile.
 
     Attributes:
-        length     : Profile length in elevation bins.
+        length     : Profile length in z bins.
         num_layers : Number of stacked GRU layers.
         project    : Linear lift of the latent code to the GRU input width.
         rnn        : Unidirectional recurrent stack unrolled over the profile length.
-        head       : Linear layer emitting one amplitude per elevation bin.
+        head       : Linear layer emitting one amplitude per z bin.
     """
 
     def __init__(self, config: GruAutoencoderConfig) -> None:

@@ -1,6 +1,6 @@
 """Architecture configuration dataclasses for the 2D image autoencoder family.
 
-Image autoencoders compress a tomographic image patch to a per-pixel embedding
+Image autoencoders compress a volumetric image patch to a per-pixel embedding
 and reconstruct it; the base class holds the fields shared by every family and
 each subclass adds the fields specific to its encoder-decoder topology.
 """

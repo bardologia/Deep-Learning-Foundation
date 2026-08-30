@@ -1,6 +1,6 @@
 """Interactive per-pixel Gaussian-fit laboratory backing the web UI Fit Lab tab.
 
-Loads a processed tomogram in the background, serves amplitude preview maps, and
+Loads a processed cube in the background, serves amplitude preview maps, and
 runs the JAX masked-Adam sigma fit over a handful of hand-picked pixels for every
 model order up to `k_max`, returning the fitted mixtures and their penalised MSE
 so the extraction settings can be explored before a full run.
@@ -26,12 +26,12 @@ from web_logger                     import WebLogger
 
 
 class FitLab:
-    """Runs background tomogram loads and interactive per-pixel Gaussian fits.
+    """Runs background cube loads and interactive per-pixel Gaussian fits.
 
     Attributes:
         logger     : Web UI logger used for load and fit outcome messages.
         lock       : Guards all mutable state against the worker threads.
-        loaded     : Currently loaded dataset (memmapped tomogram, preview maps, metadata), or None.
+        loaded     : Currently loaded dataset (memmapped cube, preview maps, metadata), or None.
         status     : Dataset-load state, progress fraction, stage label and error text.
         fit_state  : Fit-worker state, progress fraction, stage label and error text.
         fit_result : Payload of the last completed fit, or None.
@@ -67,7 +67,7 @@ class FitLab:
         """Lists processed datasets under a base directory.
 
         A candidate is the base directory itself or any of its immediate
-        subdirectories containing `data/tomogram_full.npy`.
+        subdirectories containing `data/cube_full.npy`.
 
         Args:
             base : Directory to scan, `~` allowed.
@@ -108,7 +108,7 @@ class FitLab:
         return {"ok": True}
 
     def _load_worker(self, path: str) -> None:
-        """Memmaps the tomogram, builds the SLC and peak preview maps, and publishes status."""
+        """Memmaps the cube, builds the complex and peak preview maps, and publishes status."""
         try:
             cfg       = ExtractionConfig(processed_data_path=Path(path))
             tomo_path = cfg.discover_cube_path()
@@ -166,7 +166,7 @@ class FitLab:
         """Renders a preview map as PNG bytes.
 
         Args:
-            src : Map key, `slc` for the primary amplitude or `peak` for the per-pixel tomogram maximum over height.
+            src : Map key, `slc` for the primary amplitude or `peak` for the per-pixel cube maximum over height.
 
         Returns:
             PNG bytes of the transposed map of shape (cols, rows), or None

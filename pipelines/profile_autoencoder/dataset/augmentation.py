@@ -1,4 +1,4 @@
-"""Random augmentation of one-dimensional elevation profiles.
+"""Random augmentation of one-dimensional z profiles.
 
 Applies amplitude scaling, integer height-bin shifts and flips to raw curves,
 and additive Gaussian noise to already-normalised curves.
@@ -73,7 +73,7 @@ class ProfileAugmenter:
         return shifted
 
     def _flip(self, curve: np.ndarray) -> np.ndarray:
-        """Reverses a curve of shape (H,) along elevation with probability p_flip."""
+        """Reverses a curve of shape (H,) along z with probability p_flip."""
         if self._rng.random() >= self.config.p_flip:
             return curve
 

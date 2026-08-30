@@ -1,7 +1,7 @@
-"""Patch-wise inference and stitching of predicted elevation cubes.
+"""Patch-wise inference and stitching of predicted z cubes.
 
 Runs the trained backbone over the patch grid of the inference split, renders the
-predicted and ground-truth Gaussian mixtures into elevation curves on CPU workers, and
+predicted and ground-truth Gaussian mixtures into z curves on CPU workers, and
 stitches the patches back into full cubes: curves through a windowed weighted average,
 Gaussian parameters through a most-central-patch selection.
 """
@@ -127,7 +127,7 @@ class CubeStitcher:
         """Normalises the accumulator by the accumulated weights and crops away the padding.
 
         Returns:
-            Blended cube of shape (n_channels, azimuth, range) covering the split region.
+            Blended cube of shape (n_channels, rows, cols) covering the split region.
 
         Raises:
             ValueError : If any pixel of the split region received no patch.
@@ -212,7 +212,7 @@ class SelectStitcher:
         """Crops the padding off the selected values and returns the stitched cube.
 
         Returns:
-            Cube of shape (n_channels, azimuth, range) covering the split region.
+            Cube of shape (n_channels, rows, cols) covering the split region.
 
         Raises:
             ValueError : If any pixel of the split region received no patch.
@@ -341,7 +341,7 @@ class Predictor:
 
     @staticmethod
     def _sort_by_mu(gauss: np.ndarray) -> np.ndarray:
-        """Sorts Gaussian slots by elevation position, pushing inactive slots to the end.
+        """Sorts Gaussian slots by z position, pushing inactive slots to the end.
 
         Args:
             gauss : Gaussian parameters of shape (batch, n_gaussians, 3, height, width), with amplitude, mu in metres and sigma along axis 2.
@@ -502,15 +502,15 @@ class Predictor:
         """Finalises the four cubes, masks inactive ground-truth slots and scores per-pixel metrics.
 
         Args:
-            pred_curve_stitcher : Stitcher holding the predicted elevation curves.
-            gt_curve_stitcher   : Stitcher holding the ground-truth elevation curves.
+            pred_curve_stitcher : Stitcher holding the predicted z curves.
+            gt_curve_stitcher   : Stitcher holding the ground-truth z curves.
             param_pred_stitcher : Stitcher holding the predicted Gaussian parameters.
             gt_param_stitcher   : Stitcher holding the mu-sorted ground-truth Gaussian parameters.
 
         Returns:
-            Result with curve cubes of shape (n_elevation, azimuth, range), parameter cubes
-            of shape (channels, azimuth, range) and the per-pixel MSE, MAE, R², cosine and
-            peak-index maps of shape (azimuth, range).
+            Result with curve cubes of shape (n_z, rows, cols), parameter cubes
+            of shape (channels, rows, cols) and the per-pixel MSE, MAE, R², cosine and
+            peak-index maps of shape (rows, cols).
         """
 
         pred_curves_cube = pred_curve_stitcher.finalize_cube()

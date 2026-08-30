@@ -27,7 +27,7 @@ class CrossValidationReport:
     Attributes:
         base_records     : One record per fold holding training results only.
         records_by_split : Fold records carrying inference metrics, keyed by split.
-        planner          : Planner describing the azimuth blocks each fold was built from.
+        planner          : Planner describing the row blocks each fold was built from.
         out_dir          : Directory the reports are written to.
         model_name       : Label of the model all folds share.
         embed_images     : Whether per-split comparison reports inline images.
@@ -54,7 +54,7 @@ class CrossValidationReport:
         Args:
             base_records     : One record per fold holding training results.
             records_by_split : Fold records with inference metrics, keyed by split.
-            planner          : Planner describing each fold's azimuth blocks.
+            planner          : Planner describing each fold's row blocks.
             out_dir          : Directory the reports are written to.
             model_name       : Label of the model all folds share.
             embed_images     : Whether per-split comparison reports inline images.

@@ -1,6 +1,6 @@
 """Fit-quality metrics for a Gaussian parameter-extraction run.
 
-Computes the per-pixel peak-to-floor contrast of the tomographic profiles, the per-pixel
+Computes the per-pixel peak-to-floor contrast of the volumetric profiles, the per-pixel
 R-squared of the Gaussian reconstruction against the preprocessed profile, the activity
 and per-slot parameter maps, and the model-order selection diagnostics.
 """
@@ -21,7 +21,7 @@ from tools.monitoring.logger  import Logger
 
 
 class ContrastEstimator:
-    """Measures the peak-to-floor contrast of tomographic profiles, in dB.
+    """Measures the peak-to-floor contrast of volumetric profiles, in dB.
 
     The floor is the mean of the lowest ``floor_fraction`` of the profile bins, so the
     contrast is an uncalibrated proxy for profile SNR rather than a calibrated SNR.
@@ -49,12 +49,12 @@ class ContrastEstimator:
         """Returns the peak-to-floor contrast and the profile peak of an amplitude block.
 
         Args:
-            amp            : Profile amplitude of shape (height, azimuth, range_chunk) or (height, ...), with the elevation axis first.
+            amp            : Profile amplitude of shape (height, rows, col_chunk) or (height, ...), with the z axis first.
             floor_fraction : Fraction of the lowest bins averaged into the floor.
 
         Returns:
             Tuple of the contrast in dB and the profile peak amplitude, both shaped like
-            ``amp`` with the elevation axis removed; contrast is NaN where the peak or
+            ``amp`` with the z axis removed; contrast is NaN where the peak or
             floor is not positive.
         """
         n_floor = max(1, int(round(amp.shape[0] * floor_fraction)))
@@ -69,7 +69,7 @@ class ContrastEstimator:
         return contrast, peak.astype(np.float32)
 
     def chunk_contrast(self, amp : np.ndarray) -> np.ndarray:
-        """Returns the contrast in dB of one amplitude chunk of shape (height, azimuth, range)."""
+        """Returns the contrast in dB of one amplitude chunk of shape (height, rows, cols)."""
         contrast, _ = self.contrast_from_amplitude(amp, self.floor_fraction)
 
         return contrast
@@ -122,12 +122,12 @@ class KSelectionDiagnostics:
         """Computes how far the winning model order sits from its competitors.
 
         Args:
-            penalised_per_k : Penalised score of shape (k_max, azimuth, range).
-            best_k_map      : Selected model order of shape (azimuth, range); 0 marks inactive pixels.
+            penalised_per_k : Penalised score of shape (k_max, rows, cols).
+            best_k_map      : Selected model order of shape (rows, cols); 0 marks inactive pixels.
 
         Returns:
             Mapping with the margins to K-1, K+1 and the runner-up, plus the runner-up
-            margin relative to the winning score, each of shape (azimuth, range) and NaN
+            margin relative to the winning score, each of shape (rows, cols) and NaN
             where undefined.
         """
         k_max  = penalised_per_k.shape[0]
@@ -165,9 +165,9 @@ class KSelectionDiagnostics:
         """Summarises the residual, penalty and win rate of each model order.
 
         Args:
-            mse_per_k       : Residual MSE of shape (k_max, azimuth, range).
-            penalised_per_k : Penalised score of shape (k_max, azimuth, range).
-            best_k_map      : Selected model order of shape (azimuth, range); 0 marks inactive.
+            mse_per_k       : Residual MSE of shape (k_max, rows, cols).
+            penalised_per_k : Penalised score of shape (k_max, rows, cols).
+            best_k_map      : Selected model order of shape (rows, cols); 0 marks inactive.
 
         Returns:
             Mapping from statistic name to scalar, keyed ``k{K}_...`` per model order.
@@ -278,11 +278,11 @@ class FittingMetricsCalculator:
         """Evaluates the fitted mixture at one height.
 
         Args:
-            parameters_array : Parameter block of shape (3 * n_gaussians, azimuth, range).
+            parameters_array : Parameter block of shape (3 * n_gaussians, rows, cols).
             h_val            : Elevation the mixture is evaluated at, in metres.
 
         Returns:
-            Mixture value of shape (azimuth, range).
+            Mixture value of shape (rows, cols).
         """
         return GaussianMixture.evaluate_slice(parameters_array, h_val, self.n_gaussians)
 
@@ -325,10 +325,10 @@ class FittingMetricsCalculator:
         """Counts the active Gaussian slots at each pixel.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
 
         Returns:
-            Number of slots above the amplitude threshold, of shape (azimuth, range).
+            Number of slots above the amplitude threshold, of shape (rows, cols).
         """
         active = np.zeros(parameters_array.shape[1:], dtype=np.int32)
         for k in range(self.n_gaussians):
@@ -340,11 +340,11 @@ class FittingMetricsCalculator:
         """Splits the parameter stack into per-slot maps masked to active pixels.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
 
         Returns:
             Mapping with ``amp_k``, ``mu_k`` (metres) and ``sigma_k`` (metres) maps of
-            shape (azimuth, range), NaN where the slot is inactive.
+            shape (rows, cols), NaN where the slot is inactive.
         """
         maps: Dict[str, np.ndarray] = {}
         for k in range(self.n_gaussians):
@@ -360,10 +360,10 @@ class FittingMetricsCalculator:
         """Measures the height gap between adjacent Gaussian slots.
 
         Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
 
         Returns:
-            Mapping with ``mu_sep_k_k+1`` maps of shape (azimuth, range) in metres, NaN
+            Mapping with ``mu_sep_k_k+1`` maps of shape (rows, cols) in metres, NaN
             where either slot is inactive; empty when fewer than two slots exist.
         """
         maps: Dict[str, np.ndarray] = {}
@@ -384,8 +384,8 @@ class FittingMetricsCalculator:
         """Summarises fit quality and the distribution of active-slot counts.
 
         Args:
-            r2_map       : Per-pixel R-squared of shape (azimuth, range), NaN where unfitted.
-            activity_map : Active-slot count of shape (azimuth, range).
+            r2_map       : Per-pixel R-squared of shape (rows, cols), NaN where unfitted.
+            activity_map : Active-slot count of shape (rows, cols).
 
         Returns:
             Mapping with pixel counts, R-squared moments and percentiles, and the
@@ -430,9 +430,9 @@ class FittingMetricsCalculator:
         """Summarises the contrast distribution and its relation to fit quality.
 
         Args:
-            snr_db_map  : Peak-to-floor contrast of shape (azimuth, range), in dB.
-            r2_map      : Per-pixel R-squared of shape (azimuth, range).
-            best_k_map  : Selected model order of shape (azimuth, range), or None.
+            snr_db_map  : Peak-to-floor contrast of shape (rows, cols), in dB.
+            r2_map      : Per-pixel R-squared of shape (rows, cols).
+            best_k_map  : Selected model order of shape (rows, cols), or None.
             max_samples : Cap on the number of pixels used for the correlations.
 
         Returns:

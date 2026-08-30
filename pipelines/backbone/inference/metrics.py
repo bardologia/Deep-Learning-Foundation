@@ -2,7 +2,7 @@
 
 Holds the `Result` container that carries every cube and per-pixel map produced by an
 inference pass, the `Metrics` calculator that turns them into the flat metric
-dictionary written to metrics.json (curve errors, per-slice SSIM, per-elevation
+dictionary written to metrics.json (curve errors, per-slice SSIM, per-z
 profiles, Gaussian-parameter statistics, the classical-baseline comparison and the
 label-quality split) and the `BoundedProcessPool` scheduler both
 SSIM sweeps run their per-slice workers on.
@@ -35,26 +35,26 @@ class Result:
     """Stitched output of one inference pass together with every optional evaluation.
 
     Attributes:
-        pred_curves        : Predicted cube of shape (n_elevation, azimuth, range), denormalised intensity.
+        pred_curves        : Predicted cube of shape (n_z, rows, cols), denormalised intensity.
         gt_curves          : Ground-truth Gaussian cube of the same shape.
-        pixel_mse          : Per-pixel curve MSE of shape (azimuth, range).
-        pixel_mae          : Per-pixel curve MAE of shape (azimuth, range).
-        pixel_r2           : Per-pixel curve R² of shape (azimuth, range).
-        pixel_cosine       : Per-pixel curve cosine similarity of shape (azimuth, range).
-        pixel_peak_err_idx : Per-pixel absolute peak-bin displacement of shape (azimuth, range).
+        pixel_mse          : Per-pixel curve MSE of shape (rows, cols).
+        pixel_mae          : Per-pixel curve MAE of shape (rows, cols).
+        pixel_r2           : Per-pixel curve R² of shape (rows, cols).
+        pixel_cosine       : Per-pixel curve cosine similarity of shape (rows, cols).
+        pixel_peak_err_idx : Per-pixel absolute peak-bin displacement of shape (rows, cols).
         cube_directory     : Directory the stitched cubes were written to.
         row_offset         : Row index of the crop origin in scene coordinates.
         col_offset         : Column index of the crop origin in scene coordinates.
-        params_pred        : Predicted Gaussian parameters of shape (3 * K, azimuth, range), or None.
+        params_pred        : Predicted Gaussian parameters of shape (3 * K, rows, cols), or None.
         params_gt          : Ground-truth Gaussian parameters of the same shape, or None.
         params_source      : Whether the parameters came from the model ("model") or a curve refit ("extracted").
-        extract_r2         : Per-pixel refit R² of shape (azimuth, range) when parameters were extracted.
+        extract_r2         : Per-pixel refit R² of shape (rows, cols) when parameters were extracted.
         extract_floor      : Matched-Gaussian metrics of the extractor run on GT curves, its own error floor.
         embedding_maps     : Per-pixel JEPA embedding maps, or None.
         label_r2           : Per-pixel R² of the GT curves against the raw cube, of shape (rows, cols).
-        flip_consistency   : Per-pixel flip-equivariance disagreement of shape (azimuth, range).
+        flip_consistency   : Per-pixel flip-equivariance disagreement of shape (rows, cols).
         stratified         : Covariate-stratified error tables keyed by covariate name.
-        failure_mode_map   : Per-pixel failure-mode class index of shape (azimuth, range).
+        failure_mode_map   : Per-pixel failure-mode class index of shape (rows, cols).
         failure_pairs      : Matched prediction/GT pair records feeding the failure and presence analyses.
         miss_by_sep        : Miss rate binned by GT peak separation.
         presence_rows      : Presence-reliability bins relating predicted amplitude to precision.
@@ -188,7 +188,7 @@ class Metrics:
 
     Attributes:
         result         : The inference result being scored.
-        x_axis         : Elevation axis in metres, of shape (n_elevation,).
+        x_axis         : Elevation axis in metres, of shape (n_z,).
         n_gaussians    : Gaussian count K.
         x_step         : Elevation bin spacing in metres.
         num_workers    : Process count used for the parallel SSIM sweep.
@@ -226,12 +226,12 @@ class Metrics:
         """Computes the per-pixel curve error maps between two cubes.
 
         Args:
-            pred : Predicted cube of shape (n_elevation, azimuth, range).
+            pred : Predicted cube of shape (n_z, rows, cols).
             ref  : Reference cube of the same shape.
 
         Returns:
-            Mapping with keys "mse", "mae", "r2", "cos" and "peak", each of shape (azimuth, range);
-            "peak" is the absolute displacement of the argmax elevation bin.
+            Mapping with keys "mse", "mae", "r2", "cos" and "peak", each of shape (rows, cols);
+            "peak" is the absolute displacement of the argmax z bin.
         """
 
         diff   = pred - ref
@@ -267,14 +267,14 @@ class Metrics:
         worst picks so the three sets are disjoint.
 
         Args:
-            metric_map : Per-pixel metric of shape (azimuth, range); non-finite pixels are ignored.
+            metric_map : Per-pixel metric of shape (rows, cols); non-finite pixels are ignored.
             n_best     : Number of lowest-metric pixels to select.
             n_worst    : Number of highest-metric pixels to select, ordered worst first.
             n_random   : Number of random pixels to draw from the remaining pool.
             seed       : Seed of the random generator drawing the random set.
 
         Returns:
-            Mapping with keys "best", "worst" and "random", each an array of (azimuth, range)
+            Mapping with keys "best", "worst" and "random", each an array of (rows, cols)
             index pairs of shape (n_selected, 2).
         """
 
@@ -299,7 +299,7 @@ class Metrics:
 
     @staticmethod
     def _flat_to_yx(flat_idx: np.ndarray, width: int) -> np.ndarray:
-        """Returns flat indices unravelled into (azimuth, range) pairs of shape (n, 2)."""
+        """Returns flat indices unravelled into (rows, cols) pairs of shape (n, 2)."""
 
         return np.stack([(flat_idx // width).astype(np.int32), (flat_idx % width).astype(np.int32)], axis=1)
 
@@ -307,7 +307,7 @@ class Metrics:
         """Computes cube-wide MSE, MAE, RMSE, R² and PSNR between two cubes.
 
         Args:
-            pred   : Predicted cube of shape (n_elevation, azimuth, range).
+            pred   : Predicted cube of shape (n_z, rows, cols).
             ref    : Reference cube of the same shape.
             suffix : Tag appended to every metric key, naming the reference variant.
 
@@ -335,7 +335,7 @@ class Metrics:
         """Returns the peak signal-to-noise ratio in dB, using the reference range as peak.
 
         Args:
-            pred : Predicted cube of shape (n_elevation, azimuth, range).
+            pred : Predicted cube of shape (n_z, rows, cols).
             ref  : Reference cube of the same shape.
 
         Returns:
@@ -358,7 +358,7 @@ class Metrics:
         """Flattens moments and percentiles of several per-pixel maps into one tagged dictionary.
 
         Args:
-            tagged_arrays : Pairs of metric tag and per-pixel map of shape (azimuth, range).
+            tagged_arrays : Pairs of metric tag and per-pixel map of shape (rows, cols).
 
         Returns:
             Scalar metrics keyed "<tag>_<statistic>" for each supplied map.
@@ -440,7 +440,7 @@ class Metrics:
         """Yields one worker payload per SSIM spec, slicing both cubes on demand.
 
         Args:
-            pred  : Predicted cube of shape (n_elevation, azimuth, range).
+            pred  : Predicted cube of shape (n_z, rows, cols).
             ref   : Reference cube of the same shape.
             specs : List of (metric key, axis label, cube axis, slice index) tuples.
 
@@ -569,10 +569,10 @@ class Metrics:
 
     @staticmethod
     def roughness_map(curves: np.ndarray) -> np.ndarray:
-        """Returns the mean squared second difference along elevation, of shape (azimuth, range).
+        """Returns the mean squared second difference along z, of shape (rows, cols).
 
         Args:
-            curves : Cube of shape (n_elevation, azimuth, range).
+            curves : Cube of shape (n_z, rows, cols).
 
         Returns:
             Per-pixel curve roughness.
@@ -585,7 +585,7 @@ class Metrics:
         """Compares predicted against ground-truth curve roughness.
 
         Args:
-            pred : Predicted cube of shape (n_elevation, azimuth, range).
+            pred : Predicted cube of shape (n_z, rows, cols).
             gt   : Ground-truth cube of the same shape.
 
         Returns:
@@ -625,7 +625,7 @@ class Metrics:
 
         Returns:
             Per-slot active fractions, overall active fractions and counts, the fraction of
-            pixels where the predicted scatterer count is exact, under or over, and the exact-count
+            pixels where the predicted component count is exact, under or over, and the exact-count
             accuracy conditioned on the GT and on the predicted count.
         """
 
@@ -736,7 +736,7 @@ class Metrics:
 
         Only pairs where both the predicted and the assigned GT slot are active count; a
         pair is a true positive when the μ error stays within `match_tol`. Every quantity
-        is also reported per GT-scatterer-count bucket.
+        is also reported per GT-component-count bucket.
 
         Args:
             match_tol : Maximum absolute μ error, in metres, for a matched pair to count as detected.
@@ -975,7 +975,7 @@ class Metrics:
         """Splits the per-pixel prediction error by whether the label fit was good or poor.
 
         Args:
-            r2_map    : Per-pixel label fit R² of shape (azimuth, range).
+            r2_map    : Per-pixel label fit R² of shape (rows, cols).
             threshold : R² value separating poorly fitted labels from well fitted ones.
 
         Returns:

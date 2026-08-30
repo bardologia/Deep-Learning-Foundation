@@ -1,7 +1,7 @@
 """Fitting of the per-channel normalization statistics on the train split.
 
-Input channels are grouped by slot kind (amplitude, phase, real, imaginary, DEM) and
-pooled across passes and interferograms, so every channel of a kind shares one
+Input channels are grouped by slot kind (amplitude, phase, real, imaginary, aux field) and
+pooled across passes and derived channels, so every channel of a kind shares one
 location and scale. Output channels are grouped by parameter role (amplitude, mu,
 sigma) and fitted over pixels whose Gaussian slot is active.
 """
@@ -85,7 +85,7 @@ class StatsComputer:
         fixed bounds are skipped.
 
         Args:
-            parts              : Per-region datasets holding the complex stacks and the DEM.
+            parts              : Per-region datasets holding the complex stacks and the aux field.
             input_config       : Selection and representation of the input groups.
             group_keys         : Group key of each input channel, in channel order.
             strategies         : Normalization strategy of each group.
@@ -214,8 +214,8 @@ class StatsComputer:
             dataset            : Train-split dataset, either a PatchDataset or a MultiRegionDataset.
             logger             : Logger receiving the strategy, grouping and per-channel tables.
             input_config       : Selection and representation of the input groups.
-            n_secondaries      : Number of secondary passes in the stack.
-            n_interferograms   : Number of interferogram layers in the stack.
+            n_secondaries      : Number of secondary channels in the stack.
+            n_derived   : Number of derived channel layers in the stack.
             normalization      : Normalization configuration; defaults are used when omitted.
             max_vals_per_group : Sample budget per channel group.
 
@@ -456,8 +456,8 @@ class StatsComputer:
             logger           : Logger receiving the fitting tables.
             input_config     : Selection and representation of the input groups.
             output_config    : Output configuration selecting the parameter channels.
-            n_secondaries    : Number of secondary passes in the stack.
-            n_interferograms : Number of interferogram layers in the stack.
+            n_secondaries    : Number of secondary channels in the stack.
+            n_derived : Number of derived channel layers in the stack.
             n_gaussians      : Number of Gaussian slots the output covers.
             normalization    : Normalization configuration; defaults are used when omitted.
 

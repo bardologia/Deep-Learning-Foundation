@@ -56,7 +56,7 @@ class SpatialAugmenter:
         return [tensor[sl] for tensor in tensors]
 
     def _flip_vertical(self, tensors: list) -> list:
-        """Mirrors every tensor along the second-to-last (azimuth) axis with probability p_flip_v."""
+        """Mirrors every tensor along the second-to-last (row) axis with probability p_flip_v."""
         if self._rng.random() >= self.config.p_flip_v:
             return tensors
 
@@ -77,7 +77,7 @@ class SpatialAugmenter:
         """Adds zero-mean Gaussian noise to a normalized input patch.
 
         Args:
-            normalized_input : Normalized input tensor of shape (channels, azimuth, range).
+            normalized_input : Normalized input tensor of shape (channels, rows, cols).
 
         Returns:
             The patch with noise of standard deviation noise_std (normalized units)

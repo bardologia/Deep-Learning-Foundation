@@ -1,7 +1,7 @@
 """Architecture configuration for the dual-trunk backbone family.
 
-A dual model runs two independent trunks over the same tomographic patch: one
-predicting Gaussian scatterer parameters, one predicting scatterer existence,
+A dual model runs two independent trunks over the same volumetric patch: one
+predicting Gaussian component parameters, one predicting component existence,
 each free to use its own backbone family, input representation and channel
 subset before a shared output head combines them.
 """
@@ -20,7 +20,7 @@ class DualResUNetConfig:
     Attributes:
         in_channels         : Channels of the assembled input stack.
         out_channels        : Number of predicted values per pixel.
-        params_per_gaussian : Values describing a single Gaussian scatterer.
+        params_per_gaussian : Values describing a single Gaussian component.
         head                : Name of the shared output head fed by both trunks.
         params_backbone     : Backbone family name of the parameter trunk.
         existence_backbone  : Backbone family name of the existence trunk.

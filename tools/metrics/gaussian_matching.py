@@ -1,8 +1,8 @@
-"""Per-pixel matching of predicted Gaussian scatterers to ground-truth ones.
+"""Per-pixel matching of predicted Gaussian components to ground-truth ones.
 
 The evaluation-time counterpart of the training matcher: it works on stacked
-numpy parameter maps, assigns slots by elevation proximity between active
-scatterers, and rewrites the prediction into ground-truth slot order.
+numpy parameter maps, assigns slots by z proximity between active
+components, and rewrites the prediction into ground-truth slot order.
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ from tools.loss.param_loss import ParamMatcher
 
 
 class GaussianMatcher:
-    """Assigns predicted Gaussian slots to ground-truth slots by elevation proximity.
+    """Assigns predicted Gaussian slots to ground-truth slots by z proximity.
 
     Attributes:
         ppg           : Number of parameters per Gaussian, ordered amplitude, mu, sigma.
-        amp_threshold : Amplitude above which a scatterer counts as active.
-        big           : Sentinel cost assigned to pairs where either side is inactive or the elevation difference is not finite.
+        amp_threshold : Amplitude above which a component counts as active.
+        big           : Sentinel cost assigned to pairs where either side is inactive or the z difference is not finite.
         chunk_size    : Number of pixels matched per batch, bounding peak memory.
     """
 
@@ -29,7 +29,7 @@ class GaussianMatcher:
 
         Args:
             ppg           : Number of parameters per Gaussian.
-            amp_threshold : Amplitude above which a scatterer counts as active.
+            amp_threshold : Amplitude above which a component counts as active.
             big           : Sentinel cost for pairs that must not be matched.
             chunk_size    : Number of pixels matched per batch.
         """
@@ -70,7 +70,7 @@ class GaussianMatcher:
     def assignment(self, params_pred: np.ndarray, params_gt: np.ndarray, n_K: int) -> np.ndarray:
         """Computes the ground-truth slot each predicted slot maps to, per pixel.
 
-        The cost of a pair is the absolute elevation difference between the two
+        The cost of a pair is the absolute z difference between the two
         mu values, replaced by the sentinel cost whenever either side is
         inactive, so inactive slots are only matched to each other.
 
@@ -124,7 +124,7 @@ class GaussianMatcher:
 
         Returns:
             Array of shape (n_K * ppg, height, width) holding each predicted
-            scatterer in its assigned ground-truth slot, with NaN wherever no
+            component in its assigned ground-truth slot, with NaN wherever no
             active prediction was placed.
         """
         ppg  = self.ppg

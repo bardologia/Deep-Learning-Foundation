@@ -158,7 +158,7 @@ def test_tuning_entry_ae_loss_default_factory():
 
 
 def test_fold_config_defaults():
-    """Verifies the fold defaults carry a positive fold count over a non-empty azimuth extent."""
+    """Verifies the fold defaults carry a positive fold count over a non-empty row extent."""
     cfg = FoldConfig()
     assert cfg.n_folds > 0
     assert cfg.row_end > cfg.row_start
@@ -214,7 +214,7 @@ def test_benchmark_paths_defaults_are_paths():
 
 
 def test_training_queue_config_axis_tuples():
-    """Verifies the queued training defaults carry positive epochs and batch size plus two-element patch and azimuth extents."""
+    """Verifies the queued training defaults carry positive epochs and batch size plus two-element patch and row extents."""
     cfg = TrainingQueueConfig()
     assert cfg.epochs > 0
     assert cfg.batch_size > 0

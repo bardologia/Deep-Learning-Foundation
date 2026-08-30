@@ -1,6 +1,6 @@
 """Tests that ConfigFactory derives dataset, inference and trainer configs from a benchmark config.
 
-Covers the secondary-track label list, the input representation choices, the crop and azimuth
+Covers the secondary-track label list, the input representation choices, the crop and row
 split regions read from the dataset JSON, loader settings propagation, and the trainer config
 fields (logdir, epochs, warmup, abort flag, snapshot cadence, learning-rate batch scaling).
 """

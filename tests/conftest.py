@@ -267,13 +267,13 @@ def aux_full(data_dir) -> np.ndarray:
 
 @pytest.fixture(scope="session")
 def primary(data_dir) -> np.ndarray:
-    """Returns the memory-mapped primary SLC image of shape (azimuth, range)."""
+    """Returns the memory-mapped primary complex image of shape (rows, cols)."""
     return np.load(data_dir / "primary.npy", mmap_mode="r")
 
 
 @pytest.fixture(scope="session")
 def secondaries(data_dir) -> np.ndarray:
-    """Returns the memory-mapped secondary SLC stack of shape (tracks, azimuth, range)."""
+    """Returns the memory-mapped secondary complex stack of shape (channels, rows, cols)."""
     return np.load(data_dir / "secondaries.npy", mmap_mode="r")
 
 
@@ -285,7 +285,7 @@ def derived(data_dir) -> np.ndarray:
 
 @pytest.fixture(scope="session")
 def parameters(params_dir) -> np.ndarray:
-    """Returns the memory-mapped Gaussian parameters of shape (params, azimuth, range)."""
+    """Returns the memory-mapped Gaussian parameters of shape (params, rows, cols)."""
     return np.load(params_dir / "parameters.npy", mmap_mode="r")
 
 
@@ -305,5 +305,5 @@ def track_profiles(data_dir) -> dict:
 
 @pytest.fixture
 def small_window():
-    """Returns a 32x32 azimuth and range slice pair for cheap windowed reads."""
+    """Returns a 32x32 row and column slice pair for cheap windowed reads."""
     return (slice(0, 32), slice(0, 32))

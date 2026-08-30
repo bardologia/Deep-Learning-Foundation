@@ -100,10 +100,10 @@ class TargetProvider:
 
         Args:
             encoder : Profile-autoencoder encoder producing the embedding.
-            curve   : Normalized ground-truth elevation curves of shape (batch, elevation, azimuth, range).
+            curve   : Normalized ground-truth z curves of shape (batch, z, rows, cols).
 
         Returns:
-            Target embedding tensor of shape (batch, embedding_dim, azimuth, range),
+            Target embedding tensor of shape (batch, embedding_dim, rows, cols),
             detached under "stopgrad" and differentiable under "live".
         """
         if self.kind == "live":

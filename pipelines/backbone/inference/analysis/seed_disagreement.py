@@ -86,7 +86,7 @@ class LabelSuspects:
     """Flags pixels where the seeds agree with each other but not with the label.
 
     Attributes:
-        disagreement : Across-seed disagreement map of shape (azimuth, range).
+        disagreement : Across-seed disagreement map of shape (rows, cols).
         risk         : Per-pixel error map of the same shape.
         label_r2     : Label fit-quality map of the same shape, or None.
     """
@@ -99,7 +99,7 @@ class LabelSuspects:
         """Binds the maps and checks that disagreement and risk share a shape.
 
         Args:
-            disagreement_map : Across-seed std map of shape (azimuth, range).
+            disagreement_map : Across-seed std map of shape (rows, cols).
             risk_map         : Per-pixel curve MSE map of the same shape.
             label_r2_map     : Per-pixel label fit R2 of the same shape, or None.
 
@@ -117,7 +117,7 @@ class LabelSuspects:
         """Flags low-disagreement, high-error pixels as label suspects.
 
         Returns:
-            A tuple of the suspect mask of shape (azimuth, range) as uint8 and
+            A tuple of the suspect mask of shape (rows, cols) as uint8 and
             the scalar summary holding the suspect count, fraction, both applied
             quantile thresholds and, when a label R2 map exists, its mean over
             suspects and overall.
@@ -167,7 +167,7 @@ class RiskCoverage:
         """Flattens both maps and orders the finite pixels by ascending disagreement.
 
         Args:
-            disagreement_map : Across-seed std map of shape (azimuth, range).
+            disagreement_map : Across-seed std map of shape (rows, cols).
             risk_map         : Per-pixel curve MSE map of the same shape.
 
         Raises:
@@ -318,10 +318,10 @@ class SeedDisagreementMaps:
         return cubes
 
     def _offsets(self) -> tuple[int, int]:
-        """Returns the (azimuth, range) scene offsets of the split region.
+        """Returns the (rows, cols) scene offsets of the split region.
 
         Returns:
-            The azimuth and range start indices of the inferred region.
+            The row and column start indices of the inferred region.
 
         Raises:
             KeyError : If the metrics file carries no split region.
@@ -334,10 +334,10 @@ class SeedDisagreementMaps:
         return row_start, col_start
 
     def _profile_map(self) -> np.ndarray:
-        """Builds the across-seed std of the reconstructed profile, averaged over elevation.
+        """Builds the across-seed std of the reconstructed profile, averaged over z.
 
         Returns:
-            A float32 map of shape (azimuth, range).
+            A float32 map of shape (rows, cols).
         """
         curves             = self._open_cubes(self.PROFILE_CUBE)
         n_z, n_rows, n_cols = curves[0].shape
@@ -353,11 +353,11 @@ class SeedDisagreementMaps:
         """Returns the across-seed sample std over the active seeds only.
 
         Args:
-            values : Per-seed values of shape (seeds, azimuth, range).
+            values : Per-seed values of shape (seeds, rows, cols).
             active : Boolean mask of the same shape marking contributing seeds.
 
         Returns:
-            A map of shape (azimuth, range), NaN where fewer than the minimum
+            A map of shape (rows, cols), NaN where fewer than the minimum
             number of seeds are active.
         """
         n    = active.sum(axis=0)
@@ -372,8 +372,8 @@ class SeedDisagreementMaps:
         """Matches each seed's predicted slots to the shared ground-truth slots.
 
         Returns:
-            One array per seed of shape (3 * n_gaussians, azimuth, range), with
-            slots reordered so the same index means the same physical scatterer.
+            One array per seed of shape (3 * n_gaussians, rows, cols), with
+            slots reordered so the same index means the same physical component.
         """
         preds   = self._open_cubes(self.PARAMS_CUBE)
         gt      = np.asarray(np.load(self.cube_dirs[0] / self.GT_CUBE), dtype=np.float32)
@@ -386,7 +386,7 @@ class SeedDisagreementMaps:
         """Builds the across-seed std maps of amplitude, mu and sigma over matched slots.
 
         Returns:
-            Mapping from map name to a float32 map of shape (azimuth, range),
+            Mapping from map name to a float32 map of shape (rows, cols),
             each the mean over contributing slots of the per-slot across-seed
             std; mu and sigma are in metres.
         """
@@ -424,7 +424,7 @@ class SeedDisagreementMaps:
         """Writes every disagreement map into every seed's cube directory.
 
         Args:
-            maps : Mapping from map name to a map of shape (azimuth, range).
+            maps : Mapping from map name to a map of shape (rows, cols).
 
         Returns:
             Mapping from map name to the written cube paths, one per seed.
@@ -444,7 +444,7 @@ class SeedDisagreementMaps:
         """Reduces each map to mean, median and 95th percentile over its finite pixels.
 
         Args:
-            maps : Mapping from map name to a map of shape (azimuth, range).
+            maps : Mapping from map name to a map of shape (rows, cols).
 
         Returns:
             The seed count plus per-map statistics, None where no pixel is finite.
@@ -490,7 +490,7 @@ class SeedDisagreementMaps:
         return figures
 
     def _mean_risk_map(self) -> np.ndarray:
-        """Returns the seed-averaged per-pixel curve MSE map of shape (azimuth, range)."""
+        """Returns the seed-averaged per-pixel curve MSE map of shape (rows, cols)."""
         risks = self._open_cubes(self.RISK_CUBE)
         return np.mean([np.asarray(risk, dtype=np.float64) for risk in risks], axis=0)
 
@@ -499,7 +499,7 @@ class SeedDisagreementMaps:
 
         Args:
             maps     : Disagreement maps; the profile map is used as the confidence score.
-            risk_map : Seed-averaged per-pixel error map of shape (azimuth, range).
+            risk_map : Seed-averaged per-pixel error map of shape (rows, cols).
             summary  : Scalar summary extended with the risk-coverage scalars.
             figures  : Figure mapping extended with the risk-coverage curve.
 
@@ -516,7 +516,7 @@ class SeedDisagreementMaps:
         return rows
 
     def _label_r2_map(self) -> np.ndarray | None:
-        """Returns the label fit R2 map of shape (azimuth, range), or None when absent."""
+        """Returns the label fit R2 map of shape (rows, cols), or None when absent."""
         path = self.cube_dirs[0] / "label_r2.npy"
         return np.asarray(np.load(path), dtype=np.float64) if path.is_file() else None
 
@@ -525,7 +525,7 @@ class SeedDisagreementMaps:
 
         Args:
             maps     : Disagreement maps; the profile map is used as the agreement signal.
-            risk_map : Seed-averaged per-pixel error map of shape (azimuth, range).
+            risk_map : Seed-averaged per-pixel error map of shape (rows, cols).
             offsets  : Azimuth and range scene offsets of the split region.
             summary  : Scalar summary extended with the label-suspect scalars.
             figures  : Figure mapping extended with the suspect map.

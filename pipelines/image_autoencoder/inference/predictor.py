@@ -32,7 +32,7 @@ class ImageAePredictor(AeReconstructionPredictor):
         """Reconstructs one batch of normalized patches and denormalizes the result.
 
         Args:
-            image_n : Normalized input patches of shape (batch, channels, azimuth, range).
+            image_n : Normalized input patches of shape (batch, channels, rows, cols).
 
         Returns:
             The batch reconstruction holding denormalized ground truth and

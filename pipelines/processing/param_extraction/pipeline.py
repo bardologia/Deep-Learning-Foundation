@@ -1,6 +1,6 @@
-"""Fits multi-Gaussian elevation profiles to a tomogram and persists the results.
+"""Fits multi-Gaussian z profiles to a cube and persists the results.
 
-One pipeline instance covers an extraction group: a single k_max sharing the tomogram
+One pipeline instance covers an extraction group: a single k_max sharing the cube
 load and the peak initialisation across every fit mode and lambda permutation.
 """
 
@@ -197,7 +197,7 @@ class ParamExtractionPipeline:
 
         Returns:
             Mapping from (mode, lambda) to the parameter stack of shape
-            (3 * k_max, azimuth, range) and its fit diagnostics.
+            (3 * k_max, rows, cols) and its fit diagnostics.
         """
         self.logger.subsection("Extracting multi-Gaussian parameters (shared load + init across modes and lambdas)")
         return self.parameter_extractor.run(cube_path = self.cube_path, z_range = self.z_range)
@@ -207,12 +207,12 @@ class ParamExtractionPipeline:
 
         Args:
             config           : Extraction configuration of this permutation, naming its output paths.
-            parameters_array : Parameter stack of shape (3 * k_max, azimuth, range).
+            parameters_array : Parameter stack of shape (3 * k_max, rows, cols).
             diagnostics      : Fit diagnostics arrays for this permutation.
 
         Returns:
             Mapping with the parameter, diagnostics and metadata paths, the output
-            directory and the source tomogram path.
+            directory and the source cube path.
         """
         npy_path  = self.parameter_io.save_params(parameters_array, config.parameters_npy_path)
         diag_path = self.parameter_io.save_diagnostics(diagnostics, config.diagnostics_npz_path)

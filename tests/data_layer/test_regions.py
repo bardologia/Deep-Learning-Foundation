@@ -8,7 +8,7 @@ from tools.data.regions import CropRegion, SplitRegions
 
 
 def test_crop_region_sizes():
-    """Verifies the azimuth and range sizes are the extents of the half-open bounds."""
+    """Verifies the row and column sizes are the extents of the half-open bounds."""
     region = CropRegion(1000, 2000, 500, 1000)
 
     assert region.row_size == 1000
@@ -16,7 +16,7 @@ def test_crop_region_sizes():
 
 
 def test_crop_region_as_tuple():
-    """Verifies the tuple form is the azimuth and range bounds in order."""
+    """Verifies the tuple form is the row and column bounds in order."""
     region = CropRegion(10, 20, 30, 40)
 
     assert region.as_tuple() == (10, 20, 30, 40)
@@ -30,7 +30,7 @@ def test_crop_region_identifier_string():
 
 
 def test_crop_region_labeled_string():
-    """Verifies the labelled string spells out the azimuth and range bounds."""
+    """Verifies the labelled string spells out the row and column bounds."""
     region = CropRegion(1000, 2000, 500, 1000)
 
     assert region.as_labeled_string() == "row1000-2000_col500-1000"

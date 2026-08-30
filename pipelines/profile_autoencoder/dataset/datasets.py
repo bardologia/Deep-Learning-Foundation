@@ -1,4 +1,4 @@
-"""Torch dataset that synthesises elevation profiles from Gaussian parameters.
+"""Torch dataset that synthesises z profiles from Gaussian parameters.
 
 Each pixel of the extracted parameter maps becomes one curve, evaluated on the
 fly from its amplitude, mean and sigma triplets.
@@ -18,7 +18,7 @@ from tools.monitoring.logger                             import Logger
 
 
 class ProfileDataset(Dataset):
-    """Serves normalised elevation profiles rebuilt from Gaussian parameters.
+    """Serves normalised z profiles rebuilt from Gaussian parameters.
 
     Attributes:
         x_axis      : Elevation axis of shape (H,), in metres.
@@ -76,7 +76,7 @@ class ProfileDataset(Dataset):
         """Flattens and concatenates the region parameter maps into pixel rows.
 
         Args:
-            param_arrays : Per-region parameter maps of shape (3 * n_gaussians, azimuth, range).
+            param_arrays : Per-region parameter maps of shape (3 * n_gaussians, rows, cols).
         """
         amps_list, mus_list, sigs_list = [], [], []
 

@@ -100,7 +100,7 @@ class TrainingEvolutionRun(AnalysisRun):
             centers_local : Window-local (row, column) of each probe centre.
 
         Returns:
-            One profile of shape (n_elevation,) per probe window.
+            One profile of shape (n_z,) per probe window.
         """
         params = run.model(windows)
         curves = renderer.render(params)
