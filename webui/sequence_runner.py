@@ -550,9 +550,16 @@ class SequenceRunner:
     def _runs_tree_path(self, value: str) -> bool:
         """Returns whether a path value sits inside the project's runs tree.
 
+        A relative value counts as in-tree when it names the ``runs`` directory
+        or a path below it, since the entry configs default their run-output
+        roots to checkout-relative paths.
+
         Args:
             value : Effective value of a runs-tree input, the block's override when it sets one and the entry's resolved default otherwise.
         """
+        if value == "runs" or value.startswith("runs/"):
+            return True
+
         return any(value == root or value.startswith(f"{root}/") for root in self._runs_roots())
 
     def _runs_roots(self) -> tuple:

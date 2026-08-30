@@ -19,7 +19,6 @@ import numpy as np
 import pytest
 
 from tools.runtime.completion import CompletionMarker
-from tools.sar.geocoding      import Wgs84
 
 REPO_ROOT  = Path(__file__).resolve().parents[2]
 WEBUI_ROOT = REPO_ROOT / "webui"

@@ -13,7 +13,7 @@ from collections import Counter
 import pytest
 
 from request_router             import RequestRouter
-from routers.analysis_routers   import AutopsyRouter, FitLabRouter, NormalizationRouter, ProbeRouter, SurveyRouter, SymbolicRouter, TriageRouter
+from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter, SurveyRouter, TriageRouter
 from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.dispatch           import HttpExchange, RouteConflict, RouteTable, SubRouter
 from routers.launch_routers     import CatalogRouter, JobRouter, RunConfigRouter, SavedRunRouter
@@ -21,7 +21,7 @@ from routers.library_routers    import BackboneRouter, ContentLibraryRouter, Mod
 from routers.results_routers    import CurvesRouter, DatasetRouter, LeaderboardRouter, ResultsRouter
 from routers.sequence_router    import SequenceRouter
 from routers.static_router      import StaticRouter
-from routers.system_router      import SystemRouter, TerrabyteRouter
+from routers.system_router      import SystemRouter
 from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
@@ -52,10 +52,6 @@ RESOLUTIONS = [
     ("GET",  "/api/triage/profile",                TriageRouter),
     ("GET",  "/api/autopsy/compare",               AutopsyRouter),
     ("GET",  "/api/autopsy/runs",                  AutopsyRouter),
-    ("GET",  "/api/norm/analyses",                 NormalizationRouter),
-    ("GET",  "/api/norm/report",                   NormalizationRouter),
-    ("GET",  "/api/symbolic/analyses",             SymbolicRouter),
-    ("GET",  "/api/symbolic/report",               SymbolicRouter),
     ("GET",  "/api/backbones",                     BackboneRouter),
     ("GET",  "/api/backbones/unet/note",           BackboneRouter),
     ("GET",  "/api/jepa-variants/jepa_vit/note",   ModelLibraryRouter),
@@ -79,39 +75,8 @@ RESOLUTIONS = [
     ("GET",  "/api/gpu-activity",                  SystemRouter),
     ("GET",  "/api/host-history",                  SystemRouter),
     ("GET",  "/api/server-log",                    SystemRouter),
-    ("GET",  "/api/terrabyte",                     TerrabyteRouter),
-    ("GET",  "/api/terrabyte/log",                 TerrabyteRouter),
-    ("GET",  "/api/terrabyte/quota",               TerrabyteRouter),
-    ("GET",  "/api/terrabyte/lrz",                 TerrabyteRouter),
-    ("GET",  "/api/terrabyte/launch-info",         TerrabyteRouter),
-    ("GET",  "/api/terrabyte/runs",                TerrabyteRouter),
-    ("GET",  "/api/terrabyte/pulls",               TerrabyteRouter),
-    ("POST", "/api/terrabyte/launch",              TerrabyteRouter),
-    ("POST", "/api/terrabyte/cancel",              TerrabyteRouter),
-    ("POST", "/api/terrabyte/cancel-all",          TerrabyteRouter),
-    ("POST", "/api/terrabyte/pull",                TerrabyteRouter),
     ("POST", "/api/tensorboard/tb-1/stop",         TensorboardRouter),
 ]
-
-TERRABYTE_HANDLERS = [
-    ("GET",  "/api/terrabyte",              "snapshot"),
-    ("GET",  "/api/terrabyte/log",          "log"),
-    ("GET",  "/api/terrabyte/quota",        "quota"),
-    ("GET",  "/api/terrabyte/lrz",          "lrz_status"),
-    ("GET",  "/api/terrabyte/launch-info",  "launch_info"),
-    ("GET",  "/api/terrabyte/runs",         "runs"),
-    ("GET",  "/api/terrabyte/pulls",        "pulls"),
-    ("POST", "/api/terrabyte/launch",       "launch"),
-    ("POST", "/api/terrabyte/cancel",       "cancel"),
-    ("POST", "/api/terrabyte/cancel-all",   "cancel_all"),
-    ("POST", "/api/terrabyte/pull",         "pull"),
-    ("POST", "/api/terrabyte/pull-missing", "pull_missing"),
-    ("POST", "/api/terrabyte/delete-runs",  "delete_runs"),
-    ("POST", "/api/terrabyte/clean-home",   "clean_home"),
-    ("POST", "/api/terrabyte/verify-pulls", "verify_pulls"),
-    ("POST", "/api/terrabyte/auto-pull",    "auto_pull"),
-]
-
 
 class RecordingLogger:
     """Logger stand-in collecting emitted lines.
@@ -216,12 +181,11 @@ def build_routers() -> list:
         ModelLibraryRouter("/api/image-autoencoders",   None),
         ModelLibraryRouter("/api/jepa-variants",        None),
         CatalogRouter(None, None, None, None, None, None),
-        JobRouter(None, None, None, None),
+        JobRouter(None, None, None),
         SavedRunRouter(None, None, None),
         SequenceRouter(None, None),
         RunConfigRouter(None),
         SystemRouter(None, None, None, None, None, None, None, None, None, None),
-        TerrabyteRouter(None, None, None, None, None),
         TensorboardRouter(None, None),
     ]
 
@@ -347,45 +311,6 @@ def test_every_frontend_path_resolves_to_one_sub_router(method, path, owner):
     assert len(owners) == 1, path
     assert type(owners[0]) is owner
     assert router.sections[RequestRouter._section_of(path)] is owners[0]
-
-
-@pytest.mark.parametrize("method,path,name", TERRABYTE_HANDLERS)
-def test_terrabyte_paths_bind_their_own_handlers(method, path, name):
-    """Each Terrabyte path binds its own handler method with no wildcard key."""
-    terrabyte   = TerrabyteRouter(None, None, None, None, None)
-    action, key = terrabyte.table.action_for(method, path)
-
-    assert key is None
-    assert action is not None
-    assert action.__func__ is getattr(TerrabyteRouter, name)
-
-
-def test_terrabyte_pull_and_pulls_do_not_shadow_each_other():
-    """The pull and pulls routes bind distinct handlers and reject each other's verb."""
-    terrabyte = TerrabyteRouter(None, None, None, None, None)
-
-    pull,  _ = terrabyte.table.action_for("POST", "/api/terrabyte/pull")
-    pulls, _ = terrabyte.table.action_for("GET",  "/api/terrabyte/pulls")
-
-    assert pull.__func__  is TerrabyteRouter.pull
-    assert pulls.__func__ is TerrabyteRouter.pulls
-    assert pull != pulls
-
-    assert terrabyte.table.action_for("GET",  "/api/terrabyte/pull")  == (None, None)
-    assert terrabyte.table.action_for("POST", "/api/terrabyte/pulls") == (None, None)
-
-
-def test_terrabyte_root_is_not_shadowed_by_its_prefixes():
-    """/api/terrabyte resolves to the snapshot handler and owns the section despite longer prefixes."""
-    terrabyte = TerrabyteRouter(None, None, None, None, None)
-    router    = RequestRouter(None, build_routers())
-
-    snapshot, key = terrabyte.table.action_for("GET", "/api/terrabyte")
-
-    assert key is None
-    assert snapshot.__func__ is TerrabyteRouter.snapshot
-    assert RequestRouter._section_of("/api/terrabyte") == "/api/terrabyte"
-    assert type(router.sections["/api/terrabyte"]) is TerrabyteRouter
 
 
 def test_an_unknown_path_falls_back_to_404():

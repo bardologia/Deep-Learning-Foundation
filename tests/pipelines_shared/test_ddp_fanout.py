@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from configuration.training              import UnrolledEntryConfig
+from configuration.training              import BackboneEntryConfig
 from pipelines.shared.training.ddp_fanout import DdpFanout
 from tools.runtime.completion             import CompletionMarker
 from tools.training.distributed           import DistributedContext
 
 
-def _config(tmp_path, **overrides) -> UnrolledEntryConfig:
+def _config(tmp_path, **overrides) -> BackboneEntryConfig:
     """Returns an unrolled entry config with a tmp logdir and two GPUs."""
-    config        = UnrolledEntryConfig()
+    config        = BackboneEntryConfig()
     config.logdir = tmp_path / "runs"
     config.gpus   = [0, 1]
     config.seeds  = [3]

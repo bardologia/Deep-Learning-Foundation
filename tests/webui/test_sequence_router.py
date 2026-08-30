@@ -18,7 +18,7 @@ from web_logger              import WebLogger
 
 from tests.webui.conftest             import FakeHandler
 from tests.webui.test_sequence_store  import LEAVES, FakeResolver, SequencePaths, _block, _definition, decision_engine
-from tests.webui.test_sequence_runner import FakeLauncher, FakeNotifier, FakeProcesses, FakePuller, FakeTerrabyteConsole, FakeTerrabyteLauncher
+from tests.webui.test_sequence_runner import FakeLauncher, FakeNotifier, FakeProcesses
 
 
 @pytest.fixture
@@ -26,8 +26,7 @@ def rig(tmp_path):
     """Returns a router over a real store and runner with faked backends."""
     store     = SequenceStore(SequencePaths(tmp_path), WebLogger(), decision_engine())
     processes = FakeProcesses()
-    console   = FakeTerrabyteConsole()
-    runner    = SequenceRunner(store, processes, FakeLauncher(processes), FakeResolver(LEAVES), FakeTerrabyteLauncher(console), console, FakePuller(), FakeNotifier(), WebLogger())
+    runner    = SequenceRunner(store, processes, FakeLauncher(processes), FakeResolver(LEAVES), FakeNotifier(), WebLogger())
     return SequenceRouter(store, runner), store, runner, processes
 
 

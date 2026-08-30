@@ -387,7 +387,7 @@ class CubeParams {
   }
 
   async _fetchPixel(row, col) {
-    const data = await window.apiGet(`/api/cubes/params_at?id=${encodeURIComponent(this.host.selectedId)}&row=${row}&col=${col}`);
+    const data = await Api.get(`/api/cubes/params_at?id=${encodeURIComponent(this.host.selectedId)}&row=${row}&col=${col}`);
     if (!data || !data.ok) return;
 
     this.coordsEl.textContent = `row = ${data.row} · col = ${data.col} · threshold ${data.threshold}`;
@@ -399,7 +399,7 @@ class CubeParams {
     const sources = Object.keys(data.sources);
 
     let html = `<table class="cube-metrics cube-metrics--params"><thead><tr><th scope="col">slot</th>`;
-    sources.forEach((source) => { html += `<th scope="col" colspan="3">${this.host._esc(source)}</th>`; });
+    sources.forEach((source) => { html += `<th scope="col" colspan="3">${SharedCharts.esc(source)}</th>`; });
     html += `</tr><tr><th></th>`;
     sources.forEach(() => { html += `<th>amp</th><th>mu</th><th>sigma</th>`; });
     html += `</tr></thead><tbody>`;
@@ -523,7 +523,7 @@ class CubeMetrics {
   async _fetchSelective(coverage) {
     if (!this.layer) return;
     try {
-      const data = await window.apiGet(
+      const data = await Api.get(
         `/api/cubes/selective?id=${encodeURIComponent(this.host.selectedId)}&key=${encodeURIComponent(this.layer.key)}&coverage=${coverage}`
       );
       if (!data.ok) {
@@ -665,7 +665,7 @@ class CubeMetrics {
     while (this.hoverQueued) {
       const { row, col } = this.hoverQueued;
       this.hoverQueued = null;
-      const data       = await window.apiGet(`/api/cubes/metric_at?id=${encodeURIComponent(this.host.selectedId)}&key=${encodeURIComponent(this.layer.key)}&row=${row}&col=${col}`);
+      const data       = await Api.get(`/api/cubes/metric_at?id=${encodeURIComponent(this.host.selectedId)}&key=${encodeURIComponent(this.layer.key)}&row=${row}&col=${col}`);
       if (data && data.ok && !this.picked) {
         this.coordsEl.textContent = `row = ${data.row} · col = ${data.col} · ${this.layer.label} = ${data.value === null ? "–" : this.host._fmt(data.value)}`;
       }
@@ -699,7 +699,7 @@ class CubeMetrics {
 
   async _fetchReadout(row, col) {
     const jobs = this.layers.map((layer) =>
-      window.apiGet(`/api/cubes/metric_at?id=${encodeURIComponent(this.host.selectedId)}&key=${encodeURIComponent(layer.key)}&row=${row}&col=${col}`)
+      Api.get(`/api/cubes/metric_at?id=${encodeURIComponent(this.host.selectedId)}&key=${encodeURIComponent(layer.key)}&row=${row}&col=${col}`)
     );
     const results = await Promise.all(jobs);
 
@@ -707,7 +707,7 @@ class CubeMetrics {
     this.layers.forEach((layer, i) => {
       const data = results[i];
       const value = data && data.ok && data.value !== null ? this.host._fmt(data.value) : "–";
-      html += `<tr><th scope="row">${this.host._esc(layer.label)}</th><td>${value}</td></tr>`;
+      html += `<tr><th scope="row">${SharedCharts.esc(layer.label)}</th><td>${value}</td></tr>`;
     });
     html += `</tbody></table>`;
 
@@ -870,7 +870,7 @@ class CubeTransect {
     this.saving = true;
     this.printBtn.disabled = true;
 
-    const res = await window.apiPost("/api/cubes/save_transect", {
+    const res = await Api.post("/api/cubes/save_transect", {
       id: this.host.selectedId,
       row0: this.start.row,
       col0: this.start.col,
@@ -884,11 +884,11 @@ class CubeTransect {
     this.printBtn.disabled = false;
 
     if (!res || !res.ok) {
-      window.toast((res && res.error) || "Transect figure save failed.", "error");
+      Toast.show((res && res.error) || "Transect figure save failed.", "error");
       return;
     }
 
-    window.toast(`Saved ${res.files.length} transect figures → ${res.rel}`, "ok");
+    Toast.show(`Saved ${res.files.length} transect figures → ${res.rel}`, "ok");
   }
 }
 
@@ -973,7 +973,7 @@ class CubeCloud {
   _setSource(source) {
     if (source === this.source) return;
     if (!this._sources().includes(source)) {
-      window.toast(CubeCloud.MISSING[source] || "This source is not available.", "warn");
+      Toast.show(CubeCloud.MISSING[source] || "This source is not available.", "warn");
       return;
     }
     this.source = source;
@@ -1337,7 +1337,7 @@ class CubeView {
   }
 
   async _refreshStrip() {
-    const data = await window.apiGet(`/api/cubes?base=${encodeURIComponent(this._runsBase())}`);
+    const data = await Api.get(`/api/cubes?base=${encodeURIComponent(this._runsBase())}`);
     if (!data || data.error) return;
     this.cubes = data.cubes || [];
     this._renderStrip();
@@ -1350,7 +1350,7 @@ class CubeView {
 
     let data;
     try {
-      data = await window.apiGet(`/api/cubes?base=${encodeURIComponent(this._runsBase())}`);
+      data = await Api.get(`/api/cubes?base=${encodeURIComponent(this._runsBase())}`);
     } catch (e) {
       this.hint.classList.remove("is-loading");
       this.hint.textContent = "Backend unreachable.";
@@ -1373,12 +1373,7 @@ class CubeView {
   }
 
   _runsBase() {
-    try {
-      const raw = JSON.parse(localStorage.getItem("results-sources") || "{}");
-      return raw.logs || ResultsView.DEFAULT_RUNS;
-    } catch (e) {
-      return ResultsView.DEFAULT_RUNS;
-    }
+    return ResultsSources.runs();
   }
 
   _renderStrip() {
@@ -1410,7 +1405,7 @@ class CubeView {
 
   async select(cubeId) {
     if (this.polling) {
-      window.toast("A cube is still loading.", "warn");
+      Toast.show("A cube is still loading.", "warn");
       return;
     }
     if (cubeId === this.selectedId && this.meta) return;
@@ -1450,7 +1445,7 @@ class CubeView {
     this.hint.hidden = true;
     this._renderStrip();
 
-    const res = await window.apiPost("/api/cubes/load", { id: cubeId });
+    const res = await Api.post("/api/cubes/load", { id: cubeId });
     if (!res.ok) {
       this.hint.textContent = res.error || "Cube load failed.";
       this.hint.hidden = false;
@@ -1468,7 +1463,7 @@ class CubeView {
     while (true) {
       let st;
       try {
-        st = await window.apiGet("/api/cubes/status");
+        st = await Api.get("/api/cubes/status");
       } catch (e) {
         this._failLoad("Backend unreachable.");
         break;
@@ -1605,17 +1600,17 @@ class CubeView {
 
     const attached = this.meta.attached && this.meta.attached.id === otherId;
     const res = attached
-      ? await window.apiPost("/api/cubes/detach", { id: this.selectedId })
-      : await window.apiPost("/api/cubes/attach", { id: this.selectedId, other: otherId });
+      ? await Api.post("/api/cubes/detach", { id: this.selectedId })
+      : await Api.post("/api/cubes/attach", { id: this.selectedId, other: otherId });
 
     if (!res || !res.ok) {
-      window.toast((res && res.error) || "Comparison attach failed.", "error");
+      Toast.show((res && res.error) || "Comparison attach failed.", "error");
       return;
     }
 
     this._refreshSources(res.cube);
     this._renderStrip();
-    window.toast(attached ? "Comparison detached." : "Comparison attached — pred B and A − B sources enabled.", "ok");
+    Toast.show(attached ? "Comparison detached." : "Comparison attached — pred B and A − B sources enabled.", "ok");
   }
 
   _refreshSources(meta) {
@@ -1779,7 +1774,7 @@ class CubeView {
   _toggleSource(source) {
     if (this.visible.has(source)) {
       if (this.visible.size === 1) {
-        window.toast("At least one source must stay visible.", "warn");
+        Toast.show("At least one source must stay visible.", "warn");
         return;
       }
       this.visible.delete(source);
@@ -1913,17 +1908,17 @@ class CubeView {
     this.saving = true;
     if (this.jumpPrint) this.jumpPrint.disabled = true;
 
-    const res = await window.apiPost("/api/cubes/save_slices", { id: this.selectedId, row, col, space: this.space, cmap: this.cmap });
+    const res = await Api.post("/api/cubes/save_slices", { id: this.selectedId, row, col, space: this.space, cmap: this.cmap });
 
     this.saving = false;
     if (this.jumpPrint) this.jumpPrint.disabled = false;
 
     if (!res || !res.ok) {
-      window.toast((res && res.error) || "Slice figure save failed.", "error");
+      Toast.show((res && res.error) || "Slice figure save failed.", "error");
       return;
     }
 
-    window.toast(`Saved ${res.files.length} slice figures → ${res.rel}`, "ok");
+    Toast.show(`Saved ${res.files.length} slice figures → ${res.rel}`, "ok");
   }
 
   _setManualCut() {
@@ -2140,7 +2135,7 @@ class CubeView {
 
     let data;
     try {
-      data = await window.apiGet(`/api/cubes/ssim?id=${encodeURIComponent(this.selectedId)}&row=${row}&col=${col}&space=${space}`);
+      data = await Api.get(`/api/cubes/ssim?id=${encodeURIComponent(this.selectedId)}&row=${row}&col=${col}&space=${space}`);
     } catch (e) {
       return;
     }
@@ -2190,7 +2185,7 @@ class CubeView {
 
     let data;
     try {
-      data = await window.apiGet(`/api/cubes/profiles?id=${encodeURIComponent(this.selectedId)}&row=${row}&col=${col}`);
+      data = await Api.get(`/api/cubes/profiles?id=${encodeURIComponent(this.selectedId)}&row=${row}&col=${col}`);
     } catch (e) {
       data = null;
     }
@@ -2379,9 +2374,6 @@ class CubeView {
     return value.toExponential(1);
   }
 
-  _esc(text) {
-    return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
 }
 
 window.CubeView = CubeView;

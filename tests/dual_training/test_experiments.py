@@ -20,7 +20,6 @@ from configuration.training.dual             import _default_dual_ratio_trials, 
 from configuration.training.general.ablation import AblationCatalog
 from pipelines.dual.training.experiments     import DualContextTrialPlanner, DualHeadMatchingTrialPlanner, DualRatioTrialPlanner, DualReachTrialPlanner, DualRoutingTrialPlanner
 from pipelines.dual.training.pipeline    import TrunkChannelMap
-from tools.baselines.containers          import TrackBaselines
 from tools.runtime.config_cli            import ConfigCli
 
 
@@ -402,18 +401,13 @@ def test_dual_scheduler_houses_ratio_runs_in_ratio_dir_and_plans_the_split_grid(
 
 
 def test_dual_scheduler_inherits_the_exhaustive_secondary_sweep(tmp_path):
-    """Secondary mode enumerates every two-track selection from the dataset's baselines."""
-    labels = ["FL01_PS02", "FL01_PS04", "FL01_PS06", "FL01_PS08"]
-    meta   = tmp_path / "dataset" / "meta"
-    meta.mkdir(parents=True)
-    TrackBaselines(labels=labels, vertical=[0.0, 10.0, 20.0, 30.0], horizontal=[0.0] * 4, vertical_std=[0.0] * 4, horizontal_std=[0.0] * 4).save(meta / TrackBaselines.FILENAME)
-
+    """Secondary mode enumerates every two-channel selection from the dataset's secondary labels."""
     config                                = DualEntryConfig()
     config.logdir                         = tmp_path / "runs"
     config.trials_mode                    = "secondary"
     config.secondary_trials.strategy      = "exhaustive"
     config.secondary_trials.n_secondaries = 2
-    config.paths.dataset_path             = str(tmp_path / "dataset")
+    config.paths.secondary_labels         = ("CH01", "CH02", "CH03")
 
     scheduler = dual_launcher.DualTrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_dual.py"))
     plans     = scheduler.planner().plan()
@@ -422,8 +416,8 @@ def test_dual_scheduler_inherits_the_exhaustive_secondary_sweep(tmp_path):
 
     assert scheduler.runs_root == tmp_path / "runs" / "secondary"
     assert len(plans) == 3
-    assert selections[0]  == ("FL01_PS04", "FL01_PS06")
-    assert selections[-1] == ("FL01_PS06", "FL01_PS08")
+    assert selections[0]  == ("CH01", "CH02")
+    assert selections[-1] == ("CH02", "CH03")
 
 
 def test_dual_scheduler_rejects_unknown_mode(tmp_path):

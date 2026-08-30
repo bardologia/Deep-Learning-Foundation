@@ -43,6 +43,8 @@ talking to one group of JSON endpoints.
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. |
 | Ablation | `#/ablation` | `/api/backbones`, `/api/run` | Reached from a script card. Picks the entry, the features to ablate and their order, then launches a cumulative loop that trains the full model and degrades one feature at a time down to the baseline. |
 | Saved | `#/saved` | `/api/saved-runs` | Configurations stored from launch pages, one JSON file each under `logs/saved_runs/`. Each card can be launched, queued or deleted. |
+| Sequences | `#/sequences` | `/api/sequences/*` | Experiment sequences as a drag-and-drop DAG board: launch blocks chained by predecessors with checkpoints, skip toggles, per-block decision axes, an isolated per-execution workspace, resume scans over the persisted workspace state, and per-block finalize chains that compare seeds and trials and mail the reports. |
+| Survey | `#/survey` | `/api/survey/*` | Model survey over many trained runs at once: pick runs, and compare their weight statistics, spectra and health indicators side by side. |
 | Configuration | `#/configuration` | `/api/configs` | Every configuration dataclass, field, type and default, parsed live from `configuration/`. |
 | Console | `#/console` | `/api/jobs`, `/api/jobs/<id>/stream` | Real-time stdout of launched jobs over SSE with stop control. Fan-out experiments add a progress strip from `/api/jobs/<id>/progress`: units done of total, mean unit duration, ETA and projected finish. |
 | TensorBoard | `#/tensorboard` | `/api/tensorboard/*` | Starts and supervises a TensorBoard process against any run directory. |
@@ -123,7 +125,7 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 `fit_lab.py`, `model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`
-and 34 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
+and 45 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
 tab (`home`, `equations`, `flow_view` with `flow_sketches`, `pipelines`, `repomap`,
 `models`, `scripts`, `launch` with `launch_widgets` and `launch_pickers`, `ablation`,
 `saved_runs`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube_view`,

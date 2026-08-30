@@ -26,15 +26,12 @@ from configuration.training.jepa                import JepaEntryConfig
 from configuration.training.profile_autoencoder import ProfileAeEntryConfig
 from pipelines.jepa.training.launcher           import JepaTrainingLauncher, JepaTrialScheduler
 from pipelines.profile_autoencoder.training.launcher import ProfileAeTrainingLauncher, ProfileAeTrialScheduler
-from tools.baselines.containers                 import TrackBaselines
 from tools.runtime.config_cli                   import ConfigCli
 from webui.config_value_render                  import ConfigValueRenderer
 
 
 REPO_ROOT   = Path(__file__).resolve().parents[2]
 HARNESS     = REPO_ROOT / "webui" / "tools" / "visual" / "trial_names.js"
-
-TRACK_LABELS = ["FL01_PS02", "CH01", "CH02"]
 
 SWEEP_OVERRIDES = {
     "train_profile_autoencoder": [
@@ -68,12 +65,9 @@ SWEEP_OVERRIDES = {
 
 @pytest.fixture(scope="module")
 def dataset(tmp_path_factory):
-    """Returns a dataset root holding only the baselines table the input trials read their tracks from."""
+    """Returns an empty dataset root for the dataset-path override."""
     root = tmp_path_factory.mktemp("dataset")
-    meta = root / "meta"
-    meta.mkdir()
-
-    TrackBaselines(labels=TRACK_LABELS, vertical=[0.0, 10.0, 20.0], horizontal=[0.0] * 3, vertical_std=[0.0] * 3, horizontal_std=[0.0] * 3).save(meta / TrackBaselines.FILENAME)
+    (root / "meta").mkdir()
 
     return root
 
@@ -83,7 +77,7 @@ def _sweep_argv(key: str, dataset: Path) -> list[str]:
 
     Args:
         key     : Script key of the page.
-        dataset : Dataset root carrying the baselines table.
+        dataset : Dataset root for the path override.
 
     Returns:
         The command-line overrides of the page, dataset path included.

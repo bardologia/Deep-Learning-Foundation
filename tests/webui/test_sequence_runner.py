@@ -1,14 +1,8 @@
-"""Tests for the sequence runner's execution semantics.
+"""Tests of the sequence runner: DAG advance, checkpoints, skips, isolation and finalize chains.
 
-Covers dependency-ordered launching, parallel launching of independent blocks,
-checkpoint holds with explicit release, failure propagation that skips
-descendants, dataset injection into the fields each entry exposes, launch-time
-re-reading of edited block configs, stopping a running sequence, the state
-file mirrored into each isolated workspace, resuming an earlier execution's
-workspace with a scan of that file, blocks targeting the Terrabyte cluster
-backend, the workspace pull gating a finished cluster block of an isolated
-sequence, and the finalize chain comparing a finished block's trials and
-mailing its report bundle.
+Covers block launching over the process manager, failure propagation, held
+checkpoints, the isolated workspace redirection, the persisted state file and
+resume scans, the finalize chains, and the notifier alerts on failures.
 """
 
 from __future__ import annotations
@@ -23,7 +17,6 @@ from sequence_runner import SequenceFinalizer, SequenceRunner
 
 from configuration.diagnostics import ReportMailEntryConfig
 from sequence_store     import SequenceStore
-from terrabyte_monitor  import TerrabyteRunPuller
 from web_logger         import WebLogger
 
 from tests.webui.test_sequence_store import LEAVES, FakeResolver, SequencePaths, _block, _definition, decision_engine
@@ -82,98 +75,10 @@ class FakeLauncher:
         return {"ok": True, "job_id": job_id}
 
 
-class FakeTerrabyteConsole:
-    """Cluster job console stand-in with the prefix, listing and stop the runner uses.
-
-    Attributes:
-        records : Cluster job records keyed by console job id.
-        stopped : Job ids the runner asked to stop, in call order.
-    """
-
-    PREFIX = "tby-"
-
-    def __init__(self) -> None:
-        """Starts with an empty record table."""
-        self.records = {}
-        self.stopped = []
-
-    def finish(self, job_id: str, status: str = "finished") -> None:
-        """Moves one cluster job to a terminal status."""
-        self.records[job_id]["status"] = status
-
-    def list_jobs(self) -> list:
-        """Returns a snapshot of every cluster record."""
-        return [dict(record) for record in self.records.values()]
-
-    def stop(self, job_id: str) -> dict:
-        """Records the stop request and marks the job cancelled."""
-        self.stopped.append(job_id)
-        self.finish(job_id, "cancelled")
-        return {"ok": True}
 
 
-class FakeTerrabyteLauncher:
-    """Cluster launcher stand-in registering a queued cluster job per submission.
-
-    Attributes:
-        console : Fake cluster console the jobs are registered in.
-        calls   : One record per submission with the key, overrides, resources and sweep flag.
-    """
-
-    SERVER_REPO = "/ste/rnd/User/vice_vi/ML-Template"
-
-    def __init__(self, console: FakeTerrabyteConsole) -> None:
-        """Stores the fake console and starts with no calls."""
-        self.console = console
-        self.calls   = []
-
-    def launch(self, console, script_key: str, overrides: dict, resources: dict, sweep: bool) -> dict:
-        """Registers a running cluster job and returns its console id."""
-        job_id = f"tby-{len(self.calls)}"
-        self.calls.append({"key": script_key, "overrides": overrides, "resources": resources, "sweep": sweep})
-        self.console.records[job_id] = {"job_id": job_id, "status": "running"}
-        return {"ok": True, "console_job_id": job_id}
 
 
-class FakePuller:
-    """Cluster run puller stand-in recording pull requests and answering their states.
-
-    Attributes:
-        pulls    : Pull state dictionaries keyed by run-relative path.
-        requests : Run-relative paths of every accepted pull request, in call order.
-        refuse   : Refusal message answered instead of starting a pull, or empty.
-        conflict : Overlapping in-flight pull path attached to the refusal as its conflict key, or empty.
-    """
-
-    BUSY_STATES = TerrabyteRunPuller.BUSY_STATES
-
-    def __init__(self) -> None:
-        """Starts with no pulls and no forced refusal."""
-        self.pulls    = {}
-        self.requests = []
-        self.refuse   = ""
-        self.conflict = ""
-
-    def pull(self, rel: str) -> dict:
-        """Registers a running pull for the path, or refuses it."""
-        if self.refuse:
-            refusal = {"ok": False, "error": self.refuse}
-            if self.conflict:
-                refusal["conflict"] = self.conflict
-            return refusal
-        if self.pulls.get(rel, {}).get("state") in ("running", "queued"):
-            return {"ok": False, "error": f"pull already running for {rel}"}
-        self.requests.append(rel)
-        self.pulls[rel] = {"state": "running"}
-        return {"ok": True, "rel": rel, "dest": rel}
-
-    def finish(self, rel: str, state: str = "done", error: str = "") -> None:
-        """Moves one pull to a terminal state, with an error message for a failed one."""
-        self.pulls[rel] = {"state": state, "error": error} if error else {"state": state}
-
-    def status(self) -> dict:
-        """Returns a snapshot of the current pull states."""
-        return {"ok": True, "pulls": {rel: dict(state) for rel, state in self.pulls.items()}, "auto": False}
 
 
 class FakeNotifier:
@@ -242,8 +147,7 @@ def rig(tmp_path, monkeypatch):
     store     = SequenceStore(SequencePaths(tmp_path), WebLogger(), decision_engine())
     processes = FakeProcesses()
     launcher  = FakeLauncher(processes)
-    console   = FakeTerrabyteConsole()
-    runner    = SequenceRunner(store, processes, launcher, FakeResolver(LEAVES), FakeTerrabyteLauncher(console), console, FakePuller(), FakeNotifier(), WebLogger())
+    runner    = SequenceRunner(store, processes, launcher, FakeResolver(LEAVES), FakeNotifier(), WebLogger())
     return store, processes, launcher, runner
 
 
@@ -426,8 +330,7 @@ def test_the_runner_lock_is_released_while_a_block_launches(tmp_path):
     store     = SequenceStore(SequencePaths(tmp_path), WebLogger(), decision_engine())
     processes = FakeProcesses()
     launcher  = LockProbingLauncher(processes)
-    console   = FakeTerrabyteConsole()
-    runner    = SequenceRunner(store, processes, launcher, FakeResolver(LEAVES), FakeTerrabyteLauncher(console), console, FakePuller(), FakeNotifier(), WebLogger())
+    runner    = SequenceRunner(store, processes, launcher, FakeResolver(LEAVES), FakeNotifier(), WebLogger())
     launcher.runner = runner
 
     runner.start_sequence(_saved(store, [_block("a1")]))
@@ -440,8 +343,7 @@ def test_a_stop_landing_mid_launch_stops_the_job_it_started(tmp_path):
     store     = SequenceStore(SequencePaths(tmp_path), WebLogger(), decision_engine())
     processes = FakeProcesses()
     launcher  = StoppingLauncher(processes)
-    console   = FakeTerrabyteConsole()
-    runner    = SequenceRunner(store, processes, launcher, FakeResolver(LEAVES), FakeTerrabyteLauncher(console), console, FakePuller(), FakeNotifier(), WebLogger())
+    runner    = SequenceRunner(store, processes, launcher, FakeResolver(LEAVES), FakeNotifier(), WebLogger())
     launcher.runner      = runner
     sequence_id          = _saved(store, [_block("a1")])
     launcher.sequence_id = sequence_id
@@ -581,15 +483,6 @@ def test_a_dataset_rooted_runs_dir_is_not_redirected(rig):
     assert "runs_dir" not in launcher.calls[0]["overrides"]
 
 
-def test_a_runs_dir_override_inside_the_runs_tree_is_redirected(rig):
-    """An explicit runs_dir override under the runs tree is redirected into the workspace."""
-    store, processes, launcher, runner = rig
-    overrides   = {"runs_dir": f"{FakeTerrabyteLauncher.SERVER_REPO}/runs/backbone"}
-    sequence_id = _saved(store, [_block("a1", script="infer_backbone", overrides=overrides)], isolate=True)
-
-    runner.start_sequence(sequence_id)
-
-    assert launcher.calls[0]["overrides"]["runs_dir"] == runner.state(sequence_id)["run_dir"]
 
 
 def test_a_training_logdir_is_redirected_into_the_workspace(rig):
@@ -797,8 +690,7 @@ def test_resume_scan_reports_the_blocks_recorded_done(rig, tmp_path):
     runner.scan()
     runner.stop_sequence(sequence_id)
 
-    console   = FakeTerrabyteConsole()
-    restarted = SequenceRunner(store, FakeProcesses(), FakeLauncher(FakeProcesses()), FakeResolver(LEAVES), FakeTerrabyteLauncher(console), console, FakePuller(), FakeNotifier(), WebLogger())
+    restarted = SequenceRunner(store, FakeProcesses(), FakeLauncher(FakeProcesses()), FakeResolver(LEAVES), FakeNotifier(), WebLogger())
     result    = restarted.resume_scan(sequence_id, workspace)
 
     assert result["ok"], result
@@ -909,58 +801,12 @@ def test_a_sequence_without_isolation_leaves_the_run_roots_alone(rig):
     assert "paths.log_base_dir" not in launcher.calls[0]["overrides"]
 
 
-def test_a_terrabyte_block_submits_through_the_cluster_launcher(rig):
-    """A terrabyte-target block goes to the cluster with its resources and sweep flag, not the local launcher."""
-    store, processes, launcher, runner = rig
-    resources   = {"gpus": 2, "partition": "hpda2_compute_gpu", "time": "12:00:00"}
-    sequence_id = _saved(store, [_block("a1", target="terrabyte", sweep=True, resources=resources, overrides={"training.seed": "5"})])
-
-    runner.start_sequence(sequence_id)
-
-    cluster = runner.terrabyte_launch.calls
-    assert launcher.calls == []
-    assert cluster[0]["key"] == "train_backbone"
-    assert cluster[0]["resources"] == resources
-    assert cluster[0]["sweep"] is True
-    assert _block_state(runner, sequence_id, "a1")["job_id"] == "tby-0"
 
 
-def test_a_local_block_launches_after_a_terrabyte_predecessor_finishes(rig):
-    """The chain crosses backends: a finished cluster job unlocks its local successor."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte"), _block("b2", script="infer_backbone", predecessors=["a1"])])
-
-    runner.start_sequence(sequence_id)
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "done"
-    assert [call["key"] for call in launcher.calls] == ["infer_backbone"]
 
 
-def test_a_failed_terrabyte_job_fails_the_block(rig):
-    """A cluster job ending failed marks the block failed and skips its descendants."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte"), _block("b2", predecessors=["a1"])])
-
-    runner.start_sequence(sequence_id)
-    runner.terrabyte.finish("tby-0", "failed")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "failed"
-    assert _block_state(runner, sequence_id, "b2")["status"] == "skipped"
 
 
-def test_stop_reaches_the_cluster_backend_for_terrabyte_blocks(rig):
-    """Stopping a sequence cancels running cluster jobs through the cluster console."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte")])
-
-    runner.start_sequence(sequence_id)
-    runner.stop_sequence(sequence_id)
-
-    assert runner.terrabyte.stopped == ["tby-0"]
-    assert processes.stopped == []
 
 
 def _workspace_rel(runner: SequenceRunner, sequence_id: str) -> str:
@@ -968,225 +814,26 @@ def _workspace_rel(runner: SequenceRunner, sequence_id: str) -> str:
     return Path(runner.state(sequence_id)["run_dir"]).relative_to(runner.store.paths.runs_dir).as_posix()
 
 
-def test_an_isolated_terrabyte_block_pulls_the_workspace_before_done(rig):
-    """A finished cluster block pulls the workspace subtree and holds its successor until the pull lands."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte"), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    rel = _workspace_rel(runner, sequence_id)
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-    assert _block_state(runner, sequence_id, "b2")["status"] == "pending"
-    assert runner.puller.requests == [rel]
-
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-
-    runner.puller.finish(rel)
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "done"
-    assert [call["key"] for call in launcher.calls] == ["infer_backbone"]
 
 
-def test_a_failed_workspace_pull_fails_the_block(rig):
-    """A pull ending failed marks the block failed with the pull error and skips its descendants."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte"), _block("b2", predecessors=["a1"])], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    rel = _workspace_rel(runner, sequence_id)
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-    runner.puller.finish(rel, "failed", error="rsync exited 255")
-    runner.scan()
-
-    state = _block_state(runner, sequence_id, "a1")
-    assert state["status"] == "failed"
-    assert "rsync exited 255" in state["error"]
-    assert _block_state(runner, sequence_id, "b2")["status"] == "skipped"
-    assert runner.state(sequence_id)["status"] == "failed"
 
 
-def test_a_refused_pull_for_a_busy_workspace_retries_until_it_starts(rig):
-    """A pull already covering the workspace defers the block's own request instead of failing it."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte")], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    rel = _workspace_rel(runner, sequence_id)
-    runner.puller.pulls[rel] = {"state": "running"}
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-    assert runner.puller.requests == []
-
-    runner.puller.finish(rel)
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-    assert runner.puller.requests == [rel]
-
-    runner.puller.finish(rel)
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "done"
 
 
-def test_sibling_blocks_share_one_workspace_pull(rig):
-    """Two cluster blocks finishing together ride one workspace pull, and both end when it lands."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte"), _block("b2", script="infer_backbone", target="terrabyte")], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    rel = _workspace_rel(runner, sequence_id)
-    runner.terrabyte.finish("tby-0")
-    runner.terrabyte.finish("tby-1")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-    assert _block_state(runner, sequence_id, "b2")["status"] == "pulling"
-    assert runner.puller.requests == [rel]
-
-    runner.puller.finish(rel)
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "done"
-    assert _block_state(runner, sequence_id, "b2")["status"] == "done"
-    assert runner.puller.requests == [rel]
 
 
-class RacingPuller(FakePuller):
-    """Puller stand-in whose first request is refused while the pull it collided with lands as done.
-
-    Attributes:
-        raced : Whether the racing refusal was already played.
-    """
-
-    def __init__(self) -> None:
-        """Starts with the race not yet played."""
-        super().__init__()
-        self.raced = False
-
-    def pull(self, rel: str) -> dict:
-        """Refuses the first request while flipping the pull to done, then behaves normally."""
-        if not self.raced:
-            self.raced = True
-            self.pulls[rel] = {"state": "done"}
-            return {"ok": False, "error": f"pull already running for {rel}"}
-        return super().pull(rel)
 
 
-def test_a_pull_completing_during_the_refusal_does_not_fail_the_block(rig):
-    """A pull that lands between the refusal and the state re-read leaves the block retrying instead of failing it."""
-    store, processes, launcher, runner = rig
-    runner.puller = RacingPuller()
-    sequence_id   = _saved(store, [_block("a1", target="terrabyte")], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    rel = _workspace_rel(runner, sequence_id)
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-
-    runner.scan()
-    assert runner.puller.requests == [rel]
-
-    runner.puller.finish(rel)
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "done"
 
 
-def test_a_conflict_refused_pull_retries_and_succeeds_on_a_later_pass(rig):
-    """A refusal naming an overlapping in-flight pull leaves the block pulling with no visible pull of its own, and the request lands once the overlap clears."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte")], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    rel                    = _workspace_rel(runner, sequence_id)
-    runner.puller.refuse   = f"pull of {rel} overlaps the in-flight pull of parent"
-    runner.puller.conflict = "parent"
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-    assert runner.puller.requests == []
-    assert rel not in runner.puller.status()["pulls"]
-
-    runner.puller.refuse   = ""
-    runner.puller.conflict = ""
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-    assert runner.puller.requests == [rel]
-
-    runner.puller.finish(rel)
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "done"
 
 
-def test_a_pull_that_cannot_start_fails_the_block(rig):
-    """A pull refusal with no pull in flight breaks the block loudly instead of retrying forever."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte")], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    runner.puller.refuse = "invalid run path"
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-
-    state = _block_state(runner, sequence_id, "a1")
-    assert state["status"] == "failed"
-    assert "invalid run path" in state["error"]
 
 
-def test_a_terrabyte_block_finalizes_only_after_the_workspace_pull(rig):
-    """The finalize chain starts on the pulled workspace, not on the bare cluster job end."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte", finalize=_finalize("compare_trials"))], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    rel        = _workspace_rel(runner, sequence_id)
-    experiment = _experiment_tree(runner.state(sequence_id)["run_dir"])
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "pulling"
-    assert launcher.calls == []
-
-    runner.puller.finish(rel)
-    runner.scan()
-    assert _block_state(runner, sequence_id, "a1")["status"] == "finalizing"
-    assert launcher.calls[0]["key"] == "compare_trials"
-    assert launcher.calls[0]["overrides"]["runs_dir"] == str(experiment)
 
 
-def test_a_non_isolated_terrabyte_block_skips_the_workspace_pull(rig):
-    """Without a workspace there is nothing to pull into, so the block ends done directly."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte")])
-
-    runner.start_sequence(sequence_id)
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "done"
-    assert runner.puller.requests == []
 
 
-def test_stopping_a_pulling_block_cancels_it(rig):
-    """A stop landing while the workspace pull runs cancels the block without touching a job."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte")], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    runner.terrabyte.finish("tby-0")
-    runner.scan()
-    runner.stop_sequence(sequence_id)
-
-    assert _block_state(runner, sequence_id, "a1")["status"] == "cancelled"
-    assert runner.terrabyte.stopped == []
 
 
 def test_start_refuses_an_empty_or_running_sequence(rig):
@@ -1497,22 +1144,6 @@ def test_a_finished_sequence_alerts_at_default_priority(rig):
     assert runner.notifier.alerts == [("sequence finished: seq", "all 2 block(s) completed", "default")]
 
 
-def test_a_failed_workspace_pull_alerts_the_block(rig):
-    """A pull ending failed pushes a block alert carrying the pull error."""
-    store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", target="terrabyte")], isolate=True)
-
-    runner.start_sequence(sequence_id)
-    runner.terrabyte.finish("tby-0", "finished")
-    runner.scan()
-    rel = runner.puller.requests[0]
-    runner.puller.finish(rel, "failed", error="rsync exited 255")
-    runner.scan()
-
-    titles = [title for title, body, priority in runner.notifier.alerts]
-
-    assert titles == ["sequence block failed: train_backbone", "sequence failed: seq"]
-    assert "rsync exited 255" in runner.notifier.alerts[0][1]
 
 
 def test_a_stopped_sequence_does_not_alert(rig):
