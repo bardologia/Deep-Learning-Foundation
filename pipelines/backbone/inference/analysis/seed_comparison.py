@@ -10,10 +10,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import numpy as np
+
 from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps
 from pipelines.backbone.inference.report                     import Report
 from pipelines.shared.inference.run_classifier               import RunDirectoryWalk
 from tools.data.io                                           import FileIO
+from pipelines.backbone.inference.metrics                    import Metrics
 from tools.metrics.scoring                                   import SeedAggregation
 from tools.monitoring.logger                                 import Logger
 from tools.reporting.markdown                                import MarkdownTable, ScalarFormatter
@@ -91,6 +94,94 @@ class SeedInferenceResolver:
         return self._latest(inference_root)
 
 
+
+class SeedEnsembleEvaluation:
+    """Scores the across-seed mean prediction cube against the ground-truth curves.
+
+    Deep-ensemble evaluation on artifacts already on disk: the per-seed
+    prediction cubes are averaged and scored with the same cube-wide scalar
+    metrics inference reports per seed, so the ensemble gain reads directly
+    against the per-seed mean without re-running any model.
+
+    Attributes:
+        PRED_CUBE : Filename of the per-seed prediction cube.
+        GT_CUBE   : Filename of the ground-truth curve cube.
+        cube_dirs : Cube directory of each seed, in seed order.
+        logger    : Logger for the result line.
+    """
+
+    PRED_CUBE = "pred_curves.npy"
+    GT_CUBE   = "gt_curves.npy"
+
+    def __init__(self, cube_dirs: list[Path], logger: Logger) -> None:
+        """Stores the seed cube directories and the logger.
+
+        Args:
+            cube_dirs : Cube directory inside each seed's inference directory.
+            logger    : Logger for the result line.
+        """
+        self.cube_dirs = [Path(d) for d in cube_dirs]
+        self.logger    = logger
+
+    def _open(self) -> tuple[list[np.ndarray], np.ndarray]:
+        """Memory-maps every seed's prediction cube and loads the ground truth.
+
+        Returns:
+            Tuple of the per-seed prediction cubes and the float32 GT cube.
+
+        Raises:
+            FileNotFoundError : If any seed is missing its prediction or GT cube.
+            ValueError        : If the cubes disagree on shape across seeds.
+        """
+        for cube_dir in self.cube_dirs:
+            for name in (self.PRED_CUBE, self.GT_CUBE):
+                if not (cube_dir / name).is_file():
+                    raise FileNotFoundError(f"{cube_dir / name} is missing; re-run inference with save_cubes enabled for every seed, or disable compute_ensemble")
+
+        preds  = [np.load(cube_dir / self.PRED_CUBE, mmap_mode="r") for cube_dir in self.cube_dirs]
+        shapes = {pred.shape for pred in preds}
+        if len(shapes) != 1:
+            raise ValueError(f"Seed prediction cubes disagree on shape: {sorted(shapes)}; the seeds were inferred on different regions and cannot be ensembled")
+
+        gt = np.asarray(np.load(self.cube_dirs[0] / self.GT_CUBE), dtype=np.float32)
+
+        return preds, gt
+
+    def run(self) -> dict:
+        """Averages the seed predictions and scores the mean against the ground truth.
+
+        Returns:
+            Mapping with "n_seeds" and the ensemble's "curve_mse_gt",
+            "curve_mae_gt", "curve_rmse_gt", "overall_r2_gt" and "psnr_db_gt",
+            named like the per-seed scalars so the gain reads side by side.
+        """
+        preds, gt = self._open()
+
+        mean = np.zeros(preds[0].shape, dtype=np.float64)
+        for pred in preds:
+            mean += pred
+        mean = (mean / len(preds)).astype(np.float32)
+
+        diff       = mean - gt
+        mse        = float((diff * diff).mean(dtype=np.float64))
+        mae        = float(np.abs(diff).mean(dtype=np.float64))
+        gt_mean    = float(gt.mean(dtype=np.float64))
+        overall_r2 = 1.0 - float((diff * diff).sum(dtype=np.float64)) / (float(((gt - gt_mean) ** 2).sum(dtype=np.float64)) + 1e-12)
+
+        scalars = {
+            "n_seeds"       : len(preds),
+            "curve_mse_gt"  : mse,
+            "curve_mae_gt"  : mae,
+            "curve_rmse_gt" : float(np.sqrt(mse)),
+            "overall_r2_gt" : overall_r2,
+            "psnr_db_gt"    : Metrics._psnr(mean, gt),
+        }
+
+        self.logger.subsection(f"Seed ensemble : mse {mse:.4g}, overall R2 {overall_r2:.4f} over {len(preds)} seeds")
+
+        return scalars
+
+
 class SeedComparisonReport:
     """Reduces the metrics of one seed group to mean +/- std and writes the report.
 
@@ -106,7 +197,7 @@ class SeedComparisonReport:
         seeds            : Seed labels, relative to the group directory.
     """
 
-    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None) -> None:
+    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
         """Binds the seed group and validates that at least two seeds are present.
 
         Args:
@@ -132,6 +223,7 @@ class SeedComparisonReport:
         self.report_filename  = report_filename
         self.logger           = logger
         self.disagreement     = disagreement
+        self.ensemble         = ensemble
 
         self.output_dir = self.group_dir / "inference" / output_subdir
         self.seeds      = [str(d.relative_to(self.group_dir)) for d in self.run_dirs]
@@ -172,6 +264,9 @@ class SeedComparisonReport:
 
         if self.disagreement is not None:
             payload["disagreement"] = self.disagreement["summary"]
+
+        if self.ensemble is not None:
+            payload["ensemble"] = self.ensemble
 
         path = self.output_dir / self.metrics_filename
         FileIO.save_json(payload, path)
@@ -248,9 +343,38 @@ class SeedComparisonReport:
 
         return out
 
+    def _build_ensemble_section(self, means: dict, stds: dict) -> list[str]:
+        """Returns the markdown lines comparing the seed-ensemble scalars with the per-seed mean.
+
+        Args:
+            means : Across-seed mean per metric key.
+            stds  : Across-seed sample standard deviation per metric key.
+
+        Returns:
+            The markdown lines of the section.
+        """
+        out = ["\n## 3. Seed ensemble\n"]
+        out.append(
+            f"The {self.ensemble['n_seeds']} seed prediction cubes averaged into one deep-ensemble prediction and scored "
+            "against the ground truth, next to the mean of the per-seed scores. A lower ensemble error than the per-seed "
+            "mean is the usual variance-reduction gain of ensembling.\n"
+        )
+
+        table = MarkdownTable(("Metric", "Ensemble", "Per-seed mean ± std"))
+        for key, value in self.ensemble.items():
+            if key == "n_seeds":
+                continue
+            counterpart = self._mean_std_cell(means[key], stds.get(key)) if key in means else "n/a"
+            table.add_row(f"`{key}`", self._fmt(value), counterpart)
+
+        out.append("\n".join(table.render()))
+        out.append("")
+
+        return out
+
     def _build_disagreement_section(self) -> list[str]:
         """Returns the markdown lines summarising the seed-disagreement maps and figures."""
-        out = ["\n## 3. Seed disagreement maps\n"]
+        out = ["\n## 4. Seed disagreement maps\n"]
         out.append(
             "Per-pixel across-seed standard deviation of the model outputs, written as cubes into every seed's inference cube directory "
             "(they appear as metric-map layers in the cube explorer). Predicted slots are first matched to the shared GT slots per seed, "
@@ -303,6 +427,9 @@ class SeedComparisonReport:
 
         lines += self._build_seed_runs_section()
         lines += self._build_metrics_section(per_seed, means, stds, cis, counts)
+
+        if self.ensemble is not None:
+            lines += self._build_ensemble_section(means, stds)
 
         if self.disagreement is not None:
             lines += self._build_disagreement_section()
@@ -393,6 +520,10 @@ class SeedComparison:
 
         inference_dirs = [resolver.resolve(run_dir) for run_dir in run_dirs]
 
+        ensemble = None
+        if self.config.compute_ensemble:
+            ensemble = SeedEnsembleEvaluation([inference_dir / self.config.cubes_subdir for inference_dir in inference_dirs], logger).run()
+
         disagreement = None
         if self.config.compute_disagreement:
             disagreement = SeedDisagreementMaps(
@@ -415,6 +546,7 @@ class SeedComparison:
             report_filename  = self.config.report_filename,
             logger           = logger,
             disagreement     = disagreement,
+            ensemble         = ensemble,
         ).run()
 
     def run(self) -> list[Path]:

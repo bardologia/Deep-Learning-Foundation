@@ -93,6 +93,7 @@ def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
         metrics_filename     = "metrics.json",
         report_filename      = "report.md",
         compute_disagreement = compute_disagreement,
+        compute_ensemble     = False,
         cubes_subdir         = "cubes",
         active_amp_thr       = 1e-4,
     )
