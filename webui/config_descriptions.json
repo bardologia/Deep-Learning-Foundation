@@ -2602,6 +2602,15 @@
         "figure_style": "PlotBase figure style the frames are rendered with (report or paper)"
       }
     },
+    "diagnostics::OnnxExportEntryConfig": {
+      "summary": "Entry config that rebuilds each selected backbone run's model, loads its best checkpoint and exports the forward as an ONNX graph with a manifest",
+      "fields": {
+        "runs_dir": "root directory scanned recursively for runs holding a best_model.pt with backbone meta files; each becomes one export",
+        "run_filter": "substrings a run's relative name must contain to be exported; empty exports every discovered run",
+        "opset": "ONNX opset version the exported graph targets",
+        "dynamic_batch": "whether the exported input and params output keep a dynamic batch axis instead of the fixed export batch of one"
+      }
+    },
     "diagnostics::ResultTableEntryConfig": {
       "summary": "Entry config that exports one table row per run with finished inference: a CSV with every scalar metric plus LaTeX and markdown tables with the selected columns",
       "fields": {

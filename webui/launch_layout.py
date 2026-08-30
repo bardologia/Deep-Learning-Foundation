@@ -1447,6 +1447,22 @@ class LaunchLayout:
                 ]},
             ],
         },
+        "export_onnx": {
+            "sections": [
+                {"key": "config", "title": "Configuration", "panels": [
+                    {"kind": "fields", "groups": [
+                        {"title": "Runs", "fields": [
+                            "runs_dir",
+                            {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir"}},
+                        ]},
+                        {"title": "Graph", "fields": [
+                            {"path": "opset", "widget": {"kind": "number", "int": True, "min": 11, "max": 22, "presets": [17, 18, 20]}},
+                            "dynamic_batch",
+                        ]},
+                    ]},
+                ]},
+            ],
+        },
         "profile_training": {
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
