@@ -1,7 +1,6 @@
 "use strict";
 
 class TriageView {
-  static get DEFAULT_BASE() { return window.repoPath("runs"); }
   static VERDICTS     = ["label problem", "model problem", "interesting"];
 
   constructor(root) {
@@ -26,7 +25,7 @@ class TriageView {
       <div class="cube-pick">
         <div class="fl-src" role="group" aria-label="Runs directory">
           <label for="triage-base">Runs dir</label>
-          <input id="triage-base" type="text" spellcheck="false" autocomplete="off" placeholder="${TriageView.DEFAULT_BASE}" />
+          <input id="triage-base" type="text" spellcheck="false" autocomplete="off" placeholder="${ResultsSources.runs()}" />
           <button type="button" class="btn btn--mini" id="triage-scan">Scan</button>
         </div>
         <div class="run-strip" id="triage-strip" aria-label="Saved inferences"></div>
@@ -42,7 +41,7 @@ class TriageView {
       cases : this.root.querySelector("#triage-cases"),
     };
 
-    this.refs.base.value = TriageView.DEFAULT_BASE;
+    this.refs.base.value = ResultsSources.runs();
     this.refs.scan.addEventListener("click", () => this._scan());
     this.refs.base.addEventListener("keydown", (ev) => { if (ev.key === "Enter") this._scan(); });
   }
@@ -51,7 +50,7 @@ class TriageView {
     const base = this.refs.base.value.trim();
     if (!base) return;
 
-    const data = await window.apiGet(`/api/cubes?base=${encodeURIComponent(base)}`);
+    const data = await Api.get(`/api/cubes?base=${encodeURIComponent(base)}`);
     if (!data.ok) {
       this.refs.hint.textContent = data.error || "scan failed";
       return;
@@ -73,9 +72,9 @@ class TriageView {
     this.cubeId = cubeId;
     this.runStrip.repaint();
 
-    const data = await window.apiGet(`/api/triage/cases?id=${encodeURIComponent(cubeId)}&n=40`);
+    const data = await Api.get(`/api/triage/cases?id=${encodeURIComponent(cubeId)}&n=40`);
     if (!data.ok) {
-      this.refs.cases.innerHTML = `<p class="cube-hint">${this._esc(data.error || "failed to build cases")}</p>`;
+      this.refs.cases.innerHTML = `<p class="cube-hint">${SharedCharts.esc(data.error || "failed to build cases")}</p>`;
       return;
     }
 
@@ -105,10 +104,10 @@ class TriageView {
   _card(row, index) {
     const data       = this.payload || {};
     const annotation = row.annotation || {};
-    const modeBadge  = data.has_modes && row.mode ? `<span class="cube-coords">mode: ${this._esc(row.mode)} (${(row.fail_frac * 100).toFixed(0)}% failing)</span><br>` : "";
+    const modeBadge  = data.has_modes && row.mode ? `<span class="cube-coords">mode: ${SharedCharts.esc(row.mode)} (${(row.fail_frac * 100).toFixed(0)}% failing)</span><br>` : "";
     const aux        = (data.aux || [])
       .filter((name) => row[name] !== null && row[name] !== undefined)
-      .map((name) => `${this._esc(name)}: ${Number(row[name]).toPrecision(3)}`)
+      .map((name) => `${SharedCharts.esc(name)}: ${Number(row[name]).toPrecision(3)}`)
       .join(" · ");
 
     const thumb = `/api/triage/thumb?id=${encodeURIComponent(this.cubeId)}&row0=${row.row0}&col0=${row.col0}`;
@@ -132,23 +131,26 @@ class TriageView {
         </p>
         <div class="triage-verdicts" role="group" aria-label="Verdict">${verdictBtns}</div>
         <div class="fl-pixrow">
-          <input type="text" class="cube-jump__input cube-jump__input--wide" placeholder="note" value="${this._esc(annotation.note || "")}" data-note="${index}" />
+          <input type="text" class="cube-jump__input cube-jump__input--wide" placeholder="note" value="${SharedCharts.esc(annotation.note || "")}" data-note="${index}" />
           <button type="button" class="btn btn--mini" data-open="${index}">Open cuts</button>
         </div>
-        ${annotation.updated ? `<p class="cube-hint">last touched ${this._esc(annotation.updated)}</p>` : ""}
+        ${annotation.updated ? `<p class="cube-hint">last touched ${SharedCharts.esc(annotation.updated)}</p>` : ""}
       </article>`;
   }
 
   async _loadProfile(row, index) {
-    const data = await window.apiGet(
+    const data = await Api.get(
       `/api/triage/profile?id=${encodeURIComponent(this.cubeId)}&row=${row.worst_row}&col=${row.worst_col}`
     );
-    if (!data.ok) return;
+    if (!data.ok) {
+      this.refs.hint.textContent = data.error || "profile failed";
+      return;
+    }
 
     const canvas = this.refs.cases.querySelector(`#triage-profile-${index}`);
     if (!canvas) return;
 
-    window.drawLineChart(canvas, data.z_axis, [
+    SharedCharts.lineChart(canvas, data.z_axis, [
       { values: data.gt,   color: "#111827", width: 1.2, label: "GT" },
       { values: data.pred, color: "#0f766e", width: 1.7, label: "pred" },
     ]);
@@ -164,12 +166,15 @@ class TriageView {
       note    : noteOverride !== undefined ? noteOverride : (annotation.note || ""),
     };
 
-    const out = await window.apiPost("/api/triage/annotate", body);
+    const out = await Api.post("/api/triage/annotate", body);
 
-    if (out.ok) {
-      row.annotation = out.annotation || null;
-      this._repaintCard(index);
+    if (!out.ok) {
+      Toast.show(out.error || "Could not save the verdict", "error");
+      return;
     }
+
+    row.annotation = out.annotation || null;
+    this._repaintCard(index);
   }
 
   _repaintCard(index) {
@@ -204,10 +209,6 @@ class TriageView {
     scope.querySelectorAll("[data-note]").forEach((input) => {
       input.addEventListener("change", () => this._annotate(Number(input.dataset.note), null, input.value));
     });
-  }
-
-  _esc(text) {
-    return String(text).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
   }
 }
 

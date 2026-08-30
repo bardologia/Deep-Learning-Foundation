@@ -33,7 +33,7 @@ class ModelProbe:
 
     A single run is held at a time, loaded asynchronously and guarded by a lock
     so that concurrent HTTP handlers see a consistent model, dataset and layer
-    index. Every probe method takes an azimuth/range pixel, cuts the patch the
+    index. Every probe method takes an row/column pixel, cuts the patch the
     model was trained on around it, and reports on the centre pixel.
 
     Attributes:
@@ -47,7 +47,7 @@ class ModelProbe:
     FAMILIES        = ("amp", "mu", "sigma")
     FIELD_CMAPS     = {"amp": "magma", "mu": "viridis", "sigma": "cividis"}
     PERTURBATIONS   = ("drop_channel", "scale_channel", "noise")
-    FLIPS           = (("none", ()), ("azimuth", (2,)), ("range", (3,)), ("both", (2, 3)))
+    FLIPS           = (("none", ()), ("row", (2,)), ("col", (3,)), ("both", (2, 3)))
     CONTAINER_TYPES = ("ModuleList", "ModuleDict", "Sequential")
     LOADER_NAME     = "model_probe"
     CHECKPOINT      = "best_model.pt"
@@ -258,7 +258,7 @@ class ModelProbe:
     def map_png(self) -> bytes | None:
         """Returns a grayscale PNG of the primary track amplitude over the region.
 
-        The amplitude image has shape (azimuth, range) and is scaled with the
+        The amplitude image has shape (rows, cols) and is scaled with the
         supervisor amplitude clim convention.
 
         Returns:
@@ -812,7 +812,7 @@ class ModelProbe:
                 return {"ok": False, "error": str(error)}
 
     def flips(self, body: dict) -> dict:
-        """Tests flip equivariance at a pixel over azimuth, range and both axes.
+        """Tests flip equivariance at a pixel over rows, columns and both axes.
 
         Each flipped patch is predicted and the parameter map flipped back
         before the centre curve is read, so an equivariant model reproduces the

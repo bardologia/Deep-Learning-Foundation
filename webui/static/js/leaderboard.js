@@ -3,13 +3,15 @@
 class LeaderboardView {
   static DIFF_TAGS = ["A", "B", "C", "D", "E", "F"];
   static AXIS_COLS = [
-    { key: "model",    label: "model" },
-    { key: "head",     label: "head" },
-    { key: "matching", label: "matching" },
-    { key: "k",        label: "K" },
-    { key: "aug",      label: "aug" },
-    { key: "presence", label: "presence" },
-    { key: "loss",     label: "loss" },
+    { key: "model",      label: "model" },
+    { key: "head",       label: "head" },
+    { key: "matching",   label: "matching" },
+    { key: "k",          label: "K" },
+    { key: "aug",        label: "aug" },
+    { key: "presence",   label: "presence" },
+    { key: "profile_ae", label: "profile AE" },
+    { key: "image_ae",   label: "image AE" },
+    { key: "loss",       label: "loss" },
   ];
 
   constructor(root) {
@@ -52,12 +54,12 @@ class LeaderboardView {
   async load() {
     this.root.innerHTML = `<div class="res-empty">Scanning inference results&hellip;</div>`;
 
-    const base = this._runsBase();
-    const data = await window.apiGet(`/api/leaderboard?base=${encodeURIComponent(base)}`);
+    const base = ResultsSources.runs();
+    const data = await Api.get(`/api/leaderboard?base=${encodeURIComponent(base)}`);
 
     if (!data || !data.ok) {
       this.data = null;
-      this.root.innerHTML = `<div class="res-empty">${this._esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
+      this.root.innerHTML = `<div class="res-empty">${SharedCharts.esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
       return;
     }
 
@@ -71,12 +73,12 @@ class LeaderboardView {
   async loadTrials() {
     this.root.innerHTML = `<div class="res-empty">Aggregating seeded trials&hellip;</div>`;
 
-    const base = this._runsBase();
-    const data = await window.apiGet(`/api/leaderboard/trials?base=${encodeURIComponent(base)}`);
+    const base = ResultsSources.runs();
+    const data = await Api.get(`/api/leaderboard/trials?base=${encodeURIComponent(base)}`);
 
     if (!data || !data.ok) {
       this.trialsData = null;
-      this.root.innerHTML = `<div class="res-empty">${this._esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
+      this.root.innerHTML = `<div class="res-empty">${SharedCharts.esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
       return;
     }
 
@@ -88,12 +90,12 @@ class LeaderboardView {
   async loadCurveRuns() {
     this.root.innerHTML = `<div class="res-empty">Scanning training runs&hellip;</div>`;
 
-    const base = this._runsBase();
-    const data = await window.apiGet(`/api/curves/runs?base=${encodeURIComponent(base)}`);
+    const base = ResultsSources.runs();
+    const data = await Api.get(`/api/curves/runs?base=${encodeURIComponent(base)}`);
 
     if (!data || !data.ok) {
       this.curveRuns = null;
-      this.root.innerHTML = `<div class="res-empty">${this._esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
+      this.root.innerHTML = `<div class="res-empty">${SharedCharts.esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
       return;
     }
 
@@ -113,10 +115,10 @@ class LeaderboardView {
     }
 
     const runsQuery = [...this.curveSelected].map((id) => `run=${encodeURIComponent(id)}`).join("&");
-    const data = await window.apiGet(`/api/curves?${runsQuery}&tag=${encodeURIComponent(this.curveTag)}`);
+    const data = await Api.get(`/api/curves?${runsQuery}&tag=${encodeURIComponent(this.curveTag)}`);
 
     if (!data || !data.ok) {
-      window.toast((data && data.error) || "Could not load the training curves.", "warn");
+      Toast.show((data && data.error) || "Could not load the training curves.", "warn");
       return;
     }
 
@@ -130,10 +132,10 @@ class LeaderboardView {
     if (this.selected.length < 2) return;
 
     const runsQuery = this.selected.map((id) => `run=${encodeURIComponent(id)}`).join("&");
-    const data      = await window.apiGet(`/api/leaderboard/diff?${runsQuery}`);
+    const data      = await Api.get(`/api/leaderboard/diff?${runsQuery}`);
 
     if (!data || !data.ok) {
-      window.toast((data && data.error) || "Could not load the comparison.", "warn");
+      Toast.show((data && data.error) || "Could not load the comparison.", "warn");
       return;
     }
 
@@ -249,12 +251,12 @@ class LeaderboardView {
 
     rows.forEach((row) => {
       const selected = this.selected.includes(row.id);
-      html += `<tr class="lb-row${row.n_seeds ? " lb-row--unit" : ""}${selected ? " is-selected" : ""}" data-id="${this._esc(row.id)}" title="${this._esc(row.id)}">`;
-      html += `<td class="lb-run"><span class="lb-run__name">${this._esc(row.run)}</span><span class="lb-run__stamp">${this._esc(row.group !== "." ? row.group + " / " : "")}${this._esc(row.stamp)}</span></td>`;
+      html += `<tr class="lb-row${row.n_seeds ? " lb-row--unit" : ""}${selected ? " is-selected" : ""}" data-id="${SharedCharts.esc(row.id)}" title="${SharedCharts.esc(row.id)}">`;
+      html += `<td class="lb-run"><span class="lb-run__name">${SharedCharts.esc(row.run)}</span><span class="lb-run__stamp">${SharedCharts.esc(row.group !== "." ? row.group + " / " : "")}${SharedCharts.esc(row.stamp)}</span></td>`;
 
       LeaderboardView.AXIS_COLS.forEach((col) => {
         const value = row.axes ? row.axes[col.key] : undefined;
-        html += `<td class="lb-axis">${value === undefined || value === "" ? "&ndash;" : this._esc(value)}</td>`;
+        html += `<td class="lb-axis">${value === undefined || value === "" ? "&ndash;" : SharedCharts.esc(value)}</td>`;
       });
 
       columns.forEach((col) => {
@@ -285,23 +287,23 @@ class LeaderboardView {
     let html = `<div class="lb-bar-top">`;
     html += this._modeToggleHtml();
     html += `<span class="lb-count">${count} inference result${total === 1 ? "" : "s"}</span>`;
-    html += `<input type="search" class="res-filter" id="lb-filter" placeholder="Filter by run name" value="${this._esc(this.filter)}" spellcheck="false" />`;
+    html += `<input type="search" class="res-filter" id="lb-filter" placeholder="Filter by run name" value="${SharedCharts.esc(this.filter)}" spellcheck="false" />`;
 
     LeaderboardView.AXIS_COLS.forEach((col) => {
       if (col.key === "loss") return;
-      const values = [...new Set(this.data.rows.filter((r) => r.axes).map((r) => String(r.axes[col.key])))].sort();
+      const values = [...new Set(this.data.rows.filter((r) => r.axes).map((r) => String(r.axes[col.key])))].filter((v) => v !== "").sort();
       if (values.length < 2) return;
       const active = this.axisSel[col.key] || "";
       html += `<select class="lb-select" data-axis="${col.key}" aria-label="Filter by ${col.label}">`;
       html += `<option value="">${col.label}: all</option>`;
-      values.forEach((v) => { html += `<option value="${this._esc(v)}"${v === active ? " selected" : ""}>${this._esc(v)}</option>`; });
+      values.forEach((v) => { html += `<option value="${SharedCharts.esc(v)}"${v === active ? " selected" : ""}>${SharedCharts.esc(v)}</option>`; });
       html += `</select>`;
     });
 
     html += `<details class="lb-cols"><summary>Columns</summary><div class="lb-cols__menu">`;
     this.data.columns.forEach((col) => {
       const on = this.visible.includes(col.key);
-      html += `<label><input type="checkbox" data-col="${col.key}"${on ? " checked" : ""} /> ${this._esc(col.label)}</label>`;
+      html += `<label><input type="checkbox" data-col="${col.key}"${on ? " checked" : ""} /> ${SharedCharts.esc(col.label)}</label>`;
     });
     html += `</div></details>`;
 
@@ -313,7 +315,7 @@ class LeaderboardView {
   _headCell(key, label, isMetric = false) {
     const active = this.sortKey === key;
     const arrow  = active ? (this.sortDir === 1 ? " &#9650;" : " &#9660;") : "";
-    return `<th class="lb-th${isMetric ? " lb-th--metric" : ""}${active ? " is-sorted" : ""}" data-sort="${key}">${this._esc(label)}${arrow}</th>`;
+    return `<th class="lb-th${isMetric ? " lb-th--metric" : ""}${active ? " is-sorted" : ""}" data-sort="${key}">${SharedCharts.esc(label)}${arrow}</th>`;
   }
 
   _ranges(rows, columns) {
@@ -340,7 +342,7 @@ class LeaderboardView {
     html += this._modeToggleHtml();
     html += `<span class="lb-count">${experiments.reduce((n, e) => n + e.units.length, 0)} seeded units in ${experiments.length} experiment${experiments.length === 1 ? "" : "s"}</span>`;
     html += `<select class="lb-select" id="lb-trials-metric" aria-label="Chart metric">`;
-    columns.forEach((col) => { html += `<option value="${col.key}"${col.key === metric.key ? " selected" : ""}>${this._esc(col.label)}</option>`; });
+    columns.forEach((col) => { html += `<option value="${col.key}"${col.key === metric.key ? " selected" : ""}>${SharedCharts.esc(col.label)}</option>`; });
     html += `</select>`;
     html += `</div>`;
 
@@ -350,7 +352,7 @@ class LeaderboardView {
 
     experiments.forEach((experiment, index) => {
       html += `<section class="lb-diff__section">`;
-      html += `<h4 class="res-section__cap">${this._esc(experiment.key === "." ? "runs root" : experiment.key)} <span>${experiment.units.length} units</span></h4>`;
+      html += `<h4 class="res-section__cap">${SharedCharts.esc(experiment.key === "." ? "runs root" : experiment.key)} <span>${experiment.units.length} units</span></h4>`;
       html += this._trialsChartHtml(experiment, metric);
       html += this._trialsTableHtml(experiment, columns, index);
       html += `</section>`;
@@ -365,7 +367,7 @@ class LeaderboardView {
       .filter((row) => row.agg);
 
     if (!rows.length) {
-      return `<div class="res-empty res-empty--tight">No unit reports the metric "${this._esc(metric.label)}".</div>`;
+      return `<div class="res-empty res-empty--tight">No unit reports the metric "${SharedCharts.esc(metric.label)}".</div>`;
     }
 
     rows.sort((a, b) => metric.direction >= 0 ? b.agg.mean - a.agg.mean : a.agg.mean - b.agg.mean);
@@ -385,7 +387,7 @@ class LeaderboardView {
     const height = rows.length * rowH + 14;
     const xAt = (v) => labelW + ((v - lo) / (hi - lo)) * chartW;
 
-    let svg = `<svg class="lb-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Seed-averaged ${this._esc(metric.label)} per unit">`;
+    let svg = `<svg class="lb-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Seed-averaged ${SharedCharts.esc(metric.label)} per unit">`;
     svg += `<line x1="${xAt(0)}" y1="4" x2="${xAt(0)}" y2="${height - 4}" class="lb-chart__zero" />`;
 
     rows.forEach((row, i) => {
@@ -395,7 +397,7 @@ class LeaderboardView {
       const x1 = xAt(Math.max(0, row.agg.mean));
       const best = i === 0;
 
-      svg += `<text x="${labelW - 10}" y="${mid + 4}" class="lb-chart__label" text-anchor="end">${this._esc(row.unit)}</text>`;
+      svg += `<text x="${labelW - 10}" y="${mid + 4}" class="lb-chart__label" text-anchor="end">${SharedCharts.esc(row.unit)}</text>`;
       svg += `<rect x="${x0}" y="${y}" width="${Math.max(1, x1 - x0)}" height="14" class="lb-chart__bar${best ? " is-best" : ""}" />`;
       if (row.agg.std > 0) {
         const e0 = xAt(row.agg.mean - row.agg.std);
@@ -424,11 +426,11 @@ class LeaderboardView {
 
     let html = `<details class="lb-trials-table"><summary>mean ± std across all headline metrics</summary>`;
     html += `<div class="lb-scroll"><table class="lb-table lb-table--diff"><thead><tr><th class="lb-th">unit</th><th class="lb-th">seeds</th>`;
-    present.forEach((col) => { html += `<th class="lb-th">${this._esc(col.label)}</th>`; });
+    present.forEach((col) => { html += `<th class="lb-th">${SharedCharts.esc(col.label)}</th>`; });
     html += `</tr></thead><tbody>`;
 
     experiment.units.forEach((unit) => {
-      html += `<tr><td class="lb-key">${this._esc(unit.unit)}</td><td>${unit.seeds.join(", ")}</td>`;
+      html += `<tr><td class="lb-key">${SharedCharts.esc(unit.unit)}</td><td>${unit.seeds.join(", ")}</td>`;
       present.forEach((col) => {
         const agg = unit.metrics[col.key];
         html += `<td>${agg ? `${this._fmt(agg.mean)} ± ${this._fmt(agg.std)}${this._sigText(agg)}` : "&ndash;"}</td>`;
@@ -453,6 +455,11 @@ class LeaderboardView {
 
   static CURVE_COLORS = ["#1d4fd8", "#0f766e", "#b45309", "#7c3aed", "#db2777", "#0891b2", "#4d7c0f", "#b91c1c"];
 
+  _curveColor(runId) {
+    const slot = [...this.curveSelected].indexOf(runId);
+    return LeaderboardView.CURVE_COLORS[((slot < 0 ? 0 : slot) % 8)];
+  }
+
   _curvesHtml() {
     const needle = this.curveFilter.toLowerCase();
     const runs   = needle ? this.curveRuns.filter((run) => run.name.toLowerCase().includes(needle)) : this.curveRuns;
@@ -464,7 +471,7 @@ class LeaderboardView {
     if (this.curveData && this.curveData.tags.length) {
       html += `<select class="lb-select" id="lb-curve-tag" aria-label="Scalar tag">`;
       this.curveData.tags.forEach((tag) => {
-        html += `<option value="${this._esc(tag)}"${tag === this.curveTag ? " selected" : ""}>${this._esc(tag)}</option>`;
+        html += `<option value="${SharedCharts.esc(tag)}"${tag === this.curveTag ? " selected" : ""}>${SharedCharts.esc(tag)}</option>`;
       });
       html += `</select>`;
       html += `<label class="lb-check"><input type="checkbox" id="lb-curve-log"${this.curveLog ? " checked" : ""} /> log scale</label>`;
@@ -473,17 +480,16 @@ class LeaderboardView {
 
     html += `<div class="lb-curves">`;
     html += `<aside class="lb-curves__list">`;
-    html += `<input type="search" class="res-filter" id="lb-curve-filter" placeholder="Filter runs" value="${this._esc(this.curveFilter)}" spellcheck="false" />`;
+    html += `<input type="search" class="res-filter" id="lb-curve-filter" placeholder="Filter runs" value="${SharedCharts.esc(this.curveFilter)}" spellcheck="false" />`;
 
     if (!runs.length) {
       html += `<div class="res-empty res-empty--tight">${this.curveRuns.length ? "No run matches the filter." : "No training runs with tensorboard logs found."}</div>`;
     }
     runs.forEach((run, index) => {
       const on = this.curveSelected.has(run.id);
-      const colorAt = [...this.curveSelected].indexOf(run.id);
-      const dot = on ? `<i class="lb-curves__dot" style="background:${LeaderboardView.CURVE_COLORS[colorAt % 8]}"></i>` : `<i class="lb-curves__dot"></i>`;
-      html += `<label class="lb-curves__run${on ? " is-on" : ""}" title="${this._esc(run.id)}">`;
-      html += `<input type="checkbox" data-run="${this._esc(run.id)}"${on ? " checked" : ""} />${dot}<span>${this._esc(run.name)}</span>`;
+      const dot = on ? `<i class="lb-curves__dot" style="background:${this._curveColor(run.id)}"></i>` : `<i class="lb-curves__dot"></i>`;
+      html += `<label class="lb-curves__run${on ? " is-on" : ""}" title="${SharedCharts.esc(run.id)}">`;
+      html += `<input type="checkbox" data-run="${SharedCharts.esc(run.id)}"${on ? " checked" : ""} />${dot}<span>${SharedCharts.esc(run.name)}</span>`;
       html += `</label>`;
     });
     html += `</aside>`;
@@ -494,12 +500,12 @@ class LeaderboardView {
     } else if (this.curveData && this.curveData.series.length) {
       html += this._curveChartSvg();
       html += `<div class="lb-curves__legend">`;
-      this.curveData.series.forEach((series, index) => {
-        html += `<span class="lb-curves__key"><i class="lb-curves__dot" style="background:${LeaderboardView.CURVE_COLORS[index % 8]}"></i>${this._esc(series.name)}</span>`;
+      this.curveData.series.forEach((series) => {
+        html += `<span class="lb-curves__key"><i class="lb-curves__dot" style="background:${this._curveColor(series.id)}"></i>${SharedCharts.esc(series.name)}</span>`;
       });
       html += `</div>`;
     } else if (this.curveData) {
-      html += `<div class="res-empty">None of the selected runs logs the tag "${this._esc(this.curveTag)}".</div>`;
+      html += `<div class="res-empty">None of the selected runs logs the tag "${SharedCharts.esc(this.curveTag)}".</div>`;
     } else {
       html += `<div class="res-empty">Loading curves&hellip;</div>`;
     }
@@ -546,7 +552,7 @@ class LeaderboardView {
       svg += `<text x="${x}" y="${H - 12}" class="lb-linechart__tick" text-anchor="middle">${Math.round(step)}</text>`;
     }
 
-    series.forEach((s, index) => {
+    series.forEach((s) => {
       let d = "";
       let pen = false;
       for (let i = 0; i < s.steps.length; i++) {
@@ -555,7 +561,7 @@ class LeaderboardView {
         d += `${pen ? "L" : "M"}${xAt(s.steps[i]).toFixed(1)} ${yAt(v).toFixed(1)} `;
         pen = true;
       }
-      svg += `<path d="${d.trim()}" class="lb-linechart__line" style="stroke:${LeaderboardView.CURVE_COLORS[index % 8]}" />`;
+      svg += `<path d="${d.trim()}" class="lb-linechart__line" style="stroke:${this._curveColor(s.id)}" />`;
     });
 
     svg += `</svg>`;
@@ -665,7 +671,7 @@ class LeaderboardView {
 
     html += `<div class="lb-diff__heads">`;
     sides.forEach((side, i) => {
-      html += `<div class="lb-diff__head"><span class="lb-diff__tag">${tags[i]}</span><span class="lb-run__name">${this._esc(side.run)}</span><span class="lb-run__stamp">${this._esc(side.stamp)}</span></div>`;
+      html += `<div class="lb-diff__head"><span class="lb-diff__tag">${tags[i]}</span><span class="lb-run__name">${SharedCharts.esc(side.run)}</span><span class="lb-run__stamp">${SharedCharts.esc(side.stamp)}</span></div>`;
     });
     html += `</div>`;
 
@@ -696,7 +702,7 @@ class LeaderboardView {
 
     html += `<section class="lb-diff__section"><h4 class="res-section__cap">Metrics <span>${kept.length} of ${all.length}</span></h4>`;
     html += `<div class="lb-diff__controls">`;
-    html += `<input type="search" class="res-filter" id="lb-diff-filter" placeholder="Filter metrics by name" value="${this._esc(this.diffFilter)}" spellcheck="false" />`;
+    html += `<input type="search" class="res-filter" id="lb-diff-filter" placeholder="Filter metrics by name" value="${SharedCharts.esc(this.diffFilter)}" spellcheck="false" />`;
     html += `<label class="lb-check"><input type="checkbox" id="lb-diff-changed"${this.diffChanged ? " checked" : ""} /> differing only</label>`;
     html += `<label class="lb-check"><input type="checkbox" id="lb-diff-series"${this.diffSeries ? " checked" : ""} /> per-index series</label>`;
     html += `</div>`;
@@ -707,7 +713,7 @@ class LeaderboardView {
       if (!keys.length) return;
 
       index.push({ id: `lb-diff-sec-${si}`, title: section.title, count: keys.length });
-      html += `<h2 id="lb-diff-sec-${si}">${this._esc(section.title)} <span>${keys.length}</span></h2>`;
+      html += `<h2 id="lb-diff-sec-${si}">${SharedCharts.esc(section.title)} <span>${keys.length}</span></h2>`;
       html += `<table><thead><tr><th>metric</th>`;
       sides.forEach((_, i) => { html += `<th>${tags[i]}</th>`; });
       html += pair ? `<th>&Delta; (B&minus;A)</th><th>&Delta;%</th>` : `<th>spread%</th>`;
@@ -725,7 +731,7 @@ class LeaderboardView {
     html += `</div>`;
     html += `<nav class="res-index lb-diff__index" aria-label="Comparison index">`;
     index.forEach((entry) => {
-      html += `<button type="button" class="res-index__link" data-target="${entry.id}">${this._esc(entry.title)}<span>${entry.count}</span></button>`;
+      html += `<button type="button" class="res-index__link" data-target="${entry.id}">${SharedCharts.esc(entry.title)}<span>${entry.count}</span></button>`;
     });
     html += `</nav></div>`;
     return html;
@@ -782,7 +788,7 @@ class LeaderboardView {
       cells += `<td>${spread === null ? "&ndash;" : spread === 0 ? "=" : spread.toFixed(1) + "%"}</td>`;
     }
 
-    return `<tr${hot ? ` class="lb-hot"` : ""}><td><code>${this._esc(key)}</code></td>${cells}</tr>`;
+    return `<tr${hot ? ` class="lb-hot"` : ""}><td><code>${SharedCharts.esc(key)}</code></td>${cells}</tr>`;
   }
 
   _configDiffHtml(sides, tags, index) {
@@ -794,7 +800,7 @@ class LeaderboardView {
 
     const notes = sides.flatMap((side, i) => side.config_notes.map((note) => `${tags[i]}: ${note}`));
     if (notes.length) {
-      html += `<div class="res-empty res-empty--tight">${notes.map((note) => this._esc(note)).join("<br>")}</div>`;
+      html += `<div class="res-empty res-empty--tight">${notes.map((note) => SharedCharts.esc(note)).join("<br>")}</div>`;
     }
 
     if (!keys.length) {
@@ -809,9 +815,9 @@ class LeaderboardView {
     sides.forEach((_, i) => { html += `<th>${tags[i]}</th>`; });
     html += `</tr></thead><tbody>`;
     differs.forEach((key) => {
-      html += `<tr><td><code>${this._esc(key)}</code></td>`;
+      html += `<tr><td><code>${SharedCharts.esc(key)}</code></td>`;
       sides.forEach((side) => {
-        html += `<td>${side.config[key] === undefined ? "&ndash;" : this._esc(String(side.config[key]))}</td>`;
+        html += `<td>${side.config[key] === undefined ? "&ndash;" : SharedCharts.esc(String(side.config[key]))}</td>`;
       });
       html += `</tr>`;
     });
@@ -893,15 +899,6 @@ class LeaderboardView {
     localStorage.removeItem("leaderboard-cols");
   }
 
-  _runsBase() {
-    try {
-      const raw = JSON.parse(localStorage.getItem("results-sources") || "{}");
-      return raw.logs || ResultsView.DEFAULT_RUNS;
-    } catch (e) {
-      return ResultsView.DEFAULT_RUNS;
-    }
-  }
-
   _fmt(value) {
     if (value === 0) return "0";
     const magnitude = Math.abs(value);
@@ -916,9 +913,6 @@ class LeaderboardView {
     return `${Math.round(seconds / 86400)}d ago`;
   }
 
-  _esc(text) {
-    return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
 }
 
 window.LeaderboardView = LeaderboardView;

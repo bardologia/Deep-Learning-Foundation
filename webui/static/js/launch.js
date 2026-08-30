@@ -1,5 +1,69 @@
 "use strict";
 
+class RailRunModeBlock {
+
+  constructor(view, followSelect) {
+    this.view         = view;
+    this.followSelect = followSelect;
+    this.detachEl     = null;
+    this.toggle       = null;
+    this.hint         = null;
+    this.fieldsEl     = null;
+  }
+
+  _detachBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block";
+    block.innerHTML = `<span class="rail-block__label">Execution</span>`;
+
+    const row = document.createElement("div");
+    row.className = "rail-detach";
+
+    this.toggle = document.createElement("button");
+    this.toggle.type = "button";
+    this.toggle.className = "switch";
+    this.toggle.setAttribute("role", "switch");
+    this.toggle.innerHTML = `<span class="switch__knob"></span>`;
+    this.toggle.addEventListener("click", () => {
+      this.view.detach = !this.view.detach;
+      this.view._refresh();
+    });
+
+    const label = document.createElement("span");
+    label.className = "rail-detach__label";
+    label.textContent = "Detach from server";
+
+    this.hint = document.createElement("p");
+    this.hint.className = "rail-detach__hint";
+
+    row.append(this.toggle, label);
+    block.append(row, this.hint);
+    return block;
+  }
+
+  paint() {
+    const detach = this.view.detach;
+
+    this.toggle.classList.toggle("is-on", detach);
+    this.toggle.setAttribute("aria-checked", String(detach));
+    this.hint.textContent = detach
+      ? "The run survives a lost connection or a console restart. Output goes to logs/<script>_<stamp>.out in the repo."
+      : "Output streams to this console. The run dies if the console server goes down.";
+
+    if (this.followSelect) {
+      this.followSelect.disabled = detach;
+      this.followSelect.title = detach ? "unavailable for detached runs" : "";
+      if (detach) this.followSelect.value = "";
+    }
+  }
+
+  build() {
+    this.detachEl = this._detachBlock();
+    return { detach: this.detachEl };
+  }
+}
+
+
 class LaunchView extends ConfigForm {
 
   static FOLLOW_INFER = {
@@ -135,31 +199,14 @@ class LaunchView extends ConfigForm {
     this.saveBtn = null;
     this.active = false;
     this.loadSeq = 0;
+    this.copyControl = new window.RunConfigCopy(this);
+    this.runMode = null;
     this._wireTabs();
     this._wireKeys();
   }
 
   _resetState() {
-    this.dirty         = {};
-    this.controls      = {};
-    this.dependents    = {};
-    this.states        = [];
-    this.gates         = [];
-    this.sections      = [];
-    this.pairs         = [];
-    this.pairBase      = new Map();
-    this.byPath        = new Map();
-    this.activeSection = null;
-    this.query         = "";
-    this.modelFamilies = null;
-    this.modelHeads    = null;
-    this.modelEndpoint = null;
-    this.layoutEl      = null;
-    this.navHost       = null;
-    this.pinsEl        = null;
-    this.nomatchEl     = null;
-    this.countEl       = null;
-    this.builder       = null;
+    this.reset();
     this.detach        = true;
   }
 
@@ -181,10 +228,10 @@ class LaunchView extends ConfigForm {
 
     this._renderSkeleton();
 
-    const detail = await window.apiGet(`/api/scripts/${key}`);
+    const detail = await Api.get(`/api/scripts/${key}`);
     if (seq !== this.loadSeq) return;
     if (detail.error) {
-      window.toast("Could not load script", "error");
+      Toast.show("Could not load script", "error");
       window.router.go("scripts");
       return;
     }
@@ -194,7 +241,7 @@ class LaunchView extends ConfigForm {
     this._renderSource(detail);
     this._setPane("config");
 
-    const cfg = await window.apiGet(`/api/scripts/${key}/config`);
+    const cfg = await Api.get(`/api/scripts/${key}/config`);
     if (seq !== this.loadSeq) return;
     if (!cfg.ok) {
       this._renderConfigError(cfg.error || "could not resolve configuration");
@@ -204,7 +251,7 @@ class LaunchView extends ConfigForm {
 
     if (this._usesModelPanels(cfg)) {
       const endpoint = this._modelFamiliesEndpoint();
-      const models   = await window.apiGet(endpoint);
+      const models   = await Api.get(endpoint);
       if (seq !== this.loadSeq) return;
       this.modelEndpoint = endpoint;
       this.modelFamilies = (models && models.families) || [];
@@ -245,17 +292,18 @@ class LaunchView extends ConfigForm {
     if (endpoint === this.modelEndpoint) return;
 
     const seq    = this.loadSeq;
-    const models = await window.apiGet(endpoint);
+    const models = await Api.get(endpoint);
     if (seq !== this.loadSeq) return;
-
-    this.modelEndpoint = endpoint;
-    this.modelFamilies = (models && models.families) || [];
-    this.modelHeads    = (models && models.heads) || [];
 
     const dirty         = this.dirty;
     const activeSection = this.activeSection;
     const detach        = this.detach;
+    const config        = this.config;
     this._resetState();
+    this.config        = config;
+    this.modelEndpoint = endpoint;
+    this.modelFamilies = (models && models.families) || [];
+    this.modelHeads    = (models && models.heads) || [];
     this.dirty         = dirty;
     this.activeSection = activeSection;
     this.detach        = detach;
@@ -572,13 +620,11 @@ class LaunchView extends ConfigForm {
     });
   }
 
-  _renderRail() {
-    const host = document.getElementById("launch-rail");
-    host.innerHTML = "";
+  _interpreterBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block";
+    block.innerHTML = `<span class="rail-block__label">Interpreter</span>`;
 
-    const interp = document.createElement("div");
-    interp.className = "rail-block";
-    interp.innerHTML = `<span class="rail-block__label">Interpreter</span>`;
     const select = document.createElement("select");
     select.className = "run-select";
     select.id = "launch-interpreter";
@@ -589,123 +635,130 @@ class LaunchView extends ConfigForm {
       if (it.path === this.detail.preferred) opt.selected = true;
       select.appendChild(opt);
     });
-    interp.appendChild(select);
 
-    let follow = null;
-    let followSelect = null;
-    if (this.detail && LaunchView.FOLLOW_INFER[this.detail.key]) {
-      follow = document.createElement("div");
-      follow.className = "rail-block";
-      follow.innerHTML = `<span class="rail-block__label">After run</span>`;
-      const fsel = document.createElement("select");
-      fsel.className = "run-select";
-      fsel.id = "launch-follow";
-      [["", "nothing"], [LaunchView.FOLLOW_INFER[this.detail.key], "Inference"]].forEach(([value, label]) => {
-        const opt = document.createElement("option");
-        opt.value = value;
-        opt.textContent = label;
-        fsel.appendChild(opt);
-      });
-      follow.appendChild(fsel);
-      followSelect = fsel;
-    }
+    block.appendChild(select);
+    return block;
+  }
 
-    const detach = document.createElement("div");
-    detach.className = "rail-block";
-    detach.innerHTML = `<span class="rail-block__label">Execution</span>`;
+  _followBlock() {
+    if (!this.detail || !LaunchView.FOLLOW_INFER[this.detail.key]) return null;
 
-    const detachRow = document.createElement("div");
-    detachRow.className = "rail-detach";
-    const detachToggle = document.createElement("button");
-    detachToggle.type = "button";
-    detachToggle.className = "switch";
-    detachToggle.setAttribute("role", "switch");
-    detachToggle.innerHTML = `<span class="switch__knob"></span>`;
-    const detachLabel = document.createElement("span");
-    detachLabel.className = "rail-detach__label";
-    detachLabel.textContent = "Detach from server";
+    const block = document.createElement("div");
+    block.className = "rail-block";
+    block.innerHTML = `<span class="rail-block__label">After run</span>`;
 
-    const hint = document.createElement("p");
-    hint.className = "rail-detach__hint";
-
-    const paintDetach = () => {
-      detachToggle.classList.toggle("is-on", this.detach);
-      detachToggle.setAttribute("aria-checked", String(this.detach));
-      hint.textContent = this.detach
-        ? "The run survives a lost connection or a console restart. Output goes to logs/<script>_<stamp>.out in the repo."
-        : "Output streams to this console. The run dies if the console server goes down.";
-      if (followSelect) {
-        followSelect.disabled = this.detach;
-        followSelect.title = this.detach ? "unavailable for detached runs" : "";
-        if (this.detach) followSelect.value = "";
-      }
-      this._refresh();
-    };
-    detachToggle.addEventListener("click", () => {
-      this.detach = !this.detach;
-      paintDetach();
+    const select = document.createElement("select");
+    select.className = "run-select";
+    select.id = "launch-follow";
+    [["", "nothing"], [LaunchView.FOLLOW_INFER[this.detail.key], "Inference"]].forEach(([value, label]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      select.appendChild(opt);
     });
 
-    detachRow.appendChild(detachToggle);
-    detachRow.appendChild(detachLabel);
-    detach.appendChild(detachRow);
-    detach.appendChild(hint);
-    paintDetach();
+    block.appendChild(select);
+    return block;
+  }
 
-    const cmd = document.createElement("div");
-    cmd.className = "rail-block";
-    const cmdHead = document.createElement("div");
-    cmdHead.className = "rail-block__row";
-    cmdHead.innerHTML = `<span class="rail-block__label">Command</span>`;
+  _commandBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block";
+
+    const head = document.createElement("div");
+    head.className = "rail-block__row";
+    head.innerHTML = `<span class="rail-block__label">Command</span>`;
+
     const copy = document.createElement("button");
     copy.className = "btn btn--mini";
     copy.textContent = "Copy";
     copy.addEventListener("click", () => {
-      navigator.clipboard.writeText(this._commandText()).then(() => window.toast("Command copied", "ok"));
+      navigator.clipboard.writeText(this._commandText()).then(() => Toast.show("Command copied", "ok"));
     });
-    cmdHead.appendChild(copy);
+    head.appendChild(copy);
+
     const code = document.createElement("code");
     code.className = "rail-command";
     this.cmdEl = code;
-    cmd.appendChild(cmdHead);
-    cmd.appendChild(code);
 
-    const manifest = document.createElement("div");
-    manifest.className = "rail-block";
-    manifest.innerHTML = `<span class="rail-block__label">Overrides</span>`;
+    block.appendChild(head);
+    block.appendChild(code);
+    return block;
+  }
+
+  _manifestBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block";
+    block.innerHTML = `<span class="rail-block__label">Overrides</span>`;
+
     const list = document.createElement("div");
     list.className = "rail-manifest";
     this.manifestEl = list;
-    manifest.appendChild(list);
 
-    const actions = document.createElement("div");
-    actions.className = "rail-block rail-block--actions";
+    block.appendChild(list);
+    return block;
+  }
+
+  _copyBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block";
+    block.innerHTML = `<span class="rail-block__label">Copy from run</span>`;
+
+    const parts = this.copyControl.build();
+    block.append(parts.dir, parts.select, parts.note, parts.apply);
+    return block;
+  }
+
+  _actionsBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block rail-block--actions";
+
     const launch = document.createElement("button");
     launch.className = "btn btn--primary rail-launch";
     launch.addEventListener("click", () => this._launch(false));
     this.launchBtn = launch;
-    actions.appendChild(launch);
 
     const schedule = document.createElement("button");
     schedule.className = "btn btn--ghost rail-schedule";
     schedule.title = "Queue this exact configuration to launch when the currently running job (and any earlier queued runs) end";
     schedule.addEventListener("click", () => this._launch(true));
     this.scheduleBtn = schedule;
-    actions.appendChild(schedule);
 
     const save = document.createElement("button");
     save.className = "btn btn--ghost rail-save";
     save.title = "Store this exact configuration in the Saved tab, to launch or schedule any time later";
     save.addEventListener("click", () => this._save());
     this.saveBtn = save;
-    actions.appendChild(save);
+
+    block.append(launch, schedule, save);
+    return block;
+  }
+
+  _renderRail() {
+    const host = document.getElementById("launch-rail");
+    host.innerHTML = "";
+
+    this.cmdEl       = null;
+    this.manifestEl  = null;
+    this.launchBtn   = null;
+    this.scheduleBtn = null;
+    this.saveBtn     = null;
+    this.runMode     = null;
+
+    const interp = this._interpreterBlock();
+    const follow = this._followBlock();
+
+    this.runMode = new RailRunModeBlock(this, follow ? follow.querySelector("select") : null);
+    const runMode = this.runMode.build();
 
     host.appendChild(interp);
     if (follow) host.appendChild(follow);
-    host.appendChild(detach);
-    host.appendChild(cmd);
-    host.appendChild(manifest);
-    host.appendChild(actions);
+    host.appendChild(runMode.detach);
+    host.appendChild(this._copyBlock());
+    host.appendChild(this._commandBlock());
+    host.appendChild(this._manifestBlock());
+    host.appendChild(this._actionsBlock());
+
     this._refresh();
   }
 
@@ -765,16 +818,12 @@ class LaunchView extends ConfigForm {
 
   _commandText() {
     if (!this.detail) return "";
-    let text = this.detail.command;
-    Object.entries(this.dirty).forEach(([path, value]) => {
-      const rendered = /^[\w@%+=:,./-]+$/.test(value) ? value : `'${String(value).replace(/'/g, `'\\''`)}'`;
-      text += ` --${path} ${rendered}`;
-    });
-    if (this.detach) text += " --detach";
-    return text;
+    return this._commandLine(this.detail.command, " ");
   }
 
   _refresh() {
+    if (this.runMode) this.runMode.paint();
+
     const n = Object.keys(this.dirty).length;
 
     if (this.cmdEl) this.cmdEl.textContent = this._commandText();
@@ -782,9 +831,10 @@ class LaunchView extends ConfigForm {
 
     if (this.launchBtn) {
       this.launchBtn.classList.toggle("is-armed", n > 0);
+      const verb = "Launch run";
       this.launchBtn.innerHTML = n
-        ? `&#9654;&nbsp; Launch run <small>${n} override${n > 1 ? "s" : ""}</small>`
-        : `&#9654;&nbsp; Launch run <small>all defaults</small>`;
+        ? `&#9654;&nbsp; ${verb} <small>${n} override${n > 1 ? "s" : ""}</small>`
+        : `&#9654;&nbsp; ${verb} <small>all defaults</small>`;
     }
 
     if (this.scheduleBtn) {
@@ -827,8 +877,8 @@ class LaunchView extends ConfigForm {
       item.title = "Remove override";
       const from = control ? control.leaf.value : "";
       item.innerHTML =
-        `<span class="rail-override__path">${path}</span>` +
-        `<span class="rail-override__change">${from} &rarr; <b>${value}</b></span>` +
+        `<span class="rail-override__path">${SharedCharts.esc(path)}</span>` +
+        `<span class="rail-override__change">${SharedCharts.esc(from)} &rarr; <b>${SharedCharts.esc(value)}</b></span>` +
         `<span class="rail-override__x" aria-hidden="true">&times;</span>`;
       item.addEventListener("click", () => this._resetField(path));
       this.manifestEl.appendChild(item);
@@ -865,12 +915,12 @@ class LaunchView extends ConfigForm {
     this.saving = true;
     if (this.saveBtn) this.saveBtn.disabled = true;
     try {
-      const res = await window.apiPost("/api/saved-runs", { script_key: this.detail.key, title: this.detail.title, name: name.trim(), interpreter: interp, overrides: { ...this.dirty }, follow_up: follow || null, detach: this.detach });
+      const res = await Api.post("/api/saved-runs", { script_key: this.detail.key, title: this.detail.title, name: name.trim(), interpreter: interp, overrides: { ...this.dirty }, follow_up: follow || null, detach: this.detach });
       if (!res.ok) {
-        window.toast(res.error || "Save failed", "error");
+        Toast.show(res.error || "Save failed", "error");
         return;
       }
-      window.toast(`Saved ${res.entry.name || this.detail.title} to the Saved tab`, "ok");
+      Toast.show(`Saved ${res.entry.name || this.detail.title} to the Saved tab`, "ok");
     } finally {
       this.saving = false;
       if (this.saveBtn) this.saveBtn.disabled = false;

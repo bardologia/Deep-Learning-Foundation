@@ -29,27 +29,54 @@
     </svg>
   </a>
   <nav class="nav__links" aria-label="Sections">
-    <a href="#/model" data-route="model">Model</a>
-    <a href="#/pipelines" data-route="pipelines">Pipelines</a>
-    <a href="#/architectures" data-route="architectures">Architectures</a>
-    <a href="#/repomap" data-route="repomap">Repo Map</a>
-    <a href="#/scripts" data-route="scripts">Scripts</a>
-    <a href="#/saved" data-route="saved">Saved</a>
-    <a href="#/configuration" data-route="configuration">Configuration</a>
-    <a href="#/console" data-route="console">Console</a>
-    <a href="#/results" data-route="results">Results</a>
-    <a href="#/cube" data-route="cube">Cube</a>
-    <a href="#/slices" data-route="slices">Slices</a>
-    <a href="#/fitlab" data-route="fitlab">Fit Lab</a>
-    <a href="#/microscope" data-route="microscope">Microscope</a>
-    <a href="#/triage" data-route="triage">Triage</a>
-    <a href="#/autopsy" data-route="autopsy">Autopsy</a>
-    <a href="#/leaderboard" data-route="leaderboard">Leaderboard</a>
-    <a href="#/feedtuner" data-route="feedtuner">Feed Tuner</a>
-    <a href="#/tensorboard" data-route="tensorboard">TensorBoard</a>
+    <div class="nav__group" data-group="reference">
+      <button type="button" class="nav__grouphead"><i class="nav__chev" aria-hidden="true"></i>Reference</button>
+      <div class="nav__sub">
+        <a href="#/model" data-route="model">Model</a>
+        <a href="#/pipelines" data-route="pipelines">Pipelines</a>
+        <a href="#/architectures" data-route="architectures">Architectures</a>
+        <a href="#/repomap" data-route="repomap">Repo Map</a>
+      </div>
+    </div>
+    <div class="nav__group" data-group="launch">
+      <button type="button" class="nav__grouphead"><i class="nav__chev" aria-hidden="true"></i>Launch</button>
+      <div class="nav__sub">
+        <a href="#/scripts" data-route="scripts">Scripts</a>
+        <a href="#/saved" data-route="saved">Saved</a>
+        <a href="#/sequences" data-route="sequences">Sequences</a>
+        <a href="#/configuration" data-route="configuration">Configuration</a>
+        <a href="#/feedtuner" data-route="feedtuner">Feed Tuner</a>
+      </div>
+    </div>
+    <div class="nav__group" data-group="monitor">
+      <button type="button" class="nav__grouphead"><i class="nav__chev" aria-hidden="true"></i>Monitor</button>
+      <div class="nav__sub">
+        <a href="#/console" data-route="console">Console</a>
+        <a href="#/tensorboard" data-route="tensorboard">TensorBoard</a>
+      </div>
+    </div>
+    <div class="nav__group" data-group="results">
+      <button type="button" class="nav__grouphead"><i class="nav__chev" aria-hidden="true"></i>Results</button>
+      <div class="nav__sub">
+        <a href="#/results" data-route="results">Results</a>
+        <a href="#/leaderboard" data-route="leaderboard">Leaderboard</a>
+        <a href="#/cube" data-route="cube">Cube</a>
+        <a href="#/slices" data-route="slices">Slices</a>
+      </div>
+    </div>
+    <div class="nav__group" data-group="inspect">
+      <button type="button" class="nav__grouphead"><i class="nav__chev" aria-hidden="true"></i>Inspect</button>
+      <div class="nav__sub">
+        <a href="#/microscope" data-route="microscope">Microscope</a>
+        <a href="#/survey" data-route="survey">Survey</a>
+        <a href="#/triage" data-route="triage">Triage</a>
+        <a href="#/autopsy" data-route="autopsy">Autopsy</a>
+        <a href="#/fitlab" data-route="fitlab">Fit Lab</a>
+      </div>
+    </div>
   </nav>
   <div class="nav__status" id="nav-status" title="Backend connection">
-    <span class="dot" id="status-dot"></span>
+    <span class="dot"></span>
     <span id="status-text">connecting</span>
   </div>
 </header>
@@ -142,7 +169,7 @@
       </p>
     </div>
     <div class="filter-row" id="script-filters"></div>
-    <div class="script-grid" id="script-grid"></div>
+    <div class="script-sections" id="script-grid"></div>
   </section>
 
   <!-- SAVED RUNS -->
@@ -156,6 +183,19 @@
       </p>
     </div>
     <div class="saved-grid" id="saved-grid"></div>
+  </section>
+
+  <!-- SEQUENCES -->
+  <section class="page page--pad" data-page="sequences">
+    <div class="page__head">
+      <h2 class="page__title">Experiment sequences</h2>
+      <p class="page__lead">
+        Chains of launch blocks over one shared dataset. Link blocks into a graph, run
+        independent branches in parallel, and hold the line at checkpoints so the next
+        block can be edited against the previous results before it launches.
+      </p>
+    </div>
+    <div id="sequences-root"></div>
   </section>
 
   <!-- ABLATION -->
@@ -221,7 +261,7 @@
   <!-- CONSOLE -->
   <section class="page page--console" data-page="console">
     <div class="console">
-      <aside class="console__jobs" id="console-jobs">
+      <aside class="console__jobs">
         <div class="console__jobs-head">Jobs</div>
         <ul class="job-list" id="job-list"></ul>
       </aside>
@@ -367,6 +407,7 @@
               <button type="button" class="cube-space is-active" data-mode="raw">Raw</button>
               <button type="button" class="cube-space" data-mode="unit">Unit area</button>
             </div>
+            <label class="lb-check" id="cube-prof-mix-wrap" hidden title="Overlay the Gaussian mixture reconstructed from the extracted parameters, with one stem per active slot at its mu"><input type="checkbox" id="cube-prof-mix" /> mixture</label>
           </div>
           <p class="cube-coords" id="cube-prof-at">Hover a slice to read the profiles at that position.</p>
           <div class="cube-profiles__grid">
@@ -494,6 +535,7 @@
             <div class="cube-spaces" id="cube-cloud-color" role="group" aria-label="Colour by">
               <button type="button" class="cube-space is-active" data-color="mu">colour: z</button>
               <button type="button" class="cube-space" data-color="amp">colour: amplitude</button>
+              <button type="button" class="cube-space" data-color="std" title="Colour each point by the seed disagreement of its pixel (seed_std_profile)">colour: uncertainty</button>
             </div>
             <div class="cube-mctl" role="group" aria-label="Amplitude threshold">
               <label for="cube-cloud-thr" id="cube-cloud-thr-label">amp &ge;</label>
@@ -517,6 +559,116 @@
         </div>
       </div>
 
+      <div class="cube-view" data-view="volume" hidden>
+        <div class="cube-pview">
+          <div class="cube-pview__bar">
+            <div class="cube-spaces" id="cube-volume-source" role="group" aria-label="Volume source">
+              <button type="button" class="cube-space is-active" data-source="pred">pred</button>
+              <button type="button" class="cube-space" data-source="predb">pred B</button>
+              <button type="button" class="cube-space" data-source="diff">A &minus; B</button>
+              <button type="button" class="cube-space" data-source="gt">gt</button>
+              <button type="button" class="cube-space" data-source="reduced">capon</button>
+              <button type="button" class="cube-space" data-source="full">full</button>
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Transfer function window">
+              <label for="cube-volume-lo" title="Transfer function window: intensities below the lower bound stay transparent, opacity ramps up to the upper bound">tf window</label>
+              <input type="range" id="cube-volume-lo" min="0" max="99" value="35" title="Lower bound of the transfer function window" />
+              <input type="range" id="cube-volume-hi" min="1" max="100" value="90" title="Upper bound of the transfer function window" />
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Opacity">
+              <label for="cube-volume-opacity">opacity</label>
+              <input type="range" id="cube-volume-opacity" min="1" max="100" value="45" />
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Quality">
+              <label for="cube-volume-steps" title="Ray-march steps per pixel; more is sharper and slower">steps</label>
+              <select id="cube-volume-steps" class="cube-mselect">
+                <option value="128">128</option>
+                <option value="256" selected>256</option>
+                <option value="512">512</option>
+              </select>
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Clip plane">
+              <label for="cube-volume-clip-axis" title="Cut the volume open along one axis">clip</label>
+              <select id="cube-volume-clip-axis" class="cube-mselect">
+                <option value="off" selected>off</option>
+                <option value="az">azimuth</option>
+                <option value="rg">range</option>
+                <option value="elev">elevation</option>
+              </select>
+              <input type="range" id="cube-volume-clip-pos" min="0" max="100" value="50" />
+            </div>
+            <span class="cube-elev__at" id="cube-volume-at"></span>
+          </div>
+          <div class="cube-cloud__stage">
+            <canvas id="cube-volume-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="cube-view" data-view="globe" hidden>
+        <div class="cube-pview">
+          <div class="cube-pview__bar">
+            <div class="cube-spaces" id="cube-globe-source" role="group" aria-label="Globe point source">
+              <button type="button" class="cube-space is-active" data-source="pred">pred</button>
+              <button type="button" class="cube-space" data-source="gt">gt</button>
+              <button type="button" class="cube-space" data-source="reduced" title="Capon reduced tomogram (metric elevation axis)">capon</button>
+            </div>
+            <div class="cube-spaces" id="cube-globe-color" role="group" aria-label="Colour by">
+              <button type="button" class="cube-space is-active" data-color="mu">colour: elevation</button>
+              <button type="button" class="cube-space" data-color="amp">colour: amplitude</button>
+              <button type="button" class="cube-space" data-color="std" title="Colour each scatterer by the seed disagreement of its pixel (seed_std_profile)">colour: uncertainty</button>
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Amplitude threshold">
+              <label for="cube-globe-thr" id="cube-globe-thr-label">amp &ge;</label>
+              <input type="range" id="cube-globe-thr" min="0" max="100" value="0" />
+              <span class="cube-mctl__val" id="cube-globe-thr-val"></span>
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Point budget">
+              <label for="cube-globe-max" title="How many scatterers to stream onto the globe &mdash; type any budget, 0 draws every point above the amplitude cut">points</label>
+              <input type="number" id="cube-globe-max" class="cube-jump__input cube-jump__input--wide" min="0" step="10000" inputmode="numeric" />
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Height exaggeration">
+              <label for="cube-globe-exagg" title="Scale heights above the scene base so subtle relief becomes visible">height</label>
+              <select id="cube-globe-exagg" class="cube-mselect">
+                <option value="1">1&times;</option>
+                <option value="3" selected>3&times;</option>
+                <option value="5">5&times;</option>
+                <option value="10">10&times;</option>
+                <option value="20">20&times;</option>
+              </select>
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Vertical lift">
+              <label for="cube-globe-lift" title="Extra vertical offset applied to every point, in metres">lift [m]</label>
+              <input type="number" id="cube-globe-lift" class="cube-jump__input" step="10" value="0" />
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Section cut">
+              <label for="cube-globe-cut-axis" title="Slide a cutting plane through the scene; scatterers beyond the plane are hidden so the interior section is exposed">cut</label>
+              <select id="cube-globe-cut-axis" class="cube-mselect">
+                <option value="off" selected>off</option>
+                <option value="east">east</option>
+                <option value="north">north</option>
+                <option value="height">height</option>
+                <option value="azimuth">azimuth</option>
+                <option value="range">range</option>
+              </select>
+              <input type="range" id="cube-globe-cut-pos" min="0" max="100" value="50" title="Position of the cutting plane along the chosen axis" />
+            </div>
+            <label class="lb-check" title="Animate the cutting plane back and forth through the scene"><input type="checkbox" id="cube-globe-cut-sweep" /> sweep</label>
+            <label class="lb-check" title="Subtract the median DEM height so the terrain rests on the imagery; untick to place points at their absolute heights above the ellipsoid"><input type="checkbox" id="cube-globe-clamp" checked /> rest on imagery</label>
+            <label class="lb-check" title="Hide the scatterers to inspect the imagery underneath"><input type="checkbox" id="cube-globe-points" checked /> points</label>
+            <label class="lb-check" title="Drape a per-pixel metric map on the terrain as coloured ground points"><input type="checkbox" id="cube-globe-metric" /> metric</label>
+            <select id="cube-globe-metric-layer" class="cube-mselect" aria-label="Metric drape layer"></select>
+            <label class="lb-check" title="Draw the flight track of every pass over the run region, the aircraft at mid-track on the reference pass, and the radar beam segment down to the imaged swath"><input type="checkbox" id="cube-globe-tracks" /> tracks</label>
+            <label class="lb-check" title="Loop a flight animation: the aircraft flies the reference pass, the beam sweeps with it, and scatterers appear as their swath is scanned"><input type="checkbox" id="cube-globe-fly" /> fly</label>
+            <button type="button" class="btn btn--mini" id="cube-globe-reframe" title="Fly the camera back to the scene">Reframe</button>
+            <span class="cube-elev__at" id="cube-globe-at"></span>
+          </div>
+          <div class="cube-globe__stage" id="cube-globe-stage">
+            <div id="cube-globe-container"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="cube-view" data-view="transect" hidden>
         <div class="cube-pview">
           <div class="cube-pview__bar">
@@ -527,6 +679,7 @@
               <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
             </div>
+            <span class="cube-elev__at" id="cube-transect-at">Click points on the map to trace a polyline; every segment is cut through the tomograms.</span>
           </div>
           <div class="cube-tview">
             <figure class="cube-pmap cube-pmap--transect">
@@ -534,6 +687,14 @@
                 <img id="cube-transect-map" alt="Primary channel amplitude" />
                 <svg id="cube-transect-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
               </div>
+              <figcaption class="cube-tstrip" id="cube-transect-strip-wrap" hidden>
+                <div class="cube-mctl">
+                  <label for="cube-transect-strip-layer">along-line metric</label>
+                  <select id="cube-transect-strip-layer" class="cube-mselect"></select>
+                  <span class="cube-mctl__val" id="cube-transect-strip-val"></span>
+                </div>
+                <canvas id="cube-transect-strip"></canvas>
+              </figcaption>
             </figure>
             <div class="cube-z__grid cube-z__grid--transect" id="cube-transect-grid">
               <figure class="cube-eplane" data-source="pred"><div class="cube-eplane__media"><canvas></canvas><span class="cube-slice__tag"><i class="cube-dot" data-source="pred"></i>pred</span></div></figure>
@@ -550,7 +711,7 @@
         <div class="cube-pview">
           <div class="cube-pview__bar">
             <div class="cube-spaces" id="cube-metric-layer" role="group" aria-label="Metric layer"></div>
-            <div class="cube-mctl" role="group" aria-label="Colour range">
+            <div class="cube-mctl" role="group" aria-label="Colour range" id="cube-metric-range-wrap">
               <label for="cube-metric-vmin">range</label>
               <input type="number" id="cube-metric-vmin" class="cube-jump__input cube-jump__input--wide" step="any" />
               <span>&hellip;</span>
@@ -571,31 +732,103 @@
               <label for="cube-metric-alpha">opacity</label>
               <input type="col" id="cube-metric-alpha" min="0" max="100" value="75" />
             </div>
+            <button type="button" class="btn btn--mini" id="cube-metric-download" title="Download the current overlay as a PNG file">PNG</button>
           </div>
           <div class="cube-pview__deck">
             <figure class="cube-pmap">
               <div class="cube-pmap__media">
                 <img id="cube-metric-img" alt="metric overlay" />
                 <i class="cube-cross" id="cube-metric-cross" hidden></i>
+                <i class="cube-rect" id="cube-metric-rect" hidden></i>
               </div>
               <figcaption class="cube-pmap__legend">
                 <span class="cube-pmap__bound" id="cube-metric-min"></span>
                 <img class="cube-pmap__cbar" id="cube-metric-cbar" alt="colour scale" />
                 <span class="cube-pmap__bound" id="cube-metric-max"></span>
+                <span class="cube-pmap__classes" id="cube-metric-classes" hidden></span>
               </figcaption>
             </figure>
             <aside class="cube-pside">
+              <h3 class="cube-panel-title">Layer distribution</h3>
+              <figure class="cube-hist" title="Distribution of the selected layer; the shaded band is the current colour range and the orange line the keep threshold"><canvas id="cube-metric-hist"></canvas></figure>
+              <p class="cube-hint" id="cube-metric-hist-note" hidden></p>
               <h3 class="cube-panel-title">Pixel readout</h3>
               <p class="cube-coords" id="cube-metric-coords">Hover the map to read the value under the cursor; click to lock a pixel and read every layer.</p>
               <div class="cube-pside__table" id="cube-metric-readout"></div>
               <button type="button" class="btn btn--mini" id="cube-metric-open" hidden>Open cuts at this pixel</button>
-              <div class="cube-mctl" id="cube-selective-wrap">
+              <h3 class="cube-panel-title" title="Keep the selected layer's most confident share of pixels (lowest values for error-like layers, highest for R&sup2;-like layers) and compare the kept-pixel metric means against the full region">Selective prediction</h3>
+              <div class="cube-mctl">
                 <label for="cube-selective-cov">coverage</label>
                 <input type="col" id="cube-selective-cov" min="5" max="100" value="100" />
                 <span class="cube-mctl__val" id="cube-selective-val">100%</span>
+                <label class="lb-check" title="Paint only the pixels the current coverage keeps, so the scene erodes from least to most confident"><input type="checkbox" id="cube-selective-mask" /> mask</label>
+                <button type="button" class="btn btn--mini" id="cube-selective-play" title="Sweep the coverage down to 5% and back">Play</button>
               </div>
-              <p class="cube-hint">Selective prediction: keep the selected layer's most confident share of pixels (lowest values for error-like layers, highest for R&sup2;-like layers) and compare the kept-pixel metric means against the full region.</p>
               <div class="cube-pside__table" id="cube-selective-table"></div>
+              <h3 class="cube-panel-title">Region statistics</h3>
+              <p class="cube-hint" id="cube-region-hint">Shift-drag a rectangle on the map to compare it against the scene.</p>
+              <div class="cube-pside__table" id="cube-region-table"></div>
+              <figure class="cube-hist" id="cube-region-prof-wrap" hidden title="Mean elevation profile over the selected region, per source"><canvas id="cube-region-prof"></canvas></figure>
+            </aside>
+          </div>
+        </div>
+      </div>
+
+      <div class="cube-view" data-view="timeline" hidden>
+        <div class="cube-pview">
+          <div class="cube-pview__bar">
+            <div class="cube-spaces" id="cube-timeline-source" role="group" aria-label="Timeline source">
+              <button type="button" class="cube-space is-active" data-source="pred">pred</button>
+              <button type="button" class="cube-space" data-source="gt">gt</button>
+              <button type="button" class="cube-space" data-source="reduced">capon reduced</button>
+              <button type="button" class="cube-space" data-source="full">capon full</button>
+            </div>
+            <div class="cube-spaces" id="cube-timeline-axis" role="group" aria-label="Cut axis">
+              <button type="button" class="cube-space is-active" data-axis="range">Range cut</button>
+              <button type="button" class="cube-space" data-axis="azimuth">Azimuth cut</button>
+            </div>
+            <div class="cube-sweep__controls">
+              <button type="button" class="cube-sweep__play" id="cube-timeline-play">Play</button>
+              <input type="range" id="cube-timeline-pos" min="0" max="0" value="0" title="Scrub through the run's inference stamps" />
+            </div>
+            <span class="cube-elev__at" id="cube-timeline-at"></span>
+          </div>
+          <div class="cube-pview__deck">
+            <figure class="cube-pmap">
+              <div class="cube-pmap__media"><canvas id="cube-timeline-canvas"></canvas></div>
+              <figcaption class="cube-pmap__legend"><span id="cube-timeline-label"></span></figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+
+      <div class="cube-view" data-view="folds" hidden>
+        <div class="cube-pview">
+          <div class="cube-pview__bar">
+            <div class="cube-mctl" role="group" aria-label="Fold seam">
+              <label for="cube-seam-index">seam</label>
+              <select id="cube-seam-index" class="cube-mselect"></select>
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Seam layer">
+              <label for="cube-seam-layer">layer</label>
+              <select id="cube-seam-layer" class="cube-mselect"></select>
+            </div>
+            <span class="cube-elev__at" id="cube-folds-at"></span>
+          </div>
+          <div class="cube-pview__deck">
+            <figure class="cube-pmap">
+              <div class="cube-pmap__media">
+                <img id="cube-folds-map" alt="Primary SLC amplitude with fold boundaries" />
+                <div id="cube-folds-lines" class="cube-foldlines" aria-hidden="true"></div>
+              </div>
+            </figure>
+            <aside class="cube-pside">
+              <h3 class="cube-panel-title">Per-fold metric means</h3>
+              <div class="cube-pside__table" id="cube-folds-table"></div>
+              <h3 class="cube-panel-title">Seam profile</h3>
+              <p class="cube-hint">Range-averaged metric per azimuth row in a band around the selected boundary; a step at the dashed marker means the metric depends on which fold owns the row.</p>
+              <figure class="cube-hist"><canvas id="cube-seam-canvas"></canvas></figure>
+              <p class="cube-hint" id="cube-seam-val"></p>
             </aside>
           </div>
         </div>
@@ -730,12 +963,12 @@
     <div id="triage-root"></div>
   </section>
 
-  <!-- MODEL MICROSCOPE -->
+  <!-- NORMALIZATION ANALYSIS -->
   <section class="page page--pad" data-page="microscope">
     <div class="page__head">
       <h2 class="page__title">Model microscope</h2>
       <p class="page__lead">
-        Load a trained backbone checkpoint, pick a pixel on the scene, and inspect the model
+        Load a trained backbone or dual checkpoint, pick a pixel on the scene, and inspect the model
         from the inside: the predicted profile against ground truth and the raw cube,
         gradient attribution of every output family to every input channel, spatial maps of
         where in the window those gradients concentrate, feature maps along a clickable view
@@ -743,6 +976,21 @@
       </p>
     </div>
     <div id="probe-root"></div>
+  </section>
+
+  <!-- MODEL SURVEY -->
+  <section class="page page--pad" data-page="survey">
+    <div class="page__head">
+      <h2 class="page__title">Model survey</h2>
+      <p class="page__lead">
+        The microscope's diagnostics, run over every pixel of the test region instead of one.
+        Pick a trained run and the model is re-run tile by tile: prediction fit and matched
+        scatterer errors, channel attribution and ablation, flip symmetry, noise robustness,
+        occlusion evidence distance, and layer vitals, all averaged over the whole region
+        with a progress bar while it works.
+      </p>
+    </div>
+    <div id="survey-root"></div>
   </section>
 
   <!-- FIT LAB -->
@@ -783,7 +1031,7 @@
           </div>
           <div class="fl-map__frame">
             <span class="cube-axis cube-axis--y">range &rarr;</span>
-            <div class="fl-map__wrap" id="fl-map-wrap">
+            <div class="fl-map__wrap">
               <img id="fl-map-img" alt="Dataset map" />
               <div class="fl-marks" id="fl-marks"></div>
             </div>
@@ -817,8 +1065,8 @@
           <div class="fl-fields">
             <label>K max<input id="fl-kmax" type="number" min="1" max="8" step="1" value="5" /></label>
             <label>lambda per K<input id="fl-lambda" type="number" step="any" value="0.01" /></label>
-            <label>threshold factor<input id="fl-threshold" type="number" step="any" value="0.25" /></label>
-            <label>truncation index<input id="fl-truncation" type="number" min="0" step="1" value="170" /></label>
+            <label>threshold factor<input id="fl-threshold" type="number" min="0" max="0.999" step="any" value="0.25" /></label>
+            <label>truncation index<input id="fl-truncation" type="number" min="1" step="1" value="170" /></label>
             <label>prominence frac<input id="fl-prominence" type="number" step="any" value="0.05" /></label>
             <label>sigma init divisor<input id="fl-sigdiv" type="number" step="any" value="4" /></label>
             <label>activity threshold<input id="fl-activity" type="number" step="any" value="0.001" /></label>
@@ -875,7 +1123,7 @@
       </p>
     </div>
     <div class="ft">
-      <aside class="ft__deck" id="ft-deck">
+      <aside class="ft__deck">
         <h3 class="ft-deck__title">Target</h3>
         <div class="ft-modes" id="ft-modes" role="tablist" aria-label="Tuning mode">
           <button class="ft-mode is-active" data-mode="profile_autoencoder" role="tab">Profile AE</button>
@@ -1033,7 +1281,6 @@
     </div>
   </section>
 
-  <!-- REPO MAP -->
   <section class="page page--pad page--repomap" data-page="repomap">
     <div class="page__head">
       <h2 class="page__title">Repo map</h2>
@@ -1103,39 +1350,50 @@
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 
-<script src="/static/js/radar.js?v=20260611z"></script>
-<script src="/static/js/training_anim.js?v=20260804a"></script>
-<script src="/static/js/gauges.js?v=20260703e"></script>
-<script src="/static/js/server_anim.js?v=20260703b"></script>
-<script src="/static/js/home.js?v=20260729a"></script>
-<script src="/static/js/process_anim.js?v=20260606r"></script>
-<script src="/static/js/diagram.js?v=20260606r"></script>
-<script src="/static/js/router.js?v=20260625a"></script>
-<script src="/static/js/equations.js?v=20260613a"></script>
-<script src="/static/js/flow_sketches.js?v=20260623d"></script>
-<script src="/static/js/flow_view.js?v=20260623c"></script>
-<script src="/static/js/pipelines.js?v=20260606r"></script>
-<script src="/static/js/repomap.js?v=20260705c"></script>
-<script src="/static/js/models.js?v=20260616a"></script>
-<script src="/static/js/configs.js?v=20260606r"></script>
-<script src="/static/js/scripts.js?v=20260625a"></script>
-<script src="/static/js/saved_runs.js?v=20260717a"></script>
-<script src="/static/js/launch_widgets.js?v=20260804a"></script>
-<script src="/static/js/launch_pickers.js?v=20260716a"></script>
-<script src="/static/js/launch.js?v=20260717a"></script>
-<script src="/static/js/ablation.js?v=20260625e"></script>
-<script src="/static/js/console.js?v=20260715b"></script>
-<script src="/static/js/results.js?v=20260714a"></script>
-<script src="/static/js/leaderboard.js?v=20260716"></script>
-<script src="/static/js/run_strip.js?v=20260804b"></script>
-<script src="/static/js/cube_view.js?v=20260804a"></script>
-<script src="/static/js/slice_collector.js?v=20260804a"></script>
-<script src="/static/js/fit_lab.js?v=20260721a"></script>
-<script src="/static/js/microscope.js?v=20260804c"></script>
-<script src="/static/js/triage.js?v=20260804a"></script>
-<script src="/static/js/autopsy.js?v=20260804a"></script>
-<script src="/static/js/tensorboard.js?v=20260702r"></script>
-<script src="/static/js/feed_tuner.js?v=20260624a"></script>
-<script src="/static/js/app.js?v=20260802a"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/results_sources.js"></script>
+<script src="/static/js/shared_charts.js"></script>
+<script src="/static/js/canvas_base.js"></script>
+<script src="/static/js/mathjax.js"></script>
+<script src="/static/js/training_anim.js"></script>
+<script src="/static/js/gauges.js"></script>
+<script src="/static/js/server_anim.js"></script>
+<script src="/static/js/home.js"></script>
+<script src="/static/js/process_anim.js"></script>
+<script src="/static/js/diagram.js"></script>
+<script src="/static/js/router.js"></script>
+<script src="/static/js/equations.js"></script>
+<script src="/static/js/flow_sketches.js"></script>
+<script src="/static/js/flow_view.js"></script>
+<script src="/static/js/pipelines.js"></script>
+<script src="/static/js/repomap.js"></script>
+<script src="/static/js/models.js"></script>
+<script src="/static/js/configs.js"></script>
+<script src="/static/js/scripts.js"></script>
+<script src="/static/js/saved_runs.js"></script>
+<script src="/static/js/python_literal.js"></script>
+<script src="/static/js/form_widgets.js"></script>
+<script src="/static/js/model_panels.js"></script>
+<script src="/static/js/gpu_pickers.js"></script>
+<script src="/static/js/experiment_builder.js"></script>
+<script src="/static/js/config_form.js"></script>
+<script src="/static/js/launch_pickers.js"></script>
+<script src="/static/js/launch.js"></script>
+<script src="/static/js/ablation.js"></script>
+<script src="/static/js/sequences.js"></script>
+<script src="/static/js/console.js"></script>
+<script src="/static/js/results.js"></script>
+<script src="/static/js/leaderboard.js"></script>
+<script src="/static/js/run_strip.js"></script>
+<script src="/static/js/cube_view.js"></script>
+<script src="/static/js/slice_collector.js"></script>
+<script src="/static/js/fit_lab.js"></script>
+<script src="/static/js/microscope.js"></script>
+<script src="/static/js/survey.js"></script>
+<script src="/static/js/triage.js"></script>
+<script src="/static/js/autopsy.js"></script>
+<script src="/static/js/tensorboard.js"></script>
+<script src="/static/js/feed_tuner.js"></script>
+<script src="/static/js/app.js"></script>
 </body>
 </html>

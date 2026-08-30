@@ -1,63 +1,10 @@
 "use strict";
 
-window.apiGet = async function (url) {
-  try {
-    const res = await fetch(url);
-    if (!res.ok && res.status >= 500) return { error: `server ${res.status}` };
-    return await res.json();
-  } catch (e) {
-    return { error: "backend unreachable" };
-  }
-};
-
-window.apiPost = async function (url, body) {
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
-    return await res.json();
-  } catch (e) {
-    return { ok: false, error: "backend unreachable" };
-  }
-};
-
 window.repoRoot = "";
 
 window.repoPath = function (name) {
   const root = (window.repoRoot || "").replace(/\/+$/, "");
   return root ? `${root}/${name}` : name;
-};
-
-window.fmtDuration = function (seconds) {
-  const total = Math.max(0, Math.round(seconds));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
-  if (m) return `${m}m`;
-  return `${total}s`;
-};
-
-window.fmtProgressBits = function (p) {
-  const done = p.done + p.failed;
-  const pct = Math.round((100 * done) / p.total);
-  const bits = [`${done}/${p.total}`, `${pct}%`];
-  if (p.eta_s != null) bits.push(`ETA ${window.fmtDuration(p.eta_s)}`, `≈ ${p.finish_at.slice(11, 16)}`);
-  else if (done < p.total) bits.push("estimating ETA");
-  if (p.failed) bits.push(`${p.failed} FAILED`);
-  return bits;
-};
-
-let _toastTimer = null;
-window.toast = function (message, kind) {
-  const el = document.getElementById("toast");
-  el.textContent = message;
-  el.className = "toast is-show" + (kind ? ` is-${kind}` : "");
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => {
-    el.className = "toast";
-  }, 3200);
 };
 
 class RevealObserver {
@@ -107,25 +54,30 @@ class App {
         nav.classList.add("is-dismissed");
       });
     });
+    nav.querySelectorAll(".nav__grouphead").forEach((head) => {
+      head.addEventListener("click", () => {
+        const group = head.closest(".nav__group");
+        const open  = group.classList.contains("is-open");
+        nav.querySelectorAll(".nav__group").forEach((g) => g.classList.toggle("is-open", g === group && !open));
+      });
+    });
     if (edge) edge.addEventListener("mouseenter", () => nav.classList.remove("is-dismissed"));
   }
 
   _initScenes() {
     const radar = document.getElementById("radar");
     const server = document.getElementById("server-anim");
-    try {
-      if (radar && window.TrainingScene) this.scenes.push(new window.TrainingScene(radar));
-    } catch (e) {}
-    try {
-      if (server && window.ServerScene) {
-        window.serverScene = new window.ServerScene(server);
-        this.scenes.push(window.serverScene);
-      }
-    } catch (e) {}
+
+    if (radar) this.scenes.push(new window.TrainingScene(radar));
+
+    if (server) {
+      window.serverScene = new window.ServerScene(server);
+      this.scenes.push(window.serverScene);
+    }
   }
 
   async _loadProject() {
-    const project = await window.apiGet("/api/project");
+    const project = await Api.get("/api/project");
 
     if (project.error) {
       this.project = { interpreters: [], counts: {} };
@@ -142,7 +94,7 @@ class App {
 
   _retryProject() {
     setTimeout(async () => {
-      const project = await window.apiGet("/api/project");
+      const project = await Api.get("/api/project");
       if (project.error) {
         this._retryProject();
         return;
@@ -198,6 +150,8 @@ class App {
 
     this.savedRunsView = new window.SavedRunsView(this.runConsole, document.getElementById("saved-grid"));
 
+    this.sequencesView = new window.SequencesView(this.runConsole, this.project || {});
+
     this.equationView = new window.EquationView(
       document.getElementById("eq-tabs"),
       document.getElementById("eq-grid")
@@ -239,9 +193,10 @@ class App {
 
     this.leaderboardView = new window.LeaderboardView(document.getElementById("leaderboard-root"));
 
-    this.microscopeView = new window.MicroscopeView(document.getElementById("probe-root"));
-    this.triageView     = new window.TriageView(document.getElementById("triage-root"));
-    this.autopsyView    = new window.AutopsyView(document.getElementById("autopsy-root"));
+    this.microscopeView    = new window.MicroscopeView(document.getElementById("probe-root"));
+    this.surveyView        = new window.SurveyView(document.getElementById("survey-root"));
+    this.triageView        = new window.TriageView(document.getElementById("triage-root"));
+    this.autopsyView       = new window.AutopsyView(document.getElementById("autopsy-root"));
 
     this.fitLabView = new window.FitLabView({
       baseInput        : document.getElementById("fl-base"),
@@ -299,6 +254,8 @@ class App {
       profiles      : document.getElementById("cube-profiles"),
       profAt        : document.getElementById("cube-prof-at"),
       profMetrics   : document.getElementById("cube-prof-metrics"),
+      profMixWrap   : document.getElementById("cube-prof-mix-wrap"),
+      profMix       : document.getElementById("cube-prof-mix"),
       progress      : document.getElementById("cube-progress"),
       progressFill  : document.getElementById("cube-progress-fill"),
       progressLabel : document.getElementById("cube-progress-label"),
@@ -322,6 +279,11 @@ class App {
       },
       metrics       : {
         layer  : document.getElementById("cube-metric-layer"),
+        rangeWrap : document.getElementById("cube-metric-range-wrap"),
+        classes   : document.getElementById("cube-metric-classes"),
+        hist      : document.getElementById("cube-metric-hist"),
+        histNote  : document.getElementById("cube-metric-hist-note"),
+        download  : document.getElementById("cube-metric-download"),
         vmin   : document.getElementById("cube-metric-vmin"),
         vmax   : document.getElementById("cube-metric-vmax"),
         reset  : document.getElementById("cube-metric-reset"),
@@ -339,12 +301,29 @@ class App {
         open   : document.getElementById("cube-metric-open"),
         selCov : document.getElementById("cube-selective-cov"),
         selVal : document.getElementById("cube-selective-val"),
+        selMask : document.getElementById("cube-selective-mask"),
+        selPlay : document.getElementById("cube-selective-play"),
         selTab : document.getElementById("cube-selective-table"),
+        rect       : document.getElementById("cube-metric-rect"),
+        regionHint : document.getElementById("cube-region-hint"),
+        regionTab  : document.getElementById("cube-region-table"),
+        regionWrap : document.getElementById("cube-region-prof-wrap"),
+        regionProf : document.getElementById("cube-region-prof"),
       },
       transect      : {
         at      : document.getElementById("cube-transect-at"),
+        undo    : document.getElementById("cube-transect-undo"),
         clear   : document.getElementById("cube-transect-clear"),
         print   : document.getElementById("cube-transect-print"),
+        download: document.getElementById("cube-transect-download"),
+        name       : document.getElementById("cube-transect-name"),
+        save       : document.getElementById("cube-transect-save"),
+        saved      : document.getElementById("cube-transect-saved"),
+        remove     : document.getElementById("cube-transect-delete"),
+        stripWrap  : document.getElementById("cube-transect-strip-wrap"),
+        stripLayer : document.getElementById("cube-transect-strip-layer"),
+        stripVal   : document.getElementById("cube-transect-strip-val"),
+        strip      : document.getElementById("cube-transect-strip"),
         map     : document.getElementById("cube-transect-map"),
         overlay : document.getElementById("cube-transect-overlay"),
         grid    : document.getElementById("cube-transect-grid"),
@@ -473,6 +452,9 @@ class App {
     }
     if (route === "ablation") this.ablationView.enter();
     if (route === "saved") this.savedRunsView.enter();
+    if (route === "sequences") this.sequencesView.enter();
+    else this.sequencesView.leave();
+    if (route === "physics") this.physicsLossView.load();
     if (route === "model" && document.querySelector("#model-mode .model-mode__btn.is-active")?.dataset.mode === "walkthrough") this.flowView.load();
     if (route === "repomap") this.repoMap.enter();
     if (route === "tensorboard") this.tensorboardView.enter();
@@ -480,11 +462,12 @@ class App {
     if (route === "results") this.resultsView.enter();
     if (route === "leaderboard") this.leaderboardView.enter();
     if (route === "feedtuner") this.feedTuner.enter();
-    if (route === "cube") this.cubeView.enter();
+    if (route === "cube") this.cubeView.enter(param);
     else this.cubeView.leave();
     if (route === "slices") this.sliceCollectorView.enter();
     if (route === "fitlab") this.fitLabView.enter();
     if (route === "microscope") this.microscopeView.enter();
+    if (route === "survey") this.surveyView.enter();
     if (route === "triage") this.triageView.enter();
     if (route === "autopsy") this.autopsyView.enter();
     if (route === "console") this.runConsole.onShow();

@@ -65,13 +65,8 @@ class TensorboardView {
   }
 
   async refresh() {
-    let data;
-    try {
-      data = await window.apiGet("/api/tensorboard");
-    } catch (e) {
-      return;
-    }
-    if (!this.active || !data || data.error) return;
+    const data = await Api.get("/api/tensorboard");
+    if (!this.active || data.error) return;
 
     this.instances = (data.instances || []).filter((i) => i.status === "starting" || i.status === "running" || i.status === "failed");
 
@@ -149,11 +144,11 @@ class TensorboardView {
   async _start() {
     this.startBtn.disabled = true;
     try {
-      const res = await window.apiPost("/api/tensorboard/start", { script_key: "train_backbone" });
-      if (res && res.error) window.toast(res.error, "error");
-      else window.toast("TensorBoard starting", "ok");
+      const res = await Api.post("/api/tensorboard/start", { script_key: "train_backbone" });
+      if (res && res.error) Toast.show(res.error, "error");
+      else Toast.show("TensorBoard starting", "ok");
     } catch (e) {
-      window.toast("Could not start TensorBoard", "error");
+      Toast.show("Could not start TensorBoard", "error");
     }
     this.startBtn.disabled = false;
     this.refresh();
@@ -163,10 +158,10 @@ class TensorboardView {
     const inst = this._selected();
     if (!inst) return;
     try {
-      const res = await window.apiPost(`/api/tensorboard/${inst.id}/stop`, {});
-      if (res && res.error) window.toast(res.error, "error");
+      const res = await Api.post(`/api/tensorboard/${inst.id}/stop`, {});
+      if (res && res.error) Toast.show(res.error, "error");
     } catch (e) {
-      window.toast("Could not stop TensorBoard", "error");
+      Toast.show("Could not stop TensorBoard", "error");
     }
     this.selectedId = null;
     this.loadedUrl = null;
@@ -194,15 +189,9 @@ class TensorboardView {
   async _loadLogdirs() {
     this.pickerList.innerHTML = `<p class="tb-picker__msg">Scanning run directories…</p>`;
     this.pickerRoot.textContent = "";
-    let data;
-    try {
-      data = await window.apiGet("/api/tensorboard/logdirs");
-    } catch (e) {
-      this.pickerList.innerHTML = `<p class="tb-picker__msg">Could not read run directories.</p>`;
-      return;
-    }
-    if (!data || data.error || data.ok === false) {
-      this.pickerList.innerHTML = `<p class="tb-picker__msg">${(data && data.error) || "No runs root available."}</p>`;
+    const data = await Api.get("/api/tensorboard/logdirs");
+    if (data.error || data.ok === false) {
+      this.pickerList.innerHTML = `<p class="tb-picker__msg">${SharedCharts.esc(data.error || "No runs root available.")}</p>`;
       return;
     }
     this.pickerRoot.textContent = data.runs_root || "";
@@ -240,15 +229,15 @@ class TensorboardView {
       return;
     }
     try {
-      const res = await window.apiPost("/api/tensorboard/start", { logdir: dir.path });
+      const res = await Api.post("/api/tensorboard/start", { logdir: dir.path });
       if (res && res.error) {
-        window.toast(res.error, "error");
+        Toast.show(res.error, "error");
         return;
       }
       if (res && res.id) this.selectedId = res.id;
-      window.toast(`TensorBoard starting over ${dir.name}`, "ok");
+      Toast.show(`TensorBoard starting over ${dir.name}`, "ok");
     } catch (e) {
-      window.toast("Could not start TensorBoard", "error");
+      Toast.show("Could not start TensorBoard", "error");
       return;
     }
     this._closeBrowse();

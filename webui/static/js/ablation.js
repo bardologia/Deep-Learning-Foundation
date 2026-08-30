@@ -41,14 +41,14 @@ class AblationView extends ConfigForm {
   async _load() {
     this.host.innerHTML = `<p class="ablation__note">Loading training configuration…</p>`;
 
-    const detail = await window.apiGet(`/api/scripts/${this.key}`);
+    const detail = await Api.get(`/api/scripts/${this.key}`);
     if (!detail || detail.error) {
       this.host.innerHTML = `<p class="ablation__note ablation__note--error">Could not load the training script.</p>`;
       return;
     }
     this.detail = detail;
 
-    const cfg = await window.apiGet(`/api/scripts/${this.key}/config`);
+    const cfg = await Api.get(`/api/scripts/${this.key}/config`);
     if (!cfg || !cfg.ok) {
       this.host.innerHTML = `<p class="ablation__note ablation__note--error">${(cfg && cfg.error) || "Could not resolve configuration."}</p>`;
       return;
@@ -61,7 +61,7 @@ class AblationView extends ConfigForm {
       return;
     }
 
-    const models = await window.apiGet("/api/backbones");
+    const models = await Api.get("/api/backbones");
     this.modelFamilies = (models && models.families) || [];
 
     this.loaded = true;
@@ -76,6 +76,7 @@ class AblationView extends ConfigForm {
     this.dependents    = {};
     this.states        = [];
     this.gates         = [];
+    this.repainters    = [];
     this.sections      = [];
     this.pairs         = [];
     this.activeSection = null;
@@ -234,14 +235,7 @@ class AblationView extends ConfigForm {
   }
 
   _commandText() {
-    let text = (this.detail && this.detail.command) || "python main/training/train_backbone.py";
-    Object.entries(this.dirty).forEach(([path, value]) => {
-      const raw      = String(value);
-      const rendered = /^[\w@%+=:,./-]+$/.test(raw) ? raw : `'${raw.replace(/'/g, `'\\''`)}'`;
-      text += ` \\\n  --${path} ${rendered}`;
-    });
-    if (this.detach) text += ` \\\n  --detach`;
-    return text;
+    return this._commandLine((this.detail && this.detail.command) || "python main/training/train_backbone.py", " \\\n  ");
   }
 
   _launch() {

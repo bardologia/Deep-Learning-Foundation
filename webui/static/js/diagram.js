@@ -61,14 +61,13 @@ class ModelDiagram {
     let type = isT ? "transformer" : "unet";
 
     const over = this.KEYSPEC[model.key];
-    let gated = false;
-    if (over) { skipKind = over.skipKind; type = over.type; gated = !!over.gated; }
+    if (over) { skipKind = over.skipKind; type = over.type; }
 
     const actMap = { relu: "ReLU", leaky_relu: "LeakyReLU", gelu: "GELU", silu: "SiLU", simplegate: "SimpleGate" };
     const normMap = { batch: "BatchNorm", instance: "InstanceNorm", group: "GroupNorm", layer: "LayerNorm", layernorm: "LayerNorm", l2: "L2 Norm", none: null };
     const act = (model.activation || "relu").toLowerCase();
     const norm = (model.normalization || "batch").toLowerCase();
-    return { skipKind, heads, type, gated, key: model.key, act: actMap[act] || "ReLU", norm: normMap[norm] !== undefined ? normMap[norm] : "BatchNorm" };
+    return { skipKind, heads, type, key: model.key, act: actMap[act] || "ReLU", norm: normMap[norm] !== undefined ? normMap[norm] : "BatchNorm" };
   }
 
   /* ---------- primitives ---------- */
@@ -658,22 +657,6 @@ class ModelDiagram {
 
   static _headBlock(s) {
     const o = this._o;
-    if (s.gated) {
-      return {
-        id: "head", title: "Set-prediction heads",
-        caption: "per-slot PixelMLPs plus an existence-logit head; the sigmoid gate blends each slot's amplitude toward a learned off level",
-        ops: [
-          o.io("decoder features", "d1 : F1 x P x P"),
-          o.txt("PixelMLP x K", "amp, mu, sigma per slot"),
-          o.txt("Existence head", "PixelMLP -> K logits"),
-          o.txt("Sigmoid", "gate g in [0,1]"),
-          o.mul(),
-          o.txt("Amp blend", "g*amp + (1-g)*off_k"),
-          o.io("params", "3K x P x P"),
-        ],
-        shortcuts: [{ from: 1, to: 4, label: "amp" }],
-      };
-    }
     if (s.key === "nafnet") {
       return { id: "head", title: "Output head", caption: "3x3 conv to params", ops: [o.txt("Conv 3x3", "w -> 3K"), o.io("params", "3K x P x P")] };
     }
@@ -822,7 +805,7 @@ class ModelDiagram {
 
     const cnnShapes = ["Cin x P x P", "F1 x P/2 x P/2", "F2 x P/4 x P/4", "F3 x P/8 x P/8", "F4 x P/16 x P/16", "Fb x P/16 x P/16", "F4 x P/8 x P/8", "F3 x P/4 x P/4", "F2 x P/2 x P/2", "F1 x P x P", "3K x P x P"];
     const txShapes = ["Cin x P x P", "D1 x N1", "D2 x N2", "D3 x N3", "D4 x N4", "Db x N4", "D4 x N3", "D3 x N2", "D2 x N1", "D1 x N1", "3K x P x P"];
-    const headSub = s.gated ? "K x PixelMLP + gate" : s.heads === 3 ? "3 x PixelMLP" : s.heads === "K" ? "K x PixelMLP" : s.key === "nafnet" ? "3x3 conv" : "1x1 conv";
+    const headSub = s.heads === 3 ? "3 x PixelMLP" : s.heads === "K" ? "K x PixelMLP" : s.key === "nafnet" ? "3x3 conv" : "1x1 conv";
 
     const labels = {
       unet: { enc: "Encoder", dec: "Decoder", bott: "Bridge", skip: "concat" },
@@ -1334,9 +1317,9 @@ class ModelDiagram {
       }
 
       if (model.key === "transformer1d_ae") {
-        const txl = { id: "txl", title: "Transformer layer", caption: "self-attention then feed-forward, each with a residual add and post-norm", ops: [o.txt("Multi-head attn", "4 heads"), o.sum(), o.txt("LayerNorm"), o.txt("FFN", "192 -> 384 -> 192, GELU"), o.sum(), o.txt("LayerNorm"), o.io("output")], shortcuts: [{ from: "top", to: 1, label: "res" }, { from: 2, to: 4, label: "res" }] };
-        const enc = { id: "enc", title: "Encoder", caption: "embed the profile, relate bins with self-attention, then project to the embedding", ops: [inIo, o.txt("Linear", "256 -> 192"), { label: "Transformer layer", sub: "x3", block: "txl" }, o.txt("Linear", "192 -> 24"), zEnd] };
-        const dec = { id: "dec", title: "Decoder", caption: "mirror of the encoder: embed, self-attention, then project to the profile", ops: [zStart, o.txt("Linear", "24 -> 192"), { label: "Transformer layer", sub: "x3", block: "txl" }, o.txt("Linear", "192 -> 256"), outIo] };
+        const txl = { id: "txl", title: "Transformer layer", caption: "attention over a single token, so it reduces to a value-output projection, then feed-forward, each with a residual add and post-norm", ops: [o.txt("Self-attention", "1 token"), o.sum(), o.txt("LayerNorm"), o.txt("FFN", "192 -> 384 -> 192, GELU"), o.sum(), o.txt("LayerNorm"), o.io("output")], shortcuts: [{ from: "top", to: 1, label: "res" }, { from: 2, to: 4, label: "res" }] };
+        const enc = { id: "enc", title: "Encoder", caption: "embed the whole profile into one token, run the transformer stack, then project to the embedding", ops: [inIo, o.txt("Linear", "256 -> 192"), { label: "Transformer layer", sub: "x3", block: "txl" }, o.txt("Linear", "192 -> 24"), zEnd] };
+        const dec = { id: "dec", title: "Decoder", caption: "mirror of the encoder: one token, transformer stack, then project to the profile", ops: [zStart, o.txt("Linear", "24 -> 192"), { label: "Transformer layer", sub: "x3", block: "txl" }, o.txt("Linear", "192 -> 256"), outIo] };
         return { ...base, encSub: "Transformer x3", decSub: "Transformer x3", blocks: [enc, dec, txl, latent(base.zLabel, base.zSub)] };
       }
 

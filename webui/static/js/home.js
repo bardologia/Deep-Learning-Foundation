@@ -11,11 +11,20 @@ class GpuWeekPanel {
     return Array.from({ length: 24 }, (_, hour) => `<option value="${hour}">${String(hour).padStart(2, "0")}:00</option>`).join("");
   }
 
-  static parseGpus(raw) {
+  static gpuTokens(raw) {
     return String(raw || "")
       .split(/[\s,]+/)
-      .filter((token) => token.length)
-      .map(Number);
+      .filter((token) => token.length);
+  }
+
+  static parseGpus(raw) {
+    return GpuWeekPanel.gpuTokens(raw)
+      .map(Number)
+      .filter(Number.isFinite);
+  }
+
+  static badGpuTokens(raw) {
+    return GpuWeekPanel.gpuTokens(raw).filter((token) => !Number.isFinite(Number(token)));
   }
 
   constructor() {
@@ -47,6 +56,21 @@ class GpuWeekPanel {
   }
 
   async _submit(enabled, greedy, charity) {
+    const fields = [
+      ["sb-sch-weekday", "weekday"],
+      ["sb-sch-night", "night"],
+      ["sb-sch-weekend", "weekend"],
+    ];
+    for (const [id, label] of fields) {
+      const bad = GpuWeekPanel.badGpuTokens(this._raw(id));
+      const el  = document.getElementById(id);
+      if (el) el.classList.toggle("is-bad", !!bad.length);
+      if (bad.length) {
+        Toast.show(`${label} pool is not numeric: ${bad.join(", ")}`, "error");
+        return;
+      }
+    }
+
     const payload = {
       enabled: !!enabled,
       greedy: !!greedy,
@@ -62,15 +86,15 @@ class GpuWeekPanel {
       night_end_hour: this._value("sb-sch-nightend"),
     };
 
-    const res = await window.apiPost("/api/gpu-schedule", payload);
+    const res = await Api.post("/api/gpu-schedule", payload);
     if (!res || !res.ok) {
-      window.toast(`schedule rejected: ${(res && res.error) || "network error"}`, "error");
+      Toast.show(`schedule rejected: ${(res && res.error) || "network error"}`, "error");
       return;
     }
 
     this.seeded = false;
     this.render(res);
-    window.toast(res.enabled ? `GPU week schedule on — ${res.phase} pool ${res.gpus_now.join(",")} applies now` : "GPU week schedule off", res.enabled ? "ok" : "warn");
+    Toast.show(res.enabled ? `GPU week schedule on — ${res.phase} pool ${res.gpus_now.join(",")} applies now` : "GPU week schedule off", res.enabled ? "ok" : "warn");
   }
 
   render(state) {
@@ -141,18 +165,725 @@ class GpuWeekPanel {
   }
 }
 
+class ByteFormat {
+
+  static gb(bytes) {
+    return (bytes / 1073741824).toFixed(1);
+  }
+
+  static mb(bytes) {
+    const gb = bytes / 1073741824;
+    if (gb >= 1) return `${gb.toFixed(1)}G`;
+    return `${Math.round(bytes / 1048576)}M`;
+  }
+
+  static tb(bytes) {
+    const tb = bytes / 1099511627776;
+    return tb >= 1 ? `${tb.toFixed(2)} TB` : `${ByteFormat.gb(bytes)} GB`;
+  }
+}
+
+class UsersTable {
+
+  markup() {
+    return (
+      `<section class="sboard sboard--users" aria-label="Active users">` +
+      `<header class="sboard__cap"><span>active users</span><span class="sboard__n" id="sb-users-n">--</span></header>` +
+      `<div class="utable">` +
+      `<div class="utable__row utable__row--head"><span>user</span><span title="summed over all the user's processes; 100% = one full core">cpu%</span><span title="memory attributed to the user: proportional set size for your own processes, private resident for other users, so shared pages are not double-counted">ram</span><span title="share of used RAM (total minus available), same base as the neighbour impact panel">ram%</span><span class="utable__gpu" title="GPU memory the user has allocated across all CUDA devices">gpu mem</span><span title="CUDA devices the user holds memory on">gpus</span><span title="processes owned by the user">procs</span><span title="open login sessions">ssh</span></div>` +
+      `<div class="utable__body" id="sb-users"></div>` +
+      `</div>` +
+      `</section>`
+    );
+  }
+
+  render(users) {
+    const body = document.getElementById("sb-users");
+    const n = document.getElementById("sb-users-n");
+    if (!body) return;
+    if (n) n.textContent = `${users.length} user${users.length === 1 ? "" : "s"}`;
+
+    if (!users.length) {
+      body.innerHTML = `<div class="sboard__empty">measuring user activity&hellip;</div>`;
+      return;
+    }
+
+    body.innerHTML = users.map((u) => {
+      const cls = u.cpu >= 100 ? "is-hot" : u.cpu >= 25 ? "is-mid" : "";
+      const gpus = (u.gpus || []).length ? u.gpus.join(",") : "--";
+      return (
+        `<div class="utable__row${u.me ? " is-me" : ""}">` +
+        `<span class="utable__user">${SharedCharts.esc(u.user)}${u.me ? `<i class="utable__me">you</i>` : ""}</span>` +
+        `<span class="utable__cpu ${cls}">${u.cpu.toFixed(1)}</span>` +
+        `<span>${ByteFormat.mb(u.mem)}</span>` +
+        `<span class="utable__share">${u.mem_share.toFixed(1)}%</span>` +
+        `<span class="utable__gpu">${u.gpu_mem ? ByteFormat.mb(u.gpu_mem * 1048576) : "--"}</span>` +
+        `<span class="utable__gpus">${gpus}</span>` +
+        `<span>${u.nproc}</span>` +
+        `<span class="utable__sess">${u.sessions || "--"}</span>` +
+        `</div>`
+      );
+    }).join("");
+  }
+}
+
+class ProcessTable {
+
+  markup(user) {
+    return (
+      `<section class="sboard sboard--procs" aria-label="Processes">` +
+      `<header class="sboard__cap"><span>processes &middot; ${SharedCharts.esc(user || "user")}</span><span class="sboard__n" id="sb-proc-n"></span></header>` +
+      `<div class="ptable">` +
+      `<div class="ptable__row ptable__row--head"><span>pid</span><span>cpu%</span><span title="proportional set size: shared pages split across the processes mapping them, so these rows sum to real memory use (unlike RSS, which double-counts shared pages)">mem</span><span class="ptable__gpu">gpu</span><span title="threads currently open in the process">thr</span><span>s</span><span>command</span></div>` +
+      `<div class="ptable__body" id="sb-procs"></div>` +
+      `</div>` +
+      `</section>`
+    );
+  }
+
+  render(procs) {
+    const body = document.getElementById("sb-procs");
+    const n = document.getElementById("sb-proc-n");
+    if (!body) return;
+    if (n) n.textContent = String(procs.length);
+
+    if (!procs.length) {
+      body.innerHTML = `<div class="sboard__empty">no processes</div>`;
+      return;
+    }
+
+    body.innerHTML = procs.map((p) => {
+      const cls = p.cpu >= 100 ? "is-hot" : p.cpu >= 25 ? "is-mid" : "";
+      const run = p.state === "R" ? " is-run" : "";
+      return (
+        `<div class="ptable__row${run}">` +
+        `<span class="ptable__pid">${p.pid}</span>` +
+        `<span class="ptable__cpu ${cls}">${p.cpu.toFixed(1)}</span>` +
+        `<span>${ByteFormat.mb(p.pss != null ? p.pss : p.rss)}</span>` +
+        `<span class="ptable__gpu">${p.gpu ? ByteFormat.mb(p.gpu * 1048576) : "--"}</span>` +
+        `<span class="ptable__thr">${p.threads != null ? p.threads : "--"}</span>` +
+        `<span class="ptable__state">${SharedCharts.esc(p.state)}</span>` +
+        `<span class="ptable__cmd" title="${SharedCharts.esc(p.cmd)}">${SharedCharts.esc(p.cmd)}</span>` +
+        `</div>`
+      );
+    }).join("");
+  }
+}
+
+class JobsList {
+
+  markup() {
+    return (
+      `<section class="sboard sboard--jobs" aria-label="Jobs">` +
+      `<header class="sboard__cap"><span>jobs</span><span class="sboard__n" id="sb-jobs-n">0</span></header>` +
+      `<ul class="sboard__jobs" id="sb-jobs"><li class="sboard__empty">no runs yet</li></ul>` +
+      `</section>`
+    );
+  }
+
+  _row(job, follow) {
+    const name = SharedCharts.esc(job.script || String(job.command || "").split(" ")[0].split("/").pop() || "job");
+    const cls =
+      job.status === "running" ? "is-run" :
+      job.status === "failed" ? "is-fail" :
+      job.status === "scheduled" || job.status === "queued" ? "is-sched" :
+      job.status === "cancelled" ? "is-cancel" : "is-done";
+    const mark = follow ? `<span class="sboard__jarrow" aria-hidden="true">&#8627;</span>` : "";
+    const prog = job.progress && job.progress.total
+      ? `<span class="sboard__jprog${job.progress.failed ? " is-failing" : ""}">${SharedCharts.esc(Format.progressBits(job.progress).join(" · "))}</span>`
+      : "";
+    const energyLabel = Format.energy(job.energy_wh);
+    const energy = energyLabel ? `<span class="sboard__jenergy">${energyLabel}</span>` : "";
+    return `<li class="sboard__job ${cls}${follow ? " sboard__job--follow" : ""}">${mark}<span class="sboard__jdot" aria-hidden="true"></span><span class="sboard__jname">${name}</span>${prog}${energy}<span class="sboard__jstate">${SharedCharts.esc(job.status)}</span></li>`;
+  }
+
+  render(jobs) {
+    const list = document.getElementById("sb-jobs");
+    const n = document.getElementById("sb-jobs-n");
+    if (!list) return;
+
+    const running = jobs.filter((j) => j.status === "running").length;
+    if (n) n.textContent = running > 0 ? `${running} running` : String(jobs.length);
+
+    if (!jobs.length) {
+      list.innerHTML = `<li class="sboard__empty">no runs yet</li>`;
+      return;
+    }
+
+    const followers = new Map();
+    jobs.forEach((j) => {
+      if (j.follow_of) followers.set(j.follow_of, j);
+    });
+
+    list.innerHTML = jobs.filter((j) => !j.follow_of).slice(0, 8).map((j) => {
+      const next = followers.get(j.job_id);
+      return this._row(j, false) + (next ? this._row(next, true) : "");
+    }).join("");
+  }
+}
+
+class GpuActivityTimeline {
+  static ROW_MIN = 18;
+  static ROW_GAP = 8;
+  static AXIS_H  = 18;
+  static LABEL_W = 46;
+  static MINE    = "111, 155, 255";
+  static OTHERS  = "251, 191, 36";
+  static UNKNOWN = "45, 212, 191";
+
+  constructor(canvas, readout) {
+    this.canvas = canvas;
+    this.readout = readout;
+    this.state = null;
+    this.geom = null;
+    this.rows = [];
+    this.markers = [];
+    this.markerDots = [];
+    this.idle = readout ? readout.textContent : "";
+
+    if (canvas) {
+      canvas.addEventListener("mousemove", (event) => this._hover(event));
+      canvas.addEventListener("mouseleave", () => this._blur());
+    }
+  }
+
+  render(state) {
+    this.state = state;
+    if (!this.canvas || !state) return;
+
+    const rows = Math.max(1, (state.gpus || []).length);
+    const tall = GpuActivityTimeline.AXIS_H + rows * (GpuActivityTimeline.ROW_MIN + GpuActivityTimeline.ROW_GAP);
+    this.canvas.style.minHeight = `${Math.max(150, tall)}px`;
+    this.draw();
+  }
+
+  setMarkers(records) {
+    this.markers = (records || []).map((r) => {
+      const stamp = Date.parse(r.critical_at || r.detected_at || "");
+      const gpu = (r.gpu || {}).index;
+      if (!Number.isFinite(stamp) || gpu == null) return null;
+      return { t: stamp / 1000, gpu, kind: r.kind, user: (r.intruder || {}).user || "?" };
+    }).filter(Boolean);
+    this.draw();
+  }
+
+  _segments(bucket) {
+    const segs = [];
+    if (bucket.mine > 0) segs.push({ color: GpuActivityTimeline.MINE, share: bucket.mine });
+    if (bucket.others > 0) segs.push({ color: GpuActivityTimeline.OTHERS, share: bucket.others });
+    if (!segs.length && bucket.busy > 0) segs.push({ color: GpuActivityTimeline.UNKNOWN, share: bucket.busy });
+    return segs;
+  }
+
+  _hourTicks() {
+    const g = this.geom;
+    const ticks = [];
+
+    for (let t = Math.ceil(g.start / 3600) * 3600; t <= g.now; t += 3600) {
+      const date = new Date(t * 1000);
+      if (date.getHours() % 3 !== 0) continue;
+      ticks.push({ t, label: `${String(date.getHours()).padStart(2, "0")}:00` });
+    }
+    return ticks;
+  }
+
+  _dayTicks() {
+    const g = this.geom;
+    const midnights = [];
+    const cursor = new Date(g.start * 1000);
+    cursor.setHours(24, 0, 0, 0);
+
+    while (cursor.getTime() / 1000 <= g.now) {
+      midnights.push(cursor.getTime() / 1000);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const every = Math.max(1, Math.ceil((midnights.length * 40) / Math.max(1, g.plotW)));
+    return midnights.map((t, index) => {
+      const date = new Date(t * 1000);
+      const label = index % every === 0 ? `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}` : null;
+      return { t, label };
+    });
+  }
+
+  _axis(ctx, w, top, bottom) {
+    const g = this.geom;
+    ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+    ctx.textBaseline = "top";
+
+    const ticks = g.window > 86400 ? this._dayTicks() : this._hourTicks();
+    ticks.forEach(({ t, label }) => {
+      const x = Math.round(g.plotX + ((t - g.start) / g.window) * g.plotW) + 0.5;
+      ctx.strokeStyle = "rgba(220, 235, 245, 0.12)";
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+      ctx.stroke();
+
+      if (!label) return;
+      ctx.fillStyle = "rgba(220, 235, 245, 0.38)";
+      ctx.textAlign = x > w - 20 ? "right" : "center";
+      ctx.fillText(label, Math.min(x, w - 1), bottom + 5);
+    });
+  }
+
+  draw() {
+    const cv = this.canvas;
+    const state = this.state;
+    if (!cv || !state) return;
+
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    if (!w || !h) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr);
+      cv.height = Math.round(h * dpr);
+    }
+
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const gpus = state.gpus || [];
+    const plotX = GpuActivityTimeline.LABEL_W;
+    this.geom = {
+      start:  state.now - state.window_s,
+      now:    state.now,
+      window: state.window_s,
+      bucket: state.bucket_s,
+      plotX,
+      plotW:  Math.max(1, w - plotX - 2),
+    };
+    this.rows = [];
+
+    if (!gpus.length) {
+      ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
+      ctx.font = "11px ui-monospace, SFMono-Regular, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText("no GPU activity recorded yet", 2, h / 2);
+      return;
+    }
+
+    const gaps  = (gpus.length - 1) * GpuActivityTimeline.ROW_GAP;
+    const rowH  = Math.max(GpuActivityTimeline.ROW_MIN, (h - GpuActivityTimeline.AXIS_H - gaps) / gpus.length);
+    const top   = 0;
+
+    gpus.forEach((gpu, index) => {
+      const y = top + index * (rowH + GpuActivityTimeline.ROW_GAP);
+      this.rows.push({ y, h: rowH, gpu });
+
+      ctx.fillStyle = "rgba(220, 235, 245, 0.06)";
+      ctx.fillRect(plotX, y, this.geom.plotW, rowH);
+
+      ctx.fillStyle = "rgba(220, 235, 245, 0.55)";
+      ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`gpu ${gpu.index}`, 0, y + rowH / 2);
+
+      (gpu.buckets || []).forEach((bucket) => {
+        if (bucket.t + this.geom.bucket < this.geom.start) return;
+
+        const x0 = plotX + ((bucket.t - this.geom.start) / this.geom.window) * this.geom.plotW;
+        const bw = Math.max(1.5, (this.geom.bucket / this.geom.window) * this.geom.plotW);
+        const segs = this._segments(bucket);
+
+        segs.forEach((seg, s) => {
+          const sh = rowH / segs.length;
+          ctx.fillStyle = `rgba(${seg.color}, ${(0.3 + 0.65 * seg.share).toFixed(3)})`;
+          ctx.fillRect(x0, y + s * sh, bw, sh);
+        });
+      });
+
+      ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(plotX + 0.5, y + 0.5, this.geom.plotW - 1, rowH - 1);
+    });
+
+    this._drawMarkers(ctx);
+    this._axis(ctx, w, top, top + gpus.length * rowH + gaps);
+  }
+
+  _drawMarkers(ctx) {
+    this.markerDots = [];
+
+    this.markers.forEach((marker) => {
+      if (marker.t < this.geom.start || marker.t > this.geom.now) return;
+      const row = this.rows.find((r) => r.gpu.index === marker.gpu);
+      if (!row) return;
+
+      const x = this.geom.plotX + ((marker.t - this.geom.start) / this.geom.window) * this.geom.plotW;
+      const y = row.y + 1;
+      const color = marker.kind === "critical" ? "248, 113, 113" : "251, 191, 36";
+
+      ctx.beginPath();
+      ctx.moveTo(x, y + 6);
+      ctx.lineTo(x - 3.5, y);
+      ctx.lineTo(x + 3.5, y);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${color}, 0.95)`;
+      ctx.fill();
+
+      this.markerDots.push({ x, y: y + 3, marker });
+    });
+  }
+
+  _hover(event) {
+    if (!this.readout || !this.geom || !this.rows.length) return;
+
+    const box = this.canvas.getBoundingClientRect();
+    const x = event.clientX - box.left;
+    const y = event.clientY - box.top;
+
+    const dot = this.markerDots.find((d) => Math.abs(d.x - x) <= 5 && Math.abs(d.y - y) <= 6);
+    if (dot) {
+      const when = new Date(dot.marker.t * 1000);
+      const clock = `${String(when.getDate()).padStart(2, "0")}.${String(when.getMonth() + 1).padStart(2, "0")} ${when.toTimeString().slice(0, 5)}`;
+      this.readout.textContent = dot.marker.kind === "critical"
+        ? `${clock} · gpu ${dot.marker.gpu} · CRITICAL: ${dot.marker.user} invaded and your process died`
+        : `${clock} · gpu ${dot.marker.gpu} · intrusion by ${dot.marker.user}`;
+      return;
+    }
+
+    const row = this.rows.find((r) => y >= r.y && y <= r.y + r.h);
+    if (!row || x < this.geom.plotX) return this._blur();
+
+    const when = this.geom.start + ((x - this.geom.plotX) / this.geom.plotW) * this.geom.window;
+    const bucket = (row.gpu.buckets || []).find((b) => when >= b.t && when < b.t + this.geom.bucket);
+    const date = new Date(Math.round(when) * 1000);
+    const time = date.toTimeString().slice(0, 5);
+    const clock = this.geom.window > 86400 ? `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")} ${time}` : time;
+
+    if (!bucket) {
+      this.readout.textContent = `${clock} · gpu ${row.gpu.index} · no record`;
+      return;
+    }
+
+    const who = (bucket.holders || []).join(", ");
+    this.readout.textContent = bucket.busy > 0
+      ? `${clock} · gpu ${row.gpu.index} · busy ${Math.round(100 * bucket.busy)}% · util ${bucket.util}% · ${who || "owner unknown"}`
+      : `${clock} · gpu ${row.gpu.index} · idle`;
+  }
+
+  _blur() {
+    if (this.readout) this.readout.textContent = this.idle;
+  }
+}
+
+class GpuHeatmapCalendar {
+  static SLOT_H  = 9;
+  static ROW_GAP = 16;
+  static LABEL_W = 46;
+  static AXIS_H  = 16;
+  static SLOTS   = 6;
+  static MINE    = "111, 155, 255";
+  static OTHERS  = "251, 191, 36";
+
+  constructor(canvas, readout) {
+    this.canvas = canvas;
+    this.readout = readout;
+    this.state = null;
+    this.cells = [];
+    this.idle = readout ? readout.textContent : "";
+
+    if (canvas) {
+      canvas.addEventListener("mousemove", (event) => this._hover(event));
+      canvas.addEventListener("mouseleave", () => this._blur());
+    }
+  }
+
+  render(state) {
+    this.state = state;
+    if (!this.canvas || !state) return;
+
+    const rows = Math.max(1, (state.gpus || []).length);
+    const tall = GpuHeatmapCalendar.AXIS_H + rows * (GpuHeatmapCalendar.SLOTS * GpuHeatmapCalendar.SLOT_H + GpuHeatmapCalendar.ROW_GAP);
+    this.canvas.style.height = `${Math.max(96, tall)}px`;
+    this.draw();
+  }
+
+  _days(state) {
+    const first = new Date((state.now - state.window_s) * 1000);
+    first.setHours(0, 0, 0, 0);
+    const days = [];
+    const cursor = new Date(first);
+    while (cursor.getTime() / 1000 <= state.now) {
+      days.push(cursor.getTime() / 1000);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return days;
+  }
+
+  draw() {
+    const cv = this.canvas;
+    const state = this.state;
+    if (!cv || !state) return;
+
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    if (!w || !h) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr);
+      cv.height = Math.round(h * dpr);
+    }
+
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    this.cells = [];
+
+    const gpus = state.gpus || [];
+    if (!gpus.length) {
+      ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
+      ctx.font = "11px ui-monospace, SFMono-Regular, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText("no GPU activity recorded yet", 2, h / 2);
+      return;
+    }
+
+    const days = this._days(state);
+    const plotX = GpuHeatmapCalendar.LABEL_W;
+    const plotW = Math.max(1, w - plotX - 2);
+    const cellW = plotW / days.length;
+    const slotH = GpuHeatmapCalendar.SLOT_H;
+    const rowH = GpuHeatmapCalendar.SLOTS * slotH;
+
+    gpus.forEach((gpu, row) => {
+      const y0 = row * (rowH + GpuHeatmapCalendar.ROW_GAP);
+
+      ctx.fillStyle = "rgba(220, 235, 245, 0.55)";
+      ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`gpu ${gpu.index}`, 0, y0 + rowH / 2);
+
+      ctx.fillStyle = "rgba(220, 235, 245, 0.04)";
+      ctx.fillRect(plotX, y0, plotW, rowH);
+
+      (gpu.buckets || []).forEach((bucket) => {
+        const day = Math.floor((bucket.t - days[0]) / 86400);
+        if (day < 0 || day >= days.length) return;
+
+        const slot = Math.min(GpuHeatmapCalendar.SLOTS - 1, Math.floor(new Date(bucket.t * 1000).getHours() / 4));
+        const x = plotX + day * cellW;
+        const y = y0 + slot * slotH;
+
+        if (bucket.busy > 0) {
+          const color = bucket.others > bucket.mine ? GpuHeatmapCalendar.OTHERS : GpuHeatmapCalendar.MINE;
+          ctx.fillStyle = `rgba(${color}, ${(0.14 + 0.8 * bucket.busy).toFixed(3)})`;
+          ctx.fillRect(x + 0.5, y + 0.5, Math.max(1, cellW - 1), slotH - 1);
+        }
+
+        this.cells.push({ x, y, w: cellW, h: slotH, gpu, bucket });
+      });
+
+      ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(plotX + 0.5, y0 + 0.5, plotW - 1, rowH - 1);
+    });
+
+    const bottom = gpus.length * (rowH + GpuHeatmapCalendar.ROW_GAP) - GpuHeatmapCalendar.ROW_GAP;
+    ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+    ctx.textBaseline = "top";
+    const every = Math.max(1, Math.ceil((days.length * 40) / plotW));
+    days.forEach((t, index) => {
+      if (index % every !== 0) return;
+      const date = new Date(t * 1000);
+      const x = plotX + index * cellW;
+      ctx.fillStyle = "rgba(220, 235, 245, 0.38)";
+      ctx.textAlign = x > w - 24 ? "right" : "left";
+      ctx.fillText(`${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}`, Math.min(x, w - 1), bottom + 5);
+    });
+  }
+
+  _hover(event) {
+    if (!this.readout || !this.cells.length) return;
+
+    const box = this.canvas.getBoundingClientRect();
+    const x = event.clientX - box.left;
+    const y = event.clientY - box.top;
+    const cell = this.cells.find((c) => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h);
+    if (!cell) return this._blur();
+
+    const clock = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const start = new Date(cell.bucket.t * 1000);
+    const end = new Date((cell.bucket.t + 4 * 3600) * 1000);
+    const label = `${String(start.getDate()).padStart(2, "0")}.${String(start.getMonth() + 1).padStart(2, "0")} ${clock(start)}-${clock(end)}`;
+    const who = (cell.bucket.holders || []).join(", ");
+    this.readout.textContent = cell.bucket.busy > 0
+      ? `${label} · gpu ${cell.gpu.index} · busy ${Math.round(100 * cell.bucket.busy)}% · you ${Math.round(100 * cell.bucket.mine)}% · others ${Math.round(100 * cell.bucket.others)}%${who ? ` · ${who}` : ""}`
+      : `${label} · gpu ${cell.gpu.index} · idle`;
+  }
+
+  _blur() {
+    if (this.readout) this.readout.textContent = this.idle;
+  }
+}
+
+class HostHistoryPanel {
+  static COLORS = { cpu: "111, 155, 255", ram: "45, 212, 191", rx: "167, 139, 250", tx: "251, 191, 36" };
+
+  constructor() {
+    this.state = null;
+  }
+
+  render(state) {
+    this.state = state;
+    this.draw();
+  }
+
+  draw() {
+    const state = this.state;
+    const cpuCv = document.getElementById("sb-hh-cpu");
+    const netCv = document.getElementById("sb-hh-net");
+    if (!state || !cpuCv || !netCv) return;
+
+    const host = state.host || [];
+    this._chart(cpuCv, state, host, [
+      { key: "cpu", color: HostHistoryPanel.COLORS.cpu },
+      { key: "ram", color: HostHistoryPanel.COLORS.ram },
+    ], 100, "%");
+
+    const netMax = Math.max(0.5, ...host.map((s) => Math.max(s.rx || 0, s.tx || 0)));
+    this._chart(netCv, state, host, [
+      { key: "rx", color: HostHistoryPanel.COLORS.rx },
+      { key: "tx", color: HostHistoryPanel.COLORS.tx },
+    ], netMax, " MB/s");
+  }
+
+  _ticks(state, plotW) {
+    const start = state.now - state.window_s;
+    const ticks = [];
+
+    if (state.window_s > 86400) {
+      const cursor = new Date(start * 1000);
+      cursor.setHours(24, 0, 0, 0);
+      const days = [];
+      while (cursor.getTime() / 1000 <= state.now) {
+        days.push(cursor.getTime() / 1000);
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      const every = Math.max(1, Math.ceil((days.length * 42) / Math.max(1, plotW)));
+      days.forEach((t, i) => {
+        const date = new Date(t * 1000);
+        ticks.push({ t, label: i % every === 0 ? `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}` : null });
+      });
+    } else {
+      const step = state.window_s > 7200 ? 3 * 3600 : 900;
+      for (let t = Math.ceil(start / step) * step; t <= state.now; t += step) {
+        const date = new Date(t * 1000);
+        ticks.push({ t, label: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}` });
+      }
+    }
+    return ticks;
+  }
+
+  _chart(cv, state, samples, series, yMax, unit) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr);
+      cv.height = Math.round(h * dpr);
+    }
+
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(6, 10, 14, 0.55)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+    const axisH = 13;
+    const plotH = h - axisH;
+    const start = state.now - state.window_s;
+    const px = (t) => ((t - start) / state.window_s) * (w - 4) + 2;
+    const py = (v) => plotH - 2 - Math.min(1, Math.max(0, v / yMax)) * (plotH - 6);
+
+    ctx.font = "8.5px ui-monospace, SFMono-Regular, monospace";
+    ctx.textBaseline = "top";
+    this._ticks(state, w).forEach(({ t, label }) => {
+      const x = Math.round(px(t)) + 0.5;
+      ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
+      ctx.beginPath();
+      ctx.moveTo(x, 2);
+      ctx.lineTo(x, plotH - 2);
+      ctx.stroke();
+      if (!label) return;
+      ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
+      ctx.textAlign = x > w - 24 ? "right" : "center";
+      ctx.fillText(label, Math.min(x, w - 1), plotH + 2);
+    });
+
+    ctx.setLineDash([1, 4]);
+    ctx.strokeStyle = "rgba(220, 235, 245, 0.14)";
+    [0.5].forEach((f) => {
+      const y = Math.round(py(yMax * f)) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(2, y);
+      ctx.lineTo(w - 2, y);
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
+    ctx.textAlign = "left";
+    ctx.fillText(`${yMax >= 10 ? Math.round(yMax) : yMax.toFixed(1)}${unit}`, 4, 3);
+
+    if (samples.length < 2) return;
+
+    series.forEach((s) => {
+      ctx.beginPath();
+      samples.forEach((sample, i) => {
+        const x = px(sample.t);
+        const y = py(sample[s.key] || 0);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = `rgba(${s.color}, 0.9)`;
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+    });
+  }
+}
+
 class StatusBoard {
-  static POLL_MS    = 1000;
-  static AWAY_EVERY = 10;
+  static POLL_MS      = 1000;
+  static AWAY_EVERY   = 10;
+  static SHRINK_TICKS = 10;
 
   constructor(els) {
     this.els = els;
     this.built = false;
     this.gpuEls = [];
     this.coreEls = [];
+    this.cpuDial = null;
+    this.ramTank = null;
+    this.swapTank = null;
+    this.impactMeters = null;
     this.histMax = 144;
     this.gpuCount = 0;
+    this.shrunkTicks = 0;
     this.ticks = 0;
+    this.usersTable = new UsersTable();
+    this.processTable = new ProcessTable();
+    this.jobsList = new JobsList();
+    this.activity = null;
+    this._activityState = null;
+    this._activityRange = "day";
+    this.hostPanel = new HostHistoryPanel();
+    this._hhRange = "day";
+    this._hostHour = null;
+    this.heatmap = null;
   }
 
   start() {
@@ -162,6 +893,21 @@ class StatusBoard {
     setInterval(() => { if (this._showing()) this._pollJobs(); }, 5000);
     this._pollGuardHistory();
     setInterval(() => { if (this._showing()) this._pollGuardHistory(); }, 20000);
+    this._pollActivity();
+    setInterval(() => { if (this._showing()) this._pollActivity(); }, 60000);
+    this._pollServerLog();
+    setInterval(() => { if (this._showing()) this._pollServerLog(); }, 5000);
+    this._pollHostHistory();
+    setInterval(() => { if (this._showing()) this._pollHostHistory(); }, 60000);
+    this._pollHostHour();
+    setInterval(() => { if (this._showing()) this._pollHostHour(); }, 30000);
+    this._pollHeatmap();
+    setInterval(() => { if (this._showing()) this._pollHeatmap(); }, 300000);
+    window.addEventListener("resize", () => {
+      if (this.activity) this.activity.draw();
+      if (this.heatmap) this.heatmap.draw();
+      this.hostPanel.draw();
+    });
   }
 
   _tick() {
@@ -177,14 +923,49 @@ class StatusBoard {
 
   async _pollGuardHistory() {
     if (this._serverDown) return;
-    let data;
-    try {
-      data = await window.apiGet("/api/gpu-guard/history?limit=100");
-    } catch (e) {
-      return;
-    }
-    this._guardHistory = data || {};
+    const data = await Api.get("/api/gpu-guard/history?limit=100");
+    if (data.error) return;
+
+    this._guardHistory = data;
     this._renderGuardPanel();
+    if (this.activity) this.activity.setMarkers(data.records || []);
+  }
+
+  async _pollActivity() {
+    if (this._serverDown) return;
+    const range = this._activityRange;
+    const data = await Api.get(`/api/gpu-activity?range=${range}`);
+    if (data.error || range !== this._activityRange) return;
+
+    this._activityState = data;
+    this._renderActivity();
+  }
+
+  _renderActivity() {
+    const state = this._activityState;
+    if (!this.activity || !state) return;
+
+    const gpus = state.gpus || [];
+    const blocks = state.bucket_s >= 3600 ? `${Math.round(state.bucket_s / 3600)} h blocks` : `${Math.round(state.bucket_s / 60)} min blocks`;
+    this._txt("sb-act-n", `${gpus.length} device${gpus.length === 1 ? "" : "s"} &middot; ${blocks}`);
+    this.activity.render(state);
+  }
+
+  _wireActivityRanges() {
+    const wrap = document.getElementById("sb-act-ranges");
+    if (!wrap) return;
+
+    const buttons = [...wrap.querySelectorAll("button[data-range]")];
+    buttons.forEach((button) => {
+      button.classList.toggle("is-on", button.dataset.range === this._activityRange);
+      button.addEventListener("click", () => {
+        if (this._activityRange === button.dataset.range) return;
+
+        this._activityRange = button.dataset.range;
+        buttons.forEach((other) => other.classList.toggle("is-on", other === button));
+        this._pollActivity();
+      });
+    });
   }
 
   async _poll() {
@@ -194,28 +975,133 @@ class StatusBoard {
 
     let sys;
     try {
-      sys = await window.apiGet("/api/system");
+      sys = await Api.get("/api/system");
     } finally {
       this._polling = false;
     }
 
     if (!sys || sys.error) return;
-    if (!this.built || (sys.gpus || []).length > this.gpuCount) this._build(sys);
+    if (this._needsRebuild((sys.gpus || []).length)) this._build(sys);
     this._update(sys);
+  }
+
+  _needsRebuild(gpus) {
+    if (!this.built || gpus > this.gpuCount) {
+      this.shrunkTicks = 0;
+      return true;
+    }
+    if (gpus === this.gpuCount) {
+      this.shrunkTicks = 0;
+      return false;
+    }
+
+    this.shrunkTicks += 1;
+    if (this.shrunkTicks < StatusBoard.SHRINK_TICKS) return false;
+
+    this.shrunkTicks = 0;
+    return true;
+  }
+
+  async _pollHeatmap() {
+    if (this._serverDown) return;
+    const data = await Api.get("/api/gpu-activity?range=month");
+    if (data.error) return;
+
+    this._heatState = data;
+    this._renderHeatmap();
+  }
+
+  _renderHeatmap() {
+    const state = this._heatState;
+    if (!this.heatmap || !state) return;
+
+    const gpus = (state.gpus || []).length;
+    this._txt("sb-heat-n", `${gpus} device${gpus === 1 ? "" : "s"} &middot; 4 h cells`);
+    this.heatmap.render(state);
+  }
+
+  async _pollHostHistory() {
+    if (this._serverDown) return;
+    const range = this._hhRange;
+    const data = await Api.get(`/api/host-history?range=${range}`);
+    if (data.error || range !== this._hhRange) return;
+
+    const points = (data.host || []).length;
+    this._txt("sb-hh-n", `${points} point${points === 1 ? "" : "s"}`);
+    this.hostPanel.render(data);
+  }
+
+  async _pollHostHour() {
+    if (this._serverDown) return;
+    const data = await Api.get("/api/host-history?range=hour");
+    if (data.error) return;
+
+    this._hostHour = {};
+    (data.gpus || []).forEach((g) => { this._hostHour[String(g.index)] = g.buckets || []; });
+  }
+
+  _wireHostRanges() {
+    const wrap = document.getElementById("sb-hh-ranges");
+    if (!wrap) return;
+
+    const buttons = [...wrap.querySelectorAll("button[data-range]")];
+    buttons.forEach((button) => {
+      button.classList.toggle("is-on", button.dataset.range === this._hhRange);
+      button.addEventListener("click", () => {
+        if (this._hhRange === button.dataset.range) return;
+
+        this._hhRange = button.dataset.range;
+        buttons.forEach((other) => other.classList.toggle("is-on", other === button));
+        this._pollHostHistory();
+      });
+    });
   }
 
   async _pollJobs() {
     if (this._serverDown) return;
-    let data;
-    try {
-      data = await window.apiGet("/api/jobs");
-    } catch (e) {
-      return;
-    }
-    this._updateJobs(data.jobs || []);
+    const data = await Api.get("/api/jobs");
+    if (data.error) return;
+
+    this.jobsList.render(data.jobs);
+  }
+
+  async _pollServerLog() {
+    if (this._serverDown) return;
+    const data = await Api.get("/api/server-log?limit=150");
+    if (data.error) return;
+
+    const box = document.getElementById("sb-srvlog");
+    if (!box) return;
+
+    const lines = data.lines || [];
+    this._txt("sb-srvlog-n", `${lines.length} recent lines`);
+
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.innerHTML = lines.length
+      ? lines.map((l) =>
+          `<div class="srvlog__line is-${SharedCharts.esc(String(l.level || "").toLowerCase())}">` +
+          `<span class="srvlog__time">${SharedCharts.esc(l.time)}</span>` +
+          `<span class="srvlog__lvl">${SharedCharts.esc(l.level)}</span>` +
+          `<span class="srvlog__msg">${SharedCharts.esc(l.message)}</span></div>`
+        ).join("")
+      : `<div class="sboard__empty">the server has logged nothing yet</div>`;
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  _disposeGauges() {
+    this.gpuEls.forEach((card) => [card.dialU, card.meterT, card.meterP, card.vseg].forEach((gauge) => gauge.dispose()));
+    [this.cpuDial, this.ramTank, this.swapTank].forEach((gauge) => { if (gauge) gauge.dispose(); });
+    Object.values(this.impactMeters || {}).forEach((meter) => meter.dispose());
+
+    this.gpuEls = [];
+    this.cpuDial = null;
+    this.ramTank = null;
+    this.swapTank = null;
+    this.impactMeters = null;
   }
 
   _build(sys) {
+    this._disposeGauges();
     this.built = true;
     const gpus = sys.gpus || [];
     const cores = (sys.cpu && sys.cpu.cores) || [];
@@ -224,7 +1110,7 @@ class StatusBoard {
     const gpuCards = gpus.length
       ? gpus.map((g, i) =>
           `<article class="gcard" data-gpu="${i}">` +
-          `<header class="gcard__head"><span class="gcard__idx">gpu ${g.index != null ? g.index : i}</span><span class="gcard__name">${this._esc(g.name || "unknown")}</span><span class="gcard__who"></span></header>` +
+          `<header class="gcard__head"><span class="gcard__idx">gpu ${g.index != null ? g.index : i}</span><span class="gcard__name">${SharedCharts.esc(g.name || "unknown")}</span><span class="gcard__who"></span></header>` +
           `<div class="gcard__cluster">` +
           `<canvas class="gdial gdial--big gdial--util"></canvas>` +
           `<canvas class="gcard__graph"></canvas>` +
@@ -233,11 +1119,12 @@ class StatusBoard {
           `<canvas class="gmeter gmeter--temp"></canvas>` +
           `<canvas class="gmeter gmeter--power"></canvas>` +
           `</div>` +
+          `<canvas class="gcard__health" title="last hour &middot; temperature (amber, &deg;C) and power (violet, % of limit)"></canvas>` +
           `<div class="gcard__vramrow"><span class="gcard__vlabel">vram</span><canvas class="gseg"></canvas><span class="gcard__vram">--</span></div>` +
           `<footer class="gcard__foot"><span class="gcard__temp">--</span><span class="gcard__power">--</span><span class="gcard__legend"><i class="lg lg--util"></i>util<i class="lg lg--vram"></i>vram</span></footer>` +
           `</article>`
         ).join("")
-      : `<div class="sboard__empty">no CUDA devices visible to the backend</div>`;
+      : `<div class="sboard__empty">${sys.gpus_known ? "no CUDA devices visible to the backend" : "nvidia-smi is not answering, GPU occupancy is unknown"}</div>`;
 
     const coreCells = cores.map((_, i) => `<i class="cpu__cell" data-core="${i}" title="core ${i}"></i>`).join("");
 
@@ -247,6 +1134,8 @@ class StatusBoard {
       [lim.load_ratio != null ? `${lim.load_ratio.toFixed(1)} / core` : "--", "load limit"],
       [lim.ram_warn != null ? `${Math.round(lim.ram_warn)}%` : "--", "ram warn"],
       [lim.ram_kill != null ? `${Math.round(lim.ram_kill)}%` : "--", "ram kill"],
+      [lim.mine_share != null ? `${Math.round(lim.mine_share * 100)}%` : "--", "own ram share"],
+      [lim.disk_warn != null ? `&lt;${Math.round(lim.disk_warn)}% free` : "--", "disk warn"],
       [lim.interval != null ? `${Math.round(lim.interval)} s` : "--", "interval"],
       [lim.cooldown != null ? `${Math.round(lim.cooldown)} s` : "--", "kill cooldown"],
     ].map(([v, k]) => `<div><dt>${v}</dt><dd>${k}</dd></div>`).join("");
@@ -258,6 +1147,9 @@ class StatusBoard {
 
       `<section class="sboard sboard--gpualarm" id="sb-gpu-guard" aria-label="GPU intrusion alarm" hidden></section>` +
 
+      `<div class="sboard__strips">` +
+      `<div class="strips__col">` +
+
       `<section class="sboard sboard--strip" aria-label="Resource watchdog">` +
       `<div class="strip__seg">` +
       `<i class="wd__light" id="sb-wd-light" aria-hidden="true"></i><span class="wd__label">watchdog</span><span class="wd__mode" id="sb-wd-mode">--</span></div>` +
@@ -266,7 +1158,7 @@ class StatusBoard {
       `<i class="strip__div" aria-hidden="true"></i>` +
       `<dl class="wd__limits">${limitCells}</dl>` +
       `<div class="strip__actions">` +
-      `<button type="button" class="impact__arm" id="sb-detach" title="Detach the backend from your terminal (retroactive nohup): RAM protection and all monitors survive SSH logout">keep-alive: --</button>` +
+      `<button type="button" class="impact__arm" id="sb-detach" title="Detach the backend from your terminal AND login session (retroactive nohup + own systemd scope with lingering): monitors and sequences survive SSH logout, session cleanup and stray SIGTERMs; only SIGKILL or the kill front end button stop it">keep-alive: --</button>` +
       `<button type="button" class="impact__arm" id="sb-impact-arm" title="When armed, auto-nukes all your processes if you slow other users too much">auto-nuke: --</button>` +
       `<button type="button" class="impact__arm" id="sb-kill-ui" title="Stop ONLY this web console's server process: running and detached jobs survive and are re-adopted on the next start, but queued launches, watchdogs and TensorBoard viewers die with it">kill front end</button>` +
       `<button type="button" class="wd__nuke" id="sb-nuke" title="Kill every process running under your user">` +
@@ -289,6 +1181,9 @@ class StatusBoard {
       `</div>` +
       `</section>` +
 
+      `</div>` +
+      `<div class="strips__col">` +
+
       `<section class="sboard sboard--strip sboard--sched" aria-label="GPU week schedule">` +
       `<div class="strip__seg">` +
       `<i class="wd__light" id="sb-sch-light" aria-hidden="true"></i><span class="wd__label">gpu week</span><span class="wd__mode" id="sb-sch-mode">--</span></div>` +
@@ -308,6 +1203,9 @@ class StatusBoard {
       `<button type="button" class="impact__arm" id="sb-sch-toggle" title="Toggle the automatic weekday/night/weekend GPU switch">schedule: --</button>` +
       `</div>` +
       `</section>` +
+
+      `</div>` +
+      `</div>` +
 
       `<section class="sboard sboard--gpus" aria-label="CUDA devices">` +
       `<div class="sboard__gputop">` +
@@ -335,24 +1233,36 @@ class StatusBoard {
       `</div>` +
       `</section>` +
 
-      `<section class="sboard sboard--mem" aria-label="Memory">` +
+      `<section class="sboard sboard--sysres" aria-label="Memory and storage">` +
       `<header class="sboard__cap"><span>memory</span><span class="sboard__n" id="sb-mem-total"></span></header>` +
       `<div class="mem__tanks">` +
       `<div class="mem__tank"><canvas class="gtank" id="sb-ram-tank"></canvas><span class="mem__tlabel">ram</span><span class="mem__tval" id="sb-ram-txt">--</span></div>` +
       `<div class="mem__tank"><canvas class="gtank" id="sb-swap-tank"></canvas><span class="mem__tlabel">swap</span><span class="mem__tval" id="sb-swap-txt">--</span></div>` +
       `</div>` +
       `<canvas class="sboard__graph sboard__graph--mem" id="sb-mem-graph"></canvas>` +
-      `</section>` +
-
-      `<section class="sboard sboard--disk" aria-label="Storage">` +
-      `<header class="sboard__cap"><span>storage</span><span class="sboard__n" id="sb-disk-total"></span></header>` +
+      `<div class="sysres__rule"><span>storage</span><span class="sboard__n" id="sb-disk-total"></span></div>` +
       `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-path"></span><span id="sb-disk-txt">--</span></div>` +
       `<div class="bar"><i class="bar__fill" id="sb-disk-bar"></i></div>` +
       `<div class="sboard__metric"><span>free &middot; all users</span><span id="sb-disk-free">--</span></div>` +
-      `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-user-path">${this._esc(sys.user || "user")} &middot; total</span><span id="sb-disk-user">--</span></div>` +
+      `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-user-path">${SharedCharts.esc(sys.user || "user")} &middot; total</span><span id="sb-disk-user">--</span></div>` +
       `<div class="bar"><i class="bar__fill bar__fill--user" id="sb-disk-user-bar"></i></div>` +
       `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-repo-path">repo root</span><span id="sb-disk-repo">--</span></div>` +
       `<div class="bar"><i class="bar__fill bar__fill--repo" id="sb-disk-repo-bar"></i></div>` +
+      `</section>` +
+
+      `<section class="sboard sboard--gpuhist" aria-label="GPU activity timeline">` +
+      `<header class="sboard__cap"><span>gpu activity</span>` +
+      `<span class="gpuhist__ranges" id="sb-act-ranges" role="group" aria-label="Activity window">` +
+      `<button type="button" class="gpuhist__range" data-range="day">day</button>` +
+      `<button type="button" class="gpuhist__range" data-range="week">week</button>` +
+      `<button type="button" class="gpuhist__range" data-range="month">month</button>` +
+      `</span>` +
+      `<span class="sboard__n" id="sb-act-n">--</span></header>` +
+      `<canvas class="gpuhist__canvas" id="sb-act-graph"></canvas>` +
+      `<div class="gpuhist__foot">` +
+      `<span class="gpuhist__legend"><i class="lg lg--mine"></i>you<i class="lg lg--others"></i>others<i class="lg lg--idle"></i>idle</span>` +
+      `<span class="gpuhist__read" id="sb-act-read">hover a block</span>` +
+      `</div>` +
       `</section>` +
 
       `<section class="sboard sboard--impact" aria-label="Neighbour impact">` +
@@ -371,33 +1281,46 @@ class StatusBoard {
       `</dl>` +
       `</section>` +
 
+      `<section class="sboard sboard--hosthist" aria-label="Host history">` +
+      `<header class="sboard__cap"><span>host history</span>` +
+      `<span class="gpuhist__ranges" id="sb-hh-ranges" role="group" aria-label="History window">` +
+      `<button type="button" class="gpuhist__range" data-range="hour">hour</button>` +
+      `<button type="button" class="gpuhist__range" data-range="day">day</button>` +
+      `<button type="button" class="gpuhist__range" data-range="week">week</button>` +
+      `<button type="button" class="gpuhist__range" data-range="month">month</button>` +
+      `</span>` +
+      `<span class="sboard__n" id="sb-hh-n">--</span></header>` +
+      `<div class="hosthist__grid">` +
+      `<div class="hosthist__cell"><span class="hosthist__cap"><i class="lg lg--util"></i>cpu %<i class="lg lg--vram"></i>ram %</span><canvas class="hosthist__canvas" id="sb-hh-cpu"></canvas></div>` +
+      `<div class="hosthist__cell"><span class="hosthist__cap"><i class="lg lg--rx"></i>net in<i class="lg lg--tx"></i>net out</span><canvas class="hosthist__canvas" id="sb-hh-net"></canvas></div>` +
+      `</div>` +
+      `</section>` +
+
+      `<section class="sboard sboard--heatcal" aria-label="GPU month heatmap">` +
+      `<header class="sboard__cap"><span>gpu heatmap &middot; 30 days</span><span class="sboard__n" id="sb-heat-n">--</span></header>` +
+      `<canvas class="heatcal__canvas" id="sb-heat-graph"></canvas>` +
+      `<div class="gpuhist__foot">` +
+      `<span class="gpuhist__legend"><i class="lg lg--mine"></i>you<i class="lg lg--others"></i>others<i class="lg lg--idle"></i>idle</span>` +
+      `<span class="gpuhist__read" id="sb-heat-read">hover a cell &middot; rows are 4 h slots, columns are days</span>` +
+      `</div>` +
+      `</section>` +
+
       `<section class="sboard sboard--impactlog" id="sb-impact-log" aria-label="Neighbour impact alarms" hidden></section>` +
 
-      `<section class="sboard sboard--users" aria-label="Active users">` +
-      `<header class="sboard__cap"><span>active users</span><span class="sboard__n" id="sb-users-n">--</span></header>` +
-      `<div class="utable">` +
-      `<div class="utable__row utable__row--head"><span>user</span><span title="summed over all the user's processes; 100% = one full core">cpu%</span><span title="memory attributed to the user: proportional set size for your own processes, private resident for other users, so shared pages are not double-counted">ram</span><span title="share of used RAM (total minus available), same base as the neighbour impact panel">ram%</span><span class="utable__gpu" title="GPU memory the user has allocated across all CUDA devices">gpu mem</span><span title="CUDA devices the user holds memory on">gpus</span><span title="processes owned by the user">procs</span><span title="open login sessions">ssh</span></div>` +
-      `<div class="utable__body" id="sb-users"></div>` +
-      `</div>` +
-      `</section>` +
+      this.usersTable.markup() +
+      this.processTable.markup(sys.user) +
+      this.jobsList.markup() +
 
-      `<section class="sboard sboard--procs" aria-label="Processes">` +
-      `<header class="sboard__cap"><span>processes &middot; ${this._esc(sys.user || "user")}</span><span class="sboard__n" id="sb-proc-n"></span></header>` +
-      `<div class="ptable">` +
-      `<div class="ptable__row ptable__row--head"><span>pid</span><span>cpu%</span><span title="proportional set size: shared pages split across the processes mapping them, so these rows sum to real memory use (unlike RSS, which double-counts shared pages)">mem</span><span class="ptable__gpu">gpu</span><span title="threads currently open in the process">thr</span><span>s</span><span>command</span></div>` +
-      `<div class="ptable__body" id="sb-procs"></div>` +
-      `</div>` +
-      `</section>` +
+      `<section class="sboard sboard--gpuguard" id="sb-gpu-guard-panel" aria-label="GPU guard"></section>` +
 
-      `<section class="sboard sboard--jobs" aria-label="Jobs">` +
-      `<header class="sboard__cap"><span>jobs</span><span class="sboard__n" id="sb-jobs-n">0</span></header>` +
-      `<ul class="sboard__jobs" id="sb-jobs"><li class="sboard__empty">no runs yet</li></ul>` +
-      `</section>` +
-
-      `<section class="sboard sboard--gpuguard" id="sb-gpu-guard-panel" aria-label="GPU guard"></section>`;
+      `<section class="sboard sboard--srvlog" aria-label="Server internals">` +
+      `<header class="sboard__cap"><span>server internals</span><span class="sboard__n" id="sb-srvlog-n">--</span></header>` +
+      `<div class="srvlog" id="sb-srvlog"><div class="sboard__empty">reading the server log&hellip;</div></div>` +
+      `</section>`;
 
     this.gpuEls = [...this.els.board.querySelectorAll(".gcard")].map((card, i) => ({
       vramTxt: card.querySelector(".gcard__vram"),
+      health: card.querySelector(".gcard__health"),
       temp: card.querySelector(".gcard__temp"),
       who: card.querySelector(".gcard__who"),
       power: card.querySelector(".gcard__power"),
@@ -418,11 +1341,21 @@ class StatusBoard {
       cpu: new window.LinearMeter(document.getElementById("sb-impact-cpu-meter"), { label: "CPU STALL %", color: "111, 155, 255", zones: [{ from: 40, to: 70, color: "251, 191, 36" }, { from: 70, to: 100, color: "248, 113, 113" }] }),
     };
     this.coreEls = [...this.els.board.querySelectorAll(".cpu__cell")];
+    this.activity = new GpuActivityTimeline(document.getElementById("sb-act-graph"), document.getElementById("sb-act-read"));
+    if (this._guardHistory) this.activity.setMarkers(this._guardHistory.records || []);
+    this._wireActivityRanges();
+    this._renderActivity();
+    this._wireHostRanges();
+    this.hostPanel.draw();
+    this.heatmap = new GpuHeatmapCalendar(document.getElementById("sb-heat-graph"), document.getElementById("sb-heat-read"));
+    this._renderHeatmap();
+    this._pollServerLog();
 
     this._wireNuke();
     this._wireImpactArm();
     this._wireDetach();
     this._wireKillUi();
+    this._ntfSeeded = false;
     this._wireNotify();
 
     this.schedule = new GpuWeekPanel();
@@ -444,14 +1377,14 @@ class StatusBoard {
       btn.disabled = true;
       btn.classList.add("is-firing");
       try {
-        const res = await window.apiPost("/api/system/nuke");
+        const res = await Api.post("/api/system/nuke");
         if (res && res.ok) {
-          window.toast(`nuke: terminated ${res.signalled}, force-killed ${res.killed}`, "ok");
+          Toast.show(`nuke: terminated ${res.signalled}, force-killed ${res.killed}`, "ok");
         } else {
-          window.toast(`nuke failed: ${(res && res.error) || "unknown error"}`, "error");
+          Toast.show(`nuke failed: ${(res && res.error) || "unknown error"}`, "error");
         }
       } catch (e) {
-        window.toast("nuke failed: network error", "error");
+        Toast.show("nuke failed: network error", "error");
       } finally {
         btn.disabled = false;
         btn.classList.remove("is-firing");
@@ -466,16 +1399,17 @@ class StatusBoard {
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       try {
-        const res = await window.apiPost("/api/system/detach");
+        const res = await Api.post("/api/system/detach");
         if (res && res.ok) {
-          window.toast(`backend detached from the terminal (pid ${res.pid}) — protection survives SSH logout, log: ${res.log_path}`, "ok");
-          this._renderDetach({ detached: true, pid: res.pid, log_path: res.log_path });
+          if (res.shield_error) Toast.show(`backend detached (pid ${res.pid}) but the session shield is incomplete: ${res.shield_error}`, "warn");
+          else Toast.show(`backend detached and shielded in ${res.scope} (pid ${res.pid}) — survives logout, session cleanup and SIGTERM, log: ${res.log_path}`, "ok");
+          this._renderDetach(res);
         } else {
-          window.toast(`detach failed: ${(res && res.error) || "unknown error"}`, "error");
+          Toast.show(`detach failed: ${(res && res.error) || "unknown error"}`, "error");
           btn.disabled = false;
         }
       } catch (e) {
-        window.toast("detach failed: network error", "error");
+        Toast.show("detach failed: network error", "error");
         btn.disabled = false;
       }
     });
@@ -484,10 +1418,13 @@ class StatusBoard {
   _renderDetach(srv) {
     const btn = document.getElementById("sb-detach");
     if (!btn || !srv) return;
-    btn.textContent = srv.detached ? "keep-alive: ON" : "keep-alive: off";
-    btn.classList.toggle("is-safe", !!srv.detached);
+    const partial = srv.detached && srv.shield_error;
+    btn.textContent = srv.detached ? (partial ? "keep-alive: PARTIAL" : "keep-alive: ON") : "keep-alive: off";
+    btn.classList.toggle("is-safe", !!srv.detached && !partial);
+    btn.classList.toggle("is-warn", !!partial);
     btn.disabled = !!srv.detached;
-    if (srv.detached) btn.title = `backend detached (pid ${srv.pid}) — output continues in ${srv.log_path}`;
+    if (partial) btn.title = `backend detached (pid ${srv.pid}) but the session shield is incomplete: ${srv.shield_error} — output continues in ${srv.log_path}`;
+    else if (srv.detached) btn.title = `backend shielded in ${srv.scope} (pid ${srv.pid}) — survives logout, session cleanup and SIGTERM; output continues in ${srv.log_path}`;
   }
 
   _wireKillUi() {
@@ -500,18 +1437,18 @@ class StatusBoard {
 
       btn.disabled = true;
       try {
-        const res = await window.apiPost("/api/system/shutdown");
+        const res = await Api.post("/api/system/shutdown");
         if (res && res.ok) {
           this._serverDown = true;
           btn.textContent = "front end: down";
           btn.classList.add("is-armed");
-          window.toast(`front end stopped (pid ${res.pid}) — running jobs keep going; restart it from the terminal (webui/run.sh)`, "ok");
+          Toast.show(`front end stopped (pid ${res.pid}) — running jobs keep going; restart it from the terminal (webui/run.sh)`, "ok");
         } else {
-          window.toast(`shutdown failed: ${(res && res.error) || "unknown error"}`, "error");
+          Toast.show(`shutdown failed: ${(res && res.error) || "unknown error"}`, "error");
           btn.disabled = false;
         }
       } catch (e) {
-        window.toast("shutdown failed: network error", "error");
+        Toast.show("shutdown failed: network error", "error");
         btn.disabled = false;
       }
     });
@@ -531,13 +1468,13 @@ class StatusBoard {
         topic: topic ? topic.value.trim() : "",
         server: server ? server.value.trim() : "",
       };
-      const res = await window.apiPost("/api/notify/config", payload);
+      const res = await Api.post("/api/notify/config", payload);
       if (res && res.ok) {
         this._ntfSeeded = false;
         this._renderNotify(res);
-        window.toast(`notifications ${res.enabled ? "on" : "off"} — settings saved`, "ok");
+        Toast.show(`notifications ${res.enabled ? "on" : "off"} — settings saved`, "ok");
       } else {
-        window.toast(`notify settings rejected: ${(res && res.error) || "network error"}`, "error");
+        Toast.show(`notify settings rejected: ${(res && res.error) || "network error"}`, "error");
       }
     };
 
@@ -547,9 +1484,9 @@ class StatusBoard {
     test.addEventListener("click", async () => {
       test.disabled = true;
       try {
-        const res = await window.apiPost("/api/notify/test");
-        if (res && res.ok) window.toast("test notification sent — check your device", "ok");
-        else window.toast(`test failed: ${(res && res.error) || "network error"}`, "error");
+        const res = await Api.post("/api/notify/test");
+        if (res && res.ok) Toast.show("test notification sent — check your device", "ok");
+        else Toast.show(`test failed: ${(res && res.error) || "network error"}`, "error");
       } finally {
         test.disabled = false;
       }
@@ -595,13 +1532,13 @@ class StatusBoard {
       }
       btn.disabled = true;
       try {
-        const res = await window.apiPost("/api/impact/arm", { armed: arming });
+        const res = await Api.post("/api/impact/arm", { armed: arming });
         if (res && typeof res.auto_nuke === "boolean") {
           this._autoNuke = res.auto_nuke;
-          window.toast(`auto-nuke ${res.auto_nuke ? "armed" : "disarmed"}`, res.auto_nuke ? "warn" : "ok");
+          Toast.show(`auto-nuke ${res.auto_nuke ? "armed" : "disarmed"}`, res.auto_nuke ? "warn" : "ok");
         }
       } catch (e) {
-        window.toast("auto-nuke toggle failed: network error", "error");
+        Toast.show("auto-nuke toggle failed: network error", "error");
       } finally {
         btn.disabled = false;
       }
@@ -609,7 +1546,7 @@ class StatusBoard {
   }
 
   _update(sys) {
-    if (window.serverScene && window.serverScene.feed) window.serverScene.feed(sys);
+    window.serverScene.feed(sys);
     this._renderWatchdog(sys.alerts || {});
     this._renderAlerts(sys.alerts || {});
     this._renderImpact(sys.impact || {});
@@ -630,8 +1567,8 @@ class StatusBoard {
       const bits = [];
       if (sys.uptime) bits.push(`up ${this._uptime(sys.uptime)}`);
       if (cpu.count) bits.push(`${cpu.count} cores`);
-      bits.push(`${gpus.length} CUDA device${gpus.length === 1 ? "" : "s"}`);
-      if (mem.total) bits.push(`${this._tb(mem.total)} ram`);
+      bits.push(sys.gpus_known ? `${gpus.length} CUDA device${gpus.length === 1 ? "" : "s"}` : "CUDA devices unknown");
+      if (mem.total) bits.push(`${ByteFormat.tb(mem.total)} ram`);
       this.els.sum.textContent = bits.join(" · ");
     }
 
@@ -647,7 +1584,7 @@ class StatusBoard {
       if (g.power_limit) el.meterP.range(g.power_limit);
       el.meterP.set(g.power);
       el.vseg.set(memPct / 100);
-      el.vramTxt.innerHTML = `<b>${this._gb(g.mem_used * 1048576)}</b> / ${this._gb(g.mem_total * 1048576)} GB`;
+      el.vramTxt.innerHTML = `<b>${ByteFormat.gb(g.mem_used * 1048576)}</b> / ${ByteFormat.gb(g.mem_total * 1048576)} GB`;
       el.temp.textContent = g.temp != null ? `${Math.round(g.temp)}°C` : "--";
       el.temp.className = "gcard__temp" + (g.temp >= 85 ? " is-danger" : g.temp >= 70 ? " is-warn" : "");
 
@@ -667,6 +1604,14 @@ class StatusBoard {
         { data: h.mem, color: "45, 212, 191", fill: 0.08 },
         { data: h.util, color: "111, 155, 255", fill: 0.14 },
       ]);
+
+      const hh = (this._hostHour || {})[String(g.index != null ? g.index : i)] || [];
+      if (el.health && hh.length > 1) {
+        this._spark(el.health, [
+          { data: hh.map((b) => b.temp || 0), color: "251, 191, 36", fill: 0.05 },
+          { data: hh.map((b) => (g.power_limit ? (100 * (b.power || 0)) / g.power_limit : 0)), color: "167, 139, 250", fill: 0.05 },
+        ], 120);
+      }
     });
 
     if (this.cpuDial) this.cpuDial.set(cpu.total || 0);
@@ -697,35 +1642,35 @@ class StatusBoard {
     if (mem.total) {
       const used = mem.total - mem.available;
       this.ramTank.set(used / mem.total);
-      this._txt("sb-ram-txt", `<b>${this._gb(used)}</b> / ${this._gb(mem.total)} GB`);
-      this._txt("sb-mem-total", `${this._tb(mem.total)}`);
+      this._txt("sb-ram-txt", `<b>${ByteFormat.gb(used)}</b> / ${ByteFormat.gb(mem.total)} GB`);
+      this._txt("sb-mem-total", `${ByteFormat.tb(mem.total)}`);
       const swapUsed = (mem.swap_total || 0) - (mem.swap_free || 0);
       this.swapTank.set(mem.swap_total ? swapUsed / mem.swap_total : 0);
-      this._txt("sb-swap-txt", mem.swap_total ? `<b>${this._gb(swapUsed)}</b> / ${this._gb(mem.swap_total)} GB` : "none");
+      this._txt("sb-swap-txt", mem.swap_total ? `<b>${ByteFormat.gb(swapUsed)}</b> / ${ByteFormat.gb(mem.swap_total)} GB` : "none");
       this._spark(document.getElementById("sb-mem-graph"), [{ data: hist.ram || [], color: "45, 212, 191", fill: 0.10 }]);
     }
 
     if (disk.total) {
       this._bar("sb-disk-bar", (100 * disk.used) / disk.total);
-      this._txt("sb-disk-txt", `<b>${this._tb(disk.used)}</b> / ${this._tb(disk.total)}`);
-      this._txt("sb-disk-total", this._tb(disk.total));
-      this._txt("sb-disk-free", `<b>${this._tb(disk.free)}</b>`);
+      this._txt("sb-disk-txt", `<b>${ByteFormat.tb(disk.used)}</b> / ${ByteFormat.tb(disk.total)}`);
+      this._txt("sb-disk-total", ByteFormat.tb(disk.total));
+      this._txt("sb-disk-free", `<b>${ByteFormat.tb(disk.free)}</b>`);
       const path = document.getElementById("sb-disk-path");
       if (path) path.textContent = disk.path || "";
 
       const userPath = document.getElementById("sb-disk-user-path");
       if (userPath && disk.user_path) userPath.title = disk.user_path;
-      this._txt("sb-disk-user", disk.user_used != null ? `<b>${this._tb(disk.user_used)}</b>` : "scanning&hellip;");
+      this._txt("sb-disk-user", disk.user_used != null ? `<b>${ByteFormat.tb(disk.user_used)}</b>` : "scanning&hellip;");
       this._bar("sb-disk-user-bar", disk.user_used ? (100 * disk.user_used) / disk.total : 0);
 
       const repoPath = document.getElementById("sb-disk-repo-path");
       if (repoPath && disk.repo_path) repoPath.title = disk.repo_path;
-      this._txt("sb-disk-repo", disk.repo_used != null ? `<b>${this._tb(disk.repo_used)}</b>` : "scanning&hellip;");
+      this._txt("sb-disk-repo", disk.repo_used != null ? `<b>${ByteFormat.tb(disk.repo_used)}</b>` : "scanning&hellip;");
       this._bar("sb-disk-repo-bar", disk.repo_used ? (100 * disk.repo_used) / disk.total : 0);
     }
 
-    this._renderUsers(sys.users || []);
-    this._renderProcs(sys.procs || []);
+    this.usersTable.render(sys.users || []);
+    this.processTable.render(sys.procs || []);
   }
 
   _renderWatchdog(alerts) {
@@ -757,10 +1702,10 @@ class StatusBoard {
     }
 
     const chips = active.map((a) =>
-      `<span class="alert alert--${a.level === "danger" ? "danger" : "warn"}">${this._esc(a.message)}</span>`
+      `<span class="alert alert--${a.level === "danger" ? "danger" : "warn"}">${SharedCharts.esc(a.message)}</span>`
     ).join("");
     const log = events.map((e) =>
-      `<span class="alert alert--event"><b>${this._esc(e.time.replace("T", " "))}</b> ${this._esc(e.message)}</span>`
+      `<span class="alert alert--event"><b>${SharedCharts.esc(e.time.replace("T", " "))}</b> ${SharedCharts.esc(e.message)}</span>`
     ).join("");
 
     box.hidden = false;
@@ -810,7 +1755,7 @@ class StatusBoard {
     const top = sig.top;
     const topEl = document.getElementById("sb-impact-top");
     if (topEl) {
-      topEl.innerHTML = top ? `<b>${this._esc(top.user)}</b> &middot; ${(top.mem_gb || 0).toFixed(1)}G` : "--";
+      topEl.innerHTML = top ? `<b>${SharedCharts.esc(top.user)}</b> &middot; ${(top.mem_gb || 0).toFixed(1)}G` : "--";
       topEl.classList.toggle("is-other", !!(top && !top.is_mine));
     }
 
@@ -839,13 +1784,13 @@ class StatusBoard {
     if (logBox) {
       const cards = active.map((a) =>
         `<div class="impact__alarm impact__alarm--${a.level === "danger" ? "danger" : "warn"}${a.mine ? " is-mine" : ""}">` +
-        `<span class="impact__alarm-tag">${a.mine ? "you" : "others"} &middot; ${this._esc(a.kind)}</span>` +
-        `<span class="impact__alarm-msg">${this._esc(a.message)}</span></div>`
+        `<span class="impact__alarm-tag">${a.mine ? "you" : "others"} &middot; ${SharedCharts.esc(a.kind)}</span>` +
+        `<span class="impact__alarm-msg">${SharedCharts.esc(a.message)}</span></div>`
       ).join("");
       const events = (impact.events || []).slice(-3).reverse().map((e) =>
         `<div class="impact__alarm impact__alarm--${e.kind === "auto_nuke" ? "danger" : "warn"} is-event">` +
-        `<span class="impact__alarm-tag">${this._esc(e.time.replace("T", " "))} &middot; ${this._esc(e.kind)}</span>` +
-        `<span class="impact__alarm-msg">${this._esc(e.message)}</span></div>`
+        `<span class="impact__alarm-tag">${SharedCharts.esc(e.time.replace("T", " "))} &middot; ${SharedCharts.esc(e.kind)}</span>` +
+        `<span class="impact__alarm-msg">${SharedCharts.esc(e.message)}</span></div>`
       ).join("");
       const content = cards + events;
       logBox.hidden = !content;
@@ -863,7 +1808,7 @@ class StatusBoard {
         banner.innerHTML =
           `<span class="impactbanner__sym" aria-hidden="true">&#9888;</span>` +
           `<div class="impactbanner__body"><span class="impactbanner__head">you are slowing other users</span>` +
-          mine.map((a) => `<span class="impactbanner__line">${this._esc(a.message)}</span>`).join("") +
+          mine.map((a) => `<span class="impactbanner__line">${SharedCharts.esc(a.message)}</span>`).join("") +
           `</div>`;
         if (!this._impactWasFiring) { this._impactWasFiring = true; this._alarm(worst === "danger"); }
       } else {
@@ -905,7 +1850,7 @@ class StatusBoard {
     const context = gpus.length
       ? `<div class="alarm__sect"><span class="alarm__sect-cap">contested devices</span>` +
         `<div class="gpuctx">` + gpus.map((g) => {
-          const who = g.free ? "free" : (g.holders || []).map((h) => this._esc(h.user)).join(", ");
+          const who = g.free ? "free" : (g.holders || []).map((h) => SharedCharts.esc(h.user)).join(", ");
           const kind = g.free ? "is-free" : g.others ? (g.mine ? "is-clash" : "is-others") : "is-mine";
           return `<span class="gpuctx__cell ${kind}" title="gpu ${g.index} &middot; ${Math.round(g.util || 0)}% util">gpu ${g.index} &middot; ${who}</span>`;
         }).join("") + `</div></div>`
@@ -913,13 +1858,13 @@ class StatusBoard {
 
     const cards = active.map((a) => {
       if (a.status === "critical") {
-        const dead = this._esc((a.dead_pids || a.mine_pids || []).join(", "));
+        const dead = SharedCharts.esc((a.dead_pids || a.mine_pids || []).join(", "));
         return (
           `<div class="aint aint--critical">` +
           `<span class="aint__sev">&#9760; critical</span>` +
           `<div class="aint__main">` +
-          `<span class="aint__head">gpu ${a.gpu_index}<i>${this._esc(a.gpu_name || "")}</i></span>` +
-          `<span class="aint__detail">your pid(s) <b>${dead}</b> died after <b>${this._esc(a.user)}</b> (pid ${a.pid}) invaded</span>` +
+          `<span class="aint__head">gpu ${a.gpu_index}<i>${SharedCharts.esc(a.gpu_name || "")}</i></span>` +
+          `<span class="aint__detail">your pid(s) <b>${dead}</b> died after <b>${SharedCharts.esc(a.user)}</b> (pid ${a.pid}) invaded</span>` +
           `</div></div>`
         );
       }
@@ -927,8 +1872,8 @@ class StatusBoard {
         `<div class="aint aint--danger">` +
         `<span class="aint__sev">intrusion</span>` +
         `<div class="aint__main">` +
-        `<span class="aint__head">gpu ${a.gpu_index}<i>${this._esc(a.gpu_name || "")}</i></span>` +
-        `<span class="aint__detail">intruder <b>${this._esc(a.user)}</b> &middot; pid ${a.pid} &middot; ${Math.round(a.mem_mib)} MiB &middot; clashes with your pids ${this._esc((a.mine_pids || []).join(", "))}</span>` +
+        `<span class="aint__head">gpu ${a.gpu_index}<i>${SharedCharts.esc(a.gpu_name || "")}</i></span>` +
+        `<span class="aint__detail">intruder <b>${SharedCharts.esc(a.user)}</b> &middot; pid ${a.pid} &middot; ${Math.round(a.mem_mib)} MiB &middot; clashes with your pids ${SharedCharts.esc((a.mine_pids || []).join(", "))}</span>` +
         `</div></div>`
       );
     }).join("");
@@ -939,7 +1884,7 @@ class StatusBoard {
     const log = events.map((e) => {
       const stamp = (e.critical_at || e.since || "").replace("T", " ");
       const tag = e.status === "critical" ? `<b class="alert__crit">killed</b>` : `<b>seen</b>`;
-      return `<span class="alarm__evt">${tag}<span class="alarm__evt-time">${this._esc(stamp)}</span><span>${this._esc(e.user)} &middot; gpu ${e.gpu_index} &middot; pid ${e.pid}</span></span>`;
+      return `<span class="alarm__evt">${tag}<span class="alarm__evt-time">${SharedCharts.esc(stamp)}</span><span>${SharedCharts.esc(e.user)} &middot; gpu ${e.gpu_index} &middot; pid ${e.pid}</span></span>`;
     }).join("");
     const logSect = log
       ? `<div class="alarm__sect"><span class="alarm__sect-cap">recent events</span><div class="alarm__log">${log}</div></div>`
@@ -983,15 +1928,15 @@ class StatusBoard {
           const intr = r.intruder || {};
           const gpu = r.gpu || {};
           const label = kind === "critical" ? "process killed" : "intrusion";
-          const extra = kind === "critical" && r.dead_pids ? ` (your pid ${this._esc(r.dead_pids.join(", "))} died)` : "";
+          const extra = kind === "critical" && r.dead_pids ? ` (your pid ${SharedCharts.esc(r.dead_pids.join(", "))} died)` : "";
           return (
-            `<div class="ghist__row is-${kind}" title="${this._esc(this._guardCtx(r.all_gpus))}">` +
-            `<span class="ghist__time">${this._esc(stamp)}</span>` +
+            `<div class="ghist__row is-${kind}" title="${SharedCharts.esc(this._guardCtx(r.all_gpus))}">` +
+            `<span class="ghist__time">${SharedCharts.esc(stamp)}</span>` +
             `<span class="ghist__kind">${label}</span>` +
-            `<span class="ghist__user">${this._esc(intr.user || "?")}</span>` +
+            `<span class="ghist__user">${SharedCharts.esc(intr.user || "?")}</span>` +
             `<span class="ghist__gpu">gpu ${gpu.index != null ? gpu.index : "?"}</span>` +
             `<span class="ghist__mem">${intr.mem_mib != null ? Math.round(intr.mem_mib) + " MiB" : "--"}</span>` +
-            `<span class="ghist__cmd" title="${this._esc(intr.cmd || "")}">${this._esc(intr.cmd || "")}${extra}</span>` +
+            `<span class="ghist__cmd" title="${SharedCharts.esc(intr.cmd || "")}">${SharedCharts.esc(intr.cmd || "")}${extra}</span>` +
             `</div>`
           );
         }).join("")
@@ -1000,7 +1945,7 @@ class StatusBoard {
     panel.innerHTML =
       `<header class="sboard__cap"><span>gpu guard</span>` +
       `<span class="ggd__status ${statusCls}"><i class="ggd__light"></i>${statusTxt}</span></header>` +
-      `<div class="ghist__meta"><span>${total} infraction${total === 1 ? "" : "s"} on record</span><span class="ghist__path" title="${this._esc(h.log_path || "")}">${this._esc(h.log_path || "")}</span></div>` +
+      `<div class="ghist__meta"><span>${total} infraction${total === 1 ? "" : "s"} on record</span><span class="ghist__path" title="${SharedCharts.esc(h.log_path || "")}">${SharedCharts.esc(h.log_path || "")}</span></div>` +
       `<div class="ghist"><div class="ghist__row ghist__row--head"><span>time</span><span>event</span><span>user</span><span>gpu</span><span>mem</span><span>command</span></div><div class="ghist__body">${rows}</div></div>`;
   }
 
@@ -1033,7 +1978,7 @@ class StatusBoard {
   }
 
   _alarm(critical) {
-    window.toast && window.toast(critical ? "CRITICAL: your process died after a GPU intrusion" : "GPU intrusion: another user is on a GPU you are using", "error");
+    Toast.show(critical ? "CRITICAL: your process died after a GPU intrusion" : "GPU intrusion: another user is on a GPU you are using", "error");
     try {
       const ctx = this._audioContext();
       if (!ctx) return;
@@ -1056,101 +2001,7 @@ class StatusBoard {
     } catch (e) {}
   }
 
-  _renderUsers(users) {
-    const body = document.getElementById("sb-users");
-    const n = document.getElementById("sb-users-n");
-    if (!body) return;
-    if (n) n.textContent = `${users.length} user${users.length === 1 ? "" : "s"}`;
-
-    if (!users.length) {
-      body.innerHTML = `<div class="sboard__empty">measuring user activity&hellip;</div>`;
-      return;
-    }
-
-    body.innerHTML = users.map((u) => {
-      const cls = u.cpu >= 100 ? "is-hot" : u.cpu >= 25 ? "is-mid" : "";
-      const gpus = (u.gpus || []).length ? u.gpus.join(",") : "--";
-      return (
-        `<div class="utable__row${u.me ? " is-me" : ""}">` +
-        `<span class="utable__user">${this._esc(u.user)}${u.me ? `<i class="utable__me">you</i>` : ""}</span>` +
-        `<span class="utable__cpu ${cls}">${u.cpu.toFixed(1)}</span>` +
-        `<span>${this._mb(u.mem)}</span>` +
-        `<span class="utable__share">${u.mem_share.toFixed(1)}%</span>` +
-        `<span class="utable__gpu">${u.gpu_mem ? this._mb(u.gpu_mem * 1048576) : "--"}</span>` +
-        `<span class="utable__gpus">${gpus}</span>` +
-        `<span>${u.nproc}</span>` +
-        `<span class="utable__sess">${u.sessions || "--"}</span>` +
-        `</div>`
-      );
-    }).join("");
-  }
-
-  _renderProcs(procs) {
-    const body = document.getElementById("sb-procs");
-    const n = document.getElementById("sb-proc-n");
-    if (!body) return;
-    if (n) n.textContent = String(procs.length);
-
-    if (!procs.length) {
-      body.innerHTML = `<div class="sboard__empty">no processes</div>`;
-      return;
-    }
-
-    body.innerHTML = procs.map((p) => {
-      const cls = p.cpu >= 100 ? "is-hot" : p.cpu >= 25 ? "is-mid" : "";
-      const run = p.state === "R" ? " is-run" : "";
-      return (
-        `<div class="ptable__row${run}">` +
-        `<span class="ptable__pid">${p.pid}</span>` +
-        `<span class="ptable__cpu ${cls}">${p.cpu.toFixed(1)}</span>` +
-        `<span>${this._mb(p.pss != null ? p.pss : p.rss)}</span>` +
-        `<span class="ptable__gpu">${p.gpu ? this._mb(p.gpu * 1048576) : "--"}</span>` +
-        `<span class="ptable__thr">${p.threads != null ? p.threads : "--"}</span>` +
-        `<span class="ptable__state">${this._esc(p.state)}</span>` +
-        `<span class="ptable__cmd" title="${this._esc(p.cmd)}">${this._esc(p.cmd)}</span>` +
-        `</div>`
-      );
-    }).join("");
-  }
-
-  _updateJobs(jobs) {
-    const list = document.getElementById("sb-jobs");
-    const n = document.getElementById("sb-jobs-n");
-    if (!list) return;
-    const running = jobs.filter((j) => j.status === "running").length;
-    if (n) n.textContent = running > 0 ? `${running} running` : String(jobs.length);
-
-    if (!jobs.length) {
-      list.innerHTML = `<li class="sboard__empty">no runs yet</li>`;
-      return;
-    }
-
-    const followers = new Map();
-    jobs.forEach((j) => {
-      if (j.follow_of) followers.set(j.follow_of, j);
-    });
-
-    const row = (j, follow) => {
-      const name = this._esc(j.script || String(j.command || "").split(" ")[0].split("/").pop() || "job");
-      const cls =
-        j.status === "running" ? "is-run" :
-        j.status === "failed" ? "is-fail" :
-        j.status === "scheduled" || j.status === "queued" ? "is-sched" :
-        j.status === "cancelled" ? "is-cancel" : "is-done";
-      const mark = follow ? `<span class="sboard__jarrow" aria-hidden="true">&#8627;</span>` : "";
-      const prog = j.progress && j.progress.total
-        ? `<span class="sboard__jprog${j.progress.failed ? " is-failing" : ""}">${this._esc(window.fmtProgressBits(j.progress).join(" · "))}</span>`
-        : "";
-      return `<li class="sboard__job ${cls}${follow ? " sboard__job--follow" : ""}">${mark}<span class="sboard__jdot" aria-hidden="true"></span><span class="sboard__jname">${name}</span>${prog}<span class="sboard__jstate">${this._esc(j.status)}</span></li>`;
-    };
-
-    list.innerHTML = jobs.filter((j) => !j.follow_of).slice(0, 8).map((j) => {
-      const next = followers.get(j.job_id);
-      return row(j, false) + (next ? row(next, true) : "");
-    }).join("");
-  }
-
-  _spark(cv, series) {
+  _spark(cv, series, maxSamples) {
     if (!cv) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = cv.clientWidth;
@@ -1189,7 +2040,7 @@ class StatusBoard {
     }
     ctx.setLineDash([]);
 
-    const step = w / (this.histMax - 1);
+    const step = w / ((maxSamples || this.histMax) - 1);
     series.forEach((s) => {
       const d = s.data;
       if (d.length < 2) return;
@@ -1238,31 +2089,12 @@ class StatusBoard {
     if (el) el.innerHTML = html;
   }
 
-  _gb(bytes) {
-    return (bytes / 1073741824).toFixed(1);
-  }
-
-  _mb(bytes) {
-    const gb = bytes / 1073741824;
-    if (gb >= 1) return `${gb.toFixed(1)}G`;
-    return `${Math.round(bytes / 1048576)}M`;
-  }
-
-  _tb(bytes) {
-    const tb = bytes / 1099511627776;
-    return tb >= 1 ? `${tb.toFixed(2)} TB` : `${this._gb(bytes)} GB`;
-  }
-
   _uptime(sec) {
     const d = Math.floor(sec / 86400);
     const h = Math.floor((sec % 86400) / 3600);
     const m = Math.floor((sec % 3600) / 60);
     if (d > 0) return `${d}d ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
     return `${h}:${String(m).padStart(2, "0")}`;
-  }
-
-  _esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   }
 }
 

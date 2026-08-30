@@ -33,6 +33,15 @@ class CanvasBase {
     this._resize();
   }
 
+  dispose() {
+    window.removeEventListener("resize", this._resize);
+    if (this._observer) this._observer.disconnect();
+    if (this._raf != null) {
+      cancelAnimationFrame(this._raf);
+      this._raf = null;
+    }
+  }
+
   onResize() {}
 }
 

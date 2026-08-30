@@ -169,7 +169,7 @@ class FitLab:
             src : Map key, `slc` for the primary amplitude or `peak` for the per-pixel tomogram maximum over height.
 
         Returns:
-            PNG bytes of the transposed map of shape (range, azimuth), or None
+            PNG bytes of the transposed map of shape (cols, rows), or None
             when no dataset is loaded or the key is unknown.
         """
         with self.lock:

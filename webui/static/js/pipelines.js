@@ -140,7 +140,7 @@ class PipelineFlow {
   }
 
   async load() {
-    const data = await window.apiGet("/api/pipelines");
+    const data = await Api.get("/api/pipelines");
     this.pipelines = data.pipelines || [];
     this._render();
   }

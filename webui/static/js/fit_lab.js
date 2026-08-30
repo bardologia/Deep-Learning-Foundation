@@ -144,7 +144,6 @@ class FitLabChart {
 }
 
 class FitLabView {
-  static get DEFAULT_BASE() { return window.repoPath("datasets"); }
   static MAX_PIXELS   = 24;
   static COMPONENTS   = ["sigma", "amp", "mu"];
   static PALETTE      = ["#1d4fd8", "#b91c1c", "#0f766e", "#7c3aed", "#b45309", "#0e7490", "#be185d", "#4d7c0f"];
@@ -198,13 +197,7 @@ class FitLabView {
   }
 
   _defaultBase() {
-    const own = localStorage.getItem("fitlab-base");
-    if (own) return own;
-    try {
-      const shared = JSON.parse(localStorage.getItem("results-sources") || "{}");
-      if (shared.datasets) return shared.datasets;
-    } catch (e) { /* fall through */ }
-    return FitLabView.DEFAULT_BASE;
+    return localStorage.getItem("fitlab-base") || ResultsSources.datasets();
   }
 
   async _scan() {
@@ -213,7 +206,7 @@ class FitLabView {
     localStorage.setItem("fitlab-base", base);
 
     this.refs.hint.textContent = "scanning…";
-    const data = await window.apiGet(`/api/fitlab/datasets?base=${encodeURIComponent(base)}`);
+    const data = await Api.get(`/api/fitlab/datasets?base=${encodeURIComponent(base)}`);
 
     this.refs.strip.innerHTML = "";
     if (!data.ok) {
@@ -240,7 +233,7 @@ class FitLabView {
   async _select(path, btn) {
     this.refs.strip.querySelectorAll(".fl-dataset").forEach((b) => b.classList.toggle("is-active", b === btn));
 
-    const res = await window.apiPost("/api/fitlab/load", { path });
+    const res = await Api.post("/api/fitlab/load", { path });
     if (!res.ok) {
       this.refs.hint.textContent = res.error || "load refused";
       return;
@@ -256,7 +249,7 @@ class FitLabView {
 
     const token = ++this.loadToken;
     while (token === this.loadToken) {
-      const st = await window.apiGet("/api/fitlab/status");
+      const st = await Api.get("/api/fitlab/status");
       if (st.state === "error") {
         this.refs.progress.hidden  = true;
         this.refs.hint.textContent = st.error || "load failed";
@@ -391,12 +384,18 @@ class FitLabView {
       return v;
     };
 
+    const threshold  = num(this.refs.thresholdInput, "threshold factor");
+    const truncation = num(this.refs.truncationInput, "truncation index", true);
+
+    if (truncation < 1) throw new Error("truncation index must be at least 1; it names the first zeroed z bin, so 0 blanks the whole profile");
+    if (threshold < 0 || threshold >= 1) throw new Error("threshold factor must lie in [0, 1); it is a fraction of the per-profile maximum");
+
     return {
       k_max              : num(this.refs.kmaxInput, "K max", true),
       lambda_k           : num(this.refs.lambdaInput, "lambda"),
       mode               : this._readMode(),
-      threshold_factor   : num(this.refs.thresholdInput, "threshold factor"),
-      truncation_index   : num(this.refs.truncationInput, "truncation index", true),
+      threshold_factor   : threshold,
+      truncation_index   : truncation,
       prominence_frac    : num(this.refs.prominenceInput, "prominence frac"),
       sigma_init_divisor : num(this.refs.sigdivInput, "sigma init divisor"),
       activity_threshold : num(this.refs.activityInput, "activity threshold"),
@@ -426,7 +425,7 @@ class FitLabView {
       return;
     }
 
-    const res = await window.apiPost("/api/fitlab/fit", { pixels: this.pixels, config });
+    const res = await Api.post("/api/fitlab/fit", { pixels: this.pixels, config });
     if (!res.ok) {
       this._flash(res.error || "fit refused");
       return;
@@ -438,7 +437,7 @@ class FitLabView {
     const dataset = this.loadToken;
     const token   = ++this.fitToken;
     while (token === this.fitToken) {
-      const st = await window.apiGet("/api/fitlab/fit_status");
+      const st = await Api.get("/api/fitlab/fit_status");
       if (st.state === "error") {
         this.refs.runBtn.disabled    = false;
         this.refs.fitProgress.hidden = true;
@@ -455,7 +454,7 @@ class FitLabView {
     this.refs.fitProgress.hidden = true;
     if (token !== this.fitToken || dataset !== this.loadToken) return;
 
-    const result = await window.apiGet("/api/fitlab/fit_result");
+    const result = await Api.get("/api/fitlab/fit_result");
     if (!result.ok) {
       this._flash(result.error || "no result");
       return;

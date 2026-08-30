@@ -359,7 +359,7 @@ class FeedTuner {
 
   _config() {
     if (!this.configPromise) {
-      this.configPromise = window.apiGet("/api/scripts/tune_dataloader/config").catch(() => ({ ok: false }));
+      this.configPromise = Api.get("/api/scripts/tune_dataloader/config").catch(() => ({ ok: false }));
     }
     return this.configPromise;
   }
@@ -381,7 +381,7 @@ class FeedTuner {
     this.datasetBase = this._parentDir(datasetDefault);
     this.paramsDefault = paramsDefault;
 
-    const res = await window.apiGet(`/api/fs/datasets?base=${encodeURIComponent(this.datasetBase)}`);
+    const res = await Api.get(`/api/fs/datasets?base=${encodeURIComponent(this.datasetBase)}`);
     const items = res && res.ok ? res.datasets || [] : [];
 
     if (!res || !res.ok) {
@@ -406,7 +406,7 @@ class FeedTuner {
     }
 
     note.textContent = "loading…";
-    const res = await window.apiGet(`/api/fs/params?dataset=${encodeURIComponent(dataset)}`);
+    const res = await Api.get(`/api/fs/params?dataset=${encodeURIComponent(dataset)}`);
     const items = res && res.ok ? res.files || [] : [];
     note.textContent = res && res.ok ? (items.length ? `${items.length} under ${res.params_root}` : "no extracted params yet") : (res && res.error) || "could not list params";
 
@@ -472,9 +472,9 @@ class FeedTuner {
     if (this.jobId) return;
 
     this._reset();
-    const res = await window.apiPost("/api/run", { script_key: "tune_dataloader", overrides: this._overrides() });
+    const res = await Api.post("/api/run", { script_key: "tune_dataloader", overrides: this._overrides() });
     if (!res.ok) {
-      window.toast(res.error || "Launch failed", "error");
+      Toast.show(res.error || "Launch failed", "error");
       this._appendLog(`launch failed: ${res.error || "unknown error"}`);
       return;
     }
@@ -484,14 +484,14 @@ class FeedTuner {
     this.stopBtn.hidden = false;
     this.idle.hidden = true;
     this.progress.hidden = false;
-    window.toast("Feed sweep launched", "ok");
+    Toast.show("Feed sweep launched", "ok");
     this._connect();
   }
 
   async _stop() {
     if (!this.jobId) return;
-    await window.apiPost(`/api/jobs/${this.jobId}/stop`, {});
-    window.toast("Stop signal sent", "ok");
+    await Api.post(`/api/jobs/${this.jobId}/stop`, {});
+    Toast.show("Stop signal sent", "ok");
   }
 
   _reset() {
@@ -680,7 +680,7 @@ class FeedTuner {
   _onDone(payload) {
     this._appendLog(`done — results at ${payload.results_path}`);
     this.progressLabel.textContent = "sweep complete";
-    window.toast("Feed sweep complete", "ok");
+    Toast.show("Feed sweep complete", "ok");
   }
 
   _appendRow(record) {

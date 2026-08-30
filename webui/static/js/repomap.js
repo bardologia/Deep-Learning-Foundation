@@ -447,7 +447,7 @@ class RepoMapView {
   }
 
   async load() {
-    const data = await window.apiGet("/api/repomap");
+    const data = await Api.get("/api/repomap");
     if (!data || data.error) { this._empty("Backend unreachable."); return; }
     this.folders = data.folders || [];
     this.loaded  = true;
@@ -457,7 +457,7 @@ class RepoMapView {
   }
 
   _empty(msg) {
-    this.root.innerHTML = `<div class="rm-empty">${this._esc(msg)}</div>`;
+    this.root.innerHTML = `<div class="rm-empty">${SharedCharts.esc(msg)}</div>`;
   }
 
   _buildShell() {
@@ -473,7 +473,7 @@ class RepoMapView {
       b.className   = "rm-folder";
       b.dataset.key = f.folder;
       b.setAttribute("role", "tab");
-      b.innerHTML   = `<span class="rm-folder__name">${this._esc(f.title)}</span><span class="rm-folder__n">${f.diagrams.length}</span>`;
+      b.innerHTML   = `<span class="rm-folder__name">${SharedCharts.esc(f.title)}</span><span class="rm-folder__n">${f.diagrams.length}</span>`;
       b.addEventListener("click", () => this._selectFolder(f.folder));
       this.foldersEl.appendChild(b);
     });
@@ -588,7 +588,7 @@ class RepoMapView {
       const item = document.createElement("span");
       item.className = "rm-leg";
       item.style.setProperty("--role", this.ROLE_COLORS[role]);
-      item.innerHTML = `<i></i>${this._esc(this.ROLE_LABELS[role])}`;
+      item.innerHTML = `<i></i>${SharedCharts.esc(this.ROLE_LABELS[role])}`;
       this.legendEl.appendChild(item);
     });
   }
@@ -615,14 +615,14 @@ class RepoMapView {
       el.style.setProperty("--role", this.ROLE_COLORS[n.role] || this.ROLE_COLORS.external);
 
       const io = [];
-      if (n.writes && n.writes.length) io.push(`<span class="rm-io rm-io--w" title="writes ${this._esc(n.writes.join(", "))}">out ${n.writes.length}</span>`);
-      if (n.reads && n.reads.length)   io.push(`<span class="rm-io rm-io--r" title="reads ${this._esc(n.reads.join(", "))}">in ${n.reads.length}</span>`);
+      if (n.writes && n.writes.length) io.push(`<span class="rm-io rm-io--w" title="writes ${SharedCharts.esc(n.writes.join(", "))}">out ${n.writes.length}</span>`);
+      if (n.reads && n.reads.length)   io.push(`<span class="rm-io rm-io--r" title="reads ${SharedCharts.esc(n.reads.join(", "))}">in ${n.reads.length}</span>`);
 
       el.innerHTML =
-        `<div class="rm-node__top"><span class="rm-node__role">${this._esc(this.ROLE_LABELS[n.role] || n.role)}</span><span class="rm-node__io">${io.join("")}</span></div>` +
-        `<h4 class="rm-node__name">${this._esc(n.label)}</h4>` +
-        `<p class="rm-node__fn" title="${this._esc(n.fn)}">${this._esc(n.fn)}</p>` +
-        `<code class="rm-node__mod">${this._esc(n.module)}</code>`;
+        `<div class="rm-node__top"><span class="rm-node__role">${SharedCharts.esc(this.ROLE_LABELS[n.role] || n.role)}</span><span class="rm-node__io">${io.join("")}</span></div>` +
+        `<h4 class="rm-node__name">${SharedCharts.esc(n.label)}</h4>` +
+        `<p class="rm-node__fn" title="${SharedCharts.esc(n.fn)}">${SharedCharts.esc(n.fn)}</p>` +
+        `<code class="rm-node__mod">${SharedCharts.esc(n.module)}</code>`;
 
       el.addEventListener("click", () => this._focusNode(n.id));
       el.addEventListener("mouseenter", () => this._hoverNode(n.id, true));
@@ -638,13 +638,13 @@ class RepoMapView {
 
     const rows = arts.map((a) => {
       const cross = a.scope === "cross" ? `<span class="rm-tag rm-tag--cross">cross-pipeline</span>` : "";
-      const cons  = (a.consumers || []).map((c) => this._esc(c)).join(", ") || "&mdash;";
-      return `<tr data-producer="${this._esc(a.producer)}" data-consumers="${this._esc((a.consumers || []).join("|"))}">
-        <td class="rm-led__name"><code>${this._esc(a.name)}</code>${cross}</td>
-        <td class="rm-led__fmt">${this._esc(a.fmt || "")}</td>
-        <td class="rm-led__by">${this._esc(a.producer)}</td>
+      const cons  = (a.consumers || []).map((c) => SharedCharts.esc(c)).join(", ") || "&mdash;";
+      return `<tr data-producer="${SharedCharts.esc(a.producer)}" data-consumers="${SharedCharts.esc((a.consumers || []).join("|"))}">
+        <td class="rm-led__name"><code>${SharedCharts.esc(a.name)}</code>${cross}</td>
+        <td class="rm-led__fmt">${SharedCharts.esc(a.fmt || "")}</td>
+        <td class="rm-led__by">${SharedCharts.esc(a.producer)}</td>
         <td class="rm-led__to">${cons}</td>
-        <td class="rm-led__desc">${this._esc(a.desc || "")}</td>
+        <td class="rm-led__desc">${SharedCharts.esc(a.desc || "")}</td>
       </tr>`;
     }).join("");
 
@@ -857,9 +857,6 @@ class RepoMapView {
     this.labelEls.forEach((l) => l.el.classList.remove("is-lit"));
   }
 
-  _esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
 }
 
 window.RepoMapView = RepoMapView;

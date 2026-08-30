@@ -8,6 +8,7 @@ class Router {
       this.pages[p.dataset.page] = p;
     });
     this.links = [...document.querySelectorAll("[data-route]")];
+    this.groups = [...document.querySelectorAll(".nav__group")];
     this.navAlias = { launch: "scripts", ablation: "scripts" };
     this.current = null;
 
@@ -41,6 +42,13 @@ class Router {
 
     const navTarget = this.navAlias[page] || page;
     this.links.forEach((a) => a.classList.toggle("is-current", a.dataset.route === navTarget));
+
+    const link  = this.links.find((a) => a.dataset.route === navTarget);
+    const group = link ? link.closest(".nav__group") : null;
+    this.groups.forEach((g) => {
+      g.classList.toggle("is-current", g === group);
+      g.classList.toggle("is-open", g === group);
+    });
 
     window.scrollTo({ top: 0, behavior: "instant" in window ? "instant" : "auto" });
     this._animateIn(this.pages[page]);
