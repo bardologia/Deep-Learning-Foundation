@@ -45,6 +45,10 @@ class TrainingLoopConfig:
         epochs                      : Number of epochs the loop runs.
         validation_frequency        : Epoch interval between validation passes.
         use_amp                     : Whether mixed-precision autocast wraps the forward pass.
+        compile_model               : Whether the model forward is compiled with torch.compile.
+        compile_mode                : torch.compile mode: "default", "reduce-overhead" or "max-autotune".
+        channels_last               : Whether the model and 4-D batches use the channels_last memory format.
+        activation_checkpointing    : fnmatch patterns of submodule names wrapped in gradient checkpointing; empty disables it.
         gradient_accumulation_steps : Batches accumulated before an optimizer step.
         log_debug                   : Whether per-step debug logging is emitted.
         log_all_losses              : Whether every loss term is logged, not just the total.
@@ -59,6 +63,10 @@ class TrainingLoopConfig:
     epochs                      : int   = 3
     validation_frequency        : int   = 5
     use_amp                     : bool  = False
+    compile_model               : bool  = False
+    compile_mode                : str   = "default"
+    channels_last               : bool  = False
+    activation_checkpointing    : tuple = ()
     gradient_accumulation_steps : int   = 1
     log_debug                   : bool  = False
     log_all_losses              : bool  = False

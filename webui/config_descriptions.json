@@ -1275,6 +1275,10 @@
         "log_all_losses": "log every individual loss component term to TensorBoard, not just the total",
         "log_debug": "enable the tracker's debug mode, adding gradient NaN/Inf checks and extra diagnostic logging",
         "use_amp": "autocast the forward/loss pass to bfloat16; raises at startup if the GPU lacks bf16 support",
+        "compile_model": "compile the model forward with torch.compile before training; the first step pays a compilation delay, later steps run the optimized kernels, and saved checkpoints stay byte-identical to an uncompiled run",
+        "compile_mode": "torch.compile mode: default balances compile time and speed, reduce-overhead targets small batches via CUDA graphs, max-autotune searches the widest kernel space",
+        "channels_last": "keep the model weights and every 4-D batch in channels_last (NHWC) memory layout, which speeds up convolutions under AMP on tensor-core GPUs",
+        "activation_checkpointing": "fnmatch patterns of dotted submodule names to wrap in gradient checkpointing (e.g. encoder*); wrapped activations are recomputed in backward, trading compute for activation memory; empty disables it, a pattern matching nothing fails loudly",
         "gradient_accumulation_steps": "minibatches accumulated before each optimizer step, scaling the effective batch size",
         "abort_on_nonfinite_loss": "raise and stop training on a NaN/Inf loss instead of skipping the batch with a warning",
         "use_ema": "maintain an exponential moving average of model weights, used for evaluation and checkpointing",
@@ -1331,6 +1335,10 @@
         "epochs": "Number of full channels over the training dataset",
         "validation_frequency": "Run validation every this many epochs, plus always on the final epoch",
         "use_amp": "Enable autocast mixed precision to bfloat16 during train/eval forward channels; raises at construction if the GPU lacks bf16 support",
+        "compile_model": "compile the model forward with torch.compile before training; the first step pays a compilation delay, later steps run the optimized kernels, and saved checkpoints stay byte-identical to an uncompiled run",
+        "compile_mode": "torch.compile mode: default balances compile time and speed, reduce-overhead targets small batches via CUDA graphs, max-autotune searches the widest kernel space",
+        "channels_last": "keep the model weights and every 4-D batch in channels_last (NHWC) memory layout, which speeds up convolutions under AMP on tensor-core GPUs",
+        "activation_checkpointing": "fnmatch patterns of dotted submodule names to wrap in gradient checkpointing (e.g. encoder*); wrapped activations are recomputed in backward, trading compute for activation memory; empty disables it, a pattern matching nothing fails loudly",
         "gradient_accumulation_steps": "Number of batches accumulated into one optimizer step before weights update",
         "log_debug": "Enable per-step NaN/Inf sanity checks (gradients via GradientClipper, plus inputs/predictions in trainers that opt in) via the Tracker debug flag, not general verbose logging",
         "log_all_losses": "Log every individual loss component in addition to the total, passed through to the Loss module",
@@ -1883,6 +1891,30 @@
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
         "poll_interval_s": "seconds GpuQueue sleeps between reap/launch cycles while jobs are running or queued, default 5.0",
         "inference": "InferenceConfig used for every worker run, with run_directory replaced per-run, save_cubes=True, cpu_workers=16 and gif_axes=['z','col','row']; all other InferenceConfig fields keep their normal defaults"
+      }
+    },
+    "benchmark/dataloader_tuning::TrainingProfileEntryConfig": {
+      "summary": "Entry config that records full training steps of one model family under torch.profiler and writes a chrome trace, an operator table and a top-operator summary",
+      "fields": {
+        "mode": "training family whose feed is profiled: backbone, profile_autoencoder, image_autoencoder, or synthetic for a dataset-free curve workload",
+        "model_name": "model registry key building the profiled workload; empty picks the family default",
+        "gpu": "index of the GPU the profiled steps execute on",
+        "seed": "random seed for sampling and model initialisation",
+        "use_amp": "whether the profiled forward runs under bfloat16 autocast, matching a mixed-precision training run",
+        "batch_size": "samples per profiled step",
+        "num_workers": "data loader worker processes during profiling",
+        "prefetch_factor": "batches each worker prefetches",
+        "warmup_steps": "steps the profiler observes without recording, letting allocator and autotune effects settle",
+        "active_steps": "steps recorded into the trace and the operator statistics",
+        "record_shapes": "record operator input shapes, enabling shape-grouped views in the trace viewer",
+        "profile_memory": "record allocator events so the trace shows per-operator memory traffic",
+        "with_stack": "record Python stacks per operator; the trace grows considerably",
+        "pixel_subsample": "fraction of pixels kept when building the probe dataset for the pixel-fed families",
+        "keep_empty_frac": "fraction of empty-profile pixels retained in that subsample",
+        "synthetic_samples": "number of synthetic profiles generated for the synthetic mode",
+        "synthetic_length": "z samples per synthetic profile",
+        "paths": "dataset and run path configuration the family adapters read",
+        "output_dir": "directory receiving one timestamped profile directory per run"
       }
     },
     "benchmark/dataloader_tuning::DataLoaderTuningEntryConfig": {

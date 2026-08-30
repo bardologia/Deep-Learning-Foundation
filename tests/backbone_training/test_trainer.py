@@ -245,6 +245,64 @@ def test_evaluate_skips_nonfinite_batches_when_abort_disabled(tmp_path):
     assert result["avg_loss"]    == pytest.approx(2.0)
 
 
+def test_trainer_channels_last_converts_model_and_batches(tmp_path):
+    """With channels_last enabled the conv weights and evaluation run in NHWC layout."""
+    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+
+    config.training.channels_last = True
+
+    logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_cl", level="ERROR")
+    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+    trainer.warmup.resolve(200)
+
+    conv = next(module for module in trainer.model.modules() if isinstance(module, torch.nn.Conv2d))
+    assert conv.weight.is_contiguous(memory_format=torch.channels_last)
+
+    result = trainer.evaluate(_loader(), epoch=0)
+    assert result["num_batches"] > 0
+
+
+def test_trainer_compile_flag_compiles_the_forward(tmp_path, monkeypatch):
+    """With compile_model enabled the model forward passes through torch.compile with the configured mode."""
+    recorded = {}
+
+    def _fake_compile(fn, mode=None):
+        recorded["mode"] = mode
+        return fn
+
+    monkeypatch.setattr(torch, "compile", _fake_compile)
+
+    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+
+    config.training.compile_model = True
+    config.training.compile_mode  = "reduce-overhead"
+
+    logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_compile", level="ERROR")
+    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+
+    assert recorded["mode"] == "reduce-overhead"
+    assert trainer.model is not None
+
+
+def test_trainer_activation_checkpointing_wraps_and_trains(tmp_path):
+    """A configured pattern wraps the matched blocks and one epoch still trains with clean checkpoint keys."""
+    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    reference_keys   = sorted(model.state_dict())
+    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+
+    config.training.activation_checkpointing = ("encoder_blocks", "decoder_blocks")
+
+    logger  = Logger(log_dir=str(tmp_path / "logs"), name="trainer_ckpt", level="ERROR")
+    trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+    trainer.warmup.resolve(200)
+
+    trainer.train_epoch(_loader(), epoch=0)
+
+    assert sorted(trainer.model.state_dict()) == reference_keys
+
+
 def test_evaluate_weights_batches_by_sample_count(tmp_path):
     """Verifies the evaluation average weights a partial final batch by its sample count, not like a full batch."""
     trainer = _build_trainer(tmp_path)

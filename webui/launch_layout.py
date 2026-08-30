@@ -203,6 +203,11 @@ class LaunchLayout:
                 "lr_multiplier",
                 "abort_on_nonfinite_loss",
             ]},
+            {"title": "Throughput", "fields": [
+                {"gate": "compile_model", "fields": [{"path": "compile_mode", "widget": {"kind": "choice", "options": ["default", "reduce-overhead", "max-autotune"]}}]},
+                "channels_last",
+                {"path": "activation_checkpointing", "widget": {"kind": "multi", "placeholder": "add module pattern, Enter"}},
+            ]},
             {"title": "Gradient clipping", "fields": [
                 "clip_mode",
                 "max_grad_norm",
@@ -1430,6 +1435,32 @@ class LaunchLayout:
                             "figures_subdir",
                             "metrics_filename",
                             "report_filename",
+                            "output_dir",
+                        ]},
+                    ]},
+                ]},
+            ],
+        },
+        "profile_training": {
+            "sections": [
+                {"key": "config", "title": "Configuration", "panels": [
+                    {"kind": "fields", "groups": [
+                        {"title": "Workload", "fields": ["mode", "model_name", {"path": "gpu", "widget": GPU_ONE}, {"path": "seed", "widget": NUM_SEED}, "use_amp"]},
+                        {"title": "Steps", "fields": [
+                            {"path": "batch_size", "widget": NUM_BATCH},
+                            {"path": "num_workers", "widget": NUM_WORKERS},
+                            {"path": "prefetch_factor", "widget": NUM_PREFETCH},
+                            {"path": "warmup_steps", "widget": {"kind": "number", "int": True, "min": 0, "max": 200, "presets": [4, 8, 16]}},
+                            {"path": "active_steps", "widget": {"kind": "number", "int": True, "min": 1, "max": 500, "presets": [12, 24, 48]}},
+                        ]},
+                        {"title": "Trace", "fields": ["record_shapes", "profile_memory", "with_stack"]},
+                        {"title": "Dataset", "fields": ["pixel_subsample", "keep_empty_frac", "synthetic_samples", "synthetic_length"]},
+                        {"title": "Paths", "fields": [
+                            {"path": "paths.dataset_path", "widget": PICK_DATASET},
+                            {"path": "paths.parameters_path", "widget": PICK_PARAMS},
+                            "paths.log_base_dir",
+                            "paths.secondary_labels",
+                            "paths.fingerprint_dataset",
                             "output_dir",
                         ]},
                     ]},
