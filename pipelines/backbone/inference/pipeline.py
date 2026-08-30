@@ -1,3 +1,12 @@
+"""Orchestrates the end-to-end inference pass over a trained backbone run.
+
+Loads the run, stitches predictions into cubes, then layers on the optional evaluations
+(curve-parameter extraction, embeddings, label
+quality, flip consistency, stratified errors, failure modes, presence calibration and the
+normalization audit), rewriting metrics.json after each so a crashed run keeps whatever
+finished. Figures, animations and the markdown report close the pass.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,26 +15,37 @@ from typing      import Dict, List, Type
 
 import numpy as np
 
-from configuration.inference                         import InferenceConfig
-from pipelines.backbone.inference.figures            import FigureComposer
-from pipelines.backbone.inference.flip_consistency   import FlipConsistencyEvaluator
-from pipelines.backbone.inference.normalization_audit import NormalizationAudit
-from pipelines.backbone.inference.loader             import RunLoader
-from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
-from pipelines.backbone.inference.metrics            import Metrics
-from pipelines.backbone.inference.plots              import Plotter
-from pipelines.backbone.inference.predictor          import Predictor
-from pipelines.backbone.inference.failure_modes      import FailureModes
+from configuration.inference                           import InferenceConfig
+from pipelines.backbone.inference.curve_params         import CurveParamExtractor
+from pipelines.backbone.inference.figures              import FigureComposer
+from pipelines.backbone.inference.flip_consistency     import FlipConsistencyEvaluator
+from pipelines.backbone.inference.normalization_audit  import NormalizationAudit
+from pipelines.backbone.inference.loader               import RunLoader
+from pipelines.backbone.inference.run_metadata_paths   import InferenceMetadata
+from pipelines.backbone.inference.metrics              import Metrics, Result
+from pipelines.backbone.inference.plots                import Plotter
+from pipelines.backbone.inference.predictor            import Predictor
+from pipelines.backbone.inference.failure_modes        import FailureModes
 from pipelines.backbone.inference.presence_calibration import PresenceCalibration
-from pipelines.backbone.inference.report             import Report, ReportPayloadBuilder
-from pipelines.backbone.inference.stratified         import StratifiedErrors
-from tools.monitoring.logger                         import Logger
-from tools.reporting.plotting                        import PlotBase
-from tools.runtime.completion                        import CompletionMarker
+from pipelines.backbone.inference.report               import Report, ReportPayloadBuilder
+from pipelines.backbone.inference.stratified           import StratifiedErrors
+from tools.data.regions                                import CropRegion
+from tools.monitoring.logger                           import Logger
+from tools.reporting.plotting                          import PlotBase
+from tools.runtime.completion                          import CompletionMarker
 
 
 @dataclass(frozen=True)
 class InferenceComponents:
+    """Swappable pieces that specialise the pipeline for a model family.
+
+    Attributes:
+        loader_cls              : Loader class rebuilding the run from its persisted artifacts.
+        predictor_cls           : Predictor class stitching per-patch outputs into cubes.
+        param_space             : Whether the model predicts Gaussian parameters rather than curves.
+        embedding_evaluator_cls : Evaluator producing per-pixel embedding maps, or None.
+    """
+
     loader_cls              : Type[RunLoader] = RunLoader
     predictor_cls           : Type[Predictor] = Predictor
     param_space             : bool            = True
@@ -33,11 +53,34 @@ class InferenceComponents:
 
 
 class InferencePipeline:
+    """Runs the full inference, evaluation and reporting sequence for one backbone run.
+
+    Attributes:
+        config     : Inference configuration selecting the run, split, device and every optional evaluation.
+        components : Loader, predictor and evaluator classes specialising the pipeline.
+    """
+
     def __init__(self, config: InferenceConfig, components: InferenceComponents | None = None) -> None:
+        """Stores the configuration and the component set, defaulting to the backbone components.
+
+        Args:
+            config     : Inference configuration.
+            components : Component overrides, or None for the plain backbone set.
+        """
+
         self.config     = config
         self.components = components if components is not None else InferenceComponents()
 
     def _setup(self, cfg: InferenceConfig) -> tuple[InferenceMetadata, Logger, Plotter]:
+        """Creates the output directories, seeds NumPy and builds the logger and plotters.
+
+        Args:
+            cfg : Inference configuration.
+
+        Returns:
+            Tuple of run metadata, logger and plotter bundle.
+        """
+
         meta = InferenceMetadata(cfg)
         meta.create_dirs()
         np.random.seed(cfg.seed)
@@ -71,6 +114,16 @@ class InferencePipeline:
         return meta, logger, plotter
 
     def _load_run(self, cfg: InferenceConfig, logger: Logger):
+        """Loads the trained run for the configured split.
+
+        Args:
+            cfg    : Inference configuration naming the run, split, device and checkpoint.
+            logger : Logger passed to the loader.
+
+        Returns:
+            The loaded run container.
+        """
+
         loader = self.components.loader_cls(cfg.run_directory, logger=logger)
         return loader.load(
             split           = cfg.split,
@@ -78,61 +131,264 @@ class InferencePipeline:
             num_workers     = cfg.num_workers,
             device          = cfg.device,
             checkpoint_name = cfg.checkpoint_name,
+            region_override = CropRegion(*cfg.region_override) if cfg.region_override else None,
         )
 
-    def _predict(self, cfg: InferenceConfig, meta: InferenceMetadata, run, logger: Logger):
+    def _build_embedding_evaluator(self, cfg: InferenceConfig, run, logger: Logger):
+        """Builds the embedding evaluator, or returns None when the component set declares none.
+
+        Args:
+            cfg    : Inference configuration supplying the stitching window.
+            run    : Loaded run.
+            logger : Logger passed to the evaluator.
+
+        Returns:
+            The evaluator instance, or None.
+        """
+
+        if self.components.embedding_evaluator_cls is None:
+            return None
+
+        return self.components.embedding_evaluator_cls(run, logger, window_kind=cfg.stitch_window)
+
+    def _predict(self, cfg: InferenceConfig, meta: InferenceMetadata, run, evaluator, logger: Logger):
+        """Runs the predictor over the split and stitches the patch outputs into cubes.
+
+        Args:
+            cfg       : Inference configuration supplying the stitching window, cube dtype and worker count.
+            meta      : Run metadata resolving the cube output directory.
+            run       : Loaded run.
+            evaluator : Embedding evaluator to attach, or None.
+            logger    : Logger passed to the predictor.
+
+        Returns:
+            The populated `Result` container.
+        """
+
+        evaluator_kwargs = {} if evaluator is None else {"embedding_evaluator": evaluator}
+
         predictor = self.components.predictor_cls(
-            run         = run,
-            logger      = logger,
+            run              = run,
+            logger           = logger,
             window_kind      = cfg.stitch_window,
             cube_dtype       = cfg.cube_dtype,
             save_cubes       = cfg.save_cubes,
             meta             = meta,
             cpu_workers      = cfg.cpu_workers,
             render_amp_floor = cfg.render_amp_floor,
+            active_amp_thr   = cfg.active_amp_thr,
+            **evaluator_kwargs,
         )
         return predictor.run_inference()
 
     @staticmethod
     def _equal_indices(n_total: int, n_slices: int) -> np.ndarray:
+        """Returns up to `n_slices` unique indices spread evenly across the central 10-90% of an axis."""
+
         n_slices = max(1, min(n_slices, n_total))
         return np.unique(np.linspace(n_total * 0.1, n_total * 0.9, n_slices).round().astype(int))
 
     def _compute_slice_indices(self, cfg: InferenceConfig, n_z: int, n_rows: int, n_cols: int) -> dict:
+        """Builds the slice-index arrays used by both the metric sweep and the figure composer.
+
+        Args:
+            cfg    : Inference configuration supplying the per-axis slice counts.
+            n_z : Number of z bins.
+            n_rows   : Number of row samples.
+            n_cols   : Number of range samples.
+
+        Returns:
+            Mapping with the plotted subset per axis ("slice_*_idx") and the full index
+            range per axis ("all_*_idx").
+        """
+
         return {
-            "slice_z_idx"   : self._equal_indices(n_z, cfg.n_z_slices),
-            "slice_col_idx" : self._equal_indices(n_cols,   cfg.n_col_slices),
-            "slice_row_idx" : self._equal_indices(n_rows,   cfg.n_row_slices),
-            "all_z_idx"     : np.arange(n_z),
+            "slice_elev_idx"  : self._equal_indices(n_z, cfg.n_z_slices),
+            "slice_range_idx" : self._equal_indices(n_cols,   cfg.n_col_slices),
+            "slice_az_idx"    : self._equal_indices(n_rows,   cfg.n_row_slices),
+            "all_z_idx"    : np.arange(n_z),
             "all_col_idx"   : np.arange(n_cols),
-            "all_row_idx"   : np.arange(n_rows),
+            "all_row_idx"      : np.arange(n_rows),
         }
 
-    def _evaluate_metrics(self, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict) -> dict:
-        global_metrics = Metrics(result, z_axis_np, run.n_gaussians).compute(
-            z_indices   = indices["all_z_idx"],
-            col_indices = indices["all_col_idx"],
-            row_indices = indices["all_row_idx"],
-            param_space = self.components.param_space,
+    def _extract_curve_params(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, logger: Logger) -> None:
+        """Refits Gaussians to the predicted curves so curve-space runs unlock the parameter analyses.
+
+        Does nothing for parameter-space models, and is skipped when the configuration
+        disables extraction. The same extractor is also run on the GT curves against the
+        exact GT parameters, which gives the extraction error floor every extracted
+        parameter metric has to be read against.
+
+        Args:
+            cfg       : Inference configuration supplying the prominence fraction and worker count.
+            meta      : Run metadata resolving the cube output directory.
+            run       : Loaded run supplying the Gaussian count.
+            result    : Inference result, updated in place with the extracted parameters and floor.
+            z_axis_np : Z axis in metres, of shape (n_z,).
+            logger    : Logger for the section headings and result lines.
+
+        Raises:
+            ValueError : If the predictor produced no GT parameter cube to measure the floor against.
+        """
+
+        if self.components.param_space:
+            return
+
+        if not cfg.extract_curve_params:
+            logger.section("[Inference: Curve Parameter Extraction skipped]")
+            logger.subsection("extract_curve_params is disabled; this run predicts curves directly, so every Gaussian-parameter analysis stays absent from metrics, figures, and report.")
+            return
+
+        if result.params_gt is None:
+            raise ValueError("Curve-parameter extraction needs the exact GT parameters to measure its own floor, but the predictor produced no params_gt cube; a curve-space predictor must stitch the GT parameters alongside the curves.")
+
+        logger.section("[Inference: Curve Parameter Extraction]")
+
+        extractor = CurveParamExtractor(
+            z_axis          = z_axis_np,
+            n_gaussians     = run.n_gaussians,
+            prominence_frac = cfg.extract_prominence_frac,
+            n_workers       = cfg.cpu_workers,
         )
+
+        predicted = extractor.run(result.pred_curves)
+        reference = extractor.run(result.gt_curves)
+
+        result.params_pred   = predicted.params
+        result.params_source = "extracted"
+        result.extract_r2    = predicted.fit_r2
+        result.extract_floor = self._extraction_floor(result, reference.params, z_axis_np, run.n_gaussians, cfg.cpu_workers, cfg.active_amp_thr)
+
+        if cfg.save_cubes:
+            np.save(meta.cube_dir / "params_pred.npy", predicted.params)
+            np.save(meta.cube_dir / "extract_r2.npy",  predicted.fit_r2)
+
+        logger.subsection(f"Extracted {run.n_gaussians} Gaussians per pixel from the predicted curves : median fit R² = {float(np.median(predicted.fit_r2)):.4f}")
+        logger.subsection(f"Extraction floor (same extractor on GT curves vs exact GT parameters) : μ MAE = {result.extract_floor['matched_mu_mae']:.4g}, σ MAE = {result.extract_floor['matched_sig_mae']:.4g}")
+
+    @staticmethod
+    def _extraction_floor(result, reference_params: np.ndarray, z_axis_np: np.ndarray, n_gaussians: int, cpu_workers: int, active_amp_thr: float) -> dict:
+        """Scores the extractor's own refit of the GT curves against the exact GT parameters.
+
+        Args:
+            result           : Inference result supplying the GT curves, per-pixel maps and GT parameters.
+            reference_params : Parameters the extractor recovered from the GT curves, of shape (3 * K, row, range).
+            z_axis_np        : Z axis in metres, of shape (n_z,).
+            n_gaussians      : Gaussian count K.
+            cpu_workers      : Worker count for the metric computation.
+            active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active.
+
+        Returns:
+            Matched-Gaussian metrics describing the best accuracy the extractor could reach.
+        """
+
+        floor = Result(
+            pred_curves        = result.gt_curves,
+            gt_curves          = result.gt_curves,
+            pixel_mse          = result.pixel_mse,
+            pixel_mae          = result.pixel_mae,
+            pixel_r2           = result.pixel_r2,
+            pixel_cosine       = result.pixel_cosine,
+            pixel_peak_err_idx = result.pixel_peak_err_idx,
+            cube_directory     = result.cube_directory,
+            row_offset     = result.row_offset,
+            col_offset       = result.col_offset,
+            params_pred        = reference_params,
+            params_gt          = result.params_gt,
+        )
+
+        return Metrics(floor, z_axis_np, n_gaussians, cpu_workers, active_amp_thr).matched_gaussian_metrics()
+
+    def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict) -> dict:
+        """Computes the core metric dictionary, annotates it with run provenance and writes metrics.json.
+
+        Args:
+            cfg       : Inference configuration supplying the worker count.
+            result    : Inference result carrying the cubes and per-pixel maps.
+            z_axis_np : Z axis in metres, of shape (n_z,).
+            run       : Loaded run supplying the split, regions and track metadata.
+            meta      : Run metadata resolving the metrics path.
+            indices   : Slice-index arrays keyed by axis.
+
+        Returns:
+            The metric dictionary, also written to disk.
+        """
+
+        param_space = result.params_pred is not None and result.params_gt is not None
+
+        global_metrics = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, cfg.active_amp_thr).compute(
+            z_indices      = indices["all_z_idx"],
+            col_indices     = indices["all_col_idx"],
+            row_indices        = indices["all_row_idx"],
+            param_space       = param_space,
+            slot_organization = result.params_source == "model",
+        )
+
+        global_metrics["params_source"] = result.params_source
+
+        if result.extract_r2 is not None:
+            finite = result.extract_r2[np.isfinite(result.extract_r2)]
+            global_metrics["extract_fit_r2_mean"]   = float(finite.mean())
+            global_metrics["extract_fit_r2_median"] = float(np.median(finite))
+            global_metrics["extract_fit_r2_p5"]     = float(np.percentile(finite, 5.0))
+
+        if result.extract_floor is not None:
+            for key, value in result.extract_floor.items():
+                global_metrics[f"extract_floor_{key}"] = value
 
         global_metrics["split"]        = run.split_name
         global_metrics["split_region"] = list(run.split_region.as_tuple())
 
+        if run.core_region is not None:
+            global_metrics["core_region"] = list(run.core_region.as_tuple())
+
+        if run.channel_profiles is not None:
+            global_metrics["track_positions"] = run.channel_profiles.position_summary()
+
         Metrics.write_json(global_metrics, meta.metrics_path)
         return global_metrics
 
-    def _evaluate_embeddings(self, meta: InferenceMetadata, run, global_metrics: dict, logger: Logger) -> None:
-        if self.components.embedding_evaluator_cls is None:
+    def _evaluate_embeddings(self, cfg: InferenceConfig, meta: InferenceMetadata, evaluator, result, global_metrics: dict) -> None:
+        """Runs the embedding evaluator, merging its scalars into the metrics and its maps into the result.
+
+        Args:
+            cfg            : Inference configuration deciding whether the maps are saved as cubes.
+            meta           : Run metadata resolving the metrics and cube paths.
+            evaluator      : Embedding evaluator, or None to skip.
+            result         : Inference result, updated in place with the embedding maps.
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+        """
+
+        if evaluator is None:
             return
 
-        evaluator = self.components.embedding_evaluator_cls(run, logger)
+        metrics, maps = evaluator.run(pixel_mse=result.pixel_mse)
 
-        global_metrics.update(evaluator.run())
+        result.embedding_maps = maps
+
+        global_metrics.update(metrics)
         Metrics.write_json(global_metrics, meta.metrics_path)
 
+        if cfg.save_cubes:
+            np.save(meta.cube_dir / "embedding_error.npy",  maps.embedding_error)
+            np.save(meta.cube_dir / "embedding_cosine.npy", maps.embedding_cosine)
+            np.save(meta.cube_dir / "decode_mse.npy",       maps.decode_mse)
+            np.save(meta.cube_dir / "chain_mse.npy",        maps.chain_mse)
+
     def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
-        r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians).label_quality(run.full_curves)
+        """Scores how well the Gaussian labels reproduce the raw cube and splits the error by label quality.
+
+        Args:
+            cfg            : Inference configuration deciding whether the map is saved as a cube.
+            meta           : Run metadata resolving the metrics and cube paths.
+            run            : Loaded run supplying the raw cube.
+            result         : Inference result, updated in place with the label R² map.
+            z_axis_np      : Z axis in metres, of shape (n_z,).
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            logger         : Logger for the result line.
+        """
+
+        r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, cfg.active_amp_thr).label_quality(run.full_curves)
 
         result.label_r2 = r2_map
         global_metrics["label_quality_status"] = "computed"
@@ -145,6 +401,22 @@ class InferencePipeline:
         logger.subsection(f"Label quality : mean fit R² = {stats['label_r2_mean']:.4f}, {stats['label_r2_frac_below_half'] * 100.0:.1f}% of labels below R² 0.5")
 
     def _evaluate_flip_consistency(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
+        """Measures flip-equivariance disagreement and its correlation with the supervised error.
+
+        Skipped when the configuration disables it.
+
+        Args:
+            cfg            : Inference configuration supplying the stitching window and amplitude floor.
+            meta           : Run metadata resolving the metrics and cube paths.
+            run            : Loaded run.
+            result         : Inference result, updated in place with the disagreement map.
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            logger         : Logger for the section headings and result line.
+
+        Raises:
+            ValueError : If the stitched disagreement map holds no finite value.
+        """
+
         if not cfg.compute_flip_consistency:
             logger.section("[Inference: Flip Consistency skipped]")
             logger.subsection("compute_flip_consistency is disabled; the flip-equivariance disagreement map is absent from metrics, figures, and report.")
@@ -154,7 +426,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Flip Consistency]")
 
-        evaluator = FlipConsistencyEvaluator(run, logger, window_kind=cfg.stitch_window, render_amp_floor=cfg.render_amp_floor)
+        evaluator = FlipConsistencyEvaluator(run, logger, window_kind=cfg.stitch_window, render_amp_floor=cfg.render_amp_floor, render_params=self.components.param_space)
         flip_map  = evaluator.run()
 
         result.flip_consistency = flip_map
@@ -181,6 +453,19 @@ class InferencePipeline:
         logger.subsection(f"Flip consistency : mean disagreement {global_metrics['flip_mse_mean']:.4g}, correlation with pixel MSE {corr:.3f}")
 
     def _stratify_errors(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
+        """Stratifies the per-pixel error over scene covariates and records the rank correlations.
+
+        Skipped when the configuration disables it.
+
+        Args:
+            cfg            : Inference configuration.
+            meta           : Run metadata resolving the metrics path.
+            run            : Loaded run supplying the covariate sources.
+            result         : Inference result, updated in place with the stratification tables.
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            logger         : Logger for the section headings and result line.
+        """
+
         if not cfg.compute_stratified:
             logger.section("[Inference: Stratified Errors skipped]")
             logger.subsection("compute_stratified is disabled; the covariate-stratified error curves are absent from metrics, figures, and report.")
@@ -190,7 +475,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Stratified Errors]")
 
-        tables, scalars   = StratifiedErrors(run, result).run()
+        tables, scalars   = StratifiedErrors(run, result, active_amp_thr=cfg.active_amp_thr).run()
         result.stratified = tables
 
         global_metrics["stratified_status"] = "computed"
@@ -201,6 +486,19 @@ class InferencePipeline:
         logger.subsection(f"Stratified over {sorted(tables)}; strongest rank correlation with error: {strongest} ({scalars[f'strat_{strongest}_spearman']:.3f})")
 
     def _classify_failures(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
+        """Classifies each pixel into a failure mode from its matched prediction-GT component pairs.
+
+        Skipped when no parameter cubes exist.
+
+        Args:
+            cfg            : Inference configuration deciding whether the mode map is saved as a cube.
+            meta           : Run metadata resolving the metrics and cube paths.
+            run            : Loaded run supplying the Gaussian count.
+            result         : Inference result, updated in place with the mode map, pairs and separation table.
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            logger         : Logger for the section headings and result line.
+        """
+
         if result.params_pred is None or result.params_gt is None:
             logger.section("[Inference: Failure Modes skipped]")
             logger.subsection("No parameter cubes are available; the failure-mode classification is absent from metrics, figures, and report.")
@@ -210,9 +508,13 @@ class InferencePipeline:
 
         logger.section("[Inference: Failure Modes]")
 
-        mode_map, by_sep, scalars = FailureModes(result.params_pred, result.params_gt, run.n_gaussians, assignment=result.assignment(run.n_gaussians)).run()
+        modes = FailureModes(result.params_pred, result.params_gt, run.n_gaussians, assignment=result.assignment(run.n_gaussians, cfg.active_amp_thr), active_amp_thr=cfg.active_amp_thr)
+        pairs = modes.pair_predictions()
+
+        mode_map, by_sep, scalars = modes.classify(pairs)
 
         result.failure_mode_map = mode_map
+        result.failure_pairs    = pairs
         result.miss_by_sep      = by_sep
 
         global_metrics["failure_mode_status"] = "computed"
@@ -225,7 +527,19 @@ class InferencePipeline:
         logger.subsection(f"Failure modes : miss rate {scalars['failure_miss_rate'] * 100.0:.2f}%, hallucination rate {scalars['failure_halluc_rate'] * 100.0:.2f}%, clean pixels {scalars['failure_frac_ok'] * 100.0:.1f}%")
 
     def _calibrate_presence(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
-        if result.params_pred is None or result.params_gt is None:
+        """Builds the presence-reliability curve relating predicted amplitude to detection precision.
+
+        Skipped when the failure-mode step produced no pairs.
+
+        Args:
+            meta           : Run metadata resolving the metrics path.
+            run            : Loaded run.
+            result         : Inference result, updated in place with the reliability rows.
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            logger         : Logger for the section headings and result line.
+        """
+
+        if result.failure_pairs is None:
             logger.section("[Inference: Presence Calibration skipped]")
             logger.subsection("No parameter cubes are available; the presence reliability curve is absent from metrics, figures, and report.")
             global_metrics["presence_status"] = "skipped: no parameter cubes"
@@ -234,7 +548,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Presence Calibration]")
 
-        rows, scalars        = PresenceCalibration(result.params_pred, result.params_gt, run.n_gaussians, assignment=result.assignment(run.n_gaussians)).run()
+        rows, scalars        = PresenceCalibration(result.failure_pairs).run()
         result.presence_rows = rows
 
         global_metrics["presence_status"] = "computed"
@@ -244,28 +558,49 @@ class InferencePipeline:
         logger.subsection(f"Presence calibration : overall precision {scalars['presence_overall_precision'] * 100.0:.1f}%, amp-precision rank correlation {scalars['presence_rank_corr']:.3f}")
 
     def _audit_normalization(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
+        """Audits input-normalization drift and output-clamp saturation on this split.
+
+        Args:
+            meta           : Run metadata resolving the metrics path.
+            run            : Loaded run supplying the dataset and normalization statistics.
+            result         : Inference result supplying the predicted parameter cube.
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            logger         : Logger for the section heading and result lines.
+        """
+
         logger.section("[Inference: Normalization Audit]")
 
-        stats = NormalizationAudit(run, result).run()
+        stats = NormalizationAudit(run, result, active_amp_thr=self.config.active_amp_thr).run()
         global_metrics.update(stats)
         Metrics.write_json(global_metrics, meta.metrics_path)
 
-        logger.subsection(
-            f"Input drift : worst |mean| {stats['norm_in_worst_abs_mean']:.3f}, worst |std-1| {stats['norm_in_worst_std_dev']:.3f}, "
-            f"overflow {stats['norm_in_overflow_frac'] * 100.0:.3f}%"
-        )
+        logger.subsection(f"Input drift : worst |mean| {stats['norm_in_worst_abs_mean']:.3f}, worst |std-1| {stats['norm_in_worst_std_dev']:.3f}, overflow {stats['norm_in_overflow_frac'] * 100.0:.3f}%")
 
         if "clamp_amp_ceil_frac" in stats:
             logger.subsection(f"Clamp hits  : amp ceil {stats['clamp_amp_ceil_frac'] * 100.0:.2f}%, sigma floor {stats['clamp_sigma_floor_frac'] * 100.0:.2f}%, mu at axis edge {stats['clamp_mu_edge_frac'] * 100.0:.2f}%")
 
     def _compose_figures(self, composer: FigureComposer, result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict) -> Dict[str, List[Path]]:
+        """Delegates figure composition, enabling parameter figures only when both parameter cubes exist.
+
+        Args:
+            composer       : Figure composer bound to this run's plotters and output directories.
+            result         : Inference result.
+            run            : Loaded run.
+            global_metrics : Metric dictionary the figures annotate themselves from.
+            z_axis_np      : Z axis in metres, of shape (n_z,).
+            indices        : Slice-index arrays keyed by axis.
+
+        Returns:
+            Mapping of figure-family name to the paths written for it.
+        """
+
         return composer.compose(
             result         = result,
             run            = run,
             global_metrics = global_metrics,
             z_axis_np      = z_axis_np,
             indices        = indices,
-            param_space    = self.components.param_space,
+            param_space    = result.params_pred is not None and result.params_gt is not None,
         )
 
     def _build_report(
@@ -278,6 +613,20 @@ class InferencePipeline:
         figure_paths   : Dict[str, List[Path]],
         gif_paths      : Dict[str, Path],
     ) -> Path:
+        """Assembles the markdown inference report from the metrics, figures and animations.
+
+        Args:
+            meta           : Run metadata resolving the output and report paths.
+            run            : Loaded run described in the report header.
+            cfg            : Inference configuration echoed into the report.
+            z_axis_np      : Z axis in metres, of shape (n_z,).
+            global_metrics : Metric dictionary tabulated in the report.
+            figure_paths   : Figure paths grouped by family.
+            gif_paths      : Animation paths keyed by axis.
+
+        Returns:
+            Path of the written report.
+        """
 
         return Report(
             output_dir       = meta.output_dir,
@@ -291,21 +640,30 @@ class InferencePipeline:
         ).assemble()
 
     def run(self) -> Path:
+        """Runs the whole inference pass and stamps the completion marker on success.
+
+        Returns:
+            Path of the written inference report.
+        """
+
         cfg                    = self.config
         meta, logger, plotter  = self._setup(cfg)
         CompletionMarker.clear(meta.output_dir)
-        run    = self._load_run(cfg, logger)
-        result = self._predict(cfg, meta, run, logger)
+        run       = self._load_run(cfg, logger)
+        evaluator = self._build_embedding_evaluator(cfg, run, logger)
+        result    = self._predict(cfg, meta, run, evaluator, logger)
 
         z_axis_np         = np.asarray(run.z_axis, dtype=np.float64)
         _N_z, _row, _col = result.pred_curves.shape
 
+        self._extract_curve_params(cfg, meta, run, result, z_axis_np, logger)
+
         logger.section("[Inference: Metrics]")
         indices        = self._compute_slice_indices(cfg, _N_z, _row, _col)
-        global_metrics = self._evaluate_metrics(result, z_axis_np, run, meta, indices)
+        global_metrics = self._evaluate_metrics(cfg, result, z_axis_np, run, meta, indices)
         logger.subsection(f"Global metrics written : {meta.metrics_path}")
 
-        self._evaluate_embeddings(meta, run, global_metrics, logger)
+        self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics)
         self._evaluate_label_quality(cfg, meta, run, result, z_axis_np, global_metrics, logger)
         self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)
         self._stratify_errors(cfg, meta, run, result, global_metrics, logger)

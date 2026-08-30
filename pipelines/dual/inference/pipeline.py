@@ -1,3 +1,8 @@
+"""Inference component wiring for dual-trunk runs.
+
+Reuses the backbone inference pipeline with the dual run loader substituted in.
+"""
+
 from __future__ import annotations
 
 from pipelines.backbone.inference.pipeline import InferenceComponents

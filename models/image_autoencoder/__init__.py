@@ -1,3 +1,5 @@
+"""Registry of 2D image autoencoders and their configuration classes."""
+
 from configuration.architectures import Conv2dImageAutoencoderConfig, ImageAutoencoderBaseConfig, ResNet2dImageAutoencoderConfig, ConvNeXt2dImageAutoencoderConfig, DilatedConv2dImageAutoencoderConfig, ViTImageAutoencoderConfig
 from ..registry                  import RegistryFactory
 from .base                       import ImageAutoencoderBase

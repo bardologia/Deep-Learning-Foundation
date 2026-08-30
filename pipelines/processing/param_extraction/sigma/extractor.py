@@ -1,3 +1,10 @@
+"""GPU-batched Gaussian-mixture fitting of tomographic elevation profiles.
+
+Drives the three-phase extraction loop: CPU peak initialisation, a JAX Adam
+kernel that fits every candidate mixture order K on device, and a background
+scoring stage that picks the best K per pixel for each model-order penalty.
+"""
+
 from __future__ import annotations
 
 import gc
@@ -21,6 +28,14 @@ from .selection   import BestKSelector, KernelBackendSelector
 
 
 class SigmaFittingExtractor:
+    """Fits Gaussian mixtures to every active pixel of a tomogram on GPU.
+
+    Attributes:
+        modes         : Fit modes (see `FitMode`) deciding which of amplitude, mean and sigma are free parameters.
+        lambda_values : Model-order penalties applied per extra Gaussian when selecting the best K.
+        k_max         : Largest mixture order fitted.
+        mode_masks    : Per-mode gradient masks as (amplitude, mean, sigma) scalars.
+    """
 
     MAX_PENDING_SCORINGS = 2
 
@@ -45,6 +60,28 @@ class SigmaFittingExtractor:
         peak_initialiser    : Optional[PeakInitialiser] = None,
         kernel_backend      : Optional[tuple]     = None,
     ) -> None:
+        """Configures the fitting grid, peak initialiser and JAX kernel backend.
+
+        Args:
+            logger               : Logger used for section reporting.
+            modes                : Fit-mode names resolved through `FitMode.free_flags`.
+            lambda_values        : Model-order penalties, one output permutation each.
+            k_max                : Maximum number of Gaussians fitted per pixel.
+            threshold_factor     : Relative floor applied by `ProfilePreprocessor`.
+            truncation_index     : Height-bin index above which profiles are cut.
+            prominence_frac      : Peak prominence as a fraction of the profile max.
+            sigma_init_divisor   : Divides the heuristic initial sigma in metres.
+            activity_threshold   : Minimum profile peak for a pixel to be fitted.
+            range_batch_size     : Number of range bins loaded per batch.
+            adam_steps           : Adam iterations run inside the kernel.
+            adam_lr              : Adam learning rate.
+            adam_b1              : Adam first-moment decay.
+            adam_b2              : Adam second-moment decay.
+            gpu_pixel_batch_size : Pixels per kernel invocation.
+            init_workers         : Process-pool size for peak initialisation; defaults to the CPU count capped at 32.
+            peak_initialiser     : Externally owned initialiser to reuse; a private one is created and closed by this extractor when omitted.
+            kernel_backend       : Externally owned (kernel, n_devices, backend, devices) tuple; selected here when omitted.
+        """
 
         self.logger               = logger
         self.modes                = list(modes)
@@ -111,6 +148,17 @@ class SigmaFittingExtractor:
         cube_path : Path,
         z_range   : Tuple[float, float],
     ) -> tuple:
+        """Memory-maps the tomogram and derives the height axis and fit bounds.
+
+        Args:
+            tomogram_path : Path to a (height, azimuth, range) tomogram .npy.
+            height_range  : Lowest and highest elevation of the height axis, in metres.
+
+        Returns:
+            Tuple of memmapped tomogram, its H/Az/R sizes, the numpy and JAX
+            height axes in metres, the sigma and mean clamp bounds in metres,
+            and the flattened parameter count 3 * k_max.
+        """
 
         n_params_out = 3 * self.k_max
 
@@ -127,6 +175,11 @@ class SigmaFittingExtractor:
 
         mu_lower_j = jnp.float32(z_axis[0])
         mu_upper_j = jnp.float32(z_axis[-1])
+
+        sigma_guess = PeakInitialiser.sigma_guess(height_axis, self.k_max, self.sigma_init_divisor)
+        if sigma_guess < dh:
+            erasing_divisor = PeakInitialiser.sigma_base(height_axis, self.k_max) / dh
+            self.logger.warning(f"sigma_init_divisor {self.sigma_init_divisor} places the initial sigma at {sigma_guess:.4f}, below the fit lower bound {dh:.4f}; the kernel clamps it, so every divisor above {erasing_divisor:.3f} starts this fit from the same sigma and produces identical parameters")
 
         self.logger.section("[Data Preparation]")
         self.logger.subsection(f"H            : {H}")
@@ -153,6 +206,16 @@ class SigmaFittingExtractor:
         mu_lower_j    : jnp.ndarray,
         mu_upper_j    : jnp.ndarray,
     ) -> None:
+        """Triggers JAX compilation of the fitting kernel on dummy inputs.
+
+        Args:
+            height_ax_j   : Height axis of shape (H,) in metres.
+            H             : Number of height bins.
+            sigma_lower_j : Lower sigma clamp in metres.
+            sigma_upper_j : Upper sigma clamp in metres.
+            mu_lower_j    : Lower mean clamp in metres.
+            mu_upper_j    : Upper mean clamp in metres.
+        """
 
         self.logger.section("[Kernel Compilation]")
         self.logger.subsection(f"Compiling JAX kernel (modes: {', '.join(self.modes)}) for K={self.k_max}")
@@ -178,6 +241,21 @@ class SigmaFittingExtractor:
         n_row     : int,
         H         : int,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+        """Loads one range batch and returns raw, peak-normalised profiles.
+
+        Args:
+            tomogram_mmap : Memmapped complex tomogram of shape (H, Az, R).
+            r_start       : First range bin of the batch.
+            R             : Total number of range bins.
+            Az            : Number of azimuth lines.
+            H             : Number of height bins.
+
+        Returns:
+            Tuple of raw profiles of shape (r_count * Az, H), the same profiles
+            divided by their peak, the peak scale of shape (r_count * Az, 1),
+            an activity mask of shape (r_count * Az,), and the exclusive end
+            range bin.
+        """
 
         r_end = min(r_start + self.col_batch_size, n_col)
         r_c   = r_end - r_start
@@ -185,8 +263,8 @@ class SigmaFittingExtractor:
         raw   = ProfilePreprocessor.apply(raw, self.threshold_factor, self.truncation_index)
 
         pf     = raw.transpose(2, 1, 0).reshape(r_c * n_row, H)
-        active = pf.max(axis=1) > self.activity_threshold
         pmax   = pf.max(axis=1, keepdims=True)
+        active = pmax[:, 0] > self.activity_threshold
         scale  = np.where(active[:, None], pmax, 1.0).astype(np.float32)
         norm   = pf / scale
 
@@ -196,6 +274,7 @@ class SigmaFittingExtractor:
 
     @staticmethod
     def _pad_rows(arr : np.ndarray, target : int) -> np.ndarray:
+        """Zero-pads a 2-D array to exactly `target` rows."""
         pad = target - arr.shape[0]
         if pad == 0:
             return np.ascontiguousarray(arr, dtype=np.float32)
@@ -215,6 +294,26 @@ class SigmaFittingExtractor:
         mode          : str,
         batch_tag     : str,
     ) -> dict:
+        """Fits every mixture order from 1 to k_max for one batch and mode.
+
+        Args:
+            inits         : Per-K tuple of initial amplitudes, means and sigmas, each of shape (N_act, K).
+            prof_norm_all : Peak-normalised profiles of shape (N_act, H).
+            scale_all     : Per-pixel peak scale of shape (N_act,).
+            height_ax_j   : Height axis of shape (H,) in metres.
+            sigma_lower_j : Lower sigma clamp in metres.
+            sigma_upper_j : Upper sigma clamp in metres.
+            mu_lower_j    : Lower mean clamp in metres.
+            mu_upper_j    : Upper mean clamp in metres.
+            N_act         : Number of active pixels in the batch.
+            mode          : Fit mode selecting which parameters receive gradients.
+            batch_tag     : Label used in log sections.
+
+        Returns:
+            Mapping from K to (amplitudes, means in metres, sigmas in metres,
+            per-pixel MSE) with the parameter arrays shaped (N_act, K) and the
+            MSE shaped (N_act,).
+        """
 
         gpu_results                   = {}
         B                             = self.gpu_pixel_batch_size
@@ -271,6 +370,15 @@ class SigmaFittingExtractor:
 
     @staticmethod
     def _materialize_chunk(pending : tuple, final_amps : np.ndarray, final_mus : np.ndarray, final_sigs : np.ndarray, final_mse : np.ndarray) -> None:
+        """Copies one pending device chunk into the batch result arrays.
+
+        Args:
+            pending    : Tuple of device amplitudes, means, sigmas, MSE and the inclusive-exclusive row range they belong to.
+            final_amps : Destination amplitudes of shape (N_act, K).
+            final_mus  : Destination means of shape (N_act, K), in metres.
+            final_sigs : Destination sigmas of shape (N_act, K), in metres.
+            final_mse  : Destination per-pixel MSE of shape (N_act,).
+        """
         out_a, out_m, out_s, out_e, i_start, i_end = pending
         n_chunk = i_end - i_start
 
@@ -288,6 +396,21 @@ class SigmaFittingExtractor:
         z_axis        : np.ndarray,
         batch_tag     : str,
     ) -> Optional[tuple]:
+        """Runs CPU peak initialisation for the active pixels of one batch.
+
+        Args:
+            profiles_flat : Raw profiles of shape (n_total, H).
+            profiles_norm : Peak-normalised profiles of shape (n_total, H).
+            active        : Boolean activity mask of shape (n_total,).
+            safe_scale    : Peak scale of shape (n_total, 1).
+            height_axis   : Height axis of shape (H,) in metres.
+            batch_tag     : Label used in log sections.
+
+        Returns:
+            Tuple of per-K initialisations, active normalised profiles of shape
+            (N_act, H), active scales of shape (N_act,), the active row indices
+            and their count; None when the batch holds no active pixel.
+        """
 
         active_idx = np.where(active)[0]
         N_act      = len(active_idx)
@@ -328,6 +451,21 @@ class SigmaFittingExtractor:
         n_row        : int,
         batch_tag    : str,
     ) -> None:
+        """Selects the best K per pixel and writes the batch into the maps.
+
+        Args:
+            mode         : Fit mode the results belong to.
+            gpu_results  : Per-K fit results as returned by `_fit_all_K`.
+            scale_all    : Active-pixel peak scales of shape (N_act,), used to undo amplitude normalisation.
+            active_idx   : Row indices of the active pixels within the batch.
+            n_total      : Number of pixels in the batch, active or not.
+            n_params_out : Flattened parameter count 3 * k_max.
+            outputs      : Destination maps keyed by (mode, lambda_k).
+            r_start      : First range bin of the batch.
+            r_end        : Exclusive last range bin of the batch.
+            Az           : Number of azimuth lines.
+            batch_tag    : Label used in log sections.
+        """
 
         t_score = perf_counter()
         r_count = r_end - r_start
@@ -356,6 +494,19 @@ class SigmaFittingExtractor:
 
     @staticmethod
     def _throttle_scorings(futures : list, max_pending : int) -> None:
+        """Blocks until fewer than `max_pending` scoring futures are unfinished.
+
+        Args:
+            futures     : Scoring futures submitted so far.
+            max_pending : Backlog size above which the caller waits.
+
+        Raises:
+            Exception : Whatever a completed scoring future raised.
+        """
+        for future in futures:
+            if future.done():
+                future.result()
+
         pending = [future for future in futures if not future.done()]
         while len(pending) >= max_pending:
             pending[0].result()
@@ -376,6 +527,28 @@ class SigmaFittingExtractor:
         n_params_out  : int,
         outputs       : Dict[tuple, dict],
     ) -> int:
+        """Streams range batches through load, init, fit and scoring stages.
+
+        Loading runs one batch ahead on its own thread and scoring runs in the
+        background so the GPU stays busy while results are written.
+
+        Args:
+            tomogram_mmap : Memmapped complex tomogram of shape (H, Az, R).
+            height_axis   : Height axis of shape (H,) in metres.
+            height_ax_j   : Device copy of the height axis.
+            sigma_lower_j : Lower sigma clamp in metres.
+            sigma_upper_j : Upper sigma clamp in metres.
+            mu_lower_j    : Lower mean clamp in metres.
+            mu_upper_j    : Upper mean clamp in metres.
+            Az            : Number of azimuth lines.
+            R             : Number of range bins.
+            H             : Number of height bins.
+            n_params_out  : Flattened parameter count 3 * k_max.
+            outputs       : Destination maps keyed by (mode, lambda_k).
+
+        Returns:
+            Number of active pixels that were fitted.
+        """
 
         n_batches = -(-n_col // self.col_batch_size)
 
@@ -453,6 +626,19 @@ class SigmaFittingExtractor:
         cube_path : Path,
         z_range   : Tuple[float, float],
     ) -> Dict[tuple, Tuple[np.ndarray, Dict[str, np.ndarray]]]:
+        """Fits the whole tomogram and returns one parameter map per permutation.
+
+        Args:
+            tomogram_path : Path to a (height, azimuth, range) tomogram .npy.
+            height_range  : Lowest and highest elevation in metres.
+
+        Returns:
+            Mapping from (mode, lambda_k) to a parameter map of shape
+            (3 * k_max, Az, R) — amplitude, mean in metres and sigma in metres
+            interleaved per Gaussian — and a diagnostics dict holding
+            `mse_per_k` and `penalised_per_k` of shape (k_max, Az, R), the
+            `best_k_map` of shape (Az, R) and the scalar `lambda_k`.
+        """
 
         (
             cube_mmap, H, n_row, n_col,

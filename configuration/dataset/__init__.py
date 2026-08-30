@@ -1,3 +1,5 @@
+"""Public re-exports of the dataset configuration dataclasses."""
+
 from configuration.dataset.general import (
     InputConfig,
     OutputConfig,

@@ -1,6 +1,11 @@
+"""Markdown reporting for multi-trial comparisons (benchmark and cross-validation).
+
+Renders leaderboards, per-metric tables, grouped figure pages and a JSON summary
+from the collected `TrialRecord` set of a benchmark or cross-validation run.
+"""
+
 from __future__ import annotations
 
-import math
 import re
 from pathlib import Path
 
@@ -15,6 +20,14 @@ from tools.reporting.reporting                    import MetricSectionGrouper, R
 
 
 class ComparisonReportBase:
+    """Ranking and significance machinery shared by comparison reports.
+
+    Attributes:
+        HEADLINE_METRICS : Ordered (metric key, column label) pairs forming the flat leaderboard.
+        HEADLINE_GROUPS  : Named groups of headline metric keys, averaged within a group so correlated metrics do not outvote independent axes.
+        seed_dispersion  : Per-trial seed statistics keyed by trial name, holding "n_seeds", "best_val_loss_std", "metrics" (per-key standard deviations) and "seed_metrics" (per-seed metric dicts).
+    """
+
     HEADLINE_METRICS = [
         ("curve_rmse_gt",                "RMSE"),
         ("curve_mae_gt",                 "MAE"),
@@ -36,21 +49,36 @@ class ComparisonReportBase:
 
     seed_dispersion: dict = {}
 
-    def _seed_annotated(self, cell: str, std: float | None) -> str:
-        if std is None or not math.isfinite(std):
-            return cell
-
-        return f"{cell} ± {ScalarFormatter.format_scalar(std)}"
-
     def _metric_seed_std(self, name: str, key: str) -> float | None:
+        """Returns the across-seed standard deviation of one metric for one trial."""
         entry = self.seed_dispersion.get(name)
         return entry["metrics"].get(key) if entry else None
 
     def _ranking(self, metrics: list[tuple[str, str]], scored: list[TrialRecord]) -> RankingResult:
+        """Ranks the scored trials over the given (metric key, label) pairs.
+
+        Args:
+            metrics : Ordered (metric key, column label) pairs to rank on.
+            scored  : Trial records carrying a non-empty metrics dict.
+
+        Returns:
+            Ranking result with composite scores, mean ranks, wins and per-metric ranks.
+        """
         trials = [(r.name, r.metrics) for r in scored]
         return RankingComputer(metrics, trials).compute()
 
     def _significance_vs_leader(self, metric_key: str, order: list[str]) -> dict[str, dict] | None:
+        """Tests every trial's per-seed metric against the composite leader.
+
+        Args:
+            metric_key : Metric whose per-seed values feed the permutation test.
+            order      : Trial names ordered by composite score, leader first.
+
+        Returns:
+            Mapping of trial name to significance entry (raw and Holm-adjusted
+            p-values), or None when the leader has no per-seed values or fewer
+            than two trials were seed-swept.
+        """
         per_seed = {}
         for name in order:
             entry = self.seed_dispersion.get(name, {})
@@ -65,6 +93,7 @@ class ComparisonReportBase:
 
     @staticmethod
     def _significance_cell(entry: dict | None) -> str:
+        """Returns the adjusted p-value cell, starred when below 0.05."""
         if entry is None or entry.get("p_adjusted") is None:
             return "n/a"
 
@@ -73,6 +102,18 @@ class ComparisonReportBase:
         return f"{p:.3g}{mark}"
 
     def _rank_section(self, entity: str, title: str, intro: str, metrics: list[tuple[str, str]], scored: list[TrialRecord]) -> list[str]:
+        """Renders a flat ranking table with per-metric ranks and significance.
+
+        Args:
+            entity  : Column heading for the ranked entity ("Model", "Fold").
+            title   : Section heading text.
+            intro   : Paragraph explaining how the table is to be read.
+            metrics : Ordered (metric key, column label) pairs to rank on.
+            scored  : Trial records carrying a non-empty metrics dict.
+
+        Returns:
+            Markdown lines for the section, or a placeholder when no metric applies.
+        """
         if not metrics:
             return [f"## {title}\n", "_No applicable metrics available._\n"]
 
@@ -122,6 +163,18 @@ class ComparisonReportBase:
         return lines
 
     def _grouped_section(self, entity: str, title: str, intro: str, groups: list[tuple[str, list[str]]], scored: list[TrialRecord]) -> list[str]:
+        """Renders a ranking table whose columns are metric groups, not metrics.
+
+        Args:
+            entity : Column heading for the ranked entity ("Model", "Fold").
+            title  : Section heading text.
+            intro  : Paragraph explaining how the table is to be read.
+            groups : (group label, metric keys) pairs; scores are averaged within a group, then across groups with equal weight.
+            scored : Trial records carrying a non-empty metrics dict.
+
+        Returns:
+            Markdown lines for the section, or a placeholder when no metric applies.
+        """
         metrics = [(key, key) for _, keys in groups for key in keys]
         if not metrics:
             return [f"## {title}\n", "_No applicable metrics available._\n"]
@@ -157,6 +210,21 @@ class ComparisonReportBase:
 
 
 class ComparisonReport(ComparisonReportBase):
+    """Writes the full comparison report set for a benchmark or CV run.
+
+    Produces an overview page, a metrics comparison page, one page per figure
+    group, an animation page, and a machine-readable JSON summary.
+
+    Attributes:
+        FIGURE_GROUPS   : (section title, filename pattern) pairs that sort figure names into separate pages; unmatched names land in "Other figures".
+        records         : Collected trials, one per model or fold.
+        out_dir         : Directory the report files are written to.
+        reference_model : Model whose parameter count anchors the size match.
+        embed_images    : Whether images are inlined rather than linked.
+        rank_models     : False for cross-validation, where folds are not ranked.
+        seed_dispersion : Per-trial seed statistics keyed by trial name.
+        has_seed_sweep  : True when at least one trial aggregates several seeds.
+    """
 
     FIGURE_GROUPS = [
         ("Profile reconstructions",     re.compile(r"^profiles_")),
@@ -170,6 +238,17 @@ class ComparisonReport(ComparisonReportBase):
     ]
 
     def __init__(self, records: list[TrialRecord], out_dir: Path, reference_model: str, embed_images: bool, logger: Logger, rank_models: bool = True, seed_dispersion: dict | None = None) -> None:
+        """Stores the records and prepares the report asset resolver.
+
+        Args:
+            records         : Collected trials to compare.
+            out_dir         : Directory the report files are written to.
+            reference_model : Name of the model used as the capacity reference.
+            embed_images    : Whether images are inlined as data URIs.
+            logger          : Logger used by the caller for progress reporting.
+            rank_models     : False for cross-validation folds, which are not ranked.
+            seed_dispersion : Per-trial seed statistics keyed by trial name.
+        """
         self.records         = records
         self.out_dir         = out_dir
         self.reference_model = reference_model
@@ -182,6 +261,7 @@ class ComparisonReport(ComparisonReportBase):
         self.timestamp       = self.assets.timestamp
 
     def _write_overview(self) -> Path:
+        """Writes benchmark_overview.md and returns its path."""
         if self.rank_models:
             lines = self.assets.header("Benchmark Overview")
         else:
@@ -212,6 +292,7 @@ class ComparisonReport(ComparisonReportBase):
         return out
 
     def _capacity_table(self) -> list[str]:
+        """Returns the markdown table of parameter counts and width-scale overrides."""
         table = MarkdownTable(["Model", "Parameters", "Δ vs reference", "Width scale", "Scaled attributes"])
 
         for r in self.records:
@@ -225,6 +306,7 @@ class ComparisonReport(ComparisonReportBase):
         return table.render()
 
     def _training_table(self) -> list[str]:
+        """Returns the markdown table of training status, best epoch, loss and duration."""
         headers = ["Model", "Status", "Best epoch", "Best val loss", "Epochs run", "Duration"]
         if self.has_seed_sweep:
             headers.insert(1, "Seeds")
@@ -240,7 +322,7 @@ class ComparisonReport(ComparisonReportBase):
                 f"`{r.name}`",
                 r.training_result.get("status", "—"),
                 ScalarFormatter.format_scalar(r.checkpoint.get("best_epoch")),
-                self._seed_annotated(ScalarFormatter.format_scalar(r.checkpoint.get("best_val_loss")), best_val_loss_std),
+                ScalarFormatter.with_std(ScalarFormatter.format_scalar(r.checkpoint.get("best_val_loss")), best_val_loss_std),
                 ScalarFormatter.format_scalar(r.checkpoint.get("n_train_epochs")),
                 duration,
             ]
@@ -251,6 +333,7 @@ class ComparisonReport(ComparisonReportBase):
         return table.render()
 
     def _inference_table(self) -> list[str]:
+        """Returns the markdown table of inference stamps, media counts and report links."""
         table = MarkdownTable(["Model", "Inference run", "Figures", "Animations", "Report"])
 
         for r in self.records:
@@ -262,6 +345,7 @@ class ComparisonReport(ComparisonReportBase):
         return table.render()
 
     def _leaderboard(self) -> list[str]:
+        """Returns the flat and grouped leaderboard sections for the overview page."""
         scored = [r for r in self.records if r.metrics]
         if not scored:
             return ["## Leaderboard\n", "_No inference metrics available yet._\n"]
@@ -282,6 +366,7 @@ class ComparisonReport(ComparisonReportBase):
         return lines
 
     def _write_metrics(self) -> Path:
+        """Writes metrics_comparison.md, one section per metric family, and returns its path."""
         scored = [r for r in self.records if r.metrics]
 
         if self.rank_models:
@@ -306,6 +391,17 @@ class ComparisonReport(ComparisonReportBase):
         return out
 
     def _metric_table(self, keys: list[str], scored: list[TrialRecord]) -> list[str]:
+        """Renders one metrics table, trials as columns and metric keys as rows.
+
+        Args:
+            keys   : Metric keys forming the rows, in display order.
+            scored : Trial records carrying a non-empty metrics dict.
+
+        Returns:
+            Markdown lines for the table followed by a blank line. Cells carry a
+            direction arrow, the seed standard deviation when available, and the
+            best value in bold when ranking is enabled.
+        """
         table = MarkdownTable(["Metric", *[f"`{r.name}`" for r in scored]])
 
         for key in keys:
@@ -324,7 +420,7 @@ class ComparisonReport(ComparisonReportBase):
                 finite = FiniteScalar.coerce(value)
                 if best is not None and finite is not None and finite == best:
                     cell = f"**{cell}**"
-                cell = self._seed_annotated(cell, self._metric_seed_std(r.name, key))
+                cell = ScalarFormatter.with_std(cell, self._metric_seed_std(r.name, key))
                 cells.append(cell)
 
             table.add_row(f"`{key}`{arrow}", *cells)
@@ -332,6 +428,16 @@ class ComparisonReport(ComparisonReportBase):
         return [*table.render(), ""]
 
     def _write_media(self, groups: list[tuple[str, re.Pattern]] | None, subdir: str, title: str) -> list[Path]:
+        """Writes side-by-side media pages for every trial with an inference run.
+
+        Args:
+            groups : (section title, filename pattern) pairs sorting media names into separate pages, or None to write a single page.
+            subdir : Inference sub-directory holding the media ("figures" or "animations").
+            title  : Base title of the generated pages.
+
+        Returns:
+            Paths of the written markdown files.
+        """
         scored = [r for r in self.records if r.has_inference]
 
         if groups is None:
@@ -354,14 +460,27 @@ class ComparisonReport(ComparisonReportBase):
         return written
 
     def _media_names(self, scored: list[TrialRecord], subdir: str) -> list[str]:
+        """Returns the naturally sorted union of media filenames across the trials."""
         names = {name for r in scored for name in self._record_media(r, subdir)}
         return sorted(names, key=ReportAssets.natural_key)
 
     def _record_media(self, record: TrialRecord, subdir: str) -> list[str]:
+        """Returns the figure or animation filenames recorded for one trial."""
         media = record.figures if subdir == "figures" else record.animations
         return [path.name for path in media]
 
     def _write_media_file(self, names: list[str], subdir: str, title: str, filename: str) -> Path:
+        """Writes one media page grouping every trial's copy of each media name.
+
+        Args:
+            names    : Media filenames to render, one heading each.
+            subdir   : Inference sub-directory holding the media.
+            title    : Page title.
+            filename : Output filename inside the report directory.
+
+        Returns:
+            Path of the written markdown file.
+        """
         scored = [r for r in self.records if r.has_inference]
 
         lines = self.assets.header(title)
@@ -385,6 +504,7 @@ class ComparisonReport(ComparisonReportBase):
         return out
 
     def _write_summary_json(self) -> Path:
+        """Writes comparison_summary.json with one entry per trial and returns its path."""
         payload = []
         for r in self.records:
             entry = {
@@ -412,6 +532,12 @@ class ComparisonReport(ComparisonReportBase):
         return FileIO.save_json(payload, out, indent=2)
 
     def write_all(self) -> list[Path]:
+        """Writes every report file and returns the paths in write order.
+
+        Returns:
+            Paths of the overview, metrics comparison, figure pages, animation
+            page and JSON summary.
+        """
         FileIO.ensure_dir(self.out_dir)
 
         written = [self._write_overview(), self._write_metrics()]

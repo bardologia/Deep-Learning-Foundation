@@ -1,3 +1,5 @@
+"""Plotters for the parameter-extraction inference report."""
+
 from pipelines.processing.param_extraction.plots.spatial       import SpatialMapPlotter
 from pipelines.processing.param_extraction.plots.distributions import DistributionPlotter
 from pipelines.processing.param_extraction.plots.metrics       import MetricsBarPlotter

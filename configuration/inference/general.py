@@ -1,3 +1,10 @@
+"""Configuration for backbone and dual tomographic inference runs.
+
+Holds the output layout, the analysis toggles (reduced tomography, data
+consistency, flip consistency, stratified metrics, curve-parameter fitting)
+and the plotting and animation settings applied to every inference run.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,6 +14,17 @@ from typing      import List, Optional
 
 @dataclass
 class InferencePaths:
+    """Subdirectory and file names written inside an inference output directory.
+
+    Attributes:
+        figures_subdir    : Directory holding saved figures.
+        animations_subdir : Directory holding rendered GIF animations.
+        logs_subdir       : Directory holding inference log files.
+        cubes_subdir      : Directory holding saved prediction cubes.
+        metrics_filename  : JSON file collecting the computed metrics.
+        report_filename   : Markdown report file summarising the run.
+    """
+
     figures_subdir    : str = "figures"
     animations_subdir : str = "animations"
     logs_subdir       : str = "logs"
@@ -17,18 +35,65 @@ class InferencePaths:
 
 @dataclass
 class InferenceConfig:
+    """Settings for one tomographic inference pass over a trained run.
+
+    Attributes:
+        run_directory            : Training run directory holding the checkpoint and config.
+        output_subdir            : Name of the inference output directory inside the run.
+        device                   : Torch device string used for the forward passes.
+        seed                     : Seed used for the random profile and slice selections.
+        log_level                : Logging verbosity for the inference logger.
+        split                    : Dataset split evaluated, typically "train", "val" or "test".
+        region_override          : Crop region as [azimuth_start, azimuth_end, range_start, range_end] overriding the split region.
+        checkpoint_name          : Checkpoint file name loaded from the run directory.
+        batch_size               : Patch batch size, or None to reuse the training batch size.
+        num_workers              : Dataloader worker processes.
+        cpu_workers              : Process-pool size for CPU-side analyses.
+        gif_workers              : Process-pool size for animation frame rendering.
+        save_plots               : Whether figures are written to disk.
+        save_animations          : Whether GIF animations are rendered.
+        save_cubes               : Whether stitched prediction cubes are written.
+        stitch_window            : Window applied when blending overlapping patches.
+        cube_dtype               : NumPy dtype name used when writing cubes.
+        render_amp_floor         : Amplitude below which scatterers are hidden in renders.
+        active_amp_thr           : Physical amplitude at or above which a Gaussian slot counts as active in the Hungarian slot matching, metrics, failure modes, stratified errors, normalization audit, report figures and the predictor's masking of inactive GT slots in the stitched parameter cube.
+        compute_flip_consistency : Whether flip-equivariance metrics run.
+        compute_stratified       : Whether metrics are stratified by scene strata.
+        extract_curve_params     : Whether Gaussians are refitted to predicted curves.
+        extract_prominence_frac  : Peak prominence fraction used in curve fitting.
+        n_best_profiles          : Number of best-scoring profiles plotted.
+        n_worst_profiles         : Number of worst-scoring profiles plotted.
+        n_random_profiles        : Number of randomly drawn profiles plotted.
+        profile_seed             : Seed for the random profile draw.
+        n_range_slices           : Number of range slices plotted.
+        n_azimuth_slices         : Number of azimuth slices plotted.
+        n_elevation_slices       : Number of elevation slices plotted.
+        gif_axes                 : Cube axes animated, from "elevation", "range" and "azimuth".
+        gif_fps                  : Animation frame rate.
+        gif_max_frames           : Upper bound on frames per animation.
+        gif_dpi                  : Rendering resolution of animation frames.
+        cmap_intensity           : Colormap used for intensity imagery.
+        cmap_error               : Colormap used for error imagery.
+        normalize_intensity      : Whether intensity maps are normalized before display.
+        fig_dpi                  : Figure resolution used on screen.
+        save_dpi                 : Figure resolution used when saving.
+        figure_style             : Named matplotlib style applied to the figures.
+        paths                    : Output subdirectory and file-name layout.
+    """
+
     run_directory : Path
     output_subdir : Optional[str] = None
     device        : str           = "cuda"
     seed          : int           = 0
     log_level     : str           = "INFO"
 
-    split           : str           = "test"
-    checkpoint_name : str           = "best_model.pt"
-    batch_size      : Optional[int] = None
-    num_workers     : int           = 4
-    cpu_workers     : int           = 80
-    gif_workers     : int           = 40
+    split           : str                 = "test"
+    region_override : Optional[List[int]] = None
+    checkpoint_name : str                 = "best_model.pt"
+    batch_size      : Optional[int]       = None
+    num_workers     : int                 = 4
+    cpu_workers     : int                 = 80
+    gif_workers     : int                 = 40
 
     save_plots      : bool = True
     save_animations : bool = True
@@ -36,9 +101,13 @@ class InferenceConfig:
     stitch_window   : str  = "hann"
     cube_dtype      : str  = "float32"
     render_amp_floor : float = 0.0
+    active_amp_thr   : float = 1e-4
 
     compute_flip_consistency : bool  = False
     compute_stratified       : bool  = True
+
+    extract_curve_params    : bool  = True
+    extract_prominence_frac : float = 0.05
 
     n_best_profiles   : int = 12
     n_worst_profiles  : int = 12
@@ -62,3 +131,20 @@ class InferenceConfig:
     figure_style        : str  = "report"
 
     paths               : InferencePaths = field(default_factory=InferencePaths)
+
+    @classmethod
+    def for_run_directory(cls) -> "InferenceConfig":
+        """Builds the default nested inference config used by entry configs.
+
+        The run directory is a placeholder that the launcher replaces with the
+        actual run being inferred.
+
+        Returns:
+            An InferenceConfig saving cubes and animating all three cube axes.
+        """
+        return cls(
+            run_directory = Path("."),
+            save_cubes    = True,
+            cpu_workers   = 16,
+            gif_axes      = ["z", "col", "row"],
+        )

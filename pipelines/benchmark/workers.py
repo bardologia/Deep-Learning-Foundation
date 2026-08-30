@@ -1,3 +1,11 @@
+"""Single-unit worker processes executed by the model benchmark sweep.
+
+Each worker is spawned as its own process by the benchmark stages and performs
+exactly one action for one (model, loss component, seed) unit: probing the
+largest usable batch size, training it, or running inference on the resulting
+run directory.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,17 +18,38 @@ from tools.data.io                           import FileIO
 
 
 class BenchmarkWorker(WorkerBase):
+    """Shared state and config assembly for every benchmark worker action.
+
+    Attributes:
+        config  : Benchmark sweep configuration shared by all units.
+        run_tag : Timestamped tag identifying the sweep run directory.
+        factory : Builds trainer, dataset, and inference configs from `config`.
+    """
+
     def __init__(self, config: BenchmarkConfig, run_tag: str) -> None:
+        """Binds the worker to a benchmark sweep run.
+
+        Args:
+            config  : Benchmark sweep configuration.
+            run_tag : Tag of the sweep run directory this unit belongs to.
+        """
         super().__init__(config, run_tag)
         self.factory = ConfigFactory(config)
 
     def _run_name(self, model_name: str, component: str | None, seed: int | None) -> str:
+        """Returns the run directory name for one benchmark unit."""
         from pipelines.benchmark.stages import SeedExpandedStage
 
         unit = SeedExpandedStage.unit_base(self.config, model_name, component)
         return unit if seed is None else SeedSet.run_name(unit, seed)
 
     def _apply_loss_component(self, trainer_config, component: str | None) -> None:
+        """Replaces the trainer curriculum with the one isolating a loss component.
+
+        Args:
+            trainer_config : Trainer configuration mutated in place.
+            component      : Name of the loss component arm, or None to keep the configured curriculum untouched.
+        """
         if component is None:
             return
 
@@ -29,6 +58,18 @@ class BenchmarkWorker(WorkerBase):
         trainer_config.curriculum = LossComponentCatalog.curriculum(component, base=self.config.loss)
 
     def _size_overrides(self, model_name: str) -> dict:
+        """Returns the capacity-matching model overrides recorded for a model.
+
+        Args:
+            model_name : Registry key of the benchmarked model.
+
+        Returns:
+            Override mapping from `size_match.json`, empty when the sweep did
+            not run capacity matching.
+
+        Raises:
+            SystemExit : If `size_match.json` exists but holds no entry for the model, which would silently train a capacity-unmatched model.
+        """
         size_match_path = self.run_dir / "pipeline" / "size_match.json"
         if not size_match_path.exists():
             return {}
@@ -41,6 +82,18 @@ class BenchmarkWorker(WorkerBase):
         return records[model_name]["overrides"]
 
     def _max_batch_size(self, model_name: str) -> int | None:
+        """Returns the measured largest usable batch size for a model.
+
+        Args:
+            model_name : Registry key of the benchmarked model.
+
+        Returns:
+            Batch size measured by the max-batch stage, or None when the stage
+            did not run.
+
+        Raises:
+            SystemExit : If `max_batch.json` exists but holds no entry for the model, or the recorded probe did not pass.
+        """
         path = self.run_dir / "pipeline" / "max_batch.json"
         if not path.exists():
             return None
@@ -56,7 +109,44 @@ class BenchmarkWorker(WorkerBase):
 
         return int(entry["batch_size"])
 
+    def _lr_multiplier(self, model_name: str) -> float | None:
+        """Returns the LR multiplier the range test selected for a model.
+
+        Args:
+            model_name : Registry key of the benchmarked model.
+
+        Returns:
+            Multiplier from the model's probe record, or None when the probe
+            stage did not run or the test selected nothing.
+
+        Raises:
+            SystemExit : If `max_batch.json` exists but holds no entry for the model.
+        """
+        path = self.run_dir / "pipeline" / "max_batch.json"
+        if not path.exists():
+            return None
+
+        records = FileIO.load_json(path)
+
+        if model_name not in records:
+            raise SystemExit(f"max_batch.json present but missing an entry for '{model_name}'")
+
+        multiplier = records[model_name]["lr_multiplier"]
+
+        return float(multiplier) if multiplier is not None else None
+
     def _ae_entry_config(self, model_name: str, logdir: Path, run_name: str | None = None, seed: int | None = None):
+        """Builds the profile-autoencoder training entry config for one unit.
+
+        Args:
+            model_name : Profile-autoencoder registry key.
+            logdir     : Directory the run writes its outputs under.
+            run_name   : Run directory name, defaulting to the model name.
+            seed       : Seed for this unit, defaulting to the sweep seed.
+
+        Returns:
+            A populated ProfileAeEntryConfig.
+        """
         from configuration.training import ProfileAeEntryConfig
 
         return ProfileAeEntryConfig(
@@ -73,6 +163,17 @@ class BenchmarkWorker(WorkerBase):
         )
 
     def _jepa_entry_config(self, model_name: str, logdir: Path, run_name: str | None = None, seed: int | None = None):
+        """Builds the JEPA training entry config for one unit.
+
+        Args:
+            model_name : Backbone registry key, optionally carrying a head suffix.
+            logdir     : Directory the run writes its outputs under.
+            run_name   : Run directory name, defaulting to the model name.
+            seed       : Seed for this unit, defaulting to the sweep seed.
+
+        Returns:
+            A populated JepaEntryConfig with the backbone name and head split apart.
+        """
         from configuration.training import JepaEntryConfig
         from pipelines.shared.model.model_builder import ModelBuilder
 
@@ -80,37 +181,75 @@ class BenchmarkWorker(WorkerBase):
         name, head = ModelBuilder.split_key(model_name)
 
         return JepaEntryConfig(
-            run_name                   = run_name or model_name,
-            backbone_name              = name,
-            backbone_head              = head,
-            seed                       = self.config.seed if seed is None else seed,
-            logdir                     = logdir,
-            profile_autoencoder_logdir = jepa.profile_autoencoder_logdir,
-            profile_autoencoder_run    = jepa.profile_autoencoder_run,
-            profile_autoencoder_mode   = jepa.profile_autoencoder_mode,
-            image_autoencoder_logdir   = jepa.image_autoencoder_logdir,
-            image_autoencoder_run      = jepa.image_autoencoder_run,
-            image_autoencoder_mode     = jepa.image_autoencoder_mode,
-            target_provider            = jepa.target_provider,
-            embedding_loss             = jepa.embedding_loss,
-            param_loss                 = jepa.param_loss,
-            paths                      = self.config.paths,
-            training                   = self.config.training,
-            normalization              = self.config.normalization,
-            augmentation               = self.config.augmentation,
-            overfit_check              = self.config.overfit_check,
+            run_name      = run_name or model_name,
+            backbone_name = name,
+            backbone_head = head,
+            seed          = self.config.seed if seed is None else seed,
+            logdir        = logdir,
+            paths         = self.config.paths,
+            training      = self.config.training,
+            normalization = self.config.normalization,
+            augmentation  = self.config.augmentation,
+            overfit_check = self.config.overfit_check,
+            probe         = self.config.probe,
+            **jepa.entry_kwargs(),
         )
 
 
 class MaxBatchWorker(BenchmarkWorker):
-    def run(self, model_name: str) -> None:
-        from pipelines.benchmark.batch_probe import MaxBatchProbe
+    """Worker that measures the largest batch size a model fits into VRAM."""
 
+    def _build_probe(self, model_name: str, work_dir: Path):
+        """Returns the probe matching the sweep's training type.
+
+        Backbone arms probe through the sweep-assembled context with the
+        size-match overrides applied; JEPA and profile-autoencoder arms probe
+        through their training pipeline's own preflight trainer builder.
+
+        Args:
+            model_name : Registry key of the model to probe.
+            work_dir   : Directory the probe writes into.
+
+        Returns:
+            The configured probe instance.
+
+        Raises:
+            ValueError : If the configured training type has no probe.
+        """
+        from pipelines.benchmark.batch_probe import EntryMaxBatchProbe, MaxBatchProbe
+
+        training_type = self.config.training_type
+
+        if training_type == "backbone":
+            return MaxBatchProbe(config=self.config, model_name=model_name, overrides=self._size_overrides(model_name), work_dir=work_dir)
+
+        if training_type == "jepa":
+            from pipelines.jepa.training.pipeline import TrainingPipeline
+
+            entry = self._jepa_entry_config(model_name, work_dir)
+            return EntryMaxBatchProbe(config=self.config, model_name=model_name, work_dir=work_dir, build_trainer=TrainingPipeline(entry).build_pretrain_trainer)
+
+        if training_type == "profile_autoencoder":
+            from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
+
+            entry = self._ae_entry_config(model_name, work_dir)
+            return EntryMaxBatchProbe(config=self.config, model_name=model_name, work_dir=work_dir, build_trainer=TrainingPipeline(entry).build_pretrain_trainer)
+
+        raise ValueError(f"Unknown training_type '{training_type}', expected one of ['backbone', 'jepa', 'profile_autoencoder']")
+
+    def run(self, model_name: str) -> None:
+        """Probes and records the maximum usable batch size for one model.
+
+        Args:
+            model_name : Registry key of the model to probe.
+
+        Raises:
+            SystemExit : If the probe failed to find any usable batch size.
+        """
         stage_dir   = self.run_dir / "max_batch"
         result_path = stage_dir / model_name / "max_batch_result.json"
 
-        probe  = MaxBatchProbe(config=self.config, model_name=model_name, overrides=self._size_overrides(model_name), work_dir=stage_dir / model_name / "probe")
-        result = probe.run()
+        result = self._build_probe(model_name, stage_dir / model_name / "probe").run()
 
         FileIO.save_json(result, result_path, indent=2)
 
@@ -119,34 +258,43 @@ class MaxBatchWorker(BenchmarkWorker):
 
 
 class TrainingWorker(BenchmarkWorker):
+    """Worker that trains one benchmark unit in the configured model family."""
+
     def _run_profile_autoencoder(self, model_name: str, run_name: str, seed: int | None) -> None:
+        """Trains one profile-autoencoder unit under the probed batch size and LR multiplier."""
         from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
+
+        self._apply_probed_overrides(model_name)
 
         entry = self._ae_entry_config(model_name, self.run_dir / "training", run_name=run_name, seed=seed)
         TrainingPipeline(entry).run()
 
     def _run_jepa(self, model_name: str, run_name: str, seed: int | None) -> None:
+        """Trains one JEPA unit under the probed batch size and LR multiplier."""
         from pipelines.jepa.training.pipeline import TrainingPipeline
+
+        self._apply_probed_overrides(model_name)
 
         entry = self._jepa_entry_config(model_name, self.run_dir / "training", run_name=run_name, seed=seed)
         TrainingPipeline(entry).run()
 
     def _run_backbone(self, model_name: str, run_name: str, seed: int | None, loss_component: str | None) -> None:
-        from models                               import BACKBONE_CONFIG_REGISTRY
+        """Trains one backbone unit under the measured batch size, probed LR multiplier and loss arm.
+
+        Args:
+            model_name     : Backbone registry key, optionally with a head suffix.
+            run_name       : Run directory name for this unit.
+            seed           : Seed for this unit, defaulting to the sweep seed.
+            loss_component : Loss component arm to isolate, or None for the configured curriculum.
+        """
         from pipelines.backbone.training.pipeline import TrainingPipeline
         from pipelines.shared.model.model_builder import ModelBuilder
 
         stage_dir    = self.run_dir / "training"
         name, head   = ModelBuilder.split_key(model_name)
-        model_config = BACKBONE_CONFIG_REGISTRY[name]()
-        model_config.head = head
+        model_config = ModelBuilder.config_from_registry(name, self._size_overrides(model_name), head=head)
 
-        for attribute, value in self._size_overrides(model_name).items():
-            setattr(model_config, attribute, value)
-
-        measured_batch = self._max_batch_size(model_name)
-        if measured_batch is not None:
-            self.config.training.batch_size = measured_batch
+        self._apply_probed_overrides(model_name)
 
         trainer_config          = self.factory.training_trainer_config(logdir=stage_dir)
         self._apply_loss_component(trainer_config, loss_component)
@@ -164,9 +312,38 @@ class TrainingWorker(BenchmarkWorker):
             overfit_check  = self.config.overfit_check,
         )
 
-        pipeline.run(probe_config=self._probe_config())
+        pipeline.run(probe_config=self.config.probe)
+
+    def _apply_probed_overrides(self, model_name: str) -> None:
+        """Writes the model's probed batch size and LR multiplier into the shared training config.
+
+        The entry configs of every family reference ``config.training``, so the
+        overrides reach the unit regardless of the training type. Nothing is
+        written when the probe stage did not run or found nothing.
+
+        Args:
+            model_name : Registry key of the benchmarked model.
+        """
+        measured_batch = self._max_batch_size(model_name)
+        if measured_batch is not None:
+            self.config.training.batch_size = measured_batch
+
+        if self.config.find_lr.enabled:
+            probed_multiplier = self._lr_multiplier(model_name)
+            if probed_multiplier is not None:
+                self.config.training.lr_multiplier = self.config.training.lr_multiplier * probed_multiplier
 
     def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None) -> None:
+        """Trains one benchmark unit, dispatching on the sweep training type.
+
+        Args:
+            model_name     : Registry key of the model to train.
+            seed           : Seed for this unit, defaulting to the sweep seed.
+            loss_component : Loss component arm to isolate, backbone runs only.
+
+        Raises:
+            ValueError : If the configured training type is not one of 'backbone', 'jepa', or 'profile_autoencoder'.
+        """
         training_type = self.config.training_type
         if training_type not in ("backbone", "jepa", "profile_autoencoder"):
             raise ValueError(f"Unknown training_type '{training_type}', expected one of ['backbone', 'jepa', 'profile_autoencoder']")
@@ -185,7 +362,16 @@ class TrainingWorker(BenchmarkWorker):
 
 
 class InferenceWorker(BenchmarkWorker):
+    """Worker that runs inference on one already-trained benchmark unit."""
+
     def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None) -> None:
+        """Runs the backbone inference pipeline over one trained unit.
+
+        Args:
+            model_name     : Registry key of the trained model.
+            seed           : Seed of the unit, defaulting to the unseeded run name.
+            loss_component : Loss component arm the unit was trained under.
+        """
         from pipelines.backbone.inference.pipeline import InferencePipeline
         from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 

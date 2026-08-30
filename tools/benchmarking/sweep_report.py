@@ -1,3 +1,9 @@
+"""Reporting over a DataLoader sweep: recommendation and diagnostic figures.
+
+Reads the records produced by the sweep, picks the configuration that saturates
+the GPU at the highest throughput, and draws the throughput, starvation, feed
+ratio and utilisation views behind that choice.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,16 +16,26 @@ matplotlib.use("Agg")
 
 
 class SweepReport:
+    """Recommends a loader configuration and plots the sweep it came from.
+
+    Attributes:
+        wait_threshold : Data-wait fraction at or below which a run counts as saturated.
+        frame          : All sweep records, failures included.
+        ok_frame       : The records whose status is 'ok'.
+    """
     def __init__(self, results: list[dict], wait_threshold: float = 0.05) -> None:
+        """Splits the sweep records into the full table and the successful subset.
+
+        Args:
+            results        : Sweep records as produced by the loader sweep.
+            wait_threshold : Data-wait fraction at or below which a run counts as saturated.
+        """
         self.wait_threshold = float(wait_threshold)
         self.frame          = pd.DataFrame(results)
         self.ok_frame       = self.frame[self.frame["status"] == "ok"].copy()
 
-    @property
-    def dataframe(self):
-        return self.frame
-
     def _saturated(self):
+        """Returns the successful runs that saturate the GPU by wait fraction or feed ratio."""
         if self.ok_frame.empty:
             return self.ok_frame
 
@@ -27,6 +43,11 @@ class SweepReport:
 
     @property
     def recommendation(self) -> dict:
+        """The recommended loader configuration, or a not-found marker.
+
+        Prefers the fastest saturated configuration and falls back to the fastest
+        overall, flagging the sweep as CPU-bound when nothing saturates.
+        """
         if self.ok_frame.empty:
             return {"found": False, "reason": "no successful configurations"}
 
@@ -52,10 +73,12 @@ class SweepReport:
         }
 
     def _new_axes(self):
+        """Returns a fresh figure and axes at the report figure size."""
         figure, axes = plt.subplots(figsize=(7.0, 4.5))
         return figure, axes
 
     def _save(self, figure, axes, fig_dir: Path, name: str) -> Path:
+        """Saves a figure under the figure directory and returns its path."""
         fig_dir = Path(fig_dir)
         fig_dir.mkdir(parents=True, exist_ok=True)
 
@@ -66,6 +89,7 @@ class SweepReport:
         return out_path
 
     def plot_throughput_vs_batch(self, fig_dir: Path) -> Path:
+        """Plots end-to-end throughput against batch size, one line per worker count, and returns the file path."""
         figure, axes = self._new_axes()
 
         for workers, group in self.ok_frame.groupby("num_workers"):
@@ -81,6 +105,7 @@ class SweepReport:
         return self._save(figure, axes, fig_dir, "throughput_vs_batch_size.png")
 
     def plot_data_wait_vs_workers(self, fig_dir: Path) -> Path:
+        """Plots the GPU data-wait share against worker count, one line per batch size, and returns the file path."""
         figure, axes = self._new_axes()
 
         for batch_size, group in self.ok_frame.groupby("batch_size"):
@@ -96,6 +121,7 @@ class SweepReport:
         return self._save(figure, axes, fig_dir, "data_wait_vs_workers.png")
 
     def plot_gpu_util_vs_throughput(self, fig_dir: Path) -> Path:
+        """Plots mean GPU utilisation against end-to-end throughput, coloured by worker count, and returns the file path."""
         figure, axes = self._new_axes()
 
         scatter = axes.scatter(
@@ -116,6 +142,7 @@ class SweepReport:
         return self._save(figure, axes, fig_dir, "gpu_util_vs_throughput.png")
 
     def plot_feed_ratio_vs_workers(self, fig_dir: Path) -> Path:
+        """Plots the loader-to-compute feed ratio against worker count, one line per batch size, and returns the file path."""
         figure, axes = self._new_axes()
 
         for batch_size, group in self.ok_frame.groupby("batch_size"):
@@ -131,6 +158,7 @@ class SweepReport:
         return self._save(figure, axes, fig_dir, "feed_ratio_vs_workers.png")
 
     def save_all(self, fig_dir: Path) -> list[Path]:
+        """Writes all four sweep figures and returns their paths."""
         return [
             self.plot_throughput_vs_batch(fig_dir),
             self.plot_data_wait_vs_workers(fig_dir),

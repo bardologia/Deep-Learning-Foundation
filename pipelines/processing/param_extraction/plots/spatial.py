@@ -1,3 +1,9 @@
+"""Per-pixel colour maps for a parameter-extraction run.
+
+Renders the discrete model-order maps, the fit-quality map, the profile-contrast map and
+the masked per-slot parameter maps over the azimuth-range grid.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,13 +19,41 @@ from tools.monitoring.logger  import Logger
 
 
 class SpatialMapPlotter(PlotBase):
+    """Renders the azimuth-range colour maps of a fitted parameter stack.
+
+    Attributes:
+        n_gaussians : Number of Gaussian slots, setting the discrete map levels.
+        logger      : Logger for skip warnings.
+        fig_dpi     : Figure resolution used while rendering.
+        save_dpi    : Resolution the PNGs are written at.
+    """
+
     def __init__(self, n_gaussians : int, logger : Logger, fig_dpi : int = 150, save_dpi : int = 300) -> None:
+        """Configures the spatial map plotter.
+
+        Args:
+            n_gaussians : Number of Gaussian slots, setting the discrete map levels.
+            logger      : Logger for skip warnings.
+            fig_dpi     : Figure resolution used while rendering.
+            save_dpi    : Resolution the PNGs are written at.
+        """
         self.n_gaussians = n_gaussians
         self.logger      = logger
         self.fig_dpi     = fig_dpi
         self.save_dpi    = save_dpi
 
-    def _plot_discrete_k_map(self, k_map : np.ndarray, title : str, cbar_label : str, out_path : Path) -> Path:
+    def plot_discrete_k_map(self, k_map : np.ndarray, title : str, cbar_label : str, out_path : Path) -> Path:
+        """Saves a discretely coloured map of an integer model-order field.
+
+        Args:
+            k_map      : Integer counts of shape (rows, cols), from 0 to ``n_gaussians``.
+            title      : Figure title.
+            cbar_label : Colourbar label.
+            out_path   : Destination PNG path.
+
+        Returns:
+            The saved figure path.
+        """
         n_row, n_col   = k_map.shape
         levels  = list(range(self.n_gaussians + 1))
         n_total = k_map.size
@@ -42,7 +76,7 @@ class SpatialMapPlotter(PlotBase):
             path           = out_path,
         )
 
-    def _plot_spatial_maps(
+    def plot_spatial_maps(
         self,
         maps_dict  : Dict[str, np.ndarray],
         keys       : List[str],
@@ -52,6 +86,20 @@ class SpatialMapPlotter(PlotBase):
         out_dir    : Path,
         cmap       : str = "plasma",
     ) -> Dict[str, Path]:
+        """Saves one continuous colour map per requested key, sharing a colourbar label.
+
+        Args:
+            maps_dict  : Mapping from key to a field of shape (azimuth, range).
+            keys       : Keys to plot, in order.
+            map_titles : Figure titles aligned with ``keys``.
+            group_name : Group name used in the skip warnings.
+            col_label  : Colourbar label shared by the group.
+            out_dir    : Directory the figures are written to.
+            cmap       : Colormap name applied to every map in the group.
+
+        Returns:
+            Mapping from key to the saved PNG path, skipping absent or fully masked fields.
+        """
         valid_pairs = [(k, t) for k, t in zip(keys, map_titles) if k in maps_dict]
         if not valid_pairs:
             self.logger.warning(f"Spatial map group '{group_name}' skipped: no data")
@@ -86,7 +134,16 @@ class SpatialMapPlotter(PlotBase):
 
         return saved
 
-    def _plot_r2_spatial_map(self, r2_map : np.ndarray, out_path : Path) -> Path:
+    def plot_r2_spatial_map(self, r2_map : np.ndarray, out_path : Path) -> Path:
+        """Saves the per-pixel fit-quality map, with the colour floor at its 1st percentile.
+
+        Args:
+            r2_map   : Per-pixel R-squared of shape (rows, cols), NaN where unfitted.
+            out_path : Destination PNG path.
+
+        Returns:
+            The saved figure path.
+        """
         n_row, n_col    = r2_map.shape
         cmap_obj = self._cmap_with_bad("RdYlGn")
         vmin     = float(np.nanpercentile(r2_map, 1.0))
@@ -106,7 +163,16 @@ class SpatialMapPlotter(PlotBase):
             path           = out_path,
         )
 
-    def _plot_snr_map(self, snr_db_map : np.ndarray, out_path : Path) -> Path:
+    def plot_snr_map(self, snr_db_map : np.ndarray, out_path : Path) -> Path:
+        """Saves the per-pixel peak-to-floor contrast map, clipped to its 1st-99th percentiles.
+
+        Args:
+            snr_db_map : Peak-to-floor contrast of shape (rows, cols), in dB.
+            out_path   : Destination PNG path.
+
+        Returns:
+            The saved figure path.
+        """
         n_row, n_col    = snr_db_map.shape
         cmap_obj = self._cmap_with_bad("viridis")
         vmin     = float(np.nanpercentile(snr_db_map, 1.0))

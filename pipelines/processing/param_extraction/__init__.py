@@ -1,3 +1,5 @@
+"""Public surface of the Gaussian parameter-extraction stage."""
+
 from configuration.param_extraction                 import ExtractionConfig
 from pipelines.processing.param_extraction.metrics  import FittingMetricsCalculator, KSelectionDiagnostics, ContrastEstimator
 from pipelines.processing.param_extraction.io       import ExtractionMetadataManager, ParameterIO

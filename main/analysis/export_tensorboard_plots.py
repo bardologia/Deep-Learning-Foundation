@@ -1,3 +1,9 @@
+"""Entry point exporting tensorboard scalar series of selected runs as publication figures.
+
+Train and validation series of one metric share a figure, and sibling seed runs of a trial
+additionally receive per-metric seed-overlay figures in the trial directory.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the export config and renders the tensorboard scalar figures."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics           import TensorboardExportEntryConfig

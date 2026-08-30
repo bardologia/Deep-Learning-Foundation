@@ -1,3 +1,9 @@
+"""Batched reconstruction of elevation profiles by a trained profile autoencoder.
+
+Feeds normalised curves through the autoencoder and returns both normalised and
+denormalised ground truth and reconstructions together with the latent codes.
+"""
+
 from __future__ import annotations
 
 import torch
@@ -6,17 +12,32 @@ from pipelines.autoencoder_common.inference.predictor import AeReconstructionPre
 
 
 class ProfileAeResult(AeResult):
+    """Reconstruction result of a profile-autoencoder run."""
+
     pass
 
 
 class ProfileAePredictor(AeReconstructionPredictor):
+    """Reconstructs a split of elevation profiles batch by batch."""
+
     SECTION      = "[Profile AE Inference: Reconstruct]"
     RESULT_CLASS = ProfileAeResult
 
     def _batch_input(self, batch):
-        return batch
+        """Returns the noisy curve tensor of shape (batch, H) from a loader batch."""
+        return batch[0]
 
     def _reconstruct_batch(self, curve_n: torch.Tensor) -> BatchReconstruction:
+        """Reconstructs one batch of normalised curves.
+
+        Args:
+            curve_n : Normalised profiles of shape (batch, H).
+
+        Returns:
+            Ground truth and reconstruction in physical and normalised units,
+            each of shape (batch, H), plus latent codes of shape
+            (batch, embedding_dim).
+        """
         x = curve_n.to(self.device).unsqueeze(-1).unsqueeze(-1)
 
         with torch.no_grad():
@@ -35,6 +56,7 @@ class ProfileAePredictor(AeReconstructionPredictor):
         )
 
     def _summary(self, result) -> dict:
+        """Returns the curve count, profile length and latent size for logging."""
         return {
             "Curves"         : result.gt.shape[0],
             "Profile length" : result.gt.shape[1],

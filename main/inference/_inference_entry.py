@@ -1,3 +1,9 @@
+"""Shared scheduler/worker plumbing behind the per-run-type inference entry scripts.
+
+Each ``main/inference/infer_*.py`` script instantiates ``InferenceEntry`` with its own run
+type; this module holds the config lookup, the CLI split and the dispatch to runners.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,6 +15,15 @@ from pipelines.shared.inference.run_classifier import RunType
 
 
 class InferenceEntry:
+    """Dual-role inference entry point for one run type.
+
+    Invoked without ``--worker`` it schedules inference over every matching run under the
+    runs directory; invoked with ``--worker`` it runs one run directory on a pinned GPU.
+
+    Attributes:
+        entry_script : Path to the concrete entry script, re-invoked for worker processes.
+        run_type     : Run family this entry serves, selecting config, description and runner.
+    """
 
     CONFIGS = {
         RunType.BACKBONE   : "BackboneInferenceEntryConfig",
@@ -25,16 +40,30 @@ class InferenceEntry:
     }
 
     def __init__(self, entry_script: Path, run_type: RunType) -> None:
+        """Binds the entry to a concrete script path and run type.
+
+        Args:
+            entry_script : Path of the calling ``infer_*.py`` script, passed to the scheduler so worker processes re-invoke the same file.
+            run_type     : Run family whose configuration and runner this entry uses.
+        """
         self.entry_script = Path(entry_script)
         self.run_type     = run_type
 
     def _entry_config(self):
+        """Returns a fresh inference entry-config instance for this run type."""
         import configuration.inference as inference_configs
 
         return getattr(inference_configs, self.CONFIGS[self.run_type])()
 
     def _worker(self, run_dir: str, config_path: str, gpu_id: int) -> None:
-        EnvironmentPinner.gpu(gpu_id)
+        """Runs inference for a single run directory on a pinned GPU.
+
+        Args:
+            run_dir     : Directory of the trained run to run inference on.
+            config_path : Path of the resolved inference config written by the scheduler.
+            gpu_id      : Index of the GPU this worker process is pinned to.
+        """
+        EnvironmentPinner.gpu(gpu_id, expandable_segments=True)
 
         from pipelines.shared.inference.inference_dispatch import BackboneInferenceRunner, DualInferenceRunner, ImageAeInferenceRunner, ProfileAeInferenceRunner
         from tools.runtime.config_cli           import ConfigCli
@@ -51,6 +80,11 @@ class InferenceEntry:
         runners[self.run_type](config).run(Path(run_dir))
 
     def _scheduler(self) -> None:
+        """Schedules inference over every matching run and fails if any unit did not finish.
+
+        Raises:
+            SystemExit : With status 1 if any scheduled unit ended in a status other than ``DONE``.
+        """
         EnvironmentPinner.threads()
 
         from pipelines.shared.inference.inference_scheduler import InferenceScheduler
@@ -64,6 +98,11 @@ class InferenceEntry:
             sys.exit(1)
 
     def run(self) -> None:
+        """Parses the role flags and dispatches to the worker or the scheduler.
+
+        Raises:
+            SystemExit : If ``--worker`` is given without both ``--run-dir`` and ``--config``, or propagated from the scheduler when a unit failed.
+        """
         parser = argparse.ArgumentParser(add_help=False)
         parser.add_argument("--worker",  action="store_true")
         parser.add_argument("--run-dir", type=str, default=None)

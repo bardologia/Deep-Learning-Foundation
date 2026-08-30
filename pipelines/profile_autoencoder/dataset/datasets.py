@@ -1,3 +1,9 @@
+"""Torch dataset that synthesises elevation profiles from Gaussian parameters.
+
+Each pixel of the extracted parameter maps becomes one curve, evaluated on the
+fly from its amplitude, mean and sigma triplets.
+"""
+
 from __future__ import annotations
 
 from typing import Optional
@@ -12,6 +18,19 @@ from tools.monitoring.logger                             import Logger
 
 
 class ProfileDataset(Dataset):
+    """Serves normalised elevation profiles rebuilt from Gaussian parameters.
+
+    Attributes:
+        x_axis      : Elevation axis of shape (H,), in metres.
+        n_gaussians : Number of Gaussians per pixel.
+        split_name  : Split this dataset covers ("train", "val" or "test").
+        amps        : Amplitudes of shape (n_pixels, n_gaussians).
+        mus         : Means of shape (n_pixels, n_gaussians), in metres.
+        sigs        : Standard deviations of shape (n_pixels, n_gaussians), in metres.
+        n_active    : Count of pixels carrying an amplitude above the threshold.
+        index       : Flat pixel indices kept by the dataset, shuffled.
+    """
+
     def __init__(
         self,
         param_arrays    : list[np.ndarray],
@@ -26,6 +45,21 @@ class ProfileDataset(Dataset):
         augmenter       : Optional[ProfileAugmenter]  = None,
         logger          : Optional[Logger] = None,
     ) -> None:
+        """Stacks the parameter maps and selects the pixels to serve.
+
+        Args:
+            param_arrays    : Per-region parameter maps of shape (3 * n_gaussians, row, col), amplitude, mean and sigma interleaved.
+            z_axis          : Z axis of shape (H,), in metres.
+            n_gaussians     : Number of Gaussians per pixel.
+            split_name      : Split name; augmentation only runs for "train".
+            amp_zero_thr    : Amplitude above which a pixel counts as active.
+            pixel_subsample : Fraction of active pixels kept.
+            keep_empty_frac : Fraction of inactive pixels kept.
+            seed            : Seed for subsampling and shuffling.
+            normalizer      : Applied to each curve when given.
+            augmenter       : Applied to training curves when given.
+            logger          : Logger for the dataset summary table.
+        """
         self.z_axis      = np.asarray(z_axis, dtype=np.float32)
         self.n_gaussians = int(n_gaussians)
         self.split_name  = split_name
@@ -39,6 +73,11 @@ class ProfileDataset(Dataset):
             self._log(logger)
 
     def _stack_parameters(self, param_arrays: list[np.ndarray]) -> None:
+        """Flattens and concatenates the region parameter maps into pixel rows.
+
+        Args:
+            param_arrays : Per-region parameter maps of shape (3 * n_gaussians, azimuth, range).
+        """
         amps_list, mus_list, sigs_list = [], [], []
 
         for params in param_arrays:
@@ -55,6 +94,17 @@ class ProfileDataset(Dataset):
         self.sigs = np.concatenate(sigs_list, axis=0)
 
     def _select_pixels(self, amp_zero_thr: float, pixel_subsample: float, keep_empty_frac: float, seed: int) -> None:
+        """Builds the shuffled index of active and retained empty pixels.
+
+        Args:
+            amp_zero_thr    : Amplitude above which a pixel counts as active.
+            pixel_subsample : Fraction of active pixels kept, when below 1.
+            keep_empty_frac : Fraction of inactive pixels kept.
+            seed            : Seed for the subsampling and shuffling generator.
+
+        Raises:
+            ValueError : If the split holds no pixel above `amp_zero_thr`.
+        """
         active = (self.amps > amp_zero_thr).any(axis=1)
         rng    = np.random.default_rng(seed)
 
@@ -79,6 +129,7 @@ class ProfileDataset(Dataset):
         rng.shuffle(self.index)
 
     def _log(self, logger: Logger) -> None:
+        """Writes the pixel counts and profile geometry to the log."""
         logger.section(f"[ProfileDataset: {self.split_name}]")
         logger.kv_table({
             "Total pixels"   : int(self.amps.shape[0]),
@@ -89,9 +140,20 @@ class ProfileDataset(Dataset):
         })
 
     def __len__(self) -> int:
+        """Returns the number of pixels served by this split."""
         return int(self.index.shape[0])
 
     def __getitem__(self, i: int):
+        """Evaluates, augments and normalises the profile at position `i`.
+
+        Args:
+            i : Position within the kept pixel index.
+
+        Returns:
+            Tuple of the noisy input curve and the clean target curve, both of
+            shape (H,) in normalised units. Outside the training split the two
+            are the same array, since augmentation and noise are skipped.
+        """
         idx   = self.index[i]
         curve = GaussianMixture.evaluate_batch(
             self.z_axis,
@@ -106,7 +168,9 @@ class ProfileDataset(Dataset):
         if self.normalizer is not None:
             curve = self.normalizer.normalize(curve)
 
+        target = curve
+
         if self.augmenter is not None and self.split_name == "train":
             curve = self.augmenter.add_noise(curve)
 
-        return curve
+        return curve, target

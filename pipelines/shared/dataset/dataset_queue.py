@@ -1,14 +1,34 @@
+"""Resolution of the preprocessing-run queue a pipeline should iterate over."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 
 class DatasetQueueResolver:
+    """Selects the preprocessing run directories to process, in a stable order.
+
+    Attributes:
+        base_path      : Directory holding one sub-directory per preprocessing run.
+        dataset_filter : Explicit run names to select; empty selects every run.
+    """
+
     def __init__(self, base_path: Path, dataset_filter: list) -> None:
+        """Stores the queue root and the optional explicit dataset selection."""
         self.base_path      = base_path
         self.dataset_filter = dataset_filter
 
     def resolve(self) -> list[Path]:
+        """Returns the sorted dataset directories of the queue.
+
+        Returns:
+            One path per selected preprocessing run, each verified to contain a
+            data/ sub-directory.
+
+        Raises:
+            TypeError          : `dataset_filter` is not a list or tuple of names.
+            NotADirectoryError : The base path is missing, or a selected entry has no data/ sub-directory.
+        """
         if not isinstance(self.dataset_filter, (list, tuple)):
             raise TypeError(f"dataset_filter must be a list of dataset names, got {type(self.dataset_filter).__name__}: {self.dataset_filter!r}")
 

@@ -1,14 +1,38 @@
+"""TransUNet backbone: a convolutional U-Net whose bottleneck is a transformer.
+
+The CNN encoder reduces the input, the bottleneck feature map is tokenized with
+non-overlapping patches and processed by transformer blocks, and the CNN decoder
+restores resolution using the encoder skips.
+"""
+
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
 
 from configuration.architectures import TransUNetConfig
-from ..blocks                    import ConvBlock, OutputHeadsMixin, PatchEmbedding, TransformerBlock, build_upsample, initialize_weights, match_spatial_size, resize_positional_embedding, tokens_to_feature_map
+from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin, PatchEmbedding, TransformerBlock
 
 
 class TransUNet(nn.Module, OutputHeadsMixin):
+    """TransUNet backbone predicting per-pixel Gaussian mixture parameters.
+
+    Attributes:
+        config               : Architecture configuration driving widths, depth and head choice.
+        expected_grid_size   : Token grid side the positional embedding was built for.
+        positional_embedding : Learned positional embedding of shape (1, expected_grid_size ** 2, bottleneck_channels), resampled when the actual grid differs.
+        embedding_channels   : Channel width of the decoded embedding fed to the output head.
+    """
+
     def __init__(self, config: TransUNetConfig | None = None):
+        """Builds the CNN encoder, the transformer bottleneck, the decoder and the head.
+
+        Args:
+            config : Architecture configuration; defaults to ``TransUNetConfig()``.
+
+        Raises:
+            ValueError : If ``cnn_features`` is empty or ``patch_size`` is not positive.
+        """
         super().__init__()
         if config is None:
             config = TransUNetConfig()
@@ -82,7 +106,7 @@ class TransUNet(nn.Module, OutputHeadsMixin):
         self.decoder_blocks  = nn.ModuleList()
         for index in range(len(reversed_features) - 1):
             self.upsample_layers.append(
-                build_upsample(
+                LayerFactory.build_upsample(
                     mode         = config.upsample_mode,
                     in_channels  = reversed_features[index],
                     out_channels = reversed_features[index + 1],
@@ -102,9 +126,17 @@ class TransUNet(nn.Module, OutputHeadsMixin):
         self.embedding_channels = cnn_features[0]
         self._build_output_head()
 
-        initialize_weights(module=self, mode=config.init_mode)
+        LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
+        """Returns the embedding at input resolution.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Embedding of shape (batch, embedding_channels, height, width).
+        """
         skip_connections: list[torch.Tensor] = []
         for encoder_block, downsample in zip(self.encoder_blocks, self.downsample_layers):
             x = encoder_block(x)
@@ -115,22 +147,32 @@ class TransUNet(nn.Module, OutputHeadsMixin):
 
         tokens, grid_height, grid_width = self.patch_embedding(x)
 
-        tokens = tokens + resize_positional_embedding(self.positional_embedding, self.expected_grid_size, grid_height, grid_width)
+        tokens = tokens + FeatureGeometry.resize_positional_embedding(self.positional_embedding, self.expected_grid_size, grid_height, grid_width)
 
         for transformer_block in self.transformer_blocks:
             tokens = transformer_block(tokens)
         tokens = self.transformer_norm(tokens)
-        x      = tokens_to_feature_map(tokens, grid_height, grid_width)
+        x      = FeatureGeometry.tokens_to_feature_map(tokens, grid_height, grid_width)
 
         for upsample, decoder_block, skip in zip(
             self.upsample_layers, self.decoder_blocks, reversed(skip_connections)
         ):
             x = upsample(x)
-            x = match_spatial_size(source=x, reference=skip)
+            x = FeatureGeometry.match_spatial_size(source=x, reference=skip)
             x = torch.cat([skip, x], dim=1)
             x = decoder_block(x)
 
         return x
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Maps the input stack to per-pixel outputs through the configured head.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Tensor of shape (batch, out_channels, height, width) holding the
+            interleaved Gaussian parameters, or the raw embedding when the head
+            is ``none``.
+        """
         return self._head_forward(self.encode_decode(x))

@@ -1,3 +1,9 @@
+"""Family-agnostic training configuration blocks.
+
+Re-exports the optimizer, scheduler, runtime, loss curriculum, pretraining and
+run-path configs shared by the backbone, dual, autoencoder and JEPA pipelines.
+"""
+
 from configuration.training.general.optimization import (
     OptimizerConfig,
     SchedulerConfig,

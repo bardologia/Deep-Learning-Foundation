@@ -1,3 +1,5 @@
+"""Dataset assembly for the standalone profile autoencoder."""
+
 from pipelines.profile_autoencoder.dataset.augmentation  import ProfileAugmenter
 from pipelines.profile_autoencoder.dataset.datasets      import ProfileDataset
 from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStats, ProfileStatsComputer

@@ -1,9 +1,13 @@
+"""Markdown report layout for profile-autoencoder inference runs."""
+
 from __future__ import annotations
 
 from pipelines.shared.inference.report import InferenceReportBase
 
 
 class ProfileAeReport(InferenceReportBase):
+    """Groups the profile-autoencoder metrics and figures into a report."""
+
     DOC_TITLE = "Profile Autoencoder Inference Report"
 
     METRIC_GROUPS = [
@@ -20,12 +24,15 @@ class ProfileAeReport(InferenceReportBase):
         ("Error distribution",     ["error_histogram"]),
         ("Integrated power",       ["power_scatter"]),
         ("Embedding norm",         ["embedding_norm"]),
+        ("Latent RGB scatter",     ["latent_rgb_scatter"]),
+        ("Latent RGB scene map",   ["latent_rgb_map"]),
         ("Best reconstructions",   ["best"]),
         ("Worst reconstructions",  ["worst"]),
         ("Random reconstructions", ["random"]),
     ]
 
     def _summary(self) -> dict:
+        """Returns the run header fields: model, geometry, split and checkpoint."""
         return {
             "model_name"        : self.run.ae_name,
             "embedding_dim"     : self.run.embedding_dim,

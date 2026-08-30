@@ -1,3 +1,11 @@
+"""Embedding-matching loss for JEPA runs coupled to a profile autoencoder.
+
+The backbone predicts an embedding of the elevation profile; the target branch
+encodes the Gaussian-rendered ground-truth curve with the same autoencoder, and
+the loss compares the two normalized embeddings, optionally anchoring them by
+decoding the prediction back to curve space.
+"""
+
 from __future__ import annotations
 
 import torch
@@ -7,7 +15,30 @@ from tools.loss.curve_loss import CurveLoss
 
 
 class Loss:
+    """Embedding-match criterion between a predicted and an encoded target embedding.
+
+    Attributes:
+        autoencoder        : Coupled profile autoencoder providing the encoder, decoder and embedding normalization.
+        target_provider    : TargetProvider producing the target embedding branch.
+        emb_cfg            : Embedding-loss configuration holding term toggles and weights.
+        z_axis             : Z axis in metres used to render ground-truth curves.
+        norm_stats         : Normalizer denormalizing the ground-truth Gaussian parameters.
+        ppg                : Number of parameters per Gaussian in the target parameter vector.
+        profile_normalizer : Normalizer mapping rendered curves into the profile autoencoder's training scale.
+    """
+
     def __init__(self, autoencoder, target_provider, embedding_cfg, z_axis, norm_stats, params_per_gaussian: int, profile_normalizer) -> None:
+        """Stores the coupled autoencoder, target provider and normalization pieces.
+
+        Args:
+            autoencoder         : Coupled profile autoencoder.
+            target_provider     : TargetProvider for the target embedding branch.
+            embedding_cfg       : Embedding-loss configuration.
+            z_axis              : Z axis in metres, of length equal to the profile length.
+            norm_stats          : Output normalizer of the training dataset.
+            params_per_gaussian : Number of parameters per Gaussian (amplitude, mean, sigma).
+            profile_normalizer  : Curve normalizer matching the profile autoencoder run.
+        """
         self.autoencoder        = autoencoder
         self.target_provider    = target_provider
         self.emb_cfg            = embedding_cfg
@@ -18,9 +49,29 @@ class Loss:
 
     @property
     def loss_generation(self) -> int:
+        """Schema generation of this loss, kept at 0 for the embedding criterion."""
         return 0
 
+    def set_curriculum(self, embedding_cfg, context: str = "curriculum swap") -> None:
+        """Replaces the embedding-loss stage configuration.
+
+        Args:
+            embedding_cfg : Embedding-loss configuration the criterion switches to.
+            context       : Label describing why the stage changed, kept for parity with the parameter loss interface.
+        """
+        self.emb_cfg = embedding_cfg
+
     def _embedding_terms(self, z_hat, z_star) -> tuple[torch.Tensor, dict]:
+        """Sums the enabled embedding-space terms between prediction and target.
+
+        Args:
+            z_hat  : Normalized predicted embedding of shape (batch, embedding_dim, azimuth, range).
+            z_star : Normalized target embedding of the same shape.
+
+        Returns:
+            Tuple of the weighted total as a scalar tensor and a dict mapping each
+            enabled term name to its unweighted scalar value.
+        """
         cfg        = self.emb_cfg
         components = {}
         total      = torch.zeros((), dtype=z_hat.dtype, device=z_hat.device)
@@ -40,9 +91,100 @@ class Loss:
             components["embedding_smoothl1"] = val
             total = total + cfg.weight_embedding_smoothl1 * val
 
+        if cfg.use_embedding_huber:
+            val = CurveLoss.huber_diff(z_hat - z_star, cfg.embedding_huber_delta)
+            components["embedding_huber"] = val
+            total = total + cfg.weight_embedding_huber * val
+
+        if cfg.use_embedding_charbonnier:
+            val = CurveLoss.charbonnier_diff(z_hat - z_star, cfg.embedding_charbonnier_eps)
+            components["embedding_charbonnier"] = val
+            total = total + cfg.weight_embedding_charbonnier * val
+
+        if cfg.use_embedding_variance:
+            val = self._variance_hinge(z_hat)
+            components["embedding_variance"] = val
+            total = total + cfg.weight_embedding_variance * val
+
+        if cfg.use_embedding_covariance:
+            val = self._covariance_penalty(z_hat)
+            components["embedding_covariance"] = val
+            total = total + cfg.weight_embedding_covariance * val
+
         return total, components
 
-    def __call__(self, z_hat, gt_params_norm) -> dict:
+    @staticmethod
+    def _flatten_pixels(z: torch.Tensor) -> torch.Tensor:
+        """Flattens an embedding map of shape (batch, dim, ...) to (pixels, dim)."""
+        return z.movedim(1, -1).reshape(-1, z.shape[1])
+
+    def _variance_hinge(self, z_hat: torch.Tensor) -> torch.Tensor:
+        """Returns the hinge holding each embedding dimension's spread above the floor.
+
+        Args:
+            z_hat : Normalized predicted embedding of shape (batch, dim, ...).
+
+        Returns:
+            Scalar mean of relu(variance_gamma - std) over the dimensions, with
+            the standard deviation taken across every pixel of the batch.
+        """
+        flat = self._flatten_pixels(z_hat)
+        std  = torch.sqrt(flat.var(dim=0, unbiased=False) + 1e-6)
+
+        return torch.relu(self.emb_cfg.variance_gamma - std).mean()
+
+    def _covariance_penalty(self, z_hat: torch.Tensor) -> torch.Tensor:
+        """Returns the mean squared off-diagonal covariance of the predicted embedding.
+
+        Args:
+            z_hat : Normalized predicted embedding of shape (batch, dim, ...).
+
+        Returns:
+            Scalar sum of squared off-diagonal covariance entries divided by the
+            embedding dimension, with the covariance taken across every pixel.
+        """
+        flat     = self._flatten_pixels(z_hat)
+        centered = flat - flat.mean(dim=0, keepdim=True)
+        cov      = centered.t() @ centered / max(1, flat.shape[0] - 1)
+        dim      = cov.shape[0]
+
+        off_diagonal = cov - torch.diag_embed(torch.diagonal(cov))
+        return (off_diagonal ** 2).sum() / dim
+
+    @staticmethod
+    def _select_masked(t: torch.Tensor, pixel_mask: torch.Tensor) -> torch.Tensor:
+        """Gathers the masked pixels of a channel map into a pixel batch.
+
+        Args:
+            t          : Map of shape (batch, channels, azimuth, range).
+            pixel_mask : Boolean mask of shape (batch, azimuth, range), True on the pixels kept.
+
+        Returns:
+            Tensor of shape (n_masked, channels, 1, 1) holding the kept pixels.
+        """
+        selected = t.permute(0, 2, 3, 1)[pixel_mask]
+        return selected.unsqueeze(-1).unsqueeze(-1)
+
+    def __call__(self, z_hat, gt_params_norm, pixel_mask=None) -> dict:
+        """Evaluates the embedding-match loss for one batch.
+
+        Args:
+            z_hat          : Raw predicted embedding from the backbone, of shape (batch, embedding_dim, azimuth, range).
+            gt_params_norm : Normalized ground-truth Gaussian parameters of shape (batch, params_per_gaussian * n_gaussians, azimuth, range).
+            pixel_mask     : Optional boolean mask of shape (batch, azimuth, range); when given, every term is evaluated on the True pixels only.
+
+        Returns:
+            Dict with the scalar "total_loss", the per-term "components" dict, and
+            empty "monitor", "occupancy" and "physical" dicts kept for the trainer's
+            uniform loss protocol.
+
+        Raises:
+            ValueError : If the configured curve reconstruction kind is unknown.
+        """
+        if pixel_mask is not None:
+            z_hat          = self._select_masked(z_hat, pixel_mask)
+            gt_params_norm = self._select_masked(gt_params_norm, pixel_mask)
+
         with torch.no_grad():
             gt_phys    = self.norm_stats.denormalize_output(gt_params_norm.float())
             gt_curve   = GaussianCurve.reconstruct(gt_phys, self.z_axis, self.ppg).to(z_hat.dtype)
@@ -54,18 +196,25 @@ class Loss:
 
         total, components = self._embedding_terms(z_hat_n, z_star_n)
 
-        if self.emb_cfg.use_curve_recon:
+        if self.emb_cfg.use_curve_recon or self.emb_cfg.use_curve_sobolev:
             cfg       = self.emb_cfg
             curve_hat = self.autoencoder.decode(z_hat_n)
             diff      = curve_hat - gt_curve_n
 
-            if   cfg.curve_kind == "mse":         c_val = CurveLoss.mse_diff(diff)
-            elif cfg.curve_kind == "l1":          c_val = CurveLoss.l1_diff(diff)
-            elif cfg.curve_kind == "huber":       c_val = CurveLoss.huber_diff(diff, cfg.huber_delta)
-            elif cfg.curve_kind == "charbonnier": c_val = CurveLoss.charbonnier_diff(diff, cfg.charbonnier_eps)
-            else:                                 raise ValueError(f"Unknown curve loss kind '{cfg.curve_kind}'. Available: mse, l1, huber, charbonnier")
+            if cfg.use_curve_recon:
+                if   cfg.curve_kind == "mse":         c_val = CurveLoss.mse_diff(diff)
+                elif cfg.curve_kind == "l1":          c_val = CurveLoss.l1_diff(diff)
+                elif cfg.curve_kind == "huber":       c_val = CurveLoss.huber_diff(diff, cfg.huber_delta)
+                elif cfg.curve_kind == "charbonnier": c_val = CurveLoss.charbonnier_diff(diff, cfg.charbonnier_eps)
+                else:                                 raise ValueError(f"Unknown curve loss kind '{cfg.curve_kind}'. Available: mse, l1, huber, charbonnier")
 
-            components["curve_recon"] = c_val
-            total = total + cfg.weight_curve_recon * c_val
+                components["curve_recon"] = c_val
+                total = total + cfg.weight_curve_recon * c_val
+
+            if cfg.use_curve_sobolev:
+                s_val = CurveLoss.mse_diff(CurveLoss.second_difference(diff))
+
+                components["curve_sobolev"] = s_val
+                total = total + cfg.weight_curve_sobolev * s_val
 
         return {"total_loss": total, "components": components, "monitor": {}, "occupancy": {}, "physical": {}}

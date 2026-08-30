@@ -1,3 +1,9 @@
+"""JAX Adam kernels that fit Gaussian mixtures to elevation profiles.
+
+Provides the per-pixel loss and its `lax.scan` Adam loop, a single-device jitted
+kernel and a `pmap` variant that shards the pixel batch across several GPUs.
+"""
+
 from __future__ import annotations
 
 from functools import partial
@@ -7,8 +13,22 @@ import jax.numpy as jnp
 
 
 class SigmaScan:
+    """Loss and masked Adam loop for one batch of profiles."""
+
     @staticmethod
     def per_pixel_loss(amps, mus, sigmas, z_axis, profile):
+        """Returns the mean squared error of a Gaussian mixture against a profile.
+
+        Args:
+            amps        : Gaussian amplitudes of shape (K,).
+            mus         : Gaussian means of shape (K,), in metres.
+            sigmas      : Gaussian standard deviations of shape (K,), in metres.
+            z_axis : Z axis of shape (H,), in metres.
+            profile     : Target profile of shape (H,).
+
+        Returns:
+            Scalar MSE between the evaluated mixture and the profile.
+        """
         safe_s2 = 2.0 * jnp.maximum(sigmas, 1e-6) ** 2
         diff    = z_axis[None, :] - mus[:, None]
         expon   = jnp.clip(-(diff ** 2) / safe_s2[:, None], -100.0, 0.0)
@@ -38,6 +58,36 @@ class SigmaScan:
         b1          : float,
         b2          : float,
     ) -> tuple:
+        """Runs masked projected Adam on a batch of mixtures for `n_steps`.
+
+        Amplitudes are kept non-negative and means and sigmas are clipped to
+        their bounds after every step; a zero mask freezes the matching
+        parameter group.
+
+        Args:
+            batched_vg   : Vmapped value-and-grad of `per_pixel_loss`.
+            batched_loss : Vmapped `per_pixel_loss`.
+            amps_init    : Initial amplitudes of shape (B, K).
+            mus_init     : Initial means of shape (B, K), in metres.
+            sigmas_init  : Initial sigmas of shape (B, K), in metres.
+            height_axis  : Height axis of shape (H,), in metres.
+            profiles     : Target profiles of shape (B, H).
+            amp_mask     : 1.0 to let amplitudes move, 0.0 to freeze them.
+            mu_mask      : 1.0 to let means move, 0.0 to freeze them.
+            sigma_mask   : 1.0 to let sigmas move, 0.0 to freeze them.
+            mu_lower     : Lower mean clamp in metres.
+            mu_upper     : Upper mean clamp in metres.
+            sigma_lower  : Lower sigma clamp in metres.
+            sigma_upper  : Upper sigma clamp in metres.
+            n_steps      : Number of Adam iterations.
+            lr           : Adam learning rate.
+            b1           : Adam first-moment decay.
+            b2           : Adam second-moment decay.
+
+        Returns:
+            Tuple of fitted amplitudes, means in metres and sigmas in metres of
+            shape (B, K), and the final per-pixel MSE of shape (B,).
+        """
         b1_         = jnp.float32(b1)
         b2_         = jnp.float32(b2)
         eps         = jnp.float32(1e-8)
@@ -90,13 +140,17 @@ class SigmaScan:
 
 
 class SigmaAdamKernel:
+    """Single-device jitted Adam fitting kernel."""
+
     def __init__(self) -> None:
+        """Vmaps the per-pixel loss and jit-compiles the Adam scan."""
         batched_vg   = jax.vmap(jax.value_and_grad(SigmaScan.per_pixel_loss, argnums=(0, 1, 2)), in_axes=(0, 0, 0, None, 0))
         batched_loss = jax.vmap(SigmaScan.per_pixel_loss, in_axes=(0, 0, 0, None, 0))
         self._run    = self._build(batched_vg, batched_loss)
 
     @staticmethod
     def _build(batched_vg, batched_loss):
+        """Returns the jitted Adam scan closed over the vmapped loss functions."""
         @partial(jax.jit, static_argnames=("n_steps", "lr", "b1", "b2"))
         def _run(
             amps_init   : jnp.ndarray,
@@ -125,6 +179,30 @@ class SigmaAdamKernel:
         amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
         n_steps=2000, lr=1e-2, b1=0.9, b2=0.999,
     ):
+        """Fits a batch of mixtures on one device.
+
+        Args:
+            amps_init   : Initial amplitudes of shape (B, K).
+            mus_init    : Initial means of shape (B, K), in metres.
+            sigmas_init : Initial sigmas of shape (B, K), in metres.
+            height_axis : Height axis of shape (H,), in metres.
+            profiles    : Target profiles of shape (B, H).
+            amp_mask    : Amplitude gradient mask, 1.0 free and 0.0 frozen.
+            mu_mask     : Mean gradient mask, 1.0 free and 0.0 frozen.
+            sigma_mask  : Sigma gradient mask, 1.0 free and 0.0 frozen.
+            mu_lower    : Lower mean clamp in metres.
+            mu_upper    : Upper mean clamp in metres.
+            sigma_lower : Lower sigma clamp in metres.
+            sigma_upper : Upper sigma clamp in metres.
+            n_steps     : Number of Adam iterations.
+            lr          : Adam learning rate.
+            b1          : Adam first-moment decay.
+            b2          : Adam second-moment decay.
+
+        Returns:
+            Tuple of fitted amplitudes, means and sigmas of shape (B, K) and the
+            per-pixel MSE of shape (B,).
+        """
         return self._run(
             amps_init, mus_init, sigmas_init, z_axis, profiles,
             amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
@@ -133,7 +211,14 @@ class SigmaAdamKernel:
 
 
 class PmapSigmaAdamKernel:
+    """Multi-device Adam fitting kernel that shards pixels across GPUs."""
+
     def __init__(self, devices: list) -> None:
+        """Compiles the pmapped Adam scan over the given JAX devices.
+
+        Args:
+            devices : JAX devices the pixel batch is sharded over.
+        """
         self._n_devices = len(devices)
         batched_vg      = jax.vmap(jax.value_and_grad(SigmaScan.per_pixel_loss, argnums=(0, 1, 2)), in_axes=(0, 0, 0, None, 0))
         batched_loss    = jax.vmap(SigmaScan.per_pixel_loss, in_axes=(0, 0, 0, None, 0))
@@ -141,6 +226,7 @@ class PmapSigmaAdamKernel:
 
     @staticmethod
     def _build(batched_vg, batched_loss, devices):
+        """Returns the pmapped Adam scan bound to the given devices."""
         def _run_on_device(
             amps_init   : jnp.ndarray,
             mus_init    : jnp.ndarray,
@@ -174,6 +260,30 @@ class PmapSigmaAdamKernel:
         amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
         n_steps=2000, lr=1e-2, b1=0.9, b2=0.999,
     ):
+        """Pads, shards and fits a batch of mixtures across all devices.
+
+        Args:
+            amps_init   : Initial amplitudes of shape (n, K).
+            mus_init    : Initial means of shape (n, K), in metres.
+            sigmas_init : Initial sigmas of shape (n, K), in metres.
+            height_axis : Height axis of shape (H,), in metres.
+            profiles    : Target profiles of shape (n, H).
+            amp_mask    : Amplitude gradient mask, 1.0 free and 0.0 frozen.
+            mu_mask     : Mean gradient mask, 1.0 free and 0.0 frozen.
+            sigma_mask  : Sigma gradient mask, 1.0 free and 0.0 frozen.
+            mu_lower    : Lower mean clamp in metres.
+            mu_upper    : Upper mean clamp in metres.
+            sigma_lower : Lower sigma clamp in metres.
+            sigma_upper : Upper sigma clamp in metres.
+            n_steps     : Number of Adam iterations.
+            lr          : Adam learning rate.
+            b1          : Adam first-moment decay.
+            b2          : Adam second-moment decay.
+
+        Returns:
+            Tuple of fitted amplitudes, means and sigmas of shape (n, K) and the
+            per-pixel MSE of shape (n,), with the device padding stripped.
+        """
         n, K = sigmas_init.shape
         H    = profiles.shape[1]
         D    = self._n_devices

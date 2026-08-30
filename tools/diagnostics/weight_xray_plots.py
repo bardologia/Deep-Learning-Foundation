@@ -1,3 +1,10 @@
+"""Publication-quality figures for the model weight x-ray.
+
+Draws per-tensor series of norm, dispersion, sparsity and effective rank in
+state-dict order, the pooled weight-value distribution, and one histogram per
+flagged weight tensor.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +23,13 @@ from configuration.diagnostics import WeightXrayConfig
 
 
 class WeightXrayPlots(PlotBase):
+    """Renders the weight x-ray figure set for one checkpoint.
+
+    Attributes:
+        config     : Weight x-ray configuration supplying thresholds and sampling limits.
+        output_dir : Directory the figures are written to.
+    """
+
     save_dpi = 300
 
     SERIES_COLOR    = "#1f77b4"
@@ -23,10 +37,16 @@ class WeightXrayPlots(PlotBase):
     TITLE_WRAP      = 58
 
     def __init__(self, config: WeightXrayConfig) -> None:
+        """Initialises the plotter.
+
+        Args:
+            config : Weight x-ray configuration for the checkpoint.
+        """
         self.config     = config
         self.output_dir = config.plots_directory
 
     def _wrap_title(self, title: str) -> str:
+        """Returns the title broken across lines at dots when it exceeds the wrap width."""
         if len(title) <= self.TITLE_WRAP:
             return title
 
@@ -43,10 +63,24 @@ class WeightXrayPlots(PlotBase):
         return "\n".join(lines)
 
     def _decorate(self, ax) -> None:
+        """Applies the grid styling shared by every weight x-ray figure."""
         ax.grid(which="major", linewidth=0.5, alpha=0.3)
         ax.set_axisbelow(True)
 
     def _series_plot(self, values: List[float], y_label: str, title: str, filename: str, log_y: bool = False, threshold: Optional[float] = None) -> Optional[Path]:
+        """Renders one per-tensor quantity against state-dict order.
+
+        Args:
+            values    : One value per tensor; None entries are dropped.
+            y_label   : Axis label for the plotted quantity.
+            title     : Figure title.
+            filename  : Output file name relative to the plots directory.
+            log_y     : Whether to use a logarithmic y axis.
+            threshold : Optional value drawn as a horizontal reference line.
+
+        Returns:
+            Path of the saved figure, or None when no value is present.
+        """
         points = [(index, value) for index, value in enumerate(values) if value is not None]
         if not points:
             return None
@@ -78,6 +112,16 @@ class WeightXrayPlots(PlotBase):
         return self._save(fig, self.output_dir / filename)
 
     def _histogram_plot(self, values: np.ndarray, title: str, filename: str) -> Optional[Path]:
+        """Renders a log-count histogram of weight values.
+
+        Args:
+            values   : Flat array of weight values.
+            title    : Figure title.
+            filename : Output file name relative to the plots directory.
+
+        Returns:
+            Path of the saved figure, or None when the array is empty.
+        """
         if values.size == 0:
             return None
 
@@ -95,27 +139,56 @@ class WeightXrayPlots(PlotBase):
         fig.tight_layout()
         return self._save(fig, self.output_dir / filename)
 
+    @staticmethod
+    def _even_subsample(values: np.ndarray, keep: int) -> np.ndarray:
+        """Returns at most keep values drawn at evenly spaced positions of the array."""
+        if values.size <= keep:
+            return values
+
+        index = np.linspace(0, values.size - 1, keep).astype(np.int64)
+
+        return values[index]
+
     def _global_sample(self, reports, state_dict: dict) -> np.ndarray:
-        chunks = []
-        for report in reports:
-            if report.role != "weight":
-                continue
+        """Returns a size-proportional sample of all finite weight values.
 
-            flat   = state_dict[report.name].detach().to(torch.float32).cpu().numpy().reshape(-1)
-            finite = flat[np.isfinite(flat)]
-            chunks.append(finite)
+        Args:
+            reports    : Per-tensor reports; only those with role "weight" are pooled.
+            state_dict : Mapping the reports were derived from.
 
-        if not chunks:
+        Returns:
+            Flat array of at most histogram_sample_max weight values, drawn from
+            each tensor in proportion to its element count.
+        """
+        weights = [report for report in reports if report.role == "weight"]
+        total   = sum(state_dict[report.name].numel() for report in weights)
+
+        if total == 0:
             return np.empty(0, dtype=np.float32)
 
-        pooled = np.concatenate(chunks)
-        if pooled.size > self.config.histogram_sample_max:
-            index  = np.linspace(0, pooled.size - 1, self.config.histogram_sample_max).astype(np.int64)
-            pooled = pooled[index]
+        budget = int(self.config.histogram_sample_max)
+        chunks = []
 
-        return pooled
+        for report in weights:
+            tensor = state_dict[report.name]
+            flat   = tensor.detach().to(torch.float32).cpu().numpy().reshape(-1)
+            finite = flat[np.isfinite(flat)]
+            keep   = max(1, round(budget * tensor.numel() / total)) if total > budget else finite.size
+
+            chunks.append(self._even_subsample(finite, keep))
+
+        return self._even_subsample(np.concatenate(chunks), budget)
 
     def _flagged_histograms(self, reports, state_dict: dict) -> List[Path]:
+        """Renders one value histogram per flagged weight tensor, worst severity first.
+
+        Args:
+            reports    : Per-tensor reports carrying their issues.
+            state_dict : Mapping the reports were derived from.
+
+        Returns:
+            Paths of the histograms written, capped at max_layer_histograms.
+        """
         flagged = [report for report in reports if report.role == "weight" and report.severity in ("warning", "critical")]
         flagged = sorted(flagged, key=lambda report: -SEVERITY_RANK[report.severity])[: self.config.max_layer_histograms]
 
@@ -132,6 +205,16 @@ class WeightXrayPlots(PlotBase):
         return paths
 
     def render(self, reports, state_dict: dict) -> List[Path]:
+        """Renders the complete weight x-ray figure set.
+
+        Args:
+            reports    : Per-tensor reports carrying statistics and issues.
+            state_dict : Mapping the reports were derived from.
+
+        Returns:
+            Paths of every figure written: the four per-tensor series, the
+            pooled weight histogram, and the per-tensor flagged histograms.
+        """
         weight_reports = [report for report in reports if report.role == "weight"]
         thresholds     = self.config.thresholds
 

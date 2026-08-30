@@ -1,6 +1,14 @@
+"""Public surface of the model zoo: backbones, autoencoders, unrolled and dual nets.
+
+Re-exports every model class, its matching configuration dataclass and the
+per-family registries, so that callers can build any architecture through a
+single import and resolve the right configuration registry from a training-type
+string.
+"""
+
 from .backbone import *  # noqa: F401,F403
 from .backbone import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS, BACKBONE_IMAGE_SIZE_MODELS, BACKBONE_MODEL_REGISTRY, get_backbone
-from .blocks   import DropPath, build_activation, build_norm2d, build_upsample, initialize_weights
+from .blocks   import DropPath, LayerFactory
 from .profile_autoencoder import (
     PROFILE_AE_CONFIG_REGISTRY,
     PROFILE_AE_MODEL_REGISTRY,
@@ -33,6 +41,14 @@ from .dual import (
 )
 
 def config_registry(training_type: str) -> dict:
+    """Returns the architecture-configuration registry for a training type.
+
+    Args:
+        training_type : Training family name, one of ``profile_autoencoder``, ``image_autoencoder``, ``unrolled`` or ``dual``; any other value falls back to the backbone registry.
+
+    Returns:
+        Mapping from architecture name to its configuration dataclass.
+    """
     if training_type == "profile_autoencoder":
         return PROFILE_AE_CONFIG_REGISTRY
     if training_type == "image_autoencoder":
@@ -50,10 +66,7 @@ __all__ = [
     "BACKBONE_IMAGE_SIZE_MODELS",
     "get_backbone",
     "DropPath",
-    "build_activation",
-    "build_norm2d",
-    "build_upsample",
-    "initialize_weights",
+    "LayerFactory",
     "PROFILE_AE_CONFIG_REGISTRY",
     "PROFILE_AE_MODEL_REGISTRY",
     "ProfileAutoencoderBase",

@@ -1,9 +1,10 @@
-from pipelines.dataloader_tuning.adapters import FeedTarget, build_feed_target, FEED_MODES
+"""Dataloader tuning: feed targets and the sweep pipeline that times them."""
+
+from pipelines.dataloader_tuning.adapters import FeedTarget, FeedTargetFactory
 from pipelines.dataloader_tuning.pipeline import DataLoaderTuningPipeline
 
 __all__ = [
     "FeedTarget",
-    "build_feed_target",
-    "FEED_MODES",
+    "FeedTargetFactory",
     "DataLoaderTuningPipeline",
 ]

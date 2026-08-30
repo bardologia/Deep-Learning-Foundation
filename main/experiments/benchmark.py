@@ -1,3 +1,9 @@
+"""Entry point for the architecture benchmark, in both scheduler and worker roles.
+
+Without ``--worker`` the process schedules the whole benchmark; with it, the same script is
+re-invoked per GPU to run one max-batch probe, training or inference unit.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -10,6 +16,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def _scheduler() -> None:
+    """Runs the benchmark pipeline that fans work out to worker invocations of this script."""
     EnvironmentPinner.threads()
 
     from configuration.benchmark import BenchmarkConfig
@@ -23,7 +30,18 @@ def _scheduler() -> None:
 
 
 def _worker(stage: str, model_name: str, seed: int | None, gpu_id: int, run_tag: str, run_dir: str | None, loss_component: str | None) -> None:
-    EnvironmentPinner.gpu(gpu_id)
+    """Runs one benchmark work unit on a single pinned GPU.
+
+    Args:
+        stage          : Which worker to run, one of ``maxbatch``, ``train`` or ``infer``.
+        model_name     : Architecture name the unit operates on.
+        seed           : Training seed for the train and infer stages; ignored by ``maxbatch``.
+        gpu_id         : Index of the GPU this process is pinned to.
+        run_tag        : Tag of the benchmark run whose resolved config is loaded.
+        run_dir        : Explicit run directory holding the resolved config, or None to derive it.
+        loss_component : Loss-component variant for the train and infer stages, or None.
+    """
+    EnvironmentPinner.gpu(gpu_id, expandable_segments=True)
 
     from configuration.benchmark import BenchmarkConfig
     from pipelines.benchmark.workers                import InferenceWorker, MaxBatchWorker, TrainingWorker
@@ -46,6 +64,11 @@ def _worker(stage: str, model_name: str, seed: int | None, gpu_id: int, run_tag:
 
 
 def main() -> None:
+    """Dispatches to the benchmark scheduler or to a single worker unit.
+
+    Raises:
+        SystemExit : If ``--worker`` is given without both ``--model`` and ``--run-tag``.
+    """
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--worker",         type=str, default=None, choices=["maxbatch", "train", "infer"])
     parser.add_argument("--model",          type=str, default=None)

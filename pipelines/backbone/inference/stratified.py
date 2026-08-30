@@ -1,27 +1,57 @@
+"""Stratification of per-pixel curve error by scene covariates.
+
+Bins the per-pixel curve MSE against covariates the scene itself provides — ground-truth
+component count, primary amplitude, aux gradient and label fit quality — so error can be
+attributed to scene difficulty rather than to the model alone.
+"""
+
 from __future__ import annotations
 
 import numpy as np
 
 from tools.loss.param_loss import ParamMatcher
+from tools.metrics.scoring import RankCorrelation
 
 
 class StratifiedErrors:
+    """Bins per-pixel curve MSE against scene covariates and scores their rank correlation.
+
+    Attributes:
+        N_BINS           : Number of quantile bins used for continuous covariates.
+        MIN_BIN_COUNT    : Minimum pixels a bin needs before it is reported.
+        loaded         : Loaded run supplying the complex stack, the aux channel and the slot count.
+        result         : Inference result supplying the ground-truth parameters and the per-pixel MSE map.
+        active_amp_thr : Physical amplitude at or above which a ground-truth Gaussian slot counts as active.
+    """
 
     N_BINS        = 12
     MIN_BIN_COUNT = 30
 
-    def __init__(self, run, result) -> None:
-        self.loaded = run
-        self.result = result
+    def __init__(self, run, result, active_amp_thr: float = ParamMatcher.ACTIVE_AMP_THR) -> None:
+        """Stores the run, the inference result and the active-amplitude threshold."""
+        self.loaded         = run
+        self.result         = result
+        self.active_amp_thr = float(active_amp_thr)
 
     def _gt_active_count(self) -> np.ndarray:
+        """Returns the number of active ground-truth Gaussians per pixel, of shape (azimuth, range)."""
         params = np.asarray(self.result.params_gt, dtype=np.float64)
         n_k    = self.loaded.n_gaussians
         amps   = np.stack([params[3 * k] for k in range(n_k)])
 
-        return ParamMatcher.is_active(amps).sum(axis=0).astype(np.float64)
+        return ParamMatcher.is_active(amps, self.active_amp_thr).sum(axis=0).astype(np.float64)
 
     def covariates(self) -> dict[str, tuple[np.ndarray, bool]]:
+        """Collects every covariate map available for this run.
+
+        Returns:
+            Mapping from covariate name to its map of shape (azimuth, range) and a flag
+            marking it as discrete, covering the ground-truth active count, primary
+            amplitude, aux gradient magnitude and label fit R².
+
+        Raises:
+            ValueError : If the run offers no covariate at all.
+        """
         out = {}
 
         if self.result.params_gt is not None:
@@ -44,6 +74,20 @@ class StratifiedErrors:
         return out
 
     def _bin_rows(self, cov: np.ndarray, err: np.ndarray, discrete: bool) -> list[dict]:
+        """Bins the error by covariate and summarises each bin by median and quartiles.
+
+        Args:
+            cov      : Covariate map of shape (azimuth, range).
+            err      : Per-pixel error map of the same shape.
+            discrete : Whether to bin on distinct covariate values instead of quantile edges.
+
+        Returns:
+            Per-bin records carrying "center", "n", "median", "q25" and "q75", skipping bins
+            below MIN_BIN_COUNT.
+
+        Raises:
+            ValueError : If no finite pairs exist, the covariate is effectively constant, or every bin falls below MIN_BIN_COUNT.
+        """
         flat_cov = cov.reshape(-1)
         flat_err = err.reshape(-1)
         both     = np.isfinite(flat_cov) & np.isfinite(flat_err)
@@ -82,33 +126,14 @@ class StratifiedErrors:
 
         return rows
 
-    @staticmethod
-    def _tie_ranks(values: np.ndarray) -> np.ndarray:
-        _uniques, inverse, counts = np.unique(values, return_inverse=True, return_counts=True)
-
-        starts   = np.cumsum(counts) - counts
-        averaged = starts + (counts - 1) / 2.0
-
-        return averaged[inverse]
-
-    @staticmethod
-    def _spearman(cov: np.ndarray, err: np.ndarray) -> float:
-        flat_cov = cov.reshape(-1)
-        flat_err = err.reshape(-1)
-        both     = np.isfinite(flat_cov) & np.isfinite(flat_err)
-
-        if both.sum() < 3:
-            return float("nan")
-
-        rank_cov = StratifiedErrors._tie_ranks(flat_cov[both])
-        rank_err = StratifiedErrors._tie_ranks(flat_err[both])
-
-        if rank_cov.std() == 0.0 or rank_err.std() == 0.0:
-            return float("nan")
-
-        return float(np.corrcoef(rank_cov, rank_err)[0, 1])
-
     def run(self) -> tuple[dict[str, list[dict]], dict[str, float]]:
+        """Stratifies the per-pixel MSE by every available covariate.
+
+        Returns:
+            Tuple of a per-covariate table, each holding its binned "rows" and its "discrete"
+            flag, and the scalars giving the Spearman correlation of covariate against error
+            and the number of reported bins.
+        """
         err     = np.asarray(self.result.pixel_mse, dtype=np.float64)
         tables  = {}
         scalars = {}
@@ -117,7 +142,7 @@ class StratifiedErrors:
             rows          = self._bin_rows(cov, err, discrete)
             tables[name]  = {"rows": rows, "discrete": discrete}
 
-            scalars[f"strat_{name}_spearman"] = self._spearman(cov, err)
+            scalars[f"strat_{name}_spearman"] = RankCorrelation.spearman(cov, err)
             scalars[f"strat_{name}_n_bins"]   = float(len(rows))
 
         return tables, scalars

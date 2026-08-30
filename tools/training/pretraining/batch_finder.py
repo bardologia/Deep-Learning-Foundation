@@ -1,3 +1,5 @@
+"""Measurement of per-batch VRAM peaks and the largest batch fitting a memory budget."""
+
 from __future__ import annotations
 
 from typing import Callable, Optional
@@ -9,7 +11,35 @@ from tools.monitoring.logger import Logger
 
 
 class TrainStepMemoryProbe:
+    """Measures the peak GPU memory of real training steps at a given batch size.
+
+    Full forward, backward and optimizer steps are run, because surrogate probes
+    understate the true peak by roughly an order of magnitude.
+
+    Attributes:
+        trainer       : Trainer supplying the optimizer, the loss and the AMP setting.
+        dataset       : Dataset the probe batches are drawn from.
+        measure_steps : Number of training steps taken per trial.
+        device        : CUDA device the peak is measured on.
+        context_gb    : Fixed device memory in GB already held outside the probe, added to every reported peak.
+    """
+
     def __init__(self, trainer, dataset: Dataset, measure_steps: int, device: torch.device, context_gb: float = 0.0) -> None:
+        """Stores the probe inputs.
+
+        Args:
+            trainer       : Trainer whose optimizer and loss are exercised.
+            dataset       : Dataset the probe batches come from.
+            measure_steps : Training steps per trial, at least one.
+            device        : CUDA device to measure.
+            context_gb    : Fixed device memory in GB added to each measured peak.
+
+        Raises:
+            ValueError : If measure_steps is below one, since no allocation peak would be reached.
+        """
+        if int(measure_steps) < 1:
+            raise ValueError(f"measure_steps={measure_steps} is below 1; the memory probe needs at least one training step to reach a peak allocation")
+
         self.trainer       = trainer
         self.dataset       = dataset
         self.measure_steps = int(measure_steps)
@@ -18,8 +48,23 @@ class TrainStepMemoryProbe:
 
     @staticmethod
     def measure_context(device: torch.device) -> float:
+        """Returns the device memory in GB already held by other processes and the driver.
+
+        Args:
+            device : Device to inspect; non-CUDA devices report 0.0.
+
+        Returns:
+            Fixed occupied memory in GB, read as total minus free.
+
+        Raises:
+            RuntimeError : If this process already allocated memory on the device, since those bytes would then be counted twice.
+        """
         if device.type != "cuda":
             return 0.0
+
+        allocated_gb = torch.cuda.memory_allocated(device) / (1024.0 ** 3)
+        if allocated_gb > 0.0:
+            raise RuntimeError(f"{allocated_gb:.3f} GB is already allocated on {device}; the fixed context is read as (total - free) and must be measured before any model or batch reaches the device, or those bytes are counted a second time in the probe's peak and the batch-size ladder stops early")
 
         warm = torch.zeros(1, device=device)
         del warm
@@ -30,6 +75,17 @@ class TrainStepMemoryProbe:
         return (total_bytes - free_bytes) / (1024.0 ** 3)
 
     def __call__(self, batch_size: int) -> float:
+        """Runs the measured training steps at a batch size and returns the peak memory.
+
+        Args:
+            batch_size : Batch size of the probe data loader.
+
+        Returns:
+            Peak reserved memory in GB, including the fixed context.
+
+        Raises:
+            RuntimeError : If the dataset holds fewer samples than one full batch.
+        """
         loader = DataLoader(self.dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=0)
         if len(loader) == 0:
             raise RuntimeError(f"dataset holds {len(self.dataset)} samples, fewer than one full batch of {batch_size} with drop_last=True")
@@ -62,6 +118,19 @@ class TrainStepMemoryProbe:
 
 
 class BatchSizeFinder:
+    """Searches powers of two for the largest batch whose measured peak fits a VRAM budget.
+
+    Attributes:
+        trial_step : Callable returning the peak memory in GB for a batch size.
+        budget_gb  : VRAM budget in GB a trial must stay within.
+        ceiling    : Largest batch size considered.
+        device     : Device the trials run on.
+        logger     : Logger receiving one line per trial.
+        model_name : Label of the probed model, reported in the result.
+        context_gb : Fixed device memory in GB reported alongside the result.
+        on_oom     : Callback invoked when a trial raises an out-of-memory error.
+    """
+
     def __init__(
         self,
         trial_step : Callable[[int], float],
@@ -73,6 +142,18 @@ class BatchSizeFinder:
         context_gb : float                        = 0.0,
         on_oom     : Optional[Callable[[], None]] = None,
     ) -> None:
+        """Stores the search settings.
+
+        Args:
+            trial_step : Callable mapping a batch size to its peak memory in GB.
+            budget_gb  : VRAM budget in GB.
+            ceiling    : Largest batch size to try.
+            device     : Device the trials run on.
+            logger     : Logger for the per-trial lines.
+            model_name : Label of the probed model.
+            context_gb : Fixed device memory in GB recorded in the result.
+            on_oom     : Callback invoked on an out-of-memory trial, or None.
+        """
         self.trial_step = trial_step
         self.budget_gb  = float(budget_gb)
         self.ceiling    = int(ceiling)
@@ -84,6 +165,7 @@ class BatchSizeFinder:
 
     @staticmethod
     def candidates(ceiling: int) -> list[int]:
+        """Returns the powers of two from 1 up to and including the ceiling."""
         sizes = []
         size  = 1
 
@@ -94,9 +176,21 @@ class BatchSizeFinder:
         return sizes
 
     def _record(self, batch_size: int, peak_gb: Optional[float], status: str) -> dict:
+        """Returns one trial entry holding the batch size, peak memory and FIT/OVER/OOM status."""
         return {"batch_size": batch_size, "peak_gb": peak_gb, "status": status}
 
     def run(self) -> dict:
+        """Runs the ladder of batch sizes and reports the largest one within budget.
+
+        The ladder stops at the first trial that exceeds the budget or raises an
+        out-of-memory error.
+
+        Returns:
+            Result dictionary with the model label, PASS/FAIL status, the chosen
+            batch size and its peak memory in GB, the budget, ceiling and fixed
+            context, the per-trial records, and an error message when no batch
+            size fits.
+        """
         result = {
             "model"      : self.model_name,
             "status"     : None,

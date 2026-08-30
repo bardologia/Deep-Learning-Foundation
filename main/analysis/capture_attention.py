@@ -1,3 +1,5 @@
+"""Entry point capturing attention maps and statistics from attention-based backbone runs."""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +9,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the CLI overrides and runs the attention capture batch over the given runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                               import AttentionCaptureConfig
@@ -14,7 +17,7 @@ def main() -> None:
     from tools.runtime.config_cli                                import ConfigCli
     from tools.monitoring.logger                                 import Logger
 
-    config = ConfigCli(AttentionCaptureConfig(), description="Capture the attention of trained attention-based backbone runs on one real batch: attention-gate maps, shared-block and torch multi-head attention weights with per-layer entropy and peak statistics, gate figures, JSON and a markdown report inside each run directory; refuses runs whose model holds no attention module").apply()
+    config = ConfigCli(AttentionCaptureConfig(), description="Capture the attention of trained attention-based backbone runs on real batches: attention-gate maps, shared-block and torch multi-head attention weights with per-layer and per-head entropy, head redundancy, attention distance against the uniform reference, gate and mean-attention figures, JSON and a markdown report inside each run directory; refuses runs whose model holds no attention module").apply()
 
     logger = Logger(log_dir="logs", name="capture_attention")
     AttentionCaptureBatch(config, logger).run()

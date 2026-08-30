@@ -1,3 +1,11 @@
+"""Statistics and anomaly detection over the parameter tensors of a checkpoint.
+
+Computes distributional, spectral and unit-level statistics for each tensor,
+converts them into severity-tagged findings (non-finite values, dead or
+constant tensors, rank collapse, duplicate units, initialisation scale drift)
+and condenses those into a checkpoint-level summary.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -15,6 +23,13 @@ SEVERITY_RANK = {"ok": 0, "info": 1, "warning": 2, "critical": 3}
 
 @dataclass
 class Issue:
+    """One anomaly finding attached to a tensor or layer.
+
+    Attributes:
+        severity : One of "info", "warning" or "critical".
+        code     : Machine-readable finding identifier.
+        message  : Human-readable description with the offending value.
+    """
     severity : str
     code     : str
     message  : str
@@ -22,6 +37,46 @@ class Issue:
 
 @dataclass
 class LayerReport:
+    """Statistics and findings for a single parameter tensor.
+
+    Matrix-level fields are populated only for weight tensors of rank two or
+    higher; the spectral fields are additionally skipped for tensors larger
+    than the configured SVD limit.
+
+    Attributes:
+        name              : State-dict key of the tensor.
+        role              : Inferred role, one of weight, bias, norm_scale, running_mean, running_var, counter or other.
+        shape             : Tensor shape.
+        dtype             : Tensor dtype name without the "torch." prefix.
+        count             : Number of values in the tensor.
+        n_nonfinite       : Number of NaN or Inf values.
+        n_nan             : Number of NaN values.
+        n_inf             : Number of Inf values.
+        mean              : Mean of the finite values.
+        std               : Standard deviation of the finite values.
+        minimum           : Smallest finite value.
+        maximum           : Largest finite value.
+        max_abs           : Largest finite absolute value.
+        mean_abs          : Mean absolute finite value.
+        l2_norm           : Euclidean norm of the finite values.
+        frac_zero         : Fraction of values exactly equal to zero.
+        frac_dead         : Fraction of values below the dead-magnitude threshold.
+        cv                : Standard deviation divided by the mean absolute value.
+        kurtosis          : Excess kurtosis of the finite values.
+        fan_in            : Number of input elements per output unit.
+        out_units         : Number of output units (rows of the reshaped matrix).
+        dead_output_units : Output units whose row norm is near zero.
+        dead_output_frac  : Fraction of output units that are near zero.
+        dead_input_units  : Input units whose column norm is near zero.
+        spectral_norm     : Largest singular value of the reshaped matrix.
+        stable_rank       : Squared Frobenius norm over the squared spectral norm.
+        effective_rank    : Exponential of the singular-value spectrum entropy.
+        rank_ratio        : Effective rank divided by the smaller matrix dimension.
+        condition_number  : Ratio of largest to smallest positive singular value.
+        init_ratio        : std multiplied by sqrt(fan_in), an initialisation-scale probe.
+        duplicate_units   : Number of collinear output-unit pairs.
+        issues            : Findings attached by the issue detector.
+    """
     name  : str
     role  : str
     shape : tuple
@@ -62,15 +117,28 @@ class LayerReport:
 
     @property
     def severity(self) -> str:
+        """Worst severity among the tensor's issues, or "ok" when there are none."""
         worst = max((SEVERITY_RANK[issue.severity] for issue in self.issues), default=0)
         return {0: "ok", 1: "info", 2: "warning", 3: "critical"}[worst]
 
 
 class WeightAnalyzer:
+    """Computes the per-tensor statistics recorded in a LayerReport.
+
+    Attributes:
+        config : Weight x-ray configuration supplying the dead-value threshold and the SVD and duplicate-detection size limits.
+    """
+
     def __init__(self, config: WeightXrayConfig) -> None:
+        """Initialises the analyzer.
+
+        Args:
+            config : Weight x-ray configuration for the checkpoint.
+        """
         self.config = config
 
     def _classify_role(self, name: str, ndim: int) -> str:
+        """Returns the tensor role inferred from its state-dict key and rank."""
         lowered = name.lower()
 
         if lowered.endswith("num_batches_tracked"):
@@ -86,6 +154,16 @@ class WeightAnalyzer:
         return "other"
 
     def _basic_stats(self, values: np.ndarray) -> dict:
+        """Returns the distributional statistics of a tensor's values.
+
+        Args:
+            values : Tensor values of arbitrary shape; non-finite entries are counted separately and excluded from the moments.
+
+        Returns:
+            Mapping with NaN and Inf counts, mean, std, extrema, absolute
+            magnitudes, L2 norm, zero and dead fractions, coefficient of
+            variation and excess kurtosis.
+        """
         finite     = np.isfinite(values)
         n_nan      = int(np.isnan(values).sum())
         n_inf      = int(np.isinf(values).sum())
@@ -120,6 +198,16 @@ class WeightAnalyzer:
         }
 
     def _matrix_stats(self, values: np.ndarray) -> dict:
+        """Returns the unit-level and spectral statistics of a weight tensor.
+
+        Args:
+            values : Weight tensor of shape (out_units, ...), reshaped to a two-dimensional (out_units, fan_in) matrix.
+
+        Returns:
+            Mapping with fan-in and output-unit counts, dead input and output
+            unit counts, the initialisation-scale ratio, the spectral
+            statistics and the duplicate output-unit pair count.
+        """
         matrix    = values.reshape(values.shape[0], -1).astype(np.float64)
         matrix    = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
         out_units = matrix.shape[0]
@@ -151,6 +239,19 @@ class WeightAnalyzer:
         return stats
 
     def _spectral_stats(self, matrix: np.ndarray, out_units: int, fan_in: int) -> dict:
+        """Returns the singular-value statistics of a weight matrix.
+
+        Args:
+            matrix    : Weight matrix of shape (out_units, fan_in).
+            out_units : Number of output units.
+            fan_in    : Number of input elements per output unit.
+
+        Returns:
+            Mapping with spectral norm, stable rank, effective rank, rank ratio
+            and condition number; all None when the matrix exceeds the
+            configured SVD size limit, and all zero when it has no positive
+            singular value.
+        """
         if min(out_units, fan_in) > self.config.svd_max_dim:
             return {"spectral_norm": None, "stable_rank": None, "effective_rank": None, "rank_ratio": None, "condition_number": None}
 
@@ -173,6 +274,17 @@ class WeightAnalyzer:
         }
 
     def _duplicate_units(self, matrix: np.ndarray, row_norms: np.ndarray) -> Optional[int]:
+        """Returns the number of collinear live output-unit pairs.
+
+        Args:
+            matrix    : Weight matrix of shape (out_units, fan_in).
+            row_norms : Euclidean norm of each output unit's row.
+
+        Returns:
+            Count of unit pairs whose absolute cosine similarity reaches the
+            configured threshold, or None when the matrix has fewer than two
+            output units or more than the duplicate-detection limit.
+        """
         out_units = matrix.shape[0]
         if out_units < 2 or out_units > self.config.duplicate_max_units:
             return None
@@ -188,6 +300,16 @@ class WeightAnalyzer:
         return int(pair_mask.sum())
 
     def analyze_tensor(self, name: str, tensor: torch.Tensor) -> Optional[LayerReport]:
+        """Builds the statistics report for one parameter tensor.
+
+        Args:
+            name   : State-dict key of the tensor.
+            tensor : Parameter tensor of any shape.
+
+        Returns:
+            The populated report, or None for batch-norm counters, scalars and
+            non-floating-point tensors, which are not analysed.
+        """
         role = self._classify_role(name, tensor.dim())
         if role == "counter" or tensor.dim() == 0 or not torch.is_floating_point(tensor):
             return None
@@ -225,6 +347,15 @@ class WeightAnalyzer:
         return report
 
     def analyze(self, state_dict: dict) -> list[LayerReport]:
+        """Builds reports for every analysable tensor of a state dict.
+
+        Args:
+            state_dict : Mapping of parameter name to tensor.
+
+        Returns:
+            Reports in state-dict order, skipping entries that are not tensors
+            or that analyze_tensor declines.
+        """
         reports = []
         for name, tensor in state_dict.items():
             if not torch.is_tensor(tensor):
@@ -238,15 +369,28 @@ class WeightAnalyzer:
 
 
 class IssueDetector:
+    """Turns per-tensor statistics into severity-tagged findings.
+
+    Attributes:
+        thresholds : Threshold set governing every check.
+    """
+
     def __init__(self, thresholds: WeightXrayThresholds) -> None:
+        """Initialises the detector.
+
+        Args:
+            thresholds : Threshold set governing every check.
+        """
         self.thresholds = thresholds
 
     def _check_finite(self, report: LayerReport) -> list[Issue]:
+        """Returns a critical issue when the tensor holds NaN or Inf values."""
         if report.n_nonfinite == 0:
             return []
         return [Issue("critical", "nonfinite", f"{report.n_nonfinite} non-finite values ({report.n_nan} NaN, {report.n_inf} Inf)")]
 
     def _check_dead(self, report: LayerReport) -> list[Issue]:
+        """Returns an issue when the near-zero value fraction crosses a threshold."""
         if report.frac_dead >= self.thresholds.dead_fraction_critical:
             return [Issue("critical", "dead_tensor", f"{report.frac_dead:.1%} of values are effectively zero")]
         if report.frac_dead >= self.thresholds.dead_fraction_warn:
@@ -254,6 +398,7 @@ class IssueDetector:
         return []
 
     def _check_uniform(self, report: LayerReport) -> list[Issue]:
+        """Returns an issue when a tensor is constant or its weights are near-uniform."""
         if report.std <= self.thresholds.constant_std_threshold:
             return [Issue("critical", "constant", f"tensor is constant (std={report.std:.2e})")]
         if report.role in ("weight", "norm_scale") and report.count >= 8 and report.cv <= self.thresholds.uniform_cv_threshold:
@@ -261,6 +406,7 @@ class IssueDetector:
         return []
 
     def _check_explode(self, report: LayerReport) -> list[Issue]:
+        """Returns warnings when the peak magnitude or the spectral norm is too large."""
         issues = []
         if report.max_abs >= self.thresholds.explode_abs_threshold:
             issues.append(Issue("warning", "large_magnitude", f"max |w| = {report.max_abs:.2e}"))
@@ -269,6 +415,7 @@ class IssueDetector:
         return issues
 
     def _check_rank(self, report: LayerReport) -> list[Issue]:
+        """Returns an issue when the effective rank ratio falls below a threshold."""
         if report.rank_ratio is None:
             return []
         if report.rank_ratio <= self.thresholds.rank_ratio_critical:
@@ -278,6 +425,7 @@ class IssueDetector:
         return []
 
     def _check_units(self, report: LayerReport) -> list[Issue]:
+        """Returns a dead-neuron finding, warning or informational, when output units are zero."""
         if report.dead_output_frac is None or report.dead_output_units == 0:
             return []
         if report.dead_output_frac >= self.thresholds.dead_unit_fraction_warn:
@@ -285,6 +433,7 @@ class IssueDetector:
         return [Issue("info", "dead_neurons", f"{report.dead_output_units}/{report.out_units} output units have ~zero norm")]
 
     def _check_duplicates(self, report: LayerReport) -> list[Issue]:
+        """Returns a finding when collinear output-unit pairs are present."""
         if not report.duplicate_units or report.out_units is None:
             return []
         fraction = report.duplicate_units / report.out_units
@@ -292,6 +441,7 @@ class IssueDetector:
         return [Issue(severity, "duplicate_units", f"{report.duplicate_units} collinear output-unit pairs (|cos| >= {self.thresholds.duplicate_cosine})")]
 
     def _check_init(self, report: LayerReport) -> list[Issue]:
+        """Returns an informational issue when std*sqrt(fan_in) leaves the expected band."""
         if report.role != "weight" or report.init_ratio is None or report.init_ratio == 0.0:
             return []
         if report.init_ratio < self.thresholds.init_ratio_low:
@@ -301,6 +451,15 @@ class IssueDetector:
         return []
 
     def _check_norm_layer(self, report: LayerReport, values: np.ndarray) -> list[Issue]:
+        """Returns a warning when normalisation scales or running variances collapse to zero.
+
+        Args:
+            report : Report of the tensor under test.
+            values : Flattened tensor values.
+
+        Returns:
+            A single-issue list for collapsed scales or variances, empty otherwise.
+        """
         if report.role == "norm_scale":
             fraction = float((np.abs(values) < self.thresholds.norm_scale_dead_value).mean())
             if fraction >= self.thresholds.norm_scale_dead_frac:
@@ -312,11 +471,18 @@ class IssueDetector:
         return []
 
     def _check_bias(self, report: LayerReport) -> list[Issue]:
+        """Returns a warning when a bias tensor carries an unusually large magnitude."""
         if report.role == "bias" and report.max_abs >= self.thresholds.bias_abs_threshold:
             return [Issue("warning", "large_bias", f"max |bias| = {report.max_abs:.2e}")]
         return []
 
     def detect(self, report: LayerReport, values: np.ndarray) -> None:
+        """Appends every applicable issue to one tensor report in place.
+
+        Args:
+            report : Report whose issues list is extended.
+            values : Flattened values of the tensor the report describes.
+        """
         report.issues.extend(self._check_finite(report))
         report.issues.extend(self._check_dead(report))
         report.issues.extend(self._check_uniform(report))
@@ -329,6 +495,15 @@ class IssueDetector:
         report.issues.extend(self._check_bias(report))
 
     def run(self, reports: list[LayerReport], state_dict: dict) -> list[LayerReport]:
+        """Populates the issues of every report against its source tensor.
+
+        Args:
+            reports    : Reports produced by WeightAnalyzer.
+            state_dict : Mapping the reports were derived from.
+
+        Returns:
+            The same report objects, now carrying their issues.
+        """
         for report in reports:
             values = state_dict[report.name].detach().to(torch.float32).cpu().numpy().reshape(-1)
             self.detect(report, values)
@@ -336,7 +511,20 @@ class IssueDetector:
 
 
 class XraySummarizer:
+    """Condenses per-tensor reports into a checkpoint-level summary."""
+
     def build(self, reports: list[LayerReport], checkpoint_path: Path) -> dict:
+        """Builds the checkpoint-level summary of a weight x-ray.
+
+        Args:
+            reports         : Populated per-tensor reports.
+            checkpoint_path : Checkpoint the reports were derived from.
+
+        Returns:
+            Mapping with the checkpoint path, tensor and parameter counts,
+            flagged tensor and issue totals, severity and issue-code
+            histograms, and a textual verdict.
+        """
         issues       = [issue for report in reports for issue in report.issues]
         flagged      = [report for report in reports if report.severity != "ok"]
         total_params = sum(report.count for report in reports)
@@ -361,6 +549,7 @@ class XraySummarizer:
         }
 
     def _verdict(self, severity_counts: dict) -> str:
+        """Returns the verdict phrase implied by the worst populated severity level."""
         if severity_counts["critical"] > 0:
             return "critical issues detected"
         if severity_counts["warning"] > 0:

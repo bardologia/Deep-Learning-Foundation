@@ -1,13 +1,25 @@
+"""UNETR backbone: a plain transformer encoder feeding a convolutional decoder.
+
+Intermediate transformer layers are tapped at four depths, reshaped into feature maps
+and progressively upsampled into skip connections for a CNN decoder ladder.
+"""
+
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
 
 from configuration.architectures import UNETRConfig
-from ..blocks                    import ConvBlock, OutputHeadsMixin, PatchEmbedding, TransformerBlock, build_activation, build_norm2d, initialize_weights, match_spatial_size, resize_positional_embedding, tokens_to_feature_map
+from ..blocks                    import ConvBlock, FeatureGeometry, LayerFactory, OutputHeadsMixin, PatchEmbedding, TransformerBlock
 
 
 class ProgressiveProjectionHead(nn.Module):
+    """Projects a token feature map and doubles its resolution a fixed number of times.
+
+    Attributes:
+        layers : The projection convolution followed by ``upsample_steps`` blocks of transposed convolution, convolution, normalization and activation.
+    """
+
     def __init__(
         self,
         input_channels:  int,
@@ -17,6 +29,16 @@ class ProgressiveProjectionHead(nn.Module):
         normalization:   str   = "batch",
         bias:            bool  = False,
     ):
+        """Builds the projection and the upsampling ladder.
+
+        Args:
+            input_channels  : Channel width of the incoming token feature map.
+            output_channels : Channel width produced by the head.
+            upsample_steps  : Number of 2x upsampling stages; 0 keeps the resolution.
+            activation      : Activation name resolved by ``LayerFactory.build_activation``.
+            normalization   : 2D normalization name resolved by ``LayerFactory.build_norm2d``.
+            bias            : Whether the convolutions carry a bias term.
+        """
         super().__init__()
         layers = [
             nn.Conv2d(
@@ -26,8 +48,8 @@ class ProgressiveProjectionHead(nn.Module):
                 padding      = 1,
                 bias         = bias,
             ),
-            build_norm2d(normalization, output_channels),
-            build_activation(activation),
+            LayerFactory.build_norm2d(normalization, output_channels),
+            LayerFactory.build_activation(activation),
         ]
         for _ in range(upsample_steps):
             layers.extend([
@@ -45,17 +67,44 @@ class ProgressiveProjectionHead(nn.Module):
                     padding      = 1,
                     bias         = bias,
                 ),
-                build_norm2d(normalization, output_channels),
-                build_activation(activation),
+                LayerFactory.build_norm2d(normalization, output_channels),
+                LayerFactory.build_activation(activation),
             ])
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Returns the projected and upsampled feature map.
+
+        Args:
+            x : Feature map of shape (batch, input_channels, height, width).
+
+        Returns:
+            Feature map of shape
+            (batch, output_channels, height * 2 ** upsample_steps, width * 2 ** upsample_steps).
+        """
         return self.layers(x)
 
 
 class UNETR(nn.Module, OutputHeadsMixin):
+    """UNETR backbone predicting per-pixel Gaussian mixture parameters.
+
+    Attributes:
+        config               : Architecture configuration driving the transformer and decoder sizes.
+        expected_grid_size   : Token grid side the positional embedding was built for.
+        positional_embedding : Learned positional embedding of shape (1, expected_grid_size ** 2, embedding_dim), resampled when the actual grid differs.
+        skip_layer_indices   : Transformer layer indices tapped for decoder skips.
+        embedding_channels   : Channel width of the decoded embedding fed to the output head.
+    """
+
     def __init__(self, config: UNETRConfig | None = None):
+        """Builds the patch embedding, the transformer stack, the decoder ladder and the head.
+
+        Args:
+            config : Architecture configuration; defaults to ``UNETRConfig()``.
+
+        Raises:
+            ValueError : If ``patch_size`` is not positive, if ``image_size`` is not divisible by ``patch_size``, if fewer than four transformer layers are requested, if ``decoder_features`` does not hold exactly four sizes, or if ``patch_size`` is not a multiple of the decoder ladder's upsampling factor.
+        """
         super().__init__()
         config      = config or UNETRConfig()
         self.config = config
@@ -68,6 +117,10 @@ class UNETR(nn.Module, OutputHeadsMixin):
             raise ValueError("transformer_layers must be at least 4 to collect four skip connections")
         if len(config.decoder_features) != 4:
             raise ValueError("decoder_features must contain exactly four feature sizes")
+
+        decoder_scale = 2 ** len(config.decoder_features)
+        if config.patch_size < decoder_scale or config.patch_size % decoder_scale != 0:
+            raise ValueError(f"patch_size ({config.patch_size}) must be a multiple of 2 ** len(decoder_features) ({decoder_scale}); the decoder ladder already upsamples the token grid by {decoder_scale} and a smaller or indivisible patch would land the decoder off the input resolution")
 
         self.patch_embedding = PatchEmbedding(
             in_channels   = config.in_channels,
@@ -176,7 +229,7 @@ class UNETR(nn.Module, OutputHeadsMixin):
                 )
             )
 
-        remaining_scale = config.patch_size // (2 ** len(decoder_features))
+        remaining_scale = config.patch_size // decoder_scale
         if remaining_scale > 1:
             self.final_upsample = nn.ConvTranspose2d(
                 in_channels  = decoder_features[-1],
@@ -189,20 +242,28 @@ class UNETR(nn.Module, OutputHeadsMixin):
         self.embedding_channels = decoder_features[-1]
         self._build_output_head()
 
-        initialize_weights(module=self, mode=config.init_mode)
+        LayerFactory.initialize_weights(module=self, mode=config.init_mode)
 
     def encode_decode(self, x: torch.Tensor) -> torch.Tensor:
+        """Returns the embedding at input resolution.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Embedding of shape (batch, embedding_channels, height, width).
+        """
         original_input = x
 
         tokens, grid_height, grid_width = self.patch_embedding(x)
-        tokens = tokens + resize_positional_embedding(self.positional_embedding, self.expected_grid_size, grid_height, grid_width)
+        tokens = tokens + FeatureGeometry.resize_positional_embedding(self.positional_embedding, self.expected_grid_size, grid_height, grid_width)
 
         transformer_skip_maps = []
         for layer_index, transformer_block in enumerate(self.transformer_blocks):
             tokens = transformer_block(tokens)
             if layer_index in self.skip_layer_indices:
                 skip_tokens = self.transformer_norm(tokens) if layer_index == len(self.transformer_blocks) - 1 else tokens
-                transformer_skip_maps.append(tokens_to_feature_map(skip_tokens, grid_height, grid_width))
+                transformer_skip_maps.append(FeatureGeometry.tokens_to_feature_map(skip_tokens, grid_height, grid_width))
 
         progressively_upsampled_skips = [
             skip_head(feature_map)
@@ -220,12 +281,22 @@ class UNETR(nn.Module, OutputHeadsMixin):
             else:
                 skip = self.input_skip_conv(original_input)
 
-            x = match_spatial_size(source=x, reference=skip)
+            x = FeatureGeometry.match_spatial_size(source=x, reference=skip)
             x = torch.cat([x, skip], dim=1)
             x = self.decoder_blocks[index](x)
 
         x = self.final_upsample(x)
-        return match_spatial_size(source=x, reference=original_input)
+        return FeatureGeometry.match_spatial_size(source=x, reference=original_input)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Maps the input stack to per-pixel outputs through the configured head.
+
+        Args:
+            x : Input feature stack of shape (batch, in_channels, height, width).
+
+        Returns:
+            Tensor of shape (batch, out_channels, height, width) holding the
+            interleaved Gaussian parameters, or the raw embedding when the head
+            is ``none``.
+        """
         return self._head_forward(self.encode_decode(x))

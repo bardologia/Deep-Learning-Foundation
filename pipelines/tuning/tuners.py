@@ -1,3 +1,10 @@
+"""Search-space sampling and the per-family Optuna objective functions.
+
+ParamSampler turns a declarative search space into Optuna suggestions and back,
+BestConfigWriter persists the best trial after every trial, and one tuner class
+per training family builds a shortened training run as the trial objective.
+"""
+
 from __future__ import annotations
 
 import copy
@@ -7,12 +14,27 @@ import optuna
 
 from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.model.model_builder   import ModelBuilder
-from pipelines.shared.training.run_naming   import RunNaming
+from pipelines.shared.training.run_naming   import JepaNamingSpec, RunNaming
 from tools.data.io                          import FileIO
 
 
 class ParamSampler:
+    """Samples a declarative search space and decodes stored trial parameters."""
+
     def sample(self, trial: optuna.Trial, space: dict) -> dict:
+        """Draws one value per search dimension from the trial.
+
+        Float dimensions are suggested directly, categorical ones by value, and
+        ``indexed_categorical`` ones through an integer index so unhashable
+        choices can be stored.
+
+        Args:
+            trial : Optuna trial doing the suggesting.
+            space : Parameter name to specification mapping.
+
+        Returns:
+            Mapping from parameter name to the sampled value.
+        """
         sampled = {}
 
         for name, spec in space.items():
@@ -31,14 +53,28 @@ class ParamSampler:
         return sampled
 
     def decode(self, params: dict, space: dict) -> dict:
+        """Resolves stored ``__idx`` parameters back to their choice values.
+
+        Args:
+            params : Parameters as Optuna stored them for a trial.
+            space  : Search space the trial was sampled from.
+
+        Returns:
+            Mapping from parameter name to its decoded value.
+
+        Raises:
+            KeyError : If an ``__idx`` parameter has no matching indexed_categorical dimension, meaning study and code diverged.
+        """
         decoded = {}
 
         for name, value in params.items():
             if name.endswith("__idx"):
                 param_name = name[:-5]
-                spec       = space.get(param_name, {})
-                if spec.get("type") == "indexed_categorical":
-                    decoded[param_name] = spec["choices"][value]
+
+                if param_name not in space or space[param_name]["type"] != "indexed_categorical":
+                    raise KeyError(f"Study parameter '{name}' has no indexed_categorical entry named '{param_name}' in the current search space; the study and the code have diverged, so the best configuration cannot be decoded")
+
+                decoded[param_name] = space[param_name]["choices"][value]
             else:
                 decoded[name] = value
 
@@ -46,13 +82,32 @@ class ParamSampler:
 
 
 class BestConfigWriter:
+    """Writes the best trial of a study to JSON, also usable as a trial callback.
+
+    Attributes:
+        model_name : Model key the study belongs to.
+        space      : Search space used to decode the stored parameters.
+        path       : Path of the best-configuration JSON file.
+        sampler    : Sampler providing the decoding.
+    """
+
     def __init__(self, model_name: str, space: dict, path: Path) -> None:
+        """Stores the model name, search space and output path."""
         self.model_name = model_name
         self.space      = space
         self.path       = Path(path)
         self.sampler    = ParamSampler()
 
     def write(self, study: optuna.Study) -> dict | None:
+        """Writes the study's best trial to JSON.
+
+        Args:
+            study : Study whose best trial is persisted.
+
+        Returns:
+            The payload holding the model, trial number, validation loss and
+            decoded parameters, or None when no trial completed yet.
+        """
         try:
             best = study.best_trial
         except ValueError:
@@ -70,10 +125,34 @@ class BestConfigWriter:
         return payload
 
     def __call__(self, study: optuna.Study, frozen_trial: optuna.trial.FrozenTrial) -> None:
+        """Rewrites the best configuration after a trial, as an Optuna callback.
+
+        Args:
+            study        : Study the finished trial belongs to.
+            frozen_trial : The trial that just finished; unused.
+        """
         self.write(study)
 
 
 class Tuner:
+    """Optuna objective running a shortened backbone training per trial.
+
+    Attributes:
+        model_name          : Composite ``<backbone>[-<head>]`` key being tuned.
+        model_config_cls    : Model configuration class of the backbone.
+        base_trainer_config : Trainer configuration each trial copies.
+        base_dataset_config : Dataset configuration each trial copies.
+        tune_cfg            : Tuning settings (epochs, patience, base seed).
+        log_dir             : Directory holding the trial runs and the best configuration.
+        logger              : Logger of the tuning worker.
+        emit_trial_docs     : Whether trial runs write documentation artifacts.
+        backbone_name       : Backbone part of the model key.
+        head                : Head part of the model key.
+        sampler             : Sampler drawing the trial parameters.
+        space               : Search space over learning-rate and architecture parameters.
+        best_writer         : Callback persisting the best trial after each trial.
+    """
+
     def __init__(
         self,
         model_name          : str,
@@ -85,6 +164,18 @@ class Tuner:
         logger,
         emit_trial_docs     : bool = False,
     ) -> None:
+        """Builds the search space and the best-config writer for a backbone.
+
+        Args:
+            model_name          : Composite ``<backbone>[-<head>]`` key to tune.
+            model_config_cls    : Model configuration class of the backbone.
+            base_trainer_config : Trainer configuration each trial copies.
+            base_dataset_config : Dataset configuration each trial copies.
+            tune_cfg            : Tuning settings.
+            log_dir             : Directory holding the trial runs.
+            logger              : Logger of the tuning worker.
+            emit_trial_docs     : Whether trial runs write documentation artifacts.
+        """
         self.model_name          = model_name
         self.model_config_cls    = model_config_cls
         self.base_trainer_config = base_trainer_config
@@ -101,11 +192,20 @@ class Tuner:
         self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
 
     def _apply_params(self, trial: optuna.Trial, model_config) -> None:
+        """Samples the search space and writes the values onto the model config."""
         sampled = self.sampler.sample(trial, self.space)
         for k, v in sampled.items():
             setattr(model_config, k, v)
 
     def _objective(self, trial: optuna.Trial) -> float:
+        """Trains one sampled backbone configuration and returns its best loss.
+
+        Args:
+            trial : Optuna trial supplying the sampled parameters.
+
+        Returns:
+            The best validation loss reached by the shortened training run.
+        """
         from pipelines.tuning.trial import TrialPipeline
 
         model_config      = self.model_config_cls()
@@ -138,6 +238,12 @@ class Tuner:
         return best_val_loss
 
     def run(self, study: optuna.Study, n_trials: int) -> None:
+        """Runs the requested number of backbone trials against the study.
+
+        Args:
+            study    : Shared Optuna study to optimize.
+            n_trials : Trials this worker contributes.
+        """
         self.logger.section(f"[Tuner — {self.model_name}]")
 
         self.logger.kv_table({
@@ -152,6 +258,24 @@ class Tuner:
 
 
 class AeTuner:
+    """Optuna objective running a shortened autoencoder training per trial.
+
+    Serves both the profile and the image autoencoder families, which differ
+    only in their config registry, entry template and trial pipeline class.
+
+    Attributes:
+        model_name         : Autoencoder model name being tuned.
+        config_cls         : Autoencoder configuration class supplying the search space.
+        entry_template     : Entry configuration each trial deep-copies.
+        trial_pipeline_cls : Trial-aware training pipeline class to run.
+        tune_cfg           : Tuning settings (epochs, patience, base seed).
+        log_dir            : Directory holding the trial runs and the best configuration.
+        logger             : Logger of the tuning worker.
+        sampler            : Sampler drawing the trial parameters.
+        space              : Search space over learning-rate and architecture parameters.
+        best_writer        : Callback persisting the best trial after each trial.
+    """
+
     def __init__(
         self,
         model_name        : str,
@@ -162,6 +286,17 @@ class AeTuner:
         log_dir           : str,
         logger,
     ) -> None:
+        """Builds the search space and the best-config writer for an autoencoder.
+
+        Args:
+            model_name         : Autoencoder model name to tune.
+            config_cls         : Autoencoder configuration class.
+            entry_template     : Entry configuration each trial deep-copies.
+            trial_pipeline_cls : Trial-aware training pipeline class.
+            tune_cfg           : Tuning settings.
+            log_dir            : Directory holding the trial runs.
+            logger             : Logger of the tuning worker.
+        """
         self.model_name         = model_name
         self.config_cls         = config_cls
         self.entry_template     = entry_template
@@ -175,6 +310,14 @@ class AeTuner:
         self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
 
     def _objective(self, trial: optuna.Trial) -> float:
+        """Trains one sampled autoencoder configuration and returns its best loss.
+
+        Args:
+            trial : Optuna trial supplying the sampled parameters.
+
+        Returns:
+            The best reconstruction validation loss of the shortened run.
+        """
         sampled = self.sampler.sample(trial, self.space)
 
         entry                 = copy.deepcopy(self.entry_template)
@@ -194,6 +337,12 @@ class AeTuner:
         return best_val_loss
 
     def run(self, study: optuna.Study, n_trials: int) -> None:
+        """Runs the requested number of autoencoder trials against the study.
+
+        Args:
+            study    : Shared Optuna study to optimize.
+            n_trials : Trials this worker contributes.
+        """
         self.logger.section(f"[AeTuner — {self.model_name}]")
 
         self.logger.kv_table({
@@ -208,6 +357,26 @@ class AeTuner:
 
 
 class JepaTuner:
+    """Optuna objective running a shortened JEPA training per trial.
+
+    Only architecture parameters are searched; the run tag is composed once
+    from the coupled autoencoders so every trial lands under the same name.
+
+    Attributes:
+        model_name       : Composite ``<backbone>[-<head>]`` key being tuned.
+        model_config_cls : Backbone configuration class.
+        entry_template   : JEPA entry configuration each trial deep-copies.
+        tune_cfg         : Tuning settings (epochs, patience, base seed).
+        log_dir          : Directory holding the trial runs and the best configuration.
+        logger           : Logger of the tuning worker.
+        backbone_name    : Backbone part of the model key.
+        head             : Head part of the model key.
+        sampler          : Sampler drawing the trial parameters.
+        space            : Search space over the architecture parameters.
+        best_writer      : Callback persisting the best trial after each trial.
+        run_tag          : Shared JEPA run tag the trial run names are composed from.
+    """
+
     def __init__(
         self,
         model_name     : str,
@@ -217,6 +386,16 @@ class JepaTuner:
         log_dir        : str,
         logger,
     ) -> None:
+        """Builds the search space, best-config writer and shared JEPA run tag.
+
+        Args:
+            model_name       : Composite ``<backbone>[-<head>]`` key to tune.
+            model_config_cls : Backbone configuration class.
+            entry_template   : JEPA entry configuration each trial deep-copies.
+            tune_cfg         : Tuning settings.
+            log_dir          : Directory holding the trial runs.
+            logger           : Logger of the tuning worker.
+        """
         self.model_name       = model_name
         self.model_config_cls = model_config_cls
         self.entry_template   = entry_template
@@ -230,18 +409,27 @@ class JepaTuner:
         self.space       = model_config_cls.tunable_arch_params()
         self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
 
+        n_gaussians  = ConfigFactory(entry_template).gaussian_config().n_default_gaussians
+        self.run_tag = RunNaming.jepa_tag(self.backbone_name, self.head, JepaNamingSpec.resolve(entry_template), n_gaussians, entry_template.augmentation)
+
     def _objective(self, trial: optuna.Trial) -> float:
+        """Trains one sampled JEPA configuration and returns its best loss.
+
+        Args:
+            trial : Optuna trial supplying the sampled parameters.
+
+        Returns:
+            The best validation loss of the shortened JEPA run.
+        """
         from pipelines.tuning.trial import TrialJepaPipeline
 
-        sampled     = self.sampler.sample(trial, self.space)
-        n_gaussians = ConfigFactory(self.entry_template).gaussian_config().n_default_gaussians
-        run_tag     = RunNaming.tag(self.backbone_name, self.head, self.entry_template.param_loss, n_gaussians, self.entry_template.augmentation)
+        sampled = self.sampler.sample(trial, self.space)
 
         entry                 = copy.deepcopy(self.entry_template)
         entry.backbone_name   = self.backbone_name
         entry.backbone_head   = self.head
         entry.model_overrides = sampled
-        entry.run_name        = RunNaming.compose(run_tag, f"trial_{trial.number:04d}")
+        entry.run_name        = RunNaming.compose(self.run_tag, f"trial_{trial.number:04d}")
         entry.seed            = self.tune_cfg.base_seed + trial.number
         entry.logdir          = Path(self.log_dir) / "trials"
 
@@ -255,6 +443,12 @@ class JepaTuner:
         return best_val_loss
 
     def run(self, study: optuna.Study, n_trials: int) -> None:
+        """Runs the requested number of JEPA trials against the study.
+
+        Args:
+            study    : Shared Optuna study to optimize.
+            n_trials : Trials this worker contributes.
+        """
         self.logger.section(f"[JepaTuner — {self.model_name}]")
 
         self.logger.kv_table({

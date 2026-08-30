@@ -1,3 +1,10 @@
+"""Bar and density figures summarising the fit metrics of a parameter-extraction run.
+
+Covers the R-squared percentiles, the active-slot count distribution, the per-order
+residual and penalty decomposition, and the relation between profile contrast, fit
+quality and model-order ambiguity.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,13 +23,40 @@ from tools.monitoring.logger  import Logger
 
 
 class MetricsBarPlotter(PlotBase):
+    """Renders the summary and contrast-relation figures of a fitted run.
+
+    Attributes:
+        n_gaussians : Number of Gaussian slots, i.e. the largest model order.
+        logger      : Logger for skip warnings.
+        fig_dpi     : Figure resolution used while rendering.
+        save_dpi    : Resolution the PNGs are written at.
+    """
+
     def __init__(self, n_gaussians : int, logger : Logger, fig_dpi : int = 150, save_dpi : int = 300) -> None:
+        """Configures the metrics plotter.
+
+        Args:
+            n_gaussians : Number of Gaussian slots, i.e. the largest model order.
+            logger      : Logger for skip warnings.
+            fig_dpi     : Figure resolution used while rendering.
+            save_dpi    : Resolution the PNGs are written at.
+        """
         self.n_gaussians = n_gaussians
         self.logger      = logger
         self.fig_dpi     = fig_dpi
         self.save_dpi    = save_dpi
 
     def _plot_r2_percentiles(self, summary : dict, out_dir : Path) -> Dict[str, Path]:
+        """Saves a bar chart of the R-squared percentiles with the mean marked.
+
+        Args:
+            summary : Global summary carrying the R-squared percentiles and mean.
+            out_dir : Directory the figure is written to.
+
+        Returns:
+            Mapping with the ``r2_percentiles`` figure path; empty when every percentile
+            is non-finite.
+        """
         qs      = [10, 25, 50, 75, 90]
         pvals   = [summary[f"r2_p{q}"] for q in qs]
         finite  = [value for value in pvals if np.isfinite(value)]
@@ -38,7 +72,7 @@ class MetricsBarPlotter(PlotBase):
         ax.set_xticklabels([f"$p_{{{q}}}$" for q in qs])
         ax.set_ylabel(r"$R^2$")
         ax.set_ylim(bottom=min(0.0, min(finite)) - 0.05)
-        ax.set_title(r"$R^2$ percentiles across all pixels")
+        ax.set_title(r"$R^2$ percentiles across fitted pixels")
         r2_mean = summary["r2_mean"]
 
         if np.isfinite(r2_mean):
@@ -56,6 +90,15 @@ class MetricsBarPlotter(PlotBase):
         return {"r2_percentiles": self._save(fig, out_dir / "r2_percentiles.png")}
 
     def _plot_active_count_distribution(self, summary : dict, out_dir : Path) -> Dict[str, Path]:
+        """Saves the share of fitted pixels carrying each active-Gaussian count.
+
+        Args:
+            summary : Global summary carrying the per-count fractions and fitted-pixel count.
+            out_dir : Directory the figure is written to.
+
+        Returns:
+            Mapping with the ``active_count_distribution`` figure path.
+        """
         fig, ax = plt.subplots(figsize=(6.4, 5))
         n_K     = self.n_gaussians
         k_vals  = list(range(1, n_K + 1))
@@ -87,7 +130,16 @@ class MetricsBarPlotter(PlotBase):
 
         return {"active_count_distribution": self._save(fig, out_dir / "active_count_distribution.png")}
 
-    def _plot_global_metrics_summary(self, summary : dict, out_dir : Path) -> Dict[str, Path]:
+    def plot_global_metrics_summary(self, summary : dict, out_dir : Path) -> Dict[str, Path]:
+        """Saves the R-squared percentile and active-count figures.
+
+        Args:
+            summary : Global summary from the metrics stage.
+            out_dir : Directory the figures are written to.
+
+        Returns:
+            Mapping from figure name to the saved PNG path.
+        """
         saved : Dict[str, Path] = {}
 
         saved.update(self._plot_r2_percentiles(summary, out_dir))
@@ -95,7 +147,18 @@ class MetricsBarPlotter(PlotBase):
 
         return saved
 
-    def _plot_mse_penalty_per_k(self, mse_per_k : np.ndarray, per_k_summary : dict, out_dir : Path) -> Dict[str, Path]:
+    def plot_mse_penalty_per_k(self, mse_per_k : np.ndarray, per_k_summary : dict, out_dir : Path) -> Dict[str, Path]:
+        """Saves the per-order residual spread, penalty decomposition and win rate.
+
+        Args:
+            mse_per_k     : Residual MSE of shape (k_max, azimuth, range).
+            per_k_summary : Per-order summary carrying the mean MSE, penalty and win fraction.
+            out_dir       : Directory the figures are written to.
+
+        Returns:
+            Mapping with the ``mse_per_k_distribution``, ``penalised_score_decomposition``
+            and ``selected_k_distribution`` figure paths.
+        """
         k_vals  = list(range(1, self.n_gaussians + 1))
         palette = [cm.tab10((k - 1) % 10) for k in k_vals]
         saved   : Dict[str, Path] = {}
@@ -152,6 +215,17 @@ class MetricsBarPlotter(PlotBase):
         return saved
 
     def _plot_snr_vs_r2(self, snr_db_map: np.ndarray, r2_map: np.ndarray, out_dir: Path) -> Dict[str, Path]:
+        """Saves the hexbin density of fit quality against profile contrast.
+
+        Args:
+            snr_db_map : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            r2_map     : Per-pixel R-squared of the same shape, floored at -1 for plotting.
+            out_dir    : Directory the figure is written to.
+
+        Returns:
+            Mapping with the ``snr_vs_r2`` figure path; empty when no pixel has both
+            quantities finite.
+        """
         s, r = self._paired_subsample([snr_db_map, np.maximum(r2_map, -1.0)], 400_000)
 
         if s.size == 0:
@@ -178,6 +252,16 @@ class MetricsBarPlotter(PlotBase):
         return {"snr_vs_r2": self._save(fig, out_dir / "snr_vs_r2.png")}
 
     def _plot_snr_by_k(self, snr_db_map: np.ndarray, best_k_map: np.ndarray, out_dir: Path) -> Dict[str, Path]:
+        """Saves the contrast distribution split by selected model order.
+
+        Args:
+            snr_db_map : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            best_k_map : Selected model order of the same shape.
+            out_dir    : Directory the figure is written to.
+
+        Returns:
+            Mapping with the ``snr_by_selected_k`` figure path.
+        """
         fig, ax = plt.subplots(figsize=(6.4, 4.8))
         k_vals  = list(range(1, self.n_gaussians + 1))
         palette = [cm.tab10((k - 1) % 10) for k in k_vals]
@@ -196,6 +280,17 @@ class MetricsBarPlotter(PlotBase):
         return {"snr_by_selected_k": self._save(fig, out_dir / "snr_by_selected_k.png")}
 
     def _plot_snr_vs_ambiguity(self, snr_db_map: np.ndarray, rel_margin_map: np.ndarray, out_dir: Path) -> Dict[str, Path]:
+        """Saves the hexbin density of model-order ambiguity against profile contrast.
+
+        Args:
+            snr_db_map     : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            rel_margin_map : Relative selection margin of the same shape.
+            out_dir        : Directory the figure is written to.
+
+        Returns:
+            Mapping with the ``snr_vs_k_ambiguity`` figure path; empty when no pixel has
+            both quantities finite.
+        """
         s_m, rel = self._paired_subsample([snr_db_map, rel_margin_map], 400_000)
 
         if s_m.size == 0:
@@ -217,7 +312,7 @@ class MetricsBarPlotter(PlotBase):
 
         return {"snr_vs_k_ambiguity": self._save(fig, out_dir / "snr_vs_k_ambiguity.png")}
 
-    def _plot_snr_vs_fit_quality(
+    def plot_snr_vs_fit_quality(
         self,
         snr_db_map     : np.ndarray,
         r2_map         : np.ndarray,
@@ -226,6 +321,19 @@ class MetricsBarPlotter(PlotBase):
         snr_summary    : dict,
         out_dir        : Path,
     ) -> Dict[str, Path]:
+        """Saves every figure relating profile contrast to fit quality and ambiguity.
+
+        Args:
+            snr_db_map     : Peak-to-floor contrast of shape (azimuth, range), in dB.
+            r2_map         : Per-pixel R-squared of the same shape.
+            best_k_map     : Selected model order of the same shape, or None to skip that split.
+            rel_margin_map : Relative selection margin of the same shape, or None to skip.
+            snr_summary    : Contrast summary from the metrics stage.
+            out_dir        : Directory the figures are written to.
+
+        Returns:
+            Mapping from figure name to the saved PNG path.
+        """
         saved : Dict[str, Path] = {}
 
         saved.update(self._plot_snr_vs_r2(snr_db_map, r2_map, out_dir))

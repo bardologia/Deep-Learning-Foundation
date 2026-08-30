@@ -1,9 +1,36 @@
+"""Catalogue of the leave-one-out ablation features.
+
+Each feature is a dict carrying a label, a group, and the config overrides that
+enable it or degrade it to the weaker alternative. The ablation pipeline trains
+the full model and then one run per feature with that feature degraded.
+"""
+
 from __future__ import annotations
 
 from configuration.training.general.loss import ParamMatching
 
 
 class AblationCatalog:
+    """Feature definitions and shared constants of the ablation study.
+
+    Attributes:
+        COMPLETE_PREFIX            : Dotted prefix addressing the complete curriculum stage.
+        CURRICULUM_SWAP_EPOCH      : Epoch at which the curriculum swaps stages.
+        PARAM_MATCH_FULL           : Slot matching rule used by the full model.
+        GROUP_LR_DEFAULTS          : Per-parameter-group learning rates of the full model.
+        SINGLE_GROUP_LR            : Learning rate the degraded run gives every group.
+        FULL_ARCHITECTURE          : Backbone family of the full single-trunk model.
+        BASELINE_ARCHITECTURE      : Backbone family the degraded run falls back to.
+        DUAL_GROUP_LR_DEFAULTS     : Per-group learning rates of the full dual model.
+        DUAL_FULL_ARCHITECTURE     : Trunk family of the full dual model.
+        DUAL_BASELINE_ARCHITECTURE : Trunk family the degraded dual run falls back to.
+        CHANNEL_NORMS              : Per-channel normalization features as (label, field, full preset, degraded preset).
+        AUGMENTATION_DEFAULTS      : Augmentation probabilities of the full model.
+        COSINE_WEIGHT              : Loss weight of the cosine curve term in the full model.
+        LOSS_TERMS                 : Extra loss toggles as (label, use key, weight key, weight).
+        DEFAULT_ORDER              : Feature labels, in the order the ablation reports them.
+    """
+
 
     COMPLETE_PREFIX = "curriculum.complete."
 
@@ -45,7 +72,7 @@ class AblationCatalog:
         ("p_flip_v", 0.5),
     )
 
-    COSINE_WEIGHT = 0.05
+    COSINE_WEIGHT = 0.5
 
     LOSS_TERMS = (
         ("smoothness_tv", "use_smoothness_tv", "weight_smoothness_tv", 1e-4),
@@ -53,6 +80,7 @@ class AblationCatalog:
 
     @classmethod
     def _channel_norm_features(cls) -> list[dict]:
+        """Returns one feature per channel whose normalization preset is degraded."""
         return [
             {
                 "label"   : label,
@@ -65,6 +93,7 @@ class AblationCatalog:
 
     @classmethod
     def _normalization_features(cls) -> list[dict]:
+        """Returns the blanket per-slot normalization and output clamp features."""
         return [
             {
                 "label"   : "normalization",
@@ -82,6 +111,7 @@ class AblationCatalog:
 
     @classmethod
     def _augmentation_features(cls) -> list[dict]:
+        """Returns the feature degrading the flip augmentation probabilities to zero."""
         return [
             {
                 "label"   : "augmentation",
@@ -93,6 +123,7 @@ class AblationCatalog:
 
     @classmethod
     def _schedule_features(cls) -> list[dict]:
+        """Returns the curriculum, learning-rate warmup and per-group learning rate features."""
         return [
             {
                 "label"   : "loss_curriculum",
@@ -116,6 +147,7 @@ class AblationCatalog:
 
     @classmethod
     def _loss_component_features(cls) -> list[dict]:
+        """Returns the feature toggling the cosine curve term of the complete stage."""
         complete = cls.COMPLETE_PREFIX
 
         return [
@@ -129,6 +161,7 @@ class AblationCatalog:
 
     @classmethod
     def _slot_features(cls) -> list[dict]:
+        """Returns the amplitude focal, active-normalization and presence-balance features."""
         prefix = cls.COMPLETE_PREFIX
 
         return [
@@ -154,6 +187,7 @@ class AblationCatalog:
 
     @classmethod
     def _architecture_features(cls) -> list[dict]:
+        """Returns the feature swapping backbone and parameter loss together."""
         complete = cls.COMPLETE_PREFIX
 
         return [
@@ -179,6 +213,17 @@ class AblationCatalog:
 
     @classmethod
     def _loss_toggle(cls, label: str, use_key: str, weight_key: str, weight: float) -> dict:
+        """Builds a feature that enables one complete-stage loss term.
+
+        Args:
+            label      : Feature label reported by the ablation.
+            use_key    : Name of the boolean toggle field of the loss term.
+            weight_key : Name of the weight field of the loss term.
+            weight     : Weight assigned when the feature is enabled.
+
+        Returns:
+            The feature dict with its enable and degrade override maps.
+        """
         prefix = cls.COMPLETE_PREFIX
 
         return {
@@ -190,6 +235,7 @@ class AblationCatalog:
 
     @classmethod
     def features(cls) -> list[dict]:
+        """Returns every catalogued feature, grouped by category."""
         loss_terms = [cls._loss_toggle(label, use_key, weight_key, weight) for label, use_key, weight_key, weight in cls.LOSS_TERMS]
 
         return (
@@ -205,6 +251,7 @@ class AblationCatalog:
 
     @classmethod
     def as_dict(cls) -> dict:
+        """Returns the catalogued features keyed by their label."""
         return {feature["label"]: feature for feature in cls.features()}
 
     DEFAULT_ORDER = (
@@ -217,11 +264,13 @@ class AblationCatalog:
 
     @classmethod
     def default_features(cls) -> list[dict]:
+        """Returns the single-trunk ablation features in reporting order."""
         catalog = cls.as_dict()
         return [catalog[label] for label in cls.DEFAULT_ORDER]
 
     @classmethod
     def _dual_lr_feature(cls) -> dict:
+        """Returns the per-group learning rate feature addressing the two trunks."""
         return {
             "label"   : "lr_per_group",
             "group"   : "optimizer",
@@ -231,6 +280,7 @@ class AblationCatalog:
 
     @classmethod
     def _dual_architecture_feature(cls) -> dict:
+        """Returns the architecture feature swapping both trunks and the parameter loss."""
         complete = cls.COMPLETE_PREFIX
 
         return {
@@ -256,6 +306,7 @@ class AblationCatalog:
 
     @classmethod
     def dual_default_features(cls) -> list[dict]:
+        """Returns the ablation features in reporting order, with the dual overrides applied."""
         catalog = cls.as_dict()
         catalog.update({feature["label"]: feature for feature in (cls._dual_lr_feature(), cls._dual_architecture_feature())})
         return [catalog[label] for label in cls.DEFAULT_ORDER]

@@ -1,3 +1,9 @@
+"""Figures for error stratification, failure modes and presence calibration.
+
+Turns the binned tables produced by the stratified-error, failure-mode and
+presence-calibration analyses into the publication figures of the inference report.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +15,11 @@ from pipelines.backbone.inference.plots.base import PlotTools
 
 
 class StratifiedErrorPlotter(PlotTools):
+    """Plots binned error curves, failure-mode maps and detection reliability curves.
+
+    Attributes:
+        COVARIATE_LABELS : Axis labels, with units, for each supported stratification covariate.
+    """
 
     COVARIATE_LABELS = {
         "gt_active_count"   : "GT active Gaussian count",
@@ -18,6 +29,17 @@ class StratifiedErrorPlotter(PlotTools):
     }
 
     def plot_error_curve(self, rows: list[dict], covariate: str, out_path: Path, discrete: bool) -> Path:
+        """Plots median pixel curve MSE with an interquartile band against a scene covariate.
+
+        Args:
+            rows      : Per-bin records carrying "center", "median", "q25" and "q75".
+            covariate : Covariate name, looked up in COVARIATE_LABELS for the x-axis label.
+            out_path  : Destination path of the figure.
+            discrete  : Whether to place x ticks exactly on the bin centres.
+
+        Returns:
+            Path of the saved figure.
+        """
         self._apply_style()
 
         centers = [row["center"] for row in rows]
@@ -41,6 +63,18 @@ class StratifiedErrorPlotter(PlotTools):
         return self._save(fig, out_path)
 
     def plot_failure_mode_map(self, mode_map, mode_names: tuple, out_path: Path, row_offset: int, col_offset: int) -> Path:
+        """Draws the dominant failure mode of every pixel as a discrete categorical map.
+
+        Args:
+            mode_map   : Integer mode index per pixel, of shape (row, col), indexing mode_names.
+            mode_names : Failure-mode names in index order, rendered as the colourbar legend.
+            out_path   : Destination path of the figure.
+            row_offset  : Row index of the first row, used for the axis extent.
+            col_offset  : Range index of the first column, used for the axis extent.
+
+        Returns:
+            Path of the saved figure.
+        """
         H, W   = mode_map.shape
         extent = [col_offset, col_offset + W, row_offset + H, row_offset]
         legend = ", ".join(f"{index}={name}" for index, name in enumerate(mode_names))
@@ -60,6 +94,15 @@ class StratifiedErrorPlotter(PlotTools):
         )
 
     def plot_presence_reliability(self, rows: list[dict], out_path: Path) -> Path:
+        """Plots the share of predicted Gaussians matching a ground-truth scatterer per amplitude bin.
+
+        Args:
+            rows     : Per-bin records carrying "amp_mean" and "precision" (a fraction in [0, 1]).
+            out_path : Destination path of the figure.
+
+        Returns:
+            Path of the saved figure.
+        """
         self._apply_style()
 
         amps       = [row["amp_mean"] for row in rows]
@@ -77,6 +120,15 @@ class StratifiedErrorPlotter(PlotTools):
         return self._save(fig, out_path)
 
     def plot_miss_by_separation(self, rows: list[dict], out_path: Path) -> Path:
+        """Plots the fraction of pixels with a missed scatterer against ground-truth scatterer separation.
+
+        Args:
+            rows     : Per-bin records carrying "center" (separation in metres) and "miss_rate" in [0, 1].
+            out_path : Destination path of the figure.
+
+        Returns:
+            Path of the saved figure.
+        """
         self._apply_style()
 
         centers = [row["center"] for row in rows]

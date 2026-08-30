@@ -1,3 +1,5 @@
+"""Optuna-based hyperparameter tuning: scheduler and per-GPU worker."""
+
 from pipelines.tuning.pipeline import TuningScheduler
 from pipelines.tuning.workers  import TuningWorker
 

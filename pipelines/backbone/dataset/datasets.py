@@ -1,3 +1,9 @@
+"""Torch datasets serving patched SAR stacks and Gaussian parameter targets.
+
+PatchDataset assembles the configured input representation for one crop region and
+MultiRegionDataset concatenates several such regions into a single split.
+"""
+
 from __future__ import annotations
 
 import bisect
@@ -13,6 +19,22 @@ from pipelines.backbone.dataset.spatial      import Patcher
 
 
 class PatchDataset(Dataset):
+    """Serves normalized input patches and Gaussian parameter targets from one crop region.
+
+    The dataset holds the whole region in memory (or memory-mapped), cuts patches on
+    demand through the Patcher grid, converts the complex stack into the configured
+    real-valued representation, augments the train split and normalizes both sides.
+
+    Attributes:
+        inputs                 : Complex SAR stack of shape (layers, azimuth, range) for this region.
+        gt_parameters          : Ground-truth Gaussian parameters of shape (3 * n_gaussians, azimuth, range).
+        grid                   : Patcher defining the patch grid and padding over the region.
+        normalizer             : Normalizer applied to inputs and targets; may be assigned after construction.
+        input_channels         : Number of channels the assembled input tensor carries.
+        gt_channels            : Number of ground-truth channels retained by the output configuration.
+        output_channel_indices : Indices into the full parameter stack that the output configuration selects.
+    """
+
     def __init__(
         self,
         inputs        : np.ndarray,
@@ -29,6 +51,27 @@ class PatchDataset(Dataset):
         augmenter     : Optional[SpatialAugmenter] = None,
         aux           : Optional[np.ndarray]       = None,
     ) -> None:
+        """Validates the stack layout against the input configuration and selects the target channels.
+
+        Args:
+            inputs           : Complex SAR stack of shape (n_primary + n_secondaries + n_interferograms, azimuth, range).
+            gt_parameters    : Ground-truth parameters of shape (3 * available_gaussians, azimuth, range), ordered amplitude, mu (metres), sigma (metres) per Gaussian slot.
+            grid             : Patcher supplying the patch coordinates and padding.
+            input_config     : Selection and representation of the primary, secondaries, interferograms and DEM.
+            output_config    : Selection of the ground-truth parameter channels.
+            split_name       : Split this dataset belongs to; augmentation runs only for "train".
+            n_secondaries    : Number of secondary passes carried by the stack.
+            n_interferograms : Number of interferogram layers carried by the stack.
+            n_primary        : Number of primary layers carried by the stack.
+            normalizer       : Normalizer for inputs and targets; may be attached later.
+            n_gaussians      : Number of Gaussian slots the output configuration indexes.
+            augmenter        : Augmenter applied to train patches, or None to disable augmentation.
+            dem              : Optional DEM of shape (azimuth, range) in metres.
+            kz_field         : Optional per-pixel kz field of shape (tracks, azimuth, range) in rad/m.
+
+        Raises:
+            ValueError : If the stack layer count disagrees with the declared composition, if the input configuration requests a group the stack does not carry, or if n_gaussians indexes parameter channels beyond those provided.
+        """
 
         self.inputs        = inputs
         self.gt_parameters = gt_parameters
@@ -72,7 +115,23 @@ class PatchDataset(Dataset):
         if required_gt_channels > available_gt_channels:
             raise ValueError(f"Configured n_gaussians={n_gaussians} indexes ground-truth parameter channel {required_gt_channels - 1} but the dataset provides only {available_gt_channels} ({available_gt_channels // 3} Gaussians). Set n_gaussians to match the parameter extraction used for this dataset.")
 
+        self.gt_selected = self._select_gt_channels(gt_parameters)
+
+    def _select_gt_channels(self, gt_parameters: np.ndarray) -> np.ndarray:
+        """Returns the leading gt_channels parameter maps of the ground-truth stack."""
+        return gt_parameters[:self.gt_channels]
+
     def _build_input_tensor(self, complex_patch: np.ndarray, aux_patch: Optional[np.ndarray] = None) -> np.ndarray:
+        """Converts a complex patch into the configured real-valued input tensor.
+
+        Args:
+            complex_patch : Complex patch of shape (layers, patch_h, patch_w) sliced from the stack.
+            aux_patch     : Aux patch of shape (patch_h, patch_w), required when use_aux is set.
+
+        Returns:
+            Float32 tensor of shape (input_channels, patch_h, patch_w) with the primary,
+            secondary, derived and aux channels written in that order.
+        """
         derived_offset          = self.n_primary + self.n_secondaries
 
         primary_data     = complex_patch[               : self.n_primary                        ]
@@ -105,37 +164,74 @@ class PatchDataset(Dataset):
 
         return input_tensor
 
-    def _build_output_tensor(self, gt_patch: np.ndarray) -> np.ndarray:
-        output_tensor = gt_patch[self.output_channel_indices, ...]
-
-        return np.ascontiguousarray(output_tensor, dtype=np.float32)
-
     def _normalize_input_tensor(self, input_tensor: np.ndarray) -> np.ndarray:
+        """Normalizes an assembled input tensor.
+
+        Args:
+            input_tensor : Tensor of shape (input_channels, patch_h, patch_w) in physical units.
+
+        Returns:
+            The tensor in normalized units, same shape.
+
+        Raises:
+            RuntimeError : If no normalizer has been attached to this dataset yet.
+        """
         if self.normalizer is None:
             raise RuntimeError(f"PatchDataset '{self.split_name}' was indexed before a normalizer was assigned; training on raw physical values would be silently wrong.")
 
         return self.normalizer.normalize_input(input_tensor)
 
     def _normalize_gt_params(self, gt_params: np.ndarray) -> np.ndarray:
+        """Normalizes a ground-truth parameter patch.
+
+        Args:
+            gt_params : Parameters of shape (gt_channels, patch_h, patch_w) in physical units.
+
+        Returns:
+            The parameters in normalized units, same shape.
+
+        Raises:
+            RuntimeError : If the attached normalizer carries no output statistics.
+        """
         if self.normalizer.stats.output_stats is None:
             raise RuntimeError(f"PatchDataset '{self.split_name}' has a normalizer without output stats; ground-truth parameters cannot be normalized.")
 
         return self.normalizer.normalize_output(gt_params)
 
     def assemble_window(self, complex_window: np.ndarray, aux_window: Optional[np.ndarray] = None) -> np.ndarray:
+        """Builds and normalizes an input tensor for an arbitrary window outside the patch grid.
+
+        Args:
+            complex_window : Complex window of shape (layers, z, width).
+            aux_window     : Aux window of shape (z, width) in metres, when the Aux channel is enabled.
+
+        Returns:
+            Normalized tensor of shape (input_channels, z, width).
+        """
         input_tensor = self._build_input_tensor(complex_window, aux_window)
         return self._normalize_input_tensor(input_tensor)
 
     def __len__(self) -> int:
+        """Returns the number of patches on this region's grid."""
         return self.grid.grid.number_of_patches
 
     def __getitem__(self, idx: int):
+        """Returns one training sample.
+
+        Args:
+            idx : Patch index on the region grid.
+
+        Returns:
+            A (input_tensor, gt_params) pair of normalized arrays with shapes
+            (input_channels, patch_h, patch_w) and (gt_channels, patch_h, patch_w),
+            extended by a kz patch of shape (tracks, patch_h, patch_w) in rad/m when a
+            per-pixel geometry field is attached.
+        """
         complex_patch = self.grid.extract(self.inputs, idx)
         aux_patch     = self.grid.extract(self.aux, idx) if self.input_config.use_aux else None
         input_tensor  = self._build_input_tensor(complex_patch, aux_patch)
 
-        gt_patch  = self.grid.extract(self.gt_parameters, idx)
-        gt_params = self._build_output_tensor(gt_patch)
+        gt_params = self.grid.extract(self.gt_selected, idx).astype(np.float32, copy=False)
 
         if self.augmenter is not None and self.split_name == "train":
             input_tensor, gt_params = self.augmenter(input_tensor, gt_params)
@@ -150,7 +246,23 @@ class PatchDataset(Dataset):
 
 
 class MultiRegionDataset(Dataset):
+    """Concatenates the patch grids of several disjoint crop regions into one split.
+
+    Attributes:
+        parts   : Per-region PatchDataset instances, in concatenation order.
+        offsets : Index of the first patch of each part in the concatenated ordering.
+        total   : Total number of patches across all parts.
+    """
+
     def __init__(self, parts: list[PatchDataset]) -> None:
+        """Builds the concatenated index and checks the parts share a channel structure.
+
+        Args:
+            parts : Per-region datasets to concatenate.
+
+        Raises:
+            ValueError : If no part is given, or if the parts disagree on the input channel count, the stack composition or the ground-truth channel count.
+        """
         if not parts:
             raise ValueError("MultiRegionDataset requires at least one part")
 
@@ -190,17 +302,31 @@ class MultiRegionDataset(Dataset):
 
     @property
     def normalizer(self):
+        """Returns the normalizer shared by the parts."""
         return self.parts[0].normalizer
 
     @normalizer.setter
     def normalizer(self, normalizer) -> None:
+        """Assigns the normalizer to every part."""
         for part in self.parts:
             part.normalizer = normalizer
 
     def __len__(self) -> int:
+        """Returns the total number of patches across all regions."""
         return self.total
 
     def __getitem__(self, idx: int):
+        """Returns the sample at a concatenated index.
+
+        Args:
+            idx : Index into the concatenated patch ordering; negative values count from the end.
+
+        Returns:
+            The sample the owning part yields for its local index.
+
+        Raises:
+            IndexError : If the index falls outside the concatenated range.
+        """
         if idx < 0:
             idx += self.total
         if idx < 0 or idx >= self.total:

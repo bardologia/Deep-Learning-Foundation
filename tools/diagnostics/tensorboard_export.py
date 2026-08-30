@@ -1,3 +1,10 @@
+"""Export of tensorboard scalar logs to publication-quality curve figures.
+
+Reads the event files of a run, pairs training and validation tags into shared
+figures, renders one PNG per tag group, and additionally overlays the seeds of
+a multi-seed trial in a single figure per tag.
+"""
+
 from __future__ import annotations
 
 import re
@@ -23,16 +30,43 @@ ScalarSeries = Tuple[np.ndarray, np.ndarray]
 
 @dataclass
 class CurveGroup:
+    """Scalar series that share one figure.
+
+    Attributes:
+        stem   : Relative output path stem of the figure, without extension.
+        title  : Human-readable tag name used for the figure title.
+        series : Tuples of (role label or None, step array, value array), where the role is "Training" or "Validation".
+    """
     stem   : str
     title  : str
     series : List[Tuple[Optional[str], np.ndarray, np.ndarray]]
 
 
 class TensorboardScalarReader:
+    """Loads every scalar series from a run's tensorboard event files.
+
+    Attributes:
+        config : Export configuration pointing at the tensorboard directory.
+    """
+
     def __init__(self, config: TensorboardExportConfig) -> None:
+        """Initialises the reader.
+
+        Args:
+            config : Export configuration for one run directory.
+        """
         self.config = config
 
     def read(self) -> Dict[str, ScalarSeries]:
+        """Reads all scalar series recorded for the run.
+
+        Returns:
+            Mapping of tag to (steps, values) arrays of equal length.
+
+        Raises:
+            FileNotFoundError : If the run has no tensorboard directory.
+            ValueError        : If the event files contain no scalar series.
+        """
         tensorboard_dir = self.config.tensorboard_directory
         if not tensorboard_dir.is_dir():
             raise FileNotFoundError(f"No '{self.config.tensorboard_dirname}' directory at {tensorboard_dir}; expected a training run directory holding tensorboard event files")
@@ -55,10 +89,13 @@ class TensorboardScalarReader:
 
 
 class ScalarTagGrouper:
+    """Groups scalar tags that differ only by their train/validation segment."""
+
     SPLIT_LABELS = {"train": "Training", "val": "Validation", "validation": "Validation"}
     SERIES_ORDER = ("Training", "Validation")
 
     def _split_tag(self, tag: str) -> Tuple[Optional[str], Optional[str]]:
+        """Returns the tag with its split segment removed and the split label, or (None, None)."""
         segments = tag.split("/")
         for index, segment in enumerate(segments):
             if segment in self.SPLIT_LABELS:
@@ -67,10 +104,23 @@ class ScalarTagGrouper:
         return None, None
 
     def _stem(self, tag: str) -> str:
+        """Returns the filesystem-safe path stem derived from a tag."""
         segments = [re.sub(r"[^A-Za-z0-9._-]+", "_", segment) for segment in tag.split("/") if segment]
         return "/".join(segments)
 
     def group(self, series_by_tag: Dict[str, ScalarSeries]) -> List[CurveGroup]:
+        """Groups tags into figures, pairing matching training and validation curves.
+
+        Args:
+            series_by_tag : Mapping of tag to (steps, values) arrays.
+
+        Returns:
+            Curve groups sorted by output stem; a group holds two series when a
+            train/validation pair was found and one otherwise.
+
+        Raises:
+            ValueError : If two tags resolve to the same split role, or if two groups would write to the same output stem.
+        """
         buckets : Dict[str, list] = {}
         singles : List[str]       = []
 
@@ -106,6 +156,8 @@ class ScalarTagGrouper:
 
 
 class CurveLabeler:
+    """Turns snake_case tensorboard tags into readable axis labels and titles."""
+
     ACRONYMS = {"lr", "gpu", "cpu", "ram", "vram", "shm", "rss", "vms", "uss", "ema", "l1", "l2", "mse", "mae", "rmse", "ssim", "bic", "f1", "gt", "aux", "iqr"}
 
     UNIT_SUFFIXES = (("mb_s", "MB/s"), ("gb_s", "GB/s"), ("gb", "GB"), ("mb", "MB"), ("pct", "%"), ("w", "W"), ("c", "°C"))
@@ -113,12 +165,14 @@ class CurveLabeler:
     WRAP_WIDTH = 52
 
     def _token(self, token: str) -> str:
+        """Returns a token upper-cased when it is a known acronym and capitalised otherwise."""
         match = re.fullmatch(r"([a-z]+)(\d*)", token)
         if match and match.group(1) in self.ACRONYMS:
             return match.group(1).upper() + match.group(2)
         return token.capitalize()
 
     def _split_unit(self, segment: str) -> Tuple[List[str], Optional[str]]:
+        """Returns the segment's tokens with any trailing unit suffix stripped and named."""
         tokens = segment.split("_")
         for suffix, unit in self.UNIT_SUFFIXES:
             suffix_tokens = suffix.split("_")
@@ -127,20 +181,29 @@ class CurveLabeler:
         return tokens, None
 
     def _segment(self, segment: str, with_unit: bool) -> str:
+        """Returns one tag segment rendered as words, optionally with its unit in parentheses."""
         tokens, unit = self._split_unit(segment) if with_unit else (segment.split("_"), None)
         text         = " ".join(self._token(token) for token in tokens if token)
         return f"{text} ({unit})" if unit else text
 
     def y_label(self, title: str) -> str:
+        """Returns the y-axis label built from the last segment of a tag, unit included."""
         return self._segment(title.split("/")[-1], with_unit=True)
 
     def title(self, title: str) -> str:
+        """Returns the wrapped figure title built from every segment of a tag."""
         segments = title.split("/")
         rendered = [self._segment(segment, with_unit=(index == len(segments) - 1)) for index, segment in enumerate(segments)]
         return "\n".join(textwrap.wrap(" / ".join(rendered), self.WRAP_WIDTH))
 
 
 class ScalarCurvePlots(PlotBase):
+    """Renders one training-curve figure per tag group.
+
+    Attributes:
+        labeler : Label formatter shared by every figure.
+    """
+
     save_dpi = 300
 
     SERIES_COLORS = {"Training": "#1f77b4", "Validation": "#ff7f0e", None: "#1f77b4"}
@@ -148,9 +211,11 @@ class ScalarCurvePlots(PlotBase):
     LOG_SPAN      = 1e3
 
     def __init__(self) -> None:
+        """Initialises the renderer with a fresh curve labeler."""
         self.labeler = CurveLabeler()
 
     def _log_scaled(self, value_arrays) -> bool:
+        """Returns whether the pooled values are strictly positive and span at least LOG_SPAN."""
         values = np.concatenate(list(value_arrays))
         values = values[np.isfinite(values)]
 
@@ -159,6 +224,7 @@ class ScalarCurvePlots(PlotBase):
         return bool(values.max() / values.min() >= self.LOG_SPAN)
 
     def _decorate(self, fig, ax, title: str, value_arrays, n_series: int) -> None:
+        """Applies the scale, grid, labels and legend shared by all curve figures."""
         if self._log_scaled(value_arrays):
             ax.set_yscale("log")
 
@@ -176,6 +242,15 @@ class ScalarCurvePlots(PlotBase):
         fig.tight_layout()
 
     def render(self, group: CurveGroup, path: Path) -> Path:
+        """Renders one tag group as a step-versus-value curve figure.
+
+        Args:
+            group : Curve group holding one or two series over training steps.
+            path  : Destination file for the figure.
+
+        Returns:
+            Path of the saved figure.
+        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=(6.2, 3.9))
@@ -190,13 +265,30 @@ class ScalarCurvePlots(PlotBase):
 
 @dataclass
 class SeedCurveGroup:
+    """Scalar series of several seeds that share one overlay figure.
+
+    Attributes:
+        stem   : Relative output path stem of the figure, without extension.
+        title  : Human-readable tag name used for the figure title.
+        series : Tuples of (seed name, role label or None, step array, value array).
+    """
     stem   : str
     title  : str
     series : List[Tuple[str, Optional[str], np.ndarray, np.ndarray]]
 
 
 class SeedScalarMerger:
+    """Merges the per-seed curve groups of a trial into shared overlay groups."""
+
     def merge(self, groups_by_seed: Dict[str, List[CurveGroup]]) -> List[SeedCurveGroup]:
+        """Collects the series of every seed under their common tag stem.
+
+        Args:
+            groups_by_seed : Curve groups keyed by seed directory name.
+
+        Returns:
+            Seed curve groups sorted by output stem.
+        """
         merged: Dict[str, SeedCurveGroup] = {}
 
         for seed in sorted(groups_by_seed):
@@ -209,17 +301,29 @@ class SeedScalarMerger:
 
 
 class SeedOverlayPlots(ScalarCurvePlots):
+    """Renders one figure per tag overlaying every seed of a trial."""
+
     PALETTE = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
 
     ROLE_STYLES = {"Training": "-", "Validation": "--", None: "-"}
 
     @staticmethod
     def _series_label(seed: str, role: Optional[str]) -> str:
+        """Returns the legend entry for one seed and split role."""
         if role is None:
             return seed
         return f"{seed} {'train' if role == 'Training' else 'val'}"
 
     def render(self, group: SeedCurveGroup, path: Path) -> Path:
+        """Renders one tag with every seed overlaid, colour by seed and dash by split role.
+
+        Args:
+            group : Seed curve group holding one series per seed and role.
+            path  : Destination file for the figure.
+
+        Returns:
+            Path of the saved figure.
+        """
         self._apply_style()
 
         fig, ax = plt.subplots(figsize=(6.2, 3.9))
@@ -234,27 +338,49 @@ class SeedOverlayPlots(ScalarCurvePlots):
 
 
 class TensorboardExport:
+    """Exports every scalar series of one run to curve figures.
+
+    Attributes:
+        config : Export configuration for the run.
+        logger : Logger used for progress reporting.
+    """
+
     def __init__(self, config: TensorboardExportConfig, logger) -> None:
+        """Initialises the exporter.
+
+        Args:
+            config : Export configuration for one run directory.
+            logger : Logger used for progress reporting.
+        """
         self.config = config
         self.logger = logger
 
     def _read(self) -> Dict[str, ScalarSeries]:
+        """Reads and reports the scalar series of the run."""
         self.logger.subsection(f"Reading tensorboard log: {self.config.tensorboard_directory}")
         series = TensorboardScalarReader(self.config).read()
         self.logger.ok(f"Loaded {len(series)} scalar series")
         return series
 
     def _group(self, series: Dict[str, ScalarSeries]) -> List[CurveGroup]:
+        """Groups the scalar series into figures and reports how many are shared."""
         groups = ScalarTagGrouper().group(series)
         shared = sum(1 for group in groups if len(group.series) > 1)
         self.logger.ok(f"Grouped into {len(groups)} figures ({shared} shared train/validation)")
         return groups
 
     def _render(self, groups: List[CurveGroup]) -> List[Path]:
+        """Renders every group into the run's plots directory and returns the file paths."""
         renderer = ScalarCurvePlots()
         return [renderer.render(group, self.config.plots_directory / f"{group.stem}.png") for group in groups]
 
     def run(self) -> dict:
+        """Reads, groups and renders the run's scalar logs.
+
+        Returns:
+            Mapping with the run and plots directories, the number of scalar
+            series read, the number of plots written, and their paths.
+        """
         self.logger.section(f"Tensorboard plot export: {Path(self.config.run_directory).name}")
 
         series = self._read()
@@ -273,10 +399,21 @@ class TensorboardExport:
 
 
 class SeedRunGrouper:
+    """Collects seed run directories under the trial directory that owns them."""
+
     SEED_DIR_PATTERN = re.compile(r"seed\d+")
 
     @classmethod
     def trials(cls, run_dirs: list[Path]) -> Dict[Path, list[Path]]:
+        """Returns the trial directories holding more than one seed run.
+
+        Args:
+            run_dirs : Candidate run directories.
+
+        Returns:
+            Mapping of trial directory to its sorted seed directories,
+            restricted to trials with at least two seeds.
+        """
         groups: Dict[Path, list[Path]] = {}
 
         for run_dir in run_dirs:
@@ -287,17 +424,41 @@ class SeedRunGrouper:
 
 
 class SeedOverlayExport:
+    """Exports seed-overlay curve figures for one multi-seed trial.
+
+    Attributes:
+        trial_dir    : Trial directory that owns the seed runs.
+        seed_dirs    : Seed run directories to overlay.
+        entry_config : Entry configuration used to derive per-seed configs.
+        logger       : Logger used for progress reporting.
+    """
+
     def __init__(self, trial_dir: Path, seed_dirs: list[Path], entry_config: TensorboardExportEntryConfig, logger) -> None:
+        """Initialises the overlay exporter.
+
+        Args:
+            trial_dir    : Trial directory that owns the seed runs.
+            seed_dirs    : Seed run directories to overlay.
+            entry_config : Entry configuration used to derive per-seed configs.
+            logger       : Logger used for progress reporting.
+        """
         self.trial_dir    = Path(trial_dir)
         self.seed_dirs    = seed_dirs
         self.entry_config = entry_config
         self.logger       = logger
 
     def _read_seed(self, seed_dir: Path) -> List[CurveGroup]:
+        """Returns the grouped scalar series of one seed run."""
         config = self.entry_config.to_config(seed_dir)
         return ScalarTagGrouper().group(TensorboardScalarReader(config).read())
 
     def run(self) -> dict:
+        """Reads every seed and writes the overlay figures into the trial directory.
+
+        Returns:
+            Mapping with the trial and plots directories, the seed count, the
+            number of plots written, and their paths.
+        """
         self.logger.subsection(f"Seed overlay export: {self.trial_dir.name} ({len(self.seed_dirs)} seeds)")
 
         groups_by_seed = {seed_dir.name: self._read_seed(seed_dir) for seed_dir in self.seed_dirs}
@@ -319,15 +480,30 @@ class SeedOverlayExport:
 
 
 class TensorboardExportBatch:
+    """Exports curve figures for every run matched by an entry-point filter.
+
+    Attributes:
+        entry_config : Entry configuration holding the run root and filter.
+        logger       : Logger used for progress reporting.
+    """
+
     def __init__(self, entry_config: TensorboardExportEntryConfig, logger) -> None:
+        """Initialises the batch exporter.
+
+        Args:
+            entry_config : Entry configuration holding the run root and filter.
+            logger       : Logger used for progress reporting.
+        """
         self.entry_config = entry_config
         self.logger       = logger
 
     def _select_runs(self) -> list[Path]:
+        """Returns the run directories matched by the configured run filter."""
         selector = TensorboardRunSelector(self.entry_config.runs_dir, self.entry_config.tensorboard_dirname, self.logger)
         return selector.resolve(self.entry_config.run_filter)
 
     def _export_run(self, run_dir: Path) -> dict:
+        """Exports one run's curve figures and returns its export result."""
         config = self.entry_config.to_config(run_dir)
         result = TensorboardExport(config, self.logger).run()
 
@@ -335,9 +511,15 @@ class TensorboardExportBatch:
         return result
 
     def _export_seed_overlays(self, run_dirs: list[Path]) -> list[dict]:
+        """Exports one overlay figure set per multi-seed trial found among the runs."""
         return [SeedOverlayExport(trial_dir, seed_dirs, self.entry_config, self.logger).run() for trial_dir, seed_dirs in SeedRunGrouper.trials(run_dirs).items()]
 
     def run(self) -> list[dict]:
+        """Exports every selected run and the seed overlays of its multi-seed trials.
+
+        Returns:
+            Per-run export results followed by the per-trial overlay results.
+        """
         run_dirs = self._select_runs()
         results  = [self._export_run(run_dir) for run_dir in run_dirs]
 

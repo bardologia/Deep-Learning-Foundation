@@ -1,3 +1,9 @@
+"""Entry point measuring the effective receptive field of trained backbone runs on real data.
+
+Backpropagates the centre output to the input window over probe pixels and writes the
+per-axis ERF sigma, a cumulative gradient-mass ladder, a heatmap and a report per run.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the receptive-field config and measures the ERF of the selected runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                             import ReceptiveFieldConfig

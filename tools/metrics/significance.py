@@ -1,3 +1,10 @@
+"""Significance testing of seed-paired metric differences between trials.
+
+Compares every trial against the leading trial with a two-sided paired sign-flip
+permutation test over shared seeds, and corrects the resulting p-values for
+multiple comparisons with the Holm-Bonferroni step-down procedure.
+"""
+
 from __future__ import annotations
 
 from itertools import product
@@ -6,14 +13,42 @@ import numpy as np
 
 
 class PairedPermutationTest:
+    """Two-sided paired permutation test on the mean of the seedwise differences.
+
+    All 2^n sign assignments are enumerated for small samples; larger samples
+    use a random subset with the add-one correction on the p-value.
+
+    Attributes:
+        n_permutations : Number of random sign draws used above EXACT_MAX_PAIRS.
+        rng            : Generator supplying the random sign draws.
+    """
 
     EXACT_MAX_PAIRS = 12
 
     def __init__(self, n_permutations: int = 10000, seed: int = 0) -> None:
+        """Initialises the test.
+
+        Args:
+            n_permutations : Number of random sign draws for large samples.
+            seed           : Seed of the random generator.
+        """
         self.n_permutations = int(n_permutations)
         self.rng            = np.random.default_rng(seed)
 
     def test(self, a: list[float], b: list[float]) -> dict:
+        """Tests whether the mean paired difference between two samples differs from zero.
+
+        Args:
+            a : Metric values of the first trial, one per seed.
+            b : Metric values of the second trial, in the same seed order.
+
+        Returns:
+            Mapping with the observed "mean_diff", the two-sided "p_value" and
+            the number of "n_pairs".
+
+        Raises:
+            ValueError : If the samples are not one-dimensional and of equal length, or if fewer than two pairs are given.
+        """
         a = np.asarray(a, dtype=np.float64)
         b = np.asarray(b, dtype=np.float64)
 
@@ -38,9 +73,18 @@ class PairedPermutationTest:
 
 
 class HolmBonferroni:
+    """Holm-Bonferroni step-down correction for multiple comparisons."""
 
     @staticmethod
     def adjust(p_values: dict[str, float]) -> dict[str, float]:
+        """Returns monotone step-down adjusted p-values, capped at one.
+
+        Args:
+            p_values : Raw p-value keyed by comparison name.
+
+        Returns:
+            Adjusted p-value keyed by comparison name.
+        """
         items = sorted(p_values.items(), key=lambda item: item[1])
         m     = len(items)
 
@@ -55,11 +99,35 @@ class HolmBonferroni:
 
 
 class SignificanceVsLeader:
+    """Tests every trial against the leading trial on their shared seeds.
+
+    Attributes:
+        test : Paired permutation test used for each comparison.
+    """
 
     def __init__(self, test: PairedPermutationTest | None = None) -> None:
+        """Initialises the comparison.
+
+        Args:
+            test : Paired permutation test to use; a default instance is built when omitted.
+        """
         self.test = test if test is not None else PairedPermutationTest()
 
     def compute(self, per_seed: dict[str, dict[str, float]], leader: str) -> dict[str, dict]:
+        """Compares every non-leading trial with the leader and corrects the p-values.
+
+        Args:
+            per_seed : Metric value keyed by trial name then seed identifier.
+            leader   : Name of the trial every other trial is compared against.
+
+        Returns:
+            Mapping keyed by trial name with "p_value", "p_adjusted",
+            "n_pairs" and "mean_diff"; the first, second and fourth are None
+            when fewer than two shared seeds carry a value.
+
+        Raises:
+            KeyError : If the leader is absent from the per-seed values.
+        """
         if leader not in per_seed:
             raise KeyError(f"Leader '{leader}' is missing from the per-seed values")
 

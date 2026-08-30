@@ -1,3 +1,9 @@
+"""Top-level figure orchestrator for a parameter-extraction run.
+
+Sequences the spatial-map, distribution, metrics and example-fit plotters into the
+``images/`` subtree of the run directory.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,6 +23,24 @@ from pipelines.processing.param_extraction.plots.examples      import ExampleFit
 
 
 class FittingResultPlotter(PlotBase):
+    """Renders the complete figure set of a fitted parameter-extraction run.
+
+    Attributes:
+        output_directory     : Run directory whose ``images/`` subtree receives the figures.
+        n_gaussians          : Number of Gaussian slots in the parameter stack.
+        logger               : Logger for the plotting report.
+        threshold_factor     : Peak fraction below which profile bins were zeroed by the fitter.
+        truncation_index     : Elevation bin above which the profile was truncated by the fitter.
+        fig_dpi              : Figure resolution used while rendering.
+        save_dpi             : Resolution the PNGs are written at.
+        n_fits_per_k         : Number of example pixels sampled per selected model order.
+        amp_threshold        : Amplitude above which a Gaussian slot counts as active.
+        spatial_plotter      : Plotter for the per-pixel colour maps.
+        distribution_plotter : Plotter for the distribution figures.
+        metrics_bar_plotter  : Plotter for the summary and contrast-relation figures.
+        example_fit_plotter  : Plotter for the per-pixel example fits.
+    """
+
     def __init__(
         self,
         output_directory : Path,
@@ -29,6 +53,19 @@ class FittingResultPlotter(PlotBase):
         n_fits_per_k     : int   = 5,
         amp_threshold    : float = 1e-3,
     ) -> None:
+        """Builds the four sub-plotters that make up the report.
+
+        Args:
+            output_directory : Run directory whose ``images/`` subtree receives the figures.
+            n_gaussians      : Number of Gaussian slots in the parameter stack.
+            logger           : Logger for the plotting report.
+            threshold_factor : Peak fraction below which profile bins were zeroed.
+            truncation_index : Elevation bin above which the profile was truncated.
+            fig_dpi          : Figure resolution used while rendering.
+            save_dpi         : Resolution the PNGs are written at.
+            n_fits_per_k     : Number of example pixels sampled per selected model order.
+            amp_threshold    : Amplitude above which a Gaussian slot counts as active.
+        """
         self.output_directory = Path(output_directory)
         self.n_gaussians      = n_gaussians
         self.logger           = logger
@@ -55,6 +92,7 @@ class FittingResultPlotter(PlotBase):
         )
 
     def _setup_output_dirs(self) -> Dict[str, Path]:
+        """Creates and returns the per-category figure subdirectories."""
         dirs = {
             "colormaps"    : self._images_dir / "colormaps",
             "example_fits" : self._images_dir / "example_fits",
@@ -66,10 +104,21 @@ class FittingResultPlotter(PlotBase):
         return dirs
 
     def _run_spatial_maps(self, metrics_dict : dict, r2_map : np.ndarray, activity_map : np.ndarray, dirs : Dict[str, Path]) -> Dict[str, Path]:
+        """Saves the colour maps of activity, model order, fit quality and parameters.
+
+        Args:
+            metrics_dict : Metric maps from the metrics stage.
+            r2_map       : Per-pixel R-squared of shape (azimuth, range).
+            activity_map : Active-slot count of the same shape.
+            dirs         : Per-category output directories.
+
+        Returns:
+            Mapping from figure name to the saved PNG path.
+        """
         saved : Dict[str, Path] = {}
 
         self.logger.subsection("Plotting active-Gaussian count colormap")
-        saved["n_gaussians_map"] = self.spatial_plotter._plot_discrete_k_map(
+        saved["n_gaussians_map"] = self.spatial_plotter.plot_discrete_k_map(
             activity_map,
             rf"Number of active Gaussians per pixel  ($A_k \geq {self.amp_threshold:g}$)",
             r"active Gaussians $K$",
@@ -78,7 +127,7 @@ class FittingResultPlotter(PlotBase):
 
         if "best_k_map" in metrics_dict:
             self.logger.subsection("Plotting selected model-order colormap")
-            saved["best_k_map"] = self.spatial_plotter._plot_discrete_k_map(
+            saved["best_k_map"] = self.spatial_plotter.plot_discrete_k_map(
                 metrics_dict["best_k_map"],
                 r"Selected model order $K^*$ per pixel  (penalised-MSE minimiser)",
                 r"selected $K^*$",
@@ -86,12 +135,12 @@ class FittingResultPlotter(PlotBase):
             )
 
         self.logger.subsection("Plotting R² spatial map")
-        saved["r2_spatial_map"] = self.spatial_plotter._plot_r2_spatial_map(r2_map, dirs["colormaps"] / "r2_map.png")
+        saved["r2_spatial_map"] = self.spatial_plotter.plot_r2_spatial_map(r2_map, dirs["colormaps"] / "r2_map.png")
 
         self.logger.subsection("Plotting amplitude spatial maps")
         amp_keys   = [f"amp_{k}"   for k in range(self.n_gaussians)]
         amp_titles = [f"$A_{{{k + 1}}}$  amplitude  (inactive pixels masked)" for k in range(self.n_gaussians)]
-        saved.update(self.spatial_plotter._plot_spatial_maps(
+        saved.update(self.spatial_plotter.plot_spatial_maps(
             metrics_dict, amp_keys, amp_titles,
             "Gaussian amplitude maps",
             r"$A_k$",
@@ -102,7 +151,7 @@ class FittingResultPlotter(PlotBase):
         self.logger.subsection("Plotting z-centroid (mu) spatial maps")
         mu_keys   = [f"mu_{k}"    for k in range(self.n_gaussians)]
         mu_titles = [rf"$\mu_{{{k + 1}}}$  centroid  (inactive pixels masked)" for k in range(self.n_gaussians)]
-        saved.update(self.spatial_plotter._plot_spatial_maps(
+        saved.update(self.spatial_plotter.plot_spatial_maps(
             metrics_dict, mu_keys, mu_titles,
             r"Gaussian centroid z maps",
             r"$\mu_k$",
@@ -113,7 +162,7 @@ class FittingResultPlotter(PlotBase):
         self.logger.subsection("Plotting sigma spatial maps")
         sig_keys   = [f"sigma_{k}" for k in range(self.n_gaussians)]
         sig_titles = [rf"$\sigma_{{{k + 1}}}$  spread  (inactive pixels masked)" for k in range(self.n_gaussians)]
-        saved.update(self.spatial_plotter._plot_spatial_maps(
+        saved.update(self.spatial_plotter.plot_spatial_maps(
             metrics_dict, sig_keys, sig_titles,
             r"Gaussian spread maps",
             r"$\sigma_k$",
@@ -125,7 +174,7 @@ class FittingResultPlotter(PlotBase):
             self.logger.subsection("Plotting μ-separation maps")
             sep_keys   = [f"mu_sep_{k}_{k + 1}" for k in range(self.n_gaussians - 1)]
             sep_titles = [rf"$|\mu_{{{k + 2}}} - \mu_{{{k + 1}}}|$   (both active)" for k in range(self.n_gaussians - 1)]
-            saved.update(self.spatial_plotter._plot_spatial_maps(
+            saved.update(self.spatial_plotter.plot_spatial_maps(
                 metrics_dict, sep_keys, sep_titles,
                 r"Adjacent centroid separation maps",
                 "separation",
@@ -136,55 +185,77 @@ class FittingResultPlotter(PlotBase):
         return saved
 
     def _run_distributions(self, parameters_array : np.ndarray, r2_map : np.ndarray, summary : dict, dirs : Dict[str, Path]) -> Dict[str, Path]:
+        """Saves the R-squared, per-slot and joint parameter distribution figures.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, azimuth, range).
+            r2_map           : Per-pixel R-squared of shape (azimuth, range).
+            summary          : Global summary from the metrics stage.
+            dirs             : Per-category output directories.
+
+        Returns:
+            Mapping from figure name to the saved PNG path.
+        """
         saved : Dict[str, Path] = {}
 
         self.logger.subsection("Plotting R² distribution and CDF")
-        saved.update(self.distribution_plotter._plot_r2_distribution(r2_map, summary, dirs["distributions"]))
+        saved.update(self.distribution_plotter.plot_r2_distribution(r2_map, summary, dirs["distributions"]))
 
         self.logger.subsection("Plotting parameter distributions")
-        saved.update(self.distribution_plotter._plot_parameter_distributions(parameters_array, dirs["distributions"]))
+        saved.update(self.distribution_plotter.plot_parameter_distributions(parameters_array, dirs["distributions"]))
 
         self.logger.subsection("Plotting joint parameter distributions")
-        saved.update(self.distribution_plotter._plot_param_joint_distributions(parameters_array, dirs["distributions"]))
+        saved.update(self.distribution_plotter.plot_param_joint_distributions(parameters_array, dirs["distributions"]))
 
         return saved
 
     def _run_metrics_and_snr(self, metrics_dict : dict, r2_map : np.ndarray, summary : dict, dirs : Dict[str, Path]) -> Dict[str, Path]:
+        """Saves the summary bars, the contrast map and the model-order ambiguity figures.
+
+        Args:
+            metrics_dict : Metric maps and summaries from the metrics stage.
+            r2_map       : Per-pixel R-squared of shape (azimuth, range).
+            summary      : Global summary from the metrics stage.
+            dirs         : Per-category output directories.
+
+        Returns:
+            Mapping from figure name to the saved PNG path.
+        """
         saved : Dict[str, Path] = {}
 
         self.logger.subsection("Plotting global metrics summary")
-        saved.update(self.metrics_bar_plotter._plot_global_metrics_summary(summary, dirs["metrics"]))
+        saved.update(self.metrics_bar_plotter.plot_global_metrics_summary(summary, dirs["metrics"]))
 
         snr_db_map    = metrics_dict["snr_db_map"]
         per_k_summary = metrics_dict["per_k_summary"]
 
         if snr_db_map is not None:
             self.logger.subsection("Plotting SNR spatial map")
-            saved["snr_map"] = self.spatial_plotter._plot_snr_map(snr_db_map, dirs["colormaps"] / "snr_map.png")
+            saved["snr_map"] = self.spatial_plotter.plot_snr_map(snr_db_map, dirs["colormaps"] / "snr_map.png")
 
         if "mse_per_k" in metrics_dict:
             self.logger.subsection("Plotting per-K MSE and penalty decomposition")
-            saved.update(self.metrics_bar_plotter._plot_mse_penalty_per_k(metrics_dict["mse_per_k"], per_k_summary, dirs["metrics"]))
+            saved.update(self.metrics_bar_plotter.plot_mse_penalty_per_k(metrics_dict["mse_per_k"], per_k_summary, dirs["metrics"]))
 
         if "k_relative_margin_map" in metrics_dict:
             self.logger.subsection("Plotting K-selection ambiguity maps and distribution")
             margin_keys   = ["k_margin_prev_map", "k_margin_next_map", "k_relative_margin_map"]
             margin_titles = [r"margin to $K^*-1$  (small = ambiguous choice)", r"margin to $K^*+1$  (small = ambiguous choice)", "relative margin to runner-up  (small = ambiguous choice)"]
 
-            saved.update(self.spatial_plotter._plot_spatial_maps(
+            saved.update(self.spatial_plotter.plot_spatial_maps(
                 metrics_dict, margin_keys, margin_titles,
                 r"K-selection margin maps",
                 "penalised-score margin",
                 dirs["colormaps"] / "k_ambiguity_maps",
                 cmap="cividis",
             ))
-            saved.update(self.distribution_plotter._plot_k_ambiguity_distribution(metrics_dict, per_k_summary, dirs["distributions"]))
+            saved.update(self.distribution_plotter.plot_k_ambiguity_distribution(metrics_dict, per_k_summary, dirs["distributions"]))
 
         if snr_db_map is not None:
             self.logger.subsection("Plotting SNR against fit quality and K-selection ambiguity")
             best_k_map     = metrics_dict["best_k_map"]            if "best_k_map"            in metrics_dict else None
             rel_margin_map = metrics_dict["k_relative_margin_map"] if "k_relative_margin_map" in metrics_dict else None
-            saved.update(self.metrics_bar_plotter._plot_snr_vs_fit_quality(
+            saved.update(self.metrics_bar_plotter.plot_snr_vs_fit_quality(
                 snr_db_map, r2_map,
                 best_k_map,
                 rel_margin_map,
@@ -195,6 +266,19 @@ class FittingResultPlotter(PlotBase):
         return saved
 
     def _run_example_fits(self, parameters_array : np.ndarray, metrics_dict : dict, r2_map : np.ndarray, z_axis : np.ndarray, cube_path : Path, dirs : Dict[str, Path]) -> Dict[str, Path]:
+        """Saves the per-pixel example fits, skipped when no selected-order map exists.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, row, col).
+            metrics_dict     : Metric maps carrying ``best_k_map`` when available.
+            r2_map           : Per-pixel R-squared of shape (row, col).
+            z_axis      : Z axis of shape (z,), in metres.
+            cube_path    : Path of the cube the fit was performed on.
+            dirs             : Per-category output directories.
+
+        Returns:
+            Mapping from figure name to the saved PNG path; empty when skipped.
+        """
         if "best_k_map" not in metrics_dict:
             self.logger.warning("Example fit plots skipped: best_k_map unavailable")
             return {}
@@ -208,6 +292,17 @@ class FittingResultPlotter(PlotBase):
         return saved
 
     def run(self, parameters_array : np.ndarray, metrics_dict : dict, metadata : dict, cube_path : Path) -> Dict[str, Path]:
+        """Renders every figure of the fit report.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, row, col).
+            metrics_dict     : Metric maps and summaries from the metrics stage.
+            metadata         : Run metadata of the fit.
+            cube_path    : Path of the cube the fit was performed on.
+
+        Returns:
+            Mapping from figure name to the saved PNG path.
+        """
         self.logger.section("[Fitting Result Plots]")
         self._apply_style()
         dirs = self._setup_output_dirs()

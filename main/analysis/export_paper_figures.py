@@ -1,3 +1,9 @@
+"""Entry point packing inference figures of selected runs into the publication figure set.
+
+Copies existing figures under stable ``<run>__<figure-path>.png`` names and writes a JSON
+manifest of their sources; paper styling itself comes from the inference run.
+"""
+
 from __future__ import annotations
 
 import sys, pathlib
@@ -7,6 +13,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
+    """Parses the figure-pack config and copies the selected figures with a manifest."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                           import PaperFigurePackConfig

@@ -1,14 +1,30 @@
+"""Spatial dispersion statistics over per-pixel maps.
+
+Provides the block-wise variability measures and the correlation length used to
+read the bias-variance trade-off of multilook windows and Gaussian fits.
+"""
+
 from __future__ import annotations
 
 import numpy as np
 
 
 class SpatialDispersion:
+    """Block-wise and autocorrelation statistics of a two-dimensional field."""
 
     EPSILON = 1e-9
 
     @staticmethod
     def _blocks(field: np.ndarray, block: int) -> np.ndarray:
+        """Tiles a field into flattened square blocks.
+
+        Args:
+            field : Per-pixel map of shape (azimuth, range).
+            block : Side length in pixels of the square tiles; the trailing partial tiles are cropped away.
+
+        Returns:
+            Array of shape (n_tiles, block * block) holding each tile's pixels.
+        """
         rows = field.shape[0] // block
         cols = field.shape[1] // block
 
@@ -19,6 +35,16 @@ class SpatialDispersion:
 
     @staticmethod
     def block_cv(field: np.ndarray, block: int) -> float:
+        """Returns the median within-block coefficient of variation.
+
+        Args:
+            field : Per-pixel map of shape (azimuth, range).
+            block : Side length in pixels of the square tiles.
+
+        Returns:
+            Median over tiles of standard deviation divided by mean, with tiles
+            whose mean is at or below EPSILON excluded.
+        """
         tiles = SpatialDispersion._blocks(field, block)
 
         mean = np.nanmean(tiles, axis=1)
@@ -31,11 +57,36 @@ class SpatialDispersion:
 
     @staticmethod
     def block_std(field: np.ndarray, block: int) -> float:
+        """Returns the median within-block standard deviation.
+
+        Args:
+            field : Per-pixel map of shape (azimuth, range), in the field's own units (metres for a height map).
+            block : Side length in pixels of the square tiles.
+
+        Returns:
+            Median over tiles of the within-tile standard deviation.
+        """
         tiles = SpatialDispersion._blocks(field, block)
         return float(np.nanmedian(np.nanstd(tiles, axis=1)))
 
     @staticmethod
     def autocorr_length(field: np.ndarray, axis: int = 0, max_lines: int = 256) -> float:
+        """Returns the 1/e correlation length of a field along one axis.
+
+        The autocorrelation is computed by FFT over mean-removed lines, averaged
+        across lines, and read at the first lag whose normalised value falls
+        below exp(-1).
+
+        Args:
+            field     : Per-pixel map of shape (azimuth, range).
+            axis      : Axis along which the correlation length is measured.
+            max_lines : Maximum number of lines subsampled for the estimate.
+
+        Returns:
+            Correlation length in pixels; the full extent when the
+            autocorrelation never drops below exp(-1), NaN when every line is
+            constant.
+        """
         moved  = np.moveaxis(field, axis, 0)
         length = moved.shape[0]
 

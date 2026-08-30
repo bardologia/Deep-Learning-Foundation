@@ -1,9 +1,13 @@
+"""Markdown report of an image-autoencoder inference run."""
+
 from __future__ import annotations
 
 from pipelines.shared.inference.report import InferenceReportBase
 
 
 class ImageAeReport(InferenceReportBase):
+    """Lays out the metric groups and figure sections of the image-autoencoder report."""
+
     DOC_TITLE = "Image Autoencoder Inference Report"
 
     METRIC_GROUPS = [
@@ -24,6 +28,7 @@ class ImageAeReport(InferenceReportBase):
     ]
 
     def _summary(self) -> dict:
+        """Returns the run identity table: architecture, widths, split, checkpoint and data source."""
         return {
             "model_name"        : self.run.ae_name,
             "embedding_dim"     : self.run.embedding_dim,

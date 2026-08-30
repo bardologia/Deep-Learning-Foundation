@@ -1,3 +1,9 @@
+"""Persistence for parameter-extraction runs: metadata, parameter stacks and diagnostics.
+
+Also carries the guard that distinguishes runs fitted by ``extract_params`` from runs
+whose parameters were injected from external files and therefore carry no diagnostics.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,11 +17,14 @@ from tools.monitoring.logger import Logger
 
 
 class ParameterRunMeta:
+    """Names the run metadata file and classifies runs by their parameter source."""
+
     FILENAME        = "param_extraction_meta.json"
     EXTERNAL_SOURCE = "external"
 
     @classmethod
     def is_external(cls, run_dir: Path) -> bool:
+        """Returns whether the run's parameters were injected from external files."""
         meta_path = Path(run_dir) / cls.FILENAME
 
         if not meta_path.is_file():
@@ -25,16 +34,49 @@ class ParameterRunMeta:
 
     @classmethod
     def reject_external(cls, run_dir: Path, action: str) -> None:
+        """Raises if the run was injected rather than fitted here.
+
+        Args:
+            run_dir : Parameter run directory to check.
+            action  : Phrase completing "cannot ..." in the error message.
+
+        Raises:
+            ValueError : If the run carries externally injected parameters.
+        """
         if cls.is_external(run_dir):
             raise ValueError(f"Parameter run {run_dir} was injected from external files, not fitted here, so it carries no fit diagnostics and cannot {action}. Point this step at a run produced by extract_params.")
 
 
 class ExtractionMetadataManager:
+    """Writes the run metadata describing how a parameter stack was fitted.
+
+    Attributes:
+        config : Extraction configuration whose settings are recorded.
+        logger : Logger for the write confirmation.
+    """
+
     def __init__(self, config: ExtractionConfig, logger: Logger) -> None:
+        """Binds the manager to one extraction configuration.
+
+        Args:
+            config : Extraction configuration whose settings are recorded.
+            logger : Logger for the write confirmation.
+        """
         self.config = config
         self.logger = logger
 
     def save_run_metadata(self, npy_path: Path, diagnostics_path: Path, cube_path: Path, z_range: tuple) -> Path:
+        """Writes the run metadata JSON for a completed fit.
+
+        Args:
+            npy_path         : Path of the saved parameter stack.
+            diagnostics_path : Path of the saved fit diagnostics archive.
+            cube_path    : Path of the cube the fit was performed on.
+            z_range     : Z axis limits as (minimum, maximum), in metres.
+
+        Returns:
+            Path of the written metadata JSON.
+        """
         meta_path = self.config.output_directory / ParameterRunMeta.FILENAME
         ext       = self.config.fit_settings
 
@@ -74,10 +116,26 @@ class ExtractionMetadataManager:
 
 
 class ParameterIO:
+    """Reads and writes the parameter stacks, diagnostics and metadata of a fit.
+
+    Attributes:
+        logger : Logger for the read and write reports.
+    """
+
     def __init__(self, logger : Logger) -> None:
+        """Binds the reader/writer to a logger."""
         self.logger = logger
 
     def save_params(self, parameters_array : np.ndarray, npy_path : Path) -> Path:
+        """Saves the fitted parameter stack as a contiguous .npy file.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * k_max, azimuth, range), interleaved as amplitude, mean in metres and sigma in metres per slot.
+            npy_path         : Destination .npy path.
+
+        Returns:
+            The destination path.
+        """
         npy_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.logger.subsection(f"Saving parameter stack of shape {parameters_array.shape} to disk")
@@ -86,10 +144,20 @@ class ParameterIO:
         return npy_path
 
     def load_params(self, npy_path : Path) -> np.ndarray:
+        """Loads a parameter stack of shape (3 * k_max, azimuth, range) as float32."""
         self.logger.subsection("Loading saved parameters for metrics and plots")
         return np.load(str(npy_path)).astype(np.float32, copy=False)
 
     def save_diagnostics(self, diagnostics : dict, npz_path : Path) -> Path:
+        """Saves the fit diagnostics arrays into a single .npz archive.
+
+        Args:
+            diagnostics : Mapping from diagnostic name to array, such as the per-K MSE of shape (k_max, azimuth, range) and the selected-K map.
+            npz_path    : Destination .npz path.
+
+        Returns:
+            The destination path.
+        """
         npz_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.logger.subsection(f"Saving fit diagnostics ({', '.join(diagnostics.keys())}) to disk")
@@ -98,9 +166,11 @@ class ParameterIO:
         return npz_path
 
     def load_diagnostics(self, npz_path : Path) -> dict:
+        """Returns every array stored in the fit diagnostics .npz archive."""
         self.logger.subsection("Loading fit diagnostics for metrics and plots")
         with np.load(str(npz_path)) as data:
             return {key: data[key] for key in data.files}
 
     def load_metadata(self, meta_path : Path) -> dict:
+        """Returns the run metadata dictionary read from the given JSON path."""
         return FileIO.load_json(meta_path)
