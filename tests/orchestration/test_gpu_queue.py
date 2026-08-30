@@ -755,7 +755,7 @@ def test_signal_handlers_restored_after_run(tmp_path):
 
 def test_units_run_against_the_restored_mask(tmp_path, logger_stub, monkeypatch):
     """A unit process sees the parent's inherited environment, not the parent's own pin."""
-    monkeypatch.setenv("TOMOSAR_INHERITED_CUDA_MASK", "")
+    monkeypatch.setenv("MLTEMPLATE_INHERITED_CUDA_MASK", "")
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     command = [sys.executable, "-c", "import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', 'ABSENT'))"]
     queue   = GpuQueue(gpus=[2], logger=logger_stub, poll_interval_s=0.0, handle_signals=False)
