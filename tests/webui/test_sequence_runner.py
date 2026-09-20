@@ -910,6 +910,21 @@ def test_a_finalize_block_chains_compare_and_mail_then_ends_done(rig):
     assert runner.state(sequence_id)["status"] == "done"
 
 
+def test_the_chain_steps_launch_attached_in_a_detached_sequence(rig):
+    """The chain steps run attached whatever the sequence's detach flag, so a crashed step ends as failed instead of finished."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS))], isolate=True, detach=True)
+
+    runner.start_sequence(sequence_id)
+    _experiment_tree(runner.state(sequence_id)["run_dir"])
+    processes.finish("job-0")
+    runner.scan()
+
+    assert launcher.calls[0]["detach"] is True
+    assert launcher.calls[1]["key"] == "compare_seeds"
+    assert launcher.calls[1]["detach"] is False
+
+
 def test_the_chain_runs_only_the_enabled_switches(rig):
     """A block with only the trial comparison and the mailing on skips the seed comparison."""
     store, processes, launcher, runner = rig
