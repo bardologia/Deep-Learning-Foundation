@@ -345,6 +345,25 @@ def test_secondary_rejects_too_many_secondaries():
         SecondaryTrialPlanner(trials, CANDIDATES)
 
 
+def test_secondary_rejects_repeated_candidates():
+    """Verifies a candidate list naming one track twice is refused before any subset could pair a track with itself."""
+    trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=2)
+
+    with pytest.raises(ValueError, match="CH01.*more than once"):
+        SecondaryTrialPlanner(trials, ["CH01", "CH01", "CH02", "CH02", "CH03"])
+
+
+def test_secondary_exhaustive_never_pairs_a_track_with_itself():
+    """Verifies every exhaustive subset holds distinct tracks and the same pair never recurs in another order."""
+    trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=3)
+    planner = SecondaryTrialPlanner(trials, CANDIDATES)
+
+    selections = [overrides["paths.secondary_labels"] for _, overrides in planner.plan()]
+
+    assert all(len(set(selection)) == 3 for selection in selections)
+    assert len({frozenset(selection) for selection in selections}) == len(selections) == 20
+
+
 def test_input_planner_default_catalog_covers_the_stack_grid():
     """Verifies the catalog input trials span the amplitude, derived channel, track-scope and aux field grid."""
     planner = InputTrialPlanner(TrialCatalog.input_trials(), CANDIDATES)

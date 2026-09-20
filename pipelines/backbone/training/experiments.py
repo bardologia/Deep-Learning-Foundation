@@ -1266,7 +1266,7 @@ class SecondaryTrialPlanner:
             candidates : Secondary track labels available in the dataset.
 
         Raises:
-            ValueError : On an unknown strategy or a parameter that is out of range for the chosen strategy.
+            ValueError : On a repeated candidate label, an unknown strategy or a parameter that is out of range for the chosen strategy.
         """
         self.trials     = trials
         self.candidates = list(candidates)
@@ -1296,9 +1296,13 @@ class SecondaryTrialPlanner:
         """Checks the strategy name and the parameters it requires.
 
         Raises:
-            ValueError : On an unknown strategy, a secondary count outside [1, len(candidates)], a missing Gaussian mean or sigma, or a non-positive trial count, block step or spacing.
+            ValueError : On a candidate list naming one track twice, an unknown strategy, a secondary count outside [1, len(candidates)], a missing Gaussian mean or sigma, or a non-positive trial count, block step or spacing.
         """
         t = self.trials
+
+        repeated = sorted({label for label in self.candidates if self.candidates.count(label) > 1})
+        if repeated:
+            raise ValueError(f"Secondary candidates name {repeated} more than once, so a subset could pair a track with itself; every track must appear once, regenerate the channel labels")
 
         if t.strategy not in self.STRATEGIES:
             raise ValueError(f"Unknown secondary_trials.strategy '{t.strategy}', expected one of {self.STRATEGIES}")
