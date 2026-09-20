@@ -11,6 +11,7 @@ import copy
 from pathlib import Path
 
 import optuna
+from optuna.trial import TrialState
 
 from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.model.model_builder   import ModelBuilder
@@ -134,6 +135,28 @@ class BestConfigWriter:
         self.write(study)
 
 
+class StudyTargetStop:
+    """Optuna callback stopping a worker once its study has reached the trial target.
+
+    Every worker is handed its own share of the trials, and a second launch
+    against the same study would add that share on top of what the first one
+    already ran. Stopping on the study's own completed count keeps the target
+    authoritative however many workers or launches attach to it.
+
+    Attributes:
+        target : Completed trials the study is optimised to; zero disables the stop.
+    """
+
+    def __init__(self, target: int) -> None:
+        """Binds the callback to the study's trial target."""
+        self.target = target
+
+    def __call__(self, study: optuna.Study, trial) -> None:
+        """Stops the study once it holds at least ``target`` completed trials."""
+        if self.target and len(study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))) >= self.target:
+            study.stop()
+
+
 class Tuner:
     """Optuna objective running a shortened backbone training per trial.
 
@@ -254,7 +277,7 @@ class Tuner:
             "Log dir"              : self.log_dir,
         }, title="Tuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer])
+        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer, StudyTargetStop(self.tune_cfg.n_trials)])
 
 
 class AeTuner:
@@ -353,7 +376,7 @@ class AeTuner:
             "Log dir"              : self.log_dir,
         }, title="AeTuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer])
+        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer, StudyTargetStop(self.tune_cfg.n_trials)])
 
 
 class JepaTuner:
@@ -459,4 +482,4 @@ class JepaTuner:
             "Log dir"              : self.log_dir,
         }, title="JepaTuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer])
+        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer, StudyTargetStop(self.tune_cfg.n_trials)])

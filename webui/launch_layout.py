@@ -43,6 +43,7 @@ class LaunchLayout:
     NUM_ACCUM    = {"kind": "number", "int": True, "min": 1, "max": 64, "presets": [1, 2, 4, 8, 16]}
     NUM_PATIENCE = {"kind": "number", "int": True, "min": 1, "max": 200, "presets": [5, 10, 20, 30, 50, 100]}
     NUM_SEED     = {"kind": "number", "int": True, "min": 0, "max": 9999, "presets": [0, 1, 42, 123, 2024]}
+    NUM_WORKERS  = {"kind": "number", "int": True, "min": 0, "max": 32, "presets": [0, 2, 4, 8]}
     NUM_K_MAX    = {"kind": "number", "int": True, "min": 1, "max": 10, "presets": [1, 2, 3, 5]}
     NUM_FREQ     = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 2, 5, 10]}
     NUM_PROBE    = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 3, 5, 10]}
@@ -1035,12 +1036,13 @@ class LaunchLayout:
                 "run_tag",
                 "resume_from",
                 {"path": "gpus", "widget": GPU_MANY},
+                {"path": "n_workers", "widget": NUM_WORKERS},
                 {"path": "paths.dataset_path", "widget": PICK_DATASET},
                 {"path": "paths.parameters_path", "widget": PICK_PARAMS},
             ],
             "sections": [
                 {"key": "search", "title": "Search", "panels": [
-                    {"kind": "hidden", "fields": ["gpus_file"]},
+                    {"kind": "hidden", "fields": ["gpus_file", "stage"]},
                     {"kind": "special", "panel": "model_toggle", "fields": ["skip_models"]},
                     {"kind": "fields", "title": "Optuna search", "groups": [
                         {"title": "Output heads", "fields": [

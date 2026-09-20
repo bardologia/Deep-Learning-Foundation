@@ -183,7 +183,7 @@ class ResumedRun:
 class TuningResumedRun(ResumedRun):
     """Resumed tuning run: the recording sits beside the study database and the entry has no unit resume flag."""
 
-    LAUNCH_FIELDS   = ("gpus", "gpus_file", "resume_from")
+    LAUNCH_FIELDS   = ("gpus", "gpus_file", "stage", "resume_from")
     LOCATION_FIELDS = ("run_tag", "paths.log_base_dir", "resume_from")
     LOCATOR         = TuningRunLocator
 

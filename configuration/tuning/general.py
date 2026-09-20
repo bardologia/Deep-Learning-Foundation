@@ -60,9 +60,11 @@ class TuningEntryConfig:
 
     Attributes:
         training_type   : Which trainer the study optimises, e.g. backbone or jepa.
+        stage           : Which part of the run to execute: 'prepare' creates the studies, 'compare' writes the reports of finished studies, 'full' does both around the trials.
         paths           : Dataset locations plus the root the study writes trials under.
         tuning          : Search budget and pruning settings of the study.
         gpus            : CUDA device indices trials are fanned out over.
+        n_workers       : Trial workers each study is fanned out over; zero means one per device in the GPU pool.
         gpus_file       : File listing device indices, re-read to resize the pool live.
         heads           : Output heads included in the search.
         skip_models     : Architecture registry keys excluded from the search.
@@ -80,11 +82,13 @@ class TuningEntryConfig:
     """
 
     training_type : str = "backbone"
+    stage         : str = "full"
 
     paths  : RunPathsConfig = field(default_factory=lambda: RunPathsConfig(log_base_dir=Path("runs/tuning")))
     tuning : TuningConfig   = field(default_factory=TuningConfig)
 
     gpus        : list[int]  = field(default_factory=lambda: [0])
+    n_workers   : int        = 0
     gpus_file   : str        = ""
     heads       : list[str]  = field(default_factory=lambda: ["conv"])
     skip_models : list[str]  = field(default_factory=list)
