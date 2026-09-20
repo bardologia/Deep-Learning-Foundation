@@ -49,7 +49,8 @@ from pathlib import Path
 
 from web_logger import WebLogger
 
-from configuration.diagnostics import ReportMailEntryConfig
+from configuration.diagnostics      import ReportMailEntryConfig
+from configuration.reference_layout import ReferenceLayout
 
 
 class SequenceFinalizer:
@@ -550,14 +551,16 @@ class SequenceRunner:
     def _runs_tree_path(self, value: str) -> bool:
         """Returns whether a path value sits inside the project's runs tree.
 
-        A relative value counts as in-tree when it names the ``runs`` directory
-        or a path below it, since the entry configs default their run-output
-        roots to checkout-relative paths.
+        A relative value counts as in-tree when it names the reference layout's
+        run-output root or a path below it, since the entry configs default their
+        run-output roots to checkout-relative paths.
 
         Args:
             value : Effective value of a runs-tree input, the block's override when it sets one and the entry's resolved default otherwise.
         """
-        if value == "runs" or value.startswith("runs/"):
+        reference = str(ReferenceLayout.RUNS_ROOT)
+
+        if value == reference or value.startswith(f"{reference}/"):
             return True
 
         return any(value == root or value.startswith(f"{root}/") for root in self._runs_roots())
@@ -565,14 +568,14 @@ class SequenceRunner:
     def _runs_roots(self) -> tuple:
         """Returns the path roots whose subtrees count as the project's runs tree.
 
-        The roots are the checkout's own run-output directory and the run-output
-        directory of the server mount the entry configs default to, both read
-        from the configured paths rather than from a repository-name fragment.
+        The root is the checkout's own run-output directory, which the machine
+        profile may have moved elsewhere; the reference layout's relative root is
+        matched by ``_runs_tree_path`` itself.
 
         Raises:
-            ValueError : If neither root can be determined from the configuration.
+            ValueError : If the root cannot be determined from the configuration.
         """
-        roots = tuple(root for root in (str(self.store.paths.runs_dir),) if root.strip("/") not in ("", "runs"))
+        roots = tuple(root for root in (str(self.store.paths.runs_dir),) if root.strip("/") not in ("", str(ReferenceLayout.RUNS_ROOT)))
 
         if not roots:
             raise ValueError("cannot determine the project's runs tree: the checkout run directory is not configured")
