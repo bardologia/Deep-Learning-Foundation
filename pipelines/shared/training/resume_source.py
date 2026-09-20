@@ -157,9 +157,12 @@ class TrainingResume:
 
         A trial sweep reads the sweep recording found at or above the path. A
         seed sweep reads its own recording, or the first seed run's when the
-        sweep predates recordings. A run, and any unit a scheduler handed its
-        directory, reads its own recording, or the recording of the sweep it
-        sits in when it has none yet.
+        sweep predates recordings. A path that is itself a sweep root, which
+        its own recording proves, is a trial sweep even when the launch did not
+        say so, so the sweep settings do not have to be retyped to resume it. A
+        run, and any unit a scheduler handed its directory, reads its own
+        recording, or the recording of the sweep it sits in when it has none
+        yet.
 
         Args:
             trial_sweep : Whether the launch schedules a trial sweep.
@@ -177,6 +180,9 @@ class TrainingResume:
         if seed_root is not None:
             recording = SweepRecording.path(seed_root) if SweepRecording.path(seed_root).is_file() else self._first_seed_recording(seed_root)
             return self.SEED_SWEEP, seed_root, recording
+
+        if SweepRecording.path(self.target).is_file():
+            return self.TRIAL_SWEEP, self.target, SweepRecording.path(self.target)
 
         return self.RUN, self.target, self._run_recording()
 

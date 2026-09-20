@@ -123,6 +123,39 @@ def test_a_trial_sweep_reads_the_sweep_recording_above_any_unit(tmp_path):
     assert config.trials_mode     == "patch"
 
 
+def test_a_sweep_root_is_a_trial_sweep_without_the_launch_saying_so(tmp_path):
+    """A pasted sweep root is recognised from its own recording, so the sweep settings need not be retyped."""
+    root = tmp_path / "patch"
+    _recorded(SweepRecording.path(root), **{"training.epochs": 3, "trials_enabled": True, "trials_mode": "patch"})
+    (root / "rung_a").mkdir(parents=True)
+
+    launch, cli = _launch(str(root))
+    resume      = TrainingResume(BackboneEntryConfig, launch, cli.overrides, trial_sweep=False)
+    config      = resume.configure()
+
+    assert resume.kind             == TrainingResume.TRIAL_SWEEP
+    assert resume.root             == root
+    assert resume.recording        == SweepRecording.path(root)
+    assert config.trials_enabled   is True
+    assert config.trials_mode      == "patch"
+    assert config.training.epochs  == 3
+
+
+def test_a_run_inside_a_trial_sweep_stays_a_run(tmp_path):
+    """A unit directory below a sweep root resumes that unit, not the whole sweep, even though the sweep recorded itself."""
+    root = tmp_path / "patch"
+    _recorded(SweepRecording.path(root), **{"training.epochs": 3, "trials_enabled": True})
+    unit = root / "rung_a"
+    unit.mkdir(parents=True)
+
+    launch, cli = _launch(str(unit))
+    resume      = TrainingResume(BackboneEntryConfig, launch, cli.overrides, trial_sweep=False)
+
+    assert resume.kind      == TrainingResume.RUN
+    assert resume.root      == unit
+    assert resume.recording == SweepRecording.path(root)
+
+
 def test_hardware_and_typed_overrides_win_over_the_recording(tmp_path):
     """The GPU fields follow the launch and a typed override replaces the recorded value, both reported."""
     run = tmp_path / "run"

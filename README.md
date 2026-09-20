@@ -233,11 +233,30 @@ directory that has one and deletes a run directory that does not before restarti
 `--training.resume` is the other kind of resume: it continues an unfinished run from
 `last.pt` instead of deleting it.
 
-The staged experiments (`cross_validate`, `benchmark`, `tune`) take `--resume_from <path>`,
-any path at or inside an existing run: the configuration that run recorded is loaded, the
-overrides typed on the new launch are applied on top, and only the missing or unfinished
-units run. Units are matched to their directories through the manifest each worker writes
-first (`meta/unit.json`), so a fold or seed found under any directory name keeps that
+The staged experiments (`cross_validate`, `benchmark`, `tune`) and the training entries
+take `--resume_from <path>`, any path at or inside an existing run: the configuration that
+run recorded is loaded, the overrides typed on the new launch are applied on top, the GPU
+fields follow the machine it runs on, and only the missing or unfinished units run.
+Nothing has to be retyped and no directory has to be named the way the entry would name
+it today:
+
+```bash
+python main/experiments/cross_validate.py --resume_from runs/sequences/plan/cv1
+python main/training/train_backbone.py    --resume_from runs/backbone/augmentation
+python main/training/train_backbone.py    --resume_from runs/backbone/resunet_myrun/seed3
+```
+
+A training path may be one run, a seed sweep root or a trial sweep root, or any run
+inside them. A trial sweep is recognised from the recording sitting in its own
+`batch_train_logs`, so the sweep mode and its arms need not be named again. The entry
+loads the recorded configuration (`pipeline/resolved_config.json` for the staged
+experiments, `batch_train_logs/resolved_config.json` for a training sweep,
+`docs/resolved_entry_config.json` for one run) and prints a table of every leaf that
+differs from the recording. Then it lists each unit with what it already holds: complete
+units are reused, unfinished ones continue from their trainer state when they have one
+and restart otherwise, missing ones are created. Units of the staged experiments are
+matched to their directories through the manifest each worker writes first
+(`meta/unit.json`), so a fold or seed found under any directory name keeps that
 directory. A run that trained before manifests existed carries none, and is adopted by
 `scripts/backfill_unit_manifests.py <run>`, which writes each unit's manifest from the
 run's own recording and matches units to directories by the name that recording composes.
