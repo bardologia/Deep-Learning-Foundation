@@ -1,4 +1,4 @@
-"""Shared pytest fixtures and logging stubs for the whole test suite.
+"""Shared pytest fixtures, logging stubs and a recording TensorBoard writer for the whole test suite.
 
 Session-scoped fixtures expose the gitignored test_data/ tree (preprocessed stacks,
 metadata and extracted Gaussian parameters); they skip when that tree is absent.
@@ -102,6 +102,52 @@ class SilentLogger:
             A progress stub that discards all task updates.
         """
         yield SilentProgress()
+
+
+class RecordingWriter:
+    """TensorBoard writer stub capturing every write.
+
+    Attributes:
+        scalars    : Tuples of (tag, value, step).
+        histograms : Tuples of (tag, values array, step, bins).
+        figures    : Tuples of (tag, figure, step, close).
+        layouts    : Custom Scalars layouts written.
+        flushed    : Number of flush calls.
+        closed     : Number of close calls.
+    """
+
+    def __init__(self):
+        """Creates the empty capture buffers and counters."""
+        self.scalars    = []
+        self.histograms = []
+        self.figures    = []
+        self.layouts    = []
+        self.flushed    = 0
+        self.closed     = 0
+
+    def add_scalar(self, tag, value, step):
+        """Records a scalar write."""
+        self.scalars.append((tag, value, step))
+
+    def add_histogram(self, tag, values, step, bins="auto"):
+        """Records a histogram write, storing the values as an array."""
+        self.histograms.append((tag, np.asarray(values), step, bins))
+
+    def add_figure(self, tag, figure, step, close=True):
+        """Records a figure write together with its close flag."""
+        self.figures.append((tag, figure, step, close))
+
+    def add_custom_scalars(self, layout):
+        """Records a Custom Scalars layout write."""
+        self.layouts.append(layout)
+
+    def flush(self):
+        """Counts a flush."""
+        self.flushed += 1
+
+    def close(self):
+        """Counts a close."""
+        self.closed += 1
 
 
 class RecordingLogger(SilentLogger):

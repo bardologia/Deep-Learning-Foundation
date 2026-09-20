@@ -5,46 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from tests.conftest           import RecordingWriter
 from tools.monitoring.tracker import Tracker, NullTracker
-
-
-class RecordingWriter:
-    """TensorBoard writer stub capturing every write.
-
-    Attributes:
-        scalars    : Tuples of (tag, value, step).
-        histograms : Tuples of (tag, values array, step, bins).
-        figures    : Tuples of (tag, figure, step, close).
-        flushed    : Number of flush calls.
-        closed     : Number of close calls.
-    """
-    def __init__(self):
-        """Creates the empty capture buffers and counters."""
-        self.scalars    = []
-        self.histograms = []
-        self.figures    = []
-        self.flushed    = 0
-        self.closed     = 0
-
-    def add_scalar(self, tag, value, step):
-        """Records a scalar write."""
-        self.scalars.append((tag, value, step))
-
-    def add_histogram(self, tag, values, step, bins="auto"):
-        """Records a histogram write, storing the values as an array."""
-        self.histograms.append((tag, np.asarray(values), step, bins))
-
-    def add_figure(self, tag, figure, step, close=True):
-        """Records a figure write together with its close flag."""
-        self.figures.append((tag, figure, step, close))
-
-    def flush(self):
-        """Counts a flush."""
-        self.flushed += 1
-
-    def close(self):
-        """Counts a close."""
-        self.closed += 1
 
 
 def test_active_false_without_writer():
@@ -208,12 +170,22 @@ def test_log_figure_delegates_with_close():
     assert close  is True
 
 
+def test_log_layout_forwards_the_custom_scalars_layout():
+    """Verifies a layout reaches the writer as a plain dictionary once."""
+    w = RecordingWriter()
+    t = Tracker(writer=w)
+    t.log_layout({"Loss": {"Total loss by stage": ["Multiline", ["loss/train$", "loss/val$"]]}})
+
+    assert w.layouts == [{"Loss": {"Total loss by stage": ["Multiline", ["loss/train$", "loss/val$"]]}}]
+
+
 def test_inactive_tracker_records_nothing():
     """Verifies logging on a writer-less tracker is a silent no-op."""
     t = Tracker()
     t.log_scalar("loss", 1.0)
     t.log_metrics("sys", {"a": 1.0})
     t.log_histogram("h", [1, 2, 3])
+    t.log_layout({"Loss": {}})
 
 
 def test_flush_and_close_delegate():
