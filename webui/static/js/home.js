@@ -745,114 +745,16 @@ class HostHistoryPanel {
     if (!state || !cpuCv || !netCv) return;
 
     const host = state.host || [];
-    this._chart(cpuCv, state, host, [
-      { key: "cpu", color: HostHistoryPanel.COLORS.cpu },
-      { key: "ram", color: HostHistoryPanel.COLORS.ram },
-    ], 100, "%");
+    TimeStrip.draw(cpuCv, state, [
+      { points: TimeStrip.points(host, "cpu"), color: HostHistoryPanel.COLORS.cpu },
+      { points: TimeStrip.points(host, "ram"), color: HostHistoryPanel.COLORS.ram },
+    ], { yMax: 100, unit: "%" });
 
     const netMax = Math.max(0.5, ...host.map((s) => Math.max(s.rx || 0, s.tx || 0)));
-    this._chart(netCv, state, host, [
-      { key: "rx", color: HostHistoryPanel.COLORS.rx },
-      { key: "tx", color: HostHistoryPanel.COLORS.tx },
-    ], netMax, " MB/s");
-  }
-
-  _ticks(state, plotW) {
-    const start = state.now - state.window_s;
-    const ticks = [];
-
-    if (state.window_s > 86400) {
-      const cursor = new Date(start * 1000);
-      cursor.setHours(24, 0, 0, 0);
-      const days = [];
-      while (cursor.getTime() / 1000 <= state.now) {
-        days.push(cursor.getTime() / 1000);
-        cursor.setDate(cursor.getDate() + 1);
-      }
-      const every = Math.max(1, Math.ceil((days.length * 42) / Math.max(1, plotW)));
-      days.forEach((t, i) => {
-        const date = new Date(t * 1000);
-        ticks.push({ t, label: i % every === 0 ? `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}` : null });
-      });
-    } else {
-      const step = state.window_s > 7200 ? 3 * 3600 : 900;
-      for (let t = Math.ceil(start / step) * step; t <= state.now; t += step) {
-        const date = new Date(t * 1000);
-        ticks.push({ t, label: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}` });
-      }
-    }
-    return ticks;
-  }
-
-  _chart(cv, state, samples, series, yMax, unit) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = cv.clientWidth;
-    const h = cv.clientHeight;
-    if (!w || !h) return;
-    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
-      cv.width = Math.round(w * dpr);
-      cv.height = Math.round(h * dpr);
-    }
-
-    const ctx = cv.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "rgba(6, 10, 14, 0.55)";
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
-
-    const axisH = 13;
-    const plotH = h - axisH;
-    const start = state.now - state.window_s;
-    const px = (t) => ((t - start) / state.window_s) * (w - 4) + 2;
-    const py = (v) => plotH - 2 - Math.min(1, Math.max(0, v / yMax)) * (plotH - 6);
-
-    ctx.font = "8.5px ui-monospace, SFMono-Regular, monospace";
-    ctx.textBaseline = "top";
-    this._ticks(state, w).forEach(({ t, label }) => {
-      const x = Math.round(px(t)) + 0.5;
-      ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
-      ctx.beginPath();
-      ctx.moveTo(x, 2);
-      ctx.lineTo(x, plotH - 2);
-      ctx.stroke();
-      if (!label) return;
-      ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
-      ctx.textAlign = x > w - 24 ? "right" : "center";
-      ctx.fillText(label, Math.min(x, w - 1), plotH + 2);
-    });
-
-    ctx.setLineDash([1, 4]);
-    ctx.strokeStyle = "rgba(220, 235, 245, 0.14)";
-    [0.5].forEach((f) => {
-      const y = Math.round(py(yMax * f)) + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(2, y);
-      ctx.lineTo(w - 2, y);
-      ctx.stroke();
-    });
-    ctx.setLineDash([]);
-
-    ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
-    ctx.textAlign = "left";
-    ctx.fillText(`${yMax >= 10 ? Math.round(yMax) : yMax.toFixed(1)}${unit}`, 4, 3);
-
-    if (samples.length < 2) return;
-
-    series.forEach((s) => {
-      ctx.beginPath();
-      samples.forEach((sample, i) => {
-        const x = px(sample.t);
-        const y = py(sample[s.key] || 0);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.strokeStyle = `rgba(${s.color}, 0.9)`;
-      ctx.lineWidth = 1.3;
-      ctx.stroke();
-    });
+    TimeStrip.draw(netCv, state, [
+      { points: TimeStrip.points(host, "rx"), color: HostHistoryPanel.COLORS.rx },
+      { points: TimeStrip.points(host, "tx"), color: HostHistoryPanel.COLORS.tx },
+    ], { yMax: netMax, unit: " MB/s" });
   }
 }
 

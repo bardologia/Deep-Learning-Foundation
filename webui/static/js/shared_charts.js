@@ -265,4 +265,159 @@ class SharedCharts {
   }
 }
 
+class TimeStrip {
+  static AXIS_H = 13;
+  static GAP_BUCKETS = 2.5;
+
+  static points(samples, key) {
+    return samples.map((sample) => ({ t: sample.t, v: sample[key] }));
+  }
+
+  static ticks(view, plotW) {
+    const start = view.now - view.window_s;
+    const ticks = [];
+
+    if (view.window_s > 86400) {
+      const cursor = new Date(start * 1000);
+      cursor.setHours(24, 0, 0, 0);
+      const days = [];
+      while (cursor.getTime() / 1000 <= view.now) {
+        days.push(cursor.getTime() / 1000);
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      const every = Math.max(1, Math.ceil((days.length * 42) / Math.max(1, plotW)));
+      days.forEach((t, i) => {
+        const date = new Date(t * 1000);
+        ticks.push({ t, label: i % every === 0 ? `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}` : null });
+      });
+    } else {
+      const step = view.window_s > 7200 ? 3 * 3600 : 900;
+      for (let t = Math.ceil(start / step) * step; t <= view.now; t += step) {
+        const date = new Date(t * 1000);
+        ticks.push({ t, label: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}` });
+      }
+    }
+    return ticks;
+  }
+
+  static draw(canvas, view, tracks, opts = {}) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (!w || !h) return;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(6, 10, 14, 0.55)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+    const values = tracks.flatMap((track) => track.points.map((point) => point.v)).filter((v) => Number.isFinite(v));
+    const yMax = Number.isFinite(opts.yMax) && opts.yMax > 0 ? opts.yMax : Math.max(1, ...values);
+    const unit = opts.unit || "";
+    const gapS = Number.isFinite(opts.gapS) ? opts.gapS : (view.bucket_s || 300) * TimeStrip.GAP_BUCKETS;
+
+    const plotH = h - TimeStrip.AXIS_H;
+    const start = view.now - view.window_s;
+    const px = (t) => ((t - start) / view.window_s) * (w - 4) + 2;
+    const py = (v) => plotH - 2 - Math.min(1, Math.max(0, v / yMax)) * (plotH - 6);
+
+    ctx.font = "8.5px ui-monospace, SFMono-Regular, monospace";
+    ctx.textBaseline = "top";
+    TimeStrip.ticks(view, w).forEach(({ t, label }) => {
+      const x = Math.round(px(t)) + 0.5;
+      ctx.strokeStyle = "rgba(220, 235, 245, 0.10)";
+      ctx.beginPath();
+      ctx.moveTo(x, 2);
+      ctx.lineTo(x, plotH - 2);
+      ctx.stroke();
+      if (!label) return;
+      ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
+      ctx.textAlign = x > w - 24 ? "right" : "center";
+      ctx.fillText(label, Math.min(x, w - 1), plotH + 2);
+    });
+
+    ctx.setLineDash([1, 4]);
+    ctx.strokeStyle = "rgba(220, 235, 245, 0.14)";
+    const mid = Math.round(py(yMax * 0.5)) + 0.5;
+    ctx.beginPath();
+    ctx.moveTo(2, mid);
+    ctx.lineTo(w - 2, mid);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    tracks.forEach((track) => TimeStrip.trace(ctx, track, px, py, plotH, gapS));
+
+    if (!values.length) return;
+
+    const label = `${yMax >= 10 ? Math.round(yMax) : yMax.toFixed(1)}${unit}`;
+    ctx.fillStyle = "rgba(6, 10, 14, 0.75)";
+    ctx.fillRect(2, 2, ctx.measureText(label).width + 4, 11);
+    ctx.fillStyle = "rgba(220, 235, 245, 0.45)";
+    ctx.textAlign = "left";
+    ctx.fillText(label, 4, 3);
+  }
+
+  static segments(points, gapS) {
+    const runs = [];
+    let run = [];
+
+    points.forEach((point) => {
+      if (!Number.isFinite(point.v)) {
+        run = [];
+        return;
+      }
+      const last = run[run.length - 1];
+      if (last && point.t - last.t > gapS) run = [];
+      if (!run.length) runs.push(run);
+      run.push(point);
+    });
+    return runs.filter((segment) => segment.length);
+  }
+
+  static trace(ctx, track, px, py, plotH, gapS) {
+    const runs = TimeStrip.segments(track.points, gapS);
+    const width = track.width || 1.3;
+
+    runs.forEach((segment) => {
+      if (track.fill && segment.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(px(segment[0].t), plotH - 2);
+        segment.forEach((point) => ctx.lineTo(px(point.t), py(point.v)));
+        ctx.lineTo(px(segment[segment.length - 1].t), plotH - 2);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(${track.color}, 0.12)`;
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      segment.forEach((point, i) => {
+        const x = px(point.t);
+        const y = py(point.v);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = `rgba(${track.color}, 0.9)`;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    });
+
+    if (!track.dots) return;
+    ctx.fillStyle = `rgba(${track.color}, 0.95)`;
+    track.points.filter((point) => Number.isFinite(point.v)).forEach((point) => {
+      ctx.beginPath();
+      ctx.arc(px(point.t), py(point.v), 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+}
+
 window.SharedCharts = SharedCharts;
+window.TimeStrip = TimeStrip;
