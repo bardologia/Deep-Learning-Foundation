@@ -76,12 +76,15 @@ class GpuPoolFile:
     """JSON file through which the GPU pool can be resized, or devices freed at once, while jobs run.
 
     Attributes:
-        path   : Location of the pool file.
-        logger : Logger used to announce the file and reject malformed edits.
-        stamp  : Modification time in nanoseconds of the last payload this object read.
+        FILE_NAME        : Default name of the pool file inside a run directory.
+        PROCESS_START_NS : Wall-clock nanoseconds at which this process imported the module, separating a leftover pool file from one edited while the experiment runs.
+        path             : Location of the pool file.
+        logger           : Logger used to announce the file and reject malformed edits.
+        stamp            : Modification time in nanoseconds of the last payload this object read.
     """
 
-    FILE_NAME = "gpu_pool.json"
+    FILE_NAME        = "gpu_pool.json"
+    PROCESS_START_NS = time.time_ns()
 
     def __init__(self, path: Path, logger: Logger) -> None:
         """Initializes the pool file handle with no observed modification stamp."""
@@ -112,10 +115,51 @@ class GpuPoolFile:
         FileIO.save_json(payload, self.path, indent=2, atomic=True)
         self.stamp = self._stamp()
 
-    def seed(self, gpus: list[int]) -> None:
-        """Writes the initial device list and tells the operator the file is editable."""
-        self.write(gpus)
+    def live(self) -> list[int] | None:
+        """Returns the pool held by a file written since this process started, else None.
+
+        A pool file older than the process is a leftover from an earlier launch
+        and states no live intent, so it is ignored. One written later is either
+        this run's own seed or an operator edit made while the experiment is in
+        flight, and it outranks the launch selection.
+
+        Returns:
+            The device list of a live pool file, or None when the file is absent, predates this process, or holds a malformed pool.
+        """
+        stamp = self._stamp()
+
+        if stamp is None or stamp <= self.PROCESS_START_NS:
+            return None
+
+        try:
+            return self.parse(FileIO.load_json(self.path)).gpus
+        except (ValueError, TypeError, json.JSONDecodeError, OSError) as error:
+            self.logger.error(f"Ignored the malformed GPU pool in {self.path}: {error}. This pass falls back to the launch selection; fix the file to steer the experiment.")
+            return None
+
+    def seed(self, gpus: list[int]) -> list[int]:
+        """Adopts a pool edited during this run, or writes the launch selection, and returns the pool to start from.
+
+        Every pass of an experiment seeds the same file, so a resize applied
+        while an earlier pass ran carries into this one instead of being reset
+        to the devices the experiment was launched with.
+
+        Args:
+            gpus : Launch device selection, used when the file holds no live pool.
+
+        Returns:
+            The devices the queue starts with.
+        """
+        live = self.live()
+        pool = gpus if live is None else live
+
+        self.write(pool)
         self.logger.info(f"GPU pool is live-editable at {self.path} — write {{\"gpus\": [...]}} to resize this experiment while it runs, add \"preempt\": [...] to free devices at once (their runs stop and restart from the head of the queue)")
+
+        if live is not None and sorted(live) != sorted(gpus):
+            self.logger.info(f"GPU pool {pool} carried over from the edit made while this experiment was already running; the launch selection {list(gpus)} no longer applies")
+
+        return list(pool)
 
     @staticmethod
     def _devices(payload: dict, key: str) -> list[int]:
@@ -475,7 +519,7 @@ class GpuQueue:
     """Runs a job list across a GPU pool, one subprocess per free device.
 
     Attributes:
-        gpus                 : Device indices the pool starts with.
+        gpus                 : Devices the pool holds; the launch selection until run() adopts a live pool file, then the pool the last run ended with.
         logger               : Logger for launch, completion and pool-resize messages.
         poll_interval_s      : Seconds between reap and dispatch sweeps.
         handle_signals       : Whether SIGTERM and SIGINT are trapped to kill workers.
@@ -779,7 +823,10 @@ class GpuQueue:
     def run(self, jobs: list[GpuJob]) -> list[GpuJobResult]:
         """Schedules every job across the pool and returns their outcomes.
 
-        Reaps finished workers, honours pool-file resizes and preemptions,
+        The pool file decides where this pass starts: a file edited while the
+        experiment was already running outranks the launch selection, so a
+        resize applied during an earlier pass carries into this one. Reaps
+        finished workers, honours pool-file resizes and preemptions,
         dispatches queued jobs onto free devices and publishes progress once
         per poll interval, until nothing is queued or in flight. Any worker still running when the loop
         aborts is terminated so no unsupervised job keeps holding a GPU.
@@ -790,16 +837,20 @@ class GpuQueue:
         Returns:
             One result per job, in completion order.
         """
-        queue    = list(jobs)
-        gpu_pool = list(self.gpus)
-        results  : list[GpuJobResult] = []
+        queue   = list(jobs)
+        results : list[GpuJobResult] = []
 
         self.running  = []
         self.retiring = set()
 
         if self.pool is not None and jobs:
-            self.pool.seed(self.gpus)
+            self.gpus     = self.pool.seed(self.gpus)
             self.progress = GpuProgressFile(GpuProgressFile.resolve(self.pool.path), jobs, self.logger)
+
+            if not self.gpus:
+                self.logger.warning(f"GPU pool is empty — {len(jobs)} jobs parked until a device is added back to {self.pool.path}")
+
+        gpu_pool = list(self.gpus)
 
         previous_handlers = self._install_signal_handlers() if self.handle_signals else {}
 
@@ -817,6 +868,8 @@ class GpuQueue:
 
                 if queue or self.running:
                     time.sleep(self.poll_interval_s)
+
+            self.gpus = sorted(gpu_pool)
         finally:
             if self.running:
                 terminated = self._shutdown_running()

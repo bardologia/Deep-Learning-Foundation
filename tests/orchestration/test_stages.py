@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from types   import SimpleNamespace
 
 import pytest
 
-from tools.orchestration.stages import QueuedInferenceStage, QueuedTrainingStage
-from tools.runtime.completion   import CompletionMarker
+from tools.orchestration.gpu_queue import GpuJob
+from tools.orchestration.stages    import QueuedInferenceStage, QueuedTrainingStage
+from tools.runtime.completion      import CompletionMarker
 
 from tests.conftest import SilentLogger
 
@@ -348,3 +350,17 @@ def test_run_dir_derived_from_config_and_run_tag(tmp_path, logger):
 
     assert stage.run_dir == Path(config.paths.log_base_dir) / "myrun"
     assert stage.results_path == stage.run_dir / "pipeline" / "training_results.json"
+
+
+def test_run_queue_hands_the_live_pool_to_the_stages_that_follow(tmp_path, logger):
+    """Verifies a pool edited while a stage ran replaces the configured selection, so the next stage inherits it."""
+    config = _config(tmp_path)
+    stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=["m"], logger=logger)
+
+    stage.pool_file.parent.mkdir(parents=True, exist_ok=True)
+    stage.pool_file.write_text(json.dumps({"gpus": [3]}))
+
+    results = stage._run_queue([GpuJob(name="m", command=[sys.executable, "-c", "pass"], log_path=tmp_path / "m.log")])
+
+    assert config.gpus       == [3]
+    assert results[0]["gpu"] == 3

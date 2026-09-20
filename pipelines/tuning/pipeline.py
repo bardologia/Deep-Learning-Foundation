@@ -169,6 +169,10 @@ class TuningScheduler:
     def _dispatch_workers(self, model_name: str, trial_counts: list[int]) -> bool:
         """Runs the tuning workers of one model across the GPU pool.
 
+        The pool the queue ends with replaces the configured selection, so a
+        resize applied while this model was tuning sets how many workers the
+        next model spreads its trials over.
+
         Args:
             model_name   : Model key being tuned.
             trial_counts : Trials assigned to each worker; zero entries are skipped.
@@ -185,6 +189,8 @@ class TuningScheduler:
 
         queue   = GpuQueue(gpus=self.config.gpus, logger=self.logger, pool_file=GpuPoolFile.resolve(self.config.gpus_file, self.run_dir))
         results = queue.run(jobs)
+
+        self.config.gpus = list(queue.gpus)
 
         return all(result.status == "DONE" for result in results)
 
