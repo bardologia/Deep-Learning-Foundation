@@ -43,6 +43,7 @@
       <div class="nav__sub">
         <a href="#/scripts" data-route="scripts">Scripts</a>
         <a href="#/saved" data-route="saved">Saved</a>
+        <a href="#/templates" data-route="templates">Templates</a>
         <a href="#/sequences" data-route="sequences">Sequences</a>
         <a href="#/configuration" data-route="configuration">Configuration</a>
         <a href="#/feedtuner" data-route="feedtuner">Feed Tuner</a>
@@ -183,6 +184,19 @@
       </p>
     </div>
     <div class="saved-grid" id="saved-grid"></div>
+  </section>
+
+  <!-- CONFIG TEMPLATES -->
+  <section class="page page--pad" data-page="templates">
+    <div class="page__head">
+      <h2 class="page__title">Config templates</h2>
+      <p class="page__lead">
+        Named sets of config overrides captured from a launch page or a sequence block, for the
+        settings you reach for on every run. Open one to land on its entry point with the form
+        already filled, or import it from the rail of any launch page.
+      </p>
+    </div>
+    <div class="saved-grid" id="templates-grid"></div>
   </section>
 
   <!-- SEQUENCES -->
@@ -1371,6 +1385,7 @@
 <script src="/static/js/configs.js"></script>
 <script src="/static/js/scripts.js"></script>
 <script src="/static/js/saved_runs.js"></script>
+<script src="/static/js/templates.js"></script>
 <script src="/static/js/python_literal.js"></script>
 <script src="/static/js/form_widgets.js"></script>
 <script src="/static/js/model_panels.js"></script>

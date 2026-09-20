@@ -269,10 +269,12 @@ the server discovers, with the profile's environment preselected.
 
 The console lists the 37 `main/` entry points, renders each one's configuration fields as
 typed controls with the profile's values already in place, shows the exact command it
-will run, and streams the output back live. It also carries the run leaderboard, the
-results and cube browsers, the fit lab, the model microscope and server telemetry; the
-browse roots of the results tabs start at the profile's data and runs roots.
-`webui/README.md` documents every tab.
+will run, and streams the output back live. A launch page stores its configuration as a
+saved run to launch later, or as a named config template under `logs/config_templates/`
+whose overrides import into the form of any entry point from the Templates tab or the
+launch rail. It also carries the run leaderboard, the results and cube browsers, the fit
+lab, the model microscope and server telemetry; the browse roots of the results tabs
+start at the profile's data and runs roots. `webui/README.md` documents every tab.
 
 The frontend pulls MathJax, GSAP, highlight.js and xterm.js from a CDN. Offline it still
 works, with plain text where the equations would be.

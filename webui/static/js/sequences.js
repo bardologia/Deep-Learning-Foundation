@@ -371,6 +371,7 @@ class SequencesView extends ConfigForm {
     this.project     = project || {};
     this.host        = document.getElementById("sequences-root");
     this.copyControl = new window.RunConfigCopy(this);
+    this.templateControl = new window.ConfigTemplates(this);
 
     this.sequences  = [];
     this.scripts    = [];
@@ -1176,6 +1177,13 @@ class SequencesView extends ConfigForm {
     const parts       = this.copyControl.build();
     copyRow.append(parts.dir, parts.select, parts.note, parts.apply);
     configHost.appendChild(copyRow);
+
+    const templateRow     = document.createElement("div");
+    templateRow.className = "seq-copy";
+    templateRow.title     = "Import a stored config template into the form, or save this block's overrides as one, then press Apply to block";
+    const templateParts   = this.templateControl.build();
+    templateRow.append(templateParts.select, templateParts.note, templateParts.actions);
+    configHost.appendChild(templateRow);
 
     configHost.appendChild(this._buildToolbar(cfg));
     this._renderLayout(configHost, cfg);

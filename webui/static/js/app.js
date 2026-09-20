@@ -143,6 +143,8 @@ class App {
 
     this.savedRunsView = new window.SavedRunsView(this.runConsole, document.getElementById("saved-grid"));
 
+    this.templatesView = new window.TemplatesView(this.launchView, document.getElementById("templates-grid"));
+
     this.sequencesView = new window.SequencesView(this.runConsole, this.project || {});
 
     this.equationView = new window.EquationView(
@@ -445,6 +447,7 @@ class App {
     }
     if (route === "ablation") this.ablationView.enter();
     if (route === "saved") this.savedRunsView.enter();
+    if (route === "templates") this.templatesView.enter();
     if (route === "sequences") this.sequencesView.enter();
     else this.sequencesView.leave();
     if (route === "physics") this.physicsLossView.load();

@@ -33,6 +33,7 @@ class ProjectPaths:
         gpu_guard_dir  : Directory holding GPU guard state files.
         gpu_pools_dir  : Directory holding per-job live GPU pool files.
         saved_runs_dir : Directory holding saved launch configurations.
+        templates_dir  : Directory holding one JSON file per stored config template.
         sequences_dir  : Directory holding one JSON file per stored experiment sequence.
     """
 
@@ -109,6 +110,7 @@ class ProjectPaths:
         self.gpu_guard_dir  = self.logs_dir / "gpu_guard"
         self.gpu_pools_dir  = self.logs_dir / "gpu_pools"
         self.saved_runs_dir = self.logs_dir / "saved_runs"
+        self.templates_dir  = self.logs_dir / "config_templates"
         self.sequences_dir  = self.logs_dir / "sequences"
 
         self._require_repository()

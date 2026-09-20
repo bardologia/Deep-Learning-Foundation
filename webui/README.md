@@ -52,6 +52,7 @@ talking to one group of JSON endpoints.
 | Launch | `#/launch/<key>` | `/api/scripts/<key>/config` | Full-screen launch control per script: config sections grouped by dataclass, typed controls, the override manifest, the command preview and the interpreter. Launch now, queue after the current job, or save for later. Entries that write a sweep (the training entries with their trial modes, cross-validation and the benchmark) also carry a Finalize section: the seed comparison, the trial comparison and the report mail are chained onto the finished run one at a time, each starting only once the previous one exited cleanly. The chain is derived before the run starts, so a run tag left to the timestamp default or a missing SMTP password is refused at the button instead of failing hours later. |
 | Ablation | `#/ablation` | `/api/backbones`, `/api/run` | Reached from a script card. Picks the entry, the features to ablate and their order, then launches a cumulative loop that trains the full model and degrades one feature at a time down to the baseline. |
 | Saved | `#/saved` | `/api/saved-runs` | Configurations stored from launch pages, one JSON file each under `logs/saved_runs/`, finalize switches included. Each card can be launched, queued or deleted. |
+| Templates | `#/templates` | `/api/config-templates` | Named sets of config overrides captured from a launch page or a sequence block, one JSON file each under `logs/config_templates/`. A template carries only the fields the form overrode, so it can be imported on any entry point: matching dotted paths apply and the rest are reported as skipped. Each card opens its entry point with the template already applied, renames or deletes it; the `Config templates` rail block on every launch page imports, saves and deletes them without leaving the form. Names are unique per entry point, and saving over one replaces it. |
 | Sequences | `#/sequences` | `/api/sequences/*` | Experiment sequences as a drag-and-drop DAG board: launch blocks chained by predecessors with checkpoints, skip toggles, per-block decision axes, an isolated per-execution workspace, resume scans over the persisted workspace state, and per-block finalize chains carrying the same switches as the launch page, chained onto the block's own end inside the workspace without holding back its successors. |
 | Survey | `#/survey` | `/api/survey/*` | Model survey over many trained runs at once: pick runs, and compare their weight statistics, spectra and health indicators side by side. |
 | Configuration | `#/configuration` | `/api/configs` | Every configuration dataclass, field, type and default, parsed live from `configuration/`. |
@@ -117,7 +118,7 @@ and `web_logger.py` handles console logging.
 
 **Launching and supervision.** `script_catalog.py`, `script_config_resolver.py`,
 `launch_layout.py`, `config_registry.py`, `run_launcher.py`, `process_manager.py`,
-`finalize_chain.py`, `saved_run_store.py`, `job_describer.py`, `notifier.py`, `gpu_schedule.py`,
+`finalize_chain.py`, `saved_run_store.py`, `config_template_store.py`, `job_describer.py`, `notifier.py`, `gpu_schedule.py`,
 `gpu_watchdog.py`, `resource_watchdog.py`, `contention_monitor.py`, `system_monitor.py`,
 `proc_stats.py`, `tensorboard_manager.py`.
 
@@ -134,10 +135,10 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 `fit_lab.py`, `model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`
-and 45 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
+and 46 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
 tab (`home`, `equations`, `flow_view` with `flow_sketches`, `pipelines`, `repomap`,
 `models`, `scripts`, `launch` with `launch_widgets` and `launch_pickers`, `ablation`,
-`saved_runs`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube_view`,
+`saved_runs`, `templates`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube_view`,
 `slice_collector`, `fit_lab`, `microscope`, `triage`, `autopsy`, `feed_tuner`); the rest
 are shared helpers, `run_strip` for the run picker the cube, slices, microscope, triage
 and autopsy tabs share, and `radar`, `diagram`, `gauges`, `process_anim`, `server_anim`
