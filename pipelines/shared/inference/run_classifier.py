@@ -27,6 +27,33 @@ class RunArtifacts:
     DUAL_CONFIG       = "dual_model_config.json"
 
 
+class InferenceLayout:
+    """Where each run family writes its inference stamps inside a run directory.
+
+    Attributes:
+        DIRNAME : Directory inside a run holding its inference outputs.
+        SUBDIRS : Family sub-directory under it, for the families that nest their stamps.
+    """
+
+    DIRNAME = "inference"
+    SUBDIRS = {
+        RunType.PROFILE_AE : RunType.PROFILE_AE,
+        RunType.IMAGE_AE   : RunType.IMAGE_AE,
+    }
+
+    @classmethod
+    def base(cls, run_directory: Path, run_type: str) -> Path:
+        """Returns the directory a family's inference stamps are written under.
+
+        Args:
+            run_directory : Training run directory.
+            run_type      : Run family, one of the RunType names.
+        """
+        base = Path(run_directory) / cls.DIRNAME
+
+        return base / cls.SUBDIRS[run_type] if run_type in cls.SUBDIRS else base
+
+
 class RunDirectoryWalk:
     """Finds run directories nested anywhere under a runs root.
 

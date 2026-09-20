@@ -23,6 +23,9 @@ class InferenceEntry:
     Attributes:
         entry_script : Path to the concrete entry script, re-invoked for worker processes.
         run_type     : Run family this entry serves, selecting config, description and runner.
+        CONFIGS      : Entry configuration class name per run family.
+        BLOCKS       : Name of the per-run inference block inside that configuration, whose split decides which runs are already scored.
+        DESCRIPTIONS : Help text per run family.
     """
 
     CONFIGS = {
@@ -32,11 +35,18 @@ class InferenceEntry:
         RunType.DUAL       : "DualInferenceEntryConfig",
     }
 
+    BLOCKS = {
+        RunType.BACKBONE   : "inference",
+        RunType.PROFILE_AE : "profile_inference",
+        RunType.IMAGE_AE   : "image_inference",
+        RunType.DUAL       : "inference",
+    }
+
     DESCRIPTIONS = {
-        RunType.BACKBONE   : "Backbone and JEPA inference: sliding-window prediction, stitched cubes, and reports over every backbone/JEPA run found at any depth under the runs directory.",
-        RunType.PROFILE_AE : "Profile-autoencoder inference: reconstruction scoring over every standalone profile-autoencoder run found at any depth under the runs directory.",
-        RunType.IMAGE_AE   : "Image-autoencoder inference: reconstruction scoring over every standalone image-autoencoder run found at any depth under the runs directory.",
-        RunType.DUAL       : "Dual-trunk model inference: sliding-window prediction, stitched cubes, and reports over every dual run found at any depth under the runs directory.",
+        RunType.BACKBONE   : "Backbone and JEPA inference: sliding-window prediction, stitched cubes, and reports over every backbone/JEPA run found at any depth under runs_dir (one run, a sweep, an experiment or a whole tree); runs already scored on the split are skipped unless skip_completed is off.",
+        RunType.PROFILE_AE : "Profile-autoencoder inference: reconstruction scoring over every standalone profile-autoencoder run found at any depth under runs_dir; runs already scored on the split are skipped unless skip_completed is off.",
+        RunType.IMAGE_AE   : "Image-autoencoder inference: reconstruction scoring over every standalone image-autoencoder run found at any depth under runs_dir; runs already scored on the split are skipped unless skip_completed is off.",
+        RunType.DUAL       : "Dual-trunk model inference: sliding-window prediction, stitched cubes, and reports over every dual run found at any depth under runs_dir; runs already scored on the split are skipped unless skip_completed is off.",
     }
 
     def __init__(self, entry_script: Path, run_type: RunType) -> None:
@@ -91,8 +101,9 @@ class InferenceEntry:
         from tools.runtime.config_cli            import ConfigCli
 
         config = ConfigCli(self._entry_config(), description=self.DESCRIPTIONS[self.run_type]).apply()
+        split  = getattr(config, self.BLOCKS[self.run_type]).split
 
-        results = InferenceScheduler(config=config, entry_script=self.entry_script, run_type=self.run_type).run()
+        results = InferenceScheduler(config=config, entry_script=self.entry_script, run_type=self.run_type, split=split).run()
 
         if any(result.status != "DONE" for result in results):
             sys.exit(1)

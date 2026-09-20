@@ -80,8 +80,9 @@ class ImageAeInferenceEntryConfig:
     """Fan-out settings for inferring a batch of image-autoencoder runs.
 
     Attributes:
-        runs_dir        : Root directory scanned for image-autoencoder run directories.
-        run_filter      : Substrings a run directory name must contain to be selected; empty selects all.
+        runs_dir        : Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every image-autoencoder run at any depth below it is scored.
+        run_filter      : Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory whose runs are all taken, or a run's own name; empty selects every run found.
+        skip_completed  : Whether runs already holding a completed inference for the configured split are left alone, so a relaunch over an experiment scores only the runs still missing it.
         gpus            : GPU device indices available to the inference workers.
         gpus_file       : Path to a file whose contents override the GPU pool at runtime.
         poll_interval_s : Seconds between scheduler polls of the worker pool.
@@ -93,5 +94,6 @@ class ImageAeInferenceEntryConfig:
     gpus            : List[int] = field(default_factory=lambda: [0])
     gpus_file       : str       = ""
     poll_interval_s : float     = 5.0
+    skip_completed  : bool      = True
 
     image_inference : ImageAeInferenceConfig = field(default_factory=lambda: ImageAeInferenceConfig(run_directory=Path(".")))

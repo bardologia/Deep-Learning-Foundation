@@ -1719,12 +1719,13 @@
     "inference/backbone::BackboneInferenceEntryConfig": {
       "summary": "Entry config for the scheduler that runs sliding-window backbone/JEPA inference over multiple runs, queuing one worker process per run across a fixed pool of GPUs",
       "fields": {
-        "runs_dir": "master runs directory scanned recursively for runs to infer, default is _RUNS_ROOT; every run at any depth (a directory holding a meta/ subdir) is discovered and non-backbone runs are skipped by type; a missing directory is skipped with a log warning rather than erroring",
-        "run_filter": "run names relative to runs_dir to restrict to (e.g. backbone/run_x), default empty list processes every run found there; an unmatched name raises FileNotFoundError",
+        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every backbone/JEPA run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
+        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
         "gpus": "GPU device indices the GpuQueue cycles jobs across, default [0]; one run is launched per free GPU concurrently until the queue drains",
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
         "poll_interval_s": "seconds GpuQueue sleeps between reap/launch cycles while jobs are running or queued, default 5.0",
-        "inference": "InferenceConfig used for every worker run, with run_directory replaced per-run, save_cubes=True, cpu_workers=16 and gif_axes=['z','col','row']; all other InferenceConfig fields (split, checkpoint_name, save_plots, etc.) keep their normal defaults"
+        "inference": "InferenceConfig used for every worker run, with run_directory replaced per-run, save_cubes=True, cpu_workers=16 and gif_axes=['z','col','row']; all other InferenceConfig fields (split, checkpoint_name, save_plots, etc.) keep their normal defaults",
+        "skip_completed": "Whether runs already holding a completed inference stamp for inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
       }
     },
     "inference/general::InferencePaths": {
@@ -1819,12 +1820,13 @@
     "inference/image_autoencoder::ImageAeInferenceEntryConfig": {
       "summary": "Entry point queuing image-autoencoder inference across every run discovered recursively under the runs directory",
       "fields": {
-        "runs_dir": "Master runs directory scanned recursively for image-autoencoder runs to infer, defaults to the image_autoencoder subtree of the runs root; every run at any depth is discovered and non-image-autoencoder runs are skipped by type",
-        "run_filter": "List of run names relative to runs_dir to restrict inference to, empty processes every discovered run of this type",
+        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every image-autoencoder run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
+        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
         "gpus": "List of GPU device indices across which queued inference jobs are distributed and launched in parallel",
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
         "poll_interval_s": "Seconds between successive polls of the GPU job queue while waiting for a free GPU or a running job to finish",
-        "image_inference": "ImageAeInferenceConfig template applied to each discovered run, with run_directory overridden per run"
+        "image_inference": "ImageAeInferenceConfig template applied to each discovered run, with run_directory overridden per run",
+        "skip_completed": "Whether runs already holding a completed inference stamp for image_inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
       }
     },
     "inference/profile_autoencoder::ProfileAeInferencePaths": {
@@ -1865,23 +1867,25 @@
     "inference/profile_autoencoder::ProfileAeInferenceEntryConfig": {
       "summary": "Batch entry point queuing profile-autoencoder inference across every run discovered recursively under the runs directory",
       "fields": {
-        "runs_dir": "master runs directory scanned recursively for standalone profile-autoencoder runs, defaults to the profile_autoencoder subtree of the runs root; every run at any depth is discovered and non-profile-autoencoder runs are skipped by type",
-        "run_filter": "list of run names relative to runs_dir to restrict processing to, empty processes every discovered run",
+        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every profile-autoencoder run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
+        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
         "gpus": "list of GPU device indices across which queued inference jobs are distributed and launched in parallel",
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
         "poll_interval_s": "seconds between successive polls of the GPU queue while waiting for a free GPU or job completion",
-        "profile_inference": "ProfileAeInferenceConfig template applied to each discovered run, with run_directory overridden per run"
+        "profile_inference": "ProfileAeInferenceConfig template applied to each discovered run, with run_directory overridden per run",
+        "skip_completed": "Whether runs already holding a completed inference stamp for profile_inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
       }
     },
     "inference/dual::DualInferenceEntryConfig": {
       "summary": "Entry config for the scheduler that runs sliding-window dual-trunk model inference over multiple runs, queuing one worker process per run across a fixed pool of GPUs",
       "fields": {
-        "runs_dir": "master runs directory scanned recursively for runs to infer, default is the dual subfolder of _RUNS_ROOT; every run at any depth (a directory holding a meta/ subdir) is discovered and non-dual runs are skipped by type",
-        "run_filter": "run names relative to runs_dir to restrict to, default empty list processes every run found there; an unmatched name raises FileNotFoundError",
+        "runs_dir": "Any path holding runs: one run directory, a seed sweep, a trial sweep, an experiment workspace or a whole runs tree; every dual run at any depth below it (a directory holding a meta/ subdir) is discovered and runs of other families are skipped by type. A missing directory is an error",
+        "run_filter": "Names selecting runs under runs_dir: a run's path relative to runs_dir, a directory below runs_dir whose runs are all taken, or a run's own directory name; empty selects every run found. An entry naming no run raises FileNotFoundError listing the runs found",
         "gpus": "GPU device indices the GpuQueue cycles jobs across, default [0]; one run is launched per free GPU concurrently until the queue drains",
         "gpus_file": "Path of the live GPU pool control file for this inference queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the queue while it runs (added devices pick up queued runs, removed devices retire once the run in flight ends). Empty places gpu_pool.json inside the batch's work directory under logs/inference",
         "poll_interval_s": "seconds GpuQueue sleeps between reap/launch cycles while jobs are running or queued, default 5.0",
-        "inference": "InferenceConfig used for every worker run, with run_directory replaced per-run, save_cubes=True, cpu_workers=16 and gif_axes=['z','col','row']; all other InferenceConfig fields keep their normal defaults"
+        "inference": "InferenceConfig used for every worker run, with run_directory replaced per-run, save_cubes=True, cpu_workers=16 and gif_axes=['z','col','row']; all other InferenceConfig fields keep their normal defaults",
+        "skip_completed": "Whether runs already holding a completed inference stamp for inference.split are left alone, so relaunching over an experiment scores only the runs still missing it; off re-scores every selected run into a fresh timestamped stamp"
       }
     },
     "benchmark/dataloader_tuning::TrainingProfileEntryConfig": {
