@@ -182,7 +182,7 @@ class SpatialMapPlotter(PlotBase):
             snr_db_map,
             x_label        = "col [px]",
             y_label        = "row [px]",
-            title          = "Per-pixel peak-to-floor profile contrast  (uncalibrated proxy, not calibrated SNR)",
+            title          = "Per-pixel peak-to-floor profile contrast\n(uncalibrated proxy, not calibrated SNR)",
             cmap           = cmap_obj,
             vmin           = vmin,
             vmax           = vmax,

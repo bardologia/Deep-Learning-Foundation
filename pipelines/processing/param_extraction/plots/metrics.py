@@ -240,7 +240,7 @@ class MetricsBarPlotter(PlotBase):
         ax.plot(centers, medians, color="cyan", lw=1.6, label=r"binned median $R^2$")
         ax.set_xlabel("peak-to-floor contrast [dB]")
         ax.set_ylabel(r"$R^2$  (floored at $-1$)")
-        ax.set_title("Fit quality vs peak-to-floor contrast  (uncalibrated proxy, not calibrated SNR)")
+        ax.set_title("Fit quality vs peak-to-floor contrast\n(uncalibrated proxy, not calibrated SNR)")
         ax.legend(loc="lower right", framealpha=0.90)
 
         pearson  = float(pearsonr(s, r)[0])  if s.size > 1 else float("nan")
@@ -273,7 +273,7 @@ class MetricsBarPlotter(PlotBase):
         ax.set_xticklabels([f"$K={k}$" for k in k_vals])
         ax.set_xlabel(r"selected model order $K^*$")
         ax.set_ylabel("peak-to-floor contrast [dB]")
-        ax.set_title("Peak-to-floor contrast conditioned on selected model order  (uncalibrated proxy, not calibrated SNR)")
+        ax.set_title("Peak-to-floor contrast conditioned on selected model order\n(uncalibrated proxy, not calibrated SNR)")
         ax.grid(True, axis="y", which="major", lw=0.3, alpha=0.40)
         fig.tight_layout()
 
@@ -306,7 +306,7 @@ class MetricsBarPlotter(PlotBase):
         ax.plot(centers, medians, color="cyan", lw=1.6, label="binned median margin")
         ax.set_xlabel("peak-to-floor contrast [dB]")
         ax.set_ylabel(r"$\log_{10}$ relative selection margin")
-        ax.set_title("K-selection ambiguity vs peak-to-floor contrast  (uncalibrated proxy, not calibrated SNR)")
+        ax.set_title("K-selection ambiguity vs peak-to-floor contrast\n(uncalibrated proxy, not calibrated SNR)")
         ax.legend(loc="lower right", framealpha=0.90)
         fig.tight_layout()
 
