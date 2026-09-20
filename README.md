@@ -233,6 +233,16 @@ directory that has one and deletes a run directory that does not before restarti
 `--training.resume` is the other kind of resume: it continues an unfinished run from
 `last.pt` instead of deleting it.
 
+The staged experiments (`cross_validate`, `benchmark`, `tune`) take `--resume_from <path>`,
+any path at or inside an existing run: the configuration that run recorded is loaded, the
+overrides typed on the new launch are applied on top, and only the missing or unfinished
+units run. Units are matched to their directories through the manifest each worker writes
+first (`meta/unit.json`), so a fold or seed found under any directory name keeps that
+directory. A run that trained before manifests existed carries none, and is adopted by
+`scripts/backfill_unit_manifests.py <run>`, which writes each unit's manifest from the
+run's own recording and matches units to directories by the name that recording composes.
+A directory no planned unit accounts for is reported and left alone.
+
 ## 6. Run inference
 
 ```bash

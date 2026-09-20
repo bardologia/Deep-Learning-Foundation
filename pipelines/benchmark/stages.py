@@ -141,11 +141,31 @@ class SeedExpandedStage:
 
         return model if component is None else f"{model}__{component}"
 
-    def _expand(self, config: BenchmarkConfig, models: list[str]) -> list[str]:
-        """Expands models and loss components into per-seed unit names.
+    @classmethod
+    def planned_units(cls, config: BenchmarkConfig, models: list[str]) -> list[tuple[str, tuple]]:
+        """Returns every unit a benchmark configuration plans, named and identified.
 
-        Also records the model, component and seed behind each unit name so the
-        worker command line can be reconstructed.
+        The unit name is the directory a fresh unit is created under, and the
+        identity is what its manifest records, so anything that has to line
+        planned units up with directories on disk reads both from here.
+
+        Args:
+            config : Benchmark configuration carrying the loss components and seeds.
+            models : Selected model keys.
+
+        Returns:
+            Pairs of unit name and its (model key, loss component, seed) identity.
+        """
+        components = cls.components(config)
+        pairs      = [(model, component) for model in models for component in components]
+        by_base    = {cls.unit_base(config, model, component): (model, component) for model, component in pairs}
+
+        units = SeedSet.units(list(by_base.keys()), config.seeds)
+
+        return [(name, (*by_base[base], seed)) for base, seed, name in units]
+
+    def _expand(self, config: BenchmarkConfig, models: list[str]) -> list[str]:
+        """Expands models and loss components into per-seed unit names, caching each unit's identity.
 
         Args:
             config : Benchmark configuration carrying the seeds.
@@ -154,21 +174,14 @@ class SeedExpandedStage:
         Returns:
             The unit names, one per model, loss component and seed.
         """
-        components = self.components(config)
-        pairs      = [(model, component) for model in models for component in components]
-        self._pair = {self.unit_base(config, model, component): (model, component) for model, component in pairs}
+        planned    = self.planned_units(config, models)
+        self._unit = dict(planned)
 
-        units      = SeedSet.units(list(self._pair.keys()), config.seeds)
-        self._unit = {name: (base, seed) for base, seed, name in units}
-
-        return [name for _, _, name in units]
+        return [name for name, _ in planned]
 
     def _identity(self, name: str) -> tuple:
         """Returns the (model key, loss component, seed) identity of a planned unit."""
-        base, seed       = self._unit[name]
-        model, component = self._pair[base]
-
-        return (model, component, seed)
+        return self._unit[name]
 
     def _reconcile(self, training_dir: Path) -> None:
         """Maps every planned unit onto the run directory its manifest identifies, when one exists.
@@ -188,8 +201,7 @@ class SeedExpandedStage:
 
     def _worker_argv(self, action: str, name: str) -> list[str]:
         """Returns the worker arguments running `action` for the unit named `name`."""
-        base, seed       = self._unit[name]
-        model, component = self._pair[base]
+        model, component, seed = self._identity(name)
 
         loss_args = ["--loss-component", component] if component is not None else []
 
