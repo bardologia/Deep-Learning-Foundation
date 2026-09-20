@@ -99,7 +99,7 @@ class TuningScheduler:
         changed = {key: (stored[key], value) for key, value in current.items() if self._defines_study(key) and stored[key] != value}
 
         if changed:
-            sys.exit(f"ERROR: --resume cannot change the fields that define the study '{self.tag}'; trials already stored were optimised under {', '.join(f'{key}={old!r} (now {new!r})' for key, (old, new) in sorted(changed.items()))} — start a new run tag instead")
+            sys.exit(f"ERROR: --resume cannot change the fields that define the study '{self.tag}'; trials already stored were optimised under {', '.join(f'{key}={old!r} (now {new!r})' for key, (old, new) in sorted(changed.items()))}; start a new run tag instead")
 
     def _distribute_trials(self, total: int, n_workers: int) -> list[int]:
         """Splits the outstanding trials as evenly as possible over the workers."""
