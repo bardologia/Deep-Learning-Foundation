@@ -148,6 +148,16 @@ class Tracker:
         dev = device if device is not None else torch.cuda.current_device()
         self.log_scalar("system/gpu_peak_alloc_gb", torch.cuda.max_memory_allocated(dev) / 1024 ** 3, step)
 
+    def log_layout(self, layout: Mapping[str, Any]) -> None:
+        """Writes the layout of the Custom Scalars page, the curated charts that draw several tags each, when a writer is attached.
+
+        Args:
+            layout : Mapping of category to a mapping of chart title to a two item list, the chart kind (Multiline or Margin) and the tag regexes it draws, the form add_custom_scalars takes.
+        """
+        if self.writer is None:
+            return
+        self.writer.add_custom_scalars(dict(layout))
+
     def flush(self) -> None:
         """Flushes the writer's pending events when one is attached."""
         if self.writer is not None:
