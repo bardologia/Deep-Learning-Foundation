@@ -26,6 +26,7 @@ from pipelines.backbone.training.pipeline        import TrainingPipeline
 from pipelines.shared.config.config_factory      import ConfigFactory
 from pipelines.shared.model.model_builder        import ModelBuilder
 from pipelines.shared.training.ddp_fanout        import DdpDispatch
+from pipelines.shared.training.resume_source     import ResumeLauncher
 from pipelines.shared.training.run_naming        import RunNaming
 from pipelines.shared.training.seed_sweep        import SeedFanoutScheduler, SeedSet, SeedSweepRunner
 from pipelines.shared.training.training_runner   import RunDirectorySettledMarker, SingleTrainRunner as BaseSingleTrainRunner
@@ -282,7 +283,11 @@ class BackboneTrainingLauncher:
         self.entry_script = Path(entry_script)
 
     def _configure(self, argv: list[str]):
-        """Parses argv into a resolved entry config and applies curriculum inheritance.
+        """Parses argv into a resolved entry config, resumes a recorded one and applies curriculum inheritance.
+
+        With ``resume_from`` set the configuration the run or sweep recorded
+        is loaded first, and the overrides typed on this command line are
+        applied on top of it.
 
         Args:
             argv : Command-line arguments without the program name.
@@ -294,8 +299,9 @@ class BackboneTrainingLauncher:
         Raises:
             SystemExit : If both `infer_after` and `infer_at_end` are set.
         """
-        cli    = ConfigCli(BackboneEntryConfig(), description="Train one backbone end to end, or fan out curriculum/warmup/secondary trials across GPUs")
+        cli    = ConfigCli(BackboneEntryConfig(), description="Train one backbone end to end, or fan out curriculum/warmup/secondary trials across GPUs; point resume_from at a run or sweep to finish it with the configuration it recorded")
         config = cli.apply(argv)
+        config = ResumeLauncher.configure(BackboneEntryConfig, config, cli.overrides, trial_sweep=config.trials_enabled and "--trial" not in argv, unit="--trial" in argv)
 
         CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
 

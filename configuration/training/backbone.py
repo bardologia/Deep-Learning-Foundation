@@ -310,7 +310,7 @@ class BackboneEntryConfig:
     Attributes:
         run_name              : Explicit run directory name, or None to derive one.
         resume                : Whether an interrupted run continues from its checkpoint.
-        resume_from           : Run directory or sweep folder whose state is resumed.
+        resume_from           : Path of a run directory, a seed sweep root or a trial sweep root to resume, or any run inside them; the configuration it recorded is loaded, the command-line overrides are applied on top, complete units are reused and the rest continue or restart in their own directories. Empty starts a fresh run.
         backbone_name         : Backbone family trained.
         backbone_head         : Output head attached to the backbone.
         gpu                   : GPU device index for a single-run launch.

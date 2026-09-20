@@ -2,8 +2,9 @@
 
 A single-seed request trains in process; a multi-seed request is fanned out as
 one subprocess per seed onto the GPU queue, optionally followed by a batched
-inference pass. Resumed sweeps reconcile the existing seed directories against
-the plan before launching anything.
+inference pass. A resumed sweep reconciles the existing seed directories
+against the plan before launching anything and hands every seed job its exact
+directory, so the sweep's naming scheme never has to be reproduced.
 """
 
 from __future__ import annotations
@@ -121,22 +122,19 @@ class SeedFanoutScheduler:
 
     Attributes:
         SCHEDULER_FIELDS  : Top-level config fields owned by the scheduler and therefore never forwarded to the per-seed jobs.
-        RESUME_PROBE      : Sentinel run name used to recover the naming prefix.
         config            : Entry configuration of the sweep.
         entry_script      : Entry script each seed job re-invokes.
         base_name         : Sweep base run name.
         infer_at_end      : Whether inference is batched after all training finishes.
         run_dir           : Sweep root directory holding the per-seed run directories.
-        resume_missing    : ``seed<N>`` names the resume plan found no run directory for; those seeds train from scratch.
-        log_dir           : Directory holding the per-seed logs and result JSONs.
+        resuming          : Whether the sweep continues an existing root, in which case every seed job is handed its own directory.
+        log_dir           : Directory holding the per-seed logs, the result JSONs and the sweep recording.
         forward_overrides : CLI overrides forwarded to each seed job.
         logger            : Logger of the sweep.
         stage             : Experiment stage owning the GPU queue and result bookkeeping.
     """
 
     SCHEDULER_FIELDS = ("gpus", "gpus_file", "poll_interval_s", "gpu", "seed", "seeds", "run_name", "infer_at_end", "resume_from")
-
-    RESUME_PROBE = "RESUME-FROM-PROBE"
 
     def __init__(self, config, cli_overrides: dict, entry_script: Path, base_name: str, run_dir: Path, infer_at_end: bool = False) -> None:
         """Prepares the sweep directories, forwarded overrides and GPU stage.
@@ -154,7 +152,7 @@ class SeedFanoutScheduler:
         self.base_name          = base_name
         self.infer_at_end       = infer_at_end
         self.run_dir            = Path(run_dir)
-        self.resume_missing     = set()
+        self.resuming           = bool(config.resume_from)
         self.log_dir            = self.run_dir / "batch_train_logs"
         self.results_path       = self.log_dir / "seed_sweep_results.json"
         self.infer_results_path = self.log_dir / "seed_sweep_infer_results.json"
@@ -163,32 +161,6 @@ class SeedFanoutScheduler:
 
         self.logger = Logger(log_dir=str(self.log_dir), name="seed_sweep")
         self.stage  = ExperimentStage(config=config, run_tag="seed_sweep", logger=self.logger, entry_script=self.entry_script, run_dir=self.run_dir)
-
-    @classmethod
-    def naming_prefix(cls, config, runner_factory: Callable[[object], object]) -> str:
-        """Recovers the descriptive prefix the entry prepends to the base name.
-
-        Composes a run name for a sentinel base and strips the sentinel back
-        off, leaving the naming scheme's prefix.
-
-        Args:
-            config         : Entry configuration of the sweep.
-            runner_factory : Callable turning a config into a single-run runner.
-
-        Returns:
-            The prefix preceding the base name in composed run names.
-
-        Raises:
-            SystemExit : If the composed name does not end in the sentinel, so the prefix cannot be recovered.
-        """
-        probe          = deepcopy(config)
-        probe.run_name = cls.RESUME_PROBE
-        composed       = runner_factory(probe)._resolve_run_name()
-
-        if not composed.endswith(cls.RESUME_PROBE):
-            raise SystemExit(f"resume_from cannot recover the sweep base name: the composed run name '{composed}' does not end in the run_name tag, so the pasted directory cannot be matched to this entry's naming scheme")
-
-        return composed[: len(composed) - len(cls.RESUME_PROBE)]
 
     @classmethod
     def _resume_run_dir(cls, resume_from: str) -> Path:
@@ -218,34 +190,12 @@ class SeedFanoutScheduler:
         raise SystemExit(f"resume_from '{target}' is neither a seed run directory nor a sweep base directory holding seed runs; paste the base directory whose children are seed<N> runs, or one of those seed directories")
 
     @classmethod
-    def _resume_target(cls, config, runner_factory: Callable[[object], object]) -> tuple[str, Path]:
-        """Points the config at the resumed sweep and recovers its base name.
-
-        Args:
-            config         : Entry configuration, mutated to resume into the sweep root.
-            runner_factory : Callable turning a config into a single-run runner.
-
-        Returns:
-            Tuple of the recovered base name and the sweep root directory.
-
-        Raises:
-            SystemExit : If the sweep directory name does not match the naming scheme composed from the current settings.
-        """
-        run_dir = cls._resume_run_dir(config.resume_from)
-        prefix  = cls.naming_prefix(config, runner_factory)
-
-        if not run_dir.name.startswith(prefix) or len(run_dir.name) == len(prefix):
-            raise SystemExit(f"resume_from run directory '{run_dir.name}' does not match '{prefix}<base>' composed from the current settings; align the entry settings with the original sweep before resuming")
-
-        config.logdir          = run_dir.parent
-        config.resume          = True
-        config.training.resume = True
-
-        return run_dir.name[len(prefix):], run_dir
-
-    @classmethod
     def for_runner(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None, infer_at_end: bool = False) -> "SeedFanoutScheduler":
         """Builds the scheduler for an entry, resuming or naming a fresh sweep.
+
+        A resumed sweep keeps the pasted root as it is, whatever it is called:
+        the seed jobs are handed their directories directly, so the root name
+        never has to be recomposed from the current settings.
 
         Args:
             config         : Entry configuration of the sweep.
@@ -259,7 +209,10 @@ class SeedFanoutScheduler:
             The configured scheduler.
         """
         if config.resume_from:
-            base, run_dir = cls._resume_target(config, runner_factory)
+            run_dir       = cls._resume_run_dir(config.resume_from)
+            base          = run_dir.name
+            config.logdir = run_dir.parent
+            config.resume = True
         else:
             base           = SeedSweepRunner.base_run_name(config, base_label)
             probe          = deepcopy(config)
@@ -268,22 +221,30 @@ class SeedFanoutScheduler:
 
         return cls(config, cli_overrides, entry_script, base_name=base, run_dir=run_dir, infer_at_end=infer_at_end)
 
-    def _resumed(self, seed: int) -> dict:
-        """Returns the resume overrides forwarded to one seed job.
+    def _unit_overrides(self, run_name: str, seed: int) -> dict:
+        """Returns the overrides pinning one seed job's identity and directory.
+
+        A resumed sweep hands the job its exact directory through
+        ``resume_from``; a fresh sweep names it through the log directory and
+        the nested run name its naming scheme composes back into the root.
 
         Args:
-            seed : Seed value of the job.
-
-        Returns:
-            The resume overrides when resuming into an existing seed run directory, empty for a fresh sweep or a seed the resume plan found no run directory for.
+            run_name : ``<base>/seed<N>`` run name of the seed.
+            seed     : Seed value pinned in the job's overrides.
         """
-        if not self.config.resume_from or f"seed{seed}" in self.resume_missing:
-            return {}
+        identity = {"seed": seed, "seeds": (seed,)}
 
-        return {"resume": True, "training.resume": True}
+        if self.resuming:
+            return {**identity, "resume_from": str(self.run_dir / f"seed{seed}")}
+
+        return {**identity, "logdir": str(self.config.logdir), "run_name": run_name}
 
     def _job(self, run_name: str, seed: int) -> GpuJob:
         """Builds the training job for one seed.
+
+        The job carries the ``--trial`` flag, which marks it as one unit of a
+        sweep: it trains the single seed in place and, when handed its
+        directory, reads that directory as a run rather than as a sweep.
 
         Args:
             run_name : ``<base>/seed<N>`` run name of the seed.
@@ -293,11 +254,11 @@ class SeedFanoutScheduler:
             The GPU job re-invoking the entry script for this seed.
         """
         batched   = {"infer_after": False} if self.infer_at_end else {}
-        overrides = {**self.forward_overrides, **self._resumed(seed), **batched, "logdir": str(self.config.logdir), "run_name": run_name, "seed": seed, "seeds": (seed,)}
+        overrides = {**self.forward_overrides, **batched, **self._unit_overrides(run_name, seed)}
 
         return GpuJob(
             name     = run_name,
-            command  = [sys.executable, str(self.entry_script)] + ConfigCli.to_argv(overrides),
+            command  = [sys.executable, str(self.entry_script), "--trial"] + ConfigCli.to_argv(overrides),
             log_path = self.log_dir / f"seed{seed}.log",
         )
 
@@ -311,11 +272,11 @@ class SeedFanoutScheduler:
         Returns:
             The GPU job re-invoking the entry script with inference enabled.
         """
-        overrides = {**self.forward_overrides, **self._resumed(seed), "infer_after": True, "resume": True, "logdir": str(self.config.logdir), "run_name": run_name, "seed": seed, "seeds": (seed,)}
+        overrides = {**self.forward_overrides, "infer_after": True, "resume": True, **self._unit_overrides(run_name, seed)}
 
         return GpuJob(
             name     = run_name,
-            command  = [sys.executable, str(self.entry_script)] + ConfigCli.to_argv(overrides),
+            command  = [sys.executable, str(self.entry_script), "--trial"] + ConfigCli.to_argv(overrides),
             log_path = self.log_dir / f"seed{seed}_infer.log",
         )
 
@@ -355,7 +316,7 @@ class SeedFanoutScheduler:
         return results
 
     def _resume_units(self, units: list[tuple[int, str]]) -> tuple[list[tuple[int, str]], "SweepResumePlan | None"]:
-        """Drops completed seeds when resuming and records the plan-missing ones.
+        """Drops completed seeds when resuming.
 
         Args:
             units : (seed, run name) pairs planned for the sweep.
@@ -364,14 +325,19 @@ class SeedFanoutScheduler:
             Tuple of the units still to launch and the reconciliation plan, or
             the units unchanged and None when not resuming.
         """
-        if not self.config.resume_from:
+        if not self.resuming:
             return units, None
 
-        plan                = SweepResumePlan(self.run_dir, [f"seed{seed}" for seed, _ in units]).build()
-        done                = set(plan.completed)
-        self.resume_missing = set(plan.missing)
+        plan = SweepResumePlan(self.run_dir, [f"seed{seed}" for seed, _ in units]).build()
+        done = set(plan.completed)
 
         return [(seed, run_name) for seed, run_name in units if f"seed{seed}" not in done], plan
+
+    def _record(self) -> Path:
+        """Records the sweep's effective configuration under its log directory, for a later resume to load."""
+        from pipelines.shared.training.resume_source import SweepRecording
+
+        return SweepRecording.write(self.run_dir, self.config)
 
     def run(self) -> None:
         """Launches every outstanding seed, then optionally the inference pass.
@@ -384,6 +350,7 @@ class SeedFanoutScheduler:
         """
         seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
         units, plan = self._resume_units([(seed, SeedSet.run_name(self.base_name, seed)) for seed in seeds])
+        recording   = self._record()
 
         self.logger.section("Seed fan-out")
         self.logger.kv_table({
@@ -394,6 +361,7 @@ class SeedFanoutScheduler:
             "GPU pool file" : str(self.stage.pool_file),
             "Infer at end"  : self.infer_at_end,
             "Resume from"   : self.config.resume_from or "—",
+            "Recording"     : str(recording),
             "Forwarded overrides (scheduler options excluded)" : self.forward_overrides or "—",
             "Log dir"       : str(self.log_dir),
         }, title="Configuration")

@@ -18,6 +18,7 @@ GPU per unit.
 
 from __future__ import annotations
 
+import re
 import socket
 import subprocess
 import sys
@@ -25,7 +26,9 @@ import time
 from pathlib import Path
 from typing  import Callable
 
-from pipelines.shared.training.seed_sweep      import SeedFanoutScheduler, SeedSet, SeedSweepRunner
+from copy import deepcopy
+
+from pipelines.shared.training.seed_sweep      import SeedSet, SeedSweepRunner
 from pipelines.shared.training.training_runner import RunDirectorySettledMarker
 from tools.monitoring.logger                   import Logger
 from tools.orchestration.gpu_queue             import GpuJob, GpuJobResult, GpuPoolFile, GpuProgressFile
@@ -49,8 +52,8 @@ class DdpFanout:
         config            : Entry configuration of the run.
         entry_script      : Training entry script each rank re-invokes.
         run_name          : Resolved run directory name shared by every rank's naming.
-        base_name         : Run name handed to rank zero, which its own naming scheme composes back into ``run_name``.
-        naming_prefix     : Descriptive fragment the entry's naming scheme prepends to a run name, empty for entries that name runs verbatim.
+        base_name         : Run name handed to rank zero of a fresh run, which its own naming scheme composes back into ``run_name``.
+        mirrors           : Existing mirror directory per secondary rank of a resumed run, empty for a fresh run.
         seed              : Seed pinned identically on every rank.
         gpus              : CUDA device indices, one rank launched per device.
         run_dir           : Canonical run directory owned by rank zero.
@@ -64,10 +67,12 @@ class DdpFanout:
 
     OWN_FIELDS = ("ddp", "gpu", "gpus", "gpus_file", "poll_interval_s", "seed", "seeds", "run_name", "logdir", "resume_from")
 
+    MIRROR_PATTERN = re.compile(r".*rank(\d+)$")
+
     POLL_S  = 2.0
     GRACE_S = 30.0
 
-    def __init__(self, config, cli_overrides: dict, entry_script: Path, run_name: str, base_name: str, naming_prefix: str, seed: int) -> None:
+    def __init__(self, config, cli_overrides: dict, entry_script: Path, run_name: str, base_name: str, seed: int, mirrors: dict | None = None) -> None:
         """Prepares the rank plan, directories and forwarded overrides.
 
         Args:
@@ -75,17 +80,17 @@ class DdpFanout:
             cli_overrides : All CLI overrides; fan-out-owned fields are filtered out before forwarding.
             entry_script  : Training entry script each rank re-invokes.
             run_name      : Resolved run directory name.
-            base_name     : Run name handed to rank zero, composed back into ``run_name`` by the entry's own naming scheme.
-            naming_prefix : Fragment that naming scheme prepends to a run name.
+            base_name     : Run name handed to rank zero of a fresh run, composed back into ``run_name`` by the entry's own naming scheme.
             seed          : Seed pinned on every rank.
+            mirrors       : Existing mirror directory per secondary rank of a resumed run, or None for a fresh run.
         """
-        self.config        = config
-        self.entry_script  = Path(entry_script)
-        self.run_name      = run_name
-        self.base_name     = base_name
-        self.naming_prefix = naming_prefix
-        self.seed          = int(seed)
-        self.gpus          = [int(gpu) for gpu in config.gpus]
+        self.config       = config
+        self.entry_script = Path(entry_script)
+        self.run_name     = run_name
+        self.base_name    = base_name
+        self.mirrors      = dict(mirrors or {})
+        self.seed         = int(seed)
+        self.gpus         = [int(gpu) for gpu in config.gpus]
 
         self.run_dir = Path(config.logdir) / run_name
         self.ddp_dir = self.run_dir / "ddp"
@@ -121,7 +126,22 @@ class DdpFanout:
             raise ValueError(f"ddp=True cannot run the pre-training probes ({', '.join(active)}): probe outcomes are rank-local and could diverge, desynchronising the rank group; disable the probes or run them once without ddp first")
 
     @classmethod
-    def _validate_resume_group(cls, target: Path, prefix: str, n_ranks: int) -> None:
+    def _mirrors(cls, target: Path) -> dict:
+        """Returns the existing mirror directory per secondary rank under a run's ``ddp`` tree, matched by their rank suffix."""
+        mirrors = {}
+
+        if not (target / "ddp").is_dir():
+            return mirrors
+
+        for path in sorted((target / "ddp").iterdir()):
+            match = cls.MIRROR_PATTERN.fullmatch(path.name)
+            if path.is_dir() and match:
+                mirrors[int(match.group(1))] = path
+
+        return mirrors
+
+    @classmethod
+    def _validate_resume_group(cls, target: Path, mirrors: dict, n_ranks: int) -> None:
         """Refuses resuming a run whose rank mirrors do not match the requested rank group.
 
         Every rank of a resumed group restores its own trainer state, so a rank
@@ -130,17 +150,17 @@ class DdpFanout:
 
         Args:
             target  : Run directory being resumed.
-            prefix  : Naming-scheme fragment the mirror directory names are prefixed with.
+            mirrors : Existing mirror directory per secondary rank.
             n_ranks : Number of ranks the current ``gpus`` setting builds.
 
         Raises:
             SystemExit : If the run's ``ddp`` mirrors do not cover exactly the ranks 1 to n_ranks - 1.
         """
-        expected = {f"{prefix}rank{rank}" for rank in range(1, n_ranks)}
-        found    = {path.name for path in (target / "ddp").glob(f"{prefix}rank*") if path.is_dir()}
+        expected = set(range(1, n_ranks))
+        found    = set(mirrors)
 
         if found != expected:
-            raise SystemExit(f"resume_from run '{target.name}' was trained by a different rank group: gpus asks for {n_ranks} ranks, expecting the mirror directories {sorted(expected)} under {target / 'ddp'}, but the run holds {sorted(found) or 'none'}. A rank without a mirror would train from scratch and desynchronise the gradient averaging; resume with the run's original device count or start a fresh run")
+            raise SystemExit(f"resume_from run '{target.name}' was trained by a different rank group: gpus asks for {n_ranks} ranks, expecting mirror directories for the ranks {sorted(expected)} under {target / 'ddp'}, but the run holds {sorted(path.name for path in mirrors.values()) or 'none'}. A rank without a mirror would train from scratch and desynchronise the gradient averaging; resume with the run's original device count or start a fresh run")
 
     @classmethod
     def for_runner(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None) -> "DdpFanout":
@@ -158,35 +178,33 @@ class DdpFanout:
 
         Raises:
             FileNotFoundError : If ``resume_from`` is not an existing directory.
-            SystemExit        : If a resumed run directory does not match the naming scheme composed from the current settings, or its rank mirrors do not match the requested rank group.
+            SystemExit        : If a resumed run's rank mirrors do not match the requested rank group.
             ValueError        : If the configuration cannot run as a rank group.
         """
         cls._validate(config)
-
-        prefix = SeedFanoutScheduler.naming_prefix(config, runner_factory)
 
         if config.resume_from:
             target = Path(config.resume_from).expanduser()
             if not target.is_dir():
                 raise FileNotFoundError(f"resume_from points at '{target}', which is not an existing run directory; paste the full path of the run to resume")
 
-            if not target.name.startswith(prefix) or len(target.name) == len(prefix):
-                raise SystemExit(f"resume_from run directory '{target.name}' does not match '{prefix}<base>' composed from the current settings; align the entry settings with the original run before resuming it data-parallel")
+            mirrors = cls._mirrors(target)
+            cls._validate_resume_group(target, mirrors, len(config.gpus))
 
-            cls._validate_resume_group(target, prefix, len(config.gpus))
-
-            config.logdir          = target.parent
-            config.resume          = True
-            config.training.resume = True
-            run_name               = target.name
-            base_name              = target.name[len(prefix):]
+            config.logdir = target.parent
+            config.resume = True
+            run_name      = target.name
+            base_name     = target.name
         else:
-            base_name = SeedSweepRunner.base_run_name(config, base_label)
-            run_name  = f"{prefix}{base_name}"
+            base_name      = SeedSweepRunner.base_run_name(config, base_label)
+            probe          = deepcopy(config)
+            probe.run_name = base_name
+            run_name       = runner_factory(probe)._resolve_run_name()
+            mirrors        = {}
 
         seed = SeedSet.resolve(config.seeds, config.seed)[0]
 
-        return cls(config, cli_overrides, entry_script, run_name=run_name, base_name=base_name, naming_prefix=prefix, seed=seed)
+        return cls(config, cli_overrides, entry_script, run_name=run_name, base_name=base_name, seed=seed, mirrors=mirrors)
 
     @staticmethod
     def _free_port() -> int:
@@ -195,22 +213,15 @@ class DdpFanout:
             probe.bind(("127.0.0.1", 0))
             return int(probe.getsockname()[1])
 
-    def _mirror_name(self, rank: int) -> str:
-        """Returns the directory name a secondary rank's own naming scheme produces.
-
-        Args:
-            rank : Zero-based rank of the process, greater than zero.
-        """
-        return f"{self.naming_prefix}rank{rank}"
-
     def _rank_overrides(self, rank: int) -> dict:
         """Returns the CLI overrides pinning one rank's identity and output tree.
 
-        Every rank is handed the bare run name its own naming scheme composes,
-        so the directory it opens matches the one the fan-out predicted. Rank
-        zero keeps the canonical run directory; every other rank is redirected
-        into the ``ddp/rank<N>`` subtree so its mirrored artifacts never collide
-        with the canonical ones.
+        A fresh run hands every rank the bare run name its own naming scheme
+        composes, so the directory it opens matches the one the fan-out
+        predicted: rank zero keeps the canonical run directory and every other
+        rank is redirected into the ``ddp/rank<N>`` subtree so its mirrored
+        artifacts never collide with the canonical ones. A resumed run hands
+        every rank its existing directory instead.
 
         Args:
             rank : Zero-based rank of the process.
@@ -218,9 +229,8 @@ class DdpFanout:
         overrides = {**self.forward_overrides, "seed": self.seed, "seeds": (self.seed,)}
 
         if self.config.resume_from:
-            overrides.update({"resume": True, "training.resume": True})
-
-        if rank == 0:
+            overrides["resume_from"] = str(self.run_dir if rank == 0 else self.mirrors[rank])
+        elif rank == 0:
             overrides.update({"logdir": str(self.config.logdir), "run_name": self.base_name})
         else:
             overrides.update({"logdir": str(self.ddp_dir), "run_name": f"rank{rank}"})
@@ -318,10 +328,8 @@ class DdpFanout:
         until it times out. Rank zero's gate has already decided that this run
         trains, so its mirrors must train with it.
         """
-        for rank in range(1, len(self.gpus)):
-            mirror = self.ddp_dir / self._mirror_name(rank)
-
-            if CompletionMarker.is_complete(mirror):
+        for rank, mirror in self._mirrors(self.run_dir).items():
+            if rank < len(self.gpus) and CompletionMarker.is_complete(mirror):
                 CompletionMarker.clear(mirror)
                 self.logger.warning(f"rank {rank}: cleared the completion marker of {mirror} so the mirror rejoins the group instead of skipping training")
 

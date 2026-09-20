@@ -279,8 +279,8 @@ def test_resume_from_skips_complete_units_and_resumes_the_rest(tmp_path):
 
     argv = scheduler.trial_argv("ema-1-raw-d0.999", {"training.use_ema": True})
 
-    assert "--resume" in argv
-    assert "--training.resume" in argv
+    assert argv[argv.index("--resume_from") + 1] == str(root / "ema-1-raw-d0.999")
+    assert "--training.resume" not in argv
 
 
 def test_loss_plan_round_trips_through_config_cli():

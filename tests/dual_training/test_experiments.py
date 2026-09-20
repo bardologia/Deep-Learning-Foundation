@@ -564,11 +564,12 @@ def test_dual_launcher_fans_out_when_trials_enabled(monkeypatch):
             ran["scheduler_ran"] = True
 
     class FakeConfig:
-        """Minimal config exposing trials as enabled with a dual curriculum and no trailing inference."""
+        """Minimal config exposing trials as enabled with a dual curriculum, no trailing inference and no resume."""
         trials_enabled = True
         curriculum     = dual_curriculum()
         infer_after    = False
         infer_at_end   = False
+        resume_from    = ""
 
     class FakeCli:
         """Config CLI stub returning the trials-enabled fake config."""
