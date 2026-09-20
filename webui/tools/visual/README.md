@@ -60,6 +60,19 @@ preview honest about the directories a sweep will create.
 node trial_names.js /tmp/train_jepa.json
 ```
 
+## Literal parsing harness
+
+`literal_split.js` runs `python_literal.js` under plain node with no DOM and no server. It
+takes a JSON array of strings, splits each one the way the sequence block editor splits a
+decision's candidates field, and prints the candidate lists that come back.
+`tests/webui/test_sequence_decision_options.py` drives it over the values the Python
+renderer produces, which is the contract that keeps `[32, 32], [64, 32]` two candidates
+instead of four.
+
+```
+node literal_split.js /tmp/fields.json
+```
+
 ## Repo-map diagram harness
 
 `render_diagram.js` renders a single repo-map schema (one folder/diagram from

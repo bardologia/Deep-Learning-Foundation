@@ -3,6 +3,8 @@
 class PythonLiteral {
   static ESCAPES = { n: "\n", t: "\t", r: "\r", "0": "\0" };
   static ENCODED = { "\n": "\\n", "\t": "\\t", "\r": "\\r", "\0": "\\0", "\\": "\\\\", "'": "\\'" };
+  static OPENERS = "[{(";
+  static CLOSERS = "]})";
 
   static escape(value) {
     return value.replace(/[\n\t\r\0\\']/g, (ch) => PythonLiteral.ENCODED[ch]);
@@ -24,6 +26,34 @@ class PythonLiteral {
     if (typeof value === "string") return `'${PythonLiteral.escape(value)}'`;
     if (Array.isArray(value)) return `[${value.map((item) => PythonLiteral.render(item)).join(", ")}]`;
     return `{${Object.entries(value).map(([key, item]) => `${PythonLiteral.render(key)}: ${PythonLiteral.render(item)}`).join(", ")}}`;
+  }
+
+  static split(text) {
+    const raw   = String(text);
+    const parts = [];
+
+    let depth = 0;
+    let quote = "";
+    let start = 0;
+
+    for (let pos = 0; pos < raw.length; pos += 1) {
+      const ch = raw[pos];
+
+      if (quote) {
+        if (ch === "\\") pos += 1;
+        else if (ch === quote) quote = "";
+        continue;
+      }
+
+      if (ch === "'" || ch === '"') quote = ch;
+      else if (PythonLiteral.OPENERS.includes(ch)) depth += 1;
+      else if (PythonLiteral.CLOSERS.includes(ch)) depth = Math.max(0, depth - 1);
+      else if (ch === "," && depth === 0) { parts.push(raw.slice(start, pos)); start = pos + 1; }
+    }
+
+    parts.push(raw.slice(start));
+
+    return parts.map((part) => part.trim()).filter(Boolean);
   }
 
   constructor(text) {
