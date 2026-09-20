@@ -6,6 +6,8 @@ predicate, and agreement between RunArtifacts filenames and the config IO classe
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO, DualModelConfigIO, ImageAutoencoderConfigIO, ProfileAutoencoderConfigIO
@@ -79,3 +81,69 @@ def test_run_classifier_artifacts_match_config_io_filenames():
     assert ProfileAutoencoderConfigIO.FILENAME == RunArtifacts.PROFILE_AE_CONFIG
     assert ImageAutoencoderConfigIO.FILENAME   == RunArtifacts.IMAGE_AE_CONFIG
     assert DualModelConfigIO.FILENAME          == RunArtifacts.DUAL_CONFIG
+
+
+def test_spatial_run_config_scores_a_fold_unit_over_its_recorded_block(tmp_path):
+    """A fold unit's manifest supplies the region override of the split it records."""
+    from configuration.inference                       import InferenceConfig
+    from pipelines.cross_validation.folds              import FoldUnitManifest
+    from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
+
+    run = tmp_path / "fold_unit"
+    FoldUnitManifest.write(run, run_tag="cv", unit="fold_unit", fold_index=2, seed=None, training_type="backbone", inference_regions={"test": (1212, 1312, 0, 256), "val": (1312, 1412, 0, 256)})
+
+    config = SpatialRunConfig.build(InferenceConfig(run_directory=Path("."), split="val"), run)
+
+    assert config.run_directory   == run
+    assert config.region_override == [1312, 1412, 0, 256]
+    assert config.output_subdir   is None
+
+
+def test_spatial_run_config_keeps_an_explicit_region_override(tmp_path):
+    """An explicit region override on the entry configuration wins over the fold's recorded block."""
+    from configuration.inference                       import InferenceConfig
+    from pipelines.cross_validation.folds              import FoldUnitManifest
+    from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
+
+    run = tmp_path / "fold_unit"
+    FoldUnitManifest.write(run, run_tag="cv", unit="fold_unit", fold_index=2, seed=None, training_type="backbone", inference_regions={"test": (1212, 1312, 0, 256)})
+
+    config = SpatialRunConfig.build(InferenceConfig(run_directory=Path("."), split="test", region_override=[0, 10, 0, 10]), run)
+
+    assert config.region_override == [0, 10, 0, 10]
+
+
+def test_spatial_run_config_refuses_a_split_the_fold_does_not_score(tmp_path):
+    """Asking a fold unit for a split outside its recorded blocks raises instead of scoring the whole scene."""
+    from configuration.inference                       import InferenceConfig
+    from pipelines.cross_validation.folds              import FoldUnitManifest
+    from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
+
+    run = tmp_path / "fold_unit"
+    FoldUnitManifest.write(run, run_tag="cv", unit="fold_unit", fold_index=2, seed=None, training_type="backbone", inference_regions={"test": (1212, 1312, 0, 256)})
+
+    with pytest.raises(ValueError, match="scores the splits"):
+        SpatialRunConfig.build(InferenceConfig(run_directory=Path("."), split="train"), run)
+
+
+def test_spatial_run_config_leaves_a_plain_run_alone(tmp_path):
+    """A run without a manifest gets no region override."""
+    from configuration.inference                       import InferenceConfig
+    from pipelines.shared.inference.inference_dispatch import SpatialRunConfig
+
+    run = tmp_path / "plain"
+    (run / "meta").mkdir(parents=True)
+
+    config = SpatialRunConfig.build(InferenceConfig(run_directory=Path("."), split="test"), run)
+
+    assert config.region_override is None
+
+
+def test_inference_layout_places_nested_families_under_their_subdirectory(tmp_path):
+    """The spatial families stamp directly under inference/ and the others under their family subdirectory."""
+    from pipelines.shared.inference.run_classifier import InferenceLayout
+
+    assert InferenceLayout.base(tmp_path, RunType.BACKBONE)   == tmp_path / "inference"
+    assert InferenceLayout.base(tmp_path, RunType.DUAL)       == tmp_path / "inference"
+    assert InferenceLayout.base(tmp_path, RunType.PROFILE_AE) == tmp_path / "inference" / "profile_ae"
+    assert InferenceLayout.base(tmp_path, RunType.IMAGE_AE)   == tmp_path / "inference" / "image_ae"
