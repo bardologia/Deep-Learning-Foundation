@@ -651,8 +651,8 @@ def test_dual_context_overrides_round_trip_through_the_cli(tmp_path):
 
 def test_dual_head_planner_holds_set_pred_and_sweeps_matchings():
     """The head planner keeps the set-prediction head fixed and varies the matching in both curriculum stages."""
-    trials  = HeadMatchingTrialsConfig(backbone="unet_skip", heads=["set_pred"], matchings=["sorted_gt", "hungarian"])
-    planner = DualHeadMatchingTrialPlanner(trials, ("unet_skip",), ("set_pred",), ("sorted_gt", "hungarian"))
+    trials  = HeadMatchingTrialsConfig(heads=["set_pred"], matchings=["sorted_gt", "hungarian"])
+    planner = DualHeadMatchingTrialPlanner(trials, "unet_skip", ("unet_skip",), ("set_pred",), ("sorted_gt", "hungarian"))
 
     plans = dict(planner.plan())
 
@@ -667,10 +667,10 @@ def test_dual_head_planner_holds_set_pred_and_sweeps_matchings():
 
 def test_dual_head_planner_rejects_heads_the_dual_model_lacks():
     """Requesting a head the dual model does not register raises ValueError."""
-    trials = HeadMatchingTrialsConfig(backbone="unet_skip", heads=["conv", "set_pred"], matchings=["hungarian"])
+    trials = HeadMatchingTrialsConfig(heads=["conv", "set_pred"], matchings=["hungarian"])
 
     with pytest.raises(ValueError, match="registered heads"):
-        DualHeadMatchingTrialPlanner(trials, ("unet_skip",), ("set_pred",), ("hungarian",))
+        DualHeadMatchingTrialPlanner(trials, "unet_skip", ("unet_skip",), ("set_pred",), ("hungarian",))
 
 
 def test_dual_reach_planner_counts_whole_dual_models_and_emits_trunk_settings():

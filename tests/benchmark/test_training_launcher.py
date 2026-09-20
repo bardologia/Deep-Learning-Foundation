@@ -454,7 +454,7 @@ def test_reach_scheduler_houses_runs_and_plans_the_size_matched_arms(tmp_path, t
 
 
 def test_head_scheduler_plans_the_head_matching_grid(tmp_path):
-    """Verifies the head mode plans the head by parameter-matching grid over the unet backbone."""
+    """Verifies the head mode plans the head by parameter-matching grid over the backbone the entry names."""
     config             = BackboneEntryConfig()
     config.logdir      = tmp_path
     config.trials_mode = "head"
@@ -464,7 +464,7 @@ def test_head_scheduler_plans_the_head_matching_grid(tmp_path):
     plans = dict(scheduler.planner().plan())
 
     assert list(plans) == ["hm-conv-sorted_gt", "hm-conv-hungarian", "hm-set_pred-sorted_gt", "hm-set_pred-hungarian"]
-    assert all(overrides["backbone_name"] == "unet" for overrides in plans.values())
+    assert all(overrides["backbone_name"] == config.backbone_name for overrides in plans.values())
     assert plans["hm-set_pred-hungarian"]["backbone_head"]                       == "set_pred"
     assert plans["hm-set_pred-hungarian"]["curriculum.warmup.param_matching"]    == "hungarian"
     assert plans["hm-set_pred-hungarian"]["curriculum.complete.param_matching"]  == "hungarian"

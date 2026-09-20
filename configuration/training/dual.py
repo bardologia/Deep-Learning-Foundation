@@ -71,7 +71,7 @@ def _default_dual_ratio_trials() -> dict:
 
 def _default_dual_head_trials() -> HeadMatchingTrialsConfig:
     """Returns the head trials comparing slot matching rules on the set-prediction head."""
-    return HeadMatchingTrialsConfig(backbone="unet_skip", heads=["set_pred"], matchings=["sorted_gt", "hungarian"])
+    return HeadMatchingTrialsConfig(heads=["set_pred"], matchings=["sorted_gt", "hungarian"])
 
 
 def _default_dual_reach_rungs() -> list:

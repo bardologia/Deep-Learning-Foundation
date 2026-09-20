@@ -47,8 +47,8 @@ class DualHeadMatchingTrialPlanner(HeadMatchingTrialPlanner):
             for matching in self.trials.matchings:
                 run_name  = f"hm-{head}-{matching}"
                 overrides = {
-                    "params_backbone"                    : self.trials.backbone,
-                    "existence_backbone"                 : self.trials.backbone,
+                    "params_backbone"                    : self.backbone,
+                    "existence_backbone"                 : self.backbone,
                     "curriculum.warmup.param_matching"   : matching,
                     "curriculum.complete.param_matching" : matching,
                 }

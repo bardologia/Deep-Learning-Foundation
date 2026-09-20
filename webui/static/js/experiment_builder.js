@@ -405,7 +405,7 @@ class ExperimentBuilder {
       },
       names     : (b) => b._reachRungs().map((rung) => `${rung.backbone}_reach-${rung.label}`) },
 
-    { group: "arch", key: "head",       label: "head x matching", hint: "one trial per output-head x parameter-matching pair on one fixed backbone",
+    { group: "arch", key: "head",       label: "head x matching", hint: "one trial per output-head x parameter-matching pair on the backbone this entry names",
       at        : 8,
       el        : "headEl",
       available : (b) => b.headTrials.size > 0,
@@ -859,6 +859,7 @@ class ExperimentBuilder {
     this.warmupLeaf   = byPath.get("warmup_losses");
     this.completeLeaf = byPath.get("complete_losses");
     this.modelLeaf    = byPath.get("backbone_name") || byPath.get("model_name") || byPath.get("ae_model_name");
+    this.headBackboneLeaf = byPath.get("backbone_name") || byPath.get("params_backbone");
     this.gpusLeaf     = byPath.get("gpus");
     this.seedsLeaf    = byPath.get("seeds");
 
@@ -993,7 +994,6 @@ class ExperimentBuilder {
     this.headEl          = null;
     this.headHeadsEl     = null;
     this.headMatchingsEl = null;
-    this.headBackboneEl  = null;
     this.augEl           = null;
     this.augStdsEl       = null;
     this.clampEl         = null;
@@ -3345,8 +3345,7 @@ class ExperimentBuilder {
   }
 
   _headBackbone() {
-    const leaf = this.headTrials.get("backbone");
-    return leaf ? this.view._effective(leaf) : "unet";
+    return this.headBackboneLeaf ? this.view._effective(this.headBackboneLeaf) : "?";
   }
 
   _emitHeadList(key, values) {
@@ -3370,24 +3369,9 @@ class ExperimentBuilder {
     head.className = "exp-col__head";
     head.innerHTML = `<span class="exp-col__name">head x matching grid</span>`;
 
-    const backboneLeaf = this.headTrials.get("backbone");
-    if (backboneLeaf) {
-      const input      = document.createElement("input");
-      input.className  = "cfg-edit__input exp-secondary__strategy";
-      input.spellcheck = false;
-      input.title      = `--${backboneLeaf.path} · backbone trained in every grid cell`;
-      input.addEventListener("change", () => {
-        this.view._setValue(backboneLeaf, input.value.trim());
-        this._repaintHead();
-      });
-      this.headBackboneEl = input;
-      head.appendChild(input);
-      this.view.controls[backboneLeaf.path] = { leaf: backboneLeaf, reset: () => this._repaintHead() };
-    }
-
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "One training run per checked head x matching pair, all on the one backbone named in the corner field. The matching strategy is applied to both curriculum stages; everything else comes from the base config.";
+    note.textContent = "One training run per checked head x matching pair, all on the backbone this entry names in its own backbone field. The matching strategy is applied to both curriculum stages; everything else comes from the base config.";
 
     const headsHead       = document.createElement("div");
     headsHead.className   = "exp-presence__sub";
@@ -3425,8 +3409,6 @@ class ExperimentBuilder {
 
   _paintHead() {
     if (!this.headEl) return;
-
-    if (this.headBackboneEl && document.activeElement !== this.headBackboneEl) this.headBackboneEl.value = this._headBackbone();
 
     const paintToggles = (el, key, catalog) => {
       el.innerHTML = "";

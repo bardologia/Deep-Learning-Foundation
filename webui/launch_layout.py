@@ -442,7 +442,7 @@ class LaunchLayout:
         "clamp_trials.leaky_slopes", "clamp_trials.param_leaky_slopes",
         "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
         "ema_trials.decays",
-        "head_trials.backbone", "head_trials.heads", "head_trials.matchings",
+        "head_trials.heads", "head_trials.matchings",
         "pair_trials.base_component", "pair_trials.base_weight", "pair_trials.components", "pair_trials.weights", "pair_trials.include_baseline",
         "log_energy_trials.weights", "log_energy_trials.replace_covariance", "log_energy_trials.include_baseline",
         "secondary_trials.strategy", "secondary_trials.n_secondaries", "secondary_trials.fixed", "secondary_trials.n_trials",
