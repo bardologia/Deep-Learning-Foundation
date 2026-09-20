@@ -11,16 +11,25 @@ webui/run.sh            # http://127.0.0.1:8772
 webui/run.sh 9000       # custom port
 ```
 
-`run.sh` picks the first interpreter that exists among `~/miniconda3/envs/Dune/bin/python`,
-`~/miniconda3/bin/python` and the system `python3`, then executes `serve.py --port <port>`.
-`serve.py` also takes `--host`, default `127.0.0.1`.
+`run.sh` sources the machine profile's shell twin (`~/.config/ml-template/machine.env`,
+written by `./install.sh`) and executes `serve.py --host <host> --port <port>` under the
+interpreter recorded there; without a profile it stops and points at the installer.
+`serve.py` also takes `--root`, the project root the console operates on (job adoption,
+logs, GPU pools, runs), default the repository that holds `serve.py`. Tests run with
+`MLTEMPLATE_MACHINE_PROFILE` empty so no developer profile leaks into their expectations.
+
+The profile also supplies the runs root the console browses, the data and runs roots the
+results tabs start from (`/api/project` carries them as `roots`), the interpreter
+preference of the launch pages, the GPU pool the guard schedule is seeded with and the
+ntfy seed. Launch pages mark every field whose default the profile rewrote and count
+them in the facts rail.
 
 The HTTP transport is standard library only (`http.server` plus server-sent events), but
 the console itself needs the project environment. `web_ui_server.py` imports the cube
 explorer, fit lab, model probe, A/B autopsy, triage board, training-curve reader and
 system monitor at boot, and those pull numpy, matplotlib, scipy, torch, scikit-image,
 tensorboard and psutil. On a bare interpreter the server fails with an ImportError before
-it binds the port, which is why `run.sh` prefers the `Dune` env.
+it binds the port, which is why `run.sh` starts from the interpreter the profile records.
 
 The frontend loads MathJax 3.2.2 (tex-svg), highlight.js 11.9.0, GSAP 3.12.5 and xterm.js
 5.5.0 with its fit addon from a CDN, so equation typesetting, syntax highlighting,
