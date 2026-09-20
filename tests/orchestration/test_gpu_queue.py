@@ -1,4 +1,4 @@
-"""Tests covering GpuQueue: job dispatch and device assignment, live pool-file resizing, per-unit progress snapshots, and signal-handler restoration."""
+"""Tests covering GpuQueue: job dispatch and device assignment, live pool-file resizing and preemption, per-unit progress snapshots, and signal-handler restoration."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.orchestration.gpu_queue import GpuJob, GpuProgressFile, GpuQueue, GpuJobResult
+from tools.orchestration.gpu_queue import GpuJob, GpuPoolFile, GpuProgressFile, GpuQueue, GpuJobResult, PoolEdit
 
 from tests.conftest import SilentLogger
 
@@ -352,6 +352,154 @@ def test_re_adding_a_retiring_gpu_cancels_the_drain(tmp_path):
     assert gpu_pool       == [0]
 
 
+def _preempt_payload(gpus: list[int], preempt: list[int]) -> str:
+    """Returns the raw pool-file text keeping gpus and freeing preempt at once."""
+    return json.dumps({"gpus": gpus, "preempt": preempt})
+
+
+def _launch_sleeper(queue: GpuQueue, tmp_path: Path, name: str, gpu: int) -> dict:
+    """Launches a 30 s sleeper as an in-flight record on the given device and registers it as running."""
+    record = queue._launch(_job(tmp_path, name, _sleeper_command(tmp_path / "gpu_seen.txt", 30.0)), gpu)
+    queue.running.append(record)
+
+    return record
+
+
+def test_parse_reads_the_preempt_list_and_defaults_it_to_empty():
+    """Verifies parse returns both lists, with preempt empty when the key is absent."""
+    assert GpuPoolFile.parse({"gpus": [0, 1]})                  == PoolEdit(gpus=[0, 1], preempt=[])
+    assert GpuPoolFile.parse({"gpus": [0], "preempt": [2, 3]}) == PoolEdit(gpus=[0], preempt=[2, 3])
+
+
+@pytest.mark.parametrize("payload, reason", [
+    ({"gpus": [0], "preempt": [0]},    "listed in both"),
+    ({"gpus": [0], "preempt": "1"},    "list"),
+    ({"gpus": [0], "preempt": [1, 1]}, "repeat"),
+    ({"gpus": [0], "preempt": [-1]},   "non-negative"),
+])
+def test_parse_rejects_a_malformed_preempt_list(payload, reason):
+    """Verifies a preempt list that overlaps the pool or is malformed is rejected with a reason."""
+    with pytest.raises(ValueError, match=reason):
+        GpuPoolFile.parse(payload)
+
+
+def test_write_carries_the_preempt_list_only_when_given(tmp_path):
+    """Verifies the writer adds the preempt key for a non-empty list and omits it otherwise."""
+    handle = GpuPoolFile(tmp_path / "gpu_pool.json", SilentLogger())
+
+    handle.write([0, 1])
+    assert json.loads(handle.path.read_text()) == {"gpus": [0, 1]}
+
+    handle.write([0], preempt=[1])
+    assert json.loads(handle.path.read_text()) == {"gpus": [0], "preempt": [1]}
+
+
+def test_reconcile_preempts_the_job_on_a_busy_gpu_and_requeues_it_at_the_head(tmp_path):
+    """Verifies a preempted device's worker is stopped, its job returns to the queue head and the device is freed."""
+    logger      = RecordingLogger()
+    queue, pool = _pool_queue(tmp_path, [0, 1], logger=logger)
+    record      = _launch_sleeper(queue, tmp_path, "a", 1)
+    gpu_pool    = [0]
+    pending     = [_job(tmp_path, "b", _ok_command())]
+
+    _write_pool(pool, _preempt_payload([0], [1]))
+    queue._reconcile(gpu_pool, pending)
+
+    assert record["process"].poll() is not None
+    assert queue.running                        == []
+    assert [job.name for job in pending]        == ["a", "b"]
+    assert gpu_pool                             == [0]
+    assert queue.retiring                       == set()
+    assert json.loads(pool.read_text())         == {"gpus": [0]}
+    assert any("preempted a" in message for message in logger.warnings)
+
+
+def test_preempt_stops_several_devices_in_launch_order(tmp_path):
+    """Verifies preempting two busy devices requeues both jobs ahead of the pending ones, in launch order."""
+    queue, pool = _pool_queue(tmp_path, [0, 1, 2])
+    first       = _launch_sleeper(queue, tmp_path, "a", 1)
+    second      = _launch_sleeper(queue, tmp_path, "b", 2)
+    gpu_pool    = [0]
+    pending     = [_job(tmp_path, "c", _ok_command())]
+
+    _write_pool(pool, _preempt_payload([0], [1, 2]))
+    queue._reconcile(gpu_pool, pending)
+
+    assert first["process"].poll()  is not None
+    assert second["process"].poll() is not None
+    assert [job.name for job in pending] == ["a", "b", "c"]
+    assert gpu_pool                      == [0]
+
+
+def test_reconcile_preempting_an_idle_gpu_just_releases_it(tmp_path):
+    """Verifies an idle device listed for preemption leaves the free pool and the command is consumed."""
+    queue, pool = _pool_queue(tmp_path, [0, 1])
+    gpu_pool    = [0, 1]
+
+    _write_pool(pool, _preempt_payload([0], [1]))
+    queue._reconcile(gpu_pool, [])
+
+    assert gpu_pool                     == [0]
+    assert queue.retiring               == set()
+    assert json.loads(pool.read_text()) == {"gpus": [0]}
+
+
+def test_preempting_a_retiring_gpu_cancels_its_drain(tmp_path):
+    """Verifies a device already draining is stopped at once and dropped from the retiring set."""
+    queue, pool = _pool_queue(tmp_path, [0, 1])
+    record      = _launch_sleeper(queue, tmp_path, "a", 1)
+    gpu_pool    = [0]
+    pending     = []
+
+    _write_pool(pool, [0])
+    queue._reconcile(gpu_pool, pending)
+    assert queue.retiring == {1}
+
+    _write_pool(pool, _preempt_payload([0], [1]))
+    queue._reconcile(gpu_pool, pending)
+
+    assert record["process"].poll() is not None
+    assert queue.retiring                == set()
+    assert queue.running                 == []
+    assert [job.name for job in pending] == ["a"]
+
+
+def test_a_preempted_worker_that_already_exited_is_left_for_the_reap(tmp_path, logger_stub):
+    """Verifies a device whose worker has exited is retired, not requeued, so its real result is still recorded."""
+    queue, pool = _pool_queue(tmp_path, [0, 1])
+    record      = {"job": _job(tmp_path, "a", _ok_command()), "gpu": 1, "process": _DoneProcess(), "log_fh": _NullHandle(), "started": time.monotonic()}
+    gpu_pool    = [0]
+    pending     = []
+
+    queue.running = [record]
+
+    _write_pool(pool, _preempt_payload([0], [1]))
+    queue._reconcile(gpu_pool, pending)
+
+    assert queue.running  == [record]
+    assert queue.retiring == {1}
+    assert pending        == []
+
+    results = []
+    queue._reap(queue.running, gpu_pool, results)
+
+    assert results[0].status == "DONE"
+    assert gpu_pool          == [0]
+    assert queue.retiring    == set()
+
+
+def test_pool_edit_without_preempt_leaves_the_file_untouched(tmp_path):
+    """Verifies a plain resize is not rewritten by the scheduler, so an operator's file edit stands as written."""
+    queue, pool = _pool_queue(tmp_path, [0])
+    gpu_pool    = [0]
+
+    _write_pool(pool, [0, 1])
+    stamp = pool.stat().st_mtime_ns
+    queue._reconcile(gpu_pool, [])
+
+    assert pool.stat().st_mtime_ns == stamp
+
+
 def test_unchanged_pool_file_is_not_re_read(tmp_path):
     """Verifies an untouched pool file is not re-applied over the live pool."""
     queue, pool = _pool_queue(tmp_path, [0])
@@ -523,6 +671,41 @@ def test_parked_pool_holds_queued_jobs_until_a_gpu_returns(tmp_path):
     assert elapsed > 1.15
 
 
+def test_preempted_job_reruns_on_the_remaining_gpu(tmp_path):
+    """Verifies a job preempted mid-run restarts on the remaining device, its interrupted attempt leaves no result, and the ledger counts it."""
+    capture = tmp_path / "gpu_seen.txt"
+    command = _sleeper_command(capture, 1.0)
+    jobs    = [_job(tmp_path, f"j{i}", [*command]) for i in range(2)]
+
+    queue, pool = _pool_queue(tmp_path, [0, 1], poll_interval_s=0.02)
+
+    def free_gpu_one() -> None:
+        """Frees device 1 at once as soon as both jobs are in flight."""
+        _await_dispatched(capture, 2)
+        _write_pool(pool, _preempt_payload([0], [1]))
+
+    thread = threading.Thread(target=free_gpu_one, daemon=True)
+    thread.start()
+    results = queue.run(jobs)
+    thread.join()
+
+    progress = json.loads(GpuProgressFile.resolve(pool).read_text())
+    by_name  = {unit["name"]: unit for unit in progress["units"]}
+
+    captured = capture.read_text().split()
+
+    assert len(results) == 2
+    assert all(result.status == "DONE" for result in results)
+    assert all(result.gpu == 0 for result in results)
+    assert sorted(captured[:2])             == ["0", "1"]
+    assert captured[2:]                     == ["0"]
+    assert json.loads(pool.read_text())     == {"gpus": [0]}
+    assert progress["preempted"]            == 1
+    assert by_name["j1"]["preemptions"]     == 1
+    assert by_name["j1"]["status"]          == "done"
+    assert by_name["j0"]["preemptions"]     == 0
+
+
 def _progress_jobs(tmp_path: Path, names: list[str]) -> list[GpuJob]:
     """Returns command-less jobs whose log paths sit under per-name directories."""
     return [GpuJob(name=name, command=[], log_path=tmp_path / name / "worker.log") for name in names]
@@ -595,6 +778,26 @@ def test_units_move_from_queued_through_running_to_terminal(tmp_path):
     done = progress.snapshot([], queued=1, workers=1)["units"]
     assert done[0]["status"]     == "done"
     assert done[0]["duration_s"] == 10.0
+
+
+def test_preempting_a_unit_returns_it_to_queued_and_counts_it(tmp_path):
+    """Verifies a preempted unit reads as queued again with its preemption counted per unit and in total."""
+    jobs     = _progress_jobs(tmp_path, ["a", "b"])
+    progress = GpuProgressFile(tmp_path / "gpu_pool_progress.json", jobs, SilentLogger())
+
+    running = progress.snapshot([_running(tmp_path, "a", 1, 5.0)], 1, 2)
+    assert {unit["name"]: unit["status"] for unit in running["units"]} == {"a": "running", "b": "queued"}
+
+    progress.preempt(jobs[0])
+    snapshot = progress.snapshot([], 2, 1)
+    by_name  = {unit["name"]: unit for unit in snapshot["units"]}
+
+    assert by_name["a"]["status"]      == "queued"
+    assert by_name["a"]["gpu"]         is None
+    assert by_name["a"]["preemptions"] == 1
+    assert by_name["b"]["preemptions"] == 0
+    assert snapshot["preempted"]       == 1
+    assert progress.completed          == 0
 
 
 def test_colliding_log_paths_fail_loudly(tmp_path):
