@@ -70,7 +70,7 @@ class DistributionPlotter(PlotBase):
         qs    = [10, 25, 50, 75, 90]
         pvals = np.percentile(valid, qs)
         pcolors  = ["#9467bd", "#1f77b4", "#2ca02c", "#ff7f0e", "#d62728"]
-        stats_tx = rf"mean={summary['r2_mean']:.4f},  median={summary['r2_median']:.4f},  neg\_frac={summary['r2_neg_frac']:.3f}"
+        stats_tx = f"mean={summary['r2_mean']:.4f},  median={summary['r2_median']:.4f},  negative fraction={summary['r2_neg_frac']:.3f}"
         saved    : Dict[str, Path] = {}
 
         fig, ax = plt.subplots(figsize=(6.4, 4.5))
