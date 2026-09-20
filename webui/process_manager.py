@@ -1357,21 +1357,23 @@ class ProcessManager:
             "text"      : AnsiTranscript().flatten(raw.decode("utf-8", errors="replace")),
         }
 
-    def set_gpus(self, job_id: str, gpus, park: bool = False) -> dict:
-        """Rewrites a running job's live GPU pool, optionally parking it on none.
+    def set_gpus(self, job_id: str, gpus, park: bool = False, preempt=None) -> dict:
+        """Rewrites a running job's live GPU pool, optionally parking it or freeing devices at once.
 
-        Runs already in flight finish on their current device; the new pool only
-        governs what the job dispatches next.
+        Runs already in flight finish on their current device, except on the
+        devices listed in preempt: the scheduler stops those runs within one
+        poll, puts them back at the head of its queue and releases the device.
 
         Args:
-            job_id : Running job whose pool is rewritten.
-            gpus   : Requested device indices, validated before being written.
-            park   : Whether an empty selection is an intentional park rather than a mistake.
+            job_id  : Running job whose pool is rewritten.
+            gpus    : Requested device indices, validated before being written.
+            park    : Whether an empty selection is an intentional park rather than a mistake.
+            preempt : Devices to free now, disjoint from gpus; None frees nothing.
 
         Returns:
-            Mapping with "ok" True, the written "gpus" and a "parked" flag, or
-            "ok" False with an "error" when the job is unknown, not running,
-            has no pool, or the selection is invalid.
+            Mapping with "ok" True, the written "gpus", the "preempted" devices
+            and a "parked" flag, or "ok" False with an "error" when the job is
+            unknown, not running, has no pool, or the selection is invalid.
         """
         with self.lock:
             record = self.jobs.get(job_id)
@@ -1391,21 +1393,24 @@ class ProcessManager:
             return {"ok": False, "error": "this job has no live GPU pool yet; the pool appears once a fan-out over trials or seeds starts dispatching"}
 
         try:
-            requested = GpuPoolFile.validate({"gpus": gpus})
+            edit = GpuPoolFile.parse({"gpus": gpus, "preempt": [] if preempt is None else preempt})
         except (ValueError, TypeError) as error:
             return {"ok": False, "error": str(error)}
 
-        if not requested and not park:
+        if not edit.gpus and not park:
             return {"ok": False, "error": "select at least one GPU, or confirm parking to hold the experiment"}
 
-        GpuPoolFile(pool, self.logger).write(requested)
+        GpuPoolFile(pool, self.logger).write(edit.gpus, edit.preempt)
 
-        if requested:
-            self.logger.ok(f"job {job_id} GPU pool set to {requested}")
+        if edit.preempt:
+            self.logger.warning(f"job {job_id} frees GPU {edit.preempt} now — the runs on them stop and restart from the head of the queue")
+
+        if edit.gpus:
+            self.logger.ok(f"job {job_id} GPU pool set to {edit.gpus}")
         else:
-            self.logger.warning(f"job {job_id} parked — no GPUs left in the pool, runs in flight will finish and nothing new starts")
+            self.logger.warning(f"job {job_id} parked — no GPUs left in the pool, nothing new starts until a device is added back")
 
-        return {"ok": True, "gpus": requested, "parked": not requested}
+        return {"ok": True, "gpus": edit.gpus, "parked": not edit.gpus, "preempted": edit.preempt}
 
     def clear_queue(self) -> int:
         """Cancels every queued job and returns how many were dropped."""

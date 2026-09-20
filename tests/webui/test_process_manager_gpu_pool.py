@@ -1,8 +1,8 @@
 """Tests for the live GPU pool file the process manager injects into fan-out runs.
 
 Covers which launch scripts receive a per-job pool file, honouring an explicit
-gpus_file override, and the validation, parking and error paths of set_gpus
-and gpu_pool.
+gpus_file override, and the validation, parking, preemption and error paths of
+set_gpus and gpu_pool.
 """
 from __future__ import annotations
 
@@ -111,7 +111,7 @@ def test_set_gpus_writes_the_pool_file_of_a_running_fan_out(manager):
 
     applied = manager.set_gpus(job_id, [0, 2, 3])
 
-    assert applied == {"ok": True, "gpus": [0, 2, 3], "parked": False}
+    assert applied == {"ok": True, "gpus": [0, 2, 3], "parked": False, "preempted": []}
     assert json.loads(pool.read_text()) == {"gpus": [0, 2, 3]}
     assert manager.gpu_pool(job_id)["gpus"] == [0, 2, 3]
 
@@ -153,14 +153,73 @@ def test_set_gpus_parks_only_when_parking_is_confirmed(manager):
 
     parked = manager.set_gpus(job_id, [], park=True)
 
-    assert parked == {"ok": True, "gpus": [], "parked": True}
+    assert parked == {"ok": True, "gpus": [], "parked": True, "preempted": []}
     assert json.loads(pool.read_text()) == {"gpus": []}
     assert manager.gpu_pool(job_id)["gpus"] == []
 
     resumed = manager.set_gpus(job_id, [2])
 
-    assert resumed == {"ok": True, "gpus": [2], "parked": False}
+    assert resumed == {"ok": True, "gpus": [2], "parked": False, "preempted": []}
     assert json.loads(pool.read_text()) == {"gpus": [2]}
+
+    manager.stop(job_id)
+
+
+def test_set_gpus_writes_the_preempt_list_beside_the_pool(manager):
+    """A preempt list is written next to the new pool so the scheduler frees those devices at once."""
+    result = manager.launch("train_backbone", sys.executable)
+    job_id = result["job_id"]
+
+    assert wait_for_status(manager, job_id, "running")
+
+    pool = _pool_path(manager, job_id)
+    pool.parent.mkdir(parents=True, exist_ok=True)
+    pool.write_text(json.dumps({"gpus": [0, 1, 2]}))
+
+    applied = manager.set_gpus(job_id, [0], preempt=[1, 2])
+
+    assert applied == {"ok": True, "gpus": [0], "parked": False, "preempted": [1, 2]}
+    assert json.loads(pool.read_text()) == {"gpus": [0], "preempt": [1, 2]}
+    assert manager.gpu_pool(job_id)["gpus"] == [0]
+
+    manager.stop(job_id)
+
+
+def test_set_gpus_rejects_a_device_kept_and_preempted_at_once(manager):
+    """A device listed both in the pool and in preempt is refused and the file stays untouched."""
+    result = manager.launch("train_backbone", sys.executable)
+    job_id = result["job_id"]
+
+    assert wait_for_status(manager, job_id, "running")
+
+    pool = _pool_path(manager, job_id)
+    pool.parent.mkdir(parents=True, exist_ok=True)
+    pool.write_text(json.dumps({"gpus": [0, 1]}))
+
+    applied = manager.set_gpus(job_id, [0, 1], preempt=[1])
+
+    assert applied["ok"] is False
+    assert "listed in both" in applied["error"]
+    assert json.loads(pool.read_text()) == {"gpus": [0, 1]}
+
+    manager.stop(job_id)
+
+
+def test_set_gpus_parks_now_when_every_device_is_preempted(manager):
+    """An empty pool with every device preempted parks the job and stops its runs at once."""
+    result = manager.launch("train_backbone", sys.executable)
+    job_id = result["job_id"]
+
+    assert wait_for_status(manager, job_id, "running")
+
+    pool = _pool_path(manager, job_id)
+    pool.parent.mkdir(parents=True, exist_ok=True)
+    pool.write_text(json.dumps({"gpus": [0, 1]}))
+
+    parked = manager.set_gpus(job_id, [], park=True, preempt=[0, 1])
+
+    assert parked == {"ok": True, "gpus": [], "parked": True, "preempted": [0, 1]}
+    assert json.loads(pool.read_text()) == {"gpus": [], "preempt": [0, 1]}
 
     manager.stop(job_id)
 
