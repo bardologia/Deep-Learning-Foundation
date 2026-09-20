@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from tools.data.gaussians import GaussianClamp
+from tools.data.gaussians_torch import GaussianClamp
 
 
 class ModelWrapper:
