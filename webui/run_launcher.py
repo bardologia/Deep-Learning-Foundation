@@ -1,8 +1,9 @@
 """Launching of training and analysis entry points from the console.
 
 Resolves the interpreter and the TensorBoard log directory of an entry point,
-hands the run to the process manager either immediately or through the queue, and
-starts TensorBoard for training runs in the background.
+hands the run to the process manager either immediately or through the queue,
+starts TensorBoard for training runs in the background, and registers the
+post-experiment finalize chain of a launch that switched any of its steps on.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import threading
 from datetime import datetime
 from pathlib  import Path
 
+from finalize_chain         import RunFinalizer
 from process_manager        import ProcessManager
 from project_paths          import ProjectPaths
 from script_config_resolver import ScriptConfigResolver
@@ -27,15 +29,21 @@ class RunLauncher:
         resolver    : Config resolver used to read an entry's default log directory.
         processes   : Process manager executing or queueing the run.
         tensorboard : TensorBoard manager started for training entry points.
+        finalizer   : Walker of the compare-and-mail chain a launch switched on.
     """
 
-    def __init__(self, paths: ProjectPaths, logger: WebLogger, resolver: ScriptConfigResolver, processes: ProcessManager, tensorboard: TensorboardManager) -> None:
-        """Stores the paths, logger, resolver, process manager and TensorBoard manager."""
+    def __init__(self, paths: ProjectPaths, logger: WebLogger, resolver: ScriptConfigResolver, processes: ProcessManager, tensorboard: TensorboardManager, notifier) -> None:
+        """Stores the collaborators and builds the finalize-chain walker over them."""
         self.paths       = paths
         self.logger      = logger
         self.resolver    = resolver
         self.processes   = processes
         self.tensorboard = tensorboard
+        self.finalizer   = RunFinalizer(self, processes, resolver, notifier, logger)
+
+    def start(self) -> None:
+        """Starts the background loop walking the finalize chains of launched runs."""
+        self.finalizer.start()
 
     def preferred_interpreter(self, script_key: str = "") -> str:
         """Returns the interpreter preferred for an entry point among the discovered ones."""
@@ -253,8 +261,12 @@ class RunLauncher:
         except Exception as exc:
             self.logger.error(f"tensorboard autostart failed: {exc}")
 
-    def execute(self, key: str, interpreter: str, overrides: dict, follow_up: str | None, detach: bool, queue: bool) -> dict:
-        """Launches or queues an entry point and starts TensorBoard for training runs.
+    def execute(self, key: str, interpreter: str, overrides: dict, follow_up: str | None, detach: bool, queue: bool, finalize: dict | None = None) -> dict:
+        """Launches or queues an entry point, starts TensorBoard for training runs and registers its finalize chain.
+
+        The chain is derived before the run starts, so a launch whose entry
+        writes no sweep the chain can compare, or which mails without the SMTP
+        password on the server, is refused instead of failing hours later.
 
         Args:
             key         : Entry-point key to run.
@@ -263,12 +275,17 @@ class RunLauncher:
             follow_up   : Entry point to run once this one succeeds, or None.
             detach      : Whether the run survives the console process.
             queue       : Whether to enqueue the run instead of starting it immediately.
+            finalize    : Finalize switches chained onto the finished run, or None for a run that ends with itself.
 
         Returns:
-            The process manager's launch result, or a failed result when the interpreter
-            is unknown.
+            The process manager's launch result, or a failed result when the
+            interpreter is unknown or the requested finalize chain cannot run.
         """
         error = self.interpreter_error(interpreter)
+        if error:
+            return {"ok": False, "error": error}
+
+        plan, error = self.finalizer.plan(key, interpreter, overrides, finalize)
         if error:
             return {"ok": False, "error": error}
 
@@ -277,7 +294,13 @@ class RunLauncher:
         else:
             result = self.processes.launch(key, interpreter, overrides, follow_up, detach)
 
-        if result.get("ok") and self.tensorboard.logdir_keys(key):
+        if not result.get("ok"):
+            return result
+
+        if plan is not None:
+            self.finalizer.watch(result["job_id"], plan)
+
+        if self.tensorboard.logdir_keys(key):
             threading.Thread(target=self._autostart_tensorboard, args=(key, overrides, interpreter), daemon=True).start()
 
         return result

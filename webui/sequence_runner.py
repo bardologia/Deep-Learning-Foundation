@@ -41,7 +41,6 @@ the sequence as failed.
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 import time
@@ -49,138 +48,8 @@ from pathlib import Path
 
 from web_logger import WebLogger
 
-from configuration.diagnostics      import ReportMailEntryConfig
 from configuration.reference_layout import ReferenceLayout
-
-
-class SequenceFinalizer:
-    """Derives the post-experiment chain comparing a block's trials and mailing its reports.
-
-    The chain runs on a sweep directory holding one run per compared unit: the
-    ``<workspace>/<trials_mode>`` directory of a trial-sweep block, and the
-    ``<workspace>/<run_tag>/folds`` directory of a cross-validation block,
-    whose fold runs are compared exactly like trials.
-
-    Attributes:
-        STEPS           : Entry-point keys of the chain, launched in order on the finished block's experiment.
-        MAIL_STEP       : Chain step key of the report mailer, the step whose SMTP password is preflighted at sequence start.
-        SKIP_DIRS       : Directory names inside a sweep directory that are not compared units.
-        CV_SCRIPT       : Entry-point key of the cross-validation entry.
-        CV_SWEEP        : Sweep directory name inside a cross-validation run holding the fold runs.
-        STAGING_DIRNAME : Directory name inside a workspace receiving the mail step's staged bundles.
-    """
-
-    STEPS           = ("compare_seeds", "compare_trials", "mail_experiment_reports")
-    MAIL_STEP       = "mail_experiment_reports"
-    SKIP_DIRS       = ("logs", "batch_train_logs")
-    CV_SCRIPT       = "cross_validate"
-    CV_SWEEP        = "folds"
-    STAGING_DIRNAME = "_mailed_reports"
-
-    def mail_preflight(self, blocks: list) -> str:
-        """Returns the start-blocking error when mailing is enabled without an SMTP password.
-
-        The report-mail chain step inherits the server process environment, so a
-        missing password variable is caught at sequence start instead of failing
-        the chain hours later, after training and comparisons succeeded.
-
-        Args:
-            blocks : Block definitions of the sequence being started.
-
-        Returns:
-            Error naming the mailing blocks and the variable, or an empty string.
-        """
-        mailers = [block["name"] or block["title"] for block in blocks if not block["skip"] and block["finalize"][self.MAIL_STEP]]
-
-        if not mailers or os.environ.get(ReportMailEntryConfig.password_env, ""):
-            return ""
-
-        return f"block(s) {', '.join(mailers)} enable the report-mail finalize step, but the server environment has no {ReportMailEntryConfig.password_env}; export it and restart the webui, or switch the mail step off"
-
-    def steps(self, flags: dict) -> tuple:
-        """Returns the enabled chain steps in launch order.
-
-        Args:
-            flags : Finalize switches of the block, one boolean per step key.
-        """
-        return tuple(step for step in self.STEPS if flags[step])
-
-    def experiment_dir(self, script: str, overrides: dict, leaves: dict, run_dir: str) -> str:
-        """Returns the block's sweep directory inside the workspace.
-
-        The training entries write their sweep into ``<logdir>/<trials_mode>``
-        and the cross-validation entry writes its fold runs into
-        ``<log_base_dir>/<run_tag>/folds``, so the experiment directory follows
-        from the effective mode or run tag: the block's override when it sets
-        one and the entry's default otherwise. The sweep root follows the same
-        effective ``logdir``: the workspace injection already redirected a
-        runs-tree value into the workspace, so a deliberately external
-        directory is honoured here exactly as it is at launch, and an entry
-        without a ``logdir`` leaf falls back to the workspace itself.
-
-        Args:
-            script    : Entry-point key of the block.
-            overrides : Launch overrides of the block, workspace already injected.
-            leaves    : Resolved leaf defaults of the block's entry, keyed by path.
-            run_dir   : Isolated workspace directory of the execution.
-
-        Raises:
-            ValueError : If the entry exposes no sweep the chain can run on, or a cross-validation block leaves the run tag to the timestamp default.
-        """
-        if script == self.CV_SCRIPT:
-            run_tag = overrides.get("run_tag", "") or leaves.get("run_tag", "")
-            if run_tag in ("", "None"):
-                raise ValueError("the finalize steps on a cross-validation block need a fixed 'run_tag' override to locate the fold sweep; set one or turn the finalize switches off")
-            return str(Path(run_dir) / run_tag / self.CV_SWEEP)
-
-        mode = overrides.get("trials_mode", "") or leaves.get("trials_mode", "")
-        if not mode:
-            raise ValueError(f"the finalize steps need a trial-sweep entry exposing 'trials_mode' or the cross-validation entry, which '{script}' is not; turn the finalize switches off for this block")
-
-        logdir = overrides.get("logdir", "") or leaves.get("logdir", "") or run_dir
-        return str(Path(logdir) / mode)
-
-    def trial_names(self, experiment_dir: str) -> list:
-        """Returns the sorted trial directory names inside one experiment directory.
-
-        Args:
-            experiment_dir : Trial-sweep directory of the finished block.
-
-        Raises:
-            FileNotFoundError : If the directory is missing or holds no trial directory.
-        """
-        root = Path(experiment_dir)
-        if not root.is_dir():
-            raise FileNotFoundError(f"experiment directory not found: {root}")
-
-        names = sorted(child.name for child in root.iterdir() if child.is_dir() and child.name not in self.SKIP_DIRS and not child.name.startswith("_"))
-        if not names:
-            raise FileNotFoundError(f"no trial directories under {root}")
-
-        return names
-
-    def step_overrides(self, step: str, experiment_dir: str, run_dir: str) -> dict:
-        """Returns the launch overrides of one chain step.
-
-        The comparison steps run over every unit of the experiment directory,
-        and the mailing step scans that directory's parent restricted to this
-        experiment, staging its bundle inside the workspace so blocks of other
-        sequence executions never overwrite the same staging archive.
-
-        Args:
-            step           : Entry-point key of the chain step.
-            experiment_dir : Sweep directory of the finished block.
-            run_dir        : Isolated workspace directory of the execution, holding the mail step's staging tree.
-
-        Raises:
-            FileNotFoundError : If the experiment directory holds no unit runs for a comparison step.
-        """
-        if step == "compare_seeds":
-            return {"runs_dir": experiment_dir, "group_tags": ", ".join(self.trial_names(experiment_dir))}
-        if step == "compare_trials":
-            return {"runs_dir": experiment_dir, "run_tags": ", ".join(self.trial_names(experiment_dir))}
-
-        return {"experiments_dir": str(Path(experiment_dir).parent), "experiment_filter": Path(experiment_dir).name, "staging_dir": str(Path(run_dir) / self.STAGING_DIRNAME)}
+from finalize_chain                 import FinalizeChain
 
 
 class SequenceRunner:
@@ -191,7 +60,7 @@ class SequenceRunner:
         processes        : Process manager whose job table supplies local block job states.
         launcher         : Run launcher executing local blocks.
         resolver         : Config resolver used to find which dataset fields a block's entry exposes.
-        finalizer        : Builder of the compare-and-mail chain appended to finalize blocks.
+        chain            : Derivation of the compare-and-mail chain appended to finalize blocks.
         notifier         : Job notifier block failures and sequence endings are pushed through.
         logger           : Console logger.
         active           : Live sequence states keyed by sequence id.
@@ -211,7 +80,7 @@ class SequenceRunner:
         self.processes = processes
         self.launcher  = launcher
         self.resolver  = resolver
-        self.finalizer = SequenceFinalizer()
+        self.chain     = FinalizeChain()
         self.notifier  = notifier
         self.logger    = logger
         self.active    = {}
@@ -246,7 +115,7 @@ class SequenceRunner:
         if not entry["blocks"]:
             return {"ok": False, "error": "the sequence has no blocks"}
 
-        error = self.finalizer.mail_preflight(entry["blocks"])
+        error = self._mail_preflight(entry["blocks"])
         if error:
             return {"ok": False, "error": error}
 
@@ -272,6 +141,23 @@ class SequenceRunner:
         self.logger.ok(f"started sequence '{entry['name']}' ({sequence_id}) with {len(entry['blocks'])} blocks" + (f", resuming workspace {run_dir}" if run_dir else ""))
         self.scan()
         return {"ok": True, "state": self.state(sequence_id)}
+
+    def _mail_preflight(self, blocks: list) -> str:
+        """Returns the start-blocking error when mailing is enabled without an SMTP password.
+
+        Args:
+            blocks : Block definitions of the sequence being started.
+
+        Returns:
+            Error naming the mailing blocks and the variable, or an empty string.
+        """
+        mailers  = [block["name"] or block["title"] for block in blocks if not block["skip"] and block["finalize"][self.chain.MAIL_STEP]]
+        variable = self.chain.mail_blocked() if mailers else ""
+
+        if not variable:
+            return ""
+
+        return f"block(s) {', '.join(mailers)} enable the report-mail finalize step, but the server environment has no {variable}; export it and restart the webui, or switch the mail step off"
 
     def resume_scan(self, sequence_id: str, resume_dir: str) -> dict:
         """Reads the execution state a previous run recorded into its workspace.
@@ -602,7 +488,7 @@ class SequenceRunner:
         experiment_dir = ""
         if any(block["finalize"].values()):
             try:
-                experiment_dir = self.finalizer.experiment_dir(block["script"], overrides, leaves, run_dir)
+                experiment_dir = self.chain.experiment_dir(block["script"], overrides, leaves, run_dir)
             except ValueError as error:
                 self._record_launch(entry, block, "", str(error))
                 return
@@ -671,7 +557,7 @@ class SequenceRunner:
         step = block_state["finalize"]["steps"][block_state["finalize"]["step"]]
 
         try:
-            overrides = self.finalizer.step_overrides(step, block_state["experiment_dir"], run_dir)
+            overrides = self.chain.step_overrides(step, block_state["experiment_dir"], run_dir)
         except FileNotFoundError as error:
             self._record_finalize_launch(entry, block, step, "", str(error))
             return
@@ -758,7 +644,7 @@ class SequenceRunner:
             status = self._job_status(block_state["job_id"])
             if status in self.ENDED_OK and any(blocks[block_id]["finalize"].values()) and state["run_dir"]:
                 block_state["status"]   = "finalizing"
-                block_state["finalize"] = {"steps": list(self.finalizer.steps(blocks[block_id]["finalize"])), "step": 0, "job_id": None, "launching": False}
+                block_state["finalize"] = {"steps": list(self.chain.steps(blocks[block_id]["finalize"])), "step": 0, "job_id": None, "launching": False}
             elif status in self.ENDED_OK:
                 block_state["status"] = "done"
             elif status in self.ENDED_BAD:

@@ -241,7 +241,7 @@ class AblationView extends ConfigForm {
   _launch() {
     if (!this._active()) return;
     const interp = this.interpEl ? this.interpEl.value : this.detail.preferred;
-    this.runConsole.launch(this.key, interp, "Ablation study", { ...this.dirty }, null, this.detach);
+    this.runConsole.launch(this.key, interp, "Ablation study", { overrides: { ...this.dirty }, detach: this.detach });
     window.router.go("console");
   }
 }

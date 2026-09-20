@@ -49,8 +49,11 @@ class SavedRunsView {
       `<div class="saved-card__override"><span class="saved-card__path">${SharedCharts.esc(path)}</span><b>${SharedCharts.esc(value)}</b></div>`
     ).join("");
 
+    const chain = ConfigForm.FINALIZE_STEPS.filter((step) => entry.finalize[step.key]);
+
     const facts = [entry.detach ? "detached" : "attached"];
     if (entry.follow_up) facts.push(`then ${entry.follow_up}`);
+    if (chain.length) facts.push(`finalize: ${chain.map((step) => step.short).join(" + ")}`);
     facts.push(entry.saved_at.replace("T", " "));
 
     card.innerHTML =

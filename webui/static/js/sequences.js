@@ -162,7 +162,7 @@ class SequenceBoard {
     const kind       = experiment ? "experiment" : "run";
     const decisions  = block.decisions || [];
     const undecided  = decisions.filter((decision) => !decision.choice);
-    const finalizeOn = SequencesView.FINALIZE_STEPS.filter((step) => (block.finalize || {})[step.key]);
+    const finalizeOn = ConfigForm.FINALIZE_STEPS.filter((step) => (block.finalize || {})[step.key]);
 
     el.innerHTML =
       `<div class="seq-block__head">` +
@@ -364,12 +364,6 @@ class SequenceBoard {
 
 
 class SequencesView extends ConfigForm {
-
-  static FINALIZE_STEPS = [
-    { key: "compare_seeds",           label: "Compare seeds",       short: "seeds",  hint: "aggregate each trial's or fold's seed runs into the seed-comparison reports" },
-    { key: "compare_trials",          label: "Compare trials",      short: "trials", hint: "write the experiment's trial- or fold-comparison reports and .md exports" },
-    { key: "mail_experiment_reports", label: "Mail report bundle",  short: "mail",   hint: "email the experiment bundle with the comparison reports attached; needs the SMTP password env var on the server" },
-  ];
 
   constructor(runConsole, project) {
     super();
@@ -1185,7 +1179,7 @@ class SequencesView extends ConfigForm {
 
     configHost.appendChild(this._buildToolbar(cfg));
     this._renderLayout(configHost, cfg);
-    this._appendFinalizeSection(block);
+    this._blockFinalizeSection(block);
     this.applyRunConfig(block.overrides);
     this._paintProvenance(configHost, block);
 
@@ -1244,76 +1238,21 @@ class SequencesView extends ConfigForm {
     return reverted;
   }
 
-  _appendFinalizeSection(block) {
-    const main = this.layoutEl.querySelector(".secmain");
+  _blockFinalizeSection(block) {
+    const note = "The chain needs the sequence's isolated workspace and an entry that writes a sweep; the enabled steps run in the order listed, without holding back the blocks after this one.";
 
-    const el           = document.createElement("section");
-    el.className       = "launch-section";
-    el.dataset.section = "finalize";
-    el.innerHTML       = `<h3 class="launch-section__title">Finalize</h3>`;
+    this._appendFinalizeSection(block.finalize || {}, note, async (key, next) => {
+      const previous = { ...(block.finalize || {}) };
+      block.finalize = { ...previous, [key]: next };
 
-    const body     = document.createElement("div");
-    body.className = "launch-section__body";
-    el.appendChild(body);
+      if (!(await this._persist())) {
+        block.finalize = previous;
+        return false;
+      }
 
-    const panel     = document.createElement("section");
-    panel.className = "cfg-panel seq-finalize";
-    panel.innerHTML = `<header class="cfg-panel__head"><h4 class="cfg-panel__name">After the experiment</h4><span class="cfg-panel__hint">steps chained onto this block's successful end, run locally on its trial sweep</span></header>`;
-
-    const rows     = document.createElement("div");
-    rows.className = "seq-finalize__rows";
-    SequencesView.FINALIZE_STEPS.forEach((step) => {
-      const on  = Boolean((block.finalize || {})[step.key]);
-      const row = document.createElement("div");
-      row.className = "seq-finalize__row";
-      row.innerHTML = `<div class="seq-finalize__text"><span class="seq-finalize__name">${step.label}</span><span class="seq-finalize__hint">${step.hint}</span></div>`;
-
-      const toggle     = document.createElement("button");
-      toggle.type      = "button";
-      toggle.className = "switch" + (on ? " is-on" : "");
-      toggle.setAttribute("role", "switch");
-      toggle.setAttribute("aria-checked", String(on));
-      toggle.innerHTML = `<span class="switch__knob"></span>`;
-      toggle.addEventListener("click", async () => {
-        const next     = { ...(block.finalize || {}) };
-        next[step.key] = !next[step.key];
-        block.finalize = next;
-
-        if (await this._persist()) {
-          toggle.classList.toggle("is-on", Boolean(block.finalize[step.key]));
-          toggle.setAttribute("aria-checked", String(Boolean(block.finalize[step.key])));
-          this.board.render(this.current, this.live, this.selected, this.linking);
-        } else {
-          block.finalize = { ...next, [step.key]: !next[step.key] };
-        }
-      });
-
-      row.appendChild(toggle);
-      rows.appendChild(row);
+      this.board.render(this.current, this.live, this.selected, this.linking);
+      return true;
     });
-    panel.appendChild(rows);
-
-    const note       = document.createElement("p");
-    note.className   = "cfg-note";
-    note.textContent = "The chain needs the sequence's isolated workspace and an entry exposing trials_mode; the enabled steps run in the order listed, without holding back the blocks after this one.";
-    panel.appendChild(note);
-
-    body.appendChild(panel);
-    main.appendChild(el);
-
-    const record = { key: "finalize", title: "Finalize", when: null, el, navBtn: null, badge: null };
-    if (this.config.layout.mode === "sections") {
-      const btn     = document.createElement("button");
-      btn.type      = "button";
-      btn.className = "secnav__item";
-      btn.innerHTML = `<span class="secnav__name">Finalize</span>`;
-      btn.addEventListener("click", () => this._navigate("finalize"));
-      record.navBtn = btn;
-      this.navHost.appendChild(btn);
-    }
-
-    this.sections.push(record);
-    el.hidden = this.config.layout.mode === "sections" && this.activeSection !== "finalize";
   }
 
   _paintProvenance(configHost, block) {

@@ -6,12 +6,15 @@ TensorBoard autostart, and the job-scoped TensorBoard opened from a console tile
 """
 from __future__ import annotations
 
+import threading
 import time
 from datetime import datetime
 from pathlib  import Path
 
-from run_launcher import RunLauncher
-from web_logger   import WebLogger
+from configuration.diagnostics import ReportMailEntryConfig
+from finalize_chain            import FinalizeChain
+from run_launcher              import RunLauncher
+from web_logger                import WebLogger
 
 
 INTERPRETERS = [
@@ -111,6 +114,8 @@ class StubProcesses:
         queued   : Argument tuples passed to enqueue.
         ok       : Whether the calls report success.
         units    : Fan-out unit records served by progress, or None for no snapshot.
+        jobs     : Job records keyed by job id, read by the finalize-chain walker.
+        lock     : Lock guarding the job table.
     """
 
     def __init__(self, ok: bool = True, units: list | None = None) -> None:
@@ -119,6 +124,8 @@ class StubProcesses:
         self.queued   = []
         self.ok       = ok
         self.units    = units
+        self.jobs     = {}
+        self.lock     = threading.Lock()
 
     def progress(self, job_id) -> dict:
         """Returns a live progress snapshot with the configured units, or none at all."""
@@ -127,19 +134,46 @@ class StubProcesses:
         return {"ok": True, "supported": True, "live": True, "progress": {"units": self.units}}
 
     def launch(self, key, interpreter, overrides, follow_up, detach) -> dict:
-        """Records the launch arguments and returns a job id."""
+        """Records the launch arguments, registers the job as running and returns its id."""
         self.launched.append((key, interpreter, overrides, follow_up, detach))
-        return {"ok": self.ok, "job_id": "job-1"}
+        job_id = f"job-{len(self.launched)}"
+        with self.lock:
+            self.jobs[job_id] = {"status": "running"}
+        return {"ok": self.ok, "job_id": job_id}
 
     def enqueue(self, key, interpreter, overrides, follow_up, detach) -> dict:
         """Records the enqueue arguments and reports the job as queued."""
         self.queued.append((key, interpreter, overrides, follow_up, detach))
-        return {"ok": self.ok, "queued": True}
+        job_id = f"queued-{len(self.queued)}"
+        with self.lock:
+            self.jobs[job_id] = {"status": "queued"}
+        return {"ok": self.ok, "job_id": job_id, "queued": True}
+
+    def finish(self, job_id: str, status: str = "finished") -> None:
+        """Moves one job to a terminal status."""
+        with self.lock:
+            self.jobs[job_id]["status"] = status
 
 
-def _launcher(resolver: StubResolver | None = None, processes: StubProcesses | None = None) -> RunLauncher:
-    """Returns a RunLauncher wired to the stub paths, resolver, processes and TensorBoard manager."""
-    return RunLauncher(StubPaths(), WebLogger(), resolver or StubResolver(), processes or StubProcesses(), StubTensorboard())
+class StubNotifier:
+    """Job notifier stand-in recording the alerts a broken finalize chain pushes.
+
+    Attributes:
+        alerts : (title, body) pairs passed to system_alert.
+    """
+
+    def __init__(self) -> None:
+        """Starts with no recorded alerts."""
+        self.alerts = []
+
+    def system_alert(self, title: str, body: str, priority: str = "high") -> None:
+        """Records one alert."""
+        self.alerts.append((title, body))
+
+
+def _launcher(resolver: StubResolver | None = None, processes: StubProcesses | None = None, notifier: StubNotifier | None = None) -> RunLauncher:
+    """Returns a RunLauncher wired to the stub paths, resolver, processes, TensorBoard manager and notifier."""
+    return RunLauncher(StubPaths(), WebLogger(), resolver or StubResolver(), processes or StubProcesses(), StubTensorboard(), notifier or StubNotifier())
 
 
 def _wait_for(items: list, count: int, timeout: float = 5.0) -> list:
@@ -245,6 +279,44 @@ def test_execute_queues_instead_of_launching_when_asked():
     assert result["queued"] is True
     assert processes.launched == []
     assert processes.queued   == [("train_backbone", "/envs/Dune/bin/python", {}, None, False)]
+
+
+def test_a_launch_with_finalize_switches_registers_its_chain(monkeypatch):
+    """A launch that switches finalize steps on leaves the chain waiting on its own job."""
+    monkeypatch.setenv(ReportMailEntryConfig.password_env, "pw")
+    processes = StubProcesses()
+    launcher  = _launcher(StubResolver({"logdir": "/data/runs", "trials_mode": "curriculum"}), processes)
+
+    result  = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, True, False, FinalizeChain.flags({"compare_trials": True}))
+    pending = launcher.finalizer.pending()
+
+    assert result["ok"] is True
+    assert len(processes.launched) == 1
+    assert pending[0]["job_id"]    == result["job_id"]
+    assert pending[0]["steps"]     == ["compare_trials"]
+    assert pending[0]["experiment_dir"] == "/data/runs/curriculum"
+
+
+def test_a_launch_whose_chain_cannot_run_is_refused_before_it_starts():
+    """An entry writing no sweep is refused with the chain's reason, and nothing is launched."""
+    processes = StubProcesses()
+    launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
+
+    result = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, True, False, FinalizeChain.flags({"compare_seeds": True}))
+
+    assert result["ok"] is False
+    assert "trials_mode" in result["error"]
+    assert processes.launched          == []
+    assert launcher.finalizer.pending() == []
+
+
+def test_a_launch_without_finalize_switches_registers_no_chain():
+    """A plain launch leaves the chain table empty and never resolves the config for it."""
+    launcher = _launcher(StubResolver({"logdir": "/data/runs"}))
+
+    launcher.execute("infer_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+
+    assert launcher.finalizer.pending() == []
 
 
 def test_a_training_launch_autostarts_tensorboard_on_its_logdir():

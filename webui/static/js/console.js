@@ -999,10 +999,20 @@ class RunConsole {
     this._renderList();
   }
 
-  async launch(scriptKey, interpreter, label, overrides, followUp, detach, queue) {
-    const res = await Api.post("/api/run", { script_key: scriptKey, interpreter, overrides: overrides || {}, follow_up: followUp || null, detach: !!detach, queue: !!queue });
+  async launch(scriptKey, interpreter, label, request) {
+    const body = {
+      script_key : scriptKey,
+      interpreter,
+      overrides  : request.overrides || {},
+      follow_up  : request.follow_up || null,
+      detach     : !!request.detach,
+      queue      : !!request.queue,
+      finalize   : request.finalize || null,
+    };
+
+    const res = await Api.post("/api/run", body);
     if (!res.ok) {
-      Toast.show(res.error || (queue ? "Schedule failed" : "Launch failed"), "error");
+      Toast.show(res.error || (body.queue ? "Schedule failed" : "Launch failed"), "error");
       return null;
     }
     Toast.show(res.queued ? `Scheduled ${label || scriptKey} to run after the current job` : `Launched ${label || scriptKey}`, "ok");
@@ -1101,6 +1111,19 @@ class RunConsole {
         progLine +
         `<div class="job-item__meta">${SharedCharts.esc(job.started.replace("T", " "))}${job.pid ? ` · pid ${SharedCharts.esc(String(job.pid))}` : ""}${Format.energy(job.energy_wh) ? ` · ${Format.energy(job.energy_wh)}` : ""}</div>`;
       item.addEventListener("click", () => this.toggle(job.job_id));
+
+      const chain = job.finalize || [];
+      if (chain.length) {
+        const short  = chain.map((key) => (ConfigForm.FINALIZE_STEPS.find((step) => step.key === key) || { short: key }).short);
+        const queued = document.createElement("div");
+        queued.className = "job-item__follow";
+        queued.title     = `queued behind this run: ${chain.join(", then ")}`;
+        queued.innerHTML =
+          `<span class="job-item__arrow" aria-hidden="true">&#8627;</span>` +
+          `<span class="job-item__name">${SharedCharts.esc(short.join(" + "))}</span>` +
+          `<span class="badge badge--queued">finalize</span>`;
+        item.appendChild(queued);
+      }
 
       const next = followers.get(job.job_id);
       if (next) {

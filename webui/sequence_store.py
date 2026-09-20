@@ -23,8 +23,8 @@ import threading
 import uuid
 from datetime import datetime
 
-from sequence_runner import SequenceFinalizer
-from web_logger      import WebLogger
+from finalize_chain import FinalizeChain
+from web_logger     import WebLogger
 
 
 class SequenceStore:
@@ -169,19 +169,13 @@ class SequenceStore:
             "predecessors" : [str(pred) for pred in list(block.get("predecessors") or [])],
             "checkpoint"   : bool(block.get("checkpoint")),
             "skip"         : bool(block.get("skip")),
-            "finalize"     : self._clean_finalize(block.get("finalize")),
+            "finalize"     : FinalizeChain.flags(block.get("finalize")),
             "target"       : "local",
             "sweep"        : bool(block.get("sweep")),
             "resources"    : dict(block.get("resources") or {}),
             "x"            : float(block.get("x", 0.0)),
             "y"            : float(block.get("y", 0.0)),
         }
-
-    @staticmethod
-    def _clean_finalize(finalize) -> dict:
-        """Returns the block's finalize switches as one boolean per chain step, all off when absent."""
-        flags = dict(finalize or {})
-        return {step: bool(flags.get(step)) for step in SequenceFinalizer.STEPS}
 
     def _validate(self, blocks: list) -> str:
         """Returns an error message when the block list is not a launchable DAG, else an empty string."""

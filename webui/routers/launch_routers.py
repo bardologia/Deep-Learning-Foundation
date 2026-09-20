@@ -178,12 +178,18 @@ class JobRouter(SubRouter):
         table.wildcard("POST", "/api/jobs/", "/tensorboard", self.tensorboard_bridge)
 
     def jobs(self, exchange: HttpExchange) -> None:
-        """Adopts orphaned processes and answers with local and cluster jobs, newest first."""
+        """Adopts orphaned processes and answers with the jobs, newest first.
+
+        Each record carries the finalize steps still queued behind it, so the
+        console shows what a finished run will chain into.
+        """
         self.processes.adopt_orphans()
 
-        local = self.processes.list_jobs()
+        chains = {chain["job_id"]: chain["steps"][chain["index"]:] for chain in self.launcher.finalizer.pending()}
+        local  = self.processes.list_jobs()
         for record in local:
             record["tensorboard"] = self.launcher.tensorboard_capable(record["script"])
+            record["finalize"]    = chains.get(record["job_id"], [])
 
         merged = list(local)
         merged.sort(key=lambda record: record["started"], reverse=True)
@@ -200,7 +206,7 @@ class JobRouter(SubRouter):
             return
 
         interpreter = body.get("interpreter") or self.launcher.preferred_interpreter()
-        result      = self.launcher.execute(key, interpreter, body.get("overrides", {}), body.get("follow_up") or None, bool(body.get("detach")), bool(body.get("queue")))
+        result      = self.launcher.execute(key, interpreter, body.get("overrides", {}), body.get("follow_up") or None, bool(body.get("detach")), bool(body.get("queue")), body.get("finalize"))
         exchange.send_result(result)
 
     def gpu_pool(self, exchange: HttpExchange, job_id: str) -> None:
@@ -398,7 +404,7 @@ class SavedRunRouter(SubRouter):
             exchange.send_json({"ok": False, "error": f"saved run points at removed entry point(s): {', '.join(missing)}"}, 404)
             return
 
-        result = self.launcher.execute(entry["script"], entry["interpreter"], entry["overrides"], entry["follow_up"], entry["detach"], bool(exchange.body.get("queue")))
+        result = self.launcher.execute(entry["script"], entry["interpreter"], entry["overrides"], entry["follow_up"], entry["detach"], bool(exchange.body.get("queue")), entry["finalize"])
         exchange.send_result(result)
 
     def remove(self, exchange: HttpExchange, saved_id: str) -> None:
