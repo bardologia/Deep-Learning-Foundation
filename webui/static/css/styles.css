@@ -1637,6 +1637,7 @@ p.seq-block__flag--decide { color: var(--accent-2); }
 .console-tile__unitpick.is-stale::before, .console-tile__unitrow.is-stale::before { background: #fbbf24; }
 .console-tile__unitrow.is-stale { opacity: 0.55; }
 .console-tile__gpuactions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.console-tile__gpubtns { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .console-tile__gpunote { font-family: var(--mono); font-size: 11px; color: var(--glass-dim); overflow-wrap: anywhere; }
 .console-tile .btn[hidden] { display: none; }
 .console-tile .btn.is-active { color: var(--ink); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }

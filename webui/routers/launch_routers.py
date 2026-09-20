@@ -306,8 +306,8 @@ class JobRouter(SubRouter):
         exchange.send_result(self._backend(job_id).stop(job_id))
 
     def set_gpus(self, exchange: HttpExchange, job_id: str) -> None:
-        """Resizes one job's GPU pool, optionally parking it off the GPUs."""
-        exchange.send_result(self._backend(job_id).set_gpus(job_id, exchange.body.get("gpus"), park=bool(exchange.body.get("park"))))
+        """Resizes one job's GPU pool, optionally parking it or freeing devices at once."""
+        exchange.send_result(self._backend(job_id).set_gpus(job_id, exchange.body.get("gpus"), park=bool(exchange.body.get("park")), preempt=exchange.body.get("preempt")))
 
     def _backend(self, job_id: str):
         """Returns the process manager owning the job."""

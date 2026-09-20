@@ -142,11 +142,22 @@ class TileGpuPanel {
     this.apply = document.createElement("button");
     this.apply.className = "btn btn--mini btn--primary";
     this.apply.textContent = "Apply";
-    this.apply.addEventListener("click", () => this.applyGpus());
+    this.apply.title = "dropped GPUs retire once the run in flight on them ends";
+    this.apply.addEventListener("click", () => this.applyGpus(false));
+
+    this.free = document.createElement("button");
+    this.free.className = "btn btn--mini btn--danger";
+    this.free.textContent = "Free now";
+    this.free.title = "stop the runs on the dropped GPUs right away; they go back to the head of the queue and restart on the next free GPU";
+    this.free.addEventListener("click", () => this.applyGpus(true));
+
+    const buttons = document.createElement("div");
+    buttons.className = "console-tile__gpubtns";
+    buttons.append(this.apply, this.free);
 
     const actions = document.createElement("div");
     actions.className = "console-tile__gpuactions";
-    actions.append(this.note, this.apply);
+    actions.append(this.note, buttons);
 
     this.el.append(this.board, actions);
   }
@@ -202,10 +213,12 @@ class TileGpuPanel {
     this.apply.textContent = parking ? "Park" : "Apply";
     this.apply.classList.toggle("btn--danger", parking);
     this.apply.classList.toggle("btn--primary", !parking);
+    this.free.disabled = !dropped.length;
+    this.free.textContent = parking ? "Park now" : "Free now";
 
     if (parking) {
       this.note.textContent = this.poolGpus.length
-        ? `park: runs in flight on ${this.poolGpus.join(",")} finish, nothing new starts until you add a GPU back`
+        ? `park: runs in flight on ${this.poolGpus.join(",")} finish, nothing new starts until you add a GPU back · Park now stops them right away`
         : "parked — nothing new starts until you add a GPU back";
       return;
     }
@@ -216,17 +229,24 @@ class TileGpuPanel {
 
     const bits = [];
     if (added.length) bits.push(`+${added.join(",")} start queued runs within seconds`);
-    if (dropped.length) bits.push(`-${dropped.join(",")} retire once the run in flight ends`);
+    if (dropped.length) bits.push(`-${dropped.join(",")} retire once the run in flight ends · Free now stops those runs and requeues them`);
     this.note.textContent = bits.join(" · ");
   }
 
-  async applyGpus() {
-    const chosen = this.cards ? this.cards.value() : [];
+  async applyGpus(freeNow) {
+    const chosen  = this.cards ? this.cards.value() : [];
+    const dropped = this.poolGpus.filter((g) => !chosen.includes(g));
     const parking = !chosen.length;
+    const preempt = freeNow ? dropped : [];
 
-    if (parking && !window.confirm(`Park ${this.tile.job.script}?\n\nThe runs in flight will finish, then the experiment holds without starting anything new. It stays parked until you add a GPU back.`)) return;
+    if (preempt.length) {
+      const hold = parking ? " With no GPU left the experiment then parks until you add one back." : "";
+      if (!window.confirm(`Free GPU ${preempt.join(",")} now?\n\nThe runs in flight on ${preempt.length === 1 ? "it stop" : "them stop"} immediately, go back to the head of the queue and restart from scratch on the next free GPU.${hold}`)) return;
+    } else if (parking && !window.confirm(`Park ${this.tile.job.script}?\n\nThe runs in flight will finish, then the experiment holds without starting anything new. It stays parked until you add a GPU back.`)) {
+      return;
+    }
 
-    const res = await Api.post(`/api/jobs/${this.tile.job.job_id}/gpus`, { gpus: chosen, park: parking });
+    const res = await Api.post(`/api/jobs/${this.tile.job.job_id}/gpus`, { gpus: chosen, park: parking, preempt });
 
     if (!res.ok) {
       Toast.show(res.error || "Could not resize the GPU pool", "error");
@@ -235,7 +255,10 @@ class TileGpuPanel {
 
     this.poolGpus = res.gpus || [];
     this.el.hidden = true;
-    Toast.show(res.parked ? "Experiment parked — no new runs will start" : `GPU pool set to ${this.poolGpus.join(", ")}`, res.parked ? "warn" : "ok");
+
+    const freed = (res.preempted || []).length ? `stopped and requeued the runs on GPU ${res.preempted.join(", ")}` : "";
+    const pool  = res.parked ? "experiment parked — no new runs will start" : `GPU pool set to ${this.poolGpus.join(", ")}`;
+    Toast.show([freed, pool].filter(Boolean).join(" · "), res.parked || freed ? "warn" : "ok");
     this.tile._pollGpus();
   }
 }
@@ -881,6 +904,7 @@ class ConsoleTile {
     if (p.eta_s != null) bits.push(`avg ${Format.duration(p.average_s)}/unit`, `ETA ${Format.duration(p.eta_s)}`, `finish ≈ ${p.finish_at.slice(11, 16)}`);
     else if (done < p.total) bits.push("estimating ETA");
     if (p.failed) bits.push(`${p.failed} FAILED`);
+    if (p.preempted) bits.push(`${p.preempted} requeued`);
     if (p.running && p.running.length) bits.push(`${p.running.length} on GPU now`);
 
     this.progWrap.hidden = false;
