@@ -248,6 +248,15 @@ class AnalysisPickerView {
     }
   }
 
+  figureDetail() {
+    return "";
+  }
+
+  figureTag() {
+    const entry = this.entries.find((candidate) => candidate.id === this.pickedId);
+    return [entry ? entry.run : "", this.figureDetail()].filter(Boolean).join("_");
+  }
+
   _build() {
     const p = this.prefix;
     this.root.innerHTML = `

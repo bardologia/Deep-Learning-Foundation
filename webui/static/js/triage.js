@@ -20,6 +20,11 @@ class TriageView {
     }
   }
 
+  figureTag() {
+    const cube = this.cubes.find((entry) => entry.id === this.cubeId);
+    return cube ? [cube.run, cube.stamp].filter(Boolean).join("_") : "";
+  }
+
   _build() {
     this.root.innerHTML = `
       <div class="cube-pick">
@@ -122,8 +127,8 @@ class TriageView {
       <article class="fl-card">
         <h3 class="cube-panel-title">#${index + 1} · row ${row.row0}–${row.row1}, col ${row.col0}–${row.col1}</h3>
         <div class="triage-media">
-          <img class="triage-thumb" src="${thumb}" loading="lazy" alt="pixel MSE around the block" title="log MSE, white = this block, red = worst pixel; click to open cuts" data-open="${index}" />
-          <canvas class="triage-profile" id="triage-profile-${index}" width="420" height="132" title="GT vs prediction at the worst pixel"></canvas>
+          <img class="triage-thumb" src="${thumb}" loading="lazy" data-fig="case ${index + 1} row${row.row0} col${row.col0} mse map" alt="pixel MSE around the block" title="log MSE, white = this block, red = worst pixel; click to open cuts" data-open="${index}" />
+          <canvas class="triage-profile" id="triage-profile-${index}" data-fig="case ${index + 1} row${row.worst_row} col${row.worst_col} profile" width="420" height="132" title="GT vs prediction at the worst pixel"></canvas>
         </div>
         <p class="cube-hint">
           block MSE ${row.mse_mean.toExponential(2)} (peak ${row.mse_max.toExponential(2)} at row ${row.worst_row}, col ${row.worst_col})<br>

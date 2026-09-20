@@ -401,6 +401,35 @@ class App {
       msg         : document.getElementById("sc-msg"),
       rows        : document.getElementById("sc-rows"),
     });
+
+    this.figureDock = new window.FigureDock();
+    window.figureDock = this.figureDock;
+  }
+
+  _figureTabs() {
+    return {
+      microscope  : this.microscopeView,
+      survey      : this.surveyView,
+      triage      : this.triageView,
+      autopsy     : this.autopsyView,
+      fitlab      : this.fitLabView,
+      cube        : this.cubeView,
+      slices      : this.sliceCollectorView,
+      results     : this.resultsView,
+      leaderboard : this.leaderboardView,
+    };
+  }
+
+  _mountFigures(route) {
+    const view = this._figureTabs()[route];
+    const page = document.querySelector(`.page[data-page="${route}"]`);
+
+    if (!view || !page) {
+      this.figureDock.unmount();
+      return;
+    }
+
+    this.figureDock.mount(route, page, () => view.figureTag());
   }
 
   _initModelZoo() {
@@ -467,6 +496,7 @@ class App {
     if (route === "triage") this.triageView.enter();
     if (route === "autopsy") this.autopsyView.enter();
     if (route === "console") this.runConsole.onShow();
+    this._mountFigures(route);
     setTimeout(() => this.reveal.scan(), 60);
   }
 }

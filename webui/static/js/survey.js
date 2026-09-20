@@ -33,6 +33,11 @@ class SurveyView {
     this._pollStatus();
   }
 
+  figureTag() {
+    const run = this.runs.find((entry) => entry.id === this.selectedId);
+    return [run ? run.run : "", this.cfg.split].filter(Boolean).join("_");
+  }
+
   _build() {
     this.root.innerHTML = `
       <div class="cube-pick">
@@ -133,7 +138,7 @@ class SurveyView {
                 <h4 class="cube-panel-title">Effective receptive field</h4>
                 <span class="ms-card__note" id="survey-erf-note"></span>
               </div>
-              <canvas id="survey-erf" width="640" height="180" hidden></canvas>
+              <canvas id="survey-erf" data-fig="effective receptive field" width="640" height="180" hidden></canvas>
               <p class="ms-wifacts" id="survey-erf-facts"></p>
             </section>
             </section>
@@ -160,7 +165,7 @@ class SurveyView {
                 <h3 class="cube-panel-title">Noise robustness</h3>
                 <span class="ms-card__note">Gaussian noise added to every channel, one fresh draw per tile &mdash; mean damage vs &sigma;</span>
               </div>
-              <canvas id="survey-noise" width="640" height="200"></canvas>
+              <canvas id="survey-noise" data-fig="noise robustness" width="640" height="200"></canvas>
               <p class="ms-wifacts" id="survey-noise-facts"></p>
             </section>
 
@@ -169,7 +174,7 @@ class SurveyView {
                 <h3 class="cube-panel-title">Occlusion distance profile</h3>
                 <span class="ms-card__note">mean damage to a pixel when a zero-patch lands at a given distance from it</span>
               </div>
-              <canvas id="survey-occl" width="640" height="200"></canvas>
+              <canvas id="survey-occl" data-fig="occlusion distance profile" width="640" height="200"></canvas>
               <p class="ms-wifacts" id="survey-occl-facts"></p>
             </section>
             </section>
