@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from sequence_runner import SequenceFinalizer, SequenceRunner
+from finalize_chain  import FinalizeChain
+from sequence_runner import SequenceRunner
 
 from configuration.diagnostics import ReportMailEntryConfig
 from sequence_store     import SequenceStore
@@ -166,7 +167,7 @@ def _block_state(runner: SequenceRunner, sequence_id: str, block_id: str) -> dic
 
 def _finalize(*steps: str) -> dict:
     """Returns a finalize-switch dict with the given chain steps on and the rest off."""
-    return {step: step in steps for step in SequenceFinalizer.STEPS}
+    return {step: step in steps for step in FinalizeChain.STEPS}
 
 
 def test_start_launches_only_the_blocks_without_predecessors(rig):
@@ -883,7 +884,7 @@ def _experiment_tree(run_dir: str, mode: str = "curriculum", trials: tuple = ("r
 def test_a_finalize_block_chains_compare_and_mail_then_ends_done(rig):
     """The chain runs compare_seeds, compare_trials and the mailer on the block's sweep, then the block is done."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS))], isolate=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
     runner.start_sequence(sequence_id)
     experiment = _experiment_tree(runner.state(sequence_id)["run_dir"])
@@ -913,7 +914,7 @@ def test_a_finalize_block_chains_compare_and_mail_then_ends_done(rig):
 def test_the_chain_steps_launch_attached_in_a_detached_sequence(rig):
     """The chain steps run attached whatever the sequence's detach flag, so a crashed step ends as failed instead of finished."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS))], isolate=True, detach=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True, detach=True)
 
     runner.start_sequence(sequence_id)
     _experiment_tree(runner.state(sequence_id)["run_dir"])
@@ -950,7 +951,7 @@ def test_the_chain_runs_only_the_enabled_switches(rig):
 def test_a_trials_mode_override_names_the_experiment_directory(rig):
     """The chain follows the block's trials_mode override instead of the entry default."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS), overrides={"trials_mode": "patch"})], isolate=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS), overrides={"trials_mode": "patch"})], isolate=True)
 
     runner.start_sequence(sequence_id)
     experiment = _experiment_tree(runner.state(sequence_id)["run_dir"], mode="patch")
@@ -979,7 +980,7 @@ def test_the_finalize_chain_follows_an_external_logdir(rig, tmp_path):
 def test_finalizing_does_not_hold_back_the_successors(rig):
     """Successors launch as soon as the block's own job finishes, beside the running chain."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS)), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS)), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
 
     runner.start_sequence(sequence_id)
     _experiment_tree(runner.state(sequence_id)["run_dir"])
@@ -994,7 +995,7 @@ def test_finalizing_does_not_hold_back_the_successors(rig):
 def test_a_failed_chain_step_marks_finalize_failed_and_fails_the_sequence(rig):
     """A chain job ending failed marks the block finalize_failed, spares the successors, and fails the sequence."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS)), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS)), _block("b2", script="infer_backbone", predecessors=["a1"])], isolate=True)
 
     runner.start_sequence(sequence_id)
     _experiment_tree(runner.state(sequence_id)["run_dir"])
@@ -1016,7 +1017,7 @@ def test_a_failed_chain_step_marks_finalize_failed_and_fails_the_sequence(rig):
 def test_a_missing_experiment_directory_fails_the_chain(rig):
     """Without the sweep directory on disk, the first chain step refuses to launch and the block ends finalize_failed."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS))], isolate=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
     runner.start_sequence(sequence_id)
     processes.finish("job-0")
@@ -1031,7 +1032,7 @@ def test_a_missing_experiment_directory_fails_the_chain(rig):
 def test_finalize_refuses_an_entry_without_trials_mode(rig):
     """A finalize block whose entry exposes no trials_mode fails at launch instead of guessing a directory."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", script="train_jepa", finalize=_finalize(*SequenceFinalizer.STEPS))], isolate=True)
+    sequence_id = _saved(store, [_block("a1", script="train_jepa", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
     runner.start_sequence(sequence_id)
 
@@ -1053,7 +1054,7 @@ def _cv_fold_tree(run_dir: str, run_tag: str) -> Path:
 def test_a_cross_validation_block_finalizes_on_its_fold_sweep(rig):
     """The chain of a cross-validation block compares the fold runs under <workspace>/<run_tag>/folds and mails from their parent."""
     store, processes, launcher, runner = rig
-    block       = _block("a1", script="cross_validate", finalize=_finalize(*SequenceFinalizer.STEPS), overrides={"run_tag": "cv1"})
+    block       = _block("a1", script="cross_validate", finalize=_finalize(*FinalizeChain.STEPS), overrides={"run_tag": "cv1"})
     sequence_id = _saved(store, [block], isolate=True)
 
     runner.start_sequence(sequence_id)
@@ -1097,7 +1098,7 @@ def test_finalize_refuses_a_cross_validation_block_without_run_tag(rig):
 def test_stop_stops_a_running_chain_job(rig):
     """Stopping a sequence cancels the chain job of a finalizing block."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS))], isolate=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
     runner.start_sequence(sequence_id)
     _experiment_tree(runner.state(sequence_id)["run_dir"])
@@ -1112,7 +1113,7 @@ def test_stop_stops_a_running_chain_job(rig):
 def test_resume_scan_proposes_a_finalize_failed_block_for_skipping(rig):
     """A block whose chain failed still counts as finished on resume: its own job completed."""
     store, processes, launcher, runner = rig
-    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*SequenceFinalizer.STEPS))], isolate=True)
+    sequence_id = _saved(store, [_block("a1", finalize=_finalize(*FinalizeChain.STEPS))], isolate=True)
 
     runner.start_sequence(sequence_id)
     workspace = runner.state(sequence_id)["run_dir"]

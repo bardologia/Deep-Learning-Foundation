@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from finalize_chain         import FinalizeChain
 from routers.dispatch       import HttpExchange
 from routers.launch_routers import SavedRunRouter
 from saved_run_store        import SavedRunStore
@@ -44,16 +45,19 @@ class SpyLauncher:
     """Launcher stand-in that records the entry-point keys it was asked to run.
 
     Attributes:
-        calls : Entry-point keys passed to ``execute``, in call order.
+        calls    : Entry-point keys passed to ``execute``, in call order.
+        finalize : Finalize switches passed with the last launch request.
     """
 
     def __init__(self) -> None:
         """Starts with an empty call log."""
-        self.calls = []
+        self.calls    = []
+        self.finalize = None
 
-    def execute(self, key: str, interpreter: str, overrides: dict, follow_up: str | None, detach: bool, queue: bool) -> dict:
+    def execute(self, key: str, interpreter: str, overrides: dict, follow_up: str | None, detach: bool, queue: bool, finalize: dict | None = None) -> dict:
         """Records the launch request and returns a fixed successful job payload."""
         self.calls.append(key)
+        self.finalize = finalize
         return {"ok": True, "job_id": "job-1"}
 
 
@@ -192,8 +196,9 @@ def test_launching_a_saved_run_reaches_the_launcher_when_its_scripts_exist(store
     exchange.read_body()
     router.launch(exchange, entry["saved_id"])
 
-    assert handler.status == 200
-    assert launcher.calls == ["train_backbone"]
+    assert handler.status    == 200
+    assert launcher.calls    == ["train_backbone"]
+    assert launcher.finalize == FinalizeChain.flags(None)
 
 
 def test_saved_entry_launches_through_process_manager(make_manager, tmp_path):

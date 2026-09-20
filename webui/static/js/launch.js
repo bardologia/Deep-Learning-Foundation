@@ -182,6 +182,8 @@ class LaunchView extends ConfigForm {
     },
   };
 
+  static TAGGED_SWEEP_ENTRIES = ["benchmark", "cross_validate"];
+
   constructor(runConsole, project) {
     super();
     this.runConsole = runConsole;
@@ -208,6 +210,7 @@ class LaunchView extends ConfigForm {
   _resetState() {
     this.reset();
     this.detach        = true;
+    this.finalize      = {};
   }
 
   async show(param) {
@@ -298,6 +301,7 @@ class LaunchView extends ConfigForm {
     const dirty         = this.dirty;
     const activeSection = this.activeSection;
     const detach        = this.detach;
+    const finalize      = this.finalize;
     const config        = this.config;
     this._resetState();
     this.config        = config;
@@ -307,6 +311,7 @@ class LaunchView extends ConfigForm {
     this.dirty         = dirty;
     this.activeSection = activeSection;
     this.detach        = detach;
+    this.finalize      = finalize;
     this._renderConfig(this.config);
     this._refresh();
   }
@@ -711,6 +716,20 @@ class LaunchView extends ConfigForm {
     return block;
   }
 
+  _finalizeBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block";
+    block.hidden    = true;
+    block.innerHTML = `<span class="rail-block__label">Finalize</span>`;
+
+    const summary = document.createElement("p");
+    summary.className = "rail-detach__hint";
+    this.finalizeRailEl = summary;
+
+    block.appendChild(summary);
+    return block;
+  }
+
   _actionsBlock() {
     const block = document.createElement("div");
     block.className = "rail-block rail-block--actions";
@@ -740,12 +759,13 @@ class LaunchView extends ConfigForm {
     const host = document.getElementById("launch-rail");
     host.innerHTML = "";
 
-    this.cmdEl       = null;
-    this.manifestEl  = null;
-    this.launchBtn   = null;
-    this.scheduleBtn = null;
-    this.saveBtn     = null;
-    this.runMode     = null;
+    this.cmdEl          = null;
+    this.manifestEl     = null;
+    this.launchBtn      = null;
+    this.scheduleBtn    = null;
+    this.saveBtn        = null;
+    this.runMode        = null;
+    this.finalizeRailEl = null;
 
     const interp = this._interpreterBlock();
     const follow = this._followBlock();
@@ -757,6 +777,7 @@ class LaunchView extends ConfigForm {
     if (follow) host.appendChild(follow);
     host.appendChild(runMode.detach);
     host.appendChild(this._copyBlock());
+    host.appendChild(this._finalizeBlock());
     host.appendChild(this._commandBlock());
     host.appendChild(this._manifestBlock());
     host.appendChild(this._actionsBlock());
@@ -809,8 +830,42 @@ class LaunchView extends ConfigForm {
     }
 
     this._renderLayout(host, cfg);
+    if (this._chainsFinalize()) this._appendLaunchFinalize();
 
     this._renderFacts();
+  }
+
+  _chainsFinalize() {
+    return LaunchView.TAGGED_SWEEP_ENTRIES.includes(this.key) || this.byPath.has("trials_mode");
+  }
+
+  _appendLaunchFinalize() {
+    const tagged = LaunchView.TAGGED_SWEEP_ENTRIES.includes(this.key);
+    const note   = tagged
+      ? "The chain runs on the sweep this entry writes under its log base directory, so the run needs a fixed run_tag instead of the timestamp default. The enabled steps run in the order listed, each starting only once the previous one exited cleanly."
+      : "The chain runs on the trial sweep this entry writes under logdir/<trials_mode>, so switch the trials on. The enabled steps run in the order listed, each starting only once the previous one exited cleanly.";
+
+    this._appendFinalizeSection(this.finalize, note, async (key, next) => {
+      this.finalize = { ...this.finalize, [key]: next };
+      this._refresh();
+      return true;
+    });
+  }
+
+  _paintFinalize() {
+    const chained = this._chainsFinalize();
+
+    if (this.finalizeToggles) {
+      this.finalizeToggles.forEach((toggle, key) => this.paintFinalize(key, this.finalize[key]));
+    }
+
+    if (!this.finalizeRailEl) return;
+
+    const steps = ConfigForm.FINALIZE_STEPS.filter((step) => this.finalize[step.key]);
+    this.finalizeRailEl.parentElement.hidden = !chained;
+    this.finalizeRailEl.textContent = steps.length
+      ? `Once the run finishes: ${steps.map((step) => step.label.toLowerCase()).join(", then ")}.`
+      : "Nothing runs after this one. The Finalize section chains the comparisons and the report mail.";
   }
 
   _navigate(key) {
@@ -825,6 +880,7 @@ class LaunchView extends ConfigForm {
 
   _refresh() {
     if (this.runMode) this.runMode.paint();
+    this._paintFinalize();
 
     const n = Object.keys(this.dirty).length;
 
@@ -897,7 +953,7 @@ class LaunchView extends ConfigForm {
     if (this.launchBtn) this.launchBtn.disabled = true;
     if (this.scheduleBtn) this.scheduleBtn.disabled = true;
     try {
-      await this.runConsole.launch(this.detail.key, interp, this.detail.title, { ...this.dirty }, follow, this.detach, queue);
+      await this.runConsole.launch(this.detail.key, interp, this.detail.title, { overrides: { ...this.dirty }, follow_up: follow, detach: this.detach, queue, finalize: { ...this.finalize } });
     } finally {
       this.launching = false;
       if (this.launchBtn) this.launchBtn.disabled = false;
@@ -917,7 +973,7 @@ class LaunchView extends ConfigForm {
     this.saving = true;
     if (this.saveBtn) this.saveBtn.disabled = true;
     try {
-      const res = await Api.post("/api/saved-runs", { script_key: this.detail.key, title: this.detail.title, name: name.trim(), interpreter: interp, overrides: { ...this.dirty }, follow_up: follow || null, detach: this.detach });
+      const res = await Api.post("/api/saved-runs", { script_key: this.detail.key, title: this.detail.title, name: name.trim(), interpreter: interp, overrides: { ...this.dirty }, follow_up: follow || null, detach: this.detach, finalize: { ...this.finalize } });
       if (!res.ok) {
         Toast.show(res.error || "Save failed", "error");
         return;

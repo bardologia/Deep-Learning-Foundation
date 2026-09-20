@@ -10,31 +10,32 @@ class ConfigForm {
   reset() {
     clearTimeout(this.refreshTimer);
 
-    this.dirty         = {};
-    this.controls      = {};
-    this.dependents    = {};
-    this.states        = [];
-    this.gates         = [];
-    this.repainters    = [];
-    this.sections      = [];
-    this.pairs         = [];
-    this.pairBase      = new Map();
-    this.byPath        = new Map();
-    this.activeSection = null;
-    this.query         = "";
-    this._section      = null;
-    this.config        = null;
-    this.builder       = null;
-    this.modelFamilies = null;
-    this.modelHeads    = null;
-    this.modelEndpoint = null;
-    this.layoutEl      = null;
-    this.navHost       = null;
-    this.pinsEl        = null;
-    this.nomatchEl     = null;
-    this.countEl       = null;
-    this.refreshTimer  = null;
-    this.shellCache    = new Map();
+    this.dirty           = {};
+    this.controls        = {};
+    this.dependents      = {};
+    this.states          = [];
+    this.gates           = [];
+    this.repainters      = [];
+    this.sections        = [];
+    this.pairs           = [];
+    this.pairBase        = new Map();
+    this.byPath          = new Map();
+    this.activeSection   = null;
+    this.query           = "";
+    this._section        = null;
+    this.config          = null;
+    this.builder         = null;
+    this.modelFamilies   = null;
+    this.modelHeads      = null;
+    this.modelEndpoint   = null;
+    this.layoutEl        = null;
+    this.navHost         = null;
+    this.pinsEl          = null;
+    this.nomatchEl       = null;
+    this.countEl         = null;
+    this.refreshTimer    = null;
+    this.shellCache      = new Map();
+    this.finalizeToggles = null;
   }
 
   _buildToolbar(cfg) {
@@ -664,6 +665,87 @@ class ConfigForm {
 
     const reset = () => paint();
     return { el: toggle, input: toggle, reset };
+  }
+
+  static FINALIZE_STEPS = [
+    { key: "compare_seeds",           label: "Compare seeds",       short: "seeds",  hint: "aggregate each trial's or fold's seed runs into the seed-comparison reports" },
+    { key: "compare_trials",          label: "Compare trials",      short: "trials", hint: "write the experiment's trial- or fold-comparison reports and .md exports" },
+    { key: "mail_experiment_reports", label: "Mail report bundle",  short: "mail",   hint: "email the experiment bundle with the comparison reports attached; needs the SMTP password env var on the server" },
+  ];
+
+  _appendFinalizeSection(flags, note, onToggle) {
+    const main = this.layoutEl.querySelector(".secmain");
+
+    const el           = document.createElement("section");
+    el.className       = "launch-section";
+    el.dataset.section = "finalize";
+    el.innerHTML       = `<h3 class="launch-section__title">Finalize</h3>`;
+
+    const body     = document.createElement("div");
+    body.className = "launch-section__body";
+    el.appendChild(body);
+
+    const panel     = document.createElement("section");
+    panel.className = "cfg-panel seq-finalize";
+    panel.innerHTML = `<header class="cfg-panel__head"><h4 class="cfg-panel__name">After the experiment</h4><span class="cfg-panel__hint">steps chained onto this run's successful end, run locally on its sweep directory</span></header>`;
+
+    const rows     = document.createElement("div");
+    rows.className = "seq-finalize__rows";
+    this.finalizeToggles = new Map();
+
+    ConfigForm.FINALIZE_STEPS.forEach((step) => {
+      const on  = Boolean(flags[step.key]);
+      const row = document.createElement("div");
+      row.className = "seq-finalize__row";
+      row.innerHTML = `<div class="seq-finalize__text"><span class="seq-finalize__name">${step.label}</span><span class="seq-finalize__hint">${step.hint}</span></div>`;
+
+      const toggle     = document.createElement("button");
+      toggle.type      = "button";
+      toggle.className = "switch" + (on ? " is-on" : "");
+      toggle.setAttribute("role", "switch");
+      toggle.setAttribute("aria-checked", String(on));
+      toggle.innerHTML = `<span class="switch__knob"></span>`;
+      toggle.addEventListener("click", async () => {
+        const next = !this.finalizeToggles.get(step.key).classList.contains("is-on");
+        if (!(await onToggle(step.key, next))) return;
+        this.paintFinalize(step.key, next);
+      });
+
+      this.finalizeToggles.set(step.key, toggle);
+      row.appendChild(toggle);
+      rows.appendChild(row);
+    });
+    panel.appendChild(rows);
+
+    const hint       = document.createElement("p");
+    hint.className   = "cfg-note";
+    hint.textContent = note;
+    panel.appendChild(hint);
+
+    body.appendChild(panel);
+    main.appendChild(el);
+
+    const record = { key: "finalize", title: "Finalize", when: null, el, navBtn: null, badge: null };
+    if (this.config.layout.mode === "sections") {
+      const btn     = document.createElement("button");
+      btn.type      = "button";
+      btn.className = "secnav__item";
+      btn.innerHTML = `<span class="secnav__name">Finalize</span>`;
+      btn.addEventListener("click", () => this._navigate("finalize"));
+      record.navBtn = btn;
+      this.navHost.appendChild(btn);
+    }
+
+    this.sections.push(record);
+    el.hidden = this.config.layout.mode === "sections" && this.activeSection !== "finalize";
+  }
+
+  paintFinalize(key, on) {
+    const toggle = this.finalizeToggles ? this.finalizeToggles.get(key) : null;
+    if (!toggle) return;
+
+    toggle.classList.toggle("is-on", Boolean(on));
+    toggle.setAttribute("aria-checked", String(Boolean(on)));
   }
 
   static shellToken(value) {

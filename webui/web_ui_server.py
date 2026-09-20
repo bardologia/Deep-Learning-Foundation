@@ -156,7 +156,7 @@ class WebUIServer:
         self.survey            = ModelSurvey(self.logger)
         self.triage            = TriageBoard(self.paths, self.cubes.roots, self.logger)
         self.autopsy           = AbAutopsy(self.logger)
-        self.launcher          = RunLauncher(self.paths, self.logger, self.resolver, self.processes, self.tensorboard)
+        self.launcher          = RunLauncher(self.paths, self.logger, self.resolver, self.processes, self.tensorboard, self.notifier)
         self.run_configs       = RunConfigReader(self.logger)
         self.sequence_decide   = SequenceDecisions(self.resolver, self.launcher, self.logger)
         self.sequence_store    = SequenceStore(self.paths, self.logger, self.sequence_decide)
@@ -214,10 +214,10 @@ class WebUIServer:
     def serve(self) -> None:
         """Serves the console until interrupted, then stops the background workers.
 
-        Starts the contention, resource, GPU, energy and progress monitors and
-        the sequence runner, runs the HTTP server on a worker thread, and
-        blocks in the detacher wait loop until a keyboard interrupt or detach
-        request arrives.
+        Starts the contention, resource, GPU, energy and progress monitors, the
+        finalize chains of launched runs and the sequence runner, runs the HTTP
+        server on a worker thread, and blocks in the detacher wait loop until a
+        keyboard interrupt or detach request arrives.
         """
 
         server        = _Server((self.host, self.port), _Handler)
@@ -230,6 +230,7 @@ class WebUIServer:
         self.gpu_schedule.start()
         self.energy.start()
         self.progress_watch.start()
+        self.launcher.start()
         self.sequence_runner.start()
 
         worker = threading.Thread(target=server.serve_forever, name="HttpServer", daemon=True)

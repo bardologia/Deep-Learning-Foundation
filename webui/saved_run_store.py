@@ -1,7 +1,8 @@
 """On-disk store of reusable run definitions saved from the console launcher.
 
 Each saved run is one JSON file named after its identifier, holding the entry
-point, interpreter, config overrides, follow-up entry and detach flag.
+point, interpreter, config overrides, follow-up entry, detach flag and the
+finalize switches chained onto the finished run.
 """
 
 from __future__ import annotations
@@ -12,7 +13,8 @@ import threading
 import uuid
 from datetime import datetime
 
-from web_logger import WebLogger
+from finalize_chain import FinalizeChain
+from web_logger     import WebLogger
 
 
 class SavedRunStore:
@@ -39,7 +41,7 @@ class SavedRunStore:
         """Writes one saved run built from a launcher payload.
 
         Args:
-            payload : Launcher form contents with `script_key`, `interpreter`, optional `title`, `name`, `overrides`, `follow_up` and `detach`.
+            payload : Launcher form contents with `script_key`, `interpreter`, optional `title`, `name`, `overrides`, `follow_up`, `detach` and `finalize`.
 
         Returns:
             Result carrying the stored entry, or `ok` False with an error when the entry
@@ -68,6 +70,7 @@ class SavedRunStore:
             "overrides"   : overrides,
             "follow_up"   : follow_up or None,
             "detach"      : bool(payload.get("detach")),
+            "finalize"    : FinalizeChain.flags(payload.get("finalize")),
             "saved_at"    : datetime.now().isoformat(timespec="seconds"),
         }
 
