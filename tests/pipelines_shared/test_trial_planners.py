@@ -124,17 +124,17 @@ def test_stability_planner_rejects_bad_settings():
 
 
 def test_ema_planner_default_walks_the_ladder():
-    """Verifies the EMA ladder plans the off rung and one on-rung per decay."""
+    """Verifies the EMA ladder plans the off rung and a raw and a decay-warmup rung per decay."""
     planner = EmaTrialPlanner(EmaTrialsConfig(decays=[0.99, 0.999]))
 
     plans = dict(planner.plan())
 
-    assert list(plans) == ["ema-0-off", "ema-1-d0.99", "ema-1-d0.999"]
-    assert planner.summary()["Total runs"] == 3
+    assert list(plans) == ["ema-0-off", "ema-1-raw-d0.99", "ema-1-raw-d0.999", "ema-2-warmup-d0.99", "ema-2-warmup-d0.999"]
+    assert planner.summary()["Total runs"] == 5
 
-    assert plans["ema-0-off"]    == {"training.use_ema": False}
-    assert plans["ema-1-d0.99"]  == {"training.use_ema": True, "training.ema_decay": 0.99}
-    assert plans["ema-1-d0.999"] == {"training.use_ema": True, "training.ema_decay": 0.999}
+    assert plans["ema-0-off"]           == {"training.use_ema": False}
+    assert plans["ema-1-raw-d0.99"]     == {"training.use_ema": True, "training.ema_decay": 0.99, "training.ema_warmup": False}
+    assert plans["ema-2-warmup-d0.999"] == {"training.use_ema": True, "training.ema_decay": 0.999, "training.ema_warmup": True}
 
 
 def test_ema_planner_paths_are_entry_config_leaves():

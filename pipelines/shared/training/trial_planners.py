@@ -136,12 +136,13 @@ class StabilityTrialPlanner:
 
 
 class EmaTrialPlanner:
-    """Plans the weight-EMA ladder: EMA off, then EMA on at each configured decay.
+    """Plans the weight-EMA arms: EMA off, then raw and decay-warmup EMA at each configured decay.
 
     Every rung trains the same model on the otherwise unchanged base config;
-    only the weight-averaging state changes, so the axis isolates whether
+    only the weight-averaging state changes, so the axes isolate whether
     evaluating and checkpointing an exponential moving average of the weights
-    beats the raw weights, and at which decay.
+    beats the raw weights, at which decay, and whether ramping the decay as
+    min(decay, (1+t)/(10+t)) over the update count t helps or hurts.
 
     Attributes:
         trials : EMA trial configuration with the `decays` list.
@@ -181,16 +182,18 @@ class EmaTrialPlanner:
     def summary(self) -> dict:
         """Returns the ladder order, decays and run count for logging."""
         return {
-            "Ladder"     : "off -> on per decay",
+            "Ladder"     : "off -> raw per decay -> decay warmup per decay",
             "Decays"     : ", ".join(f"{decay:g}" for decay in self.trials.decays),
-            "Total runs" : 1 + len(self.trials.decays),
+            "Total runs" : 1 + 2 * len(self.trials.decays),
         }
 
     def plan(self) -> list[tuple[str, dict]]:
-        """Returns the EMA-off rung followed by one EMA-on rung per decay."""
+        """Returns the EMA-off rung, one raw EMA rung per decay, and one decay-warmup rung per decay."""
         rungs = [("ema-0-off", {"training.use_ema": False})]
         for decay in self.trials.decays:
-            rungs.append((f"ema-1-d{decay:g}", {"training.use_ema": True, "training.ema_decay": decay}))
+            rungs.append((f"ema-1-raw-d{decay:g}", {"training.use_ema": True, "training.ema_decay": decay, "training.ema_warmup": False}))
+        for decay in self.trials.decays:
+            rungs.append((f"ema-2-warmup-d{decay:g}", {"training.use_ema": True, "training.ema_decay": decay, "training.ema_warmup": True}))
 
         return rungs
 

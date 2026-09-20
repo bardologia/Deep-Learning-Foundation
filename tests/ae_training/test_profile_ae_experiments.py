@@ -268,16 +268,16 @@ def test_resume_from_skips_complete_units_and_resumes_the_rest(tmp_path):
     root.mkdir()
     (root / "ema-0-off").mkdir()
     (root / "ema-0-off" / "complete.json").write_text(json.dumps({"status": "complete"}))
-    (root / "ema-1-d0.999").mkdir()
+    (root / "ema-1-raw-d0.999").mkdir()
 
     launcher  = ProfileAeTrainingLauncher(entry_script=ENTRY)
     scheduler = launcher.build_scheduler(["--trials_enabled", "true", "--trials_mode", "ema", "--seeds", "[0]", "--resume_from", str(root)])
 
     assert scheduler.runs_root              == root
     assert scheduler.resume_plan.completed  == ["ema-0-off"]
-    assert [name for name, _ in scheduler.units()] == ["ema-1-d0.999"]
+    assert [name for name, _ in scheduler.units()] == ["ema-1-raw-d0.999", "ema-2-warmup-d0.999"]
 
-    argv = scheduler.trial_argv("ema-1-d0.999", {"training.use_ema": True})
+    argv = scheduler.trial_argv("ema-1-raw-d0.999", {"training.use_ema": True})
 
     assert "--resume" in argv
     assert "--training.resume" in argv

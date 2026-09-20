@@ -461,15 +461,15 @@ class ExperimentBuilder {
       },
       names     : (b, model) => b._stabilityNames().map((rung) => `${model}_${rung}`) },
 
-    { group: "training", key: "ema", label: "weight EMA", hint: "weight-EMA ladder on the shared base config: raw weights, then an exponential moving average of the weights at each configured decay",
+    { group: "training", key: "ema", label: "weight EMA", hint: "weight-EMA arms on the shared base config: raw weights, then at each configured decay an exponential moving average with the plain decay and one with the decay warmup ramp",
       at        : 15,
       el        : "emaEl",
       available : (b) => b.emaTrials.size > 0,
       make      : (b) => b._emaPanel(),
       paint     : (b) => b._paintEma(),
       summary   : (b, gpus) => {
-        const n = 1 + b._emaDecays().length;
-        return `off + ${b._emaDecays().length} decay rung${b._emaDecays().length === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
+        const n = 1 + 2 * b._emaDecays().length;
+        return `off + ${b._emaDecays().length} raw + ${b._emaDecays().length} decay-warmup rung${b._emaDecays().length === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
       },
       names     : (b, model) => b._emaNames().map((rung) => `${model}_${rung}`) },
 
@@ -2276,7 +2276,8 @@ class ExperimentBuilder {
 
   _emaNames() {
     const names = ["ema-0-off"];
-    this._emaDecays().forEach((decay) => names.push(`ema-1-d${this._pyG(decay)}`));
+    this._emaDecays().forEach((decay) => names.push(`ema-1-raw-d${this._pyG(decay)}`));
+    this._emaDecays().forEach((decay) => names.push(`ema-2-warmup-d${this._pyG(decay)}`));
     return names;
   }
 
