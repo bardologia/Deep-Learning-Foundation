@@ -254,6 +254,59 @@ def test_binned_median_sparse_bins_nan():
     assert np.all(np.isnan(medians))
 
 
+def test_lattice_step_finds_grid_spacing():
+    """Verifies the lattice step of a sample drawn on a regular grid is that grid's spacing."""
+    step   = 100.0 / 256.0
+    sample = np.round(np.random.default_rng(0).normal(20.0, 6.0, 50_000) / step) * step
+    assert PlotBase._lattice_step(sample) == pytest.approx(step, rel=1e-6)
+
+
+def test_lattice_step_prefers_the_coarser_lattice():
+    """Verifies a sample whose mass sits on a doubled grid reports the doubled spacing."""
+    step   = 0.5
+    coarse = np.arange(20.0, 60.0, 2 * step).repeat(400)
+    fine   = np.arange(20.0, 60.0, step)
+    assert PlotBase._lattice_step(np.concatenate([coarse, fine])) == pytest.approx(2 * step, rel=1e-6)
+
+
+def test_lattice_step_zero_for_continuous_sample():
+    """Verifies a continuous sample reports a spacing far below its own scale."""
+    sample = np.random.default_rng(1).normal(20.0, 6.0, 50_000)
+    assert PlotBase._lattice_step(sample) < 1e-3 * float(np.ptp(sample))
+
+
+def test_quantised_bins_width_is_a_multiple_of_the_grid():
+    """Verifies bin edges on a quantised sample are a whole number of grid steps wide."""
+    step   = 100.0 / 256.0
+    sample = np.round(np.random.default_rng(2).normal(20.0, 6.0, 50_000) / step) * step
+    edges  = PlotBase._quantised_bins(sample, target_bins=40)
+    width  = float(edges[1] - edges[0])
+    assert width / step == pytest.approx(round(width / step), rel=1e-6)
+
+
+def test_quantised_bins_give_every_bin_the_same_grid_count():
+    """Verifies the aligned edges put the same number of grid values in each bin, the comb fix."""
+    step   = 0.25
+    sample = np.round(np.random.default_rng(3).normal(20.0, 6.0, 200_000) / step) * step
+    edges  = PlotBase._quantised_bins(sample, target_bins=40)
+    values = np.unique(sample)
+    counts = np.histogram(values[(values > edges[0]) & (values < edges[-1])], bins=edges)[0]
+    assert counts.min() == counts.max()
+
+
+def test_quantised_bins_trim_the_tails():
+    """Verifies the edges cover the requested percentile span and not the full range."""
+    sample = np.concatenate([np.random.default_rng(4).normal(20.0, 3.0, 20_000), np.array([500.0])])
+    edges  = PlotBase._quantised_bins(sample, span=(0.5, 99.5))
+    assert edges[-1] < 100.0
+
+
+def test_quantised_bins_empty_raises():
+    """Verifies an empty sample is rejected loudly rather than returning degenerate edges."""
+    with pytest.raises(ValueError):
+        PlotBase._quantised_bins(np.zeros(0))
+
+
 def test_imshow_figure_returns_figure(plotter, small_field):
     """Verifies the image-figure builder returns a matplotlib figure when no path is given."""
     fig = plotter._imshow_figure(

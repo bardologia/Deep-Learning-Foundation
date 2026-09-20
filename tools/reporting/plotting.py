@@ -152,6 +152,90 @@ class PlotBase:
         return path
 
     @staticmethod
+    def _lattice_step(sample: np.ndarray, max_multiple: int = 8, share: float = 0.5) -> float:
+        """Returns the coarsest value spacing that carries most of a sample's mass.
+
+        Parameters read off a discrete z axis take only multiples of that axis'
+        step, and a sample can mix several such lattices: a quantity built from one
+        grid value alone sits on the base step, one built from a sum of several sits
+        on a multiple of it. The base spacing is the smallest gap between distinct
+        values, and the returned step is the largest multiple of it that at least
+        ``share`` of the values still lie on.
+
+        Args:
+            sample       : Values to inspect, of any shape, assumed finite.
+            max_multiple : Largest multiple of the base spacing considered.
+            share        : Fraction of values that must sit on a multiple for it to be accepted.
+
+        Returns:
+            The spacing in the sample's own units, or zero when the values are continuous.
+        """
+        flat  = np.asarray(sample, dtype=float).reshape(-1)
+        scale = float(np.abs(flat).max()) if flat.size else 0.0
+
+        if scale <= 0.0:
+            return 0.0
+
+        gaps = np.diff(np.unique(flat))
+        gaps = gaps[gaps > 1e-6 * scale]
+
+        if gaps.size == 0:
+            return 0.0
+
+        base = float(gaps.min())
+        step = base
+
+        for multiple in range(2, max_multiple + 1):
+            candidate = base * multiple
+            quotient  = flat / candidate
+
+            if float(np.mean(np.abs(quotient - np.round(quotient)) < 1e-6)) >= share:
+                step = candidate
+
+        return step
+
+    @staticmethod
+    def _quantised_bins(sample: np.ndarray, target_bins: int = 64, span: Tuple[float, float] = (0.5, 99.5)) -> np.ndarray:
+        """Returns histogram edges aligned to the value grid the sample lives on.
+
+        Parameters read off a discrete z axis take only multiples of that axis'
+        step, so bin edges that are not a whole number of steps wide catch alternating
+        numbers of grid values and comb the histogram. The spacing is measured by
+        :meth:`_lattice_step`, the bin width is raised to a multiple of it, and the
+        first edge is offset half a step so every bin spans the same number of grid
+        values. A continuous sample reports no spacing and keeps plain equal-width bins.
+
+        Args:
+            sample      : Values to be histogrammed, of any shape, assumed finite.
+            target_bins : Bin count aimed for before the width is snapped to the grid.
+            span        : Percentiles the edges cover, trimming the heavy tails.
+
+        Returns:
+            Monotonic bin edges of shape (n_bins + 1,).
+
+        Raises:
+            ValueError : If the sample holds no values.
+        """
+        flat = np.asarray(sample).reshape(-1)
+
+        if flat.size == 0:
+            raise ValueError("_quantised_bins received an empty sample; cannot derive bin edges")
+
+        low, high = (float(value) for value in np.percentile(flat, span))
+
+        if not high > low:
+            return np.linspace(low, low + 1.0, target_bins + 1)
+
+        width = (high - low) / target_bins
+        step  = PlotBase._lattice_step(flat[(flat >= low) & (flat <= high)])
+
+        if step > 0.0 and step > 1e-3 * (high - low):
+            width = max(int(np.ceil(width / step)), 1) * step
+            low   = np.floor(low / step) * step - 0.5 * step
+
+        return np.arange(low, high + width, width)
+
+    @staticmethod
     def _shared_clim(*arrays: np.ndarray, q_low: float = 1.0, q_high: float = 99.0) -> Tuple[float, float]:
         """Returns a percentile colour range shared by several arrays.
 
