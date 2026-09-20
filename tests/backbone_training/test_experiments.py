@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from configuration.normalization             import Presets
 from configuration.training                  import BackboneEntryConfig, CurriculumInheritance, default_curriculum
-from configuration.training.backbone         import AugmentationTrialsConfig, ClampTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, NormalizationTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig
+from configuration.training.backbone         import AugmentationTrialsConfig, ClampTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig
 from configuration.training.general.run      import TrainingQueueConfig
 from configuration.training.general.trials   import TrialCatalog
 from configuration.training.general.ablation import AblationCatalog
@@ -26,7 +25,6 @@ from pipelines.backbone.training.experiments import (
     HeadMatchingTrialPlanner,
     InputTrialPlanner,
     LogEnergyTrialPlanner,
-    NormalizationTrialPlanner,
     PatchSizeTrialPlanner,
     PairLossTrialPlanner,
     ReachTrialPlanner,
@@ -819,80 +817,6 @@ def test_clamp_planner_rejects_bad_slope_lists():
 
     with pytest.raises(ValueError, match="unique"):
         ClampTrialPlanner(ClampTrialsConfig(leaky_slopes=[0.1, 0.1], param_leaky_slopes=[0.1, 0.2]))
-
-
-PRESET_NAMES = tuple(Presets.names())
-
-
-def test_normalization_planner_default_walks_the_ladder():
-    """Verifies the normalization ladder switches one preset per rung from the initial configuration."""
-    planner = NormalizationTrialPlanner(NormalizationTrialsConfig(), PRESET_NAMES)
-
-    plans = dict(planner.plan())
-
-    assert list(plans) == ["nrm-0-initial", "nrm-1-chan_mag", "nrm-2-derived_phase", "nrm-3-out_amp", "nrm-4-out_mu", "nrm-5-out_sigma", "nrm-6-aux"]
-    assert planner.summary()["Total runs"] == 7
-
-    expected = {
-        "nrm-0-initial"   : ("fixed_log1p",      "fixed_angle_01", "fixed_bounds",     "fixed_bounds", "fixed_bounds",     "zscore"),
-        "nrm-1-chan_mag"  : ("robust_iqr_log1p", "fixed_angle_01", "fixed_bounds",     "fixed_bounds", "fixed_bounds",     "zscore"),
-        "nrm-2-derived_phase" : ("robust_iqr_log1p", "fixed_div_pi",   "fixed_bounds",     "fixed_bounds", "fixed_bounds",     "zscore"),
-        "nrm-3-out_amp"   : ("robust_iqr_log1p", "fixed_div_pi",   "robust_iqr_log1p", "fixed_bounds", "fixed_bounds",     "zscore"),
-        "nrm-4-out_mu"    : ("robust_iqr_log1p", "fixed_div_pi",   "robust_iqr_log1p", "robust_iqr",   "fixed_bounds",     "zscore"),
-        "nrm-5-out_sigma" : ("robust_iqr_log1p", "fixed_div_pi",   "robust_iqr_log1p", "robust_iqr",   "robust_iqr_log1p", "zscore"),
-        "nrm-6-aux"       : ("robust_iqr_log1p", "fixed_div_pi",   "robust_iqr_log1p", "robust_iqr",   "robust_iqr_log1p", "robust_iqr_log1p"),
-    }
-    for name, (chan_mag, derived_phase, out_amp, out_mu, out_sigma, aux) in expected.items():
-        assert plans[name] == {
-            "normalization.chan_mag"  : chan_mag,
-            "normalization.derived_phase" : derived_phase,
-            "normalization.out_amp"   : out_amp,
-            "normalization.out_mu"    : out_mu,
-            "normalization.out_sigma" : out_sigma,
-            "normalization.aux"       : aux,
-        }
-
-
-def test_normalization_planner_paths_are_entry_config_leaves():
-    """Verifies every normalization override path resolves to a leaf of the backbone entry config."""
-    config = BackboneEntryConfig()
-
-    for _, overrides in NormalizationTrialPlanner(NormalizationTrialsConfig(), PRESET_NAMES).plan():
-        for path in overrides:
-            section, leaf = path.split(".")
-            assert hasattr(getattr(config, section), leaf), path
-
-
-def test_normalization_planner_rejects_unknown_preset():
-    """Verifies an unregistered normalization preset name is rejected."""
-    with pytest.raises(ValueError, match="valid presets"):
-        NormalizationTrialPlanner(NormalizationTrialsConfig(initial_chan_mag="log_softmax"), PRESET_NAMES)
-
-    with pytest.raises(ValueError, match="valid presets"):
-        NormalizationTrialPlanner(NormalizationTrialsConfig(final_out_sigma="per_slot"), PRESET_NAMES)
-
-
-def test_normalization_planner_skips_noop_rung():
-    """Verifies a step whose final preset equals its initial preset trains no rung and stays at the shared preset."""
-    planner = NormalizationTrialPlanner(NormalizationTrialsConfig(final_aux="zscore"), PRESET_NAMES)
-
-    plans = dict(planner.plan())
-
-    assert list(plans) == ["nrm-0-initial", "nrm-1-chan_mag", "nrm-2-derived_phase", "nrm-3-out_amp", "nrm-4-out_mu", "nrm-5-out_sigma"]
-    assert all(overrides["normalization.aux"] == "zscore" for overrides in plans.values())
-
-    summary = planner.summary()
-    assert summary["Total runs"] == 6
-    assert summary["Skipped"]    == "aux"
-    assert "aux" not in summary["Ladder"]
-
-
-def test_normalization_planner_rejects_all_noop_ladder():
-    """Verifies a ladder whose steps are all no-ops is rejected."""
-    trials = NormalizationTrialsConfig(final_chan_mag="fixed_log1p", final_derived_phase="fixed_angle_01", final_out_amp="fixed_bounds", final_out_mu="fixed_bounds", final_out_sigma="fixed_bounds", final_aux="zscore")
-
-    with pytest.raises(ValueError, match="nothing under test"):
-        NormalizationTrialPlanner(trials, PRESET_NAMES)
 
 
 def test_input_planner_rejects_empty_trials():

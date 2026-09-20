@@ -14,7 +14,7 @@ from configuration.training.general.run         import TrainingPathsConfig, Trai
 from configuration.dataset                      import AugmentationConfig, InputConfig
 from configuration.inference.general            import InferenceConfig
 from configuration.normalization.general        import NormalizationConfig
-from configuration.training.backbone            import AugmentationTrialsConfig, ClampTrialsConfig, EmaTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, LossScaleProbeConfig, NormalizationTrialsConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig, StabilityTrialsConfig, default_curriculum
+from configuration.training.backbone            import AugmentationTrialsConfig, ClampTrialsConfig, EmaTrialsConfig, HeadMatchingTrialsConfig, LogEnergyTrialsConfig, LossScaleProbeConfig, PairTrialsConfig, PatchTrialsConfig, ReachTrialsConfig, SecondaryTrialsConfig, StabilityTrialsConfig, default_curriculum
 from configuration.training.general.trials      import TrialCatalog
 from configuration.training.general.ablation    import AblationCatalog
 from configuration.training.general.loss        import LossCurriculumConfig
@@ -164,7 +164,6 @@ class DualEntryConfig:
         clamp_trials          : Output-clamp ladder settings.
         stability_trials      : Warmup and gradient-clipping ladder settings.
         ema_trials            : Weight-EMA on/off ladder settings; the amp mode compares mixed-precision off against on and needs no settings of its own.
-        normalization_trials  : Initial and final normalization preset pair.
         routing_trials        : Input routing sweep settings.
         ratio_trials          : Trunk capacity split sweep settings.
         ablation_features     : Ordered feature list of the leave-one-out ablation.
@@ -224,7 +223,6 @@ class DualEntryConfig:
     clamp_trials         : ClampTrialsConfig         = field(default_factory=ClampTrialsConfig)
     stability_trials     : StabilityTrialsConfig     = field(default_factory=StabilityTrialsConfig)
     ema_trials           : EmaTrialsConfig           = field(default_factory=EmaTrialsConfig)
-    normalization_trials : NormalizationTrialsConfig = field(default_factory=NormalizationTrialsConfig)
     routing_trials       : DualRoutingTrialsConfig   = field(default_factory=DualRoutingTrialsConfig)
     ratio_trials         : DualRatioTrialsConfig     = field(default_factory=DualRatioTrialsConfig)
 

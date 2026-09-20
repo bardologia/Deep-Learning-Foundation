@@ -15,13 +15,12 @@ from pathlib     import Path
 
 import torch
 
-from configuration.normalization                 import Presets
 from configuration.training                      import BackboneEntryConfig, CurriculumInheritance, default_curriculum
 from configuration.training.general.loss         import ParamMatching
 from configuration.training.general.optimization import ClipMode, WarmupMode
 from models                                      import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS
 from pipelines.backbone.inference.pipeline       import InferencePipeline
-from pipelines.backbone.training.experiments     import AblationTrialPlanner, AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, NormalizationTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
+from pipelines.backbone.training.experiments     import AblationTrialPlanner, AugmentationTrialPlanner, ClampTrialPlanner, ContextTrialPlanner, CurriculumTrialPlanner, HeadMatchingTrialPlanner, InputTrialPlanner, LogEnergyTrialPlanner, PairLossTrialPlanner, PatchSizeTrialPlanner, ReachTrialPlanner, SecondaryTrialPlanner, SlotPresenceTrialPlanner, WarmupTrialPlanner
 from pipelines.backbone.training.patch_report    import PatchTrialsReport
 from pipelines.backbone.training.pipeline        import TrainingPipeline
 from pipelines.shared.config.config_factory      import ConfigFactory
@@ -166,7 +165,7 @@ class TrainScheduler(TrialSweepScheduler):
         forward_overrides  : CLI overrides forwarded to each unit, scheduler-only fields removed.
     """
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "normalization_trials", "ablation_features", "ablation_include_full", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "warmup_losses", "complete_losses", "presence_trials", "pair_trials", "log_energy_trials", "secondary_trials", "patch_trials", "input_trials", "context_trials", "reach_trials", "head_trials", "augmentation_trials", "clamp_trials", "stability_trials", "ema_trials", "ablation_features", "ablation_include_full", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     MODE_SUBDIRS = {
         "curriculum"    : "curriculum",
@@ -185,7 +184,6 @@ class TrainScheduler(TrialSweepScheduler):
         "stability"     : "stability",
         "ema"           : "ema",
         "amp"           : "amp",
-        "normalization" : "normalization",
         "ablation"      : "ablation",
     }
 
@@ -250,8 +248,6 @@ class TrainScheduler(TrialSweepScheduler):
             return EmaTrialPlanner(self.config.ema_trials)
         if mode == "amp":
             return AmpTrialPlanner()
-        if mode == "normalization":
-            return NormalizationTrialPlanner(self.config.normalization_trials, tuple(Presets.names()))
         if mode == "ablation":
             return AblationTrialPlanner(self.config.ablation_features, self.config.ablation_include_full)
 

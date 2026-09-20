@@ -482,19 +482,6 @@ class ExperimentBuilder {
       summary   : (b, gpus) => `autocast off and on = 2 trials${b._seedsSuffix(2)}${gpus}`,
       names     : (b, model) => ["amp-0-off", "amp-1-on"].map((rung) => `${model}_${rung}`) },
 
-    { group: "data", key: "normalization", label: "normalization", hint: "cumulative normalization ladder: pass amp, then derived phase, then output amp, then output mu, then output sigma, then aux z switch from the legacy-mode initial to the final strategy",
-      at        : 12,
-      el        : "normEl",
-      available : (b) => b.normTrials.size > 0,
-      make      : (b) => b._normalizationPanel(),
-      paint     : (b) => b._paintNormalization(),
-      summary   : (b, gpus) => {
-        const active = b._normActiveKeys().length;
-        const n      = 1 + active;
-        return `baseline + ${active} ladder rung${active === 1 ? "" : "s"} = ${n} trial${n === 1 ? "" : "s"}${b._seedsSuffix(n)}${gpus}`;
-      },
-      names     : (b, model) => b._normNames().map((rung) => `${model}_${rung}`) },
-
     { group: "arch", key: "routing", label: "trunk routing", hint: "one trial per params/existence channel-group assignment, each in a no-Aux and a with-Aux variant, both trunks fixed at the shared parity feature ladders",
       at        : 13,
       el        : "routingEl",
@@ -778,19 +765,8 @@ class ExperimentBuilder {
   static COUPLING_MODES     = ["frozen", "finetune"];
   static COUPLING_PROVIDERS = ["stopgrad", "live"];
 
-  static NORM_PRESETS = ["min_max", "min_max_log1p", "robust_iqr", "robust_iqr_log1p", "fixed_div_pi", "zscore", "zscore_log1p", "fixed_log1p", "fixed_angle_01", "fixed_bounds"];
-
   static STABILITY_WARMUP_MODES = ["linear", "cosine", "exponential", "polynomial"];
   static STABILITY_CLIP_MODES   = ["fixed", "adaptive_percentile", "adaptive_mean_std"];
-
-  static NORM_GROUPS = [
-    { key: "chan_mag",  label: "pass amplitude",   step: 1 },
-    { key: "derived_phase", label: "derived phase",        step: 2 },
-    { key: "out_amp",   label: "output amplitude", step: 3 },
-    { key: "out_mu",    label: "output mu",        step: 4 },
-    { key: "out_sigma", label: "output sigma",     step: 5 },
-    { key: "aux",       label: "aux z",    step: 6 },
-  ];
 
   static HEAD_OPTIONS = [
     { key: "conv",         label: "conv" },
@@ -902,7 +878,6 @@ class ExperimentBuilder {
     this.clampTrials     = new Map();
     this.stabilityTrials = new Map();
     this.emaTrials       = new Map();
-    this.normTrials      = new Map();
     this.routingTrials   = new Map();
     this.ratioTrials     = new Map();
     this.embDimTrials    = new Map();
@@ -929,7 +904,6 @@ class ExperimentBuilder {
       if (leaf.section === "clamp_trials")         this.clampTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "stability_trials")     this.stabilityTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "ema_trials")           this.emaTrials.set(leaf.path.split(".").pop(), leaf);
-      if (leaf.section === "normalization_trials") this.normTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "routing_trials")       this.routingTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "ratio_trials")         this.ratioTrials.set(leaf.path.split(".").pop(), leaf);
       if (leaf.section === "embedding_trials")     this.embDimTrials.set(leaf.path.split(".").pop(), leaf);
@@ -961,7 +935,6 @@ class ExperimentBuilder {
     this.clampTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.stabilityTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.emaTrials.forEach((leaf) => this.claimed.push(leaf.path));
-    this.normTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.routingTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.ratioTrials.forEach((leaf) => this.claimed.push(leaf.path));
     this.embDimTrials.forEach((leaf) => this.claimed.push(leaf.path));
@@ -1028,8 +1001,6 @@ class ExperimentBuilder {
     this.emaEl           = null;
     this.emaDecaysEl     = null;
     this.ampEl           = null;
-    this.normEl          = null;
-    this.normSelects     = new Map();
     this.routingEl       = null;
     this.routingCellsEl  = null;
     this.ratioEl         = null;
@@ -3339,111 +3310,6 @@ class ExperimentBuilder {
 
   _repaintNoise() {
     this._paintNoise();
-    this._paintSummary();
-    this._paintNames();
-  }
-
-  _normValue(key) {
-    const leaf = this.normTrials.get(key);
-    return leaf ? this.view._effective(leaf) : "?";
-  }
-
-  _normActiveKeys() {
-    return ExperimentBuilder.NORM_GROUPS.filter((group) => this.normTrials.has(`initial_${group.key}`) && this.normTrials.has(`final_${group.key}`) && this._normValue(`initial_${group.key}`) !== this._normValue(`final_${group.key}`)).map((group) => group.key);
-  }
-
-  _normNames() {
-    const names = ["nrm-0-initial"];
-    this._normActiveKeys().forEach((key, index) => names.push(`nrm-${index + 1}-${key}`));
-    return names;
-  }
-
-  _normalizationPanel() {
-    const panel     = document.createElement("div");
-    panel.className = "exp-secondary exp-presence";
-
-    const head     = document.createElement("div");
-    head.className = "exp-col__head";
-    head.innerHTML = `<span class="exp-col__name">normalization ladder</span>`;
-    const reset    = LaunchWidgetDom.mini("reset ladder", () => this._resetNormalization());
-    reset.classList.add("exp-presence__reset");
-    head.appendChild(reset);
-
-    const note       = document.createElement("p");
-    note.className   = "exp-secondary__note";
-    note.textContent = "Cumulative ladder from the legacy-mode baseline to the final strategies: rung 1 switches pass amplitude, rung 2 adds derived phase, rung 3 adds output amplitude, rung 4 adds output mu, rung 5 adds output sigma, rung 6 adds aux z. Every rung sets all six normalization fields explicitly and repeats across the seeds list; a step whose initial and final strategies coincide trains no rung, and the rungs below it renumber.";
-
-    const grid     = document.createElement("div");
-    grid.className = "exp-ladder";
-    grid.innerHTML = `<span class="exp-ladder__head"></span><span class="exp-ladder__head">rung</span><span class="exp-ladder__head">initial strategy</span><span class="exp-ladder__head"></span><span class="exp-ladder__head">final strategy</span>`;
-
-    ExperimentBuilder.NORM_GROUPS.forEach((group) => {
-      const initialLeaf = this.normTrials.get(`initial_${group.key}`);
-      const finalLeaf   = this.normTrials.get(`final_${group.key}`);
-      if (!initialLeaf || !finalLeaf) return;
-
-      const label       = document.createElement("span");
-      label.className   = "exp-ladder__key";
-      label.textContent = group.label;
-      grid.appendChild(label);
-
-      const rung       = document.createElement("span");
-      rung.className   = "exp-ladder__rung";
-      rung.textContent = String(group.step);
-      grid.appendChild(rung);
-
-      [initialLeaf, finalLeaf].forEach((leaf, index) => {
-        const select     = document.createElement("select");
-        select.className = "run-select exp-ladder__select";
-        select.title     = `--${leaf.path}`;
-        ExperimentBuilder.NORM_PRESETS.forEach((preset) => {
-          const opt       = document.createElement("option");
-          opt.value       = preset;
-          opt.textContent = preset;
-          select.appendChild(opt);
-        });
-        select.addEventListener("change", () => {
-          this.view._setValue(leaf, select.value);
-          this._repaintNormalization();
-        });
-        this.normSelects.set(leaf.path, select);
-        this.view.controls[leaf.path] = { leaf, reset: () => this._repaintNormalization() };
-        grid.appendChild(select);
-
-        if (index === 0) {
-          const arrow       = document.createElement("span");
-          arrow.className   = "exp-ladder__arrow";
-          arrow.textContent = "→";
-          grid.appendChild(arrow);
-        }
-      });
-    });
-
-    panel.appendChild(head);
-    panel.appendChild(note);
-    panel.appendChild(grid);
-    this.normEl = panel;
-
-    this._paintNormalization();
-    return panel;
-  }
-
-  _paintNormalization() {
-    if (!this.normEl) return;
-
-    this.normSelects.forEach((select, path) => {
-      const leaf = this.normTrials.get(path.split(".").pop());
-      if (leaf && document.activeElement !== select) select.value = this.view._effective(leaf);
-    });
-  }
-
-  _resetNormalization() {
-    this.normTrials.forEach((leaf) => this.view._setValue(leaf, leaf.value));
-    this._repaintNormalization();
-  }
-
-  _repaintNormalization() {
-    this._paintNormalization();
     this._paintSummary();
     this._paintNames();
   }

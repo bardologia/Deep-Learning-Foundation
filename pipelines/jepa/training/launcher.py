@@ -10,11 +10,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from configuration.normalization                 import Presets
 from configuration.training.general.optimization import ClipMode, WarmupMode
 from configuration.training.jepa                 import JepaEntryConfig
 from models                                      import BACKBONE_CONFIG_REGISTRY
-from pipelines.backbone.training.experiments     import AugmentationTrialPlanner, ContextTrialPlanner, InputTrialPlanner, NormalizationTrialPlanner
+from pipelines.backbone.training.experiments     import AugmentationTrialPlanner, ContextTrialPlanner, InputTrialPlanner
 from pipelines.jepa.training.coupling            import TargetProvider
 from pipelines.jepa.training.experiments         import AeRunTrialPlanner, CouplingTrialPlanner, CurveTrialPlanner, EmbeddingLossTrialPlanner, JepaCurriculumTrialPlanner, MaskingTrialPlanner
 from pipelines.jepa.training.pipeline            import SingleTrainRunner
@@ -29,7 +28,7 @@ from tools.runtime.config_cli                    import ConfigCli
 class JepaTrialScheduler(TrialSweepScheduler):
     """JEPA trial scheduler mapping every sweep mode to its planner."""
 
-    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "embedding_trials", "curve_trials", "masking_trials", "curriculum_trials", "coupling_trials", "ae_run_trials", "context_trials", "input_trials", "augmentation_trials", "normalization_trials", "ema_trials", "stability_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
+    SCHEDULER_FIELDS = ("trials_enabled", "trials_mode", "embedding_trials", "curve_trials", "masking_trials", "curriculum_trials", "coupling_trials", "ae_run_trials", "context_trials", "input_trials", "augmentation_trials", "ema_trials", "stability_trials", "infer_at_end", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     MODE_SUBDIRS = {
         "embedding"     : "embedding",
@@ -41,7 +40,6 @@ class JepaTrialScheduler(TrialSweepScheduler):
         "context"       : "context",
         "input"         : "input",
         "augmentation"  : "augmentation",
-        "normalization" : "normalization",
         "ema"           : "ema",
         "amp"           : "amp",
         "stability"     : "stability",
@@ -87,8 +85,6 @@ class JepaTrialScheduler(TrialSweepScheduler):
             return InputTrialPlanner.from_labels(self.config.input_trials, self.config.paths.secondary_labels)
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
-        if mode == "normalization":
-            return NormalizationTrialPlanner(self.config.normalization_trials, tuple(Presets.names()))
         if mode == "ema":
             return EmaTrialPlanner(self.config.ema_trials)
         if mode == "amp":
