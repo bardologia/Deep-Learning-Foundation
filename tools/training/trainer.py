@@ -21,7 +21,7 @@ from tools.monitoring.tracker          import Tracker
 from tools.monitoring.resource_monitor import ResourceMonitor
 
 from tools.training.activation_checkpoint import ActivationCheckpointing
-from tools.training.aggregation      import MetricAggregator
+from tools.training.aggregation      import MetricAggregator, ScalarsPage
 from tools.training.distributed      import DistributedContext
 from tools.training.scheduling       import Scheduler, Warmup
 from tools.training.stopping         import EarlyStopping
@@ -285,6 +285,10 @@ class BaseTrainer:
 
         info["Device"] = self.device
         self.logger.kv_table(info)
+
+    def _scalars_page(self) -> ScalarsPage:
+        """Returns the Custom Scalars page of the run, the loss and the optimiser charts; a subclass adds the categories of its diagnostics."""
+        return ScalarsPage().loss().optimiser()
 
     def _before_training(self, train_loader: DataLoader) -> None:
         """Hook fired once after resume and before the first epoch.
@@ -787,7 +791,7 @@ class BaseTrainer:
     def train(self, train_loader: DataLoader, val_loader: DataLoader, test_loader: DataLoader):
         """Runs the full training schedule and returns the loss history.
 
-        Resolves the warmup fraction into a step count over the run's optimizer-step
+        Writes the Custom Scalars page, resolves the warmup fraction into a step count over the run's optimizer-step
         budget, then sequences resume, the epoch loop with periodic validation, checkpointing,
         snapshots and early stopping, then the final-weights checkpoint, the final
         test evaluation and the completion marker. The final-epoch weights (EMA
@@ -806,6 +810,7 @@ class BaseTrainer:
         """
         self.logger.section(self.section_title)
         self._log_train_banner(train_loader, val_loader, test_loader)
+        self.tracker.log_layout(self._scalars_page().layout())
 
         steps_per_epoch = math.ceil(len(train_loader) / self.accumulation_steps)
         self.warmup.resolve(self.epochs * steps_per_epoch)

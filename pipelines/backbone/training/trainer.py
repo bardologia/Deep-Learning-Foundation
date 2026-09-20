@@ -16,6 +16,7 @@ from pipelines.shared.training.curriculum    import CurriculumController
 from pipelines.backbone.training.docs        import TrainingDocs
 from pipelines.backbone.training.diagnostics import ParamSampler, ReconstructionFigures, SlotVitals
 from tools.training                          import BaseTrainer
+from tools.training.aggregation              import ScalarsPage
 
 
 class Trainer(BaseTrainer):
@@ -151,6 +152,10 @@ class Trainer(BaseTrainer):
             pred_params.register_hook(self.slot_vitals.observe_gradient)
 
         return self.criterion(pred_params, gt_params)
+
+    def _scalars_page(self) -> ScalarsPage:
+        """Adds the parameter errors, the occupancy statistics and the per slot vitals to the page."""
+        return super()._scalars_page().parameter_errors().occupancy().slots()
 
     def _before_training(self, train_loader: DataLoader) -> None:
         """Emits the architecture documentation from a sample batch."""

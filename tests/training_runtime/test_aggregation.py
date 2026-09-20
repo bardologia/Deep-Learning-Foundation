@@ -6,10 +6,12 @@ and tensor accumulation without eager conversion."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 import torch
 
-from tools.training.aggregation import MetricAggregator
+from tools.training.aggregation import MetricAggregator, ScalarsPage
 
 
 def _loss_dict(components, monitor, occupancy=None, physical=None):
@@ -112,3 +114,36 @@ def test_physical_channel_reduces_independently():
     agg.add(_loss_dict({}, {}, physical={"mu_mae": torch.tensor(4.0)}))
 
     assert agg.reduce_physical()["mu_mae"] == pytest.approx(3.0)
+
+
+def test_the_scalars_page_lays_the_base_families_out_as_multiline_charts():
+    """The loss and optimiser charts land in page order, every chart is a Multiline over compiled patterns and the staged families get one chart per stage."""
+    layout = ScalarsPage().loss().optimiser().layout()
+
+    assert list(layout) == ["Loss", "Optimiser"]
+    assert list(layout["Loss"]) == ["Total loss by stage", "Loss terms, training", "Loss terms, validation", "Monitors, training", "Monitors, validation"]
+    assert layout["Loss"]["Total loss by stage"]  == ["Multiline", ["loss/train$", "loss/val$", "loss/test$"]]
+    assert layout["Loss"]["Loss terms, training"] == ["Multiline", ["loss_terms/.+/train$"]]
+    assert layout["Optimiser"]["Gradient norm, total and per group"] == ["Multiline", ["optim/grad_norm$", "optim/grad_norm/"]]
+
+    for charts in layout.values():
+        for kind, patterns in charts.values():
+            assert kind == "Multiline"
+            assert all(re.compile(pattern) for pattern in patterns)
+
+
+def test_the_scalars_page_patterns_match_the_tags_the_trainers_write_from_the_start():
+    """A staged pattern takes nested keys and the stage at the end only, the group patterns take every group and the exact patterns nothing longer."""
+    layout = ScalarsPage().loss().optimiser().parameter_errors().occupancy().slots().layout()
+    terms  = layout["Loss"]["Loss terms, validation"][1][0]
+    groups = layout["Optimiser"]["Learning rate per group"][1][0]
+    total  = layout["Loss"]["Total loss by stage"][1][0]
+    slots  = layout["Slots"]["Gradient norm per slot"][1][0]
+
+    assert list(layout) == ["Loss", "Optimiser", "Diagnostics", "Slots"]
+    assert list(layout["Diagnostics"]) == ["Parameter errors, training", "Parameter errors, validation", "Occupancy, training", "Occupancy, validation"]
+    assert re.match(terms, "loss_terms/param_l1/val") and re.match(terms, "loss_terms/param_l1/amp/val")
+    assert not re.match(terms, "loss_terms/param_l1/train") and not re.match(terms, "loss_terms/param_l1/val/extra")
+    assert re.match(groups, "optim/lr/encoder") and re.match(groups, "optim/lr/output_head")
+    assert re.match(total, "loss/train") and not re.match(total, "loss/train_extra")
+    assert re.match(slots, "slot_vitals/grad_norm/slot_0/train") and not re.match(slots, "slot_vitals/amp_mean/slot_0/val")

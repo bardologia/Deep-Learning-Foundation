@@ -1,4 +1,4 @@
-"""Running means of the loss components and monitors reported over an epoch."""
+"""Running means of the loss components and monitors reported over an epoch, and the Custom Scalars page that lays the logged families out."""
 
 import torch
 
@@ -78,3 +78,78 @@ class MetricAggregator:
     def reduce_physical(self) -> dict:
         """Returns the epoch mean of every physical-domain diagnostic."""
         return self._reduce(self.physical_sum, self.physical_n)
+
+
+class ScalarsPage:
+    """The Custom Scalars page of a run: charts that draw several tags each, so a family of scalars is read on one plot.
+
+    TensorBoard matches the patterns of a chart from the start of the tag, so a
+    family is named by its prefix and its stage pinned at the end. The base
+    trainer adds the loss and the optimiser charts every family logs; a trainer
+    adds the categories of the diagnostics its loss fills.
+
+    Attributes:
+        STAGES     : Stage labels a metric family is logged under, each with the word its chart titles use.
+        categories : Category title to a mapping of chart title to its patterns, in page order.
+    """
+
+    STAGES = (("train", "training"), ("val", "validation"))
+
+    def __init__(self) -> None:
+        """Starts with an empty page."""
+        self.categories = {}
+
+    def add(self, category: str, title: str, patterns: list) -> None:
+        """Adds one chart drawing every tag one of the patterns matches.
+
+        Args:
+            category : Category the chart sits in, created on first use.
+            title    : Chart title, unique within the category.
+            patterns : Tag regexes matched from the start of the tag.
+        """
+        self.categories.setdefault(category, {})[title] = list(patterns)
+
+    def add_by_stage(self, category: str, label: str, family: str) -> None:
+        """Adds one chart per stage drawing every key of a staged family, one line per key.
+
+        Args:
+            category : Category the charts sit in.
+            label    : Chart label the stage word is appended to.
+            family   : Tag prefix of the family, whose tags read family/key/stage.
+        """
+        for stage, word in self.STAGES:
+            self.add(category, f"{label}, {word}", [f"{family}/.+/{stage}$"])
+
+    def loss(self) -> "ScalarsPage":
+        """Adds the total loss by stage and the loss terms and monitors by stage."""
+        self.add("Loss", "Total loss by stage", ["loss/train$", "loss/val$", "loss/test$"])
+        self.add_by_stage("Loss", "Loss terms", "loss_terms")
+        self.add_by_stage("Loss", "Monitors", "loss_monitor")
+        return self
+
+    def optimiser(self) -> "ScalarsPage":
+        """Adds the learning rate per parameter group and the gradient norm, total and per group."""
+        self.add("Optimiser", "Learning rate per group", ["optim/lr/"])
+        self.add("Optimiser", "Gradient norm, total and per group", ["optim/grad_norm$", "optim/grad_norm/"])
+        return self
+
+    def parameter_errors(self) -> "ScalarsPage":
+        """Adds the physical parameter errors by stage, one line per parameter."""
+        self.add_by_stage("Diagnostics", "Parameter errors", "param_error")
+        return self
+
+    def occupancy(self) -> "ScalarsPage":
+        """Adds the predicted occupancy statistics by stage, one line per statistic."""
+        self.add_by_stage("Diagnostics", "Occupancy", "occupancy")
+        return self
+
+    def slots(self) -> "ScalarsPage":
+        """Adds the per slot vitals, one line per slot: active fraction, mean active amplitude and gradient norm."""
+        self.add("Slots", "Active fraction per slot", ["slot_vitals/active_frac/"])
+        self.add("Slots", "Mean active amplitude per slot", ["slot_vitals/amp_mean/"])
+        self.add("Slots", "Gradient norm per slot", ["slot_vitals/grad_norm/"])
+        return self
+
+    def layout(self) -> dict:
+        """Returns the page in the form the writer's add_custom_scalars takes: category to chart title to ["Multiline", patterns]."""
+        return {category: {title: ["Multiline", list(patterns)] for title, patterns in charts.items()} for category, charts in self.categories.items()}

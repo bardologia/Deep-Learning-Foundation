@@ -19,6 +19,7 @@ from pipelines.shared.training.curriculum import CurriculumController
 from tools.training.checkpoint            import WeightSwa
 
 from tests.backbone_training._helpers import identity_normalizer, tiny_model, tiny_trainer_config, x_axis_numpy
+from tests.conftest                   import RecordingWriter
 
 from tools.monitoring.logger import Logger
 
@@ -192,43 +193,8 @@ def test_multi_epoch_fit_records_losses(tmp_path):
     assert len(val_losses) >= 1
 
 
-class RecordingWriter:
-    """Minimal TensorBoard writer stub that records the scalars, histograms and figures it receives.
-
-    Attributes:
-        scalars    : Recorded (tag, value, step) triples.
-        histograms : Recorded (tag, values, step) triples.
-        figures    : Recorded (tag, figure, step) triples.
-    """
-    def __init__(self):
-        """Initialises empty scalar, histogram and figure records."""
-        self.scalars    = []
-        self.histograms = []
-        self.figures    = []
-
-    def add_scalar(self, tag, value, step):
-        """Records a scalar entry."""
-        self.scalars.append((tag, value, step))
-
-    def add_histogram(self, tag, values, step, bins="auto"):
-        """Records a histogram entry."""
-        self.histograms.append((tag, values, step))
-
-    def add_figure(self, tag, figure, step, close=True):
-        """Records a figure entry."""
-        self.figures.append((tag, figure, step))
-
-    def flush(self):
-        """Accepts the flush call without doing anything."""
-        pass
-
-    def close(self):
-        """Accepts the close call without doing anything."""
-        pass
-
-
 def test_train_logs_throughput_and_diagnostics(tmp_path):
-    """Verifies training emits throughput, non-finite-batch and gradient-norm scalars plus twelve validation reconstruction figures."""
+    """Verifies training emits throughput, non-finite-batch and gradient-norm scalars, twelve validation reconstruction figures and the Custom Scalars page with the slot category."""
     writer           = RecordingWriter()
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
@@ -251,7 +217,11 @@ def test_train_logs_throughput_and_diagnostics(tmp_path):
     assert nonfinite == [0.0]
 
     assert len(writer.figures) == 12
-    assert all(tag.startswith("reconstruction/") and tag.endswith("/val") for tag, _, _ in writer.figures)
+    assert all(tag.startswith("reconstruction/") and tag.endswith("/val") for tag, *_ in writer.figures)
+
+    assert len(writer.layouts) == 1
+    assert list(writer.layouts[0]) == ["Loss", "Optimiser", "Diagnostics", "Slots"]
+    assert "Active fraction per slot" in writer.layouts[0]["Slots"]
 
 
 def _loss_dict(total: float) -> dict:

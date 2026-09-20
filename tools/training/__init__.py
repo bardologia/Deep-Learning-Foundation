@@ -1,6 +1,6 @@
 """Reusable training components: metrics, schedules, clipping, checkpointing, trainer base."""
 
-from .aggregation      import MetricAggregator
+from .aggregation      import MetricAggregator, ScalarsPage
 from .scheduling       import Scheduler, Warmup
 from .stopping         import EarlyStopping
 from .gradients        import GradientClipper
@@ -11,6 +11,7 @@ from .vram_reservation import VramReservation
 
 __all__ = [
     "MetricAggregator",
+    "ScalarsPage",
     "Scheduler",
     "Warmup",
     "EarlyStopping",
