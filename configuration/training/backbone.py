@@ -245,12 +245,12 @@ class ClampTrialsConfig:
 
 @dataclass
 class StabilityTrialsConfig:
-    """Trial settings for the cumulative training-stability ladder.
+    """Trial settings for the training-stability arms.
 
     The ladder starts with neither learning-rate warmup nor gradient clipping,
-    then adds the warmup ramp at each configured fraction of the total optimizer
-    steps, then adds gradient clipping at each configured norm threshold on top
-    of the first warmup.
+    then plans one warmup-only rung per configured fraction of the total
+    optimizer steps, one clipping-only rung per configured norm threshold, and
+    one combined rung pairing the first fraction with each threshold.
 
     Attributes:
         warmup_fractions : Fractions of the total optimizer steps the warmup ramp spans, one warmup rung each.

@@ -997,10 +997,10 @@
     "training/backbone::StabilityTrialsConfig": {
       "summary": "Cumulative training-stability ladder for the stability trial planner: rung 0 trains without lr warmup and without gradient clipping, then one warmup rung per configured fraction of the total optimizer steps, then one clipping rung per configured norm threshold on top of the first warmup",
       "fields": {
-        "warmup_fractions": "Fractions of the run's total optimizer steps the learning-rate warmup ramp spans, one warmup rung each; all must lie in (0, 1] and be unique, and the first also underlies the clipping rungs",
+        "warmup_fractions": "Fractions of the run's total optimizer steps the learning-rate warmup ramp spans, one warmup-only rung each; all must lie in (0, 1] and be unique, and the first also underlies the combined warmup-plus-clipping rungs",
         "warmup_mode": "Shape of the warmup ramp on those rungs, one of linear, cosine, exponential or polynomial",
         "clip_mode": "Gradient-clipping strategy of the clipping rungs, one of fixed, adaptive_percentile or adaptive_mean_std; disabled is rejected because it would repeat the warmup rungs",
-        "max_grad_norms": "Gradient-norm thresholds of the fixed clipping strategy, one clipping rung each; all must be positive and unique, and only the fixed strategy may list more than one"
+        "max_grad_norms": "Gradient-norm thresholds of the fixed clipping strategy, one clipping-only rung and one combined rung each; all must be positive and unique, and only the fixed strategy may list more than one"
       }
     },
     "training/backbone::PatchTrialsConfig": {
@@ -1102,7 +1102,7 @@
         "head_trials": "HeadMatchingTrialsConfig sub-config for the head-and-matching grid crossing every selected head with every selected parameter-matching strategy on one fixed backbone",
         "augmentation_trials": "AugmentationTrialsConfig sub-config for the cumulative augmentation ladder: no augmentation, then + horizontal flip, then + vertical flip, then + input noise at each configured strength",
         "clamp_trials": "ClampTrialsConfig sub-config for the output-clamp ladder: no clamp, hard clamp, leaky clamp",
-        "stability_trials": "StabilityTrialsConfig sub-config for the cumulative training-stability ladder: no lr warmup and no gradient clipping, then + lr warmup, then + gradient clipping",
+        "stability_trials": "StabilityTrialsConfig sub-config for the training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction, then gradient clipping alone per norm, then the first fraction paired with each norm",
         "ema_trials": "EmaTrialsConfig sub-config for the weight-EMA ladder: EMA off, then EMA on at each configured decay; the amp mode reuses the base config unchanged and needs no sub-config",
         "normalization_trials": "NormalizationTrialsConfig sub-config for the cumulative normalization ladder walking channel amplitude, then derived phase, then output amp, then output mu, then output sigma, then the aux channel from their fixed-preset initial to their final strategies, one run per rung plus the all-initial baseline",
         "ablation_features": "Ordered list of feature-toggle dicts (label, enable, degrade overrides) forming the cumulative ablation ladder from the full model down to the baseline",
@@ -2409,7 +2409,7 @@
         "head_trials": "HeadMatchingTrialsConfig sub-config for the head-and-matching grid on one fixed trunk architecture applied to both trunks; the dual model only supports the set_pred head, so the sweep varies the parameter-matching strategy",
         "augmentation_trials": "AugmentationTrialsConfig sub-config for the cumulative augmentation ladder: no augmentation, then + horizontal flip, then + vertical flip, then + input noise at each configured strength",
         "clamp_trials": "ClampTrialsConfig sub-config for the output-clamp ladder: no clamp, hard clamp, leaky clamp",
-        "stability_trials": "StabilityTrialsConfig sub-config for the cumulative training-stability ladder: no lr warmup and no gradient clipping, then + lr warmup, then + gradient clipping",
+        "stability_trials": "StabilityTrialsConfig sub-config for the training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction, then gradient clipping alone per norm, then the first fraction paired with each norm",
         "ema_trials": "EmaTrialsConfig sub-config for the weight-EMA ladder: EMA off, then EMA on at each configured decay; the amp mode reuses the base config unchanged and needs no sub-config",
         "normalization_trials": "NormalizationTrialsConfig sub-config for the cumulative normalization ladder walking channel amplitude, then derived phase, then output amp, then output mu, then output sigma, then the aux channel from their fixed-preset initial to their final strategies, one run per rung plus the all-initial baseline",
         "routing_trials": "DualRoutingTrialsConfig sub-config defining the trunk-routing experiment: the fixed trunk feature ladders shared by every trial and the named params/existence channel-group assignments",

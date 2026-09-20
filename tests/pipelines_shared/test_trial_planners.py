@@ -19,13 +19,13 @@ CLIP_MODES   = ("disabled", "fixed", "adaptive_percentile", "adaptive_mean_std")
 
 
 def test_stability_planner_default_walks_the_ladder():
-    """Verifies the stability ladder plans the bare, warmup-only and warmup-plus-clipping rungs."""
+    """Verifies the stability ladder plans the bare, warmup-only, clipping-only and combined rungs."""
     planner = StabilityTrialPlanner(StabilityTrialsConfig(), WARMUP_MODES, CLIP_MODES)
 
     plans = dict(planner.plan())
 
-    assert list(plans) == ["stab-0-none", "stab-1-warmup-w0.03", "stab-2-clip-n1"]
-    assert planner.summary()["Total runs"] == 3
+    assert list(plans) == ["stab-0-none", "stab-1-warmup-w0.03", "stab-2-clip-n1", "stab-3-both-w0.03-n1"]
+    assert planner.summary()["Total runs"] == 4
 
     assert plans["stab-0-none"] == {
         "training.warmup_enabled" : False,
@@ -38,6 +38,11 @@ def test_stability_planner_default_walks_the_ladder():
         "training.clip_mode"       : "disabled",
     }
     assert plans["stab-2-clip-n1"] == {
+        "training.warmup_enabled" : False,
+        "training.clip_mode"      : "fixed",
+        "training.max_grad_norm"  : 1.0,
+    }
+    assert plans["stab-3-both-w0.03-n1"] == {
         "training.warmup_enabled"  : True,
         "training.warmup_fraction" : 0.03,
         "training.warmup_mode"     : "linear",
@@ -46,18 +51,31 @@ def test_stability_planner_default_walks_the_ladder():
     }
 
 
+def test_stability_planner_labels_a_non_fixed_clip_arm_by_strategy():
+    """Verifies a non-fixed clipping strategy names its arms by strategy instead of a meaningless threshold."""
+    planner = StabilityTrialPlanner(StabilityTrialsConfig(clip_mode="adaptive_percentile"), WARMUP_MODES, CLIP_MODES)
+
+    plans = dict(planner.plan())
+
+    assert list(plans) == ["stab-0-none", "stab-1-warmup-w0.03", "stab-2-clip-adaptive_percentile", "stab-3-both-w0.03-adaptive_percentile"]
+    assert plans["stab-2-clip-adaptive_percentile"]["training.clip_mode"]      == "adaptive_percentile"
+    assert plans["stab-2-clip-adaptive_percentile"]["training.warmup_enabled"] is False
+
+
 def test_stability_planner_plans_extra_warmup_and_clipping_rungs():
-    """Verifies extra fractions and norms each add a rung, clipping on the first warmup."""
+    """Verifies extra fractions and norms each add arms, the combined rungs pairing the first fraction with each norm."""
     planner = StabilityTrialPlanner(StabilityTrialsConfig(warmup_fractions=[0.03, 0.1], max_grad_norms=[1.0, 0.5]), WARMUP_MODES, CLIP_MODES)
 
     plans = dict(planner.plan())
 
-    assert list(plans) == ["stab-0-none", "stab-1-warmup-w0.03", "stab-1-warmup-w0.1", "stab-2-clip-n1", "stab-2-clip-n0.5"]
-    assert planner.summary()["Total runs"] == 5
+    assert list(plans) == ["stab-0-none", "stab-1-warmup-w0.03", "stab-1-warmup-w0.1", "stab-2-clip-n1", "stab-2-clip-n0.5", "stab-3-both-w0.03-n1", "stab-3-both-w0.03-n0.5"]
+    assert planner.summary()["Total runs"] == 7
 
-    assert plans["stab-1-warmup-w0.1"]["training.warmup_fraction"]  == 0.1
-    assert plans["stab-2-clip-n0.5"]["training.warmup_fraction"]    == 0.03
-    assert plans["stab-2-clip-n0.5"]["training.max_grad_norm"]      == 0.5
+    assert plans["stab-1-warmup-w0.1"]["training.warmup_fraction"]     == 0.1
+    assert plans["stab-2-clip-n0.5"]["training.warmup_enabled"]        is False
+    assert plans["stab-2-clip-n0.5"]["training.max_grad_norm"]         == 0.5
+    assert plans["stab-3-both-w0.03-n0.5"]["training.warmup_fraction"] == 0.03
+    assert plans["stab-3-both-w0.03-n0.5"]["training.max_grad_norm"]   == 0.5
 
 
 def test_stability_planner_paths_are_entry_config_leaves():
@@ -170,7 +188,7 @@ def test_stability_plan_round_trips_through_config_cli():
     plans = dict(StabilityTrialPlanner(StabilityTrialsConfig(), WARMUP_MODES, CLIP_MODES).plan())
 
     cli   = ConfigCli(BackboneEntryConfig())
-    trial = cli.apply(ConfigCli.to_argv(plans["stab-2-clip-n1"]) + ["--trial"])
+    trial = cli.apply(ConfigCli.to_argv(plans["stab-3-both-w0.03-n1"]) + ["--trial"])
 
     assert trial.training.warmup_enabled  is True
     assert trial.training.warmup_fraction == 0.03

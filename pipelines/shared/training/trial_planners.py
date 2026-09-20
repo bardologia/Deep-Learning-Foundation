@@ -14,9 +14,10 @@ class StabilityTrialPlanner:
     """Plans the cumulative training-stability ladder over warmup and gradient clipping.
 
     The ladder starts with neither learning-rate warmup nor gradient clipping,
-    adds the warmup ramp at each configured fraction of the total optimizer
-    steps, then adds gradient clipping at each configured norm threshold on top
-    of the first warmup, each rung on the otherwise unchanged base config.
+    then plans one warmup-only rung per configured fraction of the total
+    optimizer steps, one clipping-only rung per configured norm threshold, and
+    one combined rung pairing the first fraction with each threshold, each rung
+    on the otherwise unchanged base config.
 
     Attributes:
         trials       : Stability trial configuration with `warmup_fractions`, `warmup_mode`, `clip_mode` and `max_grad_norms`.
@@ -85,10 +86,10 @@ class StabilityTrialPlanner:
     def summary(self) -> dict:
         """Returns the ladder order, warmup and clipping settings and run count for logging."""
         return {
-            "Ladder"     : "none -> +warmup per fraction -> +clip per norm",
+            "Ladder"     : "none -> +warmup per fraction -> +clip per norm -> +both",
             "Warmup"     : f"{', '.join(f'{fraction:g}' for fraction in self.trials.warmup_fractions)} of total steps, {self.trials.warmup_mode}",
             "Clipping"   : f"{self.trials.clip_mode} @ {', '.join(f'{norm:g}' for norm in self.trials.max_grad_norms)}",
-            "Total runs" : 1 + len(self.trials.warmup_fractions) + len(self.trials.max_grad_norms),
+            "Total runs" : 1 + len(self.trials.warmup_fractions) + 2 * len(self.trials.max_grad_norms),
         }
 
     def _overrides(self, warmup_fraction: float | None, max_grad_norm: float | None) -> dict:
@@ -116,13 +117,20 @@ class StabilityTrialPlanner:
 
         return overrides
 
+    def _clip_tag(self, norm: float) -> str:
+        """Returns the run-name token of one clipping arm: the norm under the fixed strategy, the strategy name otherwise."""
+        return f"n{norm:g}" if self.trials.clip_mode == "fixed" else self.trials.clip_mode
+
     def plan(self) -> list[tuple[str, dict]]:
-        """Returns the bare rung, one warmup rung per fraction, and one clipping rung per norm on the first warmup."""
+        """Returns the bare rung, one warmup-only rung per fraction, one clipping-only rung per norm, and one combined rung per norm on the first fraction."""
+        first = self.trials.warmup_fractions[0]
         rungs = [("stab-0-none", self._overrides(None, None))]
         for fraction in self.trials.warmup_fractions:
             rungs.append((f"stab-1-warmup-w{fraction:g}", self._overrides(fraction, None)))
         for norm in self.trials.max_grad_norms:
-            rungs.append((f"stab-2-clip-n{norm:g}", self._overrides(self.trials.warmup_fractions[0], norm)))
+            rungs.append((f"stab-2-clip-{self._clip_tag(norm)}", self._overrides(None, norm)))
+        for norm in self.trials.max_grad_norms:
+            rungs.append((f"stab-3-both-w{first:g}-{self._clip_tag(norm)}", self._overrides(first, norm)))
 
         return rungs
 
