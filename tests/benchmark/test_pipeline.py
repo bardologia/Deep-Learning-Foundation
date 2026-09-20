@@ -147,11 +147,12 @@ def _recording_pipeline(tmp_path, monkeypatch, **kwargs):
     pipeline = BenchmarkPipeline(_config(tmp_path, **kwargs), entry_script=ENTRY)
     calls    = []
     returns  = {
-        "_run_size_match" : {},
-        "_run_max_batch"  : {},
-        "_run_training"   : [],
-        "_run_inference"  : [],
-        "_run_comparison" : tmp_path / "comparison",
+        "_run_size_match"  : {},
+        "_run_max_batch"   : {},
+        "_log_unit_status" : None,
+        "_run_training"    : [],
+        "_run_inference"   : [],
+        "_run_comparison"  : tmp_path / "comparison",
     }
 
     for step, value in returns.items():
@@ -166,7 +167,7 @@ def test_prepare_stage_stops_before_training(tmp_path, monkeypatch):
 
     pipeline.run()
 
-    assert calls == ["_run_size_match", "_run_max_batch"]
+    assert calls == ["_run_size_match", "_run_max_batch", "_log_unit_status"]
     state = FileIO.load_json(pipeline.state_path)
     assert state["stages"]["prepare"]["status"] == "completed"
 

@@ -892,6 +892,7 @@ class LaunchLayout:
                 {"path": "seed", "widget": NUM_SEED},
                 "seeds",
                 "resume",
+                "resume_from",
                 "poll_interval_s",
             ],
             "sections": [
@@ -958,6 +959,7 @@ class LaunchLayout:
                 {"path": "seed", "widget": NUM_SEED},
                 "seeds",
                 "resume",
+                "resume_from",
                 "poll_interval_s",
             ],
             "sections": [
@@ -1031,6 +1033,7 @@ class LaunchLayout:
             "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["image_autoencoder", "Image AE"], ["jepa", "JEPA"]]},
             "essentials": [
                 "run_tag",
+                "resume_from",
                 {"path": "gpus", "widget": GPU_MANY},
                 {"path": "paths.dataset_path", "widget": PICK_DATASET},
                 {"path": "paths.parameters_path", "widget": PICK_PARAMS},

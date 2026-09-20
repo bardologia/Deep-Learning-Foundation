@@ -25,14 +25,15 @@ class CrossValidationPipeline(StagedPipeline):
     LOGGER_NAME = "cross_validation_pipeline"
     STAGES      = ("full", "prepare", "compare")
 
-    def __init__(self, config: CrossValidationConfig, entry_script: Path) -> None:
+    def __init__(self, config: CrossValidationConfig, entry_script: Path, resumed=None) -> None:
         """Binds the pipeline to its configuration and entry script.
 
         Args:
             config       : Cross-validation configuration.
             entry_script : Entry point the stages re-invoke for each unit.
+            resumed      : Resumed-run description logged when the pipeline starts, or None for a fresh run.
         """
-        super().__init__(config, entry_script)
+        super().__init__(config, entry_script, resumed=resumed)
         self.factory = FoldConfigFactory(config)
 
     @classmethod
@@ -58,6 +59,20 @@ class CrossValidationPipeline(StagedPipeline):
     def _validate_sweep(self) -> None:
         """Validates this pipeline's own configuration."""
         self.validate_sweep(self.config)
+
+    def _log_unit_status(self) -> None:
+        """Logs what every fold x seed unit already holds on disk, and which directories no unit claims.
+
+        A full run gets the same table from its training stage; this is the
+        prepare stage's version, so a resume can be inspected before anything
+        is launched.
+        """
+        stage = FoldTrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, logger=self.logger)
+
+        stage.status_report().log(self.logger, "Unit status")
+
+        for directory in stage.unidentified:
+            self.logger.warning(f"{directory.relative_to(stage.stage_dir)}: run directory without a cross-validation manifest, left untouched")
 
     def _run_training(self) -> list[dict]:
         """Trains every fold x seed unit and records the stage status.
@@ -108,9 +123,10 @@ class CrossValidationPipeline(StagedPipeline):
     def run(self) -> None:
         """Runs the configured stage of the cross-validation experiment.
 
-        The 'prepare' stage validates and logs the fold plan only, 'compare'
-        writes the reports from already-finished folds, and 'full' runs
-        training, inference, and reporting in sequence.
+        The 'prepare' stage validates and logs the fold plan and the status
+        of every unit on disk, 'compare' writes the reports from
+        already-finished folds, and 'full' runs training, inference, and
+        reporting in sequence.
         """
         try:
             self._validate_sweep()
@@ -129,6 +145,8 @@ class CrossValidationPipeline(StagedPipeline):
                 "Resume"           : self.config.resume,
                 "Run dir"          : str(self.run_dir),
             }, title="Configuration")
+
+            self._log_resumed()
 
             if self.config.stage == "compare":
                 reports_dir = self._run_reports(planner)
@@ -149,8 +167,9 @@ class CrossValidationPipeline(StagedPipeline):
             self.logger.metrics_table(rows, ["Fold", "Test", "Val", "Train"])
 
             if self.config.stage == "prepare":
+                self._log_unit_status()
                 self._mark_stage("prepare", "completed")
-                self.logger.info(f"Prepare stage done: fold plan validated and resolved config written to {self.pipeline_dir}")
+                self.logger.info(f"Prepare stage done: fold plan validated, unit status listed and resolved config written to {self.pipeline_dir}")
                 return
 
             training_results  = self._run_training()

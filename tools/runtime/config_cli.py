@@ -42,7 +42,7 @@ class ConfigCli:
         "--trial", "--worker", "--resume",
         "--model",
         "--n-trials", "--study-name", "--storage-url",
-        "--run-tag", "--run-dir",
+        "--run-tag", "--run-dir", "--run-name",
         "--fold", "--split",
     )
 

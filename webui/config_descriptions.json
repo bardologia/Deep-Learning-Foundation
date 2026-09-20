@@ -2050,7 +2050,8 @@
         "seed": "base random seed used for the max-batch probe and as the default per-unit seed when seeds is empty",
         "seeds": "List of seeds expanded across every (model, loss-component) pair, one run per seed nested as seed<N> inside each unit directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "poll_interval_s": "seconds between polls of queued job status while waiting for GPUs or completed jobs",
-        "sweep_loss_components": "loss component names from LossComponentCatalog, one training run launched per component layered onto loss, must be non-empty and valid"
+        "sweep_loss_components": "loss component names from LossComponentCatalog, one training run launched per component layered onto loss, must be non-empty and valid",
+        "resume_from": "Path at or inside an existing benchmark run to finish (the run directory, its pipeline, training or one unit run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every model x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference passes run. Empty starts a fresh run"
       }
     },
     "cross_validation/general::FoldConfig": {
@@ -2092,7 +2093,8 @@
         "resume": "Whether to skip a fold's training job or inference split whose directory holds a complete.json marker stamped only at successful completion, letting an interrupted CV sweep continue without retraining finished folds while unfinished ones are deleted and restarted (distinct from training.resume, which resumes a single run's own training mid-epoch)",
         "seed": "Base random seed used for a fold when no per-seed override is given, controlling weight init, shuffling, and augmentation",
         "seeds": "List of seeds for a multi-seed sweep, one run per fold and seed nested as seed<N> inside each fold directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
-        "poll_interval_s": "Seconds between successive polls of the fold job queue while waiting for GPUs or completed jobs"
+        "poll_interval_s": "Seconds between successive polls of the fold job queue while waiting for GPUs or completed jobs",
+        "resume_from": "Path at or inside an existing cross-validation run to finish (the run directory, its pipeline, folds or one fold run inside it). The run recorded configuration under pipeline/resolved_config.json is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and resume is switched on; every fold x seed unit is matched to its directory through the unit manifest it wrote, so only the missing or unfinished units and inference splits run. Empty starts a fresh run"
       }
     },
     "cross_validation/dual::DualCvConfig": {
@@ -2156,7 +2158,8 @@
         "image_ae_loss": "ImageAeLossConfig reconstruction-loss settings used when tuning the image autoencoder",
         "jepa": "JepaCouplingConfig sub-config supplying pretrained autoencoder sources, their finetune rates and JEPA-specific loss settings for jepa trials",
         "pixel_subsample": "fraction of active (non-empty) pixels kept when building the profile-autoencoder tuning dataset, 1.0 keeps all",
-        "keep_empty_frac": "fraction of empty (no-Gaussian) profiles kept alongside the subsampled active ones when building the profile-autoencoder tuning dataset"
+        "keep_empty_frac": "fraction of empty (no-Gaussian) profiles kept alongside the subsampled active ones when building the profile-autoencoder tuning dataset",
+        "resume_from": "Path at or inside an existing tuning run to continue (the run directory or any path inside it). The run recorded configuration beside its Optuna database is loaded as the base, the overrides typed on this launch are applied on top, the run tag and log base follow the path, and every study is topped up to the trial target; the study-defining fields stay guarded exactly as with --resume. Empty starts a fresh run"
       }
     },
     "comparison::TrialComparisonConfig": {

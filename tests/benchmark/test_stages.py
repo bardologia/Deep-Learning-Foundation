@@ -353,3 +353,35 @@ def test_unit_base_names_model_head_stem_and_component(data_config):
     unit = SeedExpandedStage.unit_base(data_config, "resunet-set_pred", "mse_curve")
 
     assert unit == f"resunet-set_pred-hungarian-{SCENE_K_TAG}-hv-AB__mse_curve"
+
+
+@pytest.mark.dataset
+def test_training_stage_reuses_a_unit_found_through_its_manifest(data_config, logger_stub):
+    """Verifies a completed benchmark unit under another directory name is matched by its manifest and its worker pointed at that directory."""
+    from pipelines.benchmark.stages import BenchmarkUnitManifest
+    from tools.runtime.completion   import CompletionMarker
+
+    data_config.resume = True
+    data_config.seeds  = [7]
+
+    old = data_config.paths.log_base_dir / "t" / "training" / "renamed_unit" / "seed7"
+    BenchmarkUnitManifest.write(old, run_tag="t", unit="renamed_unit/seed7", model="unet", loss_component="param_l1", seed=7)
+    CompletionMarker.stamp(old, {})
+
+    stage   = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
+    planned = f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7"
+
+    assert stage.unit_dirs == {planned: "renamed_unit/seed7"}
+    assert stage._job(planned).command[stage._job(planned).command.index("--run-name") + 1] == "renamed_unit/seed7"
+    assert stage._is_complete(planned)
+
+
+@pytest.mark.dataset
+def test_training_stage_hands_a_fresh_unit_its_own_name(data_config, logger_stub):
+    """Verifies a unit without a directory is handed its own name as the run name."""
+    data_config.seeds = [7]
+    stage = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
+
+    job = stage._job(f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7")
+
+    assert job.command[job.command.index("--run-name") + 1] == f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7"

@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from configuration.benchmark      import BenchmarkConfig
-from pipelines.benchmark.pipeline import BenchmarkPipeline
-from pipelines.benchmark.stages   import SeedExpandedStage
-from tools.runtime.config_cli     import ConfigCli
-from tools.runtime.run_tag        import RunTag
+from configuration.benchmark                    import BenchmarkConfig
+from pipelines.benchmark.pipeline               import BenchmarkPipeline
+from pipelines.benchmark.stages                 import SeedExpandedStage
+from pipelines.shared.orchestration.resumed_run import ResumedRun
+from tools.runtime.config_cli                   import ConfigCli
+from tools.runtime.run_tag                      import RunTag
 
 
 class BenchmarkClusterScheduler(SeedExpandedStage):
@@ -24,9 +25,11 @@ class BenchmarkClusterScheduler(SeedExpandedStage):
         run_tag           : Tag identifying this benchmark run.
         run_dir           : Directory holding every artefact of the run.
         forward_overrides : CLI overrides forwarded to the stage jobs, scheduler-only fields removed.
+        unit_dirs         : Existing directory per unit name, relative to the training directory, for the units a resume found through their manifests.
+        unidentified      : Run directories under the training directory that carry no benchmark manifest.
     """
 
-    SCHEDULER_FIELDS = ("stage", "run_tag", "gpu", "gpus", "gpus_file", "poll_interval_s")
+    SCHEDULER_FIELDS = ("stage", "run_tag", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     def __init__(self, config: BenchmarkConfig, cli_overrides: dict, entry_script: Path) -> None:
         """Resolves the run directory and expands the selected models into seed units.
@@ -40,10 +43,19 @@ class BenchmarkClusterScheduler(SeedExpandedStage):
         self.entry_script = Path(entry_script)
         self.run_tag      = config.run_tag or RunTag.now()
         self.run_dir      = Path(config.paths.log_base_dir) / self.run_tag
+        self.unit_dirs    = {}
+        self.unidentified = []
 
         self.forward_overrides = {path: value for path, value in cli_overrides.items() if path.split(".")[0] not in self.SCHEDULER_FIELDS}
 
         self._names = self._expand(config, BenchmarkPipeline.select_models(config))
+
+        if config.resume:
+            self._reconcile(self.run_dir / "training")
+
+    def unit_name(self, name: str) -> str:
+        """Returns the directory of a unit relative to the training directory: the one found on disk, else the unit's own name."""
+        return self.unit_dirs.get(name, name)
 
     @property
     def sweep_name(self) -> str:
@@ -106,6 +118,9 @@ class BenchmarkLauncher:
         """
         cli    = ConfigCli(BenchmarkConfig(), description="Fan the architecture benchmark out over a cluster: prepare, one job per model unit, then compare")
         config = cli.apply(list(argv))
+
+        if config.resume_from:
+            config = ResumedRun(BenchmarkConfig, config, cli.overrides).load()
 
         BenchmarkPipeline.validate_sweep(config)
 

@@ -497,3 +497,26 @@ def test_training_worker_rejects_unsupported_training_type(config):
 
     with pytest.raises(ValueError, match="nonexistent_type"):
         worker.run("gamma_net")
+
+
+@pytest.mark.dataset
+def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory(config, test_data_dir, params_dir, monkeypatch):
+    """Verifies the training worker records the unit identity in the directory the scheduler handed over before training."""
+    from pipelines.benchmark.stages                   import BenchmarkUnitManifest
+    from pipelines.benchmark.workers                  import TrainingWorker
+    from pipelines.shared.orchestration.unit_manifest import UnitManifest
+
+    config.paths.dataset_path    = test_data_dir
+    config.paths.parameters_path = params_dir / "parameters.npy"
+
+    seen = {}
+    monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: seen.update(run_name=run_name), raising=True)
+
+    worker = TrainingWorker(config, "tag")
+    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+
+    manifest = UnitManifest.read(worker.run_dir / "training" / "renamed/seed3")
+    assert seen["run_name"] == "renamed/seed3"
+    assert manifest["kind"] == BenchmarkUnitManifest.KIND
+    assert BenchmarkUnitManifest.identity(manifest) == ("unet", "param_l1", 3)
+    assert manifest["unit"] == "renamed/seed3"

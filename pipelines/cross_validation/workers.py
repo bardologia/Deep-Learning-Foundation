@@ -16,7 +16,7 @@ from configuration.cross_validation import CrossValidationConfig
 from pipelines.shared.comparison.trial_collection import TrainingResultsIndex, TrialCollector, TrialRecord
 from pipelines.shared.training.unit_resume        import UnitResume
 from pipelines.shared.training.worker_base        import WorkerBase
-from pipelines.cross_validation.folds             import FoldConfigFactory, FoldFamily, FoldNaming, FoldRunNaming
+from pipelines.cross_validation.folds             import FoldConfigFactory, FoldFamily, FoldNaming, FoldPlanner, FoldRunNaming, FoldUnitManifest
 from tools.data.io           import FileIO
 from tools.metrics.scoring   import SeedAggregation
 from tools.data.regions      import SplitRegions
@@ -199,6 +199,20 @@ class CrossValidationWorker(WorkerBase):
         """Returns the full run name of one fold and seed."""
         return self.naming.run_name(fold_index, seed)
 
+    def unit_run_name(self, fold_index: int, seed: int | None, run_name: str | None) -> str:
+        """Returns the run name the unit lives under: the one the scheduler handed over, else the composed one.
+
+        Args:
+            fold_index : Zero-based index of the fold.
+            seed       : Seed of the unit, or None for an unseeded run.
+            run_name   : Directory the scheduler found for this unit relative to the folds directory, or None to compose the name.
+        """
+        return run_name if run_name else self.fold_run_name(fold_index, seed)
+
+    def unit_directory(self, run_name: str) -> Path:
+        """Returns the run directory of a unit from its name relative to the folds directory."""
+        return self.run_dir / "folds" / run_name
+
 
 class FoldTrainingWorker(CrossValidationWorker):
     """Trains one fold x seed unit in the configured model family."""
@@ -222,7 +236,23 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         return trainer_config, dataset_config
 
-    def _run_backbone(self, fold_index: int, seed: int | None, split_regions: SplitRegions) -> None:
+    def _write_manifest(self, fold_index: int, seed: int | None, run_name: str) -> Path:
+        """Records the unit's identity and scored regions in its run directory before training starts.
+
+        Args:
+            fold_index : Zero-based index of the fold.
+            seed       : Seed of the unit, or None for an unseeded run.
+            run_name   : Run name of the unit relative to the folds directory.
+
+        Returns:
+            Path of the written manifest.
+        """
+        planner = self.factory.planner()
+        regions = {split: planner.inference_region(fold_index, split).as_tuple() for split in FoldPlanner.INFERENCE_SPLITS}
+
+        return FoldUnitManifest.write(self.unit_directory(run_name), run_tag=self.run_tag, unit=run_name, fold_index=fold_index, seed=seed, training_type=self.config.training_type, inference_regions=regions)
+
+    def _run_backbone(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
         """Trains one backbone fold unit."""
         from pipelines.backbone.training.pipeline import TrainingPipeline
         from pipelines.shared.model.model_builder import ModelBuilder
@@ -236,13 +266,13 @@ class FoldTrainingWorker(CrossValidationWorker):
             backbone_name  = self.config.backbone_name,
             model_config   = model_config,
             seed           = self.config.seed if seed is None else seed,
-            run_name       = self.fold_run_name(fold_index, seed),
+            run_name       = run_name,
             overfit_check  = self.config.overfit_check,
         )
 
         pipeline.run(probe_config=self.config.probe)
 
-    def _run_dual(self, fold_index: int, seed: int | None, split_regions: SplitRegions) -> None:
+    def _run_dual(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
         """Trains one dual-trunk fold unit."""
         from pipelines.dual.training.pipeline import DualTrainingPipeline
 
@@ -255,7 +285,7 @@ class FoldTrainingWorker(CrossValidationWorker):
             backbone_name  = self.config.dual.model_name,
             model_config   = model_config,
             seed           = self.config.seed if seed is None else seed,
-            run_name       = self.fold_run_name(fold_index, seed),
+            run_name       = run_name,
             overfit_check  = self.config.overfit_check,
         )
 
@@ -290,11 +320,11 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         return ModelBuilder.config_from_registry(dual.model_name, {**trunk_overrides, **self.config.model_overrides}, registry=DUAL_CONFIG_REGISTRY)
 
-    def _run_jepa(self, fold_index: int, seed: int | None, split_regions: SplitRegions) -> None:
+    def _run_jepa(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
         """Trains one JEPA fold unit."""
         from pipelines.jepa.training.pipeline import TrainingPipeline
 
-        TrainingPipeline(self._jepa_entry_config(self.fold_run_name(fold_index, seed), seed), split_regions=split_regions).run()
+        TrainingPipeline(self._jepa_entry_config(run_name, seed), split_regions=split_regions).run()
 
     def _jepa_entry_config(self, run_name: str, seed: int | None):
         """Builds the JEPA training entry config for one fold unit."""
@@ -319,11 +349,11 @@ class FoldTrainingWorker(CrossValidationWorker):
             **jepa.entry_kwargs(),
         )
 
-    def _run_profile_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions) -> None:
+    def _run_profile_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
         """Trains one profile-autoencoder fold unit."""
         from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
 
-        TrainingPipeline(self._ae_entry_config(self.fold_run_name(fold_index, seed), seed), split_regions=split_regions).run()
+        TrainingPipeline(self._ae_entry_config(run_name, seed), split_regions=split_regions).run()
 
     def _ae_entry_config(self, run_name: str, seed: int | None):
         """Builds the profile-autoencoder training entry config for one fold unit."""
@@ -347,11 +377,11 @@ class FoldTrainingWorker(CrossValidationWorker):
             overfit_check        = cv.overfit_check,
         )
 
-    def _run_image_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions) -> None:
+    def _run_image_autoencoder(self, fold_index: int, seed: int | None, split_regions: SplitRegions, run_name: str) -> None:
         """Trains one image-autoencoder fold unit."""
         from pipelines.image_autoencoder.training.pipeline import TrainingPipeline
 
-        TrainingPipeline(self._image_ae_entry_config(self.fold_run_name(fold_index, seed), seed), split_regions=split_regions).run()
+        TrainingPipeline(self._image_ae_entry_config(run_name, seed), split_regions=split_regions).run()
 
     def _image_ae_entry_config(self, run_name: str, seed: int | None):
         """Builds the image-autoencoder training entry config for one fold unit."""
@@ -374,12 +404,16 @@ class FoldTrainingWorker(CrossValidationWorker):
             overfit_check   = cv.overfit_check,
         )
 
-    def run(self, fold_index: int, seed: int | None = None) -> None:
+    def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
         """Trains one fold unit, dispatching on the configured training family.
+
+        The unit's manifest is written first, so even a run that dies before
+        its first epoch is identifiable when the sweep is resumed.
 
         Args:
             fold_index : Zero-based index of the fold.
             seed       : Seed of the unit, or None for an unseeded run.
+            run_name   : Directory of the unit relative to the folds directory, or None to compose it from the fold and seed.
 
         Raises:
             ValueError : If the training family is unsupported.
@@ -394,8 +428,11 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         training_type = FoldFamily.validate(self.config.training_type)
         split_regions = self.factory.planner().plan(fold_index).split_regions
+        run_name      = self.unit_run_name(fold_index, seed, run_name)
 
-        dispatch[training_type](fold_index, seed, split_regions)
+        self._write_manifest(fold_index, seed, run_name)
+
+        dispatch[training_type](fold_index, seed, split_regions, run_name)
 
 
 class FoldInferenceWorker(CrossValidationWorker):
@@ -428,7 +465,7 @@ class FoldInferenceWorker(CrossValidationWorker):
 
         ImageAeInferencePipeline(self.factory.fold_image_ae_inference_config(run_directory, split)).run()
 
-    def run(self, fold_index: int, seed: int | None = None) -> None:
+    def run(self, fold_index: int, seed: int | None = None, run_name: str | None = None) -> None:
         """Runs inference for one fold unit on every configured split.
 
         Splits whose inference is already complete are skipped when resume is
@@ -437,6 +474,7 @@ class FoldInferenceWorker(CrossValidationWorker):
         Args:
             fold_index : Zero-based index of the fold.
             seed       : Seed of the unit, or None for an unseeded run.
+            run_name   : Directory of the unit relative to the folds directory, or None to compose it from the fold and seed.
 
         Raises:
             ValueError : If the training family is unsupported.
@@ -450,8 +488,7 @@ class FoldInferenceWorker(CrossValidationWorker):
         }
 
         training_type = FoldFamily.validate(self.config.training_type)
-        run_name      = self.fold_run_name(fold_index, seed)
-        run_directory = self.run_dir / "folds" / run_name
+        run_directory = self.unit_directory(self.unit_run_name(fold_index, seed, run_name))
         subdir        = FoldFamily.inference_subdir(training_type)
         resume        = UnitResume(run_directory, enabled=self.config.resume)
 

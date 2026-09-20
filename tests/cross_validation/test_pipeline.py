@@ -34,11 +34,23 @@ def install_fake_stages(monkeypatch, order: list, training_results=None, inferen
     train_results = training_results if training_results is not None else [{"name": f"fold_{i}", "status": "DONE"} for i in range(5)]
     infer_results = inference_results if inference_results is not None else [{"name": "fold_0", "status": "DONE"}]
 
+    class FakeStatus:
+        """Unit status stub that records nothing."""
+        def log(self, logger, title):
+            """Accepts the logger and title without writing anything."""
+            pass
+
     class FakeTraining:
         """Training stage stub returning canned fold results."""
+        unidentified = []
+
         def __init__(self, **kwargs):
-            """Accepts and discards the stage keyword arguments."""
-            pass
+            """Records the folds directory the stage would write under."""
+            self.stage_dir = Path(kwargs["config"].paths.log_base_dir) / kwargs["run_tag"] / "folds"
+
+        def status_report(self):
+            """Returns the inert status stub."""
+            return FakeStatus()
 
         def run(self):
             """Records the training step and returns the canned results."""

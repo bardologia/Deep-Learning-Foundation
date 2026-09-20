@@ -69,6 +69,7 @@ class CrossValidationConfig:
         gpus_file         : Path to a file that can resize the GPU pool while running.
         run_tag           : Optional tag appended to generated run names.
         resume            : Whether completed folds are skipped on a repeated launch.
+        resume_from       : Path at or inside an existing cross-validation run to finish; its recorded configuration is loaded, the command-line overrides are applied on top, and only the missing or unfinished fold x seed units and inference splits are run.
         seed              : Base random seed.
         seeds             : Seeds trained per fold.
         poll_interval_s   : Scheduler polling interval in seconds.
@@ -105,6 +106,7 @@ class CrossValidationConfig:
     gpus_file       : str        = ""
     run_tag         : str | None = None
     resume          : bool       = True
+    resume_from     : str        = ""
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=standard_seeds)
     poll_interval_s : float      = 5.0

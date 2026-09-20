@@ -237,6 +237,7 @@ class BenchmarkConfig:
         skip_models           : Model names excluded from the benchmark.
         run_tag               : Optional tag appended to generated run names.
         resume                : Whether completed units are skipped on a repeated launch.
+        resume_from           : Path at or inside an existing benchmark run to finish; its recorded configuration is loaded, the command-line overrides are applied on top, and only the missing or unfinished model x seed units and inference passes are run.
         infer_after           : Whether inference runs once training finishes.
         seed                  : Base random seed.
         seeds                 : Seeds trained per benchmarked configuration.
@@ -273,6 +274,7 @@ class BenchmarkConfig:
     skip_models     : list[str]  = field(default_factory=list)
     run_tag         : str | None = None
     resume          : bool       = True
+    resume_from     : str        = ""
     infer_after     : bool       = True
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=standard_seeds)

@@ -67,6 +67,7 @@ class TuningEntryConfig:
         heads           : Output heads included in the search.
         skip_models     : Architecture registry keys excluded from the search.
         run_tag         : Suffix appended to the study folder name.
+        resume_from     : Path at or inside an existing tuning run to continue; its recorded configuration is loaded, the command-line overrides are applied on top, and the studies in its database are topped up to the trial target.
         training        : Training schedule shared by all trials.
         curriculum      : Loss curriculum stages applied inside each trial.
         normalization   : Input normalization strategy and statistics.
@@ -88,6 +89,7 @@ class TuningEntryConfig:
     heads       : list[str]  = field(default_factory=lambda: ["conv"])
     skip_models : list[str]  = field(default_factory=list)
     run_tag     : str | None = None
+    resume_from : str        = ""
 
     training        : TrainingQueueConfig  = field(default_factory=TrainingQueueConfig)
     curriculum      : LossCurriculumConfig = field(default_factory=default_curriculum)

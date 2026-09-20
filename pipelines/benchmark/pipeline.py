@@ -27,14 +27,15 @@ class BenchmarkPipeline(StagedPipeline):
     SUPPORTED_TYPES = ("backbone", "jepa", "profile_autoencoder")
     STAGES          = ("full", "prepare", "compare")
 
-    def __init__(self, config: BenchmarkConfig, entry_script: Path) -> None:
+    def __init__(self, config: BenchmarkConfig, entry_script: Path, resumed=None) -> None:
         """Resolves the run directory and the model keys this benchmark covers.
 
         Args:
             config       : Resolved benchmark configuration.
             entry_script : Entry script the stage workers re-invoke.
+            resumed      : Resumed-run description logged when the pipeline starts, or None for a fresh run.
         """
-        super().__init__(config, entry_script)
+        super().__init__(config, entry_script, resumed=resumed)
         self.models = self.select_models(config)
 
     @classmethod
@@ -124,6 +125,20 @@ class BenchmarkPipeline(StagedPipeline):
         self._mark_stage("size_match", "completed")
         return records
 
+    def _log_unit_status(self) -> None:
+        """Logs what every model x seed unit already holds on disk, and which directories no unit claims.
+
+        A full run gets the same table from its training stage; this is the
+        prepare stage's version, so a resume can be inspected before anything
+        is launched.
+        """
+        stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
+
+        stage.status_report().log(self.logger, "Unit status")
+
+        for directory in stage.unidentified:
+            self.logger.warning(f"{directory.relative_to(stage.stage_dir)}: run directory without a benchmark manifest, left untouched")
+
     def _run_training(self) -> list[dict]:
         """Trains every benchmark unit on the GPU pool and returns the job results."""
         stage   = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
@@ -167,6 +182,8 @@ class BenchmarkPipeline(StagedPipeline):
             "Run dir"   : str(self.run_dir),
         }, title="Configuration")
 
+        self._log_resumed()
+
         try:
             self._validate_sweep()
 
@@ -182,8 +199,9 @@ class BenchmarkPipeline(StagedPipeline):
             self._run_max_batch()
 
             if self.config.stage == "prepare":
+                self._log_unit_status()
                 self._mark_stage("prepare", "completed")
-                self.logger.info(f"Prepare stage done: size match and max batch written to {self.pipeline_dir}")
+                self.logger.info(f"Prepare stage done: size match, max batch and unit status written to {self.pipeline_dir}")
                 return
 
             training_results  = self._run_training()

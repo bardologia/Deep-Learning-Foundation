@@ -30,7 +30,7 @@ def _config(tmp_path: Path, resume: bool = False) -> SimpleNamespace:
         poll_interval_s = 0.0,
         resume          = resume,
         paths           = SimpleNamespace(log_base_dir=str(tmp_path / "runs")),
-        training        = SimpleNamespace(epochs=3, batch_size=8),
+        training        = SimpleNamespace(epochs=3, batch_size=8, resume=False),
         inference       = SimpleNamespace(split="val"),
     )
 
@@ -172,6 +172,74 @@ def test_training_purges_unfinished_run_dir_on_resume(tmp_path, logger):
 
     assert recorder == [["m"]]
     assert not item_dir.exists()
+
+
+def test_training_keeps_an_unfinished_run_dir_the_trainer_resumes_from(tmp_path, logger):
+    """Verifies an unfinished run holding a trainer state is kept and re-dispatched when the trainer resume is on."""
+    items  = ["m"]
+    config = _config(tmp_path, resume=True)
+    config.training.resume = True
+    stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
+
+    item_dir = stage.stage_dir / "m"
+    item_dir.mkdir(parents=True)
+    (item_dir / "last.pt").write_text("x")
+
+    recorder = []
+    _patch_queue(stage, recorder)
+
+    stage.run()
+
+    assert recorder == [["m"]]
+    assert (item_dir / "last.pt").exists()
+
+
+def test_training_restarts_an_unfinished_run_dir_without_a_trainer_state(tmp_path, logger):
+    """Verifies an unfinished run without a trainer state is deleted even when the trainer resume is on."""
+    items  = ["m"]
+    config = _config(tmp_path, resume=True)
+    config.training.resume = True
+    stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
+
+    item_dir = stage.stage_dir / "m"
+    item_dir.mkdir(parents=True)
+    (item_dir / "best_model.pt").write_text("x")
+
+    recorder = []
+    _patch_queue(stage, recorder)
+
+    stage.run()
+
+    assert recorder == [["m"]]
+    assert not item_dir.exists()
+
+
+def test_training_job_hands_the_worker_the_unit_directory(tmp_path, logger):
+    """Verifies a unit found under another directory name is handed to the worker as its run name and logs there."""
+    config = _config(tmp_path, resume=True)
+    stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=["m"], logger=logger, unit_dirs={"m": "old_label_m"})
+
+    job = stage._job("m")
+
+    assert job.command[job.command.index("--run-name") + 1] == "old_label_m"
+    assert job.log_path == stage.stage_dir / "old_label_m" / "worker.log"
+    assert stage.unit_dir("m") == stage.stage_dir / "old_label_m"
+
+
+def test_training_job_defaults_the_run_name_to_the_unit_name(tmp_path, logger):
+    """Verifies a fresh unit is handed its own name as the run name."""
+    stage = QueuedTrainingStage(config=_config(tmp_path), entry_script=Path("entry.py"), run_tag="t1", items=["m"], logger=logger)
+
+    job = stage._job("m")
+
+    assert job.command[job.command.index("--run-name") + 1] == "m"
+
+
+def test_trainer_state_name_matches_the_trainer(tmp_path):
+    """Verifies the stage looks for the same rolling state file the trainer writes."""
+    from tools.training.checkpoint import TrainerState
+
+    assert QueuedTrainingStage.TRAINER_STATE == TrainerState.FILENAME
 
 
 def test_training_no_resume_ignores_completion_marker_and_keeps_dir(tmp_path, logger):

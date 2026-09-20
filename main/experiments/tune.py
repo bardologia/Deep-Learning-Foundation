@@ -25,6 +25,10 @@ def main() -> None:
     reloaded from the run's resolved config when resuming, and curriculum inheritance is
     applied before scheduling.
 
+    A ``resume_from`` path continues the tuning run holding it with the
+    configuration that run recorded, the command-line overrides applied on
+    top; ``--resume`` with a run tag does the same for a run named by its tag.
+
     Raises:
         SystemExit : If worker mode lacks ``--model``, ``--study-name``, ``--storage-url``, ``--n-trials``, ``--run-tag`` or ``--run-dir``, or if ``--resume`` is given without a run tag or with no resolved config at the expected path.
     """
@@ -45,11 +49,12 @@ def main() -> None:
     else:
         EnvironmentPinner.threads()
 
-    from configuration.training import CurriculumInheritance, default_curriculum
-    from configuration.tuning   import TuningEntryConfig
-    from pipelines.tuning.pipeline               import TuningScheduler
-    from pipelines.tuning.workers                import TuningWorker
-    from tools.runtime.config_cli                import ConfigCli
+    from configuration.training                     import CurriculumInheritance, default_curriculum
+    from configuration.tuning                       import TuningEntryConfig
+    from pipelines.shared.orchestration.resumed_run import TuningResumedRun
+    from pipelines.tuning.pipeline                  import TuningScheduler
+    from pipelines.tuning.workers                   import TuningWorker
+    from tools.runtime.config_cli                   import ConfigCli
 
     entry_script = Path(__file__).resolve()
 
@@ -75,11 +80,18 @@ def main() -> None:
         )
 
     else:
-        cli    = ConfigCli(TuningEntryConfig(), description="Optuna hyperparameter tuning")
+        cli    = ConfigCli(TuningEntryConfig(), description="Optuna hyperparameter tuning; point resume_from at an existing tuning run to top its studies up with the configuration it recorded")
         config = cli.apply()
-        tag    = args.run_tag or config.run_tag or RunTag.now()
 
-        if args.resume:
+        resumed = None
+        if config.resume_from:
+            resumed     = TuningResumedRun(TuningEntryConfig, config, cli.overrides)
+            config      = resumed.load()
+            args.resume = True
+
+        tag = args.run_tag or config.run_tag or RunTag.now()
+
+        if args.resume and resumed is None:
             if args.run_tag is None and config.run_tag is None:
                 sys.exit("ERROR: --resume requires --run-tag")
 
@@ -92,7 +104,7 @@ def main() -> None:
 
         CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
 
-        scheduler = TuningScheduler(tag=tag, config=config, entry_script=entry_script)
+        scheduler = TuningScheduler(tag=tag, config=config, entry_script=entry_script, resumed=resumed)
         scheduler.schedule(target_model=args.model, resume=args.resume)
 
 
