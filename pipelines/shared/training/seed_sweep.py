@@ -22,7 +22,13 @@ from tools.runtime.run_tag    import RunTag
 
 
 class SeedSet:
-    """Naming conventions for the seed dimension of a sweep."""
+    """Naming conventions for the seed dimension of a sweep.
+
+    Attributes:
+        SEED_DIR : Pattern matching a ``seed<N>`` directory name.
+    """
+
+    SEED_DIR = re.compile(r"seed\d+")
 
     @staticmethod
     def resolve(seeds, default_seed: int) -> list[int]:
@@ -116,7 +122,6 @@ class SeedFanoutScheduler:
     Attributes:
         SCHEDULER_FIELDS  : Top-level config fields owned by the scheduler and therefore never forwarded to the per-seed jobs.
         RESUME_PROBE      : Sentinel run name used to recover the naming prefix.
-        SEED_DIR          : Pattern matching a ``seed<N>`` directory name.
         config            : Entry configuration of the sweep.
         entry_script      : Entry script each seed job re-invokes.
         base_name         : Sweep base run name.
@@ -132,8 +137,6 @@ class SeedFanoutScheduler:
     SCHEDULER_FIELDS = ("gpus", "gpus_file", "poll_interval_s", "gpu", "seed", "seeds", "run_name", "infer_at_end", "resume_from")
 
     RESUME_PROBE = "RESUME-FROM-PROBE"
-
-    SEED_DIR = re.compile(r"seed\d+")
 
     def __init__(self, config, cli_overrides: dict, entry_script: Path, base_name: str, run_dir: Path, infer_at_end: bool = False) -> None:
         """Prepares the sweep directories, forwarded overrides and GPU stage.
@@ -206,10 +209,10 @@ class SeedFanoutScheduler:
         if not target.is_dir():
             raise FileNotFoundError(f"resume_from points at '{target}', which does not exist; paste the sweep base directory holding the seed runs, or one of its seed directories")
 
-        if cls.SEED_DIR.fullmatch(target.name):
+        if SeedSet.SEED_DIR.fullmatch(target.name):
             return target.parent
 
-        if any(child.is_dir() and cls.SEED_DIR.fullmatch(child.name) for child in target.iterdir()):
+        if any(child.is_dir() and SeedSet.SEED_DIR.fullmatch(child.name) for child in target.iterdir()):
             return target
 
         raise SystemExit(f"resume_from '{target}' is neither a seed run directory nor a sweep base directory holding seed runs; paste the base directory whose children are seed<N> runs, or one of those seed directories")
