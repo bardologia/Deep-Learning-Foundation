@@ -11,10 +11,10 @@ import numpy as np
 import pytest
 import torch
 
-from tools.data.gaussians  import GaussianClamp, GaussianCurve
-from tools.loss.curve_loss import CurveLoss as CL
-from tools.loss.param_loss import ParamLoss as PL
-from tools.loss.param_loss import ParamMatcher as PM
+from tools.data.gaussians_torch import GaussianClamp, GaussianCurve
+from tools.loss.curve_loss       import CurveLoss as CL
+from tools.loss.param_loss       import ParamLoss as PL
+from tools.loss.param_loss       import ParamMatcher as PM
 
 PPG     = 3
 AMP_MAX = 1000.0

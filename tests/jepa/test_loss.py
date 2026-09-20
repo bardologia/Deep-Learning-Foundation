@@ -13,7 +13,7 @@ import torch
 from configuration.training.jepa      import EmbeddingLossConfig
 from pipelines.jepa.training.coupling import TargetProvider
 from pipelines.jepa.training.loss     import Loss as EmbeddingLoss
-from tools.data.gaussians             import GaussianCurve
+from tools.data.gaussians_torch       import GaussianCurve
 
 from tests.jepa.conftest import EMBEDDING_DIM, N_GAUSSIANS, SPATIAL, make_autoencoder
 

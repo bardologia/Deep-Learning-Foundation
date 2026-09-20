@@ -7,11 +7,13 @@ import pytest
 import torch
 
 from tools.data.gaussians import (
-    GaussianClamp,
-    GaussianCurve,
     GaussianHead,
     GaussianMixture,
     GaussianReconstructor,
+)
+from tools.data.gaussians_torch import (
+    GaussianClamp,
+    GaussianCurve,
 )
 
 

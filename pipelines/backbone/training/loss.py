@@ -10,7 +10,7 @@ from __future__ import annotations
 import torch
 
 from pipelines.backbone.training.loss_terms import LOSS_TERMS
-from tools.data.gaussians                   import GaussianClamp, GaussianCurve
+from tools.data.gaussians_torch             import GaussianClamp, GaussianCurve
 from tools.loss.curve_loss                  import CurveLoss, MomentLoss
 from tools.loss.param_loss                  import ParamLoss, ParamMatcher
 

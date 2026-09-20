@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import torch
 
-from tools.data.gaussians  import GaussianCurve
-from tools.loss.curve_loss import CurveLoss
+from tools.data.gaussians_torch import GaussianCurve
+from tools.loss.curve_loss      import CurveLoss
 
 
 class Loss:
