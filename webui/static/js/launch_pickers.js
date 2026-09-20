@@ -503,16 +503,10 @@ class DatasetPicker {
   }
 }
 
-class RunConfigCopy {
-  static DATASET_ENTRIES = ["pre_process", "extract_params", "inject_external_params"];
+class EntryFormControl {
 
   constructor(view) {
     this.view = view;
-    this.base = null;
-    this.baseKey = null;
-    this.run = "";
-    this.loadSeq = 0;
-    this.timer = null;
   }
 
   _entryKey() {
@@ -520,6 +514,19 @@ class RunConfigCopy {
     const editorKey = this.view.editorKey || "";
     const cut = editorKey.indexOf(":");
     return cut >= 0 ? editorKey.slice(cut + 1) : "";
+  }
+}
+
+class RunConfigCopy extends EntryFormControl {
+  static DATASET_ENTRIES = ["generate_dataset", "extract_params", "inject_external_params"];
+
+  constructor(view) {
+    super(view);
+    this.base = null;
+    this.baseKey = null;
+    this.run = "";
+    this.loadSeq = 0;
+    this.timer = null;
   }
 
   _defaultBase() {
@@ -616,9 +623,8 @@ class RunConfigCopy {
       const identity = res.identity;
       const parts    = [`Copied ${res.run}: ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`];
       if (identity.length) parts.push(`${identity.length} identity field${identity.length === 1 ? "" : "s"} kept: ${identity.join(", ")}`);
-      if (outcome.locked.length) parts.push(`${outcome.locked.length} locked field${outcome.locked.length === 1 ? "" : "s"} kept`);
-      if (outcome.skipped.length) parts.push(`${outcome.skipped.length} unknown key${outcome.skipped.length === 1 ? "" : "s"} skipped: ${outcome.skipped.slice(0, 4).join(", ")}${outcome.skipped.length > 4 ? ", ..." : ""}`);
-      Toast.show(parts.join(" · "), outcome.skipped.length || outcome.locked.length ? "warn" : "ok");
+      parts.push(...ConfigForm.outcomeParts(outcome));
+      Toast.show(parts.join(" · "), ConfigForm.outcomeKind(outcome));
     } finally {
       apply.disabled = false;
     }

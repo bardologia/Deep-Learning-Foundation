@@ -80,10 +80,8 @@ class ConfigForm {
   _applyLegacy() {
     const merged  = Object.assign({}, this.config.layout.legacy.preset, this.dirty);
     const outcome = this.applyRunConfig(merged);
-    const parts   = [`Legacy setup applied: ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`];
-    if (outcome.locked.length) parts.push(`${outcome.locked.length} locked field${outcome.locked.length === 1 ? "" : "s"} kept`);
-    if (outcome.skipped.length) parts.push(`${outcome.skipped.length} unknown key${outcome.skipped.length === 1 ? "" : "s"} skipped: ${outcome.skipped.slice(0, 4).join(", ")}${outcome.skipped.length > 4 ? ", ..." : ""}`);
-    Toast.show(parts.join(" · "), outcome.skipped.length || outcome.locked.length ? "warn" : "ok");
+    const parts   = [`Legacy setup applied: ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`, ...ConfigForm.outcomeParts(outcome)];
+    Toast.show(parts.join(" · "), ConfigForm.outcomeKind(outcome));
   }
 
   applyRunConfig(values) {
@@ -113,6 +111,17 @@ class ConfigForm {
     this._refresh();
 
     return { applied: changed.length, skipped, locked };
+  }
+
+  static outcomeParts(outcome) {
+    const parts = [];
+    if (outcome.locked.length) parts.push(`${outcome.locked.length} locked field${outcome.locked.length === 1 ? "" : "s"} kept`);
+    if (outcome.skipped.length) parts.push(`${outcome.skipped.length} unknown key${outcome.skipped.length === 1 ? "" : "s"} skipped: ${outcome.skipped.slice(0, 4).join(", ")}${outcome.skipped.length > 4 ? ", ..." : ""}`);
+    return parts;
+  }
+
+  static outcomeKind(outcome) {
+    return outcome.skipped.length || outcome.locked.length ? "warn" : "ok";
   }
 
   _buildPins(pinned) {
