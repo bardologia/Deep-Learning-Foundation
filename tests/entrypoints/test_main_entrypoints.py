@@ -242,6 +242,21 @@ def test_train_main_defers_heavy_imports(name, tmp_path):
     assert result.stdout.strip() == "[]"
 
 
+@pytest.mark.parametrize("module_path", ("pipelines.processing.synthesis.pipeline", "pipelines.processing.param_extraction.pipeline"))
+def test_processing_pipeline_loads_no_torch(module_path, tmp_path):
+    """The dataset synthesis and the parameter extraction import no torch.
+
+    Both consume the NumPy half of the Gaussian toolbox only, so the split of
+    tools/data/gaussians.py from tools/data/gaussians_torch.py keeps torch out
+    of the CPU-only and JAX-only processing entries.
+    """
+    code   = f"import sys; sys.path.insert(0, {str(_MAIN_DIR.parent)!r}); import {module_path}; print(sorted(module for module in sys.modules if module.split('.')[0] == 'torch'))"
+    result = subprocess.run([sys.executable, "-u", "-c", code], cwd=str(tmp_path), capture_output=True, text=True, timeout=180)
+
+    assert result.returncode     == 0, result.stderr
+    assert result.stdout.strip() == "[]"
+
+
 @pytest.mark.parametrize("name", ("generate_dataset", "tune_dataloader", "extract_params"))
 def test_entry_pins_the_environment_before_the_numeric_stack_loads(name, tmp_path):
     """EnvironmentPinner runs before numpy, torch, scipy, jax, pipelines or models are imported."""
