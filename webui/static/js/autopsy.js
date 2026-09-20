@@ -30,6 +30,15 @@ class AutopsyView {
     this._refreshRuns();
   }
 
+  figureTag() {
+    const named = (id) => {
+      const run = this.runs.find((entry) => entry.id === id);
+      return run ? run.run : "";
+    };
+
+    return [named(this.sideA), named(this.sideB)].filter(Boolean).join("_vs_");
+  }
+
   _build() {
     this.root.innerHTML = `
       <div class="cube-pick">
@@ -162,7 +171,7 @@ class AutopsyView {
           <article class="fl-card">
             <h3 class="cube-panel-title">${spot.winner} wins · row ${spot.row}, col ${spot.col}</h3>
             <p class="cube-hint">block Δ pixel MSE (A−B): ${spot.mean_delta.toExponential(2)}</p>
-            <canvas id="autopsy-spot-${index}" width="560" height="220"></canvas>
+            <canvas id="autopsy-spot-${index}" data-fig="hotspot ${index + 1} row${spot.row} col${spot.col}" width="560" height="220"></canvas>
           </article>`;
       });
       html += `</div>`;

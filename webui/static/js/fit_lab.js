@@ -196,6 +196,10 @@ class FitLabView {
     this._scan();
   }
 
+  figureTag() {
+    return this.meta ? this.meta.name : "";
+  }
+
   _defaultBase() {
     return localStorage.getItem("fitlab-base") || ResultsSources.datasets();
   }
@@ -283,6 +287,7 @@ class FitLabView {
   }
 
   _refreshMap() {
+    this.refs.mapImg.dataset.fig = `scene map ${this.mapSrc}`;
     this.refs.mapImg.src = `/api/fitlab/map?src=${this.mapSrc}&t=${Date.now()}`;
   }
 
@@ -565,6 +570,7 @@ class FitLabView {
       const media = document.createElement("div");
       media.className = "fl-card__media";
       const canvas = document.createElement("canvas");
+      canvas.dataset.fig = `profile row${row} col${col}`;
       media.appendChild(canvas);
       card.appendChild(media);
 
@@ -585,6 +591,7 @@ class FitLabView {
         const strip = document.createElement("div");
         strip.className = "fl-card__sweep";
         sweep = document.createElement("canvas");
+        sweep.dataset.fig = `k sweep row${row} col${col}`;
         strip.appendChild(sweep);
         card.appendChild(strip);
       }

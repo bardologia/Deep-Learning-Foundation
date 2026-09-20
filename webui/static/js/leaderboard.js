@@ -51,6 +51,10 @@ class LeaderboardView {
     else this.load();
   }
 
+  figureTag() {
+    return this.view === "trials" ? `trials_${this.trialsMetric}` : this.view;
+  }
+
   async load() {
     this.root.innerHTML = `<div class="res-empty">Scanning inference results&hellip;</div>`;
 

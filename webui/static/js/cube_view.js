@@ -1336,6 +1336,14 @@ class CubeView {
     await this.refresh();
   }
 
+  figureTag() {
+    const cube  = this.cubes.find((c) => c.id === this.selectedId);
+    const parts = [cube ? `${cube.run}_${cube.stamp}` : "cube", this.space];
+    if (this.point) parts.push(`row${String(this.point.row).padStart(4, "0")}_col${String(this.point.col).padStart(4, "0")}`);
+
+    return parts.filter(Boolean).join("_");
+  }
+
   async _refreshStrip() {
     const data = await Api.get(`/api/cubes?base=${encodeURIComponent(this._runsBase())}`);
     if (!data || data.error) return;

@@ -68,6 +68,34 @@ talking to one group of JSON endpoints.
 | Autopsy | `#/autopsy` | `/api/autopsy/*` | Guided A/B comparison of two inferences over the same region: the largest relative metric gaps with an orientation-aware winner per row, plus the blocks where the runs disagree most, each rendered as both predicted profiles against the ground truth. |
 | Feed Tuner | `#/feedtuner` | `/api/scripts/tune_dataloader/config`, `/api/run` | Launch surface for the DataLoader sweep with its own result view. |
 
+## Saving figures
+
+The tabs that show images have a figure saver: Microscope, Survey, Triage, Autopsy, Fit Lab,
+Results, Leaderboard, Cube and Slices. It runs in the browser over what is already on
+screen, so the server renders nothing extra and no run directory is written.
+
+- **One figure.** Hovering a chart, map or plot floats a small save button in its top-right
+  corner, and pressing it downloads that figure as a PNG.
+- **Every figure.** A dock at the bottom right counts the figures on the view and packs them
+  into one ZIP.
+- **A subset.** The dock's second button opens the list of those figures, grouped by the card
+  they sit in. Each row has its own PNG button and a checkbox, and the selection saves as one
+  ZIP. Hovering a row outlines the figure on the page and clicking it scrolls there.
+
+A file name carries the tab, the view's context and the figure, so a single save lands as
+`microscope_<run>_row0413_col0207_predicted_profile.png` and a batch as
+`<tab>_<context>_figures.zip`. Each tab supplies its context through a `figureTag()` method.
+A figure takes its label from its `data-fig` attribute, or failing that from its `alt` text,
+its caption or the heading above it.
+
+The scanner only sees figures that are visible, so on a tab with paged analyses the batch
+covers the page on screen. Canvases are written at their backing-store resolution over an
+opaque background. Small server-rendered maps are upscaled by whole pixels the way the page
+shows them, and vector charts are rasterized at twice their layout size with their computed
+styles inlined. `figure_export.js` holds the mechanics, including a store-only ZIP writer,
+and `figure_saver.js` the scanner and the dock. The cube explorer keeps its server-side
+paper-style figure export beside this.
+
 ## How launching works
 
 Every `main/*.py` script builds its configuration as `ConfigCli(<EntryConfig>()).apply()`,
@@ -135,11 +163,12 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 `fit_lab.py`, `model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`
-and 46 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
+and 48 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
 tab (`home`, `equations`, `flow_view` with `flow_sketches`, `pipelines`, `repomap`,
 `models`, `scripts`, `launch` with `launch_widgets` and `launch_pickers`, `ablation`,
 `saved_runs`, `templates`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube_view`,
 `slice_collector`, `fit_lab`, `microscope`, `triage`, `autopsy`, `feed_tuner`); the rest
 are shared helpers, `run_strip` for the run picker the cube, slices, microscope, triage
-and autopsy tabs share, and `radar`, `diagram`, `gauges`, `process_anim`, `server_anim`
-and `training_anim` for drawing and animation.
+and autopsy tabs share, `figure_export` and `figure_saver` for the figure saver, and
+`radar`, `diagram`, `gauges`, `process_anim`, `server_anim` and `training_anim` for
+drawing and animation.

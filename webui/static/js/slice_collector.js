@@ -54,6 +54,12 @@ class SliceCollectorView {
     this._refresh();
   }
 
+  figureTag() {
+    const row = this._num(this.refs.rowInput);
+    const col = this._num(this.refs.colInput);
+    return `row${String(row).padStart(4, "0")}_col${String(col).padStart(4, "0")}_${this.space}`;
+  }
+
   _runsBase() {
     return ResultsSources.runs();
   }

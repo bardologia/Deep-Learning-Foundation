@@ -65,6 +65,15 @@ class MicroscopeView {
     this._pollStatus();
   }
 
+  figureTag() {
+    const run   = this.runs.find((entry) => entry.id === this.selectedId);
+    const parts = [run ? run.run : ""];
+
+    if (this.pixel) parts.push(`row${String(this.pixel.row).padStart(4, "0")}_col${String(this.pixel.col).padStart(4, "0")}`);
+
+    return parts.filter(Boolean).join("_");
+  }
+
   _build() {
     this.root.innerHTML = `
       <div class="cube-pick">
@@ -121,7 +130,7 @@ class MicroscopeView {
                 <h3 class="cube-panel-title">Predicted profile</h3>
                 <span class="ms-card__note">reflectivity vs height at the probed pixel</span>
               </div>
-              <canvas id="probe-profile" width="640" height="240"></canvas>
+              <canvas id="probe-profile" data-fig="predicted profile" width="640" height="240"></canvas>
               <table class="ms-slots" id="probe-slots"></table>
               <p class="ms-wifacts" id="probe-fit"></p>
               <p class="ms-card__note ms-witablenote" id="probe-match-note" hidden>ground-truth scatterers and their hungarian-matched predictions &mdash; red marks a miss beyond 0.1 amp or 0.5 m</p>
@@ -169,7 +178,7 @@ class MicroscopeView {
                 <h4 class="cube-panel-title">Effective receptive field</h4>
                 <span class="ms-card__note">share of each output's gradient energy within a radius of the probed pixel</span>
               </div>
-              <canvas id="probe-erf" width="640" height="180" hidden></canvas>
+              <canvas id="probe-erf" data-fig="effective receptive field" width="640" height="180" hidden></canvas>
               <p class="ms-wifacts" id="probe-erf-facts"></p>
             </section>
             </section>
@@ -197,7 +206,7 @@ class MicroscopeView {
                 <h3 class="cube-panel-title">Symmetry</h3>
                 <span class="ms-card__note">re-run the model on flipped windows and flip the outputs back &mdash; a flip-equivariant model repeats itself exactly</span>
               </div>
-              <canvas id="probe-flips" width="640" height="240"></canvas>
+              <canvas id="probe-flips" data-fig="symmetry" width="640" height="240"></canvas>
               <p class="ms-wifacts" id="probe-flips-facts"></p>
             </section>
             </section>
@@ -231,7 +240,7 @@ class MicroscopeView {
                 <span class="ms-ctlrow__na" id="probe-whatif-valna">zeroing removes the channel outright; there is no strength to tune</span>
               </div>
               <p class="ms-wisummary" id="probe-whatif-desc"></p>
-              <canvas id="probe-whatif" width="640" height="240"></canvas>
+              <canvas id="probe-whatif" data-fig="what-if" width="640" height="240"></canvas>
               <p class="ms-wifacts" id="probe-whatif-delta"></p>
               <p class="ms-card__note ms-witablenote" id="probe-whatif-tablenote" hidden>scatterer parameters at the probed pixel, base &rarr; perturbed &mdash; red marks a moved value</p>
               <table class="ms-slots" id="probe-whatif-slots"></table>
@@ -239,7 +248,7 @@ class MicroscopeView {
                 <h4 class="cube-panel-title">Response sweep</h4>
                 <span class="ms-card__note">sweep this perturbation's strength and re-run at each step &mdash; the dashed marker is the strength dialled in above</span>
               </div>
-              <canvas id="probe-sweep" width="640" height="200" hidden></canvas>
+              <canvas id="probe-sweep" data-fig="response sweep" width="640" height="200" hidden></canvas>
               <p class="ms-wifacts" id="probe-sweep-facts"></p>
             </section>
             </section>
@@ -1033,6 +1042,7 @@ class MicroscopeView {
   _loadFeatures() {
     this._loadKernels();
     if (!this.pixel || !this.layer) return;
+    this.refs.features.dataset.fig = `feature maps ${this.layer}`;
     this.refs.features.src = `/api/probe/features?row=${this.pixel.row}&col=${this.pixel.col}&layer=${encodeURIComponent(this.layer)}&t=${Date.now()}`;
   }
 
@@ -1047,6 +1057,7 @@ class MicroscopeView {
     }
 
     this.refs.kernNote.textContent = `${this.layer} — signed weights, red positive and blue negative on a shared scale`;
+    this.refs.kernels.dataset.fig = `kernels ${this.layer}`;
     this.refs.kernels.src = `/api/probe/kernels?layer=${encodeURIComponent(this.layer)}&t=${Date.now()}`;
   }
 
