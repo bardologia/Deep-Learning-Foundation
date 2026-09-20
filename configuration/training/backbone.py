@@ -163,13 +163,14 @@ class SecondaryTrialsConfig:
 class HeadMatchingTrialsConfig:
     """Trial settings crossing output heads with slot-matching rules.
 
+    The backbone is not a field here: the trials run on the backbone the entry already
+    names, so there is one place to read it from and no way for the two to disagree.
+
     Attributes:
-        backbone  : Backbone family held fixed across the trials.
         heads     : Output heads swept, e.g. "conv" and "set_pred".
         matchings : Slot-matching rules swept, e.g. "sorted_gt" and "hungarian".
     """
 
-    backbone  : str       = "unet"
     heads     : list[str] = field(default_factory=lambda: ["conv", "set_pred"])
     matchings : list[str] = field(default_factory=lambda: ["sorted_gt", "hungarian"])
 

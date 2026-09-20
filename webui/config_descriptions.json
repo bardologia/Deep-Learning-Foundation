@@ -933,7 +933,6 @@
     "training/backbone::HeadMatchingTrialsConfig": {
       "summary": "Grid crossing output heads with parameter-matching strategies on one fixed backbone for the head-and-matching trial planner",
       "fields": {
-        "backbone": "Backbone architecture trained in every grid cell; must exist in the backbone registry",
         "heads": "Output heads to cross, each trained once per matching strategy: conv, multihead, per_gaussian, or set_pred",
         "matchings": "Parameter-matching strategies applied to both curriculum stages, each crossed with every head: sorted_gt or hungarian"
       }

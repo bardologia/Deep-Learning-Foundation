@@ -237,7 +237,7 @@ class TrainScheduler(TrialSweepScheduler):
             n_secondaries = len(self.config.paths.secondary_labels)
             return ReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self.config.backbone_head, self.config.input.total_channels(n_secondaries, n_secondaries), self._out_channels())
         if mode == "head":
-            return HeadMatchingTrialPlanner(self.config.head_trials, tuple(BACKBONE_CONFIG_REGISTRY), BACKBONE_HEADS, tuple(matching.value for matching in ParamMatching))
+            return HeadMatchingTrialPlanner(self.config.head_trials, self.config.backbone_name, tuple(BACKBONE_CONFIG_REGISTRY), BACKBONE_HEADS, tuple(matching.value for matching in ParamMatching))
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
         if mode == "clamp":

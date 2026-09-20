@@ -647,18 +647,23 @@ class ReachTrialPlanner:
 class HeadMatchingTrialPlanner:
     """Plans the cross product of output heads and parameter-matching strategies.
 
+    The backbone comes from the entry that launches the sweep, not from the trial
+    configuration, so the block that names a backbone is the one the runs use.
+
     Attributes:
-        trials         : Head trial configuration with `backbone`, `heads` and `matchings`.
+        trials         : Head trial configuration with `heads` and `matchings`.
+        backbone       : Backbone family held fixed across the trials, taken from the entry configuration.
         registry_names : Names of the registered backbones.
         head_names     : Registered output head names.
         matching_names : Allowed parameter-matching strategy names.
     """
 
-    def __init__(self, trials, registry_names: tuple, head_names: tuple, matching_names: tuple) -> None:
+    def __init__(self, trials, backbone: str, registry_names: tuple, head_names: tuple, matching_names: tuple) -> None:
         """Stores and validates the head-by-matching grid.
 
         Args:
-            trials         : Configuration object naming the backbone, heads and matchings.
+            trials         : Configuration object naming the heads and matchings.
+            backbone       : Backbone family every trial trains, as the entry configuration names it.
             registry_names : Names of the registered backbones.
             head_names     : Registered output head names.
             matching_names : Allowed parameter-matching strategy names.
@@ -667,6 +672,7 @@ class HeadMatchingTrialPlanner:
             ValueError : On an unknown backbone, head or matching, or on empty or duplicated head/matching lists.
         """
         self.trials         = trials
+        self.backbone       = backbone
         self.registry_names = tuple(registry_names)
         self.head_names     = tuple(head_names)
         self.matching_names = tuple(matching_names)
@@ -681,8 +687,8 @@ class HeadMatchingTrialPlanner:
         """
         t = self.trials
 
-        if t.backbone not in self.registry_names:
-            raise ValueError(f"Unknown head_trials.backbone '{t.backbone}'; registered backbones are {sorted(self.registry_names)}")
+        if self.backbone not in self.registry_names:
+            raise ValueError(f"Unknown backbone '{self.backbone}'; registered backbones are {sorted(self.registry_names)}")
 
         if not t.heads:
             raise ValueError("head_trials.heads must list at least one head")
@@ -709,7 +715,7 @@ class HeadMatchingTrialPlanner:
     def summary(self) -> dict:
         """Returns the backbone, swept heads and matchings and the run count."""
         return {
-            "Backbone"   : self.trials.backbone,
+            "Backbone"   : self.backbone,
             "Heads"      : list(self.trials.heads),
             "Matchings"  : list(self.trials.matchings),
             "Total runs" : len(self.trials.heads) * len(self.trials.matchings),
@@ -723,7 +729,7 @@ class HeadMatchingTrialPlanner:
             for matching in self.trials.matchings:
                 run_name  = f"hm-{head}-{matching}"
                 overrides = {
-                    "backbone_name"                      : self.trials.backbone,
+                    "backbone_name"                      : self.backbone,
                     "backbone_head"                      : head,
                     "curriculum.warmup.param_matching"   : matching,
                     "curriculum.complete.param_matching" : matching,

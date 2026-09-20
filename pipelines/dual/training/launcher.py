@@ -120,7 +120,7 @@ class DualTrainScheduler(TrainScheduler):
             return DualReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self._in_channels(), self._out_channels(), self.config.model_name, self._trunk_channels())
 
         if mode == "head":
-            return DualHeadMatchingTrialPlanner(self.config.head_trials, tuple(BACKBONE_CONFIG_REGISTRY), ("set_pred",), tuple(matching.value for matching in ParamMatching))
+            return DualHeadMatchingTrialPlanner(self.config.head_trials, self.config.params_backbone, tuple(BACKBONE_CONFIG_REGISTRY), ("set_pred",), tuple(matching.value for matching in ParamMatching))
 
         if mode == "patch":
             if self.config.patch_trials.step <= 0:

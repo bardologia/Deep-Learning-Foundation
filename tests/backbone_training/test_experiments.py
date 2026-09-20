@@ -689,7 +689,7 @@ MATCHING_NAMES = ("hungarian", "sorted_gt")
 
 def test_head_matching_planner_default_crosses_heads_and_matchings():
     """Verifies the head-matching planner crosses every head with every matching on one backbone."""
-    planner = HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+    planner = HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
     plans = planner.plan()
 
@@ -705,28 +705,28 @@ def test_head_matching_planner_default_crosses_heads_and_matchings():
 def test_head_matching_planner_rejects_unknown_axes():
     """Verifies an unregistered backbone, head or matching name is rejected."""
     with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(backbone="voxel_gnn"), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(), "voxel_gnn", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
     with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=["conv", "cone"]), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=["conv", "cone"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
     with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=["sorted_gt", "greedy"]), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=["sorted_gt", "greedy"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
 
 def test_head_matching_planner_rejects_empty_and_duplicate_axes():
     """Verifies empty and duplicated head or matching lists are rejected."""
     with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=[]), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=[]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
     with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=[]), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=[]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
     with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=["conv", "conv"]), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(heads=["conv", "conv"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
     with pytest.raises(ValueError):
-        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=["hungarian", "hungarian"]), REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
+        HeadMatchingTrialPlanner(HeadMatchingTrialsConfig(matchings=["hungarian", "hungarian"]), "unet", REGISTRY_NAMES, HEAD_NAMES, MATCHING_NAMES)
 
 
 def test_augmentation_planner_default_walks_the_ladder():
