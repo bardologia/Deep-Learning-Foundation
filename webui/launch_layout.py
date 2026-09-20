@@ -445,8 +445,8 @@ class LaunchLayout:
         "head_trials.backbone", "head_trials.heads", "head_trials.matchings",
         "pair_trials.base_component", "pair_trials.base_weight", "pair_trials.components", "pair_trials.weights", "pair_trials.include_baseline",
         "log_energy_trials.weights", "log_energy_trials.replace_covariance", "log_energy_trials.include_baseline",
-        "secondary_trials.strategy", "secondary_trials.n_secondaries", "secondary_trials.n_trials", "secondary_trials.mean",
-        "secondary_trials.sigma", "secondary_trials.block_step", "secondary_trials.spacing", "secondary_trials.seed",
+        "secondary_trials.strategy", "secondary_trials.n_secondaries", "secondary_trials.fixed", "secondary_trials.n_trials",
+        "secondary_trials.mean", "secondary_trials.sigma", "secondary_trials.block_step", "secondary_trials.spacing", "secondary_trials.seed",
         "patch_trials.minimum", "patch_trials.maximum", "patch_trials.step", "patch_trials.stride_ratio", "patch_trials.constant_pixel_budget",
         "reach_trials.rungs", "reach_trials.patch_size", "reach_trials.patch_stride", "reach_trials.in_channels", "reach_trials.match_tolerance",
     ]

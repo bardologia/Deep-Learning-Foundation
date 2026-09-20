@@ -1010,7 +1010,8 @@
       "summary": "Controls how secondary-track combinations are sampled for the secondary-selection trial sweep",
       "fields": {
         "strategy": "Secondary-track sampling scheme: uniform, gaussian, consecutive, spaced, or exhaustive (every combination of exactly n_secondaries tracks)",
-        "n_secondaries": "Number of secondary tracks selected per trial (exact set size for the exhaustive strategy), must be between 1 and the candidate count",
+        "n_secondaries": "Number of secondary tracks the strategy picks per trial on top of the fixed ones (exact set size for the exhaustive strategy), must be between 1 and the swept candidate count",
+        "fixed": "Track labels pinned into every trial and removed from the swept pool, so one fixed track with n_secondaries 1 under the exhaustive strategy pairs that track with each remaining secondary in turn",
         "n_trials": "Number of distinct secondary-track draws to generate, required (>=1) for uniform and gaussian strategies",
         "mean": "Mean index of the gaussian strategy's normal draw over the secondary-track list; required (not None) when strategy is gaussian",
         "sigma": "Standard deviation of the gaussian strategy's normal draw over the secondary-track list; required (not None) when strategy is gaussian",
