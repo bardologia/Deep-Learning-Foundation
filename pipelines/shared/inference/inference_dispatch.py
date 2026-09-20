@@ -1,14 +1,47 @@
 """Per-family adapters that run inference on one trained run directory.
 
 Each runner takes the entry-point configuration, repoints its inference block at
-a given run directory, and drives the matching pipeline. Pipeline imports are
-deferred so that selecting a family does not pull in the others.
+a given run directory, and drives the matching pipeline. A spatial run that is a
+cross-validation fold unit is scored over the row block its manifest records,
+so a fold can be re-scored by the generic entry. Pipeline imports are deferred
+so that selecting a family does not pull in the others.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
 from pathlib     import Path
+
+
+class SpatialRunConfig:
+    """Derives the per-run spatial inference config, honouring a fold unit's recorded block."""
+
+    @staticmethod
+    def build(inference_config, run_directory: Path):
+        """Returns the inference config pointed at one run.
+
+        An explicit region override in the entry configuration is kept; otherwise
+        a fold unit's manifest supplies the untrimmed row block of the split.
+
+        Args:
+            inference_config : Inference block of the entry configuration.
+            run_directory    : Training run to score.
+
+        Raises:
+            ValueError : If the run is a fold unit that does not score the configured split.
+        """
+        from pipelines.cross_validation.folds import FoldUnitManifest
+
+        config = replace(inference_config, run_directory=Path(run_directory), output_subdir=None)
+
+        if config.region_override:
+            return config
+
+        region = FoldUnitManifest.inference_region(Path(run_directory), config.split)
+        if region is not None:
+            config.region_override = list(region.as_tuple())
+
+        return config
 
 
 class BackboneInferenceRunner:
@@ -31,7 +64,7 @@ class BackboneInferenceRunner:
         from pipelines.backbone.inference.pipeline import InferencePipeline
         from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 
-        config     = replace(self.entry.inference, run_directory=Path(run_directory), output_subdir=None)
+        config     = SpatialRunConfig.build(self.entry.inference, run_directory)
         components = InferenceComponentsResolver.for_run(Path(run_directory))
 
         InferencePipeline(config, components=components).run()
@@ -129,6 +162,6 @@ class DualInferenceRunner:
         from pipelines.backbone.inference.pipeline import InferencePipeline
         from pipelines.dual.inference.pipeline     import DUAL_INFERENCE_COMPONENTS
 
-        config = replace(self.entry.inference, run_directory=Path(run_directory), output_subdir=None)
+        config = SpatialRunConfig.build(self.entry.inference, run_directory)
 
         InferencePipeline(config, components=DUAL_INFERENCE_COMPONENTS).run()
