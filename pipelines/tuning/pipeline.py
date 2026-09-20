@@ -33,6 +33,7 @@ class TuningScheduler:
         SUPPORTED_TYPES : Training types that can be tuned.
         STUDY_KEYS      : Config keys whose values define a study and may not change on resume.
         MUTABLE_KEYS    : Study keys exempted from that rule.
+        STAGES          : Parts of a tuning run that can be executed on their own, so separate launches can create the studies, run the workers and write the reports.
         tag             : Run tag naming the tuning directory and the studies.
         config          : Tuning entry configuration.
         entry_script    : Entry script the worker subprocesses re-invoke.
@@ -48,6 +49,7 @@ class TuningScheduler:
     SUPPORTED_TYPES = ("backbone", "image_autoencoder", "jepa", "profile_autoencoder")
     STUDY_KEYS      = ("training_type", "heads", "skip_models", "tuning", "curriculum", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
     MUTABLE_KEYS    = ("tuning.n_trials",)
+    STAGES          = ("full", "prepare", "compare")
 
     def __init__(self, tag: str, config, entry_script: Path, resumed=None) -> None:
         """Resolves the tuning paths and quiets Optuna's own logging.
@@ -105,6 +107,15 @@ class TuningScheduler:
         extra = total % n_workers
         return [base + (1 if i < extra else 0) for i in range(n_workers)]
 
+    def worker_count(self) -> int:
+        """Returns how many trial workers one study is fanned out over.
+
+        The configured count wins; without one there is a worker per device in
+        the GPU pool, which is what a local run can keep busy at once. A launch
+        whose pool is sized elsewhere sets the count explicitly.
+        """
+        return self.config.n_workers or max(len(self.config.gpus), 1)
+
     def _study_name(self, model_name: str) -> str:
         """Returns the Optuna study name of one model under this run tag."""
         return f"{model_name}_{self.tag}"
@@ -141,6 +152,72 @@ class TuningScheduler:
         config_cls = self._registry()[ModelBuilder.split_key(model_name)[0]]
         return {**config_cls.tunable_lr_params(), **config_cls.tunable_arch_params()}
 
+    def selected_models(self, target_model: str | None = None) -> list[str]:
+        """Returns the model keys this run tunes.
+
+        Args:
+            target_model : Single model key to tune, or None for every model the skip list leaves.
+
+        Returns:
+            The model keys, in registry order.
+
+        Raises:
+            SystemExit : If an unknown model or head was requested.
+        """
+        registry = self._registry()
+
+        if target_model is None:
+            skip = set(self.config.skip_models)
+            return [key for key in self._model_keys() if key not in skip and ModelBuilder.split_key(key)[0] not in skip]
+
+        name, head = ModelBuilder.split_key(target_model)
+        if name not in registry:
+            sys.exit(f"ERROR: unknown model '{name}'. Available: {list(registry.keys())}")
+        if head not in BACKBONE_HEADS:
+            sys.exit(f"ERROR: unknown head '{head}'. Available: {list(BACKBONE_HEADS)}")
+
+        return [target_model]
+
+    def planned_workers(self) -> list[tuple[str, str, int, int]]:
+        """Returns the trial workers one launch plans, one per model and GPU slot.
+
+        The trial target is split over the configured worker count, or over
+        the GPU pool when no count is set, as a local run does. A
+        worker attaching to a study that already reached the target stops
+        without running a trial, so a second launch tops the study up instead
+        of overshooting it.
+
+        Returns:
+            Tuples of model key, study name, the trials that worker runs and its index.
+        """
+        workers = []
+        for model_name in self.selected_models():
+            counts = self._distribute_trials(self.config.tuning.n_trials, self.worker_count())
+            workers += [(model_name, self._study_name(model_name), count, index) for index, count in enumerate(counts) if count > 0]
+
+        return workers
+
+    def worker_argv(self, model_name: str, study_name: str, n_trials: int) -> list[str]:
+        """Returns the arguments running one tuning worker against a shared study.
+
+        Args:
+            model_name : Model key the worker tunes.
+            study_name : Name of the shared study the worker attaches to.
+            n_trials   : Trials this worker is responsible for.
+
+        Returns:
+            The argument list, without the interpreter and the entry script.
+        """
+        return [
+            "--worker",
+            "--model",        model_name,
+            "--n-trials",     str(n_trials),
+            "--study-name",   study_name,
+            "--storage-url",  self.storage_url,
+            "--run-tag",      self.tag,
+            "--run-dir",      str(self.run_dir),
+        ]
+
     def _worker_job(self, model_name: str, n_trials: int, worker_index: int) -> GpuJob:
         """Builds the GPU job running one tuning worker.
 
@@ -152,16 +229,7 @@ class TuningScheduler:
         Returns:
             The GPU job invoking the entry script in worker mode.
         """
-        command = [
-            sys.executable, str(self.entry_script),
-            "--worker",
-            "--model",        model_name,
-            "--n-trials",     str(n_trials),
-            "--study-name",   self._study_name(model_name),
-            "--storage-url",  self.storage_url,
-            "--run-tag",      self.tag,
-            "--run-dir",      str(self.run_dir),
-        ]
+        command = [sys.executable, str(self.entry_script), *self.worker_argv(model_name, self._study_name(model_name), n_trials)]
 
         return GpuJob(
             name     = f"{model_name}_w{worker_index}",
@@ -255,16 +323,14 @@ class TuningScheduler:
             "best_config"     : str(path) if path is not None else None,
         }
 
-    def _tune_model(self, model_name: str, tune_cfg: TuningConfig) -> None:
-        """Tops one model's study up to its trial target and records the outcome.
-
-        Stale trials are failed first, the outstanding trials are split across
-        the GPUs, and the best configuration, plots and summary record are
-        written afterwards.
+    def _prepare_model(self, model_name: str) -> optuna.Study:
+        """Creates or loads one model's study and clears the trials a killed worker left running.
 
         Args:
-            model_name : Model key to tune.
-            tune_cfg   : Tuning settings holding the trial target and plot flag.
+            model_name : Model key whose study is opened.
+
+        Returns:
+            The study, ready for workers to attach to.
         """
         self.logger.section(f"[{model_name}]")
 
@@ -273,18 +339,40 @@ class TuningScheduler:
         if stale > 0:
             self.logger.info(f"Marked {stale} stale running trials as failed")
 
+        return study
+
+    def _run_model(self, study: optuna.Study, model_name: str, tune_cfg: TuningConfig) -> bool:
+        """Tops one model's study up to its trial target across the GPU pool.
+
+        Args:
+            study      : Study to top up.
+            model_name : Model key being tuned.
+            tune_cfg   : Tuning settings holding the trial target.
+
+        Returns:
+            Whether every dispatched worker finished.
+        """
         done      = self._count_done(study)
         remaining = max(0, tune_cfg.n_trials - done)
-        n_gpus    = len(self.config.gpus)
-        ok        = True
+        n_workers = self.worker_count()
 
         if remaining == 0:
-            self.logger.subsection(f"Target reached — {done}/{tune_cfg.n_trials} trials already complete")
-        else:
-            self.logger.subsection(f"{done}/{tune_cfg.n_trials} trials done — running {remaining} across {n_gpus} GPUs")
-            counts = self._distribute_trials(remaining, n_gpus)
-            ok     = self._dispatch_workers(model_name, counts)
+            self.logger.subsection(f"Target reached, {done}/{tune_cfg.n_trials} trials already complete")
+            return True
 
+        self.logger.subsection(f"{done}/{tune_cfg.n_trials} trials done, running {remaining} across {n_workers} worker(s)")
+
+        return self._dispatch_workers(model_name, self._distribute_trials(remaining, n_workers))
+
+    def _report_model(self, study: optuna.Study, model_name: str, tune_cfg: TuningConfig, ok: bool) -> None:
+        """Writes one model's best configuration, plots and summary record.
+
+        Args:
+            study      : Study the report is written from.
+            model_name : Model key being reported.
+            tune_cfg   : Tuning settings holding the plot flag.
+            ok         : Whether every dispatched worker finished, which decides between DONE and PARTIAL.
+        """
         writer  = BestConfigWriter(model_name, self._search_space(model_name), self.run_dir / model_name / "best_config.json")
         payload = writer.write(study)
 
@@ -294,7 +382,7 @@ class TuningScheduler:
             self._save_results()
             return
 
-        self.logger.subsection(f"Best — trial {payload['trial']}  best validation loss under the {self.config.training_type} objective = {payload['val_loss']:.6f}")
+        self.logger.subsection(f"Best, trial {payload['trial']}, best validation loss under the {self.config.training_type} objective = {payload['val_loss']:.6f}")
         self.logger.kv_table(payload["params"], title="Best Params")
 
         if tune_cfg.emit_study_plots:
@@ -303,26 +391,56 @@ class TuningScheduler:
         self.results.append(self._record(model_name, "DONE" if ok else "PARTIAL", study, payload, writer.path))
         self._save_results()
 
+    def _tune_model(self, model_name: str, tune_cfg: TuningConfig) -> None:
+        """Runs the configured stage for one model: open the study, top it up, report it.
+
+        Args:
+            model_name : Model key to tune.
+            tune_cfg   : Tuning settings holding the trial target and plot flag.
+        """
+        study = self._prepare_model(model_name)
+
+        if self.config.stage == "prepare":
+            return
+
+        ok = self._run_model(study, model_name, tune_cfg) if self.config.stage == "full" else True
+
+        self._report_model(study, model_name, tune_cfg, ok)
+
     def schedule(self, target_model: str | None = None, resume: bool = False) -> None:
         """Validates the request, then tunes every selected model in turn.
+
+        The stage decides how much of a run happens here: 'prepare' only opens
+        the studies, so trial workers launched separately have something to
+        attach to, 'compare' only writes the reports of studies the workers
+        filled, and 'full' runs the trials between the two. The database guards
+        apply to a full run, since the prepare and compare stages of one run
+        deliberately meet the same database.
 
         Args:
             target_model : Single model key to tune, or None to tune all models that are not skipped.
             resume       : Whether to continue an existing study database.
 
         Raises:
-            SystemExit : If the training type is unsupported, the GPU pool is empty, the resume flag disagrees with the database on disk, or an unknown model or head was requested.
+            SystemExit : If the training type or stage is unsupported, a full run has an empty GPU pool, the resume flag disagrees with the database on disk, a compare stage finds no database, or an unknown model or head was requested.
         """
         if self.config.training_type not in self.SUPPORTED_TYPES:
             sys.exit(f"ERROR: tuning does not support training_type '{self.config.training_type}'; supported: {', '.join(self.SUPPORTED_TYPES)}")
 
-        if not self.config.gpus:
+        if self.config.stage not in self.STAGES:
+            sys.exit(f"ERROR: unknown tuning stage '{self.config.stage}'; valid: {', '.join(self.STAGES)}")
+
+        if self.config.stage == "full" and not self.config.gpus:
             sys.exit(f"ERROR: gpus is empty; {GpuQueue.EMPTY_POOL_MESSAGE}")
 
-        if resume and not self.db_path.exists():
-            sys.exit(f"ERROR: --resume given but no study found at {self.db_path}")
-        if not resume and self.db_path.exists():
-            sys.exit(f"ERROR: run tag '{self.tag}' already has a study at {self.db_path} — pass --resume to continue it")
+        if self.config.stage == "compare" and not self.db_path.exists():
+            sys.exit(f"ERROR: stage 'compare' found no study database at {self.db_path}; run the prepare stage and the trial workers first")
+
+        if self.config.stage == "full":
+            if resume and not self.db_path.exists():
+                sys.exit(f"ERROR: --resume given but no study found at {self.db_path}")
+            if not resume and self.db_path.exists():
+                sys.exit(f"ERROR: run tag '{self.tag}' already has a study at {self.db_path}; pass --resume to continue it")
 
         tune_cfg      = self.config.tuning
         resolved_path = self.run_dir / "resolved_config.json"
@@ -335,24 +453,16 @@ class TuningScheduler:
 
         self.logger = Logger(log_dir=str(self.run_dir), name="tune_scheduler")
 
-        registry   = self._registry()
-        all_models = self._model_keys()
-        if target_model is not None:
-            name, head = ModelBuilder.split_key(target_model)
-            if name not in registry:
-                self.logger.close()
-                sys.exit(f"ERROR: unknown model '{name}'. Available: {list(registry.keys())}")
-            if head not in BACKBONE_HEADS:
-                self.logger.close()
-                sys.exit(f"ERROR: unknown head '{head}'. Available: {list(BACKBONE_HEADS)}")
-            models_to_run = [target_model]
-        else:
-            skip          = set(self.config.skip_models)
-            models_to_run = [m for m in all_models if m not in skip and ModelBuilder.split_key(m)[0] not in skip]
+        try:
+            models_to_run = self.selected_models(target_model)
+        except SystemExit:
+            self.logger.close()
+            raise
 
         self.logger.section("Hyperparameter Tuning")
         self.logger.kv_table({
             "Run tag"      : self.tag,
+            "Stage"        : self.config.stage,
             "Mode"         : "resume" if resume else "new",
             "Models"       : len(models_to_run),
             "GPUs"         : self.config.gpus,

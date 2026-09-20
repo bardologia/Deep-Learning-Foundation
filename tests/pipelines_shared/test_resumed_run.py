@@ -126,6 +126,23 @@ def test_the_report_says_when_nothing_changed(tmp_path):
     assert ("ok", "the run continues with exactly the configuration it recorded") in logger.messages
 
 
+def test_a_resumed_tuning_run_takes_its_stage_from_the_launch(tmp_path):
+    """The stage is the launch's decision, so a compare job does not inherit the prepare job's recording."""
+    from configuration.tuning                       import TuningEntryConfig
+    from pipelines.shared.orchestration.resumed_run import TuningResumedRun
+
+    recorded       = TuningEntryConfig()
+    recorded.stage = "prepare"
+    run_dir        = tmp_path / "tuning" / "study_b"
+    ConfigCli.save_resolved(recorded, run_dir / "resolved_config.json")
+
+    cli    = ConfigCli(TuningEntryConfig())
+    launch = cli.apply(["--resume_from", str(run_dir), "--stage", "compare"])
+    config = TuningResumedRun(TuningEntryConfig, launch, cli.overrides).load()
+
+    assert config.stage == "compare"
+
+
 def test_tuning_resume_locates_the_recording_beside_the_study_database(tmp_path):
     """A tuning run records its configuration in its run directory, and the resume finds it from any path inside."""
     from configuration.tuning                       import TuningEntryConfig

@@ -55,7 +55,9 @@ def _make_config(tmp_path: Path, n_trials: int = 10):
         paths         = paths,
         tuning        = tuning,
         training_type = "backbone",
+        stage         = "full",
         gpus          = [0, 1, 2],
+        n_workers     = 0,
         gpus_file     = "",
         skip_models   = [],
     )
@@ -368,3 +370,44 @@ def test_resume_allows_more_trials_and_a_new_gpu_pool(tmp_path):
     orch.config.gpus            = [0]
 
     orch._guard_resumed_config(orch.run_dir / "resolved_config.json")
+
+
+def test_prepare_stage_opens_the_study_without_dispatching_or_reporting(tmp_path, monkeypatch):
+    """The prepare stage creates the study a separately submitted worker attaches to, and stops there."""
+    orch = _orchestrator(tmp_path, n_trials=2)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    orch.config.stage = "prepare"
+
+    called = {"dispatch": False, "report": False}
+    monkeypatch.setattr(orch, "_dispatch_workers", lambda model_name, counts: called.update(dispatch=True) or True)
+    monkeypatch.setattr(orch, "_report_model", lambda study, model_name, tune_cfg, ok: called.update(report=True))
+
+    orch._tune_model("unet", orch.config.tuning)
+
+    assert called == {"dispatch": False, "report": False}
+    assert orch.db_path.exists()
+
+
+def test_compare_stage_reports_without_dispatching(tmp_path, monkeypatch):
+    """The compare stage writes the reports of a study the workers filled without running more trials."""
+    orch = _orchestrator(tmp_path, n_trials=2)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    orch.config.stage = "compare"
+
+    called = {"dispatch": False, "report": False}
+    monkeypatch.setattr(orch, "_dispatch_workers", lambda model_name, counts: called.update(dispatch=True) or True)
+    monkeypatch.setattr(orch, "_report_model", lambda study, model_name, tune_cfg, ok: called.update(report=True))
+
+    orch._tune_model("unet", orch.config.tuning)
+
+    assert called == {"dispatch": False, "report": True}
+
+
+def test_worker_count_follows_the_configured_value_then_the_pool(tmp_path):
+    """An explicit worker count wins, and without one there is a worker per device in the pool."""
+    orch = _orchestrator(tmp_path)
+
+    assert orch.worker_count() == 3
+
+    orch.config.n_workers = 8
+    assert orch.worker_count() == 8

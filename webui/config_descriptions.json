@@ -2143,9 +2143,11 @@
       "summary": "Entry point wiring an Optuna tuning sweep: model type, resources, data, and nested search/training configs",
       "fields": {
         "training_type": "model family being tuned: backbone, profile_autoencoder, image_autoencoder, or jepa (anything else falls back to the backbone model registry)",
+        "stage": "Part of the run to execute. 'prepare' only creates the studies, so trial workers launched separately have something to attach to; 'compare' only writes the best configuration and the study plots of studies the workers filled; 'full' runs the trials between the two, which is what a local launch does",
         "paths": "RunPathsConfig sub-config holding the dataset/parameters paths, secondary labels, and log/output base directory shared by every trial",
         "tuning": "TuningConfig sub-config controlling the Optuna search (trial count, epochs, pruning, seeding)",
         "gpus": "list of GPU device indices across which each model's trials are distributed and run in parallel",
+        "n_workers": "Trial workers each study is fanned out over. Zero means one worker per device in the GPU pool, which is what a local launch can keep busy at once; a launch whose pool is sized elsewhere sets the count explicitly",
         "gpus_file": "Path of the live GPU pool control file for this queue; the scheduler seeds it from the gpus selection and re-reads it on every poll, so writing {\"gpus\": [...]} into it resizes the run while it is in flight (added devices pick up queued jobs, removed devices retire once the job in flight ends). Empty places gpu_pool.json inside the run directory",
         "heads": "Output heads crossed with every tuned backbone; each backbone x head pair gets its own study (default [conv])",
         "skip_models": "model names excluded from the sweep's registry-driven model loop",
