@@ -11,7 +11,38 @@ that every part of the skeleton runs end to end on a fresh clone with no externa
 and so that each piece has a concrete thing to point at. Replacing it is the subject of
 `ADAPTING.md`.
 
-This file is the setup guide. Follow it top to bottom.
+This file is the setup guide. The quick start is enough for most people; the numbered
+sections explain what the installer does, for anyone who prefers to do it by hand or has
+to debug a step.
+
+## Quick start
+
+```bash
+./install.sh
+```
+
+`install.sh` finds or installs Miniconda, creates the `Dune` environment with the torch
+build that matches your NVIDIA driver, installs the pinned dependencies and the optional
+extras, and then asks eight questions: where your datasets are, where runs and results
+should be written, which GPUs the entry points may use, how many workers to allow, and
+whether you want notifications. Every question has a detected default, so pressing
+Enter through it is a valid setup. The answers become the machine profile at
+`~/.config/ml-template/machine.json`; the entry points and the web console read it, so
+no default in `configuration/` ever has to be edited.
+
+Run `./install.sh` again whenever something changes; each question defaults to the
+current answer. `./install.sh --yes` accepts every default without asking,
+`--skip-install` reruns only the questions, `--torch-index cu128` forces a torch build,
+and `--answers FILE` takes the answers from a JSON file keyed by question. On a desktop
+session the installer also offers an application-menu entry that starts the console and
+opens it in the browser.
+
+Then generate the example dataset and start the console:
+
+```bash
+python main/processing/generate_dataset.py
+webui/run.sh          # http://127.0.0.1:8772
+```
 
 ## What you need
 
@@ -30,11 +61,10 @@ pip install -r requirements.txt
 pip install "jax>=0.4.30" pytest==9.0.3 pyflakes==3.4.0
 ```
 
-Keep the name `Dune` unless you have a reason not to. `webui/run.sh` looks for
-`~/miniconda3/envs/Dune/bin/python` first and only then falls back to conda base and
-system `python3`, and `ProjectPaths.PRIORITY` in `webui/project_paths.py` names the same
-env as the console's preferred interpreter. A differently named env means the console
-may start on the wrong one; section 7 says where to change it.
+Keep the name `Dune` unless you have a reason not to. The installer records the
+interpreter of the environment in the machine profile, and `webui/run.sh` starts the
+console with exactly that interpreter; a hand-made environment under another name works
+as long as the installer is told about it (`./install.sh --skip-install --env <name>`).
 
 `requirements.txt` pins `torch==2.11.0`, and the reference machine runs the `cu130`
 build. If your driver needs a different CUDA build, install torch from the PyTorch index
@@ -108,9 +138,29 @@ fail rather than skip. Check `nvidia-smi` before believing a red run.
 
 ## 4. Point the configuration at your machine
 
-There is no config file to edit before a run. Each entry point builds a configuration
-dataclass and hands it to `ConfigCli`, which exposes every leaf field as a command-line
-flag.
+The defaults in `configuration/` describe the checkout itself: every path default is
+relative to the repository root and sits below one of the roots named in
+`configuration/reference_layout.py` (`datasets/`, `runs/`, `results/`, the example
+dataset and its parameter run), the GPU lists name device 0, and the worker counts are
+plain numbers. On any machine where the data or the runs should live elsewhere, the
+installer's machine profile retargets them.
+
+The profile lives at `~/.config/ml-template/machine.json` (or wherever
+`MLTEMPLATE_MACHINE_PROFILE` points; an empty value disables it, which is what the test
+suite does). `ConfigCli` applies it before parsing any flag: path defaults below a
+reference root are rebased onto the profile's root, the most specific root winning, so a
+default such as `runs/benchmark` becomes `<your runs root>/benchmark` with no per-field
+bookkeeping; `gpus`, `gpu_device_ids` and `gpu` take the profile's GPU pool;
+`vram_budget_gb`, `cpu_workers` and `gif_workers` take the profile's values; loader worker
+counts are capped at its limit; the report-mail identity follows it too. A
+`config_overrides` section of the form `{"ClassName.field": value}` handles anything
+else. `--help-config` marks every rewritten default with `[machine profile]`, and the
+console's launch pages mark the same fields.
+
+Nothing needs a profile: without one the checkout-relative defaults apply unchanged, so
+a clone works from its own `datasets/` and `runs/` directories. Each entry point builds a
+configuration dataclass and hands it to `ConfigCli`, which exposes every leaf field as a
+command-line flag; a flag always wins over the profile.
 
 Ask any script what it accepts:
 
@@ -208,19 +258,21 @@ webui/run.sh          # http://127.0.0.1:8772
 webui/run.sh 9000     # different port
 ```
 
-The HTTP layer is standard library only, but the console runs inside the project
-environment: the cube explorer, fit lab, model probe and training-curve readers are
-imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
-psutil all have to be there. `run.sh` picks the `Dune` interpreter for exactly that
-reason, and it prints the one it picked. To point the console at a different env, edit
-the candidate list in `webui/run.sh` and `ProjectPaths.PRIORITY` in
-`webui/project_paths.py`; each launch page also has an interpreter picker filled from the
-conda envs the server discovers.
+`run.sh` reads the interpreter, bind address and port from the machine profile's shell
+twin (`~/.config/ml-template/machine.env`) and refuses to start without one, pointing at
+`./install.sh`. The HTTP layer is standard library only, but the console runs inside the
+project environment: the cube explorer, fit lab, model probe and training-curve readers
+are imported at boot, so numpy, matplotlib, scipy, torch, scikit-image, tensorboard and
+psutil all have to be there, which is why the profile records the project environment's
+interpreter. Each launch page also has an interpreter picker filled from the conda envs
+the server discovers, with the profile's environment preselected.
 
 The console lists the 37 `main/` entry points, renders each one's configuration fields as
-typed controls, shows the exact command it will run, and streams the output back live. It
-also carries the run leaderboard, the results and cube browsers, the fit lab, the model
-microscope and server telemetry. `webui/README.md` documents every tab.
+typed controls with the profile's values already in place, shows the exact command it
+will run, and streams the output back live. It also carries the run leaderboard, the
+results and cube browsers, the fit lab, the model microscope and server telemetry; the
+browse roots of the results tabs start at the profile's data and runs roots.
+`webui/README.md` documents every tab.
 
 The frontend pulls MathJax, GSAP, highlight.js and xterm.js from a CDN. Offline it still
 works, with plain text where the equations would be.
@@ -248,14 +300,15 @@ Scripts tab.
 ## Repository map
 
 ```
+install.sh      one-command setup: conda, environment, dependencies, guided machine profile
 main/           entry points, one per verb and model type; nothing but wiring
-configuration/  dataclasses holding every default
+configuration/  dataclasses holding every default; reference_layout.py names the roots the profile rebases
 pipelines/      the pipelines behind the entry points
 models/         backbones, heads, blocks
 tools/          shared components (logger, training, metrics, monitoring)
 webui/          the control console, stdlib HTTP server plus static frontend
 tests/          about 4000 tests, self-contained
-scripts/        maintenance utilities
+scripts/        maintenance utilities and the setup wizard
 notes/          model and design notes, read by the console
 datasets/       generated example datasets, gitignored
 runs/           run outputs, gitignored

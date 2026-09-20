@@ -328,11 +328,15 @@ Nothing derives the name at runtime, so it is spelled out in a handful of places
   `pipelines/backbone/inference/analysis/seed_comparison.py`.
   `tests/backbone_inference/test_report.py` and `tests/webui/test_notifier.py` assert the
   current text, so they change with it.
-- The port, 8772: `webui/run.sh` and `webui/serve.py` hold the default, and
+- The port, 8772: `ReferenceLayout.CONSOLE_PORT` in `configuration/reference_layout.py`
+  seeds the machine profile, `webui/serve.py` holds the default, and
   `webui/tools/visual/refresh.sh` and `webui/tools/visual/snap_ui.js` hold the screenshot
   harness default.
-- The interpreter: `ProjectPaths.PRIORITY` in `webui/project_paths.py` and the candidate
-  list in `webui/run.sh` both name the `Dune` env.
+- The interpreter and environment name: `MachineProfile.DEFAULTS["machine"]` in
+  `tools/runtime/machine_profile.py` and `install.sh` both name the `Dune` env; the
+  profile written by the installer carries the interpreter `webui/run.sh` starts from.
+- The profile location, `~/.config/ml-template/` and `MLTEMPLATE_MACHINE_PROFILE`:
+  `MachineProfile` in `tools/runtime/machine_profile.py`, `install.sh` and `webui/run.sh`.
 - The browser storage prefix `mlt.` in `webui/static/js/configs.js`
   (`mlt.config.open`, `mlt.config.active`). Changing it resets which config sections a
   returning user had open, which is the point if two consoles share a host.
