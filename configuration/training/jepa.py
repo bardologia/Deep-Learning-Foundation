@@ -363,7 +363,7 @@ class JepaEntryConfig:
     Attributes:
         run_name                   : Explicit run folder name, or None to derive one from the settings.
         resume                     : Whether an interrupted run continues from its last checkpoint.
-        resume_from                : Run directory or sweep folder whose state is resumed.
+        resume_from                : Path of a run directory, a seed sweep root or a trial sweep root to resume, or any run inside them; the configuration it recorded is loaded, the command-line overrides are applied on top, complete units are reused and the rest continue or restart in their own directories. Empty starts a fresh run.
         backbone_name              : Registry key of the backbone predicting the embeddings.
         backbone_head              : Output head attached to that backbone.
         gpu                        : CUDA device index used for a single-seed run.

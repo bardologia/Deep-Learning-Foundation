@@ -22,8 +22,9 @@ from pipelines.dual.inference.pipeline    import DUAL_INFERENCE_COMPONENTS
 from pipelines.dual.training.experiments  import DualContextTrialPlanner, DualHeadMatchingTrialPlanner, DualRatioTrialPlanner, DualReachTrialPlanner, DualRoutingTrialPlanner
 from pipelines.dual.training.pipeline     import DualTrainingPipeline, TrunkChannelMap
 from pipelines.shared.model.model_builder import ModelBuilder
-from pipelines.shared.training.ddp_fanout import DdpDispatch
-from pipelines.shared.training.run_naming import RunNaming
+from pipelines.shared.training.ddp_fanout    import DdpDispatch
+from pipelines.shared.training.resume_source import ResumeLauncher
+from pipelines.shared.training.run_naming    import RunNaming
 from pipelines.shared.training.seed_sweep import SeedFanoutScheduler, SeedSet, SeedSweepRunner
 from tools.runtime.config_cli             import ConfigCli
 
@@ -168,8 +169,9 @@ class DualTrainingLauncher:
         Raises:
             SystemExit : If both `infer_after` and `infer_at_end` are requested.
         """
-        cli    = ConfigCli(DualEntryConfig(), description="Train the dual-trunk set-prediction model (the full stack feeds both trunks by default, a 90 % trunk feeds the gaussian heads and a 10 % trunk feeds the existence gate; each trunk is any backbone-zoo architecture), or fan out training trials across GPUs")
+        cli    = ConfigCli(DualEntryConfig(), description="Train the dual-trunk set-prediction model (the full stack feeds both trunks by default, a 90 % trunk feeds the gaussian heads and a 10 % trunk feeds the existence gate; each trunk is any backbone-zoo architecture), or fan out training trials across GPUs; point resume_from at a run or sweep to finish it with the configuration it recorded")
         config = cli.apply(argv)
+        config = ResumeLauncher.configure(DualEntryConfig, config, cli.overrides, trial_sweep=config.trials_enabled and "--trial" not in argv, unit="--trial" in argv)
 
         CurriculumInheritance(config.curriculum, dual_curriculum(), cli.overrides).apply()
 

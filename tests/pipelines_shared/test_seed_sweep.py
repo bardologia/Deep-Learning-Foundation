@@ -111,17 +111,17 @@ def _scheduler(tmp_path, config=None, overrides=None):
 
 
 def test_fanout_resumes_from_the_sweep_base_directory(tmp_path):
-    """Resuming from a sweep base directory rewires the log directory and forces resume on."""
+    """Resuming from a sweep base directory keeps that directory as the root, whatever it is called, and switches the unit resume on."""
     (tmp_path / "label_exp" / "seed3").mkdir(parents=True)
 
     config    = _Config(resume_from=str(tmp_path / "label_exp"), seeds=[3, 0, 17], logdir=Path("/elsewhere"))
     scheduler = SeedFanoutScheduler.for_runner(config, {}, Path("/entry/train.py"), _factory([]))
 
-    assert scheduler.base_name    == "exp"
-    assert scheduler.run_dir      == tmp_path / "label_exp"
-    assert config.logdir          == tmp_path
-    assert config.resume          is True
-    assert config.training.resume is True
+    assert scheduler.base_name == "label_exp"
+    assert scheduler.run_dir   == tmp_path / "label_exp"
+    assert scheduler.resuming  is True
+    assert config.logdir       == tmp_path
+    assert config.resume       is True
 
 
 def test_fanout_resumes_from_a_single_seed_directory(tmp_path):
@@ -131,24 +131,30 @@ def test_fanout_resumes_from_a_single_seed_directory(tmp_path):
     config    = _Config(resume_from=str(tmp_path / "label_exp" / "seed3"), seeds=[0, 1], logdir=Path("/elsewhere"))
     scheduler = SeedFanoutScheduler.for_runner(config, {}, Path("/entry/train.py"), _factory([]))
 
-    assert scheduler.base_name == "exp"
+    assert scheduler.base_name == "label_exp"
     assert scheduler.run_dir   == tmp_path / "label_exp"
 
 
-def test_fanout_resume_jobs_force_resume_and_hold_back_resume_from(tmp_path):
-    """Resume jobs pass resume flags and the resolved log directory but never forward resume_from."""
-    (tmp_path / "label_exp" / "seed0").mkdir(parents=True)
+def test_fanout_resume_jobs_are_handed_their_seed_directory(tmp_path):
+    """Resume jobs receive their exact seed directory through resume_from, existing or not, and no naming fields."""
+    (tmp_path / "other-label_exp" / "seed0").mkdir(parents=True)
 
-    config    = _Config(resume_from=str(tmp_path / "label_exp"), seeds=[0, 1], logdir=Path("/elsewhere"))
-    overrides = {"resume_from": str(tmp_path / "label_exp"), "training.epochs": "3"}
+    config    = _Config(resume_from=str(tmp_path / "other-label_exp"), seeds=[0, 1], logdir=Path("/elsewhere"))
+    overrides = {"resume_from": str(tmp_path / "other-label_exp"), "training.epochs": "3"}
     scheduler = SeedFanoutScheduler.for_runner(config, overrides, Path("/entry/train.py"), _factory([]))
 
-    argv = scheduler._job("exp/seed1", 1).command
+    for seed in (0, 1):
+        argv = scheduler._job(f"other-label_exp/seed{seed}", seed).command
 
-    assert "--resume_from" not in argv
-    assert argv[argv.index("--resume") + 1]          == "true"
-    assert argv[argv.index("--training.resume") + 1] == "true"
-    assert argv[argv.index("--logdir") + 1]          == str(tmp_path)
+        assert argv[argv.index("--resume_from") + 1]     == str(tmp_path / "other-label_exp" / f"seed{seed}")
+        assert argv[argv.index("--training.epochs") + 1] == "3"
+        assert argv[argv.index("--seed") + 1]            == str(seed)
+        assert "--logdir"   not in argv
+        assert "--run_name" not in argv
+
+    infer = scheduler._inference_job("other-label_exp/seed1", 1).command
+    assert infer[infer.index("--resume_from") + 1] == str(tmp_path / "other-label_exp" / "seed1")
+    assert infer[infer.index("--infer_after") + 1] == "true"
 
 
 def test_fanout_resume_skips_completed_seeds(tmp_path):
@@ -169,14 +175,29 @@ def test_fanout_resume_skips_completed_seeds(tmp_path):
     assert plan.missing                == ["seed3", "seed4"]
 
 
-def test_fanout_resume_rejects_a_mismatched_naming_prefix(tmp_path):
-    """A resume directory whose label prefix disagrees with the runner exits with an error."""
-    (tmp_path / "other_exp" / "seed0").mkdir(parents=True)
+def test_fresh_fanout_jobs_keep_naming_their_runs(tmp_path):
+    """A fresh sweep names its seed jobs through the log directory and the nested run name, never through resume_from."""
+    scheduler = _scheduler(tmp_path)
 
-    config = _Config(resume_from=str(tmp_path / "other_exp"), seeds=[0, 1], logdir=Path("/elsewhere"))
+    argv = scheduler._job("exp/seed3", 3).command
 
-    with pytest.raises(SystemExit, match="does not match"):
-        SeedFanoutScheduler.for_runner(config, {}, Path("/entry/train.py"), _factory([]))
+    assert "--resume_from" not in argv
+    assert argv[argv.index("--logdir") + 1]   == str(tmp_path)
+    assert argv[argv.index("--run_name") + 1] == "exp/seed3"
+
+
+def test_run_records_the_sweep_configuration(tmp_path):
+    """A launch writes the sweep's effective configuration under its log directory, with the resume path cleared."""
+    import json
+
+    scheduler = _scheduler(tmp_path)
+    scheduler.stage._run_queue = lambda jobs: [{"name": job.name, "gpu": 0, "status": "DONE", "returncode": 0, "duration_s": 60.0, "log_file": str(job.log_path)} for job in jobs]
+    scheduler.run()
+
+    recorded = json.loads((scheduler.log_dir / "resolved_config.json").read_text())
+
+    assert recorded["seeds"]       == [3, 0, 17]
+    assert recorded["resume_from"] == ""
 
 
 def test_fanout_resume_rejects_a_folder_without_seed_runs(tmp_path):
@@ -350,6 +371,7 @@ class _LauncherConfig:
 
     Attributes:
         run_name        : Explicit run name, or None to stamp one.
+        resume_from     : Pasted run or sweep directory to resume from.
         seed            : Base seed used when no seed list is given.
         seeds           : Seeds the sweep fans out over.
         logdir          : Parent directory runs are written under.
@@ -361,6 +383,7 @@ class _LauncherConfig:
         infer_at_end    : Whether inference is batched after every seed has trained.
     """
     run_name        : str | None = None
+    resume_from     : str        = ""
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=list)
     logdir          : Path       = Path("/logs")

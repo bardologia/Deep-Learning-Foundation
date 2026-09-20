@@ -285,7 +285,7 @@ def test_runner_resume_off_trains_in_place(tmp_path):
 
 
 def test_resume_from_pins_the_pasted_directory(tmp_path):
-    """A pasted resume_from directory becomes the run directory, name, and log parent, with resume forced on."""
+    """A pasted resume_from directory becomes the run directory, name, and log parent, with the unit resume forced on."""
     _StubPipeline.launched = []
 
     target = tmp_path / "elsewhere" / "resunet-set_pred-K_3_myrun"
@@ -299,21 +299,41 @@ def test_resume_from_pins_the_pasted_directory(tmp_path):
     assert config.run_name          == "resunet-set_pred-K_3_myrun"
     assert config.logdir            == target.parent
     assert config.resume            is True
-    assert config.training.resume   is True
+    assert config.training.resume   is False
     assert _StubPipeline.launched   == ["resunet-set_pred-K_3_myrun"]
 
 
+def test_resume_from_creates_an_absent_directory_fresh(tmp_path):
+    """A resume_from path that does not exist yet is trained into fresh, at exactly that path."""
+    _StubPipeline.launched = []
+
+    target = tmp_path / "sweep_root" / "seed4"
+    target.parent.mkdir(parents=True)
+
+    config = _entry_config(tmp_path, resume_from=str(target))
+    runner = _StubRunner(config)
+    runner.run()
+
+    assert runner.run_directory   == target
+    assert config.logdir          == target.parent
+    assert config.run_name        == "seed4"
+    assert config.training.resume is False
+    assert _StubPipeline.launched == ["seed4"]
+
+
 def test_resume_from_never_deletes_the_unfinished_target(tmp_path):
-    """An unfinished resume_from target keeps its checkpoint and is retrained in place."""
+    """An unfinished resume_from target holding a trainer state keeps it and continues from it in place."""
     _StubPipeline.launched = []
 
     target = tmp_path / "run_stub_old"
     target.mkdir(parents=True)
     (target / "last.pt").write_text("x")
 
-    _StubRunner(_entry_config(tmp_path, resume_from=str(target))).run()
+    config = _entry_config(tmp_path, resume_from=str(target))
+    _StubRunner(config).run()
 
     assert (target / "last.pt").exists()
+    assert config.training.resume is True
     assert _StubPipeline.launched == ["run_stub_old"]
 
 
@@ -330,10 +350,10 @@ def test_resume_from_skips_a_completed_target(tmp_path):
     assert _StubPipeline.launched == []
 
 
-def test_resume_from_rejects_a_missing_directory(tmp_path):
-    """A resume_from path that does not exist raises FileNotFoundError."""
-    with pytest.raises(FileNotFoundError, match="not an existing run directory"):
-        _StubRunner(_entry_config(tmp_path, resume_from=str(tmp_path / "nope"))).run()
+def test_resume_from_rejects_a_path_without_a_parent_directory(tmp_path):
+    """A resume_from path whose parent does not exist either raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError, match="no parent directory"):
+        _StubRunner(_entry_config(tmp_path, resume_from=str(tmp_path / "nope" / "unit"))).run()
 
 
 def test_resolved_config_records_the_post_preflight_values(tmp_path):

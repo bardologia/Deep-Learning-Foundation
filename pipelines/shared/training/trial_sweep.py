@@ -66,11 +66,10 @@ class TrialSweepScheduler:
         self.runs_root   = Path(config.logdir) / self.MODE_SUBDIRS[config.trials_mode]
 
         if config.resume_from:
-            names                  = [run_name for run_name, _ in self.units()]
-            self.runs_root         = SweepResumeRoot.resolve(config.resume_from, names)
-            self.resume_plan       = SweepResumePlan(self.runs_root, names).build()
-            config.resume          = True
-            config.training.resume = True
+            names            = [run_name for run_name, _ in self.units()]
+            self.runs_root   = SweepResumeRoot.resolve(config.resume_from, names)
+            self.resume_plan = SweepResumePlan(self.runs_root, names).build()
+            config.resume    = True
 
         self.log_dir            = self.runs_root / "batch_train_logs"
         self.results_path       = self.log_dir / "train_scheduler_results.json"
@@ -203,24 +202,36 @@ class TrialSweepScheduler:
             raise ValueError(f"infer_at_end batches inference after every training unit finishes, so '{run_name}' is built with infer_after disabled; the caller must submit the inference pass itself via inference_argv(), or set infer_after instead to run inference inside each unit")
 
         batched = {"infer_after": False} if self.staged_inference else {}
-        resumed = {"resume": True, "training.resume": True} if self._unit_resumes(run_name) else {}
 
-        return ConfigCli.to_argv({**self.forward_overrides, **resumed, **overrides, **batched, "run_name": run_name, "logdir": str(self.runs_root)})
+        return ConfigCli.to_argv({**self.forward_overrides, **overrides, **batched, **self._unit_overrides(run_name)})
 
-    def _unit_resumes(self, run_name: str) -> bool:
-        """Returns whether a unit resumes an existing run directory of the sweep.
+    def _unit_overrides(self, run_name: str) -> dict:
+        """Returns the overrides placing one unit in its directory.
+
+        A unit whose run directory the resume plan found is handed that
+        directory through ``resume_from``, whatever the current naming scheme
+        would call it; any other unit is named through the runs root and its
+        run name, which the entry's naming scheme composes into a fresh
+        directory.
 
         Args:
-            run_name : Name of the unit's run directory.
+            run_name : Name of the unit.
 
-        Returns:
-            True when resuming and the plan found a run directory for the unit, False for a fresh launch or a plan-missing unit that trains from scratch.
+        Raises:
+            SystemExit : If several run directories under the root match the unit, which leaves it ambiguous.
         """
-        return self.resume_plan is not None and run_name not in self.resume_plan.missing
+        if self.resume_plan is None or run_name in self.resume_plan.missing:
+            return {"run_name": run_name, "logdir": str(self.runs_root)}
+
+        hits = SweepResumeRoot.matches(self.runs_root, run_name)
+        if len(hits) != 1:
+            raise SystemExit(f"unit '{run_name}' matches {len(hits)} run directories under {self.runs_root}: {[str(hit) for hit in hits]}; remove or move the extra ones before resuming")
+
+        return {"resume_from": str(hits[0])}
 
     def inference_argv(self, run_name: str, overrides: dict) -> list[str]:
         """Returns the argv running inference over an already-trained unit."""
-        return ConfigCli.to_argv({**self.forward_overrides, **overrides, "infer_after": True, "resume": True, "run_name": run_name, "logdir": str(self.runs_root)})
+        return ConfigCli.to_argv({**self.forward_overrides, **overrides, "infer_after": True, "resume": True, **self._unit_overrides(run_name)})
 
     def _job(self, run_name: str, overrides: dict) -> GpuJob:
         """Returns the GPU job training one unit."""
@@ -321,6 +332,12 @@ class TrialSweepScheduler:
     def _write_mode_report(self) -> None:
         """Writes the mode-specific sweep report, a no-op unless an entry defines one."""
 
+    def _record(self) -> Path:
+        """Records the sweep's effective configuration under its log directory, for a later resume to load."""
+        from pipelines.shared.training.resume_source import SweepRecording
+
+        return SweepRecording.write(self.runs_root, self.config)
+
     def run(self) -> None:
         """Runs the whole sweep: plan units, train the pending ones, infer over those still missing it, then write the mode report.
 
@@ -332,6 +349,7 @@ class TrialSweepScheduler:
         seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
         planned     = self.planned_units()
         units       = self.units()
+        recording   = self._record()
 
         self.logger.section(f"Training trials: {self.config.trials_mode}")
         self.logger.kv_table({
@@ -348,6 +366,7 @@ class TrialSweepScheduler:
             "Unit resume"          : f"{self.config.resume} (reuse completed run dirs, delete unfinished ones)",
             "Trainer resume"       : self.config.training.resume,
             "Resume from"          : self.config.resume_from or "—",
+            "Recording"            : str(recording),
             "Forwarded overrides (scheduler options excluded; per-trial settings win)" : self.forward_overrides or "—",
             "Log dir"              : str(self.log_dir),
         }, title="Configuration")

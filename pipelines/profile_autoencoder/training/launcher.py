@@ -10,16 +10,17 @@ from __future__ import annotations
 import argparse
 import sys
 
-from configuration.training.general.optimization       import ClipMode, WarmupMode
-from configuration.training.profile_autoencoder        import ProfileAeEntryConfig
-from models.profile_autoencoder                        import PROFILE_AE_CONFIG_REGISTRY
+from configuration.training.general.optimization        import ClipMode, WarmupMode
+from configuration.training.profile_autoencoder         import ProfileAeEntryConfig
+from models.profile_autoencoder                         import PROFILE_AE_CONFIG_REGISTRY
 from pipelines.profile_autoencoder.training.experiments import ArchTrialPlanner, CapacityTrialPlanner, EmbeddingDimTrialPlanner, ProfileAugmentationTrialPlanner, ProfileLossTrialPlanner, SamplingTrialPlanner, SmoothnessTrialPlanner
-from pipelines.profile_autoencoder.training.pipeline   import SingleTrainRunner
-from pipelines.shared.training.ddp_fanout              import DdpDispatch
-from pipelines.shared.training.training_launcher       import SeedSweepClusterLauncher, SeedSweepLauncher
-from pipelines.shared.training.trial_planners          import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
-from pipelines.shared.training.trial_sweep             import TrialSweepScheduler
-from tools.runtime.config_cli                          import ConfigCli
+from pipelines.profile_autoencoder.training.pipeline    import SingleTrainRunner
+from pipelines.shared.training.ddp_fanout               import DdpDispatch
+from pipelines.shared.training.resume_source            import ResumeLauncher
+from pipelines.shared.training.training_launcher        import SeedSweepClusterLauncher, SeedSweepLauncher
+from pipelines.shared.training.trial_planners           import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
+from pipelines.shared.training.trial_sweep              import TrialSweepScheduler
+from tools.runtime.config_cli                           import ConfigCli
 
 
 class ProfileAeTrialScheduler(TrialSweepScheduler):
@@ -93,6 +94,10 @@ class ProfileAeTrainingLauncher(SeedSweepClusterLauncher):
     def _configure(self, argv: list[str]):
         """Parses argv into a resolved entry config and the CLI holding the overrides.
 
+        A trial sweep with ``resume_from`` set loads the configuration the
+        sweep recorded first; the single-run and seed-sweep paths resume
+        through the seed sweep launcher, which re-parses the arguments itself.
+
         Args:
             argv : Command-line arguments without the program name.
 
@@ -101,6 +106,9 @@ class ProfileAeTrainingLauncher(SeedSweepClusterLauncher):
         """
         cli    = ConfigCli(self.entry_config_class(), description=self.description)
         config = cli.apply(argv)
+
+        if config.trials_enabled and "--trial" not in argv:
+            config = ResumeLauncher.configure(self.entry_config_class, config, cli.overrides, trial_sweep=True)
 
         return config, cli
 

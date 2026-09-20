@@ -7,11 +7,13 @@ argument vectors that the Terrabyte scheduler packs into container jobs.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-from pipelines.shared.training.ddp_fanout import DdpDispatch
-from pipelines.shared.training.seed_sweep  import SeedFanoutScheduler, SeedSet, SeedSweepRunner
-from tools.runtime.config_cli              import ConfigCli
+from pipelines.shared.training.ddp_fanout    import DdpDispatch
+from pipelines.shared.training.resume_source import ResumeLauncher
+from pipelines.shared.training.seed_sweep    import SeedFanoutScheduler, SeedSet, SeedSweepRunner
+from tools.runtime.config_cli                import ConfigCli
 
 
 class SeedSweepLauncher:
@@ -42,7 +44,8 @@ class SeedSweepLauncher:
         which case it is fanned out as one synchronised rank per ``gpus``
         device; several seeds are fanned out across the GPU pool one seed each.
         A process that is itself a rank of a running group always trains in
-        place.
+        place. With ``resume_from`` set the configuration the run or sweep
+        recorded is loaded first, and the typed overrides are applied on top.
 
         Args:
             argv : Argument vector to parse; None reads ``sys.argv``.
@@ -51,8 +54,11 @@ class SeedSweepLauncher:
             SystemExit : If ``infer_after`` and ``infer_at_end`` are both set.
             ValueError : If ``ddp`` is combined with a multi-seed sweep.
         """
+        tokens = list(sys.argv[1:] if argv is None else argv)
+
         cli    = ConfigCli(self.entry_config, description=self.description)
         config = cli.apply(argv)
+        config = ResumeLauncher.configure(type(self.entry_config), config, cli.overrides, trial_sweep=False, unit="--trial" in tokens)
 
         infer_at_end = self.supports_infer_at_end and config.infer_at_end
         if infer_at_end and config.infer_after:

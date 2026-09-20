@@ -86,17 +86,20 @@ def test_for_runner_composes_a_fresh_run_name(tmp_path):
 
 
 def test_for_runner_resumes_an_existing_run_directory(tmp_path):
-    """resume_from repoints the logdir and forces both resume flags."""
+    """resume_from repoints the logdir, switches the unit resume on and hands every rank its existing directory."""
     target = tmp_path / "elsewhere" / "old_run"
     (target / "ddp" / "rank1").mkdir(parents=True)
 
     config = _config(tmp_path, resume_from=str(target))
     fanout = DdpFanout.for_runner(config, {}, Path("train.py"), _Runner)
 
-    assert fanout.run_name        == "old_run"
-    assert config.logdir          == target.parent
-    assert config.resume          is True
-    assert config.training.resume is True
+    assert fanout.run_name == "old_run"
+    assert config.logdir   == target.parent
+    assert config.resume   is True
+    assert fanout._rank_overrides(0)["resume_from"] == str(target)
+    assert fanout._rank_overrides(1)["resume_from"] == str(target / "ddp" / "rank1")
+    assert "run_name" not in fanout._rank_overrides(0)
+    assert "logdir"   not in fanout._rank_overrides(1)
 
 
 def test_resume_rejects_a_run_with_fewer_mirrors_than_ranks(tmp_path):
@@ -164,27 +167,30 @@ def test_rank_overrides_carry_the_bare_name_a_labelling_entry_composes(tmp_path)
     assert fanout.run_dir               == tmp_path / "runs" / "resunet_set_pred_ddp_run"
     assert fanout._rank_overrides(0)["run_name"] == "ddp_run"
     assert fanout._rank_overrides(1)["run_name"] == "rank1"
-    assert fanout._mirror_name(1)                == "resunet_set_pred_rank1"
 
 
-def test_resume_recovers_the_bare_name_of_a_labelling_entry(tmp_path):
-    """Resuming a labelled run directory strips the label back off for the ranks."""
-    target = tmp_path / "elsewhere" / "resunet_set_pred_old_run"
-    (target / "ddp" / "resunet_set_pred_rank1").mkdir(parents=True)
+def test_resume_hands_the_ranks_their_directories_whatever_the_label(tmp_path):
+    """A resumed run keeps its directory and mirrors as they are named, with no label to recompose."""
+    target = tmp_path / "elsewhere" / "other_model_old_run"
+    (target / "ddp" / "other_model_rank1").mkdir(parents=True)
 
     fanout = DdpFanout.for_runner(_config(tmp_path, resume_from=str(target)), {}, Path("train.py"), _LabellingRunner)
 
-    assert fanout.run_name                       == "resunet_set_pred_old_run"
-    assert fanout._rank_overrides(0)["run_name"] == "old_run"
+    assert fanout.run_name                          == "other_model_old_run"
+    assert fanout._rank_overrides(0)["resume_from"] == str(target)
+    assert fanout._rank_overrides(1)["resume_from"] == str(target / "ddp" / "other_model_rank1")
 
 
-def test_resume_rejects_a_directory_from_another_naming_scheme(tmp_path):
-    """A resumed directory whose label disagrees with the current settings raises instead of renaming the run."""
-    target = tmp_path / "elsewhere" / "other_model_old_run"
-    target.mkdir(parents=True)
+def test_mirrors_are_matched_by_their_rank_suffix(tmp_path):
+    """Mirror directories are recognised by the rank they end in, whatever prefix their naming scheme added."""
+    target = tmp_path / "run"
+    (target / "ddp" / "resunet_rank1").mkdir(parents=True)
+    (target / "ddp" / "rank2").mkdir(parents=True)
+    (target / "ddp" / "logs").mkdir(parents=True)
 
-    with pytest.raises(SystemExit, match="does not match"):
-        DdpFanout.for_runner(_config(tmp_path, resume_from=str(target)), {}, Path("train.py"), _LabellingRunner)
+    mirrors = DdpFanout._mirrors(target)
+
+    assert mirrors == {1: target / "ddp" / "resunet_rank1", 2: target / "ddp" / "rank2"}
 
 
 def test_environment_stamps_the_group_coordinates():

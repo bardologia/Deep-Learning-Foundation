@@ -24,9 +24,10 @@ def test_seed_sweep_launcher_runs_runner_over_resolved_config(monkeypatch):
 
     class Resolved:
         """Config stand-in resolved to a single seed."""
-        seed  = 4
-        seeds = [4]
-        ddp   = False
+        seed        = 4
+        seeds       = [4]
+        ddp         = False
+        resume_from = ""
 
     resolved = Resolved()
 
@@ -68,10 +69,11 @@ def test_seed_sweep_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
 
     class Resolved:
         """Config stand-in resolved to three seeds and a base field."""
-        seed       = 0
-        seeds      = [0, 1, 2]
-        ddp        = False
-        base_field = "conv2d_ae"
+        seed        = 0
+        seeds       = [0, 1, 2]
+        ddp         = False
+        base_field  = "conv2d_ae"
+        resume_from = ""
 
     resolved = Resolved()
 
@@ -223,6 +225,7 @@ def test_backbone_launcher_fans_out_when_trials_enabled(monkeypatch):
         curriculum     = default_curriculum()
         infer_after    = False
         infer_at_end   = False
+        resume_from    = ""
 
     class FakeCli:
         """Stand-in config CLI returning the trials-enabled config."""
@@ -282,13 +285,15 @@ def test_trials_scheduler_resumes_from_a_sweep_folder(tmp_path, monkeypatch):
     assert scheduler.resume_plan.missing    == ["t-c"]
     assert scheduler.units()                == [("t-b", {}), ("t-c", {})]
     assert config.resume                    is True
-    assert config.training.resume           is True
     assert "resume_from" not in scheduler.forward_overrides
 
     argv = scheduler.trial_argv("t-b", {}, batched_inference=True)
-    assert argv[argv.index("--logdir") + 1]          == str(root)
-    assert argv[argv.index("--resume") + 1]          == "true"
-    assert argv[argv.index("--training.resume") + 1] == "true"
+    assert argv[argv.index("--resume_from") + 1] == str(root / "t-b")
+    assert "--logdir"   not in argv
+    assert "--run_name" not in argv
+
+    infer = scheduler.inference_argv("t-a", {})
+    assert infer[infer.index("--resume_from") + 1] == str(root / "t-a")
 
 
 def test_trials_scheduler_trains_plan_missing_units_from_scratch(tmp_path, monkeypatch):
@@ -308,13 +313,13 @@ def test_trials_scheduler_trains_plan_missing_units_from_scratch(tmp_path, monke
     scheduler = backbone_pipeline.TrainScheduler(config=config, cli_overrides={"resume_from": str(root)}, entry_script=Path("/entry/train_backbone.py"))
 
     argv = scheduler.trial_argv("t-c", {}, batched_inference=True)
-    assert argv[argv.index("--logdir") + 1] == str(root)
-    assert "--resume"          not in argv
-    assert "--training.resume" not in argv
+    assert argv[argv.index("--logdir") + 1]   == str(root)
+    assert argv[argv.index("--run_name") + 1] == "t-c"
+    assert "--resume_from" not in argv
 
 
-def test_seed_fanout_forwards_resume_only_to_seeds_with_run_dirs(tmp_path):
-    """Verifies a resumed seed sweep drops completed seeds and withholds the resume overrides from a seed the plan found no run directory for."""
+def test_seed_fanout_hands_every_resumed_seed_its_directory(tmp_path):
+    """Verifies a resumed seed sweep drops completed seeds and hands the unfinished and missing ones their exact seed directory."""
     root = tmp_path / "prefix_base"
     (root / "seed0").mkdir(parents=True)
     (root / "seed1").mkdir()
@@ -332,10 +337,9 @@ def test_seed_fanout_forwards_resume_only_to_seeds_with_run_dirs(tmp_path):
     assert plan.missing    == ["seed2"]
     assert units           == [(1, "base/seed1"), (2, "base/seed2")]
 
-    assert scheduler._resumed(1) == {"resume": True, "training.resume": True}
-    assert scheduler._resumed(2) == {}
-    assert "--training.resume"     in scheduler._job("base/seed1", 1).command
-    assert "--training.resume" not in scheduler._job("base/seed2", 2).command
+    for seed in (1, 2):
+        argv = scheduler._job(f"base/seed{seed}", seed).command
+        assert argv[argv.index("--resume_from") + 1] == str(root / f"seed{seed}")
 
 
 def test_trials_scheduler_resolves_the_root_from_a_single_run(tmp_path, monkeypatch):

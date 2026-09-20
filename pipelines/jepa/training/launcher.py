@@ -19,6 +19,7 @@ from pipelines.jepa.training.experiments         import AeRunTrialPlanner, Coupl
 from pipelines.jepa.training.pipeline            import SingleTrainRunner
 from pipelines.shared.model.model_builder        import ModelBuilder
 from pipelines.shared.training.ddp_fanout        import DdpDispatch
+from pipelines.shared.training.resume_source     import ResumeLauncher
 from pipelines.shared.training.training_launcher import SeedSweepClusterLauncher, SeedSweepLauncher
 from pipelines.shared.training.trial_planners    import AmpTrialPlanner, EmaTrialPlanner, StabilityTrialPlanner
 from pipelines.shared.training.trial_sweep       import TrialSweepScheduler
@@ -115,6 +116,10 @@ class JepaTrainingLauncher(SeedSweepClusterLauncher):
     def _configure(self, argv: list[str]):
         """Parses argv into a resolved entry config and the CLI holding the overrides.
 
+        A trial sweep with ``resume_from`` set loads the configuration the
+        sweep recorded first; the single-run and seed-sweep paths resume
+        through the seed sweep launcher, which re-parses the arguments itself.
+
         Args:
             argv : Command-line arguments without the program name.
 
@@ -126,6 +131,9 @@ class JepaTrainingLauncher(SeedSweepClusterLauncher):
         """
         cli    = ConfigCli(self.entry_config_class(), description=self.description)
         config = cli.apply(argv)
+
+        if config.trials_enabled and "--trial" not in argv:
+            config = ResumeLauncher.configure(self.entry_config_class, config, cli.overrides, trial_sweep=True)
 
         if config.infer_after and config.infer_at_end:
             raise SystemExit("infer_after and infer_at_end are mutually exclusive; infer_after runs inference inside each training job, infer_at_end batches inference after every training finishes")

@@ -15,6 +15,7 @@ from pipelines.shared.config.run_metadata          import TrainingRunMetadata
 from pipelines.shared.training.pretrain_preflight  import PretrainPreflight
 from pipelines.shared.training.unit_resume         import UnitResume
 from tools.monitoring.logger                       import Logger
+from tools.training.checkpoint                     import TrainerState
 
 
 class RunDirectorySettledMarker:
@@ -90,19 +91,25 @@ class SingleTrainRunner:
         raise NotImplementedError
 
     def _apply_resume_from(self) -> None:
-        """Points the config at the pasted run directory and enables resume.
+        """Points the config at the pasted directory, which is the run directory exactly.
+
+        The directory is used as it is, bypassing the naming scheme: an
+        existing one is reused when complete and continued from its trainer
+        state when it holds one; an existing one without a trainer state is
+        restarted from scratch, and an absent one is created fresh at that
+        path, which is how a sweep hands a job the directory it expects.
 
         Raises:
-            FileNotFoundError : If ``resume_from`` is not an existing directory.
+            FileNotFoundError : If neither ``resume_from`` nor its parent directory exists.
         """
         target = Path(self.config.resume_from).expanduser()
-        if not target.is_dir():
-            raise FileNotFoundError(f"resume_from points at '{target}', which is not an existing run directory; paste the full path of the run to resume")
+        if not target.is_dir() and not target.parent.is_dir():
+            raise FileNotFoundError(f"resume_from points at '{target}', which does not exist and has no parent directory to be created in; paste the full path of the run to resume or to create")
 
         self.config.logdir          = target.parent
         self.config.run_name        = target.name
         self.config.resume          = True
-        self.config.training.resume = True
+        self.config.training.resume = TrainerState.path(target).is_file()
 
     def _resolve_run_directory(self) -> None:
         """Sets the run directory, either from ``resume_from`` or from naming."""
