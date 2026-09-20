@@ -449,15 +449,15 @@ class ExperimentBuilder {
       },
       names     : (b, model) => b._clampNames().map((rung) => `${model}_${rung}`) },
 
-    { group: "training", key: "stability", label: "stability", hint: "cumulative training-stability ladder: no lr warmup and no gradient clipping, then + lr warmup per fraction of the total optimizer steps, then + gradient clipping per norm threshold",
+    { group: "training", key: "stability", label: "stability", hint: "training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction of the total optimizer steps, then gradient clipping alone per norm threshold, then the first warmup fraction paired with each threshold",
       at        : 11,
       el        : "stabilityEl",
       available : (b) => b.stabilityTrials.size > 0,
       make      : (b) => b._stabilityPanel(),
       paint     : (b) => b._paintStability(),
       summary   : (b, gpus) => {
-        const n = 1 + b._stabilitySteps().length + b._stabilityNorms().length;
-        return `bare + ${b._stabilitySteps().length} warmup + ${b._stabilityNorms().length} clipping = ${n} trials${b._seedsSuffix(n)}${gpus}`;
+        const n = 1 + b._stabilitySteps().length + 2 * b._stabilityNorms().length;
+        return `bare + ${b._stabilitySteps().length} warmup + ${b._stabilityNorms().length} clipping + ${b._stabilityNorms().length} both = ${n} trials${b._seedsSuffix(n)}${gpus}`;
       },
       names     : (b, model) => b._stabilityNames().map((rung) => `${model}_${rung}`) },
 
@@ -2109,10 +2109,18 @@ class ExperimentBuilder {
     return this._numbersOf(this.stabilityTrials.get("max_grad_norms"));
   }
 
+  _stabilityClipTag(norm) {
+    const leaf = this.stabilityTrials.get("clip_mode");
+    const mode = leaf ? String(this.view._effective(leaf)).replace(/^['"]|['"]$/g, "") : "fixed";
+    return mode === "fixed" ? `n${this._pyG(norm)}` : mode;
+  }
+
   _stabilityNames() {
     const names = ["stab-0-none"];
-    this._stabilitySteps().forEach((fraction) => names.push(`stab-1-warmup-w${this._pyG(fraction)}`));
-    this._stabilityNorms().forEach((norm) => names.push(`stab-2-clip-n${this._pyG(norm)}`));
+    const steps = this._stabilitySteps();
+    steps.forEach((fraction) => names.push(`stab-1-warmup-w${this._pyG(fraction)}`));
+    this._stabilityNorms().forEach((norm) => names.push(`stab-2-clip-${this._stabilityClipTag(norm)}`));
+    if (steps.length) this._stabilityNorms().forEach((norm) => names.push(`stab-3-both-w${this._pyG(steps[0])}-${this._stabilityClipTag(norm)}`));
     return names;
   }
 
