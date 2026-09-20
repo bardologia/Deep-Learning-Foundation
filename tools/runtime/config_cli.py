@@ -1,8 +1,9 @@
 """Command-line overrides for nested dataclass configurations.
 
-Walks a config dataclass tree, exposes every editable leaf as a --dotted.path
-flag, coerces the given strings to the leaf's current type or annotation, and
-handles persisting and reloading the resolved configuration of a run.
+Walks a config dataclass tree, applies the machine profile to its defaults, exposes
+every editable leaf as a --dotted.path flag, coerces the given strings to the leaf's
+current type or annotation, and handles persisting and reloading the resolved
+configuration of a run.
 """
 
 from __future__ import annotations
@@ -16,19 +17,22 @@ from dataclasses import fields, is_dataclass
 from enum        import Enum
 from pathlib     import Path
 
-from .detacher import Detacher
+from .detacher        import Detacher
+from .machine_profile import FieldRule, MachineProfile
 
 _SUPPORTED_TYPES = (bool, int, float, str, Path, list, tuple, dict)
 
 
 class ConfigCli:
-    """Applies --dotted.path overrides to a nested dataclass configuration.
+    """Applies the machine profile and --dotted.path overrides to a nested dataclass configuration.
 
     Attributes:
-        config          : Configuration dataclass whose leaves become CLI options.
-        overrides       : Leaf path to value for every override that was applied.
-        parser          : Argument parser holding one option per editable leaf.
-        BOOTSTRAP_FLAGS : Flags owned by the entry points rather than the config, which are tolerated among the unparsed arguments.
+        config            : Configuration dataclass whose leaves become CLI options.
+        overrides         : Leaf path to value for every override that was applied.
+        profile           : Machine profile whose roots and hardware rules were applied to the defaults.
+        profile_overrides : Leaf path to value for every default the machine profile rewrote.
+        parser            : Argument parser holding one option per editable leaf.
+        BOOTSTRAP_FLAGS   : Flags owned by the entry points rather than the config, which are tolerated among the unparsed arguments.
     """
 
     BOOTSTRAP_FLAGS = (
@@ -42,18 +46,24 @@ class ConfigCli:
         "--fold", "--split",
     )
 
-    def __init__(self, config, description: str | None = None) -> None:
-        """Builds a parser exposing every editable leaf of the config as an option.
+    def __init__(self, config, description: str | None = None, profile: MachineProfile | None = None) -> None:
+        """Applies the machine profile and builds a parser exposing every editable leaf as an option.
 
-        Each leaf gets both its underscored dotted path and a dashed alias.
+        The profile rewrites the reference-layout paths and hardware-shaped defaults
+        first, so the values the flags override, and the defaults the help lists, are
+        the ones of this machine. Each leaf gets both its underscored dotted path and
+        a dashed alias.
 
         Args:
             config      : Configuration dataclass to expose.
             description : Text shown in the generated help.
+            profile     : Machine profile to apply; None loads the one the environment selects.
         """
-        self.config    = config
-        self.overrides : dict = {}
-        self.parser    = argparse.ArgumentParser(description=description, add_help=False, allow_abbrev=False)
+        self.config            = config
+        self.overrides : dict  = {}
+        self.profile           = MachineProfile.current() if profile is None else profile
+        self.profile_overrides = self.apply_profile(config, self.profile)
+        self.parser            = argparse.ArgumentParser(description=description, add_help=False, allow_abbrev=False)
 
         self.parser.add_argument("-h", "--help", action="store_true", dest="_help")
         self.parser.add_argument("--help-config", action="store_true", dest="_help_config")
@@ -131,6 +141,121 @@ class ConfigCli:
         if offenders:
             keys = ", ".join(sorted(set(offenders)))
             raise ValueError(f"Unrecognized override option(s): {keys}. Known overrides: --<path> from {type(self.config).__name__}; bootstrap flags: {', '.join(self.BOOTSTRAP_FLAGS)}")
+
+    @classmethod
+    def apply_profile(cls, config, profile: MachineProfile) -> dict:
+        """Rewrites the config defaults the machine profile claims and returns what changed.
+
+        Path leaves and path-valued strings below a reference-layout root are rebased
+        onto the profile's local root, then the field rules (GPU pool, worker counts,
+        VRAM budget, mail identity and explicit overrides) are applied by field name
+        and owning dataclass.
+
+        Args:
+            config  : Configuration dataclass to rewrite in place.
+            profile : Machine profile supplying the anchors and rules.
+
+        Returns:
+            Mapping of dotted leaf path to the value the profile wrote.
+        """
+        anchors = profile.path_anchors()
+        rules   = profile.field_rules()
+        applied = {}
+
+        if not anchors and not rules:
+            return applied
+
+        for path, value, owners in cls._owned_leaves(config):
+            rewritten = cls._profile_value(path.rsplit(".", 1)[-1], value, owners, anchors, rules)
+
+            if rewritten is value or (type(rewritten) is type(value) and rewritten == value):
+                continue
+
+            cls.set_path(config, path, rewritten)
+            applied[path] = rewritten
+
+        return applied
+
+    @classmethod
+    def _owned_leaves(cls, config, prefix: str = ""):
+        """Yields (dotted path, value, owning dataclass names) for every leaf of the config.
+
+        The owning names are every dataclass in the method resolution order of the
+        section holding the leaf, so a rule naming a base dataclass also reaches the
+        sections that extend it.
+        """
+        owners = tuple(klass.__name__ for klass in type(config).__mro__ if is_dataclass(klass))
+
+        for f in fields(config):
+            value = getattr(config, f.name)
+            path  = f"{prefix}{f.name}"
+
+            if is_dataclass(value):
+                yield from cls._owned_leaves(value, prefix=f"{path}.")
+            else:
+                yield path, value, owners
+
+    @classmethod
+    def _profile_value(cls, field: str, value, owners: tuple, anchors: list, rules: list):
+        """Returns the leaf value after the path rebase and the matching field rules.
+
+        Args:
+            field   : Field name of the leaf.
+            value   : Current leaf value.
+            owners  : Dataclass names owning the leaf.
+            anchors : Reference root and replacement pairs, most specific first.
+            rules   : Field rules from the profile.
+
+        Returns:
+            The rewritten value, or the original object when nothing applies.
+        """
+        current = value
+
+        if isinstance(current, Path):
+            rebased = MachineProfile.rebase(str(current), anchors)
+            current = current if rebased is None else Path(rebased)
+        elif isinstance(current, str) and current:
+            rebased = MachineProfile.rebase(current, anchors)
+            current = current if rebased is None else rebased
+
+        for rule in rules:
+            if rule.field != field or (rule.owner is not None and rule.owner not in owners):
+                continue
+            if rule.expects is not None and (not isinstance(current, rule.expects) or isinstance(current, bool)):
+                continue
+
+            current = cls._ruled_value(current, rule)
+
+        return current
+
+    @classmethod
+    def _ruled_value(cls, current, rule: FieldRule):
+        """Applies one field rule to a leaf value.
+
+        Args:
+            current : Leaf value before the rule.
+            rule    : Rule to apply.
+
+        Returns:
+            The value the rule produces, converted to the leaf's Path, Enum or tuple type.
+
+        Raises:
+            ValueError : If the rule kind is unknown.
+        """
+        if rule.kind == "cap":
+            return min(current, int(rule.value))
+
+        if rule.kind != "set":
+            raise ValueError(f"unknown machine profile rule kind {rule.kind!r} for field {rule.field!r}")
+
+        if isinstance(current, Path):
+            return Path(rule.value)
+        if isinstance(current, Enum):
+            return type(current)(rule.value)
+        if isinstance(current, tuple):
+            return tuple(rule.value)
+
+        return rule.value
 
     @classmethod
     def _leaves(cls, config, prefix: str = ""):
@@ -317,7 +442,10 @@ class ConfigCli:
 
         print(f"Configuration overrides for {type(self.config).__name__} (pass as --<path> <value>):")
         for path, type_name, default in rows:
-            print(f"  --{path:<{width}}  {type_name:<6}  default: {default}")
+            origin = "  [machine profile]" if path in self.profile_overrides else ""
+            print(f"  --{path:<{width}}  {type_name:<6}  default: {default}{origin}")
+        if self.profile.exists:
+            print(f"Machine profile: {self.profile.path} ({len(self.profile_overrides)} default(s) rewritten)")
         print("Execution flags:")
         print("  --detach (alias --nohup)  relaunch detached from the terminal, output to logs/<script>_<stamp>.out")
 
