@@ -425,11 +425,12 @@ class ConfigForm {
     const row = document.createElement("div");
     row.className = "cfg-edit__row";
     row.title = `--${leaf.path}`;
+    if (leaf.source === "profile") row.classList.add("is-profile");
 
     const label = document.createElement("div");
     label.className = "cfg-edit__name";
     label.textContent = short;
-    label.title = `${leaf.type} · --${leaf.path}`;
+    label.title = `${leaf.type} · --${leaf.path}` + (leaf.source === "profile" ? " · default from the machine profile" : "");
     row.appendChild(label);
 
     let control;

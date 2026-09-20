@@ -2,12 +2,14 @@
 
 Detects which configuration class an entry instantiates by parsing its source,
 then runs a bootstrap snippet under the target interpreter that instantiates the
-class and prints every leaf with its rendered value, type, editability and enum
-choices. Leaf values go through the shared ``ConfigValueRenderer``, the same
-renderer the run-config reader uses, so a copied run compares string-equal to the
-resolved defaults. Results are cached against a signature of the configuration
-tree so a config edit invalidates them, and concurrent requests for the same
-entry share a single subprocess.
+class through ``ConfigCli``, so the machine profile is applied exactly as an entry
+point applies it, and prints every leaf with its rendered value, type, editability,
+enum choices and whether the profile rewrote it. Leaf values go through the shared
+``ConfigValueRenderer``, the same renderer the run-config reader uses, so a copied
+run compares string-equal to the resolved defaults. Results are cached against a
+signature of the configuration tree and the profile file so an edit to either
+invalidates them, and concurrent requests for the same entry share a single
+subprocess.
 """
 
 from __future__ import annotations
@@ -39,14 +41,16 @@ class ScriptConfigResolver:
         "from tools.runtime.config_cli import ConfigCli\n"
         "from webui.config_value_render import ConfigValueRenderer\n"
         "module = __import__(sys.argv[2], fromlist=[sys.argv[3]])\n"
-        "config = getattr(module, sys.argv[3])()\n"
+        "cli = ConfigCli(getattr(module, sys.argv[3])())\n"
+        "config = cli.config\n"
         "leaves = []\n"
         "for path, value, section, section_class in ConfigCli.detailed_leaves(config):\n"
         "    editable = ConfigCli.is_editable(value)\n"
         "    rendered = ConfigValueRenderer.render(value)\n"
         "    kind = 'none' if value is None else type(value).__name__\n"
         "    choices = [e.value for e in type(value)] if isinstance(value, Enum) else None\n"
-        "    leaves.append({'path': path, 'value': rendered, 'type': kind, 'editable': editable, 'choices': choices, 'section': section, 'section_class': section_class})\n"
+        "    source = 'profile' if path in cli.profile_overrides else 'default'\n"
+        "    leaves.append({'path': path, 'value': rendered, 'type': kind, 'editable': editable, 'choices': choices, 'section': section, 'section_class': section_class, 'source': source})\n"
         "print(json.dumps(leaves))\n"
     )
 
@@ -139,13 +143,14 @@ class ScriptConfigResolver:
         return None
 
     def _signature(self, key: str) -> tuple:
-        """Returns the change signature of the tree, the entry, config_cli and the renderer."""
+        """Returns the change signature of the tree, the entry, config_cli, the renderer and the machine profile."""
         watched = sorted(self.paths.config_dir.rglob("*.py"))
         watched.append(self.paths.script_entry(key)["path"])
         watched.append(self.paths.repo_root / "tools" / "runtime" / "config_cli.py")
+        watched.append(self.paths.repo_root / "tools" / "runtime" / "machine_profile.py")
         watched.append(self.paths.repo_root / "webui" / "config_value_render.py")
 
-        return self.paths.tree_signature(watched)
+        return self.paths.tree_signature(watched) + self.paths.profile_signature()
 
     def _run_bootstrap(self, entry: dict, interpreter: str) -> dict:
         """Instantiates the configuration under an interpreter and returns its leaves.

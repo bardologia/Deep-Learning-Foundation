@@ -1416,6 +1416,7 @@ p.seq-block__flag--finalize { color: var(--accent-2); }
 .cfg-edit__row--frozen .cfg-edit__name { color: var(--accent-2); }
 .cfg-edit__row--frozen .cfg-edit__name::after { content: "frozen"; font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-2); margin-left: 6px; display: inline-block; white-space: nowrap; }
 .cfg-edit__row--waiting .cfg-edit__name { color: var(--warn); }
+.cfg-edit__row.is-profile .cfg-edit__name::after { content: "profile"; font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-left: 6px; display: inline-block; white-space: nowrap; }
 .cfg-edit__row--waiting .cfg-edit__name::after { content: "waiting"; font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); margin-left: 6px; display: inline-block; white-space: nowrap; }
 
 .seq-decide { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: var(--r-card); padding: 12px 14px; background: var(--surface-2); min-width: 0; }

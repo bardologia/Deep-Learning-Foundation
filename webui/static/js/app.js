@@ -1,12 +1,5 @@
 "use strict";
 
-window.repoRoot = "";
-
-window.repoPath = function (name) {
-  const root = (window.repoRoot || "").replace(/\/+$/, "");
-  return root ? `${root}/${name}` : name;
-};
-
 class RevealObserver {
   constructor() {
     this.io = new IntersectionObserver(
@@ -87,7 +80,7 @@ class App {
     }
 
     this.project = project;
-    window.repoRoot = project.repo_root || "";
+    window.ResultsSources.configure(project.roots);
     this._setStatus(true);
     this._initStatus();
   }
@@ -101,7 +94,7 @@ class App {
       }
 
       this.project = project;
-      window.repoRoot = project.repo_root || "";
+      window.ResultsSources.configure(project.roots);
       if (this.launchView) this.launchView.project = project;
       if (this.ablationView) this.ablationView.project = project;
       this._setStatus(true);
