@@ -1409,9 +1409,9 @@ class SequencesView extends ConfigForm {
     candidates.className  = "cfg-edit__input seq-decide__options";
     candidates.value      = decision.options.join(", ");
     candidates.spellcheck = false;
-    candidates.title      = "Comma-separated values the experiment compares; they become the verdict choices";
+    candidates.title      = "Comma-separated values the experiment compares; they become the verdict choices. A comma inside brackets, braces or quotes belongs to the value, so a list candidate like [40, 40] stays one candidate";
     candidates.addEventListener("change", async () => {
-      decision.options = candidates.value.split(",").map((value) => value.trim()).filter(Boolean);
+      decision.options = PythonLiteral.split(candidates.value);
       if (await this._persist()) this._render();
     });
     row.appendChild(this._decisionField("candidates", candidates));
