@@ -116,9 +116,10 @@ class JepaTrainingLauncher(SeedSweepClusterLauncher):
     def _configure(self, argv: list[str]):
         """Parses argv into a resolved entry config and the CLI holding the overrides.
 
-        A trial sweep with ``resume_from`` set loads the configuration the
-        sweep recorded first; the single-run and seed-sweep paths resume
-        through the seed sweep launcher, which re-parses the arguments itself.
+        With ``resume_from`` set the configuration the run or sweep recorded
+        is loaded first, and the overrides typed on this command line are
+        applied on top of it. A path that is a sweep root is recognised from
+        its own recording, so the sweep settings do not have to be retyped.
 
         Args:
             argv : Command-line arguments without the program name.
@@ -132,8 +133,7 @@ class JepaTrainingLauncher(SeedSweepClusterLauncher):
         cli    = ConfigCli(self.entry_config_class(), description=self.description)
         config = cli.apply(argv)
 
-        if config.trials_enabled and "--trial" not in argv:
-            config = ResumeLauncher.configure(self.entry_config_class, config, cli.overrides, trial_sweep=True)
+        config = ResumeLauncher.configure(self.entry_config_class, config, cli.overrides, trial_sweep=config.trials_enabled and "--trial" not in argv, unit="--trial" in argv)
 
         if config.infer_after and config.infer_at_end:
             raise SystemExit("infer_after and infer_at_end are mutually exclusive; infer_after runs inference inside each training job, infer_at_end batches inference after every training finishes")
