@@ -2,8 +2,13 @@
 
 class ResultsSources {
   static KEY              = "results-sources";
-  static get DEFAULT_DATASETS() { return window.repoPath("datasets"); }
-  static get DEFAULT_RUNS()     { return window.repoPath("runs"); }
+  static DEFAULT_DATASETS = "";
+  static DEFAULT_RUNS     = "";
+
+  static configure(roots) {
+    ResultsSources.DEFAULT_DATASETS = (roots && roots.datasets) || "";
+    ResultsSources.DEFAULT_RUNS     = (roots && roots.runs) || "";
+  }
 
   static stored() {
     try {

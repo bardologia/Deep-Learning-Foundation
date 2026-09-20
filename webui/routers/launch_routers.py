@@ -60,7 +60,7 @@ class CatalogRouter(SubRouter):
         table.wildcard("GET", "/api/scripts/", "",        self.script_detail)
 
     def project(self, exchange: HttpExchange) -> None:
-        """Answers with the project card: models, repo root, interpreters and counts."""
+        """Answers with the project card: models, repo root, browse roots, profile, interpreters and counts."""
         interpreters = self.paths.discover_interpreters()
         model_names  = [model["name"] for family in self.models.collect() for model in family["models"]]
 
@@ -68,6 +68,8 @@ class CatalogRouter(SubRouter):
             **self.PROJECT,
             "models"       : model_names,
             "repo_root"    : str(self.paths.repo_root),
+            "roots"        : self.paths.roots(),
+            "profile"      : self.paths.profile.summary(),
             "interpreters" : interpreters,
             "preferred"    : self.paths.preferred_interpreter(interpreters),
             "counts"       : {

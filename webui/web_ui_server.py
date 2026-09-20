@@ -194,15 +194,18 @@ class WebUIServer:
         ])
 
     def _report_ready(self) -> None:
-        """Prints the startup banner with the URL, script count and interpreters."""
+        """Prints the startup banner with the URL, profile, roots, script count and interpreters."""
 
         scripts      = self.catalog.list_scripts()
         interpreters = self.paths.discover_interpreters()
         preferred    = self.paths.preferred_interpreter(interpreters)
+        profile      = self.paths.profile
 
         self.logger.banner("ML Template Control Console", [
             f"URL          http://{self.host}:{self.port}",
             f"repo root    {self.paths.repo_root}",
+            f"profile      {profile.path if profile.exists else 'none (run ./install.sh)'}",
+            f"runs root    {self.paths.runs_dir}",
             f"scripts      {len(scripts)} entry points",
             f"interpreter  {preferred}",
             f"envs found   {len(interpreters)}",

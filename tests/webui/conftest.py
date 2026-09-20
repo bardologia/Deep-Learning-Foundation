@@ -17,6 +17,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from configuration.reference_layout import ReferenceLayout
+from tools.runtime.machine_profile  import MachineProfile
+
 REPO_ROOT  = Path(__file__).resolve().parents[2]
 WEBUI_ROOT = REPO_ROOT / "webui"
 
@@ -88,9 +91,11 @@ class StubPaths:
     """Minimal stand-in for the webui path registry rooted at a temporary directory.
 
     Attributes:
+        profile        : Absent machine profile, so no root or hardware rewrite applies.
         repo_root      : Root of the fake repository.
         main_dir       : Directory holding entry-point scripts.
         runs_dir       : Root of the run-output tree.
+        data_root      : Dataset root of the fake repository.
         logs_dir       : Root of the log tree.
         gpu_guard_dir  : Directory for GPU guard state files.
         gpu_pools_dir  : Directory for GPU pool state files.
@@ -100,9 +105,11 @@ class StubPaths:
 
     def __init__(self, root: Path) -> None:
         """Derives the standard subdirectories from a root path."""
+        self.profile        = MachineProfile(None)
         self.repo_root      = root
         self.main_dir       = root / "main"
-        self.runs_dir       = root / "runs"
+        self.runs_dir       = root / ReferenceLayout.RUNS_ROOT
+        self.data_root      = root / ReferenceLayout.DATA_ROOT
         self.logs_dir       = root / "logs"
         self.gpu_guard_dir  = root / "logs" / "gpu_guard"
         self.gpu_pools_dir  = root / "logs" / "gpu_pools"

@@ -67,9 +67,12 @@ def test_the_html_escaper_is_defined_once():
 
 
 def test_the_results_roots_are_declared_once():
-    """The results root defaults and their storage key are declared only in results_sources.js."""
+    """The results root defaults and their storage key live only in results_sources.js, and only app.js feeds them from /api/project."""
     holders = [path.name for path in JS_DIR.glob("*.js") if "DEFAULT_RUNS" in path.read_text()]
     assert holders == ["results_sources.js"]
+
+    configured = [path.name for path in JS_DIR.glob("*.js") if "ResultsSources.configure(" in path.read_text()]
+    assert configured == ["app.js"]
 
     readers = [path.name for path in JS_DIR.glob("*.js") if '"results-sources"' in path.read_text()]
     assert readers == ["results_sources.js"]

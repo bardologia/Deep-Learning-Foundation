@@ -273,7 +273,7 @@ class GpuSchedule:
         self.path         = self.paths.logs_dir / self.FILE_NAME
         self.applied      = {}
         self.pending      = {}
-        self.settings     = dict(self.DEFAULTS)
+        self.settings     = self.seed(paths.profile)
         self.last_tick    = None
         self.last_sweep   = None
         self.swept_at     = None
@@ -283,8 +283,27 @@ class GpuSchedule:
 
         self._load()
 
+    @classmethod
+    def seed(cls, profile) -> dict:
+        """Returns the built-in defaults with every GPU pool set to the machine profile's pool when it names one.
+
+        Args:
+            profile : Machine profile of this installation.
+
+        Returns:
+            Settings mapping used until a schedule file exists.
+        """
+        settings = dict(cls.DEFAULTS)
+        pool     = profile.gpu_pool
+
+        if pool:
+            for key in cls.GPU_KEYS:
+                settings[key] = list(pool)
+
+        return settings
+
     def _load(self) -> None:
-        """Reads the schedule file, keeping the defaults when it is missing or invalid."""
+        """Reads the schedule file, keeping the seeded defaults when it is missing or invalid."""
         if not self.path.is_file():
             return
 

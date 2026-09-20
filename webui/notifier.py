@@ -19,6 +19,8 @@ from datetime import datetime
 
 from web_logger import WebLogger
 
+from tools.runtime.machine_profile import MachineProfile
+
 
 class JobNotifier:
     """Pushes job lifecycle notifications to an ntfy topic.
@@ -38,7 +40,7 @@ class JobNotifier:
     SETTINGS_NAME  = "notifier.json"
     TOPIC_PATTERN  = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
     SEND_TIMEOUT_S = 10.0
-    DEFAULTS       = {"enabled": False, "topic": "", "server": "https://ntfy.sh"}
+    DEFAULTS       = dict(MachineProfile.DEFAULTS["ntfy"])
 
     def __init__(self, paths, logger: WebLogger) -> None:
         """Resolves the settings file and loads the persisted notification settings.
@@ -54,9 +56,9 @@ class JobNotifier:
         self.settings = self._load()
 
     def _load(self) -> dict:
-        """Returns the persisted settings, or the defaults when no settings file exists."""
+        """Returns the persisted settings, or the machine profile's ntfy seed when no settings file exists."""
         if not self.path.exists():
-            return dict(self.DEFAULTS)
+            return {key: self.paths.profile.ntfy[key] for key in self.DEFAULTS}
         loaded = json.loads(self.path.read_text())
         return {key: loaded[key] for key in self.DEFAULTS}
 

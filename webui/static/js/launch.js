@@ -607,8 +607,10 @@ class LaunchView extends ConfigForm {
     host.innerHTML = "";
     const facts = [["entry config", this.detail.config_class || "none"]];
     if (this.config) {
+      const fromProfile = this.config.leaves.filter((leaf) => leaf.source === "profile").length;
       facts.push(["fields", String(this.config.leaves.length)]);
       facts.push(["sections", String(this.sections.length)]);
+      facts.push(["from machine profile", String(fromProfile)]);
     }
     facts.forEach(([term, value]) => {
       const dt = document.createElement("dt");

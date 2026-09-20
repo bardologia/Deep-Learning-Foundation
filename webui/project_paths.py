@@ -1,8 +1,10 @@
-"""Repository layout, entry-point script registry and interpreter discovery.
+"""Repository layout, machine profile, entry-point script registry and interpreter discovery.
 
 Resolves the directories the web UI writes to, maps every launchable script key
 to its file under main/ and its entry config class, and finds the conda
-interpreters a job can be launched with.
+interpreters a job can be launched with. The machine profile written by the
+installer supplies the runs and data roots, the preferred environment and the
+conda install to scan; without one the roots are the checkout's own.
 """
 
 from __future__ import annotations
@@ -10,18 +12,23 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from configuration.reference_layout import ReferenceLayout
+from tools.runtime.machine_profile  import MachineProfile
+
 
 class ProjectPaths:
     """Resolved paths of a ML-Template checkout plus its script and interpreter registry.
 
     Attributes:
+        profile        : Machine profile of this installation; absent when none was written.
         webui_root     : Directory holding this module and the static assets.
         repo_root      : Root of the ML-Template repository.
         main_dir       : Directory holding the entry-point scripts.
         scripts_dir    : Directory holding the auxiliary scripts.
         config_dir     : Root of the configuration package.
         static_dir     : Directory served as the front end's static assets.
-        runs_dir       : Root of the run-output tree the entry points write into.
+        runs_dir       : Root of the run-output tree the entry points write into, the profile's runs root when set.
+        data_root      : Directory holding the datasets, the profile's data root or the checkout's.
         logs_dir       : Directory the web UI writes logs and state files into.
         gpu_guard_dir  : Directory holding GPU guard state files.
         gpu_pools_dir  : Directory holding per-job live GPU pool files.
@@ -29,9 +36,8 @@ class ProjectPaths:
         sequences_dir  : Directory holding one JSON file per stored experiment sequence.
     """
 
-    REQUIRED_DIRS   = ("main", "configuration", "tools")
-    PRIORITY        = ["conda:Dune"]
-    SCRIPT_PRIORITY = {}
+    REQUIRED_DIRS = ("main", "configuration", "tools")
+    CONDA_BASES   = ("miniconda3", "anaconda3", ".conda")
 
     ENTRY_OVERRIDES = {
         "generate_dataset": {
@@ -80,22 +86,25 @@ class ProjectPaths:
         },
     }
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, profile: MachineProfile | None = None) -> None:
         """Resolves every project directory and verifies the root is a real checkout.
 
         Args:
-            root : Repository root; defaults to the parent of the webui directory.
+            root    : Repository root; defaults to the parent of the webui directory.
+            profile : Machine profile to read roots and the environment from; None loads the one the environment selects.
 
         Raises:
             ValueError : If the resolved root lacks any of REQUIRED_DIRS.
         """
+        self.profile        = MachineProfile.current() if profile is None else profile
         self.webui_root     = Path(__file__).resolve().parent
         self.repo_root      = self.webui_root.parent if root is None else Path(root).resolve()
         self.main_dir       = self.repo_root / "main"
         self.scripts_dir    = self.repo_root / "scripts"
         self.config_dir     = self.repo_root / "configuration"
         self.static_dir     = self.webui_root / "static"
-        self.runs_dir       = self.repo_root / "runs"
+        self.runs_dir       = Path(self.profile.roots["runs"]) if self.profile.roots["runs"] else self.repo_root / ReferenceLayout.RUNS_ROOT
+        self.data_root      = Path(self.profile.roots["data"]) if self.profile.roots["data"] else self.repo_root / ReferenceLayout.DATA_ROOT
         self.logs_dir       = self.repo_root / "logs"
         self.gpu_guard_dir  = self.logs_dir / "gpu_guard"
         self.gpu_pools_dir  = self.logs_dir / "gpu_pools"
@@ -110,6 +119,19 @@ class ProjectPaths:
 
         if missing:
             raise ValueError(f"project root {self.repo_root} is not an ML Template repository: missing {', '.join(missing)}")
+
+    @property
+    def priority(self) -> list[str]:
+        """Interpreter labels preferred for launches: the profile's project environment."""
+        return [f"conda:{self.profile.env_name}"]
+
+    def roots(self) -> dict:
+        """Returns the browse roots the front end starts from."""
+        return {"datasets": str(self.data_root), "runs": str(self.runs_dir)}
+
+    def profile_signature(self) -> tuple:
+        """Returns the mtime signature of the profile file, empty when profiles are disabled or absent."""
+        return self.tree_signature([self.profile.path]) if self.profile.path is not None else ()
 
     def tree_signature(self, paths) -> tuple:
         """Returns a cache key of (name, mtime_ns) pairs for the given paths.
@@ -203,9 +225,10 @@ class ProjectPaths:
     def discover_interpreters(self) -> list[dict]:
         """Returns the conda interpreters available on this machine.
 
-        Scans the miniconda, anaconda and .conda installs under the home
-        directory for base and per-environment interpreters, and prepends the
-        running interpreter when it is not one of them.
+        Scans the profile's conda root and then the miniconda, anaconda and .conda
+        installs under the home directory for base and per-environment
+        interpreters, and prepends the running interpreter when it is not one of
+        them.
 
         Returns:
             List of entries with "label", "path" and a "current" flag marking
@@ -216,8 +239,10 @@ class ProjectPaths:
         current = str(Path(sys.executable))
 
         home  = Path.home()
-        bases = [home / "miniconda3", home / "anaconda3", home / ".conda"]
-        for base in bases:
+        bases = [home / name for name in self.CONDA_BASES]
+        if self.profile.machine["conda_root"]:
+            bases.insert(0, Path(self.profile.machine["conda_root"]))
+        for base in dict.fromkeys(bases):
             base_py = base / "bin" / "python"
             if base_py.exists() and str(base_py) not in seen:
                 found.append({"label": "conda:base", "path": str(base_py), "current": str(base_py) == current})
@@ -241,15 +266,14 @@ class ProjectPaths:
 
         Args:
             interpreters : Discovered interpreter entries as returned by discover_interpreters.
-            script_key   : Script key whose per-script priority list is consulted first.
+            script_key   : Script key the launch is for; every script shares the profile's preference.
 
         Returns:
             Path of the highest-priority matching interpreter, the first
             discovered one when none match, or the running interpreter when the
             list is empty.
         """
-        priority = self.SCRIPT_PRIORITY.get(script_key, []) + self.PRIORITY
-        for wanted in priority:
+        for wanted in self.priority:
             for item in interpreters:
                 if item["label"] == wanted:
                     return item["path"]

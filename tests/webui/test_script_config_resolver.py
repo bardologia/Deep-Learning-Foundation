@@ -76,6 +76,10 @@ class RecordingPaths:
         """Returns the real project-paths signature over the given directories."""
         return ProjectPaths.tree_signature(self, paths)
 
+    def profile_signature(self) -> tuple:
+        """Returns an empty signature: the stub carries no machine profile."""
+        return ()
+
     def script_entry(self, key: str) -> dict:
         """Returns an entry descriptor that already names its config module and class."""
         return {
