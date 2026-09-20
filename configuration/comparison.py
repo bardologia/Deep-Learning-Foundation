@@ -65,7 +65,7 @@ class SeedComparisonConfig:
     metrics_filename : str = "metrics.json"
     report_filename  : str = "report.md"
 
-    compute_disagreement : bool  = True
+    compute_disagreement : bool  = False
     compute_ensemble     : bool  = True
     cubes_subdir         : str   = "cubes"
     active_amp_thr       : float = 1e-4
