@@ -1,9 +1,9 @@
 """Scheduler that runs subprocess jobs across a live-editable pool of GPUs.
 
 Holds the job and result records, the JSON pool file that lets an operator
-resize the device set while an experiment runs, the progress file consumed by
-the web UI, and the queue itself, which launches one worker per free device and
-reaps them as they exit.
+resize the device set or free devices at once while an experiment runs, the
+progress file consumed by the web UI, and the queue itself, which launches one
+worker per free device and reaps them as they exit.
 """
 
 from __future__ import annotations
@@ -59,8 +59,21 @@ class GpuJobResult:
     log_file   : str
 
 
+@dataclass
+class PoolEdit:
+    """One validated edit read from the pool file.
+
+    Attributes:
+        gpus    : Devices the pool holds from now on.
+        preempt : Devices to free at once by stopping the worker on each and requeueing its job.
+    """
+
+    gpus    : list[int]
+    preempt : list[int]
+
+
 class GpuPoolFile:
-    """JSON file through which the GPU pool can be resized while jobs run.
+    """JSON file through which the GPU pool can be resized, or devices freed at once, while jobs run.
 
     Attributes:
         path   : Location of the pool file.
@@ -85,19 +98,57 @@ class GpuPoolFile:
         """Returns the file's modification time in nanoseconds, or None when absent."""
         return self.path.stat().st_mtime_ns if self.path.exists() else None
 
-    def write(self, gpus: list[int]) -> None:
-        """Atomically writes the device list and remembers the resulting stamp."""
-        FileIO.save_json({"gpus": list(gpus)}, self.path, indent=2, atomic=True)
+    def write(self, gpus: list[int], preempt: list[int] = ()) -> None:
+        """Atomically writes the device list, plus the preempt list when given, and remembers the resulting stamp.
+
+        Args:
+            gpus    : Devices the pool holds from now on.
+            preempt : Devices to free at once; the key is omitted when empty.
+        """
+        payload = {"gpus": list(gpus)}
+        if preempt:
+            payload["preempt"] = list(preempt)
+
+        FileIO.save_json(payload, self.path, indent=2, atomic=True)
         self.stamp = self._stamp()
 
     def seed(self, gpus: list[int]) -> None:
         """Writes the initial device list and tells the operator the file is editable."""
         self.write(gpus)
-        self.logger.info(f"GPU pool is live-editable at {self.path} — write {{\"gpus\": [...]}} to resize this experiment while it runs")
+        self.logger.info(f"GPU pool is live-editable at {self.path} — write {{\"gpus\": [...]}} to resize this experiment while it runs, add \"preempt\": [...] to free devices at once (their runs stop and restart from the head of the queue)")
 
     @staticmethod
-    def validate(payload) -> list[int]:
-        """Returns the device list held by a pool payload after checking its shape.
+    def _devices(payload: dict, key: str) -> list[int]:
+        """Returns the device list under one key of a pool payload after checking its entries.
+
+        Args:
+            payload : Object decoded from the pool file.
+            key     : Key holding the device list.
+
+        Returns:
+            The device indices in the order given.
+
+        Raises:
+            ValueError : If the value is not a list of distinct non-negative integers.
+        """
+        requested = payload[key]
+
+        if not isinstance(requested, list):
+            raise ValueError(f"'{key}' must be a list of device ids, got {requested!r}")
+
+        invalid = [gpu for gpu in requested if isinstance(gpu, bool) or not isinstance(gpu, int) or gpu < 0]
+        if invalid:
+            raise ValueError(f"'{key}' must hold non-negative integers, got {invalid}")
+
+        duplicates = sorted({gpu for gpu in requested if requested.count(gpu) > 1})
+        if duplicates:
+            raise ValueError(f"'{key}' must not repeat a device, duplicated: {duplicates}")
+
+        return list(requested)
+
+    @classmethod
+    def validate(cls, payload) -> list[int]:
+        """Returns the pool device list held by a payload after checking its shape.
 
         Args:
             payload : Object decoded from the pool file.
@@ -111,27 +162,36 @@ class GpuPoolFile:
         if not isinstance(payload, dict) or "gpus" not in payload:
             raise ValueError(f"expected an object holding a 'gpus' key, got {payload!r}")
 
-        requested = payload["gpus"]
+        return cls._devices(payload, "gpus")
 
-        if not isinstance(requested, list):
-            raise ValueError(f"'gpus' must be a list of device ids, got {requested!r}")
+    @classmethod
+    def parse(cls, payload) -> PoolEdit:
+        """Returns the pool edit held by a payload: the new pool and the devices to free at once.
 
-        invalid = [gpu for gpu in requested if isinstance(gpu, bool) or not isinstance(gpu, int) or gpu < 0]
-        if invalid:
-            raise ValueError(f"'gpus' must hold non-negative integers, got {invalid}")
-
-        duplicates = sorted({gpu for gpu in requested if requested.count(gpu) > 1})
-        if duplicates:
-            raise ValueError(f"'gpus' must not repeat a device, duplicated: {duplicates}")
-
-        return list(requested)
-
-    def requested(self) -> list[int] | None:
-        """Returns the device list from a newly modified pool file, else None.
+        Args:
+            payload : Object decoded from the pool file.
 
         Returns:
-            The validated device indices when the file changed since the last
-            read, or None when it is unchanged, missing, or the edit was rejected.
+            The validated pool and preempt lists; preempt is empty when the key is absent.
+
+        Raises:
+            ValueError : If either list is malformed or a device appears in both.
+        """
+        gpus    = cls.validate(payload)
+        preempt = cls._devices(payload, "preempt") if "preempt" in payload else []
+        overlap = sorted(set(gpus) & set(preempt))
+
+        if overlap:
+            raise ValueError(f"a device cannot stay in 'gpus' and be freed through 'preempt' at the same time, listed in both: {overlap}")
+
+        return PoolEdit(gpus=gpus, preempt=preempt)
+
+    def requested(self) -> PoolEdit | None:
+        """Returns the edit held by a newly modified pool file, else None.
+
+        Returns:
+            The validated pool edit when the file changed since the last read,
+            or None when it is unchanged, missing, or the edit was rejected.
         """
         stamp = self._stamp()
 
@@ -141,7 +201,7 @@ class GpuPoolFile:
         self.stamp = stamp
 
         try:
-            return self.validate(FileIO.load_json(self.path))
+            return self.parse(FileIO.load_json(self.path))
         except (ValueError, TypeError, json.JSONDecodeError, OSError) as error:
             self.logger.error(f"Rejected the GPU pool edit in {self.path}: {error}. The pool is unchanged; fix the file to resize the experiment.")
             return None
@@ -150,9 +210,9 @@ class GpuPoolFile:
 class GpuProgressFile:
     """Per-unit progress ledger written beside the pool file for live monitoring.
 
-    Tracks how many units are done or failed, averages their durations to project
-    an ETA, and carries forward entries from a previous launch that are no longer
-    part of the current job list.
+    Tracks how many units are done, failed or were preempted, averages their
+    durations to project an ETA, and carries forward entries from a previous
+    launch that are no longer part of the current job list.
 
     Attributes:
         path         : Location of the progress JSON.
@@ -163,6 +223,7 @@ class GpuProgressFile:
         done         : Count of units that exited successfully.
         failed       : Count of units that exited non-zero.
         failed_units : Names of the failed units.
+        preempted    : Count of preemptions, each returning a running unit to the queue.
     """
 
     SUFFIX           = "_progress.json"
@@ -189,6 +250,7 @@ class GpuProgressFile:
         self.done          = 0
         self.failed        = 0
         self.failed_units  : list[str] = []
+        self.preempted     = 0
         self.last_write    = float("-inf")
         self.written_units = None
 
@@ -222,7 +284,7 @@ class GpuProgressFile:
     @staticmethod
     def _fresh_unit(job: GpuJob) -> dict:
         """Returns the queued-state ledger entry for a job."""
-        return {"name": job.name, "log": str(job.log_path), "status": "queued", "gpu": None, "duration_s": None, "returncode": None}
+        return {"name": job.name, "log": str(job.log_path), "status": "queued", "gpu": None, "duration_s": None, "returncode": None, "preemptions": 0}
 
     def _load_prior(self, current: set[str]) -> list[dict]:
         """Returns entries of an earlier progress file that this launch does not cover.
@@ -254,6 +316,19 @@ class GpuProgressFile:
     def completed(self) -> int:
         """Number of units that have finished, successfully or not."""
         return self.done + self.failed
+
+    def preempt(self, job: GpuJob) -> None:
+        """Returns a stopped unit to the queued state and counts the preemption.
+
+        Args:
+            job : Unit whose worker was stopped; its log path keys the ledger entry.
+        """
+        unit                 = self.units[str(job.log_path)]
+        unit["status"]       = "queued"
+        unit["gpu"]          = None
+        unit["preemptions"] += 1
+
+        self.preempted += 1
 
     def record(self, result: GpuJobResult) -> None:
         """Folds one finished job into the ledger, counters and duration history.
@@ -322,8 +397,9 @@ class GpuProgressFile:
             workers : Effective parallelism used for the ETA.
 
         Returns:
-            Mapping with the counters, per-unit states, average and elapsed
-            seconds, ETA, and ISO timestamps for start, projected finish and update.
+            Mapping with the counters, the preemption count, per-unit states,
+            average and elapsed seconds, ETA, and ISO timestamps for start,
+            projected finish and update.
         """
         elapsed = time.monotonic() - self.started_mono
         eta     = self._eta_s(running, queued, workers)
@@ -337,6 +413,7 @@ class GpuProgressFile:
             "workers"      : workers,
             "units"        : self._unit_states(running),
             "failed_units" : list(self.failed_units),
+            "preempted"    : self.preempted,
             "average_s"    : self._average_s(),
             "elapsed_s"    : elapsed,
             "eta_s"        : eta,
@@ -450,24 +527,33 @@ class GpuQueue:
 
         return previous
 
+    def _stop_workers(self, records: list[dict]) -> None:
+        """Terminates the given workers, kills those still alive past the deadline, and closes their logs.
+
+        Args:
+            records : In-flight records whose processes are stopped.
+        """
+        for record in records:
+            if record["process"].poll() is None:
+                record["process"].terminate()
+
+        deadline = time.time() + self.terminate_deadline_s
+        for record in records:
+            try:
+                record["process"].wait(timeout=max(0.1, deadline - time.time()))
+            except subprocess.TimeoutExpired:
+                record["process"].kill()
+                record["process"].wait()
+
+            record["log_fh"].close()
+
     def _shutdown_running(self) -> int:
         """Terminates every in-flight worker, killing those past the deadline.
 
         Returns:
             Number of workers that were shut down.
         """
-        for record in self.running:
-            if record["process"].poll() is None:
-                record["process"].terminate()
-
-        deadline = time.time() + self.terminate_deadline_s
-        for record in self.running:
-            try:
-                record["process"].wait(timeout=max(0.1, deadline - time.time()))
-            except subprocess.TimeoutExpired:
-                record["process"].kill()
-
-            record["log_fh"].close()
+        self._stop_workers(self.running)
 
         terminated   = len(self.running)
         self.running = []
@@ -531,11 +617,14 @@ class GpuQueue:
             gpu_pool.append(record["gpu"])
 
     def _reconcile(self, gpu_pool: list[int], queue: list[GpuJob]) -> None:
-        """Applies a pending pool-file edit to the free pool and the retiring set.
+        """Applies a pending pool-file edit: preempts first, then resizes the free pool and the retiring set.
+
+        A preempt list is a one-shot command, so once it has been acted on the
+        file is rewritten with the pool alone and the next edit starts clean.
 
         Args:
             gpu_pool : Free device list, mutated to match the requested pool.
-            queue    : Pending jobs, used only for the resize log lines.
+            queue    : Pending jobs; preempted jobs return to its head.
         """
         if self.pool is None:
             return
@@ -544,10 +633,12 @@ class GpuQueue:
         if requested is None:
             return
 
+        self._preempt(requested.preempt, gpu_pool, queue)
+
         busy    = [record["gpu"] for record in self.running]
         active  = set(gpu_pool) | set(busy)
-        added   = sorted(set(requested) - active)
-        removed = sorted(active - set(requested))
+        added   = sorted(set(requested.gpus) - active)
+        removed = sorted(active - set(requested.gpus))
 
         gpu_pool.extend(added)
         gpu_pool.sort()
@@ -557,9 +648,51 @@ class GpuQueue:
                 gpu_pool.remove(gpu)
 
         self.retiring |= set(removed) & set(busy)
-        self.retiring -= set(requested)
+        self.retiring -= set(requested.gpus)
 
         self._log_resize(added, removed, gpu_pool, queue)
+
+        if requested.preempt:
+            self.pool.write(requested.gpus)
+
+    def _preempt(self, devices: list[int], gpu_pool: list[int], queue: list[GpuJob]) -> None:
+        """Frees the listed devices at once: stops the live worker on each and requeues its job at the head.
+
+        A device whose worker has already exited is left to the next reap, and
+        an idle device simply leaves the free pool. Stopped jobs return to the
+        head of the queue in their launch order and restart on the next free
+        device; no result is recorded for the interrupted attempt.
+
+        Args:
+            devices  : Devices to free now.
+            gpu_pool : Free device list, purged of the freed devices.
+            queue    : Pending jobs, prepended with the stopped ones.
+        """
+        if not devices:
+            return
+
+        stopped = [record for record in self.running if record["gpu"] in devices and record["process"].poll() is None]
+        self._stop_workers(stopped)
+
+        for record in stopped:
+            self.running.remove(record)
+
+            minutes = (time.monotonic() - record["started"]) / 60
+            self.logger.warning(f"[GPU {record['gpu']}] preempted {record['job'].name} after {minutes:.1f} min — device freed, the unit restarts from the head of the queue")
+
+            if self.progress is not None:
+                self.progress.preempt(record["job"])
+
+        queue[:0] = [record["job"] for record in stopped]
+
+        idle = [gpu for gpu in devices if gpu in gpu_pool]
+        for gpu in idle:
+            gpu_pool.remove(gpu)
+
+        self.retiring -= set(devices)
+
+        if idle:
+            self.logger.info(f"GPU pool released {idle} — idle, no longer used")
 
     def _log_resize(self, added: list[int], removed: list[int], gpu_pool: list[int], queue: list[GpuJob]) -> None:
         """Reports which devices joined, were released immediately, or are draining.
@@ -646,9 +779,9 @@ class GpuQueue:
     def run(self, jobs: list[GpuJob]) -> list[GpuJobResult]:
         """Schedules every job across the pool and returns their outcomes.
 
-        Reaps finished workers, honours pool-file resizes, dispatches queued jobs
-        onto free devices and publishes progress once per poll interval, until
-        nothing is queued or in flight. Any worker still running when the loop
+        Reaps finished workers, honours pool-file resizes and preemptions,
+        dispatches queued jobs onto free devices and publishes progress once
+        per poll interval, until nothing is queued or in flight. Any worker still running when the loop
         aborts is terminated so no unsupervised job keeps holding a GPU.
 
         Args:
