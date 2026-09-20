@@ -1176,6 +1176,17 @@
               "row": 2
             },
             {
+              "id": "gaussians_torch",
+              "label": "GaussianCurve / GaussianClamp",
+              "module": "tools/data/gaussians_torch.py",
+              "role": "transform",
+              "fn": "Torch half of the Gaussian toolbox: renders parameter maps into z curves for the curve-space terms and clamps denormalised predictions to the physical axis with a leaky slope. Kept apart from gaussians.py so NumPy-only consumers load no torch.",
+              "col": 3,
+              "reads": [],
+              "writes": [],
+              "row": 1
+            },
+            {
               "id": "overfit_check",
               "label": "OverfitCheck",
               "module": "pipelines/shared/training/overfit_check.py",
@@ -1293,6 +1304,12 @@
               "from": "dataset_pipeline",
               "to": "trainer",
               "label": "loader + norm_stats",
+              "kind": "data"
+            },
+            {
+              "from": "gaussians_torch",
+              "to": "loss",
+              "label": "curves + physical clamp",
               "kind": "data"
             },
             {
