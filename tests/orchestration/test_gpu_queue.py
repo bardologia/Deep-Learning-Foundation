@@ -280,6 +280,110 @@ def test_queue_without_pool_file_writes_no_control_file(tmp_path, logger_stub):
     assert not (tmp_path / "gpu_pool.json").exists()
 
 
+def _stale_pool(path: Path, gpus: list[int]) -> None:
+    """Writes a pool file and backdates it an hour before this process started, as a leftover launch would leave it."""
+    path.write_text(json.dumps({"gpus": gpus}))
+
+    stamp = GpuPoolFile.PROCESS_START_NS - 3_600_000_000_000
+    os.utime(path, ns=(stamp, stamp))
+
+
+def test_seed_writes_the_launch_selection_when_no_pool_file_exists(tmp_path):
+    """Verifies the first pass of an experiment seeds the file with the devices it was launched with."""
+    pool = GpuPoolFile(tmp_path / "gpu_pool.json", SilentLogger())
+
+    assert pool.seed([0, 1])                                        == [0, 1]
+    assert json.loads((tmp_path / "gpu_pool.json").read_text())     == {"gpus": [0, 1]}
+
+
+def test_seed_adopts_a_pool_edited_since_the_process_started(tmp_path):
+    """Verifies an edit made while the experiment runs outranks the launch selection."""
+    path = tmp_path / "gpu_pool.json"
+    pool = GpuPoolFile(path, SilentLogger())
+
+    _write_pool(path, [0, 1, 2])
+
+    assert pool.seed([2])                   == [0, 1, 2]
+    assert json.loads(path.read_text())     == {"gpus": [0, 1, 2]}
+
+
+def test_seed_ignores_a_pool_file_left_by_an_earlier_launch(tmp_path):
+    """Verifies a pool file older than this process states no live intent and yields to the launch selection."""
+    path = tmp_path / "gpu_pool.json"
+    pool = GpuPoolFile(path, SilentLogger())
+
+    _stale_pool(path, [2, 3])
+
+    assert pool.seed([0, 1])                == [0, 1]
+    assert json.loads(path.read_text())     == {"gpus": [0, 1]}
+
+
+def test_seed_keeps_a_parked_experiment_parked(tmp_path):
+    """Verifies parking during one pass is not undone by the pass that follows it."""
+    path = tmp_path / "gpu_pool.json"
+    pool = GpuPoolFile(path, SilentLogger())
+
+    _write_pool(path, [])
+
+    assert pool.seed([0, 1])                == []
+    assert json.loads(path.read_text())     == {"gpus": []}
+
+
+def test_seed_clears_a_preempt_command_it_took_over(tmp_path):
+    """Verifies adopting a pool drops a spent preempt list instead of replaying it on the next pass."""
+    path = tmp_path / "gpu_pool.json"
+    pool = GpuPoolFile(path, SilentLogger())
+
+    _write_pool(path, _preempt_payload([0], [1]))
+
+    assert pool.seed([0, 1])                == [0]
+    assert json.loads(path.read_text())     == {"gpus": [0]}
+
+
+def test_malformed_live_pool_falls_back_to_the_launch_selection(tmp_path):
+    """Verifies an unreadable pool file is reported and the pass starts on the launched devices."""
+    path   = tmp_path / "gpu_pool.json"
+    logger = RecordingLogger()
+    pool   = GpuPoolFile(path, logger)
+
+    _write_pool(path, "{oops")
+
+    assert pool.seed([0, 1])                == [0, 1]
+    assert json.loads(path.read_text())     == {"gpus": [0, 1]}
+    assert any("malformed GPU pool" in message for message in logger.errors)
+
+
+def test_later_pass_dispatches_over_the_pool_edited_during_the_earlier_one(tmp_path):
+    """Verifies a queue rebuilt from the launch selection starts on the pool set while the previous pass ran."""
+    pool     = tmp_path / "gpu_pool.json"
+    training = GpuQueue(gpus=[0], logger=SilentLogger(), poll_interval_s=0.0, handle_signals=False, pool_file=pool)
+
+    training.run([_job(tmp_path, "train", _ok_command())])
+
+    _write_pool(pool, [0, 1, 2])
+
+    inference = GpuQueue(gpus=[0], logger=SilentLogger(), poll_interval_s=0.0, handle_signals=False, pool_file=pool)
+    results   = inference.run([_job(tmp_path, f"infer{i}", _sleeper_command(tmp_path / "gpu_seen.txt", 0.3)) for i in range(3)])
+
+    assert inference.gpus                   == [0, 1, 2]
+    assert {result.gpu for result in results} == {0, 1, 2}
+    assert json.loads(pool.read_text())     == {"gpus": [0, 1, 2]}
+
+
+def test_later_pass_keeps_the_launch_selection_when_nothing_was_edited(tmp_path):
+    """Verifies an untouched pool file leaves the second pass on the devices the experiment was launched with."""
+    pool     = tmp_path / "gpu_pool.json"
+    training = GpuQueue(gpus=[0, 1], logger=SilentLogger(), poll_interval_s=0.0, handle_signals=False, pool_file=pool)
+
+    training.run([_job(tmp_path, "train", _ok_command())])
+
+    inference = GpuQueue(gpus=[0, 1], logger=SilentLogger(), poll_interval_s=0.0, handle_signals=False, pool_file=pool)
+    inference.run([_job(tmp_path, "infer", _ok_command())])
+
+    assert inference.gpus                   == [0, 1]
+    assert json.loads(pool.read_text())     == {"gpus": [0, 1]}
+
+
 def test_reconcile_adds_requested_gpus_to_the_idle_pool(tmp_path):
     """Verifies devices added to the pool file become idle devices."""
     queue, pool = _pool_queue(tmp_path, [0])
@@ -616,6 +720,7 @@ def test_pool_growth_mid_run_dispatches_queued_jobs_to_the_new_gpus(tmp_path):
     assert len(results) == 4
     assert all(result.status == "DONE" for result in results)
     assert {1, 2} <= {result.gpu for result in results}
+    assert queue.gpus   == [0, 1, 2]
 
 
 def test_pool_shrink_mid_run_stops_dispatching_to_the_removed_gpu(tmp_path):

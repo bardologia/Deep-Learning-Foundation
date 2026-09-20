@@ -50,9 +50,24 @@ class ExperimentStage:
         self.pool_file    = Path(pool_file) if pool_file is not None else GpuPoolFile.resolve(config.gpus_file, self.run_dir)
 
     def _run_queue(self, jobs: list[GpuJob]) -> list[dict]:
-        """Runs the jobs on a GPU queue and returns their results as dictionaries."""
-        queue = GpuQueue(gpus=self.config.gpus, logger=self.logger, poll_interval_s=self.config.poll_interval_s, pool_file=self.pool_file)
-        return [asdict(result) for result in queue.run(jobs)]
+        """Runs the jobs on a GPU queue and returns their results as dictionaries.
+
+        The pool the queue ends with replaces the configured selection, so a
+        resize applied while this pass ran governs the stages that follow it
+        and the device lists they report.
+
+        Args:
+            jobs : Units to dispatch over the pool.
+
+        Returns:
+            One result dictionary per job, in completion order.
+        """
+        queue   = GpuQueue(gpus=self.config.gpus, logger=self.logger, poll_interval_s=self.config.poll_interval_s, pool_file=self.pool_file)
+        results = queue.run(jobs)
+
+        self.config.gpus = list(queue.gpus)
+
+        return [asdict(result) for result in results]
 
     def _order_results(self, results: list[dict], names: list[str]) -> list[dict]:
         """Returns the results reordered to follow the requested unit-name order."""
