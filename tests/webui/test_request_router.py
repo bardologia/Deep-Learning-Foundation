@@ -16,7 +16,7 @@ from request_router             import RequestRouter
 from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter, SurveyRouter, TriageRouter
 from routers.cube_routers       import CubeRouter, SliceRouter
 from routers.dispatch           import HttpExchange, RouteConflict, RouteTable, SubRouter
-from routers.launch_routers     import CatalogRouter, JobRouter, RunConfigRouter, SavedRunRouter
+from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.library_routers    import BackboneRouter, ContentLibraryRouter, ModelLibraryRouter
 from routers.results_routers    import CurvesRouter, DatasetRouter, LeaderboardRouter, ResultsRouter
 from routers.sequence_router    import SequenceRouter
@@ -26,8 +26,8 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 138
-SECTION_COUNT = 40
+ROUTE_COUNT   = 142
+SECTION_COUNT = 41
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -64,6 +64,10 @@ RESOLUTIONS = [
     ("GET",  "/api/jobs/job-1/log",                JobRouter),
     ("POST", "/api/saved-runs/abc/delete",         SavedRunRouter),
     ("GET",  "/api/saved-runs",                    SavedRunRouter),
+    ("POST", "/api/config-templates",              ConfigTemplateRouter),
+    ("POST", "/api/config-templates/abc/rename",   ConfigTemplateRouter),
+    ("POST", "/api/config-templates/abc/delete",   ConfigTemplateRouter),
+    ("GET",  "/api/config-templates",              ConfigTemplateRouter),
     ("GET",  "/api/run-config",                    RunConfigRouter),
     ("GET",  "/api/run-config/runs",               RunConfigRouter),
     ("GET",  "/api/sequences",                     SequenceRouter),
@@ -181,6 +185,7 @@ def build_routers() -> list:
         CatalogRouter(None, None, None, None, None, None),
         JobRouter(None, None, None),
         SavedRunRouter(None, None, None),
+        ConfigTemplateRouter(None),
         SequenceRouter(None, None),
         RunConfigRouter(None),
         SystemRouter(None, None, None, None, None, None, None, None, None, None),

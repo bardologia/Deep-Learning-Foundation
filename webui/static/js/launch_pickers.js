@@ -515,6 +515,15 @@ class EntryFormControl {
     const cut = editorKey.indexOf(":");
     return cut >= 0 ? editorKey.slice(cut + 1) : "";
   }
+
+  _entryTitle() {
+    if (this.view.detail) return this.view.detail.title;
+
+    const key     = this._entryKey();
+    const catalog = this.view.scripts || [];
+    const script  = catalog.find((entry) => entry.key === key);
+    return script ? script.title : key;
+  }
 }
 
 class RunConfigCopy extends EntryFormControl {
@@ -631,5 +640,203 @@ class RunConfigCopy extends EntryFormControl {
   }
 }
 
-window.DatasetPicker = DatasetPicker;
-window.RunConfigCopy = RunConfigCopy;
+
+class ConfigTemplates extends EntryFormControl {
+
+  constructor(view) {
+    super(view);
+    this.entries   = [];
+    this.selected  = "";
+    this.loadSeq   = 0;
+    this.selectEl  = null;
+    this.noteEl    = null;
+    this.importBtn = null;
+    this.saveBtn   = null;
+    this.deleteBtn = null;
+  }
+
+  build() {
+    const select = document.createElement("select");
+    select.className = "run-select";
+    select.addEventListener("change", () => {
+      this.selected = select.value;
+      this._paintActions();
+    });
+
+    const note = document.createElement("span");
+    note.className = "picker__note";
+
+    const actions = document.createElement("div");
+    actions.className = "rail-template__actions";
+
+    const load = document.createElement("button");
+    load.className = "btn btn--ghost rail-template";
+    load.textContent = "Import";
+    load.title = "Set the form to this template's overrides; every field the template does not carry goes back to its default";
+    load.addEventListener("click", () => this._import());
+
+    const store = document.createElement("button");
+    store.className = "btn btn--ghost rail-template";
+    store.textContent = "Save as template";
+    store.title = "Store the overrides currently set on this form under a name, to import on any launch page later";
+    store.addEventListener("click", () => this._save());
+
+    const remove = document.createElement("button");
+    remove.className = "btn btn--mini rail-template__delete";
+    remove.textContent = "×";
+    remove.title = "Delete the selected template";
+    remove.addEventListener("click", () => this._delete());
+
+    actions.append(load, store, remove);
+
+    this.selectEl  = select;
+    this.noteEl    = note;
+    this.importBtn = load;
+    this.saveBtn   = store;
+    this.deleteBtn = remove;
+
+    this._load();
+    return { select, note, actions };
+  }
+
+  async _load() {
+    const seq = ++this.loadSeq;
+
+    this.noteEl.textContent = "loading...";
+    const res = await Api.get("/api/config-templates");
+    if (seq !== this.loadSeq) return;
+
+    if (res.error) {
+      this.entries = [];
+      this.noteEl.textContent = res.error;
+      this._paintOptions();
+      return;
+    }
+
+    this.entries = res.templates || [];
+    this._paintOptions();
+  }
+
+  _paintOptions() {
+    const key  = this._entryKey();
+    const mine = this.entries.filter((entry) => entry.script === key);
+    const rest = this.entries.filter((entry) => entry.script !== key);
+
+    this.selectEl.innerHTML = "";
+
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = this.entries.length ? "select a template..." : "no templates saved yet";
+    this.selectEl.appendChild(blank);
+
+    if (mine.length) this.selectEl.appendChild(this._group("this entry point", mine, false));
+    if (rest.length) this.selectEl.appendChild(this._group("other entry points", rest, true));
+
+    this.selectEl.value = this.entries.some((entry) => entry.template_id === this.selected) ? this.selected : "";
+    this.selected = this.selectEl.value;
+
+    this.noteEl.textContent = this.entries.length ? `${mine.length} for this entry point, ${rest.length} other` : "save the current overrides to start one";
+    this._paintActions();
+  }
+
+  _group(label, entries, tagged) {
+    const group = document.createElement("optgroup");
+    group.label = label;
+
+    entries.forEach((entry) => {
+      const count  = Object.keys(entry.overrides).length;
+      const option = document.createElement("option");
+      option.value = entry.template_id;
+      option.textContent = `${entry.name}  ·  ${count} override${count === 1 ? "" : "s"}${tagged ? `  ·  ${entry.script}` : ""}`;
+      group.appendChild(option);
+    });
+
+    return group;
+  }
+
+  _paintActions() {
+    const entry = this._selected();
+
+    this.importBtn.disabled = !entry;
+    this.deleteBtn.disabled = !entry;
+    this.importBtn.classList.toggle("is-armed", !!entry && entry.script === this._entryKey());
+  }
+
+  _selected() {
+    return this.entries.find((entry) => entry.template_id === this.selected) || null;
+  }
+
+  _import() {
+    const entry = this._selected();
+    if (!entry) return;
+
+    if (!this.view.config) {
+      Toast.show("The configuration is still loading", "error");
+      return;
+    }
+
+    const outcome = this.view.applyRunConfig(entry.overrides);
+    const parts   = [`Imported "${entry.name}": ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`];
+    if (entry.script !== this._entryKey()) parts.push(`saved on ${entry.script}`);
+    parts.push(...ConfigForm.outcomeParts(outcome));
+    Toast.show(parts.join(" · "), ConfigForm.outcomeKind(outcome));
+  }
+
+  async _save() {
+    const key = this._entryKey();
+    if (!key || !this.view.config) {
+      Toast.show("The configuration is still loading", "error");
+      return;
+    }
+
+    const raw = window.prompt("Name this config template:", "");
+    if (raw === null) return;
+
+    const name = raw.trim();
+    if (!name) {
+      Toast.show("A template needs a name", "error");
+      return;
+    }
+
+    const clash = this.entries.find((entry) => entry.script === key && entry.name === name);
+    if (clash && !window.confirm(`A template named "${name}" already exists for ${key}. Replace it?`)) return;
+
+    const overrides = { ...this.view.dirty };
+    const count     = Object.keys(overrides).length;
+
+    this.saveBtn.disabled = true;
+    try {
+      const res = await Api.post("/api/config-templates", { script_key: key, title: this._entryTitle(), name, overrides, replace: !!clash });
+      if (!res.ok) {
+        Toast.show(res.error || "Save failed", "error");
+        return;
+      }
+
+      this.selected = res.entry.template_id;
+      await this._load();
+      Toast.show(`${res.replaced ? "Replaced" : "Saved"} template "${name}" with ${count} override${count === 1 ? "" : "s"}`, "ok");
+    } finally {
+      this.saveBtn.disabled = false;
+    }
+  }
+
+  async _delete() {
+    const entry = this._selected();
+    if (!entry) return;
+    if (!window.confirm(`Delete template "${entry.name}"?`)) return;
+
+    const res = await Api.post(`/api/config-templates/${entry.template_id}/delete`, {});
+    if (!res.ok) {
+      Toast.show(res.error || "Delete failed", "error");
+      return;
+    }
+
+    this.selected = "";
+    await this._load();
+    Toast.show(`Deleted template "${entry.name}"`, "ok");
+  }
+}
+
+window.DatasetPicker   = DatasetPicker;
+window.RunConfigCopy   = RunConfigCopy;
+window.ConfigTemplates = ConfigTemplates;

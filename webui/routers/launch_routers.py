@@ -2,7 +2,7 @@
 
 Covers the project/script catalog with resolved configuration layouts, the job
 list with log streaming and GPU-pool control across local and cluster backends,
-and the saved-run store.
+the saved-run store and the store of importable config templates.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import json
 import queue
 
 from backbone_model_library import BackboneModelLibrary
+from config_template_store  import ConfigTemplateStore
 from launch_layout          import LaunchLayout, LayoutError
 from process_manager        import ProcessManager
 from project_paths          import ProjectPaths
@@ -410,3 +411,40 @@ class SavedRunRouter(SubRouter):
     def remove(self, exchange: HttpExchange, saved_id: str) -> None:
         """Deletes the saved run addressed by the wildcard id."""
         exchange.send_result(self.saved_runs.delete(saved_id))
+
+
+class ConfigTemplateRouter(SubRouter):
+    """Serves the config-template store: listing, saving, renaming and deleting templates.
+
+    Attributes:
+        templates : Store holding the config templates the forms import from.
+    """
+
+    def __init__(self, templates: ConfigTemplateStore) -> None:
+        """Stores the template store and declares the routes."""
+        self.templates = templates
+
+        super().__init__(("/api/config-templates",))
+
+    def declare(self, table: RouteTable) -> None:
+        """Registers the template listing, save, rename and delete routes."""
+        table.add("GET",  "/api/config-templates", self.listing)
+        table.add("POST", "/api/config-templates", self.save)
+        table.wildcard("POST", "/api/config-templates/", "/rename", self.rename)
+        table.wildcard("POST", "/api/config-templates/", "/delete", self.remove)
+
+    def listing(self, exchange: HttpExchange) -> None:
+        """Answers with every stored template, newest first."""
+        exchange.send_json(self.templates.list())
+
+    def save(self, exchange: HttpExchange) -> None:
+        """Stores the overrides in the body as a named template of its entry point."""
+        exchange.send_result(self.templates.save(exchange.body))
+
+    def rename(self, exchange: HttpExchange, template_id: str) -> None:
+        """Renames the template addressed by the wildcard id to the body's `name`."""
+        exchange.send_result(self.templates.rename(template_id, exchange.body.get("name", "")))
+
+    def remove(self, exchange: HttpExchange, template_id: str) -> None:
+        """Deletes the template addressed by the wildcard id."""
+        exchange.send_result(self.templates.delete(template_id))

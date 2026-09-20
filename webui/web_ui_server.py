@@ -36,6 +36,7 @@ from process_manager                   import ProcessManager, ProcessNuke, Serve
 from project_paths                     import ProjectPaths
 from request_router                    import RequestRouter
 from resource_watchdog                 import ResourceWatchdog
+from config_template_store             import ConfigTemplateStore
 from contention_monitor                import ContentionMonitor
 from results_browser                   import ResultsBrowser
 from run_config_reader                 import RunConfigReader
@@ -54,7 +55,7 @@ from web_logger                        import WebLogger
 
 from routers.analysis_routers   import AutopsyRouter, FitLabRouter, ProbeRouter, SurveyRouter, TriageRouter
 from routers.cube_routers       import CubeRouter, SliceRouter
-from routers.launch_routers     import CatalogRouter, JobRouter, RunConfigRouter, SavedRunRouter
+from routers.launch_routers     import CatalogRouter, ConfigTemplateRouter, JobRouter, RunConfigRouter, SavedRunRouter
 from routers.sequence_router    import SequenceRouter
 from routers.library_routers    import BackboneRouter, ContentLibraryRouter, ModelLibraryRouter
 from routers.results_routers    import CurvesRouter, DatasetRouter, LeaderboardRouter, ResultsRouter
@@ -136,6 +137,7 @@ class WebUIServer:
         self.processes         = ProcessManager(self.paths, self.logger, self.notifier, self.describer)
         self.progress_watch    = ExperimentProgressWatcher(self.processes, self.notifier, self.logger)
         self.saved_runs        = SavedRunStore(self.paths, self.logger)
+        self.templates         = ConfigTemplateStore(self.paths, self.logger)
         self.nuke              = ProcessNuke(self.logger)
         self.detacher          = ServerDetacher(self.paths, self.logger)
         self.system            = SystemMonitor(self.paths, self.logger)
@@ -187,6 +189,7 @@ class WebUIServer:
             CatalogRouter(self.paths, self.catalog, self.resolver, self.layout, self.models, self.launcher),
             JobRouter(self.paths, self.processes, self.launcher),
             SavedRunRouter(self.paths, self.saved_runs, self.launcher),
+            ConfigTemplateRouter(self.templates),
             SequenceRouter(self.sequence_store, self.sequence_runner),
             RunConfigRouter(self.run_configs),
             SystemRouter(self.system, self.watchdog, self.contention, self.gpu_guard, self.gpu_schedule, self.detacher, self.notifier, self.nuke, self.processes, self.logger),

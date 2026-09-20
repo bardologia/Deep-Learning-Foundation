@@ -202,6 +202,8 @@ class LaunchView extends ConfigForm {
     this.active = false;
     this.loadSeq = 0;
     this.copyControl = new window.RunConfigCopy(this);
+    this.templateControl = new window.ConfigTemplates(this);
+    this.pendingTemplate = null;
     this.runMode = null;
     this._wireTabs();
     this._wireKeys();
@@ -219,6 +221,7 @@ class LaunchView extends ConfigForm {
 
     if (key === this.key && this.config) {
       if (section) this._setActiveSection(section);
+      this._importPending();
       return;
     }
 
@@ -263,6 +266,18 @@ class LaunchView extends ConfigForm {
 
     this._renderConfig(cfg);
     this._refresh();
+    this._importPending();
+  }
+
+  _importPending() {
+    const entry = this.pendingTemplate;
+    this.pendingTemplate = null;
+
+    if (!entry || !this.config || entry.script !== this.key) return;
+
+    const outcome = this.applyRunConfig(entry.overrides);
+    const parts   = [`Imported "${entry.name}": ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`, ...ConfigForm.outcomeParts(outcome)];
+    Toast.show(parts.join(" · "), ConfigForm.outcomeKind(outcome));
   }
 
   _usesModelPanels(cfg) {
@@ -716,6 +731,16 @@ class LaunchView extends ConfigForm {
     return block;
   }
 
+  _templateBlock() {
+    const block = document.createElement("div");
+    block.className = "rail-block";
+    block.innerHTML = `<span class="rail-block__label">Config templates</span>`;
+
+    const parts = this.templateControl.build();
+    block.append(parts.select, parts.note, parts.actions);
+    return block;
+  }
+
   _finalizeBlock() {
     const block = document.createElement("div");
     block.className = "rail-block";
@@ -777,6 +802,7 @@ class LaunchView extends ConfigForm {
     if (follow) host.appendChild(follow);
     host.appendChild(runMode.detach);
     host.appendChild(this._copyBlock());
+    host.appendChild(this._templateBlock());
     host.appendChild(this._finalizeBlock());
     host.appendChild(this._commandBlock());
     host.appendChild(this._manifestBlock());
