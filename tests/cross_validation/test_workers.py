@@ -232,34 +232,82 @@ def test_cross_validation_worker_fold_name(test_data_dir):
 
 
 @pytest.mark.dataset
-def test_training_worker_dispatches_to_backbone(test_data_dir, monkeypatch):
-    """Verifies a backbone run dispatches to the backbone trainer with the planned split regions."""
-    worker = FoldTrainingWorker(worker_config(test_data_dir, "backbone"), run_tag="rt")
+def test_training_worker_dispatches_to_backbone(test_data_dir, tmp_path, monkeypatch):
+    """Verifies a backbone run dispatches to the backbone trainer with the planned split regions and the composed run name."""
+    config                    = worker_config(test_data_dir, "backbone")
+    config.paths.log_base_dir = tmp_path
+    worker                    = FoldTrainingWorker(config, run_tag="rt")
 
     captured = {}
 
-    def fake_backbone(self, fold_index, seed, split_regions):
-        """Records the fold index, seed and split regions passed to the backbone run."""
-        captured["fold"]    = fold_index
-        captured["seed"]    = seed
-        captured["regions"] = split_regions
+    def fake_backbone(self, fold_index, seed, split_regions, run_name):
+        """Records the fold index, seed, split regions and run name passed to the backbone run."""
+        captured["fold"]     = fold_index
+        captured["seed"]     = seed
+        captured["regions"]  = split_regions
+        captured["run_name"] = run_name
 
     monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", fake_backbone, raising=True)
 
     worker.run(2)
 
-    assert captured["fold"] == 2
-    assert captured["seed"] is None
+    assert captured["fold"]     == 2
+    assert captured["seed"]     is None
+    assert captured["run_name"] == worker.fold_run_name(2, None)
     assert isinstance(captured["regions"], SplitRegions)
 
 
 @pytest.mark.dataset
-def test_training_worker_passes_planned_split_regions(test_data_dir, monkeypatch):
+def test_training_worker_writes_the_unit_manifest_before_training(test_data_dir, tmp_path, monkeypatch):
+    """Verifies the worker records the fold, seed and scored regions in the unit directory before the pipeline runs."""
+    from pipelines.cross_validation.folds             import FoldUnitManifest
+    from pipelines.shared.orchestration.unit_manifest import UnitManifest
+
+    config                    = worker_config(test_data_dir, "backbone")
+    config.paths.log_base_dir = tmp_path
+    worker                    = FoldTrainingWorker(config, run_tag="rt")
+
+    seen = {}
+    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", lambda self, i, seed, sr, run_name: seen.update(manifest=UnitManifest.read(worker.unit_directory(run_name))), raising=True)
+
+    worker.run(3, seed=7)
+
+    manifest = seen["manifest"]
+    assert manifest["kind"]       == FoldUnitManifest.KIND
+    assert manifest["fold_index"] == 3
+    assert manifest["seed"]       == 7
+    assert manifest["run_tag"]    == "rt"
+    assert manifest["unit"]       == worker.fold_run_name(3, 7)
+    assert FoldUnitManifest.identity(manifest) == (3, 7)
+    assert sorted(manifest["inference_regions"]) == ["test", "val"]
+    assert manifest["inference_regions"]["test"] == list(worker.factory.planner().inference_region(3, "test").as_tuple())
+
+
+@pytest.mark.dataset
+def test_training_worker_trains_into_the_directory_the_scheduler_hands_over(test_data_dir, tmp_path, monkeypatch):
+    """Verifies an explicit run name replaces the composed one, so a unit found by its manifest keeps its directory."""
+    config                    = worker_config(test_data_dir, "backbone")
+    config.paths.log_base_dir = tmp_path
+    worker                    = FoldTrainingWorker(config, run_tag="rt")
+
+    seen = {}
+    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", lambda self, i, seed, sr, run_name: seen.update(run_name=run_name), raising=True)
+
+    worker.run(1, seed=None, run_name="old-label_fold_1")
+
+    assert seen["run_name"] == "old-label_fold_1"
+    assert (worker.unit_directory("old-label_fold_1") / "meta" / "unit.json").is_file()
+
+
+@pytest.mark.dataset
+def test_training_worker_passes_planned_split_regions(test_data_dir, tmp_path, monkeypatch):
     """Verifies the split regions handed to training are the guarded regions of the fold plan."""
-    worker = FoldTrainingWorker(worker_config(test_data_dir, "backbone"), run_tag="rt")
+    config                    = worker_config(test_data_dir, "backbone")
+    config.paths.log_base_dir = tmp_path
+    worker                    = FoldTrainingWorker(config, run_tag="rt")
 
     captured = {}
-    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", lambda self, i, seed, sr: captured.update(sr=sr), raising=True)
+    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", lambda self, i, seed, sr, run_name: captured.update(sr=sr), raising=True)
 
     worker.run(2)
 
@@ -276,30 +324,36 @@ def test_training_worker_dispatch_routes_by_type(test_data_dir, tmp_path, monkey
 
     seen = {}
 
-    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone",            lambda self, i, seed, sr: seen.update(kind="backbone"),  raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_dual",                lambda self, i, seed, sr: seen.update(kind="dual"),      raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_jepa",                lambda self, i, seed, sr: seen.update(kind="jepa"),      raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_profile_autoencoder", lambda self, i, seed, sr: seen.update(kind="ae"),        raising=True)
-    monkeypatch.setattr(FoldTrainingWorker, "_run_image_autoencoder",   lambda self, i, seed, sr: seen.update(kind="image_ae"),  raising=True)
+    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone",            lambda self, i, seed, sr, run_name: seen.update(kind="backbone"),  raising=True)
+    monkeypatch.setattr(FoldTrainingWorker, "_run_dual",                lambda self, i, seed, sr, run_name: seen.update(kind="dual"),      raising=True)
+    monkeypatch.setattr(FoldTrainingWorker, "_run_jepa",                lambda self, i, seed, sr, run_name: seen.update(kind="jepa"),      raising=True)
+    monkeypatch.setattr(FoldTrainingWorker, "_run_profile_autoencoder", lambda self, i, seed, sr, run_name: seen.update(kind="ae"),        raising=True)
+    monkeypatch.setattr(FoldTrainingWorker, "_run_image_autoencoder",   lambda self, i, seed, sr, run_name: seen.update(kind="image_ae"),  raising=True)
 
-    FoldTrainingWorker(worker_config(test_data_dir, "backbone"), run_tag="rt").run(0)
+    def rooted(training_type: str) -> CrossValidationConfig:
+        """Returns a worker config of the family writing under the temporary directory."""
+        config                    = worker_config(test_data_dir, training_type)
+        config.paths.log_base_dir = tmp_path
+        return config
+
+    FoldTrainingWorker(rooted("backbone"), run_tag="rt").run(0)
     assert seen["kind"] == "backbone"
 
-    FoldTrainingWorker(worker_config(test_data_dir, "dual"), run_tag="rt").run(0)
+    FoldTrainingWorker(rooted("dual"), run_tag="rt").run(0)
     assert seen["kind"] == "dual"
 
     ProfileAutoencoderConfigIO.save(GruAutoencoderConfig(), "gru_ae", tmp_path / "gru_run" / "meta")
-    jepa_config                                 = worker_config(test_data_dir, "jepa")
+    jepa_config                                 = rooted("jepa")
     jepa_config.jepa.profile_autoencoder_logdir = tmp_path
     jepa_config.jepa.profile_autoencoder_run    = "gru_run"
 
     FoldTrainingWorker(jepa_config, run_tag="rt").run(0)
     assert seen["kind"] == "jepa"
 
-    FoldTrainingWorker(worker_config(test_data_dir, "profile_autoencoder"), run_tag="rt").run(0)
+    FoldTrainingWorker(rooted("profile_autoencoder"), run_tag="rt").run(0)
     assert seen["kind"] == "ae"
 
-    FoldTrainingWorker(worker_config(test_data_dir, "image_autoencoder"), run_tag="rt").run(0)
+    FoldTrainingWorker(rooted("image_autoencoder"), run_tag="rt").run(0)
     assert seen["kind"] == "image_ae"
 
 
@@ -569,10 +623,11 @@ def test_inference_worker_routes_autoencoders_to_their_pipelines(test_data_dir, 
 
 
 @pytest.mark.dataset
-def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, monkeypatch):
+def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path, monkeypatch):
     """Verifies the backbone fold trainer inherits the entry curriculum, geometry origin and run name."""
-    config = worker_config(test_data_dir, "backbone")
-    worker = FoldTrainingWorker(config, run_tag="rt")
+    config                    = worker_config(test_data_dir, "backbone")
+    config.paths.log_base_dir = tmp_path
+    worker                    = FoldTrainingWorker(config, run_tag="rt")
 
     captured = {}
 

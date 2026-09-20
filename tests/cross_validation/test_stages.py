@@ -433,3 +433,117 @@ def test_report_stage_model_name_for_profile_autoencoder(tmp_path, monkeypatch):
 
     assert seen["splits"]     == []
     assert seen["model_name"] == config.autoencoder.ae_model_name
+
+
+@pytest.mark.dataset
+def test_training_stage_reuses_a_completed_unit_found_through_its_manifest(tmp_path, test_data_dir):
+    """Verifies a completed fold run living under another directory name is matched by its manifest and reused, with the worker pointed at that directory."""
+    from pipelines.cross_validation.folds import FoldUnitManifest
+
+    config       = data_config(tmp_path, test_data_dir, resume=True)
+    config.seeds = [1, 2]
+
+    old = tmp_path / "rt" / "folds" / "old-label_fold_0" / "seed1"
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_0/seed1", fold_index=0, seed=1, training_type="backbone", inference_regions={"test": (0, 1, 2, 3)})
+    mark_complete(old)
+
+    stage  = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
+    worker = FoldTrainingWorker(config=config, run_tag="rt")
+    planned = worker.fold_run_name(0, 1)
+
+    assert stage.unit_dirs == {planned: "old-label_fold_0/seed1"}
+    assert stage.unit_dir(planned) == old
+    assert stage._job(worker.fold_run_name(0, 2)).command[stage._job(worker.fold_run_name(0, 2)).command.index("--run-name") + 1] == worker.fold_run_name(0, 2)
+
+    captured = install_fake_queue(stage)
+    results  = stage.run()
+
+    statuses = {r["name"]: r["status"] for r in results}
+    assert planned not in [job.name for job in captured["jobs"]]
+    assert statuses[planned] == "DONE"
+    assert old.is_dir()
+
+
+@pytest.mark.dataset
+def test_training_stage_resumes_an_unfinished_unit_in_its_own_directory(tmp_path, test_data_dir):
+    """Verifies an unfinished fold run with a trainer state is kept and its worker is handed that directory when the trainer resumes."""
+    from pipelines.cross_validation.folds import FoldUnitManifest
+
+    config                 = data_config(tmp_path, test_data_dir, resume=True)
+    config.training.resume = True
+
+    old = tmp_path / "rt" / "folds" / "old-label_fold_2"
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_2", fold_index=2, seed=None, training_type="backbone", inference_regions={})
+    (old / "last.pt").write_text("x")
+
+    stage   = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
+    planned = FoldTrainingWorker(config=config, run_tag="rt").fold_run_name(2, None)
+
+    captured = install_fake_queue(stage)
+    stage.run()
+
+    job = next(job for job in captured["jobs"] if job.name == planned)
+    assert job.command[job.command.index("--run-name") + 1] == "old-label_fold_2"
+    assert job.log_path == old / stage.worker_logname
+    assert (old / "last.pt").exists()
+
+
+@pytest.mark.dataset
+def test_inference_stage_scores_the_directory_the_manifest_identifies(tmp_path, test_data_dir):
+    """Verifies the inference stage reads training completion and inference stamps from the manifest-matched directory."""
+    from pipelines.cross_validation.folds import FoldUnitManifest
+
+    config = data_config(tmp_path, test_data_dir, resume=True)
+
+    old = tmp_path / "rt" / "folds" / "old-label_fold_1"
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_1", fold_index=1, seed=None, training_type="backbone", inference_regions={})
+    mark_complete(old)
+    stamp_split_inference(old, "val")
+
+    stage   = FoldInferenceStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
+    planned = FoldTrainingWorker(config=config, run_tag="rt").fold_run_name(1, None)
+
+    captured = install_fake_queue(stage)
+    results  = stage.run()
+
+    statuses = {r["name"]: r["status"] for r in results}
+    assert statuses[planned] == "DONE"
+    job = next(job for job in captured["jobs"] if job.name == planned)
+    assert job.command[job.command.index("--run-name") + 1] == "old-label_fold_1"
+
+
+@pytest.mark.dataset
+def test_stage_reports_run_directories_without_a_manifest(tmp_path, test_data_dir):
+    """Verifies fold runs carrying no manifest are listed as unidentified and never matched to a unit."""
+    config = data_config(tmp_path, test_data_dir, resume=True)
+
+    stray = tmp_path / "rt" / "folds" / "stray_fold_9"
+    (stray / "meta").mkdir(parents=True)
+
+    stage = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
+
+    assert stage.unit_dirs    == {}
+    assert stage.unidentified == [stray]
+
+
+@pytest.mark.dataset
+def test_status_report_lists_every_unit_with_its_directory_and_state(tmp_path, test_data_dir):
+    """Verifies the status report names the matched directory, the training state and the inference state of every unit."""
+    from pipelines.cross_validation.folds import FoldUnitManifest
+
+    config = data_config(tmp_path, test_data_dir, resume=True)
+
+    old = tmp_path / "rt" / "folds" / "old-label_fold_0"
+    FoldUnitManifest.write(old, run_tag="rt", unit="old-label_fold_0", fold_index=0, seed=None, training_type="backbone", inference_regions={})
+    mark_complete(old)
+    stamp_split_inference(old, "val")
+
+    stage = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=make_file_logger(tmp_path, "stages_test"))
+    rows  = {row["Unit"]: row for row in stage.status_report().rows()}
+    first = rows[stage.items[0]]
+
+    assert first["Directory"] == "old-label_fold_0"
+    assert first["Training"]  == "complete"
+    assert first["Inference"] == "val done, test missing"
+    assert rows[stage.items[1]]["Directory"] == "(new)"
+    assert rows[stage.items[1]]["Training"]  == "new"

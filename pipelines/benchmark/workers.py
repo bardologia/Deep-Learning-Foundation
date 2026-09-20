@@ -43,6 +43,17 @@ class BenchmarkWorker(WorkerBase):
         unit = SeedExpandedStage.unit_base(self.config, model_name, component)
         return unit if seed is None else SeedSet.run_name(unit, seed)
 
+    def unit_run_name(self, model_name: str, component: str | None, seed: int | None, run_name: str | None) -> str:
+        """Returns the run name the unit lives under: the one the scheduler handed over, else the composed one.
+
+        Args:
+            model_name : Registry key of the benchmarked model.
+            component  : Loss component arm of the unit, or None.
+            seed       : Seed of the unit, or None for an unseeded run.
+            run_name   : Directory the scheduler found for this unit relative to the training directory, or None to compose the name.
+        """
+        return run_name if run_name else self._run_name(model_name, component, seed)
+
     def _apply_loss_component(self, trainer_config, component: str | None) -> None:
         """Replaces the trainer curriculum with the one isolating a loss component.
 
@@ -333,22 +344,30 @@ class TrainingWorker(BenchmarkWorker):
             if probed_multiplier is not None:
                 self.config.training.lr_multiplier = self.config.training.lr_multiplier * probed_multiplier
 
-    def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None) -> None:
+    def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None, run_name: str | None = None) -> None:
         """Trains one benchmark unit, dispatching on the sweep training type.
+
+        The unit's manifest is written first, so even a run that dies before
+        its first epoch is identifiable when the benchmark is resumed.
 
         Args:
             model_name     : Registry key of the model to train.
             seed           : Seed for this unit, defaulting to the sweep seed.
             loss_component : Loss component arm to isolate, backbone runs only.
+            run_name       : Directory of the unit relative to the training directory, or None to compose it.
 
         Raises:
             ValueError : If the configured training type is not one of 'backbone', 'jepa', or 'profile_autoencoder'.
         """
+        from pipelines.benchmark.stages import BenchmarkUnitManifest
+
         training_type = self.config.training_type
         if training_type not in ("backbone", "jepa", "profile_autoencoder"):
             raise ValueError(f"Unknown training_type '{training_type}', expected one of ['backbone', 'jepa', 'profile_autoencoder']")
 
-        run_name = self._run_name(model_name, loss_component, seed)
+        run_name = self.unit_run_name(model_name, loss_component, seed, run_name)
+
+        BenchmarkUnitManifest.write(self.run_dir / "training" / run_name, run_tag=self.run_tag, unit=run_name, model=model_name, loss_component=loss_component, seed=seed)
 
         if training_type == "profile_autoencoder":
             self._run_profile_autoencoder(model_name, run_name, seed)
@@ -364,18 +383,19 @@ class TrainingWorker(BenchmarkWorker):
 class InferenceWorker(BenchmarkWorker):
     """Worker that runs inference on one already-trained benchmark unit."""
 
-    def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None) -> None:
+    def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None, run_name: str | None = None) -> None:
         """Runs the backbone inference pipeline over one trained unit.
 
         Args:
             model_name     : Registry key of the trained model.
             seed           : Seed of the unit, defaulting to the unseeded run name.
             loss_component : Loss component arm the unit was trained under.
+            run_name       : Directory of the unit relative to the training directory, or None to compose it.
         """
         from pipelines.backbone.inference.pipeline import InferencePipeline
         from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 
-        run_directory = self.run_dir / "training" / self._run_name(model_name, loss_component, seed)
+        run_directory = self.run_dir / "training" / self.unit_run_name(model_name, loss_component, seed, run_name)
 
         components = InferenceComponentsResolver.for_run(run_directory)
         pipeline   = InferencePipeline(self.factory.inference_config(run_directory), components=components)

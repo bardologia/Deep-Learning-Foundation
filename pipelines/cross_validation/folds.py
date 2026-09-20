@@ -18,6 +18,7 @@ from configuration.dataset.gaussian           import GaussianConfig
 from pipelines.shared.config.config_factory      import ConfigFactory
 from pipelines.shared.inference.metadata         import CompletedInference
 from pipelines.shared.inference.run_classifier   import RunType
+from pipelines.shared.orchestration.unit_manifest import UnitManifest
 from pipelines.shared.training.seed_sweep        import SeedSet
 from tools.data.regions       import CropRegion, SplitRegions
 
@@ -333,6 +334,77 @@ class FoldNaming:
         """Returns the seed encoded in a run name, or None when unseeded."""
         parts = name.split("/seed")
         return int(parts[1]) if len(parts) == 2 else None
+
+
+class FoldUnitManifest:
+    """Identity of one fold x seed unit, as the fold worker records it in the unit's run directory.
+
+    The manifest is what a resumed run and the generic inference entries read
+    instead of the directory name: the fold index and seed identify the unit,
+    and the inference regions carry the untrimmed row block each scored
+    split covers.
+
+    Attributes:
+        KIND : Manifest kind every cross-validation unit is written with.
+    """
+
+    KIND = "cross_validation"
+
+    @staticmethod
+    def identity(manifest: dict) -> tuple:
+        """Returns the (fold index, seed) pair a manifest identifies, the seed None for an unseeded unit."""
+        return (int(manifest["fold_index"]), manifest["seed"])
+
+    @classmethod
+    def write(cls, run_directory: Path, run_tag: str, unit: str, fold_index: int, seed: int | None, training_type: str, inference_regions: dict) -> Path:
+        """Writes the manifest of one unit before its training starts.
+
+        Args:
+            run_directory     : Run directory of the unit.
+            run_tag           : Tag of the cross-validation run the unit belongs to.
+            unit              : Run name of the unit, relative to the folds directory.
+            fold_index        : Zero-based index of the fold.
+            seed              : Seed of the unit, or None when the sweep has no seed dimension.
+            training_type     : Training family of the run.
+            inference_regions : Untrimmed crop region per scored split, each as (row_start, row_end, col_start, col_end).
+
+        Returns:
+            Path of the written manifest.
+        """
+        payload = {
+            "run_tag"           : run_tag,
+            "unit"              : unit,
+            "fold_index"        : int(fold_index),
+            "seed"              : seed,
+            "training_type"     : training_type,
+            "inference_regions" : {split: list(region) for split, region in inference_regions.items()},
+        }
+
+        return UnitManifest.write(run_directory, cls.KIND, payload)
+
+    @classmethod
+    def inference_region(cls, run_directory: Path, split: str) -> CropRegion | None:
+        """Returns the crop region a fold unit scores one split over, or None for a run that is no fold unit.
+
+        Args:
+            run_directory : Run directory to inspect.
+            split         : Dataset split being scored.
+
+        Raises:
+            ValueError : If the run is a fold unit but recorded no region for the split, which means the split is not one the fold scores.
+        """
+        if not UnitManifest.exists(run_directory):
+            return None
+
+        manifest = UnitManifest.read(run_directory)
+        if manifest["kind"] != cls.KIND:
+            return None
+
+        regions = manifest["inference_regions"]
+        if split not in regions:
+            raise ValueError(f"Fold unit {run_directory} scores the splits {sorted(regions)} over its own row block, not '{split}'; pick one of those splits")
+
+        return CropRegion(*regions[split])
 
 
 class FoldRunNaming:

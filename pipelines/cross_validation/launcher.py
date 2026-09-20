@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from configuration.cross_validation      import CrossValidationConfig
-from configuration.training              import CurriculumInheritance, default_curriculum
-from pipelines.cross_validation.pipeline import CrossValidationPipeline
-from pipelines.cross_validation.stages   import FoldUnitStage
-from tools.runtime.config_cli            import ConfigCli
-from tools.runtime.run_tag               import RunTag
+from configuration.cross_validation             import CrossValidationConfig
+from configuration.training                     import CurriculumInheritance, default_curriculum
+from pipelines.cross_validation.pipeline        import CrossValidationPipeline
+from pipelines.cross_validation.stages          import FoldUnitStage
+from pipelines.shared.orchestration.resumed_run import ResumedRun
+from tools.runtime.config_cli                   import ConfigCli
+from tools.runtime.run_tag                      import RunTag
 
 
 class CrossValidationClusterScheduler(FoldUnitStage):
@@ -25,9 +26,11 @@ class CrossValidationClusterScheduler(FoldUnitStage):
         run_tag           : Tag identifying the sweep run directory.
         run_dir           : Sweep run directory.
         forward_overrides : CLI overrides passed on to the jobs, with the scheduler-local fields removed.
+        unit_dirs         : Existing directory per unit name, relative to the folds directory, for the units a resume found through their manifests.
+        unidentified      : Run directories under the folds directory that carry no cross-validation manifest.
     """
 
-    SCHEDULER_FIELDS = ("stage", "run_tag", "gpu", "gpus", "gpus_file", "poll_interval_s")
+    SCHEDULER_FIELDS = ("stage", "run_tag", "gpu", "gpus", "gpus_file", "poll_interval_s", "resume_from")
 
     def __init__(self, config: CrossValidationConfig, cli_overrides: dict, entry_script: Path) -> None:
         """Expands the fold x seed units and fixes the sweep run directory.
@@ -41,10 +44,19 @@ class CrossValidationClusterScheduler(FoldUnitStage):
         self.entry_script = Path(entry_script)
         self.run_tag      = config.run_tag or RunTag.now()
         self.run_dir      = Path(config.paths.log_base_dir) / self.run_tag
+        self.unit_dirs    = {}
+        self.unidentified = []
 
         self.forward_overrides = {path: value for path, value in cli_overrides.items() if path.split(".")[0] not in self.SCHEDULER_FIELDS}
 
         self._names = self._expand(config)
+
+        if config.resume:
+            self._reconcile(self.run_dir / "folds")
+
+    def unit_name(self, name: str) -> str:
+        """Returns the directory of a unit relative to the folds directory: the one found on disk, else the unit's own name."""
+        return self.unit_dirs.get(name, name)
 
     @property
     def sweep_name(self) -> str:
@@ -107,6 +119,9 @@ class CrossValidationLauncher:
         """
         cli    = ConfigCli(CrossValidationConfig(), description="Fan k-fold cross-validation out over a cluster: prepare, one job per fold x seed unit, then the cross-fold report")
         config = cli.apply(list(argv))
+
+        if config.resume_from:
+            config = ResumedRun(CrossValidationConfig, config, cli.overrides).load()
 
         CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
 

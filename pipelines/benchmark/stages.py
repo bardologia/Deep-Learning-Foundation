@@ -2,7 +2,8 @@
 
 Each stage owns its own artefact paths and resume rules; the seed-expansion mixin
 turns the selected models and loss components into the per-seed units the queued
-training and inference stages consume.
+training and inference stages consume, and matches them to the run directories
+their manifests identify when a run is resumed.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pipelines.benchmark.results                   import BenchmarkSeedCollector
 from pipelines.shared.comparison.comparison_report import ComparisonReport
 from pipelines.benchmark.sizing                    import SizeMatcher, SizeMatchResult
 from pipelines.shared.model.model_builder          import ModelBuilder
+from pipelines.shared.orchestration.unit_manifest  import UnitLedger, UnitManifest
 from pipelines.shared.training.run_naming          import JepaNamingSpec, RunNaming
 from pipelines.shared.training.seed_sweep          import SeedSet
 from tools.orchestration                           import ExperimentStage, GpuJob, QueuedInferenceStage, QueuedTrainingStage
@@ -26,11 +28,57 @@ from tools.monitoring.logger                       import Logger
 from tools.runtime.run_tag                         import RunTag
 
 
+class BenchmarkUnitManifest:
+    """Identity of one benchmark unit, as the training worker records it in the unit's run directory.
+
+    Attributes:
+        KIND : Manifest kind every benchmark unit is written with.
+    """
+
+    KIND = "benchmark"
+
+    @staticmethod
+    def identity(manifest: dict) -> tuple:
+        """Returns the (model key, loss component, seed) triple a manifest identifies."""
+        return (manifest["model"], manifest["loss_component"], manifest["seed"])
+
+    @classmethod
+    def write(cls, run_directory: Path, run_tag: str, unit: str, model: str, loss_component: str | None, seed: int | None) -> Path:
+        """Writes the manifest of one unit before its training starts.
+
+        Args:
+            run_directory  : Run directory of the unit.
+            run_tag        : Tag of the benchmark run the unit belongs to.
+            unit           : Run name of the unit, relative to the training directory.
+            model          : Model key of the unit.
+            loss_component : Loss component the unit isolates, or None.
+            seed           : Seed of the unit, or None when the sweep has no seed dimension.
+
+        Returns:
+            Path of the written manifest.
+        """
+        payload = {
+            "run_tag"        : run_tag,
+            "unit"           : unit,
+            "model"          : model,
+            "loss_component" : loss_component,
+            "seed"           : seed,
+        }
+
+        return UnitManifest.write(run_directory, cls.KIND, payload)
+
+
 class SeedExpandedStage:
     """Mixin expanding models and loss components into named per-seed units.
 
-    Unit names double as run directory names, and are mapped back to their model,
-    loss component and seed when the worker command line is built.
+    Unit names double as run directory names for fresh units, and are mapped
+    back to their model, loss component and seed when the worker command line
+    is built. On a resumed run every unit is matched to the run directory whose
+    manifest records its identity, whatever that directory is called.
+
+    Attributes:
+        unit_dirs    : Existing directory per unit name, relative to the training directory, for the units a resume found through their manifests.
+        unidentified : Run directories under the training directory that carry no benchmark manifest and are left untouched.
     """
 
     _N_GAUSSIANS : dict = {}
@@ -115,6 +163,29 @@ class SeedExpandedStage:
 
         return [name for _, _, name in units]
 
+    def _identity(self, name: str) -> tuple:
+        """Returns the (model key, loss component, seed) identity of a planned unit."""
+        base, seed       = self._unit[name]
+        model, component = self._pair[base]
+
+        return (model, component, seed)
+
+    def _reconcile(self, training_dir: Path) -> None:
+        """Maps every planned unit onto the run directory its manifest identifies, when one exists.
+
+        Args:
+            training_dir : Directory holding the unit run directories.
+        """
+        ledger = UnitLedger(training_dir, BenchmarkUnitManifest.KIND, BenchmarkUnitManifest.identity).build()
+
+        self.unit_dirs    = {}
+        self.unidentified = list(ledger.unidentified)
+
+        for name in self._unit:
+            directory = ledger.directory(self._identity(name))
+            if directory is not None:
+                self.unit_dirs[name] = directory.relative_to(training_dir).as_posix()
+
     def _worker_argv(self, action: str, name: str) -> list[str]:
         """Returns the worker arguments running `action` for the unit named `name`."""
         base, seed       = self._unit[name]
@@ -122,7 +193,7 @@ class SeedExpandedStage:
 
         loss_args = ["--loss-component", component] if component is not None else []
 
-        return ["--worker", action, "--model", model, *loss_args, *SeedSet.cli_args(seed), "--run-tag", self.run_tag, "--run-dir", str(self.run_dir)]
+        return ["--worker", action, "--model", model, *loss_args, *SeedSet.cli_args(seed), "--run-name", self.unit_name(name), "--run-tag", self.run_tag, "--run-dir", str(self.run_dir)]
 
     def _seed_command(self, action: str, name: str) -> list[str]:
         """Returns the full subprocess command running `action` for one unit."""
@@ -133,8 +204,12 @@ class SeedExpandedStage:
         return GpuJob(
             name     = item,
             command  = self._seed_command(self.worker_action, item),
-            log_path = self.stage_dir / item / self.worker_logname,
+            log_path = self.unit_dir(item) / self.worker_logname,
         )
+
+    def _scored_splits(self) -> list[str]:
+        """Returns the split the benchmark scores, empty when the family runs no inference."""
+        return [self.config.inference.split] if self.config.runs_inference() else []
 
 
 class MaxBatchStage(ExperimentStage):
@@ -517,7 +592,7 @@ class TrainingStage(SeedExpandedStage, QueuedTrainingStage):
     """Trains every seed-expanded benchmark unit through the GPU queue."""
 
     def __init__(self, config: BenchmarkConfig, entry_script: Path, run_tag: str, models: list[str], logger: Logger) -> None:
-        """Expands the models into per-seed units and hands them to the queued stage.
+        """Expands the models into per-seed units, reconciles them against the training directory and hands them to the queued stage.
 
         Args:
             config       : Benchmark configuration.
@@ -529,12 +604,15 @@ class TrainingStage(SeedExpandedStage, QueuedTrainingStage):
         items = self._expand(config, models)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
 
+        if config.resume:
+            self._reconcile(self.stage_dir)
+
 
 class InferenceStage(SeedExpandedStage, QueuedInferenceStage):
     """Runs inference over every seed-expanded benchmark unit through the GPU queue."""
 
     def __init__(self, config: BenchmarkConfig, entry_script: Path, run_tag: str, models: list[str], logger: Logger) -> None:
-        """Expands the models into per-seed units and hands them to the queued stage.
+        """Expands the models into per-seed units, reconciles them against the training directory and hands them to the queued stage.
 
         Args:
             config       : Benchmark configuration.
@@ -545,6 +623,9 @@ class InferenceStage(SeedExpandedStage, QueuedInferenceStage):
         """
         items = self._expand(config, models)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
+
+        if config.resume:
+            self._reconcile(self.stage_dir)
 
 
 class ComparisonStage(ExperimentStage):

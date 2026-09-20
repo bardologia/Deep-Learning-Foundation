@@ -36,6 +36,7 @@ class TuningScheduler:
         tag             : Run tag naming the tuning directory and the studies.
         config          : Tuning entry configuration.
         entry_script    : Entry script the worker subprocesses re-invoke.
+        resumed         : Description of the recorded run this launch continues, or None.
         run_dir         : Directory holding the study database, logs and results.
         storage_url     : SQLAlchemy URL of the shared Optuna storage.
         summary_path    : Path of the per-model results JSON.
@@ -48,17 +49,19 @@ class TuningScheduler:
     STUDY_KEYS      = ("training_type", "heads", "skip_models", "tuning", "curriculum", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
     MUTABLE_KEYS    = ("tuning.n_trials",)
 
-    def __init__(self, tag: str, config, entry_script: Path) -> None:
+    def __init__(self, tag: str, config, entry_script: Path, resumed=None) -> None:
         """Resolves the tuning paths and quiets Optuna's own logging.
 
         Args:
             tag          : Run tag naming the tuning directory and its studies.
             config       : Tuning entry configuration.
             entry_script : Entry script the worker subprocesses re-invoke.
+            resumed      : Resumed-run description logged when scheduling starts, or None.
         """
         self.tag          = tag
         self.config       = config
         self.entry_script = Path(entry_script)
+        self.resumed      = resumed
         self.run_dir      = Path(config.paths.log_base_dir) / tag
         self.storage_url  = f"sqlite:///{self.run_dir / 'optuna.db'}"
         self.summary_path = self.run_dir / "tuning_results.json"
@@ -357,6 +360,9 @@ class TuningScheduler:
             "Storage"      : self.storage_url,
             "Log dir"      : str(self.run_dir),
         }, title="Configuration")
+
+        if self.resumed is not None:
+            self.resumed.log(self.logger)
 
         for model_name in models_to_run:
             self._tune_model(model_name, tune_cfg)

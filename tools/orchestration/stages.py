@@ -1,8 +1,10 @@
 """Experiment stages that fan worker subprocesses out over a GPU queue.
 
 Provides the shared stage base and the queued training and inference stages,
-which skip units already carrying a completion marker, purge half-written ones,
-and write a per-stage results JSON.
+which reuse units already carrying a completion marker, resume or restart
+half-written ones, hand every worker the exact directory of its unit, and
+write a per-stage results JSON. The status report lists what each unit holds
+before a stage launches anything.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import shutil
 import sys
 from dataclasses import asdict
 from pathlib     import Path
+from typing      import Callable
 
 from tools.data.io            import FileIO
 from tools.monitoring.logger  import Logger
@@ -88,18 +91,27 @@ class ExperimentStage:
 class QueuedStage(ExperimentStage):
     """Stage that turns a list of item names into one worker job each.
 
+    Every worker receives the directory of its unit relative to the stage
+    directory through ``--run-name``, so a unit whose directory was found by
+    its recorded identity keeps that directory whatever the current naming
+    scheme would call it.
+
     Attributes:
-        items        : Unit names, one worker job per name.
-        stage_dir    : Directory holding one subdirectory per unit.
-        results_path : Location of the stage results JSON.
+        TRAINER_STATE : Name of the rolling trainer state a run resumes from, mirroring ``TrainerState.FILENAME``.
+        items         : Unit names, one worker job per name.
+        unit_dirs     : Existing directory per unit name, relative to the stage directory, for the units a resume found on disk.
+        stage_dir     : Directory holding one subdirectory per unit.
+        results_path  : Location of the stage results JSON.
     """
+
+    TRAINER_STATE = "last.pt"
 
     stage_subdir     : str = "training"
     worker_action    : str = ""
     worker_logname   : str = "worker.log"
     results_filename : str = ""
 
-    def __init__(self, config, entry_script: Path, run_tag: str, items: list[str], logger: Logger) -> None:
+    def __init__(self, config, entry_script: Path, run_tag: str, items: list[str], logger: Logger, unit_dirs: dict | None = None) -> None:
         """Initializes the stage and derives its stage and results locations.
 
         Args:
@@ -108,18 +120,28 @@ class QueuedStage(ExperimentStage):
             run_tag      : Tag identifying the run.
             items        : Unit names to process, one worker job per name.
             logger       : Logger for stage messages.
+            unit_dirs    : Existing directory per unit name, relative to the stage directory; units absent from it live under their own name.
         """
         super().__init__(config=config, run_tag=run_tag, logger=logger, entry_script=entry_script)
         self.items        = items
+        self.unit_dirs    = dict(unit_dirs or {})
         self.stage_dir    = self.run_dir / self.stage_subdir
         self.results_path = self.run_dir / "pipeline" / self.results_filename
+
+    def unit_name(self, item: str) -> str:
+        """Returns the directory of a unit relative to the stage directory: the one found on disk, else the unit's own name."""
+        return self.unit_dirs.get(item, item)
+
+    def unit_dir(self, item: str) -> Path:
+        """Returns the directory of a unit."""
+        return self.stage_dir / self.unit_name(item)
 
     def _job(self, item: str) -> GpuJob:
         """Returns the worker job that processes one unit."""
         return GpuJob(
             name     = item,
-            command  = [sys.executable, str(self.entry_script), "--worker", self.worker_action, self._worker_flag(), self._worker_value(item), "--run-tag", self.run_tag, "--run-dir", str(self.run_dir)],
-            log_path = self.stage_dir / item / self.worker_logname,
+            command  = [sys.executable, str(self.entry_script), "--worker", self.worker_action, self._worker_flag(), self._worker_value(item), "--run-name", self.unit_name(item), "--run-tag", self.run_tag, "--run-dir", str(self.run_dir)],
+            log_path = self.unit_dir(item) / self.worker_logname,
         )
 
     def _worker_flag(self) -> str:
@@ -130,9 +152,43 @@ class QueuedStage(ExperimentStage):
         """Returns the value passed with the worker flag for this unit."""
         return item
 
+    def _training_complete(self, item: str) -> bool:
+        """Returns whether the unit's directory carries a training completion marker."""
+        return CompletionMarker.is_complete(self.unit_dir(item))
+
+    def _resumable(self, item: str) -> bool:
+        """Returns whether an unfinished unit can continue from its trainer state.
+
+        Args:
+            item : Unit name.
+
+        Returns:
+            True when the trainer resume is on and the unit directory holds the rolling trainer state.
+        """
+        return bool(self.config.training.resume) and (self.unit_dir(item) / self.TRAINER_STATE).is_file()
+
+    def _scored_splits(self) -> list[str]:
+        """Returns the dataset splits whose inference completion the status report lists."""
+        return [self.config.inference.split]
+
+    def _inference_base(self, directory: Path) -> Path:
+        """Returns the directory holding a unit's inference stamps."""
+        return directory / "inference"
+
+    def status_report(self) -> "UnitStatusReport":
+        """Returns the per-unit training and inference status of the stage directory."""
+        return UnitStatusReport(
+            items          = self.items,
+            unit_dir       = self.unit_dir,
+            stage_dir      = self.stage_dir,
+            splits         = self._scored_splits(),
+            inference_base = self._inference_base,
+            trainer_resume = bool(self.config.training.resume),
+        )
+
 
 class QueuedTrainingStage(QueuedStage):
-    """Training stage that reuses completed units and restarts unfinished ones."""
+    """Training stage that reuses completed units and resumes or restarts unfinished ones."""
 
     worker_action    : str = "train"
     summary_title    : str = "Training summary"
@@ -154,15 +210,23 @@ class QueuedTrainingStage(QueuedStage):
         if not self.config.resume:
             return False
 
-        return CompletionMarker.is_complete(self.stage_dir / item)
+        return self._training_complete(item)
 
     def _purge_unfinished(self, item: str) -> None:
-        """Deletes a resumed unit's directory when it holds no completion marker."""
-        item_dir = self.stage_dir / item
+        """Deletes a resumed unit's unfinished directory unless the trainer continues from its state.
+
+        Args:
+            item : Unit name.
+        """
+        item_dir = self.unit_dir(item)
         if not self.config.resume or not item_dir.is_dir():
             return
 
-        self.logger.warning(f"{item}: unfinished run detected, deleting and restarting")
+        if self._resumable(item):
+            self.logger.info(f"{item}: unfinished run resumes from {self.TRAINER_STATE} in {item_dir}")
+            return
+
+        self.logger.warning(f"{item}: unfinished run detected, deleting {item_dir} and restarting")
         shutil.rmtree(item_dir)
 
     def _cached_result(self, item: str) -> dict:
@@ -173,7 +237,7 @@ class QueuedTrainingStage(QueuedStage):
             "status"     : "DONE",
             "returncode" : 0,
             "duration_s" : None,
-            "log_file"   : str(self.stage_dir / item / self.worker_logname),
+            "log_file"   : str(self.unit_dir(item) / self.worker_logname),
         }
 
     def _log_summary(self, results: list[dict]) -> None:
@@ -194,13 +258,16 @@ class QueuedTrainingStage(QueuedStage):
         """Trains every pending unit on the GPU queue and writes the stage results.
 
         Units already carrying a completion marker are reused; unfinished
-        directories are deleted before their unit is queued again.
+        directories continue from their trainer state when the trainer resume
+        is on and are deleted before their unit is queued again otherwise.
 
         Returns:
             One result dictionary per unit, in the order the items were given.
         """
         self.logger.section("Training queue")
         self.logger.kv_table(self._config_kv(), title="Configuration")
+
+        self.status_report().log(self.logger, "Unit status")
 
         cached  = [item for item in self.items if self._is_complete(item)]
         pending = [item for item in self.items if item not in cached]
@@ -239,16 +306,12 @@ class QueuedInferenceStage(QueuedStage):
             "GPUs"  : self.config.gpus,
         }
 
-    def _training_complete(self, item: str) -> bool:
-        """Returns whether the unit's training directory carries a completion marker."""
-        return CompletionMarker.is_complete(self.stage_dir / item)
-
     def _has_inference(self, item: str) -> bool:
         """Returns whether a completed inference for the configured split already exists."""
         if not self.config.resume:
             return False
 
-        inference_dir = self.stage_dir / item / "inference"
+        inference_dir = self.unit_dir(item) / "inference"
         if not inference_dir.is_dir():
             return False
 
@@ -258,7 +321,7 @@ class QueuedInferenceStage(QueuedStage):
 
     def _purge_unfinished(self, item: str) -> None:
         """Deletes every unmarked inference output directory of a resumed unit."""
-        inference_dir = self.stage_dir / item / "inference"
+        inference_dir = self.unit_dir(item) / "inference"
         if not self.config.resume or not inference_dir.is_dir():
             return
 
@@ -283,7 +346,7 @@ class QueuedInferenceStage(QueuedStage):
             "status"     : status,
             "returncode" : 0 if status == "DONE" else None,
             "duration_s" : None,
-            "log_file"   : str(self.stage_dir / item / self.worker_logname),
+            "log_file"   : str(self.unit_dir(item) / self.worker_logname),
         }
 
     def _log_summary(self, results: list[dict]) -> None:
@@ -338,3 +401,75 @@ class QueuedInferenceStage(QueuedStage):
         self._log_summary(results)
 
         return results
+
+
+class UnitStatusReport:
+    """Per-unit training and inference status of a stage, listed before anything launches.
+
+    Attributes:
+        items          : Unit names in launch order.
+        unit_dir       : Callable returning the directory a unit lives or will live in.
+        stage_dir      : Stage directory the unit directories are reported relative to.
+        splits         : Dataset splits whose inference completion is reported, empty when the stage scores nothing.
+        inference_base : Callable returning the directory holding a unit's inference stamps.
+        trainer_resume : Whether unfinished units continue from their trainer state.
+        trainer_state  : Name of the rolling trainer state file.
+    """
+
+    def __init__(self, items: list[str], unit_dir: Callable[[str], Path], stage_dir: Path, splits: list[str], inference_base: Callable[[Path], Path], trainer_resume: bool, trainer_state: str = QueuedStage.TRAINER_STATE) -> None:
+        """Binds the report to the units of one stage and the rules that locate their artifacts."""
+        self.items          = list(items)
+        self.unit_dir       = unit_dir
+        self.stage_dir      = Path(stage_dir)
+        self.splits         = list(splits)
+        self.inference_base = inference_base
+        self.trainer_resume = trainer_resume
+        self.trainer_state  = trainer_state
+
+    def _training_status(self, directory: Path) -> str:
+        """Returns the training status word of one unit directory."""
+        if CompletionMarker.is_complete(directory):
+            return "complete"
+        if not directory.is_dir():
+            return "new"
+        if self.trainer_resume and (directory / self.trainer_state).is_file():
+            return "resumes from checkpoint"
+
+        return "restarts"
+
+    def _inference_status(self, directory: Path) -> str:
+        """Returns the per-split inference status of one unit directory, or a dash when no split is scored."""
+        if not self.splits:
+            return "-"
+
+        from pipelines.shared.inference.metadata import CompletedInference
+
+        base  = self.inference_base(directory)
+        words = [f"{split} {'done' if CompletedInference.latest(base, split) is not None else 'missing'}" for split in self.splits]
+
+        return ", ".join(words)
+
+    def rows(self) -> list[dict]:
+        """Returns one row per unit with its directory, training status and inference status."""
+        rows = []
+        for item in self.items:
+            directory = self.unit_dir(item)
+            rows.append({
+                "Unit"      : item,
+                "Directory" : directory.relative_to(self.stage_dir).as_posix() if directory.is_dir() else "(new)",
+                "Training"  : self._training_status(directory),
+                "Inference" : self._inference_status(directory),
+            })
+
+        return rows
+
+    def log(self, logger: Logger, title: str) -> None:
+        """Logs the unit table and a one-line count of what the stage will do."""
+        rows     = self.rows()
+        complete = sum(1 for row in rows if row["Training"] == "complete")
+        resumed  = sum(1 for row in rows if row["Training"] == "resumes from checkpoint")
+        fresh    = len(rows) - complete - resumed
+
+        logger.subsection(title)
+        logger.metrics_table(rows, columns=["Unit", "Directory", "Training", "Inference"])
+        logger.info(f"{complete} unit(s) complete, {resumed} resume from their checkpoint, {fresh} train from scratch")
