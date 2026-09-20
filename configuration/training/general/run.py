@@ -10,11 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib     import Path
 
+from configuration.reference_layout              import ReferenceLayout
 from configuration.training.general.optimization import ClipMode, OptimizerType, SchedulerType, WarmupMode
 
 
-DEFAULT_DATASET_DIR = Path("datasets/synthetic_small")
-DEFAULT_PARAMS_RUN  = "params_k2"
+DEFAULT_DATASET_DIR = ReferenceLayout.DATASET_DIR
+DEFAULT_PARAMS_RUN  = ReferenceLayout.PARAMS_RUN
 
 
 def standard_seeds() -> list[int]:
