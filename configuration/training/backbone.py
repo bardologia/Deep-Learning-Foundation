@@ -271,7 +271,8 @@ class EmaTrialsConfig:
 
     The ladder compares the raw weights against an exponential moving average
     of the weights on otherwise identical runs: one rung trains with EMA off,
-    then one rung per configured decay trains with EMA on at that decay.
+    then per configured decay one rung trains with the plain decay and one with
+    the decay warmup ramp.
 
     Attributes:
         decays : EMA decay rates, one EMA-on rung each.
