@@ -657,7 +657,10 @@ class SequenceRunner:
 
         The step runs locally through the process manager whatever the block's
         own target, so the comparisons and the mailing always read the local
-        tree.
+        tree. The step always runs attached, whatever the sequence's detach
+        flag: a detached process hides its exit code, so a crashed comparison
+        would read as finished and wave the chain through to a mail step that
+        has nothing to send.
 
         Args:
             entry       : Sequence definition the block belongs to.
@@ -673,7 +676,7 @@ class SequenceRunner:
             self._record_finalize_launch(entry, block, step, "", str(error))
             return
 
-        result = self.launcher.execute(step, self.launcher.preferred_interpreter(step), overrides, None, entry["detach"], False)
+        result = self.launcher.execute(step, self.launcher.preferred_interpreter(step), overrides, None, False, False)
         if not result.get("ok"):
             self._record_finalize_launch(entry, block, step, "", result.get("error", "launch failed"))
             return
