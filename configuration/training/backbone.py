@@ -138,7 +138,8 @@ class SecondaryTrialsConfig:
 
     Attributes:
         strategy      : Rule choosing the secondaries, e.g. "consecutive".
-        n_secondaries : Number of secondary tracks per trial.
+        n_secondaries : Number of secondary tracks the strategy picks per trial, on top of the fixed ones.
+        fixed         : Track labels present in every trial, held out of the swept pool.
         n_trials      : Number of track subsets drawn.
         mean          : Mean of the sampled baseline distribution in metres, or None when the strategy is deterministic.
         sigma         : Standard deviation of that distribution in metres, or None when the strategy is deterministic.
@@ -147,14 +148,15 @@ class SecondaryTrialsConfig:
         seed          : Seed for the subset draw.
     """
 
-    strategy      : str          = "consecutive"
-    n_secondaries : int          = 4
-    n_trials      : int          = 8
-    mean          : float | None = None
-    sigma         : float | None = None
-    block_step    : int          = 1
-    spacing       : int          = 2
-    seed          : int          = 0
+    strategy      : str             = "consecutive"
+    n_secondaries : int             = 4
+    fixed         : tuple[str, ...] = ()
+    n_trials      : int             = 8
+    mean          : float | None    = None
+    sigma         : float | None    = None
+    block_step    : int             = 1
+    spacing       : int             = 2
+    seed          : int             = 0
 
 
 @dataclass

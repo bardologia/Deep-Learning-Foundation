@@ -326,12 +326,14 @@ class ExperimentBuilder {
       paint     : (b) => b._paintSecondary(),
       summary   : (b, gpus) => {
         const strategy = b._strategy();
-        if (strategy === "exhaustive") return `exhaustive, all combinations of exactly ${b._secondaryEffective("n_secondaries")} secondaries${b._seedsSuffix(null)}${gpus}`;
+        const fixed    = b._secondaryFixed();
+        const held     = fixed.length ? ` + ${fixed.length} fixed (${fixed.join(", ")})` : "";
+        if (strategy === "exhaustive") return `exhaustive, all combinations of exactly ${b._secondaryEffective("n_secondaries")} secondaries${held}${b._seedsSuffix(null)}${gpus}`;
         const sampled  = strategy === "uniform" || strategy === "gaussian";
         const count    = sampled ? `${b._secondaryEffective("n_trials")} trials` : "trial count set by the stack";
-        return `${strategy}, ${b._secondaryEffective("n_secondaries")} secondaries, ${count}${b._seedsSuffix(null)}${gpus}`;
+        return `${strategy}, ${b._secondaryEffective("n_secondaries")} secondaries${held}, ${count}${b._seedsSuffix(null)}${gpus}`;
       },
-      pattern   : (b, model) => ({ text: `${model}_sec-${b._strategy()}-tNN_<labels>`, note: "one per selection, labels resolved from the dataset stack" }) },
+      pattern   : (b, model) => ({ text: `${model}_sec-${b._strategy()}-tNN_<labels>`, note: b._secondaryFixed().length ? "one per selection, labels resolved from the dataset stack, each name carrying the fixed tracks too" : "one per selection, labels resolved from the dataset stack" }) },
 
     { group: "data", key: "patch",      label: "patch",       hint: "rectangular grid of (row x range) patch shapes, same model end to end, batch rescaled to a constant pixel budget",
       at        : 1,
@@ -840,6 +842,8 @@ class ExperimentBuilder {
 
   static SECONDARY_FIELDS = [
     { key: "n_secondaries", strategies: ["uniform", "gaussian", "consecutive", "spaced", "exhaustive"] },
+    { key: "fixed",         strategies: ["uniform", "gaussian", "consecutive", "spaced", "exhaustive"],
+      multi: { kind: "multi", wide: true, placeholder: "add track label, Enter", empty: "no fixed track, every secondary is swept" } },
     { key: "n_trials",      strategies: ["uniform", "gaussian"] },
     { key: "seed",          strategies: ["uniform", "gaussian"] },
     { key: "mean",          strategies: ["gaussian"] },
@@ -1214,7 +1218,7 @@ class ExperimentBuilder {
     grid.className = "exp-secondary__grid";
     ExperimentBuilder.SECONDARY_FIELDS.forEach((field) => {
       const leaf = this.secondary.get(field.key);
-      if (leaf) grid.appendChild(this._secondaryRow(field, leaf));
+      if (leaf) grid.appendChild(field.multi ? this._secondaryFixedRow(field, leaf) : this._secondaryRow(field, leaf));
     });
 
     panel.appendChild(head);
@@ -1251,6 +1255,28 @@ class ExperimentBuilder {
     this.view.controls[leaf.path] = { leaf, reset: () => {
       input.value = this.view._effective(leaf) === "None" ? "" : this.view._effective(leaf);
       input.classList.toggle("is-dirty", this.view.dirty[leaf.path] !== undefined);
+    } };
+    return row;
+  }
+
+  _secondaryFixedRow(field, leaf) {
+    const row     = document.createElement("div");
+    row.className = "cfg-edit__row cfg-edit__row--board";
+    row.title     = `--${leaf.path}`;
+
+    const name     = document.createElement("div");
+    name.className = "cfg-edit__name";
+    name.innerHTML = `${field.key}<span>tracks in every run</span>`;
+
+    const widget = new window.MultiValueField(this.view, leaf, field.multi).build();
+
+    row.appendChild(name);
+    row.appendChild(widget.el);
+
+    this.secondaryRows.push({ strategies: field.strategies, row });
+    this.view.controls[leaf.path] = { leaf, reset: () => {
+      widget.reset();
+      this._paintSecondary();
     } };
     return row;
   }
@@ -3764,10 +3790,18 @@ class ExperimentBuilder {
   _paintSecondary() {
     if (!this.secondaryEl) return;
     const strategy = this._strategy();
+    const note     = ExperimentBuilder.STRATEGIES.find((entry) => entry.key === strategy).note;
+    const fixed    = this._secondaryFixed();
 
     if (this.strategySelect) this.strategySelect.value = strategy;
-    this.strategyNoteEl.textContent = ExperimentBuilder.STRATEGIES.find((entry) => entry.key === strategy).note;
+    this.strategyNoteEl.textContent = fixed.length
+      ? `${note}; ${fixed.join(", ")} ${fixed.length === 1 ? "sits" : "sit"} in every run on top of the n_secondaries swept ones, and ${fixed.length === 1 ? "is" : "are"} taken out of the swept pool`
+      : note;
     this.secondaryRows.forEach((entry) => (entry.row.hidden = !entry.strategies.includes(strategy)));
+  }
+
+  _secondaryFixed() {
+    return this._listOf(this.secondary.get("fixed"), (value) => typeof value === "string" && value.length > 0);
   }
 
   _secondaryEffective(key) {

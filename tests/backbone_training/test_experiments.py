@@ -321,6 +321,50 @@ def test_secondary_exhaustive_full_stack_yields_the_single_full_selection():
     assert plans[-1][1]["paths.secondary_labels"] == tuple(CANDIDATES)
 
 
+def test_secondary_exhaustive_pairs_one_fixed_track_with_every_other_candidate():
+    """Verifies a single fixed track plus one swept secondary yields one run per remaining candidate, each holding both."""
+    trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=1, fixed=("CH03",))
+    planner = SecondaryTrialPlanner(trials, CANDIDATES)
+
+    plans      = planner.plan()
+    selections = [overrides["paths.secondary_labels"] for _, overrides in plans]
+
+    assert len(plans) == len(CANDIDATES) - 1
+    assert selections[0] == ("CH01", "CH03")
+    assert selections[2] == ("CH03", "CH04")
+    assert all("CH03" in selection and len(selection) == 2 for selection in selections)
+    assert planner.summary()["Total runs"] == len(CANDIDATES) - 1
+
+
+def test_secondary_fixed_tracks_leave_the_swept_pool():
+    """Verifies the swept strategies never draw a fixed track again, so every trial keeps the requested swept count."""
+    trials  = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=2, block_step=1, fixed=("CH01", "CH06"))
+    planner = SecondaryTrialPlanner(trials, CANDIDATES)
+
+    selections = [overrides["paths.secondary_labels"] for _, overrides in planner.plan()]
+
+    assert planner.pool == ["CH02", "CH03", "CH04", "CH05"]
+    assert len(selections) == 3
+    assert selections[0] == ("CH01", "CH02", "CH03", "CH06")
+    assert all(len(selection) == 4 for selection in selections)
+
+
+def test_secondary_rejects_a_fixed_track_outside_the_candidates():
+    """Verifies a fixed label the dataset does not carry is refused instead of silently dropped."""
+    trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=1, fixed=("CH99",))
+
+    with pytest.raises(ValueError, match="CH99"):
+        SecondaryTrialPlanner(trials, CANDIDATES)
+
+
+def test_secondary_rejects_more_swept_tracks_than_the_pool_left_by_the_fixed_ones():
+    """Verifies the swept count is bounded by the candidates that remain after the fixed tracks are held out."""
+    trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=len(CANDIDATES), fixed=("CH01",))
+
+    with pytest.raises(ValueError, match="n_secondaries"):
+        SecondaryTrialPlanner(trials, CANDIDATES)
+
+
 def test_secondary_gaussian_requires_mean_and_sigma():
     """Verifies the gaussian secondary strategy without mean and sigma is rejected."""
     trials = SecondaryTrialsConfig(strategy="gaussian", n_secondaries=2, n_trials=2)

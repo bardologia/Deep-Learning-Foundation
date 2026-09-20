@@ -1248,11 +1248,16 @@ class SecondaryTrialPlanner:
 
     Subsets are drawn randomly (`uniform`, `gaussian`), swept as sliding blocks
     of the track order (`consecutive`, `spaced`), or enumerated in full
-    (`exhaustive`).
+    (`exhaustive`). Tracks named in `trials.fixed` join every subset and leave
+    the swept pool, so `n_secondaries` counts only the tracks the strategy picks
+    on top of them: one fixed track and `n_secondaries` of 1 under `exhaustive`
+    pairs that track with every other secondary of the stack, one run each.
 
     Attributes:
         trials     : Secondary trial configuration carrying the strategy and its parameters.
         candidates : Secondary track labels available in the dataset, in acquisition order.
+        fixed      : Track labels held in every subset, in acquisition order.
+        pool       : Track labels the strategy draws from, the candidates minus the fixed ones.
     """
 
     STRATEGIES   = ("uniform", "gaussian", "consecutive", "spaced", "exhaustive")
@@ -1266,10 +1271,12 @@ class SecondaryTrialPlanner:
             candidates : Secondary track labels available in the dataset.
 
         Raises:
-            ValueError : On a repeated candidate label, an unknown strategy or a parameter that is out of range for the chosen strategy.
+            ValueError : On a repeated candidate label, an unknown or repeated fixed label, an unknown strategy or a parameter that is out of range for the chosen strategy.
         """
         self.trials     = trials
         self.candidates = list(candidates)
+        self.fixed      = [label for label in self.candidates if label in tuple(trials.fixed)]
+        self.pool       = [label for label in self.candidates if label not in tuple(trials.fixed)]
 
         self._validate()
 
@@ -1296,7 +1303,7 @@ class SecondaryTrialPlanner:
         """Checks the strategy name and the parameters it requires.
 
         Raises:
-            ValueError : On a candidate list naming one track twice, an unknown strategy, a secondary count outside [1, len(candidates)], a missing Gaussian mean or sigma, or a non-positive trial count, block step or spacing.
+            ValueError : On a candidate list naming one track twice, a fixed label that is unknown or repeated, an unknown strategy, a secondary count outside [1, len(pool)], a missing Gaussian mean or sigma, or a non-positive trial count, block step or spacing.
         """
         t = self.trials
 
@@ -1304,11 +1311,19 @@ class SecondaryTrialPlanner:
         if repeated:
             raise ValueError(f"Secondary candidates name {repeated} more than once, so a subset could pair a track with itself; every track must appear once, regenerate the channel labels")
 
+        unknown = [label for label in t.fixed if label not in self.candidates]
+        if unknown:
+            raise ValueError(f"secondary_trials.fixed names {unknown}, which are not secondary tracks of this dataset; candidates are {self.candidates}")
+
+        repeated_fixed = sorted({label for label in t.fixed if list(t.fixed).count(label) > 1})
+        if repeated_fixed:
+            raise ValueError(f"secondary_trials.fixed names {repeated_fixed} more than once; every fixed track must appear once")
+
         if t.strategy not in self.STRATEGIES:
             raise ValueError(f"Unknown secondary_trials.strategy '{t.strategy}', expected one of {self.STRATEGIES}")
 
-        if not 1 <= t.n_secondaries <= len(self.candidates):
-            raise ValueError(f"secondary_trials.n_secondaries={t.n_secondaries} must be in [1, {len(self.candidates)}], candidates are {self.candidates}")
+        if not 1 <= t.n_secondaries <= len(self.pool):
+            raise ValueError(f"secondary_trials.n_secondaries={t.n_secondaries} counts the swept tracks and must be in [1, {len(self.pool)}], the tracks left to sweep are {self.pool} and the fixed ones are {self.fixed}")
 
         if t.strategy in ("uniform", "gaussian") and t.n_trials < 1:
             raise ValueError(f"secondary_trials.n_trials={t.n_trials} must be >= 1 for strategy '{t.strategy}'")
@@ -1323,13 +1338,14 @@ class SecondaryTrialPlanner:
             raise ValueError(f"secondary_trials.spacing={t.spacing} must be >= 1")
 
     def summary(self) -> dict:
-        """Returns the strategy, subset size and candidate list, plus the run count when exhaustive."""
+        """Returns the strategy, swept subset size, fixed tracks and candidate pool, plus the run count when exhaustive."""
         exhaustive = self.trials.strategy == "exhaustive"
 
         summary = {
             "Strategy"    : self.trials.strategy,
             "Secondaries" : f"{self.trials.n_secondaries} (all combinations)" if exhaustive else self.trials.n_secondaries,
-            "Candidates"  : f"{len(self.candidates)} -> {self.candidates}",
+            "Fixed"       : f"{len(self.fixed)} -> {self.fixed}, in every trial on top of the swept ones" if self.fixed else "none",
+            "Candidates"  : f"{len(self.pool)} -> {self.pool}",
         }
 
         if exhaustive:
@@ -1338,8 +1354,10 @@ class SecondaryTrialPlanner:
         return summary
 
     def _pick(self, indices) -> list[str]:
-        """Returns the candidate labels at the given indices, in track order."""
-        return [self.candidates[index] for index in sorted(indices)]
+        """Returns the fixed labels plus the pool labels at the given indices, in track order."""
+        chosen = set(self.fixed).union(self.pool[index] for index in indices)
+
+        return [label for label in self.candidates if label in chosen]
 
     def _uniform(self) -> list[list[str]]:
         """Returns distinct subsets drawn uniformly at random without replacement.
@@ -1357,7 +1375,7 @@ class SecondaryTrialPlanner:
             if len(selections) == self.trials.n_trials:
                 break
 
-            indices = tuple(sorted(rng.choice(len(self.candidates), size=self.trials.n_secondaries, replace=False).tolist()))
+            indices = tuple(sorted(rng.choice(len(self.pool), size=self.trials.n_secondaries, replace=False).tolist()))
             if indices in seen:
                 continue
 
@@ -1410,19 +1428,19 @@ class SecondaryTrialPlanner:
                 return tuple(sorted(indices))
 
             index = int(round(rng.normal(self.trials.mean, self.trials.sigma)))
-            if 0 <= index < len(self.candidates):
+            if 0 <= index < len(self.pool):
                 indices.add(index)
 
         return None
 
     def _consecutive(self) -> list[list[str]]:
-        """Returns every contiguous block of `n_secondaries` candidates, advanced by `block_step`."""
-        n, step, total = self.trials.n_secondaries, self.trials.block_step, len(self.candidates)
+        """Returns every contiguous block of `n_secondaries` pool candidates, advanced by `block_step`."""
+        n, step, total = self.trials.n_secondaries, self.trials.block_step, len(self.pool)
 
         return [self._pick(range(start, start + n)) for start in range(0, total - n + 1, step)]
 
     def _spaced(self) -> list[list[str]]:
-        """Returns sliding blocks whose members are `spacing` candidates apart.
+        """Returns sliding blocks whose members are `spacing` pool candidates apart.
 
         Returns:
             One label list per block start, advanced by `block_step`.
@@ -1430,7 +1448,7 @@ class SecondaryTrialPlanner:
         Raises:
             ValueError : If the span of one block exceeds the candidate count.
         """
-        n, step, spacing, total = self.trials.n_secondaries, self.trials.block_step, self.trials.spacing, len(self.candidates)
+        n, step, spacing, total = self.trials.n_secondaries, self.trials.block_step, self.trials.spacing, len(self.pool)
 
         span = (n - 1) * spacing + 1
         if span > total:
@@ -1440,11 +1458,11 @@ class SecondaryTrialPlanner:
 
     def _exhaustive_count(self) -> int:
         """Returns the number of subsets an exhaustive enumeration would produce."""
-        return comb(len(self.candidates), self.trials.n_secondaries)
+        return comb(len(self.pool), self.trials.n_secondaries)
 
     def _exhaustive(self) -> list[list[str]]:
-        """Returns every combination of `n_secondaries` candidates."""
-        return [self._pick(indices) for indices in combinations(range(len(self.candidates)), self.trials.n_secondaries)]
+        """Returns every combination of `n_secondaries` pool candidates."""
+        return [self._pick(indices) for indices in combinations(range(len(self.pool)), self.trials.n_secondaries)]
 
     def _ensure_complete(self, selections: list) -> None:
         """Checks that the requested number of distinct subsets was drawn.
@@ -1459,7 +1477,7 @@ class SecondaryTrialPlanner:
             raise RuntimeError(f"Found only {len(selections)} of {self.trials.n_trials} distinct secondary sets after {self.MAX_ATTEMPTS} attempts; lower n_trials, widen sigma or change strategy")
 
     def plan(self) -> list[tuple[str, dict]]:
-        """Returns one `(run_name, overrides)` pair per secondary-track subset of the strategy."""
+        """Returns one `(run_name, overrides)` pair per secondary-track subset of the strategy, each subset carrying the fixed tracks."""
         selections = getattr(self, f"_{self.trials.strategy}")()
 
         plans = []
