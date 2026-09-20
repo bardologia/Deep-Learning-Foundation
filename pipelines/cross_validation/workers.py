@@ -408,7 +408,8 @@ class FoldTrainingWorker(CrossValidationWorker):
         """Trains one fold unit, dispatching on the configured training family.
 
         The unit's manifest is written first, so even a run that dies before
-        its first epoch is identifiable when the sweep is resumed.
+        its first epoch is identifiable when the sweep is resumed, and a unit
+        that already finished is left as it is.
 
         Args:
             fold_index : Zero-based index of the fold.
@@ -431,6 +432,9 @@ class FoldTrainingWorker(CrossValidationWorker):
         run_name      = self.unit_run_name(fold_index, seed, run_name)
 
         self._write_manifest(fold_index, seed, run_name)
+
+        if self.skip_complete(self.unit_directory(run_name), "fold_training"):
+            return
 
         dispatch[training_type](fold_index, seed, split_regions, run_name)
 
