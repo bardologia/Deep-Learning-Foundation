@@ -12,7 +12,7 @@ from pathlib     import Path
 
 from configuration.training.general.run               import TrainingPathsConfig, TrainingQueueConfig, standard_seeds
 from configuration.training.general.trials             import JepaTrialCatalog, TrialCatalog
-from configuration.training.backbone                  import AugmentationTrialsConfig, EmaTrialsConfig, LossScaleProbeConfig, NormalizationTrialsConfig, StabilityTrialsConfig
+from configuration.training.backbone                  import AugmentationTrialsConfig, EmaTrialsConfig, LossScaleProbeConfig, StabilityTrialsConfig
 from configuration.architectures.profile_autoencoder  import ProfileAutoencoderBaseConfig
 from configuration.dataset                            import AugmentationConfig, InputConfig
 from configuration.normalization.general              import NormalizationConfig
@@ -412,7 +412,6 @@ class JepaEntryConfig:
         context_trials             : Constant-depth backbone rungs of the context sweep.
         input_trials               : Input-channel arms of the input sweep, keyed by run label.
         augmentation_trials        : Cumulative ladder of the patch-augmentation sweep.
-        normalization_trials       : Initial and final presets of the normalization ladder.
         ema_trials                 : Weight-EMA ladder of the ema sweep; the amp mode compares mixed-precision off against on and needs no settings of its own.
         stability_trials           : Warmup and gradient-clip arms of the stability sweep.
     """
@@ -475,6 +474,5 @@ class JepaEntryConfig:
     context_trials       : list                       = field(default_factory=TrialCatalog.context_trials)
     input_trials         : dict                       = field(default_factory=TrialCatalog.input_trials)
     augmentation_trials  : AugmentationTrialsConfig   = field(default_factory=AugmentationTrialsConfig)
-    normalization_trials : NormalizationTrialsConfig  = field(default_factory=NormalizationTrialsConfig)
     ema_trials           : EmaTrialsConfig            = field(default_factory=EmaTrialsConfig)
     stability_trials     : StabilityTrialsConfig      = field(default_factory=StabilityTrialsConfig)

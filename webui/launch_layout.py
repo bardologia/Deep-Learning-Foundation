@@ -443,8 +443,6 @@ class LaunchLayout:
         "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
         "ema_trials.decays",
         "head_trials.backbone", "head_trials.heads", "head_trials.matchings",
-        "normalization_trials.initial_chan_mag", "normalization_trials.initial_derived_phase", "normalization_trials.initial_out_amp", "normalization_trials.initial_out_mu", "normalization_trials.initial_out_sigma", "normalization_trials.initial_aux",
-        "normalization_trials.final_chan_mag", "normalization_trials.final_derived_phase", "normalization_trials.final_out_amp", "normalization_trials.final_out_mu", "normalization_trials.final_out_sigma", "normalization_trials.final_aux",
         "pair_trials.base_component", "pair_trials.base_weight", "pair_trials.components", "pair_trials.weights", "pair_trials.include_baseline",
         "log_energy_trials.weights", "log_energy_trials.replace_covariance", "log_energy_trials.include_baseline",
         "secondary_trials.strategy", "secondary_trials.n_secondaries", "secondary_trials.n_trials", "secondary_trials.mean",
@@ -477,8 +475,6 @@ class LaunchLayout:
         "coupling_trials.modes", "coupling_trials.finetune_lrs", "coupling_trials.target_providers",
         "ae_run_trials.runs",
         "augmentation_trials.flip_probability", "augmentation_trials.noise_probability", "augmentation_trials.noise_stds",
-        "normalization_trials.initial_chan_mag", "normalization_trials.initial_derived_phase", "normalization_trials.initial_out_amp", "normalization_trials.initial_out_mu", "normalization_trials.initial_out_sigma", "normalization_trials.initial_aux",
-        "normalization_trials.final_chan_mag", "normalization_trials.final_derived_phase", "normalization_trials.final_out_amp", "normalization_trials.final_out_mu", "normalization_trials.final_out_sigma", "normalization_trials.final_aux",
         "ema_trials.decays",
         "stability_trials.warmup_fractions", "stability_trials.warmup_mode", "stability_trials.clip_mode", "stability_trials.max_grad_norms",
     ]

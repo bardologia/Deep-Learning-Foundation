@@ -173,40 +173,6 @@ class HeadMatchingTrialsConfig:
 
 
 @dataclass
-class NormalizationTrialsConfig:
-    """Per-channel normalization presets compared as an initial-versus-final pair.
-
-    Attributes:
-        initial_chan_mag      : Initial preset for single-channel magnitude inputs.
-        initial_derived_phase : Initial preset for derived phase channels.
-        initial_out_amp       : Initial preset for predicted amplitudes.
-        initial_out_mu        : Initial preset for predicted means.
-        initial_out_sigma     : Initial preset for predicted widths.
-        initial_aux           : Initial preset for the aux channel.
-        final_chan_mag        : Final preset for single-channel magnitude inputs.
-        final_derived_phase   : Final preset for derived phase channels.
-        final_out_amp         : Final preset for predicted amplitudes.
-        final_out_mu          : Final preset for predicted means.
-        final_out_sigma       : Final preset for predicted widths.
-        final_aux             : Final preset for the aux channel.
-    """
-
-    initial_chan_mag      : str = "fixed_log1p"
-    initial_derived_phase : str = "fixed_angle_01"
-    initial_out_amp       : str = "fixed_bounds"
-    initial_out_mu        : str = "fixed_bounds"
-    initial_out_sigma     : str = "fixed_bounds"
-    initial_aux           : str = "zscore"
-
-    final_chan_mag        : str = "robust_iqr_log1p"
-    final_derived_phase   : str = "fixed_div_pi"
-    final_out_amp         : str = "robust_iqr_log1p"
-    final_out_mu          : str = "robust_iqr"
-    final_out_sigma       : str = "robust_iqr_log1p"
-    final_aux             : str = "robust_iqr_log1p"
-
-
-@dataclass
 class AugmentationTrialsConfig:
     """Trial settings for the cumulative augmentation ladder.
 
@@ -379,7 +345,6 @@ class BackboneEntryConfig:
         clamp_trials          : Output-clamp ladder settings.
         stability_trials      : Warmup and gradient-clipping ladder settings.
         ema_trials            : Weight-EMA on/off ladder settings; the amp mode compares mixed-precision off against on and needs no settings of its own.
-        normalization_trials  : Initial and final normalization preset pair.
         ablation_features     : Ordered feature list of the leave-one-out ablation.
         ablation_include_full : Whether the full-model reference run is included.
         gpus                  : GPU device indices available to the sweep workers, and the rank devices of a DDP run.
@@ -431,7 +396,6 @@ class BackboneEntryConfig:
     clamp_trials         : ClampTrialsConfig         = field(default_factory=ClampTrialsConfig)
     stability_trials     : StabilityTrialsConfig     = field(default_factory=StabilityTrialsConfig)
     ema_trials           : EmaTrialsConfig           = field(default_factory=EmaTrialsConfig)
-    normalization_trials : NormalizationTrialsConfig = field(default_factory=NormalizationTrialsConfig)
 
     ablation_features     : list = field(default_factory=AblationCatalog.default_features)
     ablation_include_full : bool = True

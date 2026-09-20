@@ -490,30 +490,6 @@ def test_augmentation_scheduler_plans_the_cumulative_ladder(tmp_path):
     assert plans["aug-3-noise0.03"]["augmentation.noise_std"]  == 0.03
 
 
-def test_normalization_scheduler_plans_the_cumulative_ladder(tmp_path):
-    """Verifies the normalization mode plans the cumulative ladder from fixed presets to robust and z-score slots."""
-    config             = BackboneEntryConfig()
-    config.logdir      = tmp_path
-    config.trials_mode = "normalization"
-
-    scheduler = backbone_pipeline.TrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_backbone.py"))
-
-    plans = dict(scheduler.planner().plan())
-
-    assert list(plans) == ["nrm-0-initial", "nrm-1-chan_mag", "nrm-2-derived_phase", "nrm-3-out_amp", "nrm-4-out_mu", "nrm-5-out_sigma", "nrm-6-aux"]
-    assert plans["nrm-0-initial"]["normalization.chan_mag"]    == "fixed_log1p"
-    assert plans["nrm-0-initial"]["normalization.derived_phase"]   == "fixed_angle_01"
-    assert plans["nrm-0-initial"]["normalization.out_mu"]      == "fixed_bounds"
-    assert plans["nrm-0-initial"]["normalization.aux"]         == "zscore"
-    assert plans["nrm-1-chan_mag"]["normalization.chan_mag"]   == "robust_iqr_log1p"
-    assert plans["nrm-2-derived_phase"]["normalization.derived_phase"] == "fixed_div_pi"
-    assert plans["nrm-3-out_amp"]["normalization.out_amp"]     == "robust_iqr_log1p"
-    assert plans["nrm-3-out_amp"]["normalization.out_sigma"]   == "fixed_bounds"
-    assert plans["nrm-4-out_mu"]["normalization.out_mu"]       == "robust_iqr"
-    assert plans["nrm-5-out_sigma"]["normalization.out_sigma"] == "robust_iqr_log1p"
-    assert plans["nrm-6-aux"]["normalization.aux"]             == "robust_iqr_log1p"
-
-
 def test_scheduler_fans_out_one_gpu_job_per_trial_seed(tmp_path):
     """Verifies multi-seed trials expand into one job per trial and seed, each argv pinned to its own seed."""
     config             = BackboneEntryConfig()
@@ -717,7 +693,7 @@ def test_backbone_launcher_rejects_both_inference_flags(monkeypatch):
 
 def test_scheduler_houses_each_mode_in_its_own_dir(tmp_path):
     """Verifies every trials mode houses its runs, batch logs and job logdir under a directory named after the mode."""
-    for mode in ("curriculum", "warmup", "presence", "pair", "secondary", "patch", "input", "context", "head", "augmentation", "ema", "amp", "normalization", "ablation"):
+    for mode in ("curriculum", "warmup", "presence", "pair", "secondary", "patch", "input", "context", "head", "augmentation", "ema", "amp", "ablation"):
         config             = BackboneEntryConfig()
         config.logdir      = tmp_path
         config.trials_mode = mode

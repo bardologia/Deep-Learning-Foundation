@@ -938,23 +938,6 @@
         "matchings": "Parameter-matching strategies applied to both curriculum stages, each crossed with every head: sorted_gt or hungarian"
       }
     },
-    "training/backbone::NormalizationTrialsConfig": {
-      "summary": "Initial and final per-channel normalization strategies for the cumulative ladder switching channel amplitude, then derived phase, then output amp, then output mu, then output sigma, then the aux channel from initial to final",
-      "fields": {
-        "initial_chan_mag": "Starting normalization preset for the channel amplitude slots, used until the first ladder rung switches them to the final strategy",
-        "initial_derived_phase": "Starting normalization preset for the derived phase channels, used until the second ladder rung switches them to the final strategy",
-        "initial_out_amp": "Starting normalization preset for the output Gaussian amplitude parameters, used until the third ladder rung switches them to the final strategy",
-        "initial_out_mu": "Starting normalization preset for the output Gaussian mean parameters, used until the fourth ladder rung switches them to the final strategy",
-        "initial_out_sigma": "Starting normalization preset for the output Gaussian sigma parameters, used until the fifth ladder rung switches them to the final strategy",
-        "initial_aux": "Starting normalization preset for the aux channel, used until the sixth ladder rung switches it to the final strategy",
-        "final_chan_mag": "Final normalization preset the channel amplitude slots switch to on rung one and keep for every later rung",
-        "final_derived_phase": "Final normalization preset the derived phase channels switch to on rung two and keep for every later rung",
-        "final_out_amp": "Final normalization preset the output Gaussian amplitude parameters switch to on rung three and keep for every later rung",
-        "final_out_mu": "Final normalization preset the output Gaussian mean parameters switch to on rung four and keep for every later rung",
-        "final_out_sigma": "Final normalization preset the output Gaussian sigma parameters switch to on rung five and keep on rung six",
-        "final_aux": "Final normalization preset the aux channel switches to on rung six"
-      }
-    },
     "training/backbone::PairTrialsConfig": {
       "summary": "Sweep pairing one fixed base loss component with each candidate second component and weight",
       "fields": {
@@ -1088,7 +1071,7 @@
         "infer_at_end": "Hold all inference until every training job of the fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
         "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set",
         "trials_enabled": "Enable the multi-trial GPU sweep (TrainScheduler) instead of a single training run",
-        "trials_mode": "Sweep dimension the trial scheduler varies: curriculum, warmup, presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema, amp, normalization, or ablation",
+        "trials_mode": "Sweep dimension the trial scheduler varies: curriculum, warmup, presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema, amp, or ablation",
         "warmup_losses": "Named loss-term override presets: in trials_mode=curriculum applied to the curriculum warmup stage and crossed against every complete_losses preset (one run per pair); in trials_mode=warmup applied instead to the complete stage with curriculum disabled, one run per preset",
         "complete_losses": "Named loss-term override presets applied to the curriculum complete stage, used only by trials_mode=curriculum where each preset is crossed against every warmup_losses preset (one run per pair)",
         "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
@@ -1104,7 +1087,6 @@
         "clamp_trials": "ClampTrialsConfig sub-config for the output-clamp ladder: no clamp, hard clamp, leaky clamp",
         "stability_trials": "StabilityTrialsConfig sub-config for the training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction, then gradient clipping alone per norm, then the first fraction paired with each norm",
         "ema_trials": "EmaTrialsConfig sub-config for the weight-EMA arms: EMA off, then per configured decay one rung with the plain decay and one with the decay warmup ramp; the amp mode reuses the base config unchanged and needs no sub-config",
-        "normalization_trials": "NormalizationTrialsConfig sub-config for the cumulative normalization ladder walking channel amplitude, then derived phase, then output amp, then output mu, then output sigma, then the aux channel from their fixed-preset initial to their final strategies, one run per rung plus the all-initial baseline",
         "ablation_features": "Ordered list of feature-toggle dicts (label, enable, degrade overrides) forming the cumulative ablation ladder from the full model down to the baseline",
         "ablation_include_full": "Include the full-model variant (all ablation features enabled) as an extra run alongside the ablation ladder",
         "gpus": "List of GPU device indices across which queued runs are distributed and launched in parallel; feeds the trials fan-out when trials are enabled and the per-seed fan-out of a plain multi-seed run otherwise",
@@ -1553,7 +1535,7 @@
         "input": "InputConfig selecting which channel stack channels feed the backbone or image autoencoder",
         "masking": "JepaMaskingConfig hiding part of each input patch in the embedding regime",
         "trials_enabled": "Enable the multi-trial GPU sweep (JepaTrialScheduler) instead of a single training run",
-        "trials_mode": "Sweep dimension the trial scheduler varies: embedding, curve, masking, curriculum, coupling, ae_run, context, input, augmentation, normalization, ema, amp, or stability",
+        "trials_mode": "Sweep dimension the trial scheduler varies: embedding, curve, masking, curriculum, coupling, ae_run, context, input, augmentation, ema, amp, or stability",
         "embedding_trials": "Latent-loss arms of the embedding sweep, mapping a run label to the embedding_loss fields that arm enables; every other latent term is disabled per arm, and the decoded-curve settings stay at the base configuration",
         "curve_trials": "Decoded-curve arms of the curve sweep over the penalty kind, its weight and the Sobolev smoothness term",
         "masking_trials": "Context-masking grid of the masking sweep over the strategy and the hidden-pixel ratio",
@@ -1563,7 +1545,6 @@
         "context_trials": "Constant-depth backbone rungs of the context sweep, each a dict with a label, a backbone and its model overrides",
         "input_trials": "Input-channel arms of the input sweep, mapping a run label to the channel selection that arm trains on",
         "augmentation_trials": "Cumulative ladder of the patch-augmentation sweep: none, horizontal flips, both flips, then one final rung per noise level",
-        "normalization_trials": "Initial and final presets of the normalization ladder, stepped one signal group at a time",
         "ema_trials": "Weight-EMA ladder of the ema mode; the amp mode compares mixed-precision off against on and needs no settings of its own",
         "stability_trials": "Warmup and gradient-clip arms of the stability mode"
       }
@@ -2395,7 +2376,7 @@
         "infer_at_end": "Hold all inference until every training job of the fan-out has finished, then run one inference job per completed run through the same GPU queue; keeps the GPUs saturated with training first, mutually exclusive with infer_after",
         "inference": "InferenceConfig sub-config used to run inference automatically after training when infer_after or infer_at_end is set",
         "trials_enabled": "Enable the multi-trial GPU sweep (DualTrainScheduler) that fans one training run per trial out across GPUs instead of launching a single run",
-        "trials_mode": "Sweep dimension the dual trial scheduler varies: the full backbone catalog (curriculum, warmup, presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema, amp, normalization, ablation) plus the dual-specific routing mode (one run per trunk channel-group assignment under logdir/routing) and ratio mode (one run per arm-capacity split under logdir/ratio)",
+        "trials_mode": "Sweep dimension the dual trial scheduler varies: the full backbone catalog (curriculum, warmup, presence, physics, pair, log_energy, secondary, patch, input, context, reach, head, augmentation, clamp, stability, ema, amp, ablation) plus the dual-specific routing mode (one run per trunk channel-group assignment under logdir/routing) and ratio mode (one run per arm-capacity split under logdir/ratio)",
         "warmup_losses": "Named loss-term override presets: in trials_mode=curriculum applied to the curriculum warmup stage and crossed against every complete_losses preset (one run per pair); in trials_mode=warmup applied instead to the complete stage with curriculum disabled, one run per preset",
         "complete_losses": "Named loss-term override presets applied to the curriculum complete stage, used only by trials_mode=curriculum where each preset is crossed against every warmup_losses preset (one run per pair)",
         "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
@@ -2411,7 +2392,6 @@
         "clamp_trials": "ClampTrialsConfig sub-config for the output-clamp ladder: no clamp, hard clamp, leaky clamp",
         "stability_trials": "StabilityTrialsConfig sub-config for the training-stability arms: no lr warmup and no gradient clipping, then lr warmup alone per fraction, then gradient clipping alone per norm, then the first fraction paired with each norm",
         "ema_trials": "EmaTrialsConfig sub-config for the weight-EMA arms: EMA off, then per configured decay one rung with the plain decay and one with the decay warmup ramp; the amp mode reuses the base config unchanged and needs no sub-config",
-        "normalization_trials": "NormalizationTrialsConfig sub-config for the cumulative normalization ladder walking channel amplitude, then derived phase, then output amp, then output mu, then output sigma, then the aux channel from their fixed-preset initial to their final strategies, one run per rung plus the all-initial baseline",
         "routing_trials": "DualRoutingTrialsConfig sub-config defining the trunk-routing experiment: the fixed trunk feature ladders shared by every trial and the named params/existence channel-group assignments",
         "ratio_trials": "DualRatioTrialsConfig sub-config defining the arm-ratio experiment: per-trial params/existence feature ladders that redistribute one fixed parameter budget between the two trunks, verified by building each model at launch",
         "ablation_features": "Ordered list of feature-toggle dicts (label, enable, degrade overrides) forming the cumulative ablation ladder from the full model down to the baseline; the dual catalog swaps the per-group learning rates to the trunk/head split and the architecture rung to unet_skip versus unet trunks",
