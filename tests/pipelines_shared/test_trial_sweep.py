@@ -132,7 +132,8 @@ def test_resumed_sweep_infers_over_the_reused_units_missing_inference(tmp_path):
     names = [name for name, _ in _scheduler(tmp_path).planned_units()]
 
     _complete_run(root, names[0], inference=True)
-    _complete_run(root, names[1])
+    for name in names[1:]:
+        _complete_run(root, name)
 
     scheduler        = _scheduler(tmp_path, resume_from=root, infer_at_end="true")
     scheduler._stage = FakeStage()
@@ -143,7 +144,7 @@ def test_resumed_sweep_infers_over_the_reused_units_missing_inference(tmp_path):
     scheduler.run()
 
     assert scheduler.units()          == []
-    assert scheduler._stage.submitted == [[names[1]]]
+    assert scheduler._stage.submitted == [names[1:]]
     assert reports                    == [True]
     assert "already trained" in (scheduler.log_dir / "train_scheduler.log").read_text()
 
@@ -189,7 +190,7 @@ def test_inference_covers_freshly_trained_units_and_skips_failed_ones(tmp_path):
     with pytest.raises(SystemExit, match="training trials failed"):
         scheduler.run()
 
-    assert scheduler._stage.submitted == [names, [names[0]]]
+    assert scheduler._stage.submitted == [names, [name for name in names if name != names[1]]]
 
 
 def test_run_directories_carrying_a_label_prefix_count_as_inferred(tmp_path):
