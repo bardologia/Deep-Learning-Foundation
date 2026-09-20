@@ -348,7 +348,8 @@ class TrainingWorker(BenchmarkWorker):
         """Trains one benchmark unit, dispatching on the sweep training type.
 
         The unit's manifest is written first, so even a run that dies before
-        its first epoch is identifiable when the benchmark is resumed.
+        its first epoch is identifiable when the benchmark is resumed, and a
+        unit that already finished is left as it is.
 
         Args:
             model_name     : Registry key of the model to train.
@@ -368,6 +369,9 @@ class TrainingWorker(BenchmarkWorker):
         run_name = self.unit_run_name(model_name, loss_component, seed, run_name)
 
         BenchmarkUnitManifest.write(self.run_dir / "training" / run_name, run_tag=self.run_tag, unit=run_name, model=model_name, loss_component=loss_component, seed=seed)
+
+        if self.skip_complete(self.run_dir / "training" / run_name, "benchmark_training"):
+            return
 
         if training_type == "profile_autoencoder":
             self._run_profile_autoencoder(model_name, run_name, seed)

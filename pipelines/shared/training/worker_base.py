@@ -23,3 +23,29 @@ class WorkerBase:
         self.config  = config
         self.run_tag = run_tag
         self.run_dir = Path(config.paths.log_base_dir) / run_tag
+
+    def skip_complete(self, run_directory: Path, log_name: str) -> bool:
+        """Returns whether a finished unit is left as it is, recording the decision in the unit's own log.
+
+        A local stage drops its finished units before it queues anything, but a
+        dispatcher that submits every unit it knows of hands finished ones over
+        too, so the worker has to recognise a unit a resume must not train again.
+
+        Args:
+            run_directory : Run directory of the unit.
+            log_name      : Name of the log file the decision is written to.
+
+        Returns:
+            Whether the unit already holds a completed run.
+        """
+        from tools.monitoring.logger  import Logger
+        from tools.runtime.completion import CompletionMarker
+
+        if not CompletionMarker.is_complete(run_directory):
+            return False
+
+        logger = Logger(log_dir=str(run_directory / "logs"), name=log_name, level="INFO")
+        logger.info(f"{run_directory.name} already holds a completed run; this resume leaves it as it is")
+        logger.close()
+
+        return True

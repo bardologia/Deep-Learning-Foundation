@@ -284,6 +284,25 @@ def test_training_worker_writes_the_unit_manifest_before_training(test_data_dir,
 
 
 @pytest.mark.dataset
+def test_training_worker_leaves_a_finished_unit_alone(test_data_dir, tmp_path, monkeypatch):
+    """Verifies a unit that already completed is not trained again, which a repeated dispatch relies on."""
+    config                    = worker_config(test_data_dir)
+    config.paths.log_base_dir = tmp_path
+    worker                    = FoldTrainingWorker(config, run_tag="rt")
+
+    unit = worker.unit_directory(worker.fold_run_name(1, 4))
+    unit.mkdir(parents=True)
+    CompletionMarker.stamp(unit, {"stage": "training"})
+
+    trained = []
+    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", lambda self, i, seed, sr, run_name: trained.append(run_name), raising=True)
+
+    worker.run(1, seed=4)
+
+    assert trained == []
+
+
+@pytest.mark.dataset
 def test_training_worker_trains_into_the_directory_the_scheduler_hands_over(test_data_dir, tmp_path, monkeypatch):
     """Verifies an explicit run name replaces the composed one, so a unit found by its manifest keeps its directory."""
     config                    = worker_config(test_data_dir, "backbone")

@@ -500,6 +500,28 @@ def test_training_worker_rejects_unsupported_training_type(config):
 
 
 @pytest.mark.dataset
+def test_training_worker_leaves_a_finished_unit_alone(config, test_data_dir, params_dir, monkeypatch):
+    """Verifies a benchmark unit that already completed is not trained again, which a repeated dispatch relies on."""
+    from pipelines.benchmark.workers import TrainingWorker
+    from tools.runtime.completion    import CompletionMarker
+
+    config.paths.dataset_path    = test_data_dir
+    config.paths.parameters_path = params_dir / "parameters.npy"
+
+    worker = TrainingWorker(config, "tag")
+    unit   = worker.run_dir / "training" / "renamed/seed3"
+    unit.mkdir(parents=True)
+    CompletionMarker.stamp(unit, {"stage": "training"})
+
+    trained = []
+    monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: trained.append(run_name), raising=True)
+
+    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+
+    assert trained == []
+
+
+@pytest.mark.dataset
 def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory(config, test_data_dir, params_dir, monkeypatch):
     """Verifies the training worker records the unit identity in the directory the scheduler handed over before training."""
     from pipelines.benchmark.stages                   import BenchmarkUnitManifest
