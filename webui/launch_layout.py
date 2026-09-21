@@ -96,6 +96,8 @@ class LaunchLayout:
     NUM_WARMFRAC = {"kind": "number", "min": 0, "max": 1, "step": 0.005, "presets": [0.01, 0.02, 0.03, 0.05, 0.1]}
     NUM_PROB     = {"kind": "number", "min": 0, "max": 1, "step": 0.05, "presets": [0, 0.25, 0.5, 0.75, 1.0]}
     NUM_DPI      = {"kind": "number", "int": True, "min": 72, "max": 600, "presets": [110, 150, 300, 600]}
+    NUM_MAIL_MB  = {"kind": "number", "min": 1, "max": 100, "step": 0.5, "presets": [10, 15, 18, 24]}
+    NUM_FILE_MB  = {"kind": "number", "min": 0, "max": 100, "step": 0.5, "presets": [0, 2, 5, 10, 15]}
 
     CH_AE_MODE      = {"kind": "choice", "options": ["frozen", "finetune"]}
     CH_STAGE        = {"kind": "choice", "options": ["full", "prepare", "compare"]}
@@ -1562,23 +1564,65 @@ class LaunchLayout:
             ],
         },
         "mail_experiment_reports": {
+            "type_tab": {"field": "target", "options": [["experiments", "Experiments"], ["runs", "Runs"], ["datasets", "Datasets"], ["param_extraction", "Param extraction"]]},
             "sections": [
-                {"key": "config", "title": "Configuration", "panels": [
-                    {"kind": "fields", "groups": [
+                {"key": "experiments", "title": "Experiments", "when": {"field": "target", "in": ["experiments"]}, "panels": [
+                    {"kind": "fields", "note": "Mails one message per experiment found at or below the path: a sweep of trial runs, a cross-validation run, a benchmark run, a sequence workspace holding several of them, or a whole runs tree. Each message carries the seed-aggregate report of every trial, the trial-comparison reports, a cross-validation run's cross-fold report and the configuration the experiment ran with; a missing seed aggregate, comparison or cross-fold report is written first, so nothing has to be run by hand before mailing.", "groups": [
                         {"title": "Experiments", "fields": [
                             "experiments_dir",
                             {"path": "experiment_filter", "widget": {"kind": "dataset", "mode": "experiments", "multi": True, "baseFrom": "experiments_dir", "markerFrom": "comparison_dirname"}},
                         ]},
                         {"title": "Bundle", "fields": [
-                            "staging_dir",
                             "comparison_dirname",
                             {"path": "comparison_reports", "widget": {"kind": "multi"}},
                             "inference_dirname",
                             "report_filename",
-                            "scheduler_results_filename",
-                            "resolved_config_relpath",
+                            "regenerate_reports",
                             "embed_images",
                         ]},
+                    ]},
+                ]},
+                {"key": "runs", "title": "Runs", "when": {"field": "target", "in": ["runs"]}, "panels": [
+                    {"kind": "fields", "note": "Mails one message per selected run carrying everything that run holds: the configuration and metadata it recorded, its logs and docs, the TensorBoard events, and every report and figure its inference wrote, packed into zip volumes. What travels is decided by what is left out rather than by a list of gathered paths: the three rules below drop the checkpoints, the reconstructed cubes and any file above the per-file cap, which is what keeps the walk animations behind.", "groups": [
+                        {"title": "Runs", "fields": [
+                            "runs_dir",
+                            {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir", "hint": "nothing selected = every run at or below the path is mailed"}},
+                        ]},
+                        {"title": "Left out", "fields": [
+                            {"path": "run_excluded_paths", "widget": {"kind": "multi"}},
+                            {"path": "run_excluded_suffixes", "widget": {"kind": "multi"}},
+                            {"path": "run_max_file_mb", "widget": NUM_FILE_MB},
+                        ]},
+                    ]},
+                ]},
+                {"key": "datasets", "title": "Datasets", "when": {"field": "target", "in": ["datasets"]}, "panels": [
+                    {"kind": "fields", "note": "Mails everything generate_dataset wrote into a dataset, the layout and the metadata, packed into zip volumes. The arrays under data/ are left out unless you name them; the gathered tree is rebuilt by unpacking every volume into one directory.", "groups": [
+                        {"title": "Datasets", "fields": [
+                            "datasets_dir",
+                            {"path": "dataset_filter", "widget": {"kind": "dataset", "mode": "datasets", "multi": True, "baseFrom": "datasets_dir", "validOnly": True}},
+                        ]},
+                        {"title": "Gathered paths", "fields": [
+                            {"path": "dataset_required_paths", "widget": {"kind": "multi"}},
+                            {"path": "dataset_optional_paths", "widget": {"kind": "multi"}},
+                        ]},
+                    ]},
+                ]},
+                {"key": "params", "title": "Param extraction", "when": {"field": "target", "in": ["param_extraction"]}, "panels": [
+                    {"kind": "fields", "note": "Mails one parameter-extraction run's outputs plus the metrics and figures analyze_param_extraction wrote, packed into zip volumes. The fitted arrays are left out unless you name them.", "groups": [
+                        {"title": "Parameter runs", "fields": [
+                            "params_dir",
+                            {"path": "param_run_filter", "widget": {"kind": "dataset", "mode": "param_trials", "multi": True, "baseFrom": "params_dir", "hint": "nothing selected = every parameter run is mailed"}},
+                        ]},
+                        {"title": "Gathered paths", "fields": [
+                            {"path": "param_required_paths", "widget": {"kind": "multi"}},
+                            {"path": "param_optional_paths", "widget": {"kind": "multi"}},
+                            {"path": "param_analysis_paths", "widget": {"kind": "multi"}},
+                        ]},
+                    ]},
+                ]},
+                {"key": "mail", "title": "Mail", "panels": [
+                    {"kind": "fields", "groups": [
+                        {"title": "Staging", "fields": ["staging_dir", {"path": "max_attachment_mb", "widget": NUM_MAIL_MB}]},
                         {"title": "Mail", "fields": ["recipient", "sender", "smtp_host", "smtp_port", "password_env", "subject_prefix", "dry_run"]},
                     ]},
                 ]},
