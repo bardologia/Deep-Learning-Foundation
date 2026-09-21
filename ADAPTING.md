@@ -252,6 +252,22 @@ of every model in every registry, at every head.
   checkpoints trained before it will not load. A baseline regenerated inside a large
   commit proves nothing.
 
+### Every path default sits below a reference root
+
+`configuration/reference_layout.py` names the roots a checkout works from (`datasets/`,
+`runs/`, `results/`, the example dataset and its parameter run), and the machine profile
+written by `./install.sh` retargets them: `ConfigCli` rebases every `Path` leaf, and every
+string leaf that equals a root or lies below one, onto the profile's root before any flag
+is parsed. A default written against one machine's filesystem escapes that rebase and
+points every other machine at a directory it does not have.
+
+- Fails in: `tests/configuration/test_reference_layout.py::test_no_configuration_default_is_an_absolute_path`
+  for an absolute default, and `::test_a_profile_setting_every_root_rebases_every_reference_default`
+  for a path below a root that the rebase does not reach, which happens when a root is
+  spelled differently from `ReferenceLayout` or the leaf is not a `Path` or a string.
+- Fix: write the default relative to the repository root, below the matching
+  `ReferenceLayout` root, as a `Path` or a plain string.
+
 ## 5. Add a model
 
 Backbones are registered in `models/backbone/__init__.py`. A new one needs, in order:
@@ -303,6 +319,20 @@ Registering it with the console takes five sites:
    kinds like `text`, `opt`, `opt_tail`, `list` and `flag`. Without one, the job is
    described by its overrides alone.
 
+An entry that writes a run and can pick it up again takes two more:
+
+6. A `resume_from` control in its layout with the `resume_runs` picker,
+   `{"kind": "dataset", "mode": "resume_runs", "baseFrom": <log directory field>}`, so the
+   launch page lists the runs under the log directory that recorded a configuration, and a
+   `("resuming", "resume_from", "opt_tail")` row in its `SPECS` entry. The describer then
+   reads the recorded configuration of the target, and the job line shows the values a
+   resume runs on rather than the form's defaults.
+7. A row in `FinalizeChain.TAGGED_SWEEPS` in `webui/finalize_chain.py` when the entry writes
+   a run-tagged sweep of compared units, mapping its key to the sweep directory under
+   `<log_base_dir>/<run_tag>`. That is what lets the launch page and the sequence board
+   chain the seed comparison, the trial comparison and the report mail onto the finished
+   run. A training entry needs no row: its sweep is found through `trials_mode`.
+
 `tests/webui/test_launch_layout.py::test_every_registered_script_is_reachable_from_the_catalog`
 holds 1, 2 and 3 together: every key in `SCRIPT_DIRS` has to be either a `META` card or a
 `GROUPS` member, and every one of those needs a layout. Step 4 is held by the description
@@ -312,7 +342,11 @@ still launches, it is just described by its raw overrides.
 
 The curated content is optional but goes stale silently if you skip it: a pipeline needs
 its pair of entries in `flow_library.py` and `pipeline_library.py`, and a new subsystem
-deserves a folder in `repomap_data.json`.
+deserves a folder in `repomap_data.json`. Nothing per entry is needed for saved runs,
+config templates or the machine profile: they work from the layout and the config
+dataclass alone. A new console tab that shows images registers with the figure saver
+instead, through a `figureTag()` method and `data-fig` labels, as `webui/README.md`
+describes under "Saving figures".
 
 ## 7. Rename the project
 

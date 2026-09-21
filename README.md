@@ -2,7 +2,7 @@
 
 A project skeleton for supervised deep learning, lifted out of a working research
 codebase. It carries the configuration layer, the dataset, training and inference
-pipelines, the experiment and analysis entry points, a local web console and about 4000
+pipelines, the experiment and analysis entry points, a local web console and about 5000
 tests. The domain code is gone; what is left is the machinery around a model.
 
 The example task is per-pixel Gaussian-mixture estimation along a z axis from a stack of
@@ -382,7 +382,7 @@ pipelines/      the pipelines behind the entry points
 models/         backbones, heads, blocks
 tools/          shared components (logger, training, metrics, monitoring)
 webui/          the control console, stdlib HTTP server plus static frontend
-tests/          about 4000 tests, self-contained
+tests/          about 5000 tests, self-contained
 scripts/        maintenance utilities and the setup wizard
 notes/          model and design notes, read by the console
 datasets/       generated example datasets, gitignored
