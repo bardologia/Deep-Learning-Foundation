@@ -20,10 +20,11 @@ from tools.runtime.run_tag import RunTag
 def main() -> None:
     """Runs one tuning worker against an existing study, or schedules the studies.
 
-    In worker mode the resolved config is read from the given run directory and trials are
-    run on the pinned GPU. In scheduler mode the config comes from the CLI, is optionally
-    reloaded from the run's resolved config when resuming, and curriculum inheritance is
-    applied before scheduling.
+    In worker mode the worker flags are checked before the GPU is pinned, then the
+    resolved config is read from the given run directory and trials are run on the
+    pinned GPU. In scheduler mode the config comes from the CLI, is optionally reloaded
+    from the run's resolved config when resuming, and curriculum inheritance is applied
+    before scheduling.
 
     A ``resume_from`` path continues the tuning run holding it with the
     configuration that run recorded, the command-line overrides applied on
@@ -45,6 +46,15 @@ def main() -> None:
     args, _ = parser.parse_known_args()
 
     if args.worker:
+        if args.model is None:
+            sys.exit("ERROR: --worker requires --model")
+        if args.study_name is None or args.storage_url is None:
+            sys.exit("ERROR: --worker requires --study-name and --storage-url")
+        if args.n_trials is None:
+            sys.exit("ERROR: --worker requires --n-trials")
+        if args.run_tag is None or args.run_dir is None:
+            sys.exit("ERROR: --worker requires --run-tag and --run-dir")
+
         EnvironmentPinner.gpu(args.gpu, expandable_segments=True)
     else:
         EnvironmentPinner.threads()
@@ -59,15 +69,6 @@ def main() -> None:
     entry_script = Path(__file__).resolve()
 
     if args.worker:
-        if args.model is None:
-            sys.exit("ERROR: --worker requires --model")
-        if args.study_name is None or args.storage_url is None:
-            sys.exit("ERROR: --worker requires --study-name and --storage-url")
-        if args.n_trials is None:
-            sys.exit("ERROR: --worker requires --n-trials")
-        if args.run_tag is None or args.run_dir is None:
-            sys.exit("ERROR: --worker requires --run-tag and --run-dir")
-
         config = ConfigCli.load_resolved(TuningEntryConfig(), Path(args.run_dir) / "resolved_config.json")
 
         worker = TuningWorker(tag=args.run_tag, config=config)
