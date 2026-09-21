@@ -359,8 +359,8 @@ Four experiment entries under `main/experiments/` wrap the training loop:
 scene; `tune.py` drives an Optuna study; `tune_dataloader.py` searches batch size,
 worker count and prefetch depth for throughput. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
-(losses, presence, pairs, secondaries, inputs, context, reach, heads, augmentation,
-clamp, stability, EMA, AMP and normalization ladders).
+(curriculum, warmup, presence, pair, log-energy, secondary, input, context, reach, head,
+augmentation, clamp, stability, EMA, AMP and ablation ladders).
 
 Twenty-two analysis entries under `main/analysis/` read finished runs rather than
 producing them: trial, seed and run comparisons (the seed comparison also reports 95%
