@@ -17,7 +17,8 @@ class JobDescriber:
 
     ``LEADS`` maps a script key to the method that builds its opening phrase
     (training mode, model, benchmark type), ``SPECS`` lists the config paths
-    worth surfacing per script, and any override not consumed by either is
+    worth surfacing per script, ``MAIL_TARGETS`` names the root and filter each
+    mailing target reads, and any override not consumed by any of them is
     appended as a trailing ``path=value`` extra.
 
     Attributes:
@@ -39,6 +40,7 @@ class JobDescriber:
         "cross_validate"            : "_lead_cross_validate",
         "tune"                      : "_lead_tune",
         "tune_dataloader"           : "_lead_tune_dataloader",
+        "mail_experiment_reports"   : "_lead_mail_experiment_reports",
     }
 
     SPECS = {
@@ -241,10 +243,15 @@ class JobDescriber:
             ("into", "collector_dir", "opt_tail"),
         ],
         "mail_experiment_reports": [
-            ("experiments", "experiment_filter", "list", "all experiments"),
-            ("root",        "experiments_dir",   "opt_tail"),
-            ("to",          "recipient",         "opt"),
+            ("to", "recipient", "opt"),
         ],
+    }
+
+    MAIL_TARGETS = {
+        "experiments"      : ("experiment reports", "experiments_dir", "experiment_filter", "all experiments"),
+        "runs"             : ("run contents",       "runs_dir",        "run_filter",        "all runs"),
+        "datasets"         : ("dataset results",    "datasets_dir",    "dataset_filter",    "all datasets"),
+        "param_extraction" : ("param run results",  "params_dir",      "param_run_filter",  "all parameter runs"),
     }
 
     def __init__(self, paths: ProjectPaths, resolver: ScriptConfigResolver) -> None:
@@ -469,6 +476,33 @@ class JobDescriber:
         """
         used.add("mode")
         return [f"feed tuner, {values.get('mode', '')}".strip(", ")]
+
+    def _lead_mail_experiment_reports(self, values: dict, used: set) -> list[str]:
+        """Returns the mailed-source phrases for a report mailing run.
+
+        Only the selected target's root and filter are surfaced, so a dataset
+        mailing does not advertise the experiment root it never reads.
+
+        Args:
+            values : Effective config values keyed by dotted path.
+            used   : Set of config paths already consumed, extended in place.
+
+        Returns:
+            Non-empty lead phrases, e.g. ``["dataset results", "root datasets", "all datasets"]``.
+        """
+        used.add("target")
+        for _noun, root, run_filter, _fallback in self.MAIL_TARGETS.values():
+            used.update((root, run_filter))
+
+        target = values.get("target", "")
+        if target not in self.MAIL_TARGETS:
+            return []
+
+        noun, root, run_filter, fallback = self.MAIL_TARGETS[target]
+
+        parts = [noun, self._render("root", values.get(root), "opt_tail", None), self._render("", values.get(run_filter), "list", fallback)]
+
+        return [part for part in parts if part]
 
     def _lead(self, key: str, values: dict, used: set) -> list[str]:
         """Returns the lead phrases for a script, empty when it has no lead builder.

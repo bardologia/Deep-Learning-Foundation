@@ -1,8 +1,9 @@
-"""Filesystem discovery of datasets, training runs and extracted parameter files.
+"""Filesystem discovery of datasets, training runs, experiments and extracted parameter files.
 
 Backs the web UI pickers by walking dataset roots and run roots, reporting which
 directories look like datasets, which runs carry checkpoints or inference output,
-and which parameter-extraction trials are complete.
+which experiments exist and how many trials and comparisons they hold, and which
+parameter-extraction trials are complete.
 """
 
 from __future__ import annotations
@@ -189,38 +190,44 @@ class DatasetBrowser:
         return {"ok": True, "base": base_label, "groups": entries}
 
     def experiments(self, raw_base: str, marker: str) -> dict:
-        """Lists the direct children of an experiments root that hold a comparison directory.
+        """Lists the experiments found at or below a directory by the trial runs they hold.
+
+        The base may be a sweep of trial runs, a cross-validation run, a
+        benchmark run, a sequence workspace holding several of them or a whole
+        runs tree; the scan stops at every experiment it finds, so run trees
+        are never entered.
 
         Args:
-            raw_base : Absolute path of the directory holding one folder per experiment.
-            marker   : Name of the comparison subdirectory that marks a finished experiment.
+            raw_base : Absolute path of the directory searched for experiments.
+            marker   : Name of the comparison subdirectory whose stamps are counted per sweep.
 
         Returns:
             Dict with ``ok``, the resolved ``base`` and an ``experiments`` list of
-            entries carrying name, path and the number of comparison stamps inside.
+            entries carrying the name relative to the base (the experiment's own
+            name when it is the base), the path, the kind, the number of trials
+            and the number of comparison stamps inside.
         """
+        from tools.reporting.report_mailer import ExperimentScanner
         base = self._directory(raw_base)
         if base is None:
             return {"ok": False, "error": f"not a directory: {raw_base}"}
         if not marker.strip():
             return {"ok": False, "error": "no comparison dirname given"}
 
+        scanner = ExperimentScanner(base)
+
         entries = []
-        for entry in sorted(base.iterdir()):
-            if not entry.is_dir() or entry.name.startswith("."):
-                continue
-
-            comparison_dir = entry / marker
-            if not comparison_dir.is_dir():
-                continue
-
+        for experiment in scanner.scan():
+            comparisons = experiment.comparison_root(marker)
             entries.append({
-                "name"          : entry.name,
-                "path"          : str(entry),
-                "n_comparisons" : sum(1 for child in comparison_dir.iterdir() if child.is_dir()),
+                "name"          : scanner.name(experiment),
+                "path"          : str(experiment.root),
+                "kind"          : experiment.KIND,
+                "n_trials"      : len(experiment.trials()),
+                "n_comparisons" : sum(1 for child in comparisons.iterdir() if child.is_dir()) if comparisons.is_dir() else 0,
             })
 
-        self.logger.info(f"experiments: listed {len(entries)} under {base}")
+        self.logger.info(f"experiments: listed {len(entries)} at or below {base}")
         return {"ok": True, "base": str(base), "experiments": entries}
 
     def params(self, raw_dataset: str) -> dict:

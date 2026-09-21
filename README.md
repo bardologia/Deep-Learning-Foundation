@@ -281,19 +281,30 @@ python main/inference/infer_backbone.py --runs_dir runs/sequences/plan/augmentat
 A cross-validation fold is scored over the row block its manifest records. To re-score
 everything, pass `--skip_completed false`.
 
-Mailing the results takes the experiments root and the names of the experiments under it:
+Mailing the results takes one path as well:
 
 ```bash
-python main/analysis/mail_experiment_reports.py --experiments_dir runs/sequences/plan --experiment_filter "['augmentation']"
+python main/analysis/mail_experiment_reports.py --experiments_dir runs/sequences/plan
 ```
 
-An experiment is a direct child of the root holding a `_comparison` directory, and an
-empty filter selects all of them. Each one is mailed as one message carrying the
-seed-aggregate report of every trial, the newest trial-comparison reports and the
-configuration the experiment ran with. A seeded trial without its seed-aggregate report
-or an experiment without a comparison stamp is refused with a pointer at `compare_seeds`
-or `compare_trials`, which the console's Finalize chain runs in that order before the
-mail.
+Every experiment found below the path is mailed as one message: a sweep of trial runs, a
+cross-validation run, a benchmark run, or a workspace holding several of them. The mailer
+writes the seed-aggregate report of a seeded trial, the trial comparison, and a
+cross-validation run's cross-fold report when they are missing, then attaches them
+together with the configuration the experiment ran with.
+
+To read a run rather than compare it, mail the run itself:
+
+```bash
+python main/analysis/mail_experiment_reports.py --target runs --runs_dir runs/backbone --run_filter "['unet-conv-sorted_gt-K_2']"
+```
+
+Each selected run travels whole, packed into zip volumes that each stay under the
+attachment cap: the configuration and metadata it recorded, its logs and docs, the
+TensorBoard events, and every report and figure its inference wrote. What is too heavy to
+mail is named by `run_excluded_paths`, `run_excluded_suffixes` and `run_max_file_mb`,
+whose defaults leave the checkpoints, the reconstructed cubes and the walk animations
+behind. Unpacking every volume of a run into one directory rebuilds its tree.
 
 ## 6. Run inference
 

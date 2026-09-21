@@ -85,7 +85,7 @@ class DatasetRouter(SubRouter):
         exchange.send_result(self.datasets.run_groups(exchange.texts("base")))
 
     def experiments(self, exchange: HttpExchange) -> None:
-        """Answers with the experiment folders holding a comparison directory under the requested base."""
+        """Answers with the experiments found at or below the requested base."""
         exchange.send_result(self.datasets.experiments(exchange.text("base"), exchange.text("marker")))
 
     def param_trials(self, exchange: HttpExchange) -> None:
