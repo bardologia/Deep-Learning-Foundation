@@ -58,37 +58,37 @@ class ScriptCatalog:
         "infer_backbone": {
             "title"     : "Infer Backbone",
             "category"  : "Inference",
-            "purpose"   : "Backbone and JEPA inference: sliding-window prediction, stitched cubes, and reports. Sweeps every run root and runs only backbone/JEPA runs.",
+            "purpose"   : "Backbone and JEPA inference: sliding-window prediction, stitched cubes, and reports. Scores every backbone or JEPA run found under the path given, whether that is one run, a sweep, an experiment or a whole runs tree, and leaves alone the runs already scored on the split.",
         },
         "infer_profile_autoencoder": {
             "title"     : "Infer Profile AE",
             "category"  : "Inference",
-            "purpose"   : "Profile-autoencoder inference: reconstruction scoring. Sweeps every run root and runs only standalone profile-autoencoder runs.",
+            "purpose"   : "Profile-autoencoder inference: reconstruction scoring over every standalone profile-autoencoder run found under the path given, leaving alone the runs already scored on the split.",
         },
         "infer_image_autoencoder": {
             "title"     : "Infer Image AE",
             "category"  : "Inference",
-            "purpose"   : "Image-autoencoder inference: reconstruction scoring. Sweeps every run root and runs only standalone image-autoencoder runs.",
+            "purpose"   : "Image-autoencoder inference: reconstruction scoring over every standalone image-autoencoder run found under the path given, leaving alone the runs already scored on the split.",
         },
         "infer_dual": {
             "title"     : "Infer Dual",
             "category"  : "Inference",
-            "purpose"   : "Dual-trunk model inference: sliding-window prediction, stitched cubes, and reports through the shared backbone inference pipeline. Sweeps every run root and runs only dual runs.",
+            "purpose"   : "Dual-trunk model inference: sliding-window prediction, stitched cubes, and reports through the shared backbone inference pipeline. Scores every dual run found under the path given, leaving alone the runs already scored on the split.",
         },
         "benchmark": {
             "title"     : "Benchmark",
             "category"  : "Experiments",
-            "purpose"   : "Benchmark capacity-matched architecture trade-offs, sweeping every permutation of architecture and selected loss component (one architecture + one loss component per run).",
+            "purpose"   : "Benchmark capacity-matched architecture trade-offs, sweeping every permutation of architecture and selected loss component (one architecture + one loss component per run). Point resume_from at an existing run to finish its missing units with the configuration it recorded.",
         },
         "cross_validate": {
             "title"     : "Cross-validate",
             "category"  : "Experiments",
-            "purpose"   : "Run K-fold cross-validation for a model across row folds, training and inferring each fold across GPUs.",
+            "purpose"   : "Run K-fold cross-validation for a model across row folds, training and inferring each fold across GPUs. Point resume_from at an existing run to finish its missing folds, seeds and inference splits with the configuration it recorded.",
         },
         "tune": {
             "title"     : "Tune",
             "category"  : "Experiments",
-            "purpose"   : "Run the Optuna hyperparameter search, resumable in chunks.",
+            "purpose"   : "Run the Optuna hyperparameter search in chunks. Point resume_from at an existing tuning run to top its studies up with the configuration it recorded.",
         },
         "tune_dataloader": {
             "title"     : "Feed Tuner",
