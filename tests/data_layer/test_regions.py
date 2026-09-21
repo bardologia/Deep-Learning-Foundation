@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import pytest
 
 from tools.data.regions import CropRegion, SplitRegions
@@ -269,3 +271,14 @@ def test_validate_within_names_indexed_region_in_lists():
 
     with pytest.raises(ValueError, match=r"'train\[1\]'"):
         splits.validate_within(glob)
+
+
+def test_split_regions_round_trip_through_their_persisted_form():
+    """Verifies the persisted form rebuilds single regions and lists of disjoint regions alike."""
+    regions = SplitRegions(
+        train = [CropRegion(1000, 1162, 500, 1000), CropRegion(1348, 1512, 500, 1000)],
+        val   = CropRegion(1178, 1332, 500, 1000),
+        test  = CropRegion(1000, 1162, 500, 1000),
+    )
+
+    assert SplitRegions.from_payload(asdict(regions)) == regions

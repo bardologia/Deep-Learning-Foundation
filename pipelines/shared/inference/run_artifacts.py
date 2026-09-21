@@ -42,12 +42,6 @@ class RunArtifactLoader:
         """Returns the JSON payload of a file in the run's meta directory."""
         return FileIO.load_json(self.meta_directory / name)
 
-    def _parse_split_payload(self, value):
-        """Returns one persisted split as a CropRegion, or a list of them when disjoint."""
-        if isinstance(value, list):
-            return [CropRegion(**region) for region in value]
-        return CropRegion(**value)
-
     def _build_dataset_config(self, payload: dict, batch_size: Optional[int], num_workers: int) -> DatasetConfig:
         """Rebuilds the training-time dataset configuration for inference use.
 
@@ -62,13 +56,7 @@ class RunArtifactLoader:
         Raises:
             ValueError : The stored patch stride predates per-axis strides.
         """
-        splits = payload["split_regions"]
-
-        split_regions = SplitRegions(
-            train = self._parse_split_payload(splits["train"]),
-            val   = self._parse_split_payload(splits["val"]),
-            test  = self._parse_split_payload(splits["test"]),
-        )
+        split_regions = SplitRegions.from_payload(payload["split_regions"])
 
         if not isinstance(payload["patch"]["stride"], list):
             raise ValueError(f"dataset_creation_config.json stores patch stride {payload['patch']['stride']!r} from before per-axis strides; patch it to a [vertical, horizontal] list (e.g. [32, 32]) to run inference on this run.")

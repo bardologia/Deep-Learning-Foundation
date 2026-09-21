@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from configuration.cross_validation   import CrossValidationConfig, FoldConfig
-from pipelines.cross_validation.folds import FoldConfigFactory, FoldFamily, FoldNaming, FoldPlan, FoldPlanner
+from pipelines.cross_validation.folds import FoldConfigFactory, FoldFamily, FoldNaming, FoldPlan, FoldPlanner, StoredFoldPlanner
 from tools.data.regions               import CropRegion, SplitRegions
 from tools.runtime.completion         import CompletionMarker
 
@@ -438,3 +438,33 @@ def test_family_split_inference_dir_picks_latest_and_skips_incomplete(tmp_path):
 def test_family_split_inference_dir_missing_base_is_none(tmp_path):
     """Verifies a missing inference base yields no split directory."""
     assert FoldFamily.split_inference_dir(tmp_path / "fold_0", "profile_autoencoder", "test") is None
+
+
+def test_fold_naming_recognises_tagged_and_bare_fold_names():
+    """Verifies the fold pattern accepts tagged and bare fold directory names and rejects the rest."""
+    assert FoldNaming.is_fold("resunet-conv-sorted_gt_fold_0")
+    assert FoldNaming.is_fold("fold_12")
+    assert not FoldNaming.is_fold("fold_0_seed1")
+    assert not FoldNaming.is_fold("_comparison")
+    assert not FoldNaming.is_fold("training_results.json")
+
+
+def test_stored_fold_planner_rejects_gaps_and_empty_input():
+    """Verifies stored regions must be indexed contiguously from zero and at least one fold must exist."""
+    region  = CropRegion(1000, 1162, 500, 1000)
+    regions = SplitRegions(train=region, val=region, test=region)
+
+    with pytest.raises(ValueError, match="contiguously"):
+        StoredFoldPlanner({0: regions, 2: regions})
+
+    with pytest.raises(ValueError, match="contiguously"):
+        StoredFoldPlanner({})
+
+
+def test_stored_fold_planner_rejects_an_index_outside_the_range():
+    """Verifies asking for a fold beyond the stored ones raises."""
+    region  = CropRegion(1000, 1162, 500, 1000)
+    planner = StoredFoldPlanner({0: SplitRegions(train=region, val=region, test=region)})
+
+    with pytest.raises(ValueError, match="fold_index"):
+        planner.plan(1)

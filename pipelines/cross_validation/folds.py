@@ -2,11 +2,14 @@
 
 Partitions the dataset row extent into disjoint blocks, assigns one test
 and one validation block per fold with a guard margin between neighbours, and
-derives the run names and per-fold configs each training family needs.
+derives the run names and per-fold configs each training family needs. Also
+reads a finished run's fold tree back into the same plan, family, model name
+and scored splits, for reports rebuilt without the run's configuration.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib     import Path
 
@@ -17,9 +20,10 @@ from configuration.inference.profile_autoencoder import ProfileAeInferenceConfig
 from configuration.dataset.gaussian           import GaussianConfig
 from pipelines.shared.config.config_factory      import ConfigFactory
 from pipelines.shared.inference.metadata         import CompletedInference
-from pipelines.shared.inference.run_classifier   import RunType
+from pipelines.shared.inference.run_classifier   import RunClassifier, RunType
 from pipelines.shared.orchestration.unit_manifest import UnitManifest
 from pipelines.shared.training.seed_sweep        import SeedSet
+from tools.data.io            import FileIO
 from tools.data.regions       import CropRegion, SplitRegions
 
 
@@ -305,8 +309,72 @@ class FoldPlanner:
         return [self.plan(fold_index) for fold_index in range(self.n_folds)]
 
 
+class StoredFoldPlanner:
+    """Fold plan read back from the split regions the fold runs stored.
+
+    Stands in for FoldPlanner where only the plan is needed, such as the
+    cross-fold report of a run whose configuration is not at hand: the regions
+    come from each fold run's dataset creation config rather than from a fold
+    window and guard, and the block assignment follows the planner's
+    convention, the fold's own block for testing and the next one cyclically
+    for validation.
+
+    Attributes:
+        n_folds : Number of folds the regions were stored for.
+        regions : Split regions of every fold, keyed by fold index.
+    """
+
+    def __init__(self, regions: dict[int, SplitRegions]) -> None:
+        """Validates that the stored folds are indexed contiguously from zero.
+
+        Args:
+            regions : Split regions keyed by fold index.
+
+        Raises:
+            ValueError : If no fold was given or the indices do not run from zero without gaps.
+        """
+        if not regions or sorted(regions) != list(range(len(regions))):
+            raise ValueError(f"Stored folds must be indexed contiguously from 0; got {sorted(regions)}")
+
+        self.n_folds = len(regions)
+        self.regions = dict(regions)
+
+    def plan(self, fold_index: int) -> FoldPlan:
+        """Returns the plan of one fold from its stored regions.
+
+        Args:
+            fold_index : Zero-based index of the fold.
+
+        Raises:
+            ValueError : If the index is outside the fold range.
+        """
+        if fold_index not in self.regions:
+            raise ValueError(f"fold_index must be in [0, {self.n_folds}); got {fold_index}")
+
+        test_block   = fold_index
+        val_block    = (fold_index + 1) % self.n_folds
+        train_blocks = [index for index in range(self.n_folds) if index not in (test_block, val_block)]
+
+        return FoldPlan(fold_index=fold_index, test_block=test_block, val_block=val_block, train_blocks=train_blocks, split_regions=self.regions[fold_index])
+
+    def plans(self) -> list[FoldPlan]:
+        """Returns the plan of every fold, in fold order."""
+        return [self.plan(fold_index) for fold_index in range(self.n_folds)]
+
+
 class FoldNaming:
-    """Encodes and decodes the `fold_N[/seedS]` run-name convention."""
+    """Encodes and decodes the `fold_N[/seedS]` run-name convention.
+
+    Attributes:
+        PATTERN : Pattern a fold directory name ends with, capturing the fold index.
+    """
+
+    PATTERN = re.compile(r"(?:^|_)fold_(\d+)$")
+
+    @staticmethod
+    def is_fold(name: str) -> bool:
+        """Returns whether a directory name is a fold run name, tagged or bare."""
+        return FoldNaming.PATTERN.search(name) is not None
 
     @staticmethod
     def name(index: int) -> str:
@@ -554,3 +622,112 @@ class FoldConfigFactory(ConfigFactory):
             num_workers     = inference.num_workers,
             save_plots      = inference.save_plots,
         )
+
+
+class FoldTreeSurvey:
+    """Reads what a run's fold tree records about the sweep that produced it.
+
+    Everything the cross-fold report needs is stored by the fold runs
+    themselves: the model family in the architecture config under meta, the
+    model name in the run summary, the fold's split regions in the dataset
+    creation config, and the scored splits in the inference completion
+    markers. A run whose pipeline directory never made it to disk is therefore
+    still reportable.
+
+    Attributes:
+        run_dir          : Cross-validation run directory holding the folds directory.
+        folds_dir        : Directory holding one fold run, or one seed sweep, per fold.
+        FOLDS_DIRNAME    : Name of the folds directory inside a run.
+        META_DIRNAME     : Directory marking a training run inside a fold.
+        SUMMARY_FILENAME : Run summary naming the trained model, under the meta directory.
+        DATASET_FILENAME : Dataset creation config carrying the split regions, under the meta directory.
+        FAMILIES         : Cross-validation training family per run type the classifier reports.
+    """
+
+    FOLDS_DIRNAME    = "folds"
+    META_DIRNAME     = "meta"
+    SUMMARY_FILENAME = "run_summary.json"
+    DATASET_FILENAME = "dataset_creation_config.json"
+
+    FAMILIES = {
+        RunType.BACKBONE   : "backbone",
+        RunType.DUAL       : "dual",
+        RunType.PROFILE_AE : "profile_autoencoder",
+        RunType.IMAGE_AE   : "image_autoencoder",
+    }
+
+    def __init__(self, run_dir: Path) -> None:
+        """Binds the survey to a run directory."""
+        self.run_dir   = Path(run_dir)
+        self.folds_dir = self.run_dir / self.FOLDS_DIRNAME
+
+    def fold_runs(self) -> dict[int, Path]:
+        """Returns one representative training run per fold, keyed by fold index.
+
+        A fold trained under several seeds holds one run per seed; the first
+        seed represents the fold, since every seed stored the same regions and
+        model.
+
+        Raises:
+            FileNotFoundError : If the folds directory is missing, holds no fold, or a fold holds no training run.
+        """
+        if not self.folds_dir.is_dir():
+            raise FileNotFoundError(f"No '{self.FOLDS_DIRNAME}' directory under {self.run_dir}")
+
+        fold_dirs = sorted(child for child in self.folds_dir.iterdir() if child.is_dir() and FoldNaming.is_fold(child.name))
+        if not fold_dirs:
+            raise FileNotFoundError(f"No fold run directory under {self.folds_dir}")
+
+        return {FoldNaming.index(fold_dir.name): self._representative(fold_dir) for fold_dir in fold_dirs}
+
+    def _representative(self, fold_dir: Path) -> Path:
+        """Returns the fold directory itself when it is a training run, else its first seed run.
+
+        Raises:
+            FileNotFoundError : If neither the fold directory nor any seed directory inside it holds a meta directory.
+        """
+        if (fold_dir / self.META_DIRNAME).is_dir():
+            return fold_dir
+
+        seeds = sorted(child for child in fold_dir.iterdir() if child.is_dir() and SeedSet.SEED_DIR.fullmatch(child.name) and (child / self.META_DIRNAME).is_dir())
+        if not seeds:
+            raise FileNotFoundError(f"Fold '{fold_dir.name}' holds no training run: neither a '{self.META_DIRNAME}' directory nor a seed run with one under {fold_dir}")
+
+        return seeds[0]
+
+    def training_type(self, run_dir: Path) -> str:
+        """Returns the cross-validation family of a fold run, read off its architecture config.
+
+        Args:
+            run_dir : Representative training run of a fold.
+
+        Raises:
+            ValueError : If the run carries no architecture config, or one of a family cross-validation does not train.
+        """
+        run_type = RunClassifier.classify(run_dir)
+
+        if run_type not in self.FAMILIES:
+            raise ValueError(f"Fold run {run_dir} is a '{run_type}' run, which cross-validation does not train; expected one of {sorted(self.FAMILIES)}")
+
+        return self.FAMILIES[run_type]
+
+    def model_name(self, run_dir: Path) -> str:
+        """Returns the model name the fold run recorded in its run summary."""
+        return str(FileIO.load_json(run_dir / self.META_DIRNAME / self.SUMMARY_FILENAME)["model_name"])
+
+    def split_regions(self, run_dir: Path) -> SplitRegions:
+        """Returns the split regions the fold run trained and scored on."""
+        return SplitRegions.from_payload(FileIO.load_json(run_dir / self.META_DIRNAME / self.DATASET_FILENAME)["split_regions"])
+
+    def splits(self, fold_runs: dict[int, Path], training_type: str) -> list[str]:
+        """Returns the fold-specific splits at least one fold holds a completed inference for, in planner order.
+
+        Args:
+            fold_runs     : Representative training run per fold.
+            training_type : Family deciding where the fold inference lives.
+        """
+        return [split for split in FoldPlanner.INFERENCE_SPLITS if any(CompletedInference.stamps(FoldFamily.inference_base(run_dir, training_type), split) for run_dir in fold_runs.values())]
+
+    def planner(self, fold_runs: dict[int, Path]) -> StoredFoldPlanner:
+        """Returns the fold plan read back from every fold's stored regions."""
+        return StoredFoldPlanner({index: self.split_regions(run_dir) for index, run_dir in fold_runs.items()})
