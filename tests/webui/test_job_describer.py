@@ -232,6 +232,50 @@ def test_jepa_mode_follows_selected_autoencoders():
     assert "image-AE conv2d_ae_007 (frozen)" in both
 
 
+MAIL_LEAVES = [
+    {"path": "target",            "value": "experiments"},
+    {"path": "experiments_dir",   "value": "/runs/sequences"},
+    {"path": "experiment_filter", "value": "[]"},
+    {"path": "runs_dir",          "value": "/runs/backbone"},
+    {"path": "run_filter",        "value": "[]"},
+    {"path": "datasets_dir",      "value": "/data/datasets"},
+    {"path": "dataset_filter",    "value": "[]"},
+    {"path": "params_dir",        "value": "/data/datasets"},
+    {"path": "param_run_filter",  "value": "[]"},
+    {"path": "recipient",         "value": "victor@example.com"},
+]
+
+
+def test_mail_lead_surfaces_only_the_selected_target():
+    """A dataset mailing names its own root and filter and never the roots of the other targets."""
+    overrides = {"target": "datasets", "dataset_filter": "['ds_alpha']"}
+    text      = _describer({"mail_experiment_reports": MAIL_LEAVES}).describe("mail_experiment_reports", "python", overrides)
+
+    assert text.startswith("dataset results")
+    assert "root datasets" in text
+    assert "ds_alpha" in text
+    assert "to victor@example.com" in text
+    assert "sequences" not in text
+
+
+def test_mail_lead_names_the_selected_runs():
+    """A run mailing names the runs root and the runs it was restricted to."""
+    overrides = {"target": "runs", "run_filter": "['unet_a']"}
+    text      = _describer({"mail_experiment_reports": MAIL_LEAVES}).describe("mail_experiment_reports", "python", overrides)
+
+    assert text.startswith("run contents")
+    assert "root backbone" in text
+    assert "unet_a" in text
+    assert "datasets" not in text
+
+
+def test_mail_lead_reads_every_registered_target():
+    """Every accepted mail target has a describer entry, so no job line falls back to bare overrides."""
+    from configuration.diagnostics import ReportMailEntryConfig
+
+    assert tuple(JobDescriber.MAIL_TARGETS) == ReportMailEntryConfig.TARGETS
+
+
 def _recorded_cv_run(root, run_tag: str, n_folds: int, seeds: list):
     """Writes a cross-validation run directory holding the recording a resumed launch reads.
 

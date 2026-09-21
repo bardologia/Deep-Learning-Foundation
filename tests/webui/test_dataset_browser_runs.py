@@ -5,8 +5,8 @@ itself one run, the relative names and checkpoint/inference flags reported for
 each including the split a run must already be scored on, the pruning at run
 boundaries and skipping of hidden directories, the aggregate rows offered for
 multi-seed trials, the grouping listing that counts runs per parent directory,
-and the experiment listing that keeps only children holding a comparison
-directory.
+and the experiment listing that finds sweeps, cross-validation runs and
+benchmark runs at any depth below the base.
 """
 
 from __future__ import annotations
@@ -217,30 +217,71 @@ def test_run_groups_lists_parent_dirs_of_runs_with_counts(tmp_path):
     assert Path(entries["group_a"]["path"]) == runs / "group_a"
 
 
-def test_experiments_lists_direct_children_holding_the_comparison_dir(tmp_path):
-    """Checks the experiment listing keeps only direct children with a comparison directory and counts its stamps."""
-    experiments = tmp_path / "experiments"
-    (experiments / "exp_a" / "_comparison" / "stamp_1").mkdir(parents=True)
-    (experiments / "exp_a" / "_comparison" / "stamp_2").mkdir(parents=True)
-    (experiments / "exp_b" / "_comparison").mkdir(parents=True)
-    (experiments / "no_comparison" / "trial").mkdir(parents=True)
-    (experiments / "nested" / "exp_c" / "_comparison").mkdir(parents=True)
-    (experiments / ".hidden" / "_comparison").mkdir(parents=True)
+def _make_cv_run(directory: Path, n_folds: int = 3, stamps: tuple = ("20260901_080000",), pipeline: bool = True) -> None:
+    """Writes a minimal cross-validation run directory.
 
-    result  = DatasetBrowser(WebLogger()).experiments(str(experiments), "_comparison")
+    Args:
+        directory : Run directory to create, given the fold runs and, by default, a pipeline folder.
+        n_folds   : Number of fold run directories written under folds/.
+        stamps    : Report stamp directories written under reports/, none for an unreported run.
+        pipeline  : Whether the pipeline folder is written, absent for a run copied without it.
+    """
+    if pipeline:
+        (directory / "pipeline").mkdir(parents=True)
+    for index in range(n_folds):
+        _make_run(directory / "folds" / f"resunet_fold_{index}", checkpoint=True)
+    (directory / "folds" / "_comparison").mkdir()
+    for stamp in stamps:
+        (directory / "reports" / stamp / "test").mkdir(parents=True)
+
+
+def test_experiments_lists_sweeps_and_runs_found_below_the_base(tmp_path):
+    """Checks the listing finds a trial sweep, a cross-validation run and a benchmark run under one workspace, with kind, trial and comparison counts."""
+    workspace = tmp_path / "workspace"
+    for trial in ("rung_a", "rung_b"):
+        _make_run(workspace / "ema" / trial / "seed0")
+    (workspace / "ema" / "_comparison" / "stamp_1").mkdir(parents=True)
+    (workspace / "ema" / "_comparison" / "stamp_2").mkdir(parents=True)
+    _make_cv_run(workspace / "cv1", n_folds=3)
+    for unit in ("unet", "resunet"):
+        _make_run(workspace / "bench" / "training" / unit)
+    (workspace / "bench" / "pipeline").mkdir(parents=True)
+    (workspace / "_mailed_reports" / "ema").mkdir(parents=True)
+    (workspace / ".hidden" / "trial" / "meta").mkdir(parents=True)
+
+    result  = DatasetBrowser(WebLogger()).experiments(str(workspace), "_comparison")
     entries = {entry["name"]: entry for entry in result["experiments"]}
 
     assert result["ok"] is True
-    assert sorted(entries) == ["exp_a", "exp_b"]
-    assert entries["exp_a"]["n_comparisons"] == 2
-    assert entries["exp_b"]["n_comparisons"] == 0
-    assert Path(entries["exp_a"]["path"]) == experiments / "exp_a"
+    assert sorted(entries) == ["bench", "cv1", "ema"]
+    assert entries["ema"]["kind"]            == "sweep"
+    assert entries["ema"]["n_trials"]        == 2
+    assert entries["ema"]["n_comparisons"]   == 2
+    assert entries["cv1"]["kind"]            == "cross-validation"
+    assert entries["cv1"]["n_trials"]        == 3
+    assert entries["bench"]["kind"]          == "benchmark"
+    assert entries["bench"]["n_trials"]      == 2
+    assert entries["bench"]["n_comparisons"] == 0
+    assert Path(entries["ema"]["path"]) == workspace / "ema"
+
+
+def test_experiments_lists_the_base_itself_when_it_is_an_experiment(tmp_path):
+    """Checks a base that is one experiment lists that experiment alone, under its own name."""
+    sweep = tmp_path / "runs" / "patch"
+    _make_run(sweep / "p32" / "seed0")
+    _make_run(sweep / "p64" / "seed0")
+
+    result = DatasetBrowser(WebLogger()).experiments(str(sweep), "_comparison")
+
+    assert result["ok"] is True
+    assert [entry["name"] for entry in result["experiments"]] == ["patch"]
+    assert Path(result["experiments"][0]["path"]) == sweep
 
 
 def test_experiments_rejects_a_missing_root_or_blank_marker(tmp_path):
     """Checks the experiment listing reports an error for a missing root and for an empty comparison dirname."""
     experiments = tmp_path / "experiments"
-    (experiments / "exp_a" / "_comparison").mkdir(parents=True)
+    _make_run(experiments / "exp_a" / "trial" / "seed0")
 
     assert DatasetBrowser(WebLogger()).experiments(str(tmp_path / "missing"), "_comparison")["ok"] is False
     assert DatasetBrowser(WebLogger()).experiments(str(experiments), " ")["ok"] is False

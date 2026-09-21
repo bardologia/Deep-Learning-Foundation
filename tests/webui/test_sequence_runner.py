@@ -903,7 +903,7 @@ def test_a_finalize_block_chains_compare_and_mail_then_ends_done(rig):
     processes.finish("job-2")
     runner.scan()
     assert launcher.calls[3]["key"] == "mail_experiment_reports"
-    assert launcher.calls[3]["overrides"] == {"experiments_dir": runner.state(sequence_id)["run_dir"], "experiment_filter": "curriculum", "staging_dir": str(Path(runner.state(sequence_id)["run_dir"]) / "_mailed_reports")}
+    assert launcher.calls[3]["overrides"] == {"experiments_dir": str(experiment), "staging_dir": str(Path(runner.state(sequence_id)["run_dir"]) / "_mailed_reports")}
 
     processes.finish("job-3")
     runner.scan()
@@ -1052,7 +1052,7 @@ def _cv_fold_tree(run_dir: str, run_tag: str) -> Path:
 
 
 def test_a_cross_validation_block_finalizes_on_its_fold_sweep(rig):
-    """The chain of a cross-validation block compares the fold runs under <workspace>/<run_tag>/folds and mails from their parent."""
+    """The chain of a cross-validation block compares the fold runs under <workspace>/<run_tag>/folds and mails that folds directory."""
     store, processes, launcher, runner = rig
     block       = _block("a1", script="cross_validate", finalize=_finalize(*FinalizeChain.STEPS), overrides={"run_tag": "cv1"})
     sequence_id = _saved(store, [block], isolate=True)
@@ -1074,7 +1074,7 @@ def test_a_cross_validation_block_finalizes_on_its_fold_sweep(rig):
     processes.finish("job-2")
     runner.scan()
     assert launcher.calls[3]["key"] == "mail_experiment_reports"
-    assert launcher.calls[3]["overrides"] == {"experiments_dir": str(folds.parent), "experiment_filter": "folds", "staging_dir": str(Path(runner.state(sequence_id)["run_dir"]) / "_mailed_reports")}
+    assert launcher.calls[3]["overrides"] == {"experiments_dir": str(folds), "staging_dir": str(Path(runner.state(sequence_id)["run_dir"]) / "_mailed_reports")}
 
     processes.finish("job-3")
     runner.scan()

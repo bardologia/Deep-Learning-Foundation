@@ -182,7 +182,7 @@ def test_a_run_launched_on_its_own_stages_its_mail_where_the_entry_points(tmp_pa
 
     overrides = FinalizeChain().step_overrides("mail_experiment_reports", str(experiment))
 
-    assert overrides == {"experiments_dir": str(tmp_path), "experiment_filter": "curriculum"}
+    assert overrides == {"experiments_dir": str(experiment)}
 
 
 def test_the_mail_step_refuses_a_sweep_without_unit_runs(tmp_path):
@@ -250,7 +250,7 @@ def test_the_chain_walks_its_steps_after_the_run_finished(rig, tmp_path):
     processes.finish("step-2")
     finalizer.scan()
     assert launcher.calls[2]["key"] == "mail_experiment_reports"
-    assert launcher.calls[2]["overrides"] == {"experiments_dir": str(tmp_path), "experiment_filter": "curriculum"}
+    assert launcher.calls[2]["overrides"] == {"experiments_dir": str(tmp_path / "curriculum")}
 
     processes.finish("step-3")
     finalizer.scan()

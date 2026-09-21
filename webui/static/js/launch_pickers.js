@@ -8,7 +8,7 @@ class DatasetPicker {
     runs:         { endpoint: "/api/fs/runs",     key: "runs",     noun: "runs",     hint: "nothing selected = every run is processed",     badge: (d) => (d.n_seeds ? (d.own_inference ? { text: "seed report", tone: "ok" } : { text: "no seed report", tone: "warn" }) : !d.has_checkpoint ? { text: "no checkpoint", tone: "warn" } : d.has_inference ? { text: "inferred", tone: "ok" } : null) },
     runs_compare: { endpoint: "/api/fs/runs",     key: "runs",     noun: "runs",     hint: "select 2 or more runs to compare",            params: "units=1", badge: (d) => (d.n_seeds ? { text: `${d.n_seeds} seed${d.n_seeds > 1 ? "s" : ""}`, tone: d.has_inference ? "ok" : "warn" } : d.has_inference ? { text: "inferred", tone: "ok" } : { text: "no inference", tone: "warn" }) },
     run_groups:   { endpoint: "/api/fs/run_groups", key: "groups", noun: "groups",   hint: "nothing selected = runs_dir itself is treated as one seed group", badge: (d) => ({ text: `${d.n_runs} runs`, tone: d.n_runs >= 2 ? "ok" : "warn" }) },
-    experiments:  { endpoint: "/api/fs/experiments", key: "experiments", noun: "experiments", hint: "nothing selected = every experiment is mailed", badge: (d) => ({ text: `${d.n_comparisons} comparison${d.n_comparisons === 1 ? "" : "s"}`, tone: d.n_comparisons >= 1 ? "ok" : "warn" }) },
+    experiments:  { endpoint: "/api/fs/experiments", key: "experiments", noun: "experiments", hint: "nothing selected = every experiment found is mailed; missing seed aggregates and comparisons are written first", badge: (d) => ({ text: `${d.kind} · ${d.n_trials} trial${d.n_trials === 1 ? "" : "s"} · ${d.n_comparisons ? `${d.n_comparisons} comparison${d.n_comparisons === 1 ? "" : "s"}` : "no comparison yet"}`, tone: d.n_comparisons >= 1 ? "ok" : "warn" }) },
     param_trials: { endpoint: "/api/fs/param_trials", key: "trials", noun: "trials", hint: "select 2 or more trials to compare across datasets", badge: (d) => (d.dataset ? { text: d.dataset, tone: "ok" } : null) },
   };
 
@@ -502,7 +502,7 @@ class DatasetPicker {
     const picked = this.items.filter((d) => this.selected.has(d.name)).length;
 
     this.count.textContent = picked || this.stale.length ? `${picked + this.stale.length} of ${this.items.length + this.stale.length} selected` : `all ${this.items.length} ${mode.noun}`;
-    this.hint.textContent = this.stale.length ? `kept ${this.stale.join(", ")}: not under ${this.baseLabel}` : picked ? "" : mode.hint;
+    this.hint.textContent = this.stale.length ? `kept ${this.stale.join(", ")}: not under ${this.baseLabel}` : picked ? "" : (this.spec.hint || mode.hint);
     if (this.dropBtn) this.dropBtn.hidden = !this.stale.length;
     this.board.classList.toggle("is-dirty", this.view.dirty[this.leaf.path] !== undefined);
   }

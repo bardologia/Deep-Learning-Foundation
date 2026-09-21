@@ -132,9 +132,10 @@ class FinalizeChain:
         """Returns the launch overrides of one chain step.
 
         The comparison steps run over every unit of the experiment directory,
-        and the mailing step scans that directory's parent restricted to this
-        experiment. Every step is read against the unit runs first, so a run
-        that wrote no sweep stops the chain instead of mailing an empty bundle.
+        and the mailing step is pointed at that directory itself, which the
+        mailer resolves to the one experiment it is. Every step is read against
+        the unit runs first, so a run that wrote no sweep stops the chain
+        instead of mailing an empty bundle.
         A sequence execution stages its bundle inside its own workspace so
         blocks of other executions never overwrite the same staging archive; a
         run launched on its own stages where the mail entry config points.
@@ -154,7 +155,7 @@ class FinalizeChain:
         if step == "compare_trials":
             return {"runs_dir": experiment_dir, "run_tags": ", ".join(names)}
 
-        overrides = {"experiments_dir": str(Path(experiment_dir).parent), "experiment_filter": Path(experiment_dir).name}
+        overrides = {"experiments_dir": experiment_dir}
         if run_dir:
             overrides["staging_dir"] = str(Path(run_dir) / self.STAGING_DIRNAME)
 
