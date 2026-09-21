@@ -1250,20 +1250,20 @@ class PatchSizeTrialPlanner:
 
 
 class SecondaryTrialPlanner:
-    """Plans runs over subsets of secondary tracks drawn by a selection strategy.
+    """Plans runs over subsets of secondary channels drawn by a selection strategy.
 
     Subsets are drawn randomly (`uniform`, `gaussian`), swept as sliding blocks
-    of the track order (`consecutive`, `spaced`), or enumerated in full
-    (`exhaustive`). Tracks named in `trials.fixed` join every subset and leave
-    the swept pool, so `n_secondaries` counts only the tracks the strategy picks
-    on top of them: one fixed track and `n_secondaries` of 1 under `exhaustive`
-    pairs that track with every other secondary of the stack, one run each.
+    of the channel order (`consecutive`, `spaced`), or enumerated in full
+    (`exhaustive`). Channels named in `trials.fixed` join every subset and leave
+    the swept pool, so `n_secondaries` counts only the channels the strategy picks
+    on top of them: one fixed channel and `n_secondaries` of 1 under `exhaustive`
+    pairs that channel with every other secondary of the stack, one run each.
 
     Attributes:
         trials     : Secondary trial configuration carrying the strategy and its parameters.
-        candidates : Secondary track labels available in the dataset, in acquisition order.
-        fixed      : Track labels held in every subset, in acquisition order.
-        pool       : Track labels the strategy draws from, the candidates minus the fixed ones.
+        candidates : Secondary channel labels available in the dataset, in acquisition order.
+        fixed      : Channel labels held in every subset, in acquisition order.
+        pool       : Channel labels the strategy draws from, the candidates minus the fixed ones.
     """
 
     STRATEGIES   = ("uniform", "gaussian", "consecutive", "spaced", "exhaustive")
@@ -1274,7 +1274,7 @@ class SecondaryTrialPlanner:
 
         Args:
             trials     : Configuration object naming the strategy and its parameters.
-            candidates : Secondary track labels available in the dataset.
+            candidates : Secondary channel labels available in the dataset.
 
         Raises:
             ValueError : On a repeated candidate label, an unknown or repeated fixed label, an unknown strategy or a parameter that is out of range for the chosen strategy.
@@ -1309,27 +1309,27 @@ class SecondaryTrialPlanner:
         """Checks the strategy name and the parameters it requires.
 
         Raises:
-            ValueError : On a candidate list naming one track twice, a fixed label that is unknown or repeated, an unknown strategy, a secondary count outside [1, len(pool)], a missing Gaussian mean or sigma, or a non-positive trial count, block step or spacing.
+            ValueError : On a candidate list naming one channel twice, a fixed label that is unknown or repeated, an unknown strategy, a secondary count outside [1, len(pool)], a missing Gaussian mean or sigma, or a non-positive trial count, block step or spacing.
         """
         t = self.trials
 
         repeated = sorted({label for label in self.candidates if self.candidates.count(label) > 1})
         if repeated:
-            raise ValueError(f"Secondary candidates name {repeated} more than once, so a subset could pair a track with itself; every track must appear once, regenerate the channel labels")
+            raise ValueError(f"Secondary candidates name {repeated} more than once, so a subset could pair a channel with itself; every channel must appear once, regenerate the dataset's channel labels")
 
         unknown = [label for label in t.fixed if label not in self.candidates]
         if unknown:
-            raise ValueError(f"secondary_trials.fixed names {unknown}, which are not secondary tracks of this dataset; candidates are {self.candidates}")
+            raise ValueError(f"secondary_trials.fixed names {unknown}, which are not secondary channels of this dataset; candidates are {self.candidates}")
 
         repeated_fixed = sorted({label for label in t.fixed if list(t.fixed).count(label) > 1})
         if repeated_fixed:
-            raise ValueError(f"secondary_trials.fixed names {repeated_fixed} more than once; every fixed track must appear once")
+            raise ValueError(f"secondary_trials.fixed names {repeated_fixed} more than once; every fixed channel must appear once")
 
         if t.strategy not in self.STRATEGIES:
             raise ValueError(f"Unknown secondary_trials.strategy '{t.strategy}', expected one of {self.STRATEGIES}")
 
         if not 1 <= t.n_secondaries <= len(self.pool):
-            raise ValueError(f"secondary_trials.n_secondaries={t.n_secondaries} counts the swept tracks and must be in [1, {len(self.pool)}], the tracks left to sweep are {self.pool} and the fixed ones are {self.fixed}")
+            raise ValueError(f"secondary_trials.n_secondaries={t.n_secondaries} counts the swept channels and must be in [1, {len(self.pool)}], the channels left to sweep are {self.pool} and the fixed ones are {self.fixed}")
 
         if t.strategy in ("uniform", "gaussian") and t.n_trials < 1:
             raise ValueError(f"secondary_trials.n_trials={t.n_trials} must be >= 1 for strategy '{t.strategy}'")
@@ -1344,7 +1344,7 @@ class SecondaryTrialPlanner:
             raise ValueError(f"secondary_trials.spacing={t.spacing} must be >= 1")
 
     def summary(self) -> dict:
-        """Returns the strategy, swept subset size, fixed tracks and candidate pool, plus the run count when exhaustive."""
+        """Returns the strategy, swept subset size, fixed channels and candidate pool, plus the run count when exhaustive."""
         exhaustive = self.trials.strategy == "exhaustive"
 
         summary = {
@@ -1360,7 +1360,7 @@ class SecondaryTrialPlanner:
         return summary
 
     def _pick(self, indices) -> list[str]:
-        """Returns the fixed labels plus the pool labels at the given indices, in track order."""
+        """Returns the fixed labels plus the pool labels at the given indices, in channel order."""
         chosen = set(self.fixed).union(self.pool[index] for index in indices)
 
         return [label for label in self.candidates if label in chosen]
@@ -1483,7 +1483,7 @@ class SecondaryTrialPlanner:
             raise RuntimeError(f"Found only {len(selections)} of {self.trials.n_trials} distinct secondary sets after {self.MAX_ATTEMPTS} attempts; lower n_trials, widen sigma or change strategy")
 
     def plan(self) -> list[tuple[str, dict]]:
-        """Returns one `(run_name, overrides)` pair per secondary-track subset of the strategy, each subset carrying the fixed tracks."""
+        """Returns one `(run_name, overrides)` pair per secondary-channel subset of the strategy, each subset carrying the fixed channels."""
         selections = getattr(self, f"_{self.trials.strategy}")()
 
         plans = []
