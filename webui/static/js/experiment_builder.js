@@ -333,7 +333,7 @@ class ExperimentBuilder {
         const count    = sampled ? `${b._secondaryEffective("n_trials")} trials` : "trial count set by the stack";
         return `${strategy}, ${b._secondaryEffective("n_secondaries")} secondaries${held}, ${count}${b._seedsSuffix(null)}${gpus}`;
       },
-      pattern   : (b, model) => ({ text: `${model}_sec-${b._strategy()}-tNN_<labels>`, note: b._secondaryFixed().length ? "one per selection, labels resolved from the dataset stack, each name carrying the fixed tracks too" : "one per selection, labels resolved from the dataset stack" }) },
+      pattern   : (b, model) => ({ text: `${model}_sec-${b._strategy()}-tNN_<labels>`, note: b._secondaryFixed().length ? "one per selection, labels resolved from the dataset stack, each name carrying the fixed channels too" : "one per selection, labels resolved from the dataset stack" }) },
 
     { group: "data", key: "patch",      label: "patch",       hint: "rectangular grid of (row x range) patch shapes, same model end to end, batch rescaled to a constant pixel budget",
       at        : 1,
@@ -843,7 +843,7 @@ class ExperimentBuilder {
   static SECONDARY_FIELDS = [
     { key: "n_secondaries", strategies: ["uniform", "gaussian", "consecutive", "spaced", "exhaustive"] },
     { key: "fixed",         strategies: ["uniform", "gaussian", "consecutive", "spaced", "exhaustive"],
-      multi: { kind: "multi", wide: true, placeholder: "add track label, Enter", empty: "no fixed track, every secondary is swept" } },
+      multi: { kind: "multi", wide: true, placeholder: "add channel label, Enter", empty: "no fixed channel, every secondary is swept" } },
     { key: "n_trials",      strategies: ["uniform", "gaussian"] },
     { key: "seed",          strategies: ["uniform", "gaussian"] },
     { key: "mean",          strategies: ["gaussian"] },
@@ -1266,7 +1266,7 @@ class ExperimentBuilder {
 
     const name     = document.createElement("div");
     name.className = "cfg-edit__name";
-    name.innerHTML = `${field.key}<span>tracks in every run</span>`;
+    name.innerHTML = `${field.key}<span>channels in every run</span>`;
 
     const widget = new window.MultiValueField(this.view, leaf, field.multi).build();
 

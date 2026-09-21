@@ -321,8 +321,8 @@ def test_secondary_exhaustive_full_stack_yields_the_single_full_selection():
     assert plans[-1][1]["paths.secondary_labels"] == tuple(CANDIDATES)
 
 
-def test_secondary_exhaustive_pairs_one_fixed_track_with_every_other_candidate():
-    """Verifies a single fixed track plus one swept secondary yields one run per remaining candidate, each holding both."""
+def test_secondary_exhaustive_pairs_one_fixed_channel_with_every_other_candidate():
+    """Verifies a single fixed channel plus one swept secondary yields one run per remaining candidate, each holding both."""
     trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=1, fixed=("CH03",))
     planner = SecondaryTrialPlanner(trials, CANDIDATES)
 
@@ -336,8 +336,8 @@ def test_secondary_exhaustive_pairs_one_fixed_track_with_every_other_candidate()
     assert planner.summary()["Total runs"] == len(CANDIDATES) - 1
 
 
-def test_secondary_fixed_tracks_leave_the_swept_pool():
-    """Verifies the swept strategies never draw a fixed track again, so every trial keeps the requested swept count."""
+def test_secondary_fixed_channels_leave_the_swept_pool():
+    """Verifies the swept strategies never draw a fixed channel again, so every trial keeps the requested swept count."""
     trials  = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=2, block_step=1, fixed=("CH01", "CH06"))
     planner = SecondaryTrialPlanner(trials, CANDIDATES)
 
@@ -349,7 +349,7 @@ def test_secondary_fixed_tracks_leave_the_swept_pool():
     assert all(len(selection) == 4 for selection in selections)
 
 
-def test_secondary_rejects_a_fixed_track_outside_the_candidates():
+def test_secondary_rejects_a_fixed_channel_outside_the_candidates():
     """Verifies a fixed label the dataset does not carry is refused instead of silently dropped."""
     trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=1, fixed=("CH99",))
 
@@ -357,8 +357,8 @@ def test_secondary_rejects_a_fixed_track_outside_the_candidates():
         SecondaryTrialPlanner(trials, CANDIDATES)
 
 
-def test_secondary_rejects_more_swept_tracks_than_the_pool_left_by_the_fixed_ones():
-    """Verifies the swept count is bounded by the candidates that remain after the fixed tracks are held out."""
+def test_secondary_rejects_more_swept_channels_than_the_pool_left_by_the_fixed_ones():
+    """Verifies the swept count is bounded by the candidates that remain after the fixed channels are held out."""
     trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=len(CANDIDATES), fixed=("CH01",))
 
     with pytest.raises(ValueError, match="n_secondaries"):
@@ -390,15 +390,15 @@ def test_secondary_rejects_too_many_secondaries():
 
 
 def test_secondary_rejects_repeated_candidates():
-    """Verifies a candidate list naming one track twice is refused before any subset could pair a track with itself."""
+    """Verifies a candidate list naming one channel twice is refused before any subset could pair a channel with itself."""
     trials = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=2)
 
     with pytest.raises(ValueError, match="CH01.*more than once"):
         SecondaryTrialPlanner(trials, ["CH01", "CH01", "CH02", "CH02", "CH03"])
 
 
-def test_secondary_exhaustive_never_pairs_a_track_with_itself():
-    """Verifies every exhaustive subset holds distinct tracks and the same pair never recurs in another order."""
+def test_secondary_exhaustive_never_pairs_a_channel_with_itself():
+    """Verifies every exhaustive subset holds distinct channels and the same pair never recurs in another order."""
     trials  = SecondaryTrialsConfig(strategy="exhaustive", n_secondaries=3)
     planner = SecondaryTrialPlanner(trials, CANDIDATES)
 

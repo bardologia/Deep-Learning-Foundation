@@ -138,8 +138,8 @@ class SecondaryTrialsConfig:
 
     Attributes:
         strategy      : Rule choosing the secondaries, e.g. "consecutive".
-        n_secondaries : Number of secondary tracks the strategy picks per trial, on top of the fixed ones.
-        fixed         : Track labels present in every trial, held out of the swept pool.
+        n_secondaries : Number of secondary channels the strategy picks per trial, on top of the fixed ones.
+        fixed         : Channel labels present in every trial, held out of the swept pool.
         n_trials      : Number of track subsets drawn.
         mean          : Mean of the sampled baseline distribution in metres, or None when the strategy is deterministic.
         sigma         : Standard deviation of that distribution in metres, or None when the strategy is deterministic.
