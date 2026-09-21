@@ -1,4 +1,4 @@
-"""Recovery of a finished run's resolved entry configuration for the launch pages.
+"""Recovery of a run's recorded configuration for the launch pages and the job lines.
 
 Backs the "copy configs from a previous run" control: lists the run directories
 under a root that carry a resolved config file, and reads one such file back as
@@ -6,7 +6,9 @@ dotted config paths with values rendered by the shared ``ConfigValueRenderer``,
 exactly as the config resolver renders defaults, so the launch form can diff them
 against its leaves. The identity and lifecycle fields that name the source run
 are withheld, so copying a configuration never points the new launch at the run
-it was copied from.
+it was copied from. Also finds the recording a launch with ``resume_from`` set
+will load, so a job can be described by the settings it will really run with
+rather than by the defaults of its entry point.
 """
 
 from __future__ import annotations
@@ -143,3 +145,78 @@ class RunConfigReader:
 
         self.logger.info(f"run configs: read {len(rendered)} fields from {found}, {len(identity)} identity fields withheld")
         return {"ok": True, "run": run_dir.name, "source": str(found.relative_to(run_dir)), "config": rendered, "identity": identity}
+
+
+class ResumeRecording:
+    """The configuration recording a resumed launch reads back, found from the pasted path.
+
+    A launch with ``resume_from`` set runs on the configuration its target
+    recorded, not on the entry point's defaults, so anything describing that
+    launch beforehand has to read the same file the entry point will. The
+    locators that own where each kind of recording lives are reused rather than
+    their paths repeated here.
+
+    Attributes:
+        MAX_CLIMB : Deepest number of parent directories searched above the pasted path.
+    """
+
+    MAX_CLIMB = 8
+
+    @staticmethod
+    def locate(raw_path: str) -> Path | None:
+        """Returns the recording a resume of the path reads, or None when no directory at or above it holds one.
+
+        A run's own resolved entry config wins over any recording above it, as
+        it does in the resume itself; otherwise the staged pipeline recording,
+        the training sweep recording and the tuning recording are probed at the
+        path and at each parent.
+
+        Args:
+            raw_path : Path pasted into ``resume_from``.
+
+        Returns:
+            Path of the recording, or None.
+        """
+        from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
+        from pipelines.shared.orchestration.resumed_run    import StagedRunLocator, TuningRunLocator
+        from pipelines.shared.training.resume_source       import SweepRecording
+
+        target = Path(raw_path).expanduser() if raw_path else None
+        if target is None or not target.is_dir():
+            return None
+
+        own = ResolvedEntryConfigWriter.path_for(target)
+        if own.is_file():
+            return own
+
+        for candidate in (target, *list(target.parents)[: ResumeRecording.MAX_CLIMB]):
+            for probe in (StagedRunLocator.config_path(candidate), SweepRecording.path(candidate), TuningRunLocator.config_path(candidate)):
+                if probe.is_file():
+                    return probe
+
+        return None
+
+    @staticmethod
+    def values(raw_path: str) -> dict:
+        """Returns the recorded configuration as dotted paths to rendered strings, empty when the path records none.
+
+        Args:
+            raw_path : Path pasted into ``resume_from``.
+
+        Returns:
+            Mapping of dotted config path to rendered value, rendered the way
+            the config resolver renders defaults so the two can be mixed.
+        """
+        found = ResumeRecording.locate(raw_path)
+        if found is None:
+            return {}
+
+        try:
+            mapping = json.loads(found.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+        if not isinstance(mapping, dict):
+            return {}
+
+        return {str(path): ConfigValueRenderer.render(value) for path, value in mapping.items()}

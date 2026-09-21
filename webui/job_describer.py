@@ -8,6 +8,7 @@ shown in the console, the launch queue and job notifications.
 from __future__ import annotations
 
 from project_paths          import ProjectPaths
+from run_config_reader      import ResumeRecording
 from script_config_resolver import ScriptConfigResolver
 
 
@@ -42,95 +43,107 @@ class JobDescriber:
 
     SPECS = {
         "generate_dataset": [
-            ("output",  "synthesis.output_directory", "opt_tail"),
-            ("crop",    "synthesis.global_crop",      "text"),
-            ("K",       "synthesis.k_max",            "text"),
-            ("params",  "synthesis.params_run_name",  "opt"),
-            ("seed",    "synthesis.seed",             "text"),
+            ("output", "synthesis.output_directory", "opt_tail"),
+            ("crop",   "synthesis.global_crop",      "text"),
+            ("K",      "synthesis.k_max",            "text"),
+            ("params", "synthesis.params_run_name",  "opt"),
+            ("seed",   "synthesis.seed",             "text"),
         ],
         "extract_params": [
-            ("datasets",  "dataset_filter",     "list", "all datasets"),
-            ("K",         "fit_k_values",       "list"),
-            ("lambda",    "fit_lambda_values",  "list"),
-            ("modes",     "fit_modes",          "list"),
-            ("suffix",    "output_suffix",      "opt"),
+            ("datasets", "dataset_filter",    "list", "all datasets"),
+            ("K",        "fit_k_values",      "list"),
+            ("lambda",   "fit_lambda_values", "list"),
+            ("modes",    "fit_modes",         "list"),
+            ("suffix",   "output_suffix",     "opt"),
         ],
         "train_backbone": [
-            ("dataset",         "paths.dataset_path",    "opt_tail"),
-            ("params",          "paths.parameters_path", "opt_tail"),
+            ("dataset",          "paths.dataset_path",    "opt_tail"),
+            ("params",           "paths.parameters_path", "opt_tail"),
             ("patch",            "training.patch_size",   "text"),
             ("epochs",           "training.epochs",       "text"),
             ("run",              "run_name",              "opt"),
+            ("resuming",         "resume_from",           "opt_tail"),
             ("inference after",  "infer_after",           "flag"),
             ("inference at end", "infer_at_end",          "flag"),
         ],
         "train_dual": [
-            ("params input",     "params_input",          "list"),
-            ("existence input",  "existence_input",       "list"),
-            ("dataset",          "paths.dataset_path",    "opt_tail"),
-            ("epochs",           "training.epochs",       "text"),
-            ("run",              "run_name",              "opt"),
-            ("inference after",  "infer_after",           "flag"),
-            ("inference at end", "infer_at_end",          "flag"),
+            ("params input",     "params_input",       "list"),
+            ("existence input",  "existence_input",    "list"),
+            ("dataset",          "paths.dataset_path", "opt_tail"),
+            ("epochs",           "training.epochs",    "text"),
+            ("run",              "run_name",           "opt"),
+            ("resuming",         "resume_from",        "opt_tail"),
+            ("inference after",  "infer_after",        "flag"),
+            ("inference at end", "infer_at_end",       "flag"),
         ],
         "train_profile_autoencoder": [
-            ("model",   "ae_model_name",          "text"),
-            ("params",  "paths.parameters_path",  "opt_tail"),
-            ("epochs",  "training.epochs",        "text"),
-            ("run",     "run_name",               "opt"),
+            ("model",    "ae_model_name",         "text"),
+            ("params",   "paths.parameters_path", "opt_tail"),
+            ("epochs",   "training.epochs",       "text"),
+            ("run",      "run_name",              "opt"),
+            ("resuming", "resume_from",           "opt_tail"),
         ],
         "train_image_autoencoder": [
-            ("model",   "ae_model_name",          "text"),
-            ("dataset", "paths.dataset_path",     "opt_tail"),
-            ("epochs",  "training.epochs",        "text"),
-            ("run",     "run_name",               "opt"),
+            ("model",    "ae_model_name",      "text"),
+            ("dataset",  "paths.dataset_path", "opt_tail"),
+            ("epochs",   "training.epochs",    "text"),
+            ("run",      "run_name",           "opt"),
+            ("resuming", "resume_from",        "opt_tail"),
         ],
         "train_jepa": [
-            ("dataset",          "paths.dataset_path",    "opt_tail"),
-            ("epochs",           "training.epochs",       "text"),
-            ("run",              "run_name",              "opt"),
-            ("inference after",  "infer_after",           "flag"),
-            ("inference at end", "infer_at_end",          "flag"),
+            ("dataset",          "paths.dataset_path", "opt_tail"),
+            ("epochs",           "training.epochs",    "text"),
+            ("run",              "run_name",           "opt"),
+            ("resuming",         "resume_from",        "opt_tail"),
+            ("inference after",  "infer_after",        "flag"),
+            ("inference at end", "infer_at_end",       "flag"),
         ],
         "infer_backbone": [
-            ("root",   "runs_dir",        "opt_tail"),
-            ("filter", "run_filter",      "list", "all runs"),
-            ("split",  "inference.split", "text"),
-            ("gpus",   "gpus",            "list"),
+            ("root",                  "runs_dir",        "opt_tail"),
+            ("filter",                "run_filter",      "list", "all runs"),
+            ("split",                 "inference.split", "text"),
+            ("gpus",                  "gpus",            "list"),
+            ("rescoring scored runs", "skip_completed",  "unflag"),
         ],
         "infer_dual": [
-            ("root",   "runs_dir",        "opt_tail"),
-            ("filter", "run_filter",      "list", "all runs"),
-            ("split",  "inference.split", "text"),
-            ("gpus",   "gpus",            "list"),
+            ("root",                  "runs_dir",        "opt_tail"),
+            ("filter",                "run_filter",      "list", "all runs"),
+            ("split",                 "inference.split", "text"),
+            ("gpus",                  "gpus",            "list"),
+            ("rescoring scored runs", "skip_completed",  "unflag"),
         ],
         "infer_profile_autoencoder": [
-            ("root",   "runs_dir",   "opt_tail"),
-            ("filter", "run_filter", "list", "all runs"),
-            ("gpus",   "gpus",       "list"),
+            ("root",                  "runs_dir",       "opt_tail"),
+            ("filter",                "run_filter",     "list", "all runs"),
+            ("gpus",                  "gpus",           "list"),
+            ("rescoring scored runs", "skip_completed", "unflag"),
         ],
         "infer_image_autoencoder": [
-            ("root",   "runs_dir",   "opt_tail"),
-            ("filter", "run_filter", "list", "all runs"),
-            ("gpus",   "gpus",       "list"),
+            ("root",                  "runs_dir",       "opt_tail"),
+            ("filter",                "run_filter",     "list", "all runs"),
+            ("gpus",                  "gpus",           "list"),
+            ("rescoring scored runs", "skip_completed", "unflag"),
         ],
         "benchmark": [
-            ("heads",  "heads",                 "list"),
-            ("losses", "sweep_loss_components", "list"),
-            ("seeds",  "seeds",                 "list"),
-            ("gpus",   "gpus",                  "list"),
-            ("tag",    "run_tag",               "opt"),
+            ("heads",    "heads",                 "list"),
+            ("losses",   "sweep_loss_components", "list"),
+            ("seeds",    "seeds",                 "list"),
+            ("gpus",     "gpus",                  "list"),
+            ("tag",      "run_tag",               "opt"),
+            ("resuming", "resume_from",           "opt_tail"),
         ],
         "cross_validate": [
-            ("seeds", "seeds",   "list"),
-            ("gpus",  "gpus",    "list"),
-            ("tag",   "run_tag", "opt"),
+            ("seeds",    "seeds",       "list"),
+            ("gpus",     "gpus",        "list"),
+            ("tag",      "run_tag",     "opt"),
+            ("resuming", "resume_from", "opt_tail"),
         ],
         "tune": [
             ("trials",       "tuning.n_trials", "text"),
             ("epochs/trial", "tuning.n_epochs", "text"),
             ("heads",        "heads",           "list"),
             ("tag",          "run_tag",         "opt"),
+            ("resuming",     "resume_from",     "opt_tail"),
         ],
         "tune_dataloader": [
             ("model",       "model_name",  "opt"),
@@ -259,8 +272,30 @@ class JobDescriber:
             if resolved.get("ok"):
                 values = {leaf["path"]: str(leaf["value"]) for leaf in resolved["leaves"]}
 
+        values.update(self._recorded(overrides))
         values.update({path: str(value) for path, value in overrides.items()})
+
         return values
+
+    def _recorded(self, overrides: dict) -> dict:
+        """Returns the configuration a resumed launch loads back, empty when the launch resumes nothing.
+
+        A resume runs on what its target recorded, so those values sit between
+        the entry point's defaults and the overrides typed for this launch.
+        Describing the job from the defaults alone would name a fold count, a
+        seed set or a trial mode the run will not use.
+
+        Args:
+            overrides : Dotted config path to value pairs set at launch time.
+
+        Returns:
+            Mapping of dotted config path to rendered value.
+        """
+        resume_from = str(overrides.get("resume_from", "")).strip()
+        if not resume_from:
+            return {}
+
+        return ResumeRecording.values(resume_from)
 
     def _lead_train_backbone(self, values: dict, used: set) -> list[str]:
         """Returns the training mode and backbone-head phrases for a backbone run.
@@ -476,7 +511,7 @@ class JobDescriber:
         Args:
             label    : Prefix shown before the value; empty renders the value alone.
             value    : Stringified config value, or ``None`` when the path is absent.
-            kind     : Spec kind, one of ``flag``, ``list``, ``tail``, ``opt_tail``, ``opt`` or ``text``.
+            kind     : Spec kind, one of ``flag``, ``unflag``, ``list``, ``tail``, ``opt_tail``, ``opt`` or ``text``.
             fallback : Text used for an unset list, e.g. ``"all runs"``.
 
         Returns:
@@ -484,6 +519,9 @@ class JobDescriber:
         """
         if kind == "flag":
             return label if value is not None and self._truthy(value) else None
+
+        if kind == "unflag":
+            return label if value is not None and not self._truthy(value) else None
 
         if value is None or not self._is_set(value):
             if kind == "list" and fallback and value is not None:
