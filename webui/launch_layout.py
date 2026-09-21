@@ -98,6 +98,7 @@ class LaunchLayout:
     NUM_DPI      = {"kind": "number", "int": True, "min": 72, "max": 600, "presets": [110, 150, 300, 600]}
 
     CH_AE_MODE      = {"kind": "choice", "options": ["frozen", "finetune"]}
+    CH_STAGE        = {"kind": "choice", "options": ["full", "prepare", "compare"]}
     CH_TRUNK        = {"kind": "choice", "options": [
         "unet", "unet_skip", "resunet", "attention_unet", "unetplusplus", "linknet",
         "swin_unet", "transunet", "unetr", "deeplabv3plus", "segformer", "convnext_unet",
@@ -927,11 +928,12 @@ class LaunchLayout:
                 "seeds",
                 "resume",
                 {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "paths.log_base_dir"}},
+                {"path": "stage", "widget": CH_STAGE},
                 "poll_interval_s",
             ],
             "sections": [
                 {"key": "sweep", "title": "Sweep", "panels": [
-                    {"kind": "hidden", "fields": ["gpus_file", "stage"]},
+                    {"kind": "hidden", "fields": ["gpus_file"]},
                     {"kind": "special", "panel": "model_toggle", "fields": ["skip_models"]},
                     {"kind": "fields", "note": "Output heads and loss components shape backbone sweeps only; JEPA and profile AE arms ignore both, and every JEPA arm trains the conv head.", "groups": [
                         {"title": "Output heads",    "fields": [{"gateOn": {"field": "training_type", "in": ["backbone"]}, "fields": [{"path": "heads", "widget": MULTI_HEADS}]}]},
@@ -994,6 +996,7 @@ class LaunchLayout:
                 "seeds",
                 "resume",
                 {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "paths.log_base_dir"}},
+                {"path": "stage", "widget": CH_STAGE},
                 "poll_interval_s",
             ],
             "sections": [
@@ -1019,7 +1022,7 @@ class LaunchLayout:
                     {"kind": "fields", "groups": [{"title": "Architecture overrides", "fields": ["model_overrides"]}]},
                 ]},
                 {"key": "folds", "title": "Folds", "panels": [
-                    {"kind": "hidden", "fields": ["gpus_file", "stage"]},
+                    {"kind": "hidden", "fields": ["gpus_file"]},
                     {"kind": "fields", "groups": [
                         {"title": "Fold layout", "fields": ["folds.n_folds", "folds.row_start", "folds.row_end", "folds.guard"]},
                     ]},
@@ -1068,6 +1071,7 @@ class LaunchLayout:
             "essentials": [
                 "run_tag",
                 {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "paths.log_base_dir"}},
+                {"path": "stage", "widget": CH_STAGE},
                 {"path": "gpus", "widget": GPU_MANY},
                 {"path": "n_workers", "widget": NUM_WORKERS},
                 {"path": "paths.dataset_path", "widget": PICK_DATASET},
@@ -1075,7 +1079,7 @@ class LaunchLayout:
             ],
             "sections": [
                 {"key": "search", "title": "Search", "panels": [
-                    {"kind": "hidden", "fields": ["gpus_file", "stage"]},
+                    {"kind": "hidden", "fields": ["gpus_file"]},
                     {"kind": "special", "panel": "model_toggle", "fields": ["skip_models"]},
                     {"kind": "fields", "title": "Optuna search", "groups": [
                         {"title": "Output heads", "fields": [

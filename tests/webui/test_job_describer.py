@@ -290,3 +290,13 @@ def test_rescoring_is_named_only_when_completed_runs_are_not_skipped():
 
     assert "rescoring scored runs" not in describer.describe("infer_backbone", "py", {})
     assert "rescoring scored runs" in describer.describe("infer_backbone", "py", {"skip_completed": "False"})
+
+
+def test_a_non_default_stage_is_named_and_the_full_stage_is_not():
+    """The job line names a prepare or compare stage and stays silent on a full run."""
+    leaves    = [{"path": "seeds", "value": "[0]"}, {"path": "stage", "value": "full"}]
+    describer = _describer({"cross_validate": leaves})
+
+    assert "stage" not in describer.describe("cross_validate", "py", {})
+    assert "stage prepare" in describer.describe("cross_validate", "py", {"stage": "prepare"})
+    assert "stage compare" in describer.describe("cross_validate", "py", {"stage": "compare"})

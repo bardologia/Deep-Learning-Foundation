@@ -2026,7 +2026,7 @@
       "summary": "Top-level settings orchestrating a multi-model benchmark sweep through size-matching, training, inference, and comparison stages",
       "fields": {
         "training_type": "pipeline family the sweep trains: backbone, profile_autoencoder, or jepa, gating which stages run",
-        "stage": "portion of the pipeline to run: full does everything, prepare stops after size match and max batch, compare runs the comparison report only; the terrabyte fan-out uses prepare and compare as its first and last SLURM jobs",
+        "stage": "portion of the pipeline to run: full does everything, prepare stops after size match and max batch, compare runs the comparison report only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "paths": "RunPathsConfig sub-config holding the dataset, extracted-parameters, and benchmark run/output directories",
         "max_batch": "MaxBatchConfig sub-config for the maximum-batch-size probe, run for every training type through the family-matched probe context",
         "find_lr": "FindLrConfig sub-config for the LR range test run inside the max-batch probe jobs of every training type",
@@ -2071,7 +2071,7 @@
       "summary": "Top-level config orchestrating k-fold training, inference, and comparison across row folds",
       "fields": {
         "training_type": "Model family trained per fold: backbone, dual, jepa, profile_autoencoder, or image_autoencoder, dispatched in FoldTrainingWorker.run",
-        "stage": "portion of the pipeline to run: full does everything, prepare stops after validating the fold plan and writing the resolved config, compare runs the cross-fold reports only; the terrabyte fan-out uses prepare and compare as its first and last SLURM jobs",
+        "stage": "portion of the pipeline to run: full does everything, prepare stops after validating the fold plan and writing the resolved config, compare runs the cross-fold reports only; prepare also lists every unit with what it already holds, which is how a resume is checked before anything launches",
         "backbone_name": "Backbone architecture identifier resolved via ModelBuilder's registry, e.g. resunet",
         "backbone_head": "Output head built on the selected backbone (conv, multihead, per_gaussian, or set_pred); stored in the model config and restored at inference",
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone or autoencoder before instantiation, shared across all folds",
