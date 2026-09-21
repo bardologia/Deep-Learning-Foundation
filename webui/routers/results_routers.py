@@ -78,7 +78,7 @@ class DatasetRouter(SubRouter):
 
     def runs(self, exchange: HttpExchange) -> None:
         """Answers with the runs under the requested bases, optionally split into seed units."""
-        exchange.send_result(self.datasets.runs(exchange.texts("base"), seed_units=exchange.text("units", "0") == "1"))
+        exchange.send_result(self.datasets.runs(exchange.texts("base"), seed_units=exchange.text("units", "0") == "1", split=exchange.text("split", "")))
 
     def run_groups(self, exchange: HttpExchange) -> None:
         """Answers with the run directories grouped by their parent trial."""

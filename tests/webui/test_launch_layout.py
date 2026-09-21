@@ -66,6 +66,41 @@ def test_training_layout_claims_every_config_field_exactly_once(key, flow_config
     LaunchLayout().build(key, leaves)
 
 
+_WIDGET_REFERENCES = ("baseFrom", "splitFrom", "markerFrom", "datasetFrom")
+
+
+def _widget_references(layout: dict) -> list[tuple[str, str, str]]:
+    """Returns every (field path, reference name, referenced path) a layout's widgets declare.
+
+    Args:
+        layout : Expanded layout of one script page.
+
+    Returns:
+        One triple per cross-reference found in an essentials or panel widget.
+    """
+    found = []
+    for entry in layout.get("essentials", []):
+        if not isinstance(entry, dict):
+            continue
+
+        widget = entry.get("widget") or {}
+        for name in _WIDGET_REFERENCES:
+            if widget.get(name):
+                found.append((entry["path"], name, widget[name]))
+
+    return found
+
+
+@pytest.mark.parametrize("key, flow_config", _TRAINING_PAGES + _INFERENCE_PAGES)
+def test_every_widget_reference_names_a_real_field(key, flow_config):
+    """A picker that reads its base, split or marker from another field must name a field that exists."""
+    paths  = {path for path, _value in ConfigCli._leaves(flow_config())}
+    layout = getattr(LaunchLayout, f"{key.upper()}_LAYOUT", None) or LaunchLayout.LAYOUTS[key]
+
+    for field, reference, target in _widget_references(layout):
+        assert target in paths, f"{key}: {field} reads {reference} from '{target}', which is not a field of {flow_config.__name__}"
+
+
 @pytest.mark.parametrize("key, flow_config", _INFERENCE_PAGES)
 def test_inference_layout_claims_every_config_field_exactly_once(key, flow_config):
     """Every inference page layout claims each field of its entry config exactly once."""

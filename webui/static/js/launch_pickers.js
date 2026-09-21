@@ -126,6 +126,10 @@ class DatasetPicker {
       await this._fetchRuns(this._base(), seq);
       return;
     }
+    if (this.spec.mode === "resume_runs") {
+      await this._fetchResumeRuns(this._base(), seq);
+      return;
+    }
     await this._fetchDatasets(this._base(), seq);
   }
 
@@ -151,6 +155,27 @@ class DatasetPicker {
     if (this.spec.checkpointOnly) items = items.filter((r) => r.has_checkpoint);
     this.note.textContent = items.length ? `${items.length} run${items.length > 1 ? "s" : ""} in ${res.base}` : `no completed runs in ${res.base}`;
     this._renderSingleOptions(items.map((r) => ({ value: r.name, label: r.name + (r.has_checkpoint ? "" : "  (no checkpoint)") })));
+  }
+
+  async _fetchResumeRuns(base, seq) {
+    if (!base) {
+      this.note.textContent = "set a log directory first, or type the run path";
+      this._renderSingleOptions([]);
+      return;
+    }
+    this.note.textContent = "listing...";
+    const res = await Api.get(`/api/run-config/runs?base=${encodeURIComponent(base)}`);
+    if (this._singleStale(seq)) return;
+    if (!res.ok) {
+      this.note.textContent = res.error || "could not list runs";
+      this._renderSingleOptions([]);
+      return;
+    }
+    const items = res.runs || [];
+    this.note.textContent = items.length
+      ? `${items.length} run${items.length > 1 ? "s" : ""} under ${res.base} recorded a configuration to finish from`
+      : `no run under ${res.base} recorded a configuration; type the path if it lives elsewhere`;
+    this._renderSingleOptions(items.map((r) => ({ value: r.path, label: `${r.name}  (${r.source})` })));
   }
 
   async _fetchDatasets(base, seq) {
@@ -298,6 +323,9 @@ class DatasetPicker {
     if (this.spec.markerFrom) {
       this.view._onDependency(this.spec.markerFrom, () => this._scheduleReload());
     }
+    if (this.spec.splitFrom) {
+      this.view._onDependency(this.spec.splitFrom, () => this._scheduleReload());
+    }
 
     this._loadMulti();
   }
@@ -330,6 +358,10 @@ class DatasetPicker {
     if (this.spec.markerFrom) {
       const markerLeaf = this.view._leafByPath(this.spec.markerFrom);
       parts.push(`marker=${encodeURIComponent(markerLeaf ? this.view._effective(markerLeaf) : "")}`);
+    }
+    if (this.spec.splitFrom) {
+      const splitLeaf = this.view._leafByPath(this.spec.splitFrom);
+      parts.push(`split=${encodeURIComponent(splitLeaf ? this.view._effective(splitLeaf) : "")}`);
     }
 
     const res = await Api.get(`${mode.endpoint}?${parts.join("&")}`);
