@@ -50,6 +50,10 @@ class FoldCollector(TrialCollector):
         self.training_type   = training_type
         self.seed_dispersion = {}
 
+    def _run_dirs(self) -> list[tuple[str, Path]]:
+        """Returns the fold runs, leaving out directories under the folds directory that are no fold, such as comparison stamps."""
+        return [(name, run_dir) for name, run_dir in super()._run_dirs() if FoldNaming.is_fold(FoldNaming.base(name))]
+
     def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
         """Returns the empty completion index and the training-results index of the runs."""
         return {}, TrainingResultsIndex(self.pipeline_dir, self.logger).build(runs)

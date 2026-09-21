@@ -648,7 +648,7 @@ class ComparisonStage(ExperimentStage):
         embed_images    : Whether figures are embedded into the reports.
     """
 
-    def __init__(self, config, run_tag: str, logger: Logger, reference_model: str, embed_images: bool) -> None:
+    def __init__(self, config, run_tag: str, logger: Logger, reference_model: str, embed_images: bool, run_dir: Path | None = None) -> None:
         """Stores the comparison reference and figure embedding preference.
 
         Args:
@@ -657,8 +657,9 @@ class ComparisonStage(ExperimentStage):
             logger          : Logger for the stage.
             reference_model : Model key used as comparison baseline.
             embed_images    : Whether figures are embedded into the reports.
+            run_dir         : Explicit run directory, or None to derive it from the configured log base and the run tag.
         """
-        super().__init__(config=config, run_tag=run_tag, logger=logger)
+        super().__init__(config=config, run_tag=run_tag, logger=logger, run_dir=run_dir)
         self.reference_model = reference_model
         self.embed_images    = embed_images
 

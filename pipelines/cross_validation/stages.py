@@ -2,8 +2,9 @@
 
 Holds the fold x seed unit expansion shared by the local and cluster paths, the
 reconciliation of planned units against the fold run directories through their
-manifests, the queued training and inference stages, and the report stage that
-aggregates the finished folds.
+manifests, the queued training and inference stages, the report writer and
+stage that aggregate the finished folds, and the rebuilder that writes that
+report for an existing run from its fold tree alone.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from configuration.cross_validation import CrossValidationConfig
 from pipelines.cross_validation.cv_report import CrossValidationReport
-from pipelines.cross_validation.folds             import FoldFamily, FoldPlanner, FoldRunNaming, FoldUnitManifest
+from pipelines.cross_validation.folds             import FoldFamily, FoldPlanner, FoldRunNaming, FoldTreeSurvey, FoldUnitManifest
 from pipelines.cross_validation.workers           import FoldCollector
 from pipelines.shared.orchestration.unit_manifest import UnitLedger
 from pipelines.shared.training.seed_sweep         import SeedSet
@@ -184,37 +185,42 @@ class FoldInferenceStage(FoldUnitStage, QueuedInferenceStage):
                 shutil.rmtree(candidate)
 
 
-class CrossValidationReportStage(ExperimentStage):
-    """Collects the finished folds and writes the cross-fold reports.
+class FoldReportWriter:
+    """Collects a run's folds and writes the cross-fold reports into a new stamp.
+
+    Shared by the pipeline's report stage, which describes the run from its
+    configuration, and the rebuilder, which describes it from the fold tree.
 
     Attributes:
-        planner : Planner describing the fold blocks, embedded in the report.
+        run_dir       : Cross-validation run directory holding the folds directory.
+        splits        : Dataset splits whose fold inference metrics are reported, empty to report training alone.
+        training_type : Training family the folds were trained in, deciding where their inference lives.
+        model_name    : Label of the model every fold trained.
+        planner       : Fold plan embedded in the report, from the configuration or from the stored regions.
+        embed_images  : Whether the per-split comparison pages inline their figures.
+        logger        : Logger used for progress reporting.
     """
 
-    def __init__(self, config: CrossValidationConfig, run_tag: str, planner: FoldPlanner, logger: Logger) -> None:
-        """Binds the stage to the sweep run and its fold plan.
+    def __init__(self, run_dir: Path, splits: list[str], training_type: str, model_name: str, planner, embed_images: bool, logger: Logger) -> None:
+        """Binds the writer to the run and the description of its sweep."""
+        self.run_dir       = Path(run_dir)
+        self.splits        = list(splits)
+        self.training_type = training_type
+        self.model_name    = model_name
+        self.planner       = planner
+        self.embed_images  = embed_images
+        self.logger        = logger
 
-        Args:
-            config  : Cross-validation configuration.
-            run_tag : Tag of the sweep run directory.
-            planner : Planner describing the fold blocks.
-            logger  : Logger used for progress reporting.
-        """
-        super().__init__(config=config, run_tag=run_tag, logger=logger)
-        self.planner = planner
-
-    def run(self) -> Path:
-        """Writes the reports into a timestamped directory under the sweep run.
+    def write(self) -> Path:
+        """Collects the folds and writes the reports into a timestamped directory under the run.
 
         Returns:
             Directory the reports were written to.
+
+        Raises:
+            ValueError : If a fold is missing, has no checkpoint data, or lacks metrics on a reported split.
         """
-        self.logger.section("Cross-validation reports")
-
-        splits     = self.config.inference_splits if self.config.runs_inference() else []
-        model_name = FoldFamily.model_label(self.config)
-
-        collector = FoldCollector(run_dir=self.run_dir, splits=splits, training_type=self.config.training_type, logger=self.logger)
+        collector = FoldCollector(run_dir=self.run_dir, splits=self.splits, training_type=self.training_type, logger=self.logger)
         base_records, records_by_split = collector.collect_by_split()
 
         out_dir = self.run_dir / "reports" / RunTag.now()
@@ -224,8 +230,8 @@ class CrossValidationReportStage(ExperimentStage):
             records_by_split = records_by_split,
             planner          = self.planner,
             out_dir          = out_dir,
-            model_name       = model_name,
-            embed_images     = self.config.comparison.embed_images,
+            model_name       = self.model_name,
+            embed_images     = self.embed_images,
             logger           = self.logger,
             seed_dispersion  = collector.seed_dispersion,
         )
@@ -237,3 +243,76 @@ class CrossValidationReportStage(ExperimentStage):
             self.logger.info(f"{path}")
 
         return out_dir
+
+
+class CrossValidationReportStage(ExperimentStage):
+    """Collects the finished folds and writes the cross-fold reports.
+
+    Attributes:
+        planner : Planner describing the fold blocks, embedded in the report.
+    """
+
+    def __init__(self, config: CrossValidationConfig, run_tag: str, planner: FoldPlanner, logger: Logger, run_dir: Path | None = None) -> None:
+        """Binds the stage to the sweep run and its fold plan.
+
+        Args:
+            config  : Cross-validation configuration.
+            run_tag : Tag of the sweep run directory.
+            planner : Planner describing the fold blocks.
+            logger  : Logger used for progress reporting.
+            run_dir : Explicit run directory, or None to derive it from the configured log base and the run tag.
+        """
+        super().__init__(config=config, run_tag=run_tag, logger=logger, run_dir=run_dir)
+        self.planner = planner
+
+    def run(self) -> Path:
+        """Writes the reports into a timestamped directory under the sweep run.
+
+        Returns:
+            Directory the reports were written to.
+        """
+        self.logger.section("Cross-validation reports")
+
+        splits = self.config.inference_splits if self.config.runs_inference() else []
+        writer = FoldReportWriter(run_dir=self.run_dir, splits=splits, training_type=self.config.training_type, model_name=FoldFamily.model_label(self.config), planner=self.planner, embed_images=self.config.comparison.embed_images, logger=self.logger)
+
+        return writer.write()
+
+
+class CrossValidationReportRebuilder:
+    """Writes the cross-fold report of an existing run from its fold tree alone.
+
+    Nothing beyond the folds directory is needed: the family, the model name,
+    the split regions and the scored splits are read off the fold runs, so a
+    run whose pipeline directory was never written or never copied, or that
+    sits in a sequence workspace, is reported in place. The writer aborts as the
+    pipeline's own report stage does when a fold has no checkpoint or no
+    metrics on a scored split. Figures are linked, not embedded.
+
+    Attributes:
+        run_dir : Cross-validation run directory holding the folds directory.
+        logger  : Logger used for progress reporting.
+        survey  : Reader of the fold tree.
+    """
+
+    def __init__(self, run_dir: Path, logger: Logger) -> None:
+        """Binds the rebuilder to a run directory and a logger."""
+        self.run_dir = Path(run_dir)
+        self.logger  = logger
+        self.survey  = FoldTreeSurvey(self.run_dir)
+
+    def rebuild(self) -> Path:
+        """Writes a fresh report stamp for the run and returns its directory."""
+        fold_runs     = self.survey.fold_runs()
+        first         = fold_runs[min(fold_runs)]
+        training_type = self.survey.training_type(first)
+        model_name    = self.survey.model_name(first)
+        splits        = self.survey.splits(fold_runs, training_type)
+        planner       = self.survey.planner(fold_runs)
+
+        self.logger.section("Cross-validation reports")
+        self.logger.info(f"Rebuilding the cross-fold report of {self.run_dir} from its fold tree: {len(fold_runs)} fold(s) of {training_type} '{model_name}', scored splits {', '.join(splits) or 'none'}")
+
+        writer = FoldReportWriter(run_dir=self.run_dir, splits=splits, training_type=training_type, model_name=model_name, planner=planner, embed_images=False, logger=self.logger)
+
+        return writer.write()

@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from dataclasses import asdict
+from pathlib     import Path
 
 import pytest
 
 import pipelines.cross_validation.stages as stages_module
 from configuration.cross_validation    import CrossValidationConfig, FoldConfig
-from pipelines.cross_validation.folds  import FoldPlanner, FoldRunNaming
+from pipelines.cross_validation.folds  import FoldPlanner, FoldRunNaming, FoldTreeSurvey, StoredFoldPlanner
 from pipelines.cross_validation.stages import (
+    CrossValidationReportRebuilder,
     CrossValidationReportStage,
     FoldInferenceStage,
     FoldTrainingStage,
 )
 from pipelines.cross_validation.workers import FoldTrainingWorker
+from tools.data.io                      import FileIO
 from tools.runtime.completion           import CompletionMarker
 from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
@@ -62,6 +65,63 @@ def stamp_split_inference(fold_dir: Path, split: str) -> Path:
     stamp.mkdir(parents=True, exist_ok=True)
     CompletionMarker.stamp(stamp, {"stage": "inference", "split": split})
     return stamp
+
+
+def build_finished_run(root: Path, run_tag: str, n_folds: int = 3, splits: tuple = ("test",), seeds: tuple = (), with_pipeline: bool = True) -> Path:
+    """Writes a cross-validation run whose folds trained and inferred but whose report stage never ran.
+
+    Every fold run carries what a training run persists and the fold-tree
+    survey reads: the backbone architecture config, the run summary naming
+    the model, the dataset creation config holding the fold's split regions
+    from a real planner over the window [1000, 1512), a best checkpoint, a
+    training completion marker and a stamped inference per split holding two
+    metrics. The pipeline directory, with the stage state and the training
+    results index, is optional so a run copied without it can be exercised.
+
+    Args:
+        root          : Directory the run folder is created in.
+        run_tag       : Name of the run folder.
+        n_folds       : Number of folds written.
+        splits        : Splits every fold holds a completed inference for.
+        seeds         : Seed directory names nested under every fold, empty for unseeded folds.
+        with_pipeline : Whether the pipeline directory with the stage state and training results index is written.
+
+    Returns:
+        Path of the run directory.
+    """
+    import torch
+
+    run_dir = root / run_tag
+
+    config       = CrossValidationConfig()
+    config.folds = FoldConfig(n_folds=n_folds, row_start=1000, row_end=1512)
+    planner      = make_planner(config)
+
+    results = []
+    for index in range(n_folds):
+        fold_dir = run_dir / "folds" / f"{config.backbone_name}_fold_{index}"
+        run_dirs = [fold_dir / seed for seed in seeds] if seeds else [fold_dir]
+
+        for unit_dir in run_dirs:
+            (unit_dir / "meta").mkdir(parents=True)
+            FileIO.save_json({}, unit_dir / "meta" / "model_config.json")
+            FileIO.save_json({"model_name": config.backbone_name, "in_channels": 4, "out_channels": 6}, unit_dir / "meta" / "run_summary.json")
+            FileIO.save_json({"split_regions": asdict(planner.plan(index).split_regions)}, unit_dir / "meta" / "dataset_creation_config.json")
+
+            torch.save({"best_val_loss": 0.1 * (index + 1), "best_epoch": 3, "epoch": 5}, unit_dir / "best_model.pt")
+            CompletionMarker.stamp(unit_dir, {"stage": "training", "epochs_completed": 5})
+
+            for split in splits:
+                stamp = stamp_split_inference(unit_dir, split)
+                FileIO.save_json({"curve_rmse_gt": 0.1 * (index + 1), "overall_r2_gt": 0.9 - 0.05 * index}, stamp / "metrics.json")
+
+            results.append({"name": str(unit_dir.relative_to(run_dir / "folds")), "status": "DONE", "duration_s": 60.0})
+
+    if with_pipeline:
+        FileIO.save_json({"run_tag": run_tag, "stages": {"training": {"status": "completed", "timestamp": "t"}}}, run_dir / "pipeline" / "state.json")
+        FileIO.save_json(results, run_dir / "pipeline" / "training_results.json")
+
+    return run_dir
 
 
 def queue_result(name: str, status: str = "DONE") -> dict:
@@ -433,6 +493,95 @@ def test_report_stage_model_name_for_profile_autoencoder(tmp_path, monkeypatch):
 
     assert seen["splits"]     == []
     assert seen["model_name"] == config.autoencoder.ae_model_name
+
+
+def test_report_stage_honours_an_explicit_run_dir(tmp_path):
+    """Verifies an explicit run directory replaces the one derived from the log base and run tag."""
+    config = stage_config(tmp_path)
+    stage  = CrossValidationReportStage(config=config, run_tag="rt", planner=make_planner(config), logger=make_file_logger(tmp_path, "stages_test"), run_dir=tmp_path / "workspace" / "cv_20260912")
+
+    assert stage.run_dir == tmp_path / "workspace" / "cv_20260912"
+
+
+def test_report_rebuilder_writes_the_report_from_the_fold_tree_alone(tmp_path):
+    """Verifies a run holding nothing but its folds gets a full cross-fold report, fold plan included."""
+    run_dir = build_finished_run(tmp_path / "workspace", "cv_20260912_100000", with_pipeline=False)
+
+    out_dir = CrossValidationReportRebuilder(run_dir, make_file_logger(tmp_path, "rebuild_test")).rebuild()
+
+    aggregate = (out_dir / "cv_aggregate_report.md").read_text(encoding="utf-8")
+
+    assert not (run_dir / "pipeline").exists()
+    assert out_dir.parent == run_dir / "reports"
+    assert (out_dir / "cv_summary.json").is_file()
+    assert (out_dir / "test" / "benchmark_overview.md").is_file()
+    assert (out_dir / "test" / "metrics_comparison.md").is_file()
+    assert aggregate.startswith("# Cross-Validation Aggregate Report")
+    assert "Model `resunet`, 3 folds." in aggregate
+    assert "| 0    | [1000, 1162) | [1178, 1332) | [1348, 1512)      |" in aggregate
+
+
+def test_report_rebuilder_handles_seed_sweeps(tmp_path):
+    """Verifies folds trained under several seeds are surveyed through their first seed and aggregated per fold."""
+    run_dir = build_finished_run(tmp_path / "workspace", "cv_seeded", seeds=("seed0", "seed1"), with_pipeline=False)
+
+    out_dir = CrossValidationReportRebuilder(run_dir, make_file_logger(tmp_path, "rebuild_test")).rebuild()
+
+    aggregate = (out_dir / "cv_aggregate_report.md").read_text(encoding="utf-8")
+
+    assert "Each fold was trained under multiple seeds." in aggregate
+    assert "Model `resunet`, 3 folds." in aggregate
+
+
+def test_report_rebuilder_aborts_when_a_fold_lacks_its_run_summary(tmp_path):
+    """Verifies a fold run without the run summary naming its model aborts naming that file."""
+    run_dir = build_finished_run(tmp_path / "workspace", "cv_20260912_100000")
+    (run_dir / "folds" / "resunet_fold_0" / "meta" / "run_summary.json").unlink()
+
+    with pytest.raises(FileNotFoundError, match="run_summary.json"):
+        CrossValidationReportRebuilder(run_dir, make_file_logger(tmp_path, "rebuild_test")).rebuild()
+
+
+def test_fold_tree_survey_reads_family_model_splits_and_plan(tmp_path):
+    """Verifies the survey recovers the family, the model name, the scored splits and the stored fold plan."""
+    run_dir   = build_finished_run(tmp_path / "workspace", "cv_20260912_100000", splits=("val", "test"))
+    survey    = FoldTreeSurvey(run_dir)
+    fold_runs = survey.fold_runs()
+    first     = fold_runs[0]
+
+    config       = stage_config(tmp_path)
+    config.folds = FoldConfig(n_folds=3, row_start=1000, row_end=1512)
+    expected     = make_planner(config)
+
+    assert sorted(fold_runs) == [0, 1, 2]
+    assert first == run_dir / "folds" / "resunet_fold_0"
+    assert survey.training_type(first) == "backbone"
+    assert survey.model_name(first) == "resunet"
+    assert survey.splits(fold_runs, "backbone") == ["test", "val"]
+    assert [plan.split_regions for plan in survey.planner(fold_runs).plans()] == [plan.split_regions for plan in expected.plans()]
+
+
+def test_fold_tree_survey_rejects_a_gap_in_the_fold_indices(tmp_path):
+    """Verifies folds whose indices do not run contiguously from zero are refused."""
+    run_dir = build_finished_run(tmp_path / "workspace", "cv_20260912_100000")
+    (run_dir / "folds" / "resunet_fold_2").rename(run_dir / "folds" / "resunet_fold_5")
+
+    survey = FoldTreeSurvey(run_dir)
+
+    with pytest.raises(ValueError, match="contiguously"):
+        survey.planner(survey.fold_runs())
+
+
+def test_stored_fold_planner_follows_the_planner_block_convention():
+    """Verifies stored regions yield the same plans a configured planner builds, block assignment included."""
+    config       = CrossValidationConfig()
+    config.folds = FoldConfig(n_folds=4, row_start=1000, row_end=1512)
+    configured   = make_planner(config)
+
+    stored = StoredFoldPlanner({plan.fold_index: plan.split_regions for plan in configured.plans()})
+
+    assert stored.n_folds == 4
+    assert stored.plans() == configured.plans()
 
 
 @pytest.mark.dataset

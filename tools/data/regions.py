@@ -123,6 +123,25 @@ class SplitRegions:
             return list(value)
         return [value]
 
+    @classmethod
+    def from_payload(cls, payload: dict) -> "SplitRegions":
+        """Builds the split regions from their persisted form.
+
+        Args:
+            payload : Mapping of split name to one region dict or a list of them, as written into a run's dataset creation config.
+
+        Returns:
+            The split regions, each split a single region or a list of disjoint regions as stored.
+        """
+        return cls(train=cls._parse(payload["train"]), val=cls._parse(payload["val"]), test=cls._parse(payload["test"]))
+
+    @staticmethod
+    def _parse(value):
+        """Returns one persisted split as a CropRegion, or a list of them when disjoint."""
+        if isinstance(value, list):
+            return [CropRegion(**region) for region in value]
+        return CropRegion(**value)
+
     def items(self):
         """Returns the (split name, value) pairs in train, val, test order."""
         return [("train", self.train), ("val", self.val), ("test", self.test)]
