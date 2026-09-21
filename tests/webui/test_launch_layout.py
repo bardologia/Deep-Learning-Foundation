@@ -8,6 +8,7 @@ heads, and the agreement between layout constants and the frontend JavaScript.
 
 from __future__ import annotations
 
+import ast
 import re
 
 from importlib import import_module
@@ -526,3 +527,28 @@ def test_a_choice_gate_on_an_unknown_field_is_rejected():
 
     with pytest.raises(LayoutError):
         engine._validate("tune", layout, leaves)
+
+
+def test_no_layout_constant_is_bound_twice():
+    """Every class-level constant of LaunchLayout is assigned once, so no widget silently shadows an earlier one."""
+    tree  = ast.parse((WEBUI_ROOT / "launch_layout.py").read_text())
+    klass = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "LaunchLayout")
+    names = [target.id for node in klass.body if isinstance(node, ast.Assign) for target in node.targets if isinstance(target, ast.Name)]
+
+    duplicates = sorted(name for name in set(names) if names.count(name) > 1)
+
+    assert duplicates == []
+
+
+def test_loader_worker_fields_keep_their_own_bounds_apart_from_the_tuning_widget():
+    """The loader worker fields render with the 64-worker widget while the tuning n_workers field keeps its 32-worker widget."""
+    leaves  = [{"path": path} for path, _value in ConfigCli._leaves(BackboneEntryConfig())]
+    train   = LaunchLayout().build("train_backbone", leaves)
+    leaves  = [{"path": path} for path, _value in ConfigCli._leaves(TuningEntryConfig())]
+    tune    = LaunchLayout().build("tune", leaves)
+
+    for path in ("training.num_workers", "inference.num_workers", "inference.cpu_workers", "inference.gif_workers"):
+        assert train["widgets"][path]["max"] == 64
+        assert 32 in train["widgets"][path]["presets"]
+    assert tune["widgets"]["n_workers"]["max"] == 32
+    assert tune["widgets"]["training.num_workers"]["max"] == 64
