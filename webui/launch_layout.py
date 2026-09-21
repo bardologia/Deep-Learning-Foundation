@@ -18,6 +18,46 @@ class LayoutError(Exception):
     pass
 
 
+class GpuWidgets:
+    """Widget descriptors selecting GPUs on a launch form.
+
+    Attributes:
+        ONE  : Selector pinning a launch to a single device.
+        MANY : Selector choosing the pool a fan-out spreads over.
+    """
+
+    ONE  = {"kind": "gpu"}
+    MANY = {"kind": "gpu", "multi": True}
+
+
+class InferenceEssentials:
+    """Builds the essentials row shared by the four inference launch forms.
+
+    Every inference entry exposes the same runs root, run filter, skip switch
+    and GPU pool, but each family records its split in its own configuration
+    block, and the run picker needs that path so its listing marks runs as
+    already scored on the split this launch will use.
+    """
+
+    @staticmethod
+    def for_block(split_path: str) -> list:
+        """Returns the essentials row for an inference entry.
+
+        Args:
+            split_path : Dotted path of the split leaf in the entry's own inference block.
+
+        Returns:
+            The essentials entries of the launch form.
+        """
+        return [
+            "runs_dir",
+            {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir", "splitFrom": split_path, "pendingButton": True}},
+            "skip_completed",
+            {"path": "gpus", "widget": GpuWidgets.MANY},
+            "poll_interval_s",
+        ]
+
+
 class LaunchLayout:
     """Expands the declared launch layouts into validated per-script form specs.
 
@@ -30,8 +70,8 @@ class LaunchLayout:
     NORM_PRESETS_INPUT = ["min_max", "min_max_log1p", "robust_iqr", "robust_iqr_log1p", "fixed_div_pi", "zscore", "zscore_log1p", "fixed_log1p", "fixed_angle_01"]
     NORM_PRESETS       = NORM_PRESETS_INPUT + ["fixed_bounds"]
 
-    GPU_ONE  = {"kind": "gpu"}
-    GPU_MANY = {"kind": "gpu", "multi": True}
+    GPU_ONE  = GpuWidgets.ONE
+    GPU_MANY = GpuWidgets.MANY
 
     NUM_EPOCHS   = {"kind": "number", "int": True, "min": 1, "max": 1000, "presets": [10, 50, 60, 100, 200, 500]}
     NUM_STEPS    = {"kind": "number", "int": True, "min": 0, "max": 1000, "presets": [0, 50, 100, 200, 500]}
@@ -419,7 +459,7 @@ class LaunchLayout:
     TRAIN_ESSENTIALS = [
         "run_name",
         "resume",
-        "resume_from",
+        {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "logdir"}},
         {"path": "gpu", "widget": GPU_ONE},
         {"path": "gpus", "widget": GPU_MANY},
         "logdir",
@@ -428,14 +468,6 @@ class LaunchLayout:
         {"path": "seed", "widget": NUM_SEED},
         "seeds",
         "ddp",
-    ]
-
-    INFER_ESSENTIALS = [
-        "runs_dir",
-        {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir", "pendingButton": True}},
-        "skip_completed",
-        {"path": "gpus", "widget": GPU_MANY},
-        "poll_interval_s",
     ]
 
     EXPERIMENT_TRIALS = [
@@ -530,7 +562,7 @@ class LaunchLayout:
     ]
 
     INFER_BACKBONE_LAYOUT = {
-        "essentials": INFER_ESSENTIALS,
+        "essentials": InferenceEssentials.for_block("inference.split"),
         "sections": [
             {"key": "backbone", "title": "Backbone", "panels": [
                 {"kind": "fields", "title": "Backbone inference", "template": "inference_full", "at": "inference"},
@@ -541,7 +573,7 @@ class LaunchLayout:
     }
 
     INFER_PROFILE_AE_LAYOUT = {
-        "essentials": INFER_ESSENTIALS,
+        "essentials": InferenceEssentials.for_block("profile_inference.split"),
         "sections": [
             {"key": "profile-ae", "title": "Profile AE", "panels": [
                 {"kind": "fields", "title": "Profile autoencoder inference", "template": "profile_inference", "at": "profile_inference"},
@@ -552,7 +584,7 @@ class LaunchLayout:
     }
 
     INFER_IMAGE_AE_LAYOUT = {
-        "essentials": INFER_ESSENTIALS,
+        "essentials": InferenceEssentials.for_block("image_inference.split"),
         "sections": [
             {"key": "image-ae", "title": "Image AE", "panels": [
                 {"kind": "fields", "title": "Image autoencoder inference", "template": "image_inference", "at": "image_inference"},
@@ -563,7 +595,7 @@ class LaunchLayout:
     }
 
     INFER_DUAL_LAYOUT = {
-        "essentials": INFER_ESSENTIALS,
+        "essentials": InferenceEssentials.for_block("inference.split"),
         "sections": [
             {"key": "dual", "title": "Dual", "panels": [
                 {"kind": "fields", "title": "Dual-trunk model inference", "template": "inference_full", "at": "inference"},
@@ -894,7 +926,7 @@ class LaunchLayout:
                 {"path": "seed", "widget": NUM_SEED},
                 "seeds",
                 "resume",
-                "resume_from",
+                {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "paths.log_base_dir"}},
                 "poll_interval_s",
             ],
             "sections": [
@@ -961,7 +993,7 @@ class LaunchLayout:
                 {"path": "seed", "widget": NUM_SEED},
                 "seeds",
                 "resume",
-                "resume_from",
+                {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "paths.log_base_dir"}},
                 "poll_interval_s",
             ],
             "sections": [
@@ -1035,7 +1067,7 @@ class LaunchLayout:
             "type_tab": {"field": "training_type", "options": [["backbone", "Backbone"], ["profile_autoencoder", "Profile AE"], ["image_autoencoder", "Image AE"], ["jepa", "JEPA"]]},
             "essentials": [
                 "run_tag",
-                "resume_from",
+                {"path": "resume_from", "widget": {"kind": "dataset", "mode": "resume_runs", "baseFrom": "paths.log_base_dir"}},
                 {"path": "gpus", "widget": GPU_MANY},
                 {"path": "n_workers", "widget": NUM_WORKERS},
                 {"path": "paths.dataset_path", "widget": PICK_DATASET},

@@ -73,15 +73,18 @@ class DatasetBrowser:
         self.logger.info(f"datasets: listed {len(entries)} under {base}")
         return {"ok": True, "base": str(base), "datasets": entries}
 
-    def runs(self, raw_bases: list[str], seed_units: bool = False) -> dict:
+    def runs(self, raw_bases: list[str], seed_units: bool = False, split: str = "") -> dict:
         """Lists every training run directory found under the given roots.
 
         A run directory is one containing a ``meta`` subdirectory, searched up to
-        ``RUN_MAX_DEPTH`` levels down.
+        ``RUN_MAX_DEPTH`` levels down. A root that is itself a run is listed
+        under its own name, which is how the inference entries read the same
+        path.
 
         Args:
             raw_bases  : Absolute paths of run roots; unusable ones are dropped.
             seed_units : When True, seed sweep parents are inserted as aggregate entries ahead of their individual ``seedN`` runs.
+            split      : Dataset split a run must already be scored on to count as inferred; empty reports any inference output.
 
         Returns:
             Dict with ``ok``, a comma-joined ``base`` label and a ``runs`` list of
@@ -96,10 +99,10 @@ class DatasetBrowser:
             base_entries = []
             for run_dir in self._run_dirs(base):
                 base_entries.append({
-                    "name"           : str(run_dir.relative_to(base)),
+                    "name"           : self._run_name(base, run_dir),
                     "path"           : str(run_dir),
                     "has_checkpoint" : (run_dir / self.CHECKPOINT_NAME).is_file(),
-                    "has_inference"  : self._has_inference(run_dir),
+                    "has_inference"  : self._has_inference(run_dir, split),
                 })
 
             entries += self._with_seed_units(base, base_entries) if seed_units else base_entries
@@ -287,8 +290,16 @@ class DatasetBrowser:
         return {"ok": True, "base": str(base), "trials": entries}
 
     def _run_dirs(self, base: Path):
-        """Yields every run directory below the given root."""
+        """Yields the run directories of a root, the root itself when it is one run."""
+        if (base / self.RUN_MARKER).is_dir():
+            yield base
+            return
+
         yield from self._walk_runs(base, 0)
+
+    def _run_name(self, base: Path, run_dir: Path) -> str:
+        """Returns a run's name relative to the root, its own name when it is the root."""
+        return run_dir.name if run_dir == base else str(run_dir.relative_to(base))
 
     def _walk_runs(self, directory: Path, depth: int):
         """Yields directories holding a ``meta`` folder, recursing to the depth cap."""
@@ -301,16 +312,34 @@ class DatasetBrowser:
             elif depth < self.RUN_MAX_DEPTH:
                 yield from self._walk_runs(entry, depth + 1)
 
-    def _has_inference(self, run_dir: Path) -> bool:
-        """Returns True when the run holds at least one inference output directory."""
+    def _has_inference(self, run_dir: Path, split: str = "") -> bool:
+        """Returns whether the run already holds inference, on one split when a split is named.
+
+        Without a split any output directory counts, which is what the listings
+        that only report whether a run was ever scored need. With one, the run
+        must carry a completed stamp recording that split, which is the same
+        question the inference scheduler asks before it skips a run.
+
+        Args:
+            run_dir : Run directory to inspect.
+            split   : Dataset split the stamp must record, empty for any output.
+
+        Returns:
+            Whether the run counts as inferred.
+        """
+        from pipelines.shared.inference.metadata       import CompletedInference
+        from pipelines.shared.inference.run_classifier import InferenceLayout
+
         inference_dir = run_dir / self.INFERENCE_DIR
         if not inference_dir.is_dir():
             return False
 
-        for entry in inference_dir.iterdir():
-            if entry.is_dir():
-                return True
-        return False
+        if not split:
+            return any(entry.is_dir() for entry in inference_dir.iterdir())
+
+        bases = [inference_dir] + [inference_dir / name for name in InferenceLayout.SUBDIRS.values()]
+
+        return any(CompletedInference.latest(base, split) is not None for base in bases)
 
     def _directory(self, raw: str) -> Path | None:
         """Returns the resolved path when raw is an absolute existing directory, else None."""

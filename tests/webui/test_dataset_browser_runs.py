@@ -1,10 +1,12 @@
 """Tests for run discovery in the webui dataset browser.
 
-Covers recursive discovery of run directories at any depth, the relative names
-and checkpoint/inference flags reported for each, the pruning at run boundaries
-and skipping of hidden directories, the aggregate rows offered for multi-seed
-trials, the grouping listing that counts runs per parent directory, and the
-experiment listing that keeps only children holding a comparison directory.
+Covers recursive discovery of run directories at any depth, a root that is
+itself one run, the relative names and checkpoint/inference flags reported for
+each including the split a run must already be scored on, the pruning at run
+boundaries and skipping of hidden directories, the aggregate rows offered for
+multi-seed trials, the grouping listing that counts runs per parent directory,
+and the experiment listing that keeps only children holding a comparison
+directory.
 """
 
 from __future__ import annotations
@@ -59,6 +61,53 @@ def test_run_names_are_relative_to_base_and_expose_flags(tmp_path):
     assert entries["group_a/deep/run_a2"]["has_checkpoint"] is True
     assert entries["group_a/deep/run_a2"]["has_inference"] is True
     assert Path(entries["group_a/deep/run_a2"]["path"]) == runs / "group_a" / "deep" / "run_a2"
+
+
+def test_a_root_that_is_one_run_is_listed_under_its_own_name(tmp_path):
+    """A runs root that is itself a run is listed, as the inference entries also read that path."""
+    run = tmp_path / "resunet_myrun"
+    _make_run(run, checkpoint=True)
+
+    result = DatasetBrowser(WebLogger()).runs([str(run)])
+
+    assert [entry["name"] for entry in result["runs"]] == ["resunet_myrun"]
+    assert result["runs"][0]["path"] == str(run)
+
+
+def test_inference_is_reported_per_split_when_a_split_is_named(tmp_path):
+    """With a split named, only a run carrying a completed stamp for that split counts as inferred."""
+    from tools.runtime.completion import CompletionMarker
+
+    runs = tmp_path / "runs"
+    _make_run(runs / "scored_on_test")
+    stamp = runs / "scored_on_test" / "inference" / "20260101_000000"
+    stamp.mkdir(parents=True)
+    CompletionMarker.stamp(stamp, {"stage": "inference", "split": "test"})
+
+    browser = DatasetBrowser(WebLogger())
+
+    on_test = {entry["name"]: entry["has_inference"] for entry in browser.runs([str(runs)], split="test")["runs"]}
+    on_val  = {entry["name"]: entry["has_inference"] for entry in browser.runs([str(runs)], split="val")["runs"]}
+    any_run = {entry["name"]: entry["has_inference"] for entry in browser.runs([str(runs)])["runs"]}
+
+    assert on_test["scored_on_test"] is True
+    assert on_val["scored_on_test"]  is False
+    assert any_run["scored_on_test"] is True
+
+
+def test_a_nested_family_stamp_counts_for_its_split(tmp_path):
+    """An autoencoder run keeps its stamps one level deeper, and is still reported as scored on the split."""
+    from tools.runtime.completion import CompletionMarker
+
+    runs = tmp_path / "runs"
+    _make_run(runs / "profile_ae_run")
+    stamp = runs / "profile_ae_run" / "inference" / "profile_ae" / "20260101_000000"
+    stamp.mkdir(parents=True)
+    CompletionMarker.stamp(stamp, {"stage": "inference", "split": "test"})
+
+    result = DatasetBrowser(WebLogger()).runs([str(runs)], split="test")
+
+    assert result["runs"][0]["has_inference"] is True
 
 
 def test_walk_prunes_at_run_boundary_and_skips_hidden(tmp_path):
