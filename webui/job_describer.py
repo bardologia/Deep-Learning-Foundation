@@ -131,12 +131,14 @@ class JobDescriber:
             ("gpus",     "gpus",                  "list"),
             ("tag",      "run_tag",               "opt"),
             ("resuming", "resume_from",           "opt_tail"),
+            ("stage",    "stage",                 "unless", "full"),
         ],
         "cross_validate": [
             ("seeds",    "seeds",       "list"),
             ("gpus",     "gpus",        "list"),
             ("tag",      "run_tag",     "opt"),
             ("resuming", "resume_from", "opt_tail"),
+            ("stage",    "stage",       "unless", "full"),
         ],
         "tune": [
             ("trials",       "tuning.n_trials", "text"),
@@ -144,6 +146,8 @@ class JobDescriber:
             ("heads",        "heads",           "list"),
             ("tag",          "run_tag",         "opt"),
             ("resuming",     "resume_from",     "opt_tail"),
+            ("stage",        "stage",           "unless", "full"),
+            ("workers",      "n_workers",       "unless", "0"),
         ],
         "tune_dataloader": [
             ("model",       "model_name",  "opt"),
@@ -511,8 +515,8 @@ class JobDescriber:
         Args:
             label    : Prefix shown before the value; empty renders the value alone.
             value    : Stringified config value, or ``None`` when the path is absent.
-            kind     : Spec kind, one of ``flag``, ``unflag``, ``list``, ``tail``, ``opt_tail``, ``opt`` or ``text``.
-            fallback : Text used for an unset list, e.g. ``"all runs"``.
+            kind     : Spec kind, one of ``flag``, ``unflag``, ``unless``, ``list``, ``tail``, ``opt_tail``, ``opt`` or ``text``.
+            fallback : Text used for an unset list, e.g. ``"all runs"``, or the value an ``unless`` entry stays silent on.
 
         Returns:
             The phrase to append to the summary, or ``None`` to omit the field.
@@ -522,6 +526,9 @@ class JobDescriber:
 
         if kind == "unflag":
             return label if value is not None and not self._truthy(value) else None
+
+        if kind == "unless":
+            return None if value is None or value == fallback else self._labelled(label, self._compact(value))
 
         if value is None or not self._is_set(value):
             if kind == "list" and fallback and value is not None:
