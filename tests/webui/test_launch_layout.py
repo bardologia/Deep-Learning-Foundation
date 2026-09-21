@@ -522,7 +522,7 @@ def test_a_choice_gate_on_an_unknown_field_is_rejected():
     layout = engine._expand("tune")
     leaves = [{"path": path} for path, _value in ConfigCli._leaves(TuningEntryConfig())]
 
-    layout["widgets"]["heads"]["choiceGate"] = {"when": {"field": "no_such_field", "set": True}, "only": ["conv"], "hint": "x"}
+    layout["widgets"]["heads"] = {**layout["widgets"]["heads"], "choiceGate": {"when": {"field": "no_such_field", "set": True}, "only": ["conv"], "hint": "x"}}
 
     with pytest.raises(LayoutError):
         engine._validate("tune", layout, leaves)
