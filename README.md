@@ -174,7 +174,7 @@ the run instead of being ignored. Besides the config fields there is a fixed set
 bootstrap flags, listed as `ConfigCli.BOOTSTRAP_FLAGS` in `tools/runtime/config_cli.py`:
 `--help-config`, `--detach` (alias `--nohup`), `--gpu`, `--trial`, `--worker`,
 `--resume`, `--model`, `--n-trials`, `--study-name`, `--storage-url`, `--run-tag`,
-`--run-dir`, `--fold`, `--split`.
+`--run-dir`, `--run-name`, `--fold`, `--split`.
 
 To change a default for good, edit the dataclass under `configuration/`. Never put
 values in the `main/` scripts.
@@ -233,6 +233,8 @@ directory that has one and deletes a run directory that does not before restarti
 `--training.resume` is the other kind of resume: it continues an unfinished run from
 `last.pt` instead of deleting it.
 
+### Finishing a run that broke
+
 The staged experiments (`cross_validate`, `benchmark`, `tune`) and the training entries
 take `--resume_from <path>`, any path at or inside an existing run: the configuration that
 run recorded is loaded, the overrides typed on the new launch are applied on top, the GPU
@@ -242,6 +244,7 @@ it today:
 
 ```bash
 python main/experiments/cross_validate.py --resume_from runs/sequences/plan/cv1
+python main/experiments/benchmark.py      --resume_from runs/benchmark/arch/training
 python main/training/train_backbone.py    --resume_from runs/backbone/augmentation
 python main/training/train_backbone.py    --resume_from runs/backbone/resunet_myrun/seed3
 ```
@@ -260,7 +263,37 @@ matched to their directories through the manifest each worker writes first
 directory. A run that trained before manifests existed carries none, and is adopted by
 `scripts/backfill_unit_manifests.py <run>`, which writes each unit's manifest from the
 run's own recording and matches units to directories by the name that recording composes.
-A directory no planned unit accounts for is reported and left alone.
+A directory no planned unit accounts for is reported and left alone. `--stage prepare` on
+the staged experiments prints the plan and the status of every unit without launching
+any, which is how a resume is checked before it burns GPU hours; the console offers the
+same choice beside `resume_from` on the benchmark, cross-validation and tuning forms, and
+its `resume_from` picker lists the runs under the log directory that recorded a
+configuration.
+
+Inference works the same way from the other side. Point an inference entry at any path
+and it scores every run of its family found below it, skipping the ones already scored
+on the requested split:
+
+```bash
+python main/inference/infer_backbone.py --runs_dir runs/sequences/plan/augmentation
+```
+
+A cross-validation fold is scored over the row block its manifest records. To re-score
+everything, pass `--skip_completed false`.
+
+Mailing the results takes the experiments root and the names of the experiments under it:
+
+```bash
+python main/analysis/mail_experiment_reports.py --experiments_dir runs/sequences/plan --experiment_filter "['augmentation']"
+```
+
+An experiment is a direct child of the root holding a `_comparison` directory, and an
+empty filter selects all of them. Each one is mailed as one message carrying the
+seed-aggregate report of every trial, the newest trial-comparison reports and the
+configuration the experiment ran with. A seeded trial without its seed-aggregate report
+or an experiment without a comparison stamp is refused with a pointer at `compare_seeds`
+or `compare_trials`, which the console's Finalize chain runs in that order before the
+mail.
 
 ## 6. Run inference
 
