@@ -1,14 +1,16 @@
 """Tests for JobDescriber, which turns a script key and its overrides into a job label.
 
 Covers the lead phrase chosen per entry point, the fields each script contributes,
-override precedence over resolved defaults, leftover overrides shown as extras, and
-the behaviour when the config resolver cannot answer.
+override precedence over resolved defaults, the recorded configuration a resumed
+launch is described by, leftover overrides shown as extras, and the behaviour when
+the config resolver cannot answer.
 """
 
 from __future__ import annotations
 
-
-from job_describer import JobDescriber
+from configuration.cross_validation import CrossValidationConfig
+from job_describer                  import JobDescriber
+from tools.runtime.config_cli        import ConfigCli
 
 
 GENERATE_DATASET_LEAVES = [
@@ -228,3 +230,63 @@ def test_jepa_mode_follows_selected_autoencoders():
     assert both.startswith("image-AE + backbone + profile-AE")
     assert "profile-AE mlp_ae_001 (frozen)" in both
     assert "image-AE conv2d_ae_007 (frozen)" in both
+
+
+def _recorded_cv_run(root, run_tag: str, n_folds: int, seeds: list):
+    """Writes a cross-validation run directory holding the recording a resumed launch reads.
+
+    Args:
+        root    : Directory the run is created in.
+        run_tag : Name of the run directory.
+        n_folds : Fold count written into the recording.
+        seeds   : Seed list written into the recording.
+
+    Returns:
+        Path of the run directory.
+    """
+    config                    = CrossValidationConfig()
+    config.run_tag            = run_tag
+    config.paths.log_base_dir = root
+    config.folds.n_folds      = n_folds
+    config.seeds              = seeds
+
+    run_dir = root / run_tag
+    ConfigCli.save_resolved(config, run_dir / "pipeline" / "resolved_config.json")
+
+    return run_dir
+
+
+def test_a_resumed_run_is_described_by_what_it_recorded(tmp_path):
+    """A resume is described by the recorded fold count and seeds, not by the entry point defaults."""
+    run_dir = _recorded_cv_run(tmp_path, "cv_recorded", n_folds=3, seeds=[1, 2])
+
+    leaves     = [{"path": "folds.n_folds", "value": "10"}, {"path": "seeds", "value": "[0, 1, 2, 3, 4]"}, {"path": "resume_from", "value": ""}]
+    describer  = _describer({"cross_validate": leaves})
+
+    fresh   = describer.describe("cross_validate", "py", {})
+    resumed = describer.describe("cross_validate", "py", {"resume_from": str(run_dir)})
+
+    assert "10-fold" in fresh
+    assert "3-fold" in resumed
+    assert "seeds [1, 2]" in resumed
+    assert "resuming cv_recorded" in resumed
+
+
+def test_a_resume_path_that_records_nothing_keeps_the_launch_defaults(tmp_path):
+    """A resume path without a recording leaves the described fields on the entry point defaults."""
+    leaves    = [{"path": "folds.n_folds", "value": "10"}, {"path": "resume_from", "value": ""}]
+    describer = _describer({"cross_validate": leaves})
+
+    line = describer.describe("cross_validate", "py", {"resume_from": str(tmp_path)})
+
+    assert "10-fold" in line
+    assert f"resuming {tmp_path.name}" in line
+
+
+def test_rescoring_is_named_only_when_completed_runs_are_not_skipped():
+    """The inference line names a rescoring pass only when skip_completed is off."""
+    leaves    = [{"path": "runs_dir", "value": "/runs"}, {"path": "run_filter", "value": "[]"}, {"path": "skip_completed", "value": "True"}]
+    describer = _describer({"infer_backbone": leaves})
+
+    assert "rescoring scored runs" not in describer.describe("infer_backbone", "py", {})
+    assert "rescoring scored runs" in describer.describe("infer_backbone", "py", {"skip_completed": "False"})
