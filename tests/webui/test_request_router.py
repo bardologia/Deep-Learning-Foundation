@@ -26,7 +26,7 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 142
+ROUTE_COUNT   = 145
 SECTION_COUNT = 41
 
 RESOLUTIONS = [
@@ -42,6 +42,9 @@ RESOLUTIONS = [
     ("POST", "/api/cubes/save_slices",             CubeRouter),
     ("GET",  "/api/slices/slice",                  SliceRouter),
     ("POST", "/api/slices/collect",                SliceRouter),
+    ("GET",  "/api/slices/primary",                SliceRouter),
+    ("GET",  "/api/slices/mail_settings",          SliceRouter),
+    ("POST", "/api/slices/mail",                   SliceRouter),
     ("GET",  "/api/fitlab/map",                    FitLabRouter),
     ("POST", "/api/probe/predict",                 ProbeRouter),
     ("GET",  "/api/probe/runs",                    ProbeRouter),
@@ -167,7 +170,7 @@ def build_routers() -> list:
         LeaderboardRouter(None),
         CurvesRouter(None),
         CubeRouter(None),
-        SliceRouter(None),
+        SliceRouter(None, None),
         FitLabRouter(None),
         ProbeRouter(None),
         SurveyRouter(None),

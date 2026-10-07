@@ -885,10 +885,10 @@
     <div class="page__head">
       <h2 class="page__title">Slice collector</h2>
       <p class="page__lead">
-        Pick any number of saved inference cubes, set one cut position, and read the same
-        slice from every run side by side. Collect renders the paper-style figures for all
-        selected runs and queued points into a single comparison folder, so nobody has to
-        load each run and print its slices one at a time.
+        Pick any number of saved inference cubes, then hover the primary map to preview the
+        same cuts in every run side by side. Click the map to put those cuts in the basket,
+        or add single slices with their + button. The basket renders the paper-style figures
+        into one comparison folder, and can mail that folder as a zip.
       </p>
     </div>
 
@@ -900,20 +900,6 @@
     <div class="sc-stage" id="sc-stage" hidden>
       <div class="sc-bar">
         <div class="sc-bar__controls">
-          <div class="cube-jump" role="group" aria-label="Cut position">
-            <span class="cube-jump__cell">
-              <label for="sc-row">row</label>
-              <input type="number" id="sc-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="sc-row-range"></span>
-            </span>
-            <span class="cube-jump__cell">
-              <label for="sc-col">col</label>
-              <input type="number" id="sc-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
-              <span class="cube-jump__range" id="sc-col-range"></span>
-            </span>
-            <button type="button" class="btn btn--mini" id="sc-add" title="Queue this point so Collect saves it for every selected run">Add point</button>
-            <button type="button" class="btn btn--mini" id="sc-clear" hidden>Clear points</button>
-          </div>
           <div class="cube-spaces" id="sc-axes" role="group" aria-label="Cut axes">
             <button type="button" class="cube-space is-active" data-axis="col">Col cut</button>
             <button type="button" class="cube-space" data-axis="row">Row cut</button>
@@ -939,14 +925,63 @@
             <option value="gray">gray</option>
           </select>
         </div>
-        <div class="sc-points" id="sc-points"></div>
-        <div class="sc-bar__actions">
-          <input id="sc-name" class="sc-name" type="text" spellcheck="false" autocomplete="off" placeholder="collection name (optional)" />
-          <button type="button" class="btn btn--primary" id="sc-collect" title="Render paper-style figures for every selected run at every queued point">Collect figures</button>
+      </div>
+      <section class="sc-basket" id="sc-basket" aria-label="Slice basket">
+        <header class="sc-basket__head">
+          <h3 class="cube-panel-title">Basket</h3>
+          <span class="sc-basket__sum" id="sc-basket-sum"></span>
+          <div class="sc-basket__tools">
+            <button type="button" class="btn btn--mini" id="sc-basket-toggle" aria-expanded="false" aria-controls="sc-basket-body">Show slices</button>
+            <button type="button" class="btn btn--mini" id="sc-basket-clear" hidden>Empty basket</button>
+          </div>
+        </header>
+        <div class="sc-basket__body" id="sc-basket-body" hidden></div>
+        <div class="sc-export">
+          <div class="sc-export__group">
+            <input id="sc-name" class="sc-name" type="text" spellcheck="false" autocomplete="off" placeholder="collection name (optional)" aria-label="Slice collection name" />
+            <button type="button" class="btn btn--primary" id="sc-collect" title="Render the paper-style figures of every basket slice into one folder under the runs root">Save to folder</button>
+          </div>
+          <div class="sc-export__group">
+            <input id="sc-mail-to" class="sc-name" type="text" spellcheck="false" autocomplete="off" placeholder="recipients, comma separated" aria-label="Mail recipients" />
+            <input id="sc-mail-note" class="sc-name sc-name--wide" type="text" autocomplete="off" placeholder="note for the message (optional)" aria-label="Mail note" />
+            <button type="button" class="btn" id="sc-mail" title="Render the basket into a folder, zip it and mail it">Mail as zip</button>
+          </div>
           <span class="sc-msg" id="sc-msg"></span>
         </div>
+      </section>
+      <div class="sc-deck">
+        <aside class="sc-map">
+          <div class="cube-map__head">
+            <h3 class="cube-panel-title">Primary amplitude</h3>
+            <select id="sc-map-run" class="cube-mselect sc-map__run" aria-label="Run whose primary map is shown" hidden></select>
+          </div>
+          <div class="cube-map__frame">
+            <span class="cube-axis cube-axis--y">row &rarr;</span>
+            <div class="cube-map__wrap sc-map__wrap" id="sc-map-wrap">
+              <img id="sc-map-img" alt="Primary amplitude" />
+              <i class="cube-cross" id="sc-cross" hidden></i>
+              <div class="sc-marks" id="sc-marks"></div>
+            </div>
+            <span class="cube-axis cube-axis--x">col &rarr;</span>
+          </div>
+          <p class="cube-coords" id="sc-coords">Hover the image to preview the cuts &middot; click to put them in the basket</p>
+          <div class="sc-pixrow" role="group" aria-label="Cut position by index">
+            <span class="cube-jump__cell">
+              <label for="sc-row">row</label>
+              <input type="number" id="sc-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+              <span class="cube-jump__range" id="sc-row-range"></span>
+            </span>
+            <span class="cube-jump__cell">
+              <label for="sc-col">col</label>
+              <input type="number" id="sc-col" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
+              <span class="cube-jump__range" id="sc-col-range"></span>
+            </span>
+            <button type="button" class="btn btn--mini" id="sc-add" title="Put the cuts shown at this point in the basket, for every selected run, source and axis">Add to basket</button>
+            <span class="sc-count" id="sc-basket-count" title="Slices in the basket">0</span>
+          </div>
+        </aside>
+        <div class="sc-rows" id="sc-rows"></div>
       </div>
-      <div class="sc-rows" id="sc-rows"></div>
     </div>
   </section>
 

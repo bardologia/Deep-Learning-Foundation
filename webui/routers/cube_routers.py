@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cube_explorer    import CubeExplorer, SliceCollector
+from cube_explorer    import CubeExplorer, SliceCollectionMailer, SliceCollector
 from routers.dispatch import HttpExchange, RouteTable, SubRouter
 
 
@@ -201,21 +201,39 @@ class CubeRouter(SubRouter):
 
 
 class SliceRouter(SubRouter):
+    """Routes the /api/slices endpoints onto the multi-run slice collector and its mailer.
 
-    def __init__(self, slices: SliceCollector) -> None:
+    Attributes:
+        slices : Slice collector service answering the requests.
+        mailer : Service mailing a rendered basket.
+    """
+
+    def __init__(self, slices: SliceCollector, mailer: SliceCollectionMailer) -> None:
+        """Stores the slice collector and mailer services and declares their routes."""
         self.slices = slices
+        self.mailer = mailer
 
         super().__init__(("/api/slices",))
 
     def declare(self, table: RouteTable) -> None:
-        table.add("GET",  "/api/slices/info",    self.info)
-        table.add("GET",  "/api/slices/slice",   self.slice_view)
-        table.add("POST", "/api/slices/collect", self.collect)
+        """Registers the /api/slices routes."""
+        table.add("GET",  "/api/slices/info",          self.info)
+        table.add("GET",  "/api/slices/primary",       self.primary)
+        table.add("GET",  "/api/slices/slice",         self.slice_view)
+        table.add("GET",  "/api/slices/mail_settings", self.mail_settings)
+        table.add("POST", "/api/slices/collect",       self.collect)
+        table.add("POST", "/api/slices/mail",          self.mail)
 
     def info(self, exchange: HttpExchange) -> None:
+        """Answers with the axis extents and sources available for one cube."""
         exchange.send_result(self.slices.info(exchange.text("id")), 404)
 
+    def primary(self, exchange: HttpExchange) -> None:
+        """Answers with the PNG primary-amplitude map of one cube, cropped to its region."""
+        exchange.send_png(self.slices.primary_png(exchange.text("id")))
+
     def slice_view(self, exchange: HttpExchange) -> None:
+        """Answers with the PNG slice of one cube under an optional shared colour scale."""
         png = self.slices.slice_png(
             cube_id = exchange.text("id"),
             source  = exchange.text("source", "pred"),
@@ -229,16 +247,28 @@ class SliceRouter(SubRouter):
         )
         exchange.send_png(png)
 
+    def mail_settings(self, exchange: HttpExchange) -> None:
+        """Answers with the default recipient and whether the SMTP password is available."""
+        exchange.send_json(self.mailer.settings())
+
     def collect(self, exchange: HttpExchange) -> None:
+        """Renders the posted basket of slices into one saved figure set."""
         body   = exchange.body
         result = self.slices.collect(
-            ids     = body.get("ids") or [],
-            points  = body.get("points") or [],
-            sources = body.get("sources") or [],
-            axes    = body.get("axes") or [],
-            space   = body.get("space", "physical"),
-            cmap    = body.get("cmap", "jet"),
-            shared  = bool(body.get("shared", True)),
-            name    = body.get("name", ""),
+            items  = body.get("items") or [],
+            shared = bool(body.get("shared", True)),
+            name   = body.get("name", ""),
+        )
+        exchange.send_result(result)
+
+    def mail(self, exchange: HttpExchange) -> None:
+        """Renders the posted basket of slices, then mails it as zip attachments."""
+        body   = exchange.body
+        result = self.mailer.mail(
+            items     = body.get("items") or [],
+            shared    = bool(body.get("shared", True)),
+            name      = body.get("name", ""),
+            recipient = body.get("recipient", ""),
+            note      = body.get("note", ""),
         )
         exchange.send_result(result)
