@@ -137,6 +137,31 @@ def test_training_skips_completed_items_on_resume(tmp_path, logger):
     assert [r["name"] for r in results] == items
 
 
+def test_status_report_warns_about_completed_units_retrained_with_resume_off(tmp_path):
+    """Verifies that with resume off a completed unit is reported as retrained, not reused, and named in a warning."""
+    from tools.orchestration.stages import UnitStatusReport
+
+    class Recorder(SilentLogger):
+        """Silent logger keeping the info and warning lines."""
+        def __init__(self):
+            """Creates the line buffers."""
+            self.infos    = []
+            self.warnings = []
+
+        def info(self, message, *a, **k):    self.infos.append(message)
+        def warning(self, message, *a, **k): self.warnings.append(message)
+
+    recorder = Recorder()
+    stage    = QueuedTrainingStage(config=_config(tmp_path, resume=False), entry_script=Path("entry.py"), run_tag="t1", items=["done_model", "new_model"], logger=recorder)
+    _mark_complete(stage.stage_dir / "done_model")
+
+    stage.status_report().log(recorder, "Unit status")
+
+    assert {row["Unit"]: row["Training"] for row in stage.status_report().rows()}["done_model"] == UnitStatusReport.REFUSED
+    assert recorder.infos    == ["0 unit(s) complete, 0 resume from their checkpoint, 1 train from scratch"]
+    assert recorder.warnings == ["resume is off: 1 completed unit(s) hold a finished run that is never overwritten in place, so they refuse to train and fail; set resume=True to reuse them or launch under a new run_tag: done_model"]
+
+
 def test_training_checkpoint_without_marker_is_not_finished(tmp_path, logger):
     """Verifies a checkpoint without a completion marker does not count as finished."""
     items  = ["m"]
