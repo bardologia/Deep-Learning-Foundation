@@ -468,7 +468,7 @@ class ConfigForm {
     } else if (leaf.type === "bool") {
       control = this._switchControl(leaf);
       row.classList.add("cfg-edit__row--bool");
-    } else if (leaf.type === "int" || leaf.type === "float") {
+    } else if (leaf.type === "int" || leaf.type === "float" || kind === "number") {
       control = new window.NumberField(this, leaf, short, kind === "number" ? spec : null).build();
       row.classList.add("cfg-edit__row--num");
     } else {
