@@ -3,8 +3,11 @@
 Owns the run directory layout (``<log_base_dir>/<run_tag>/pipeline``), persists
 the resolved configuration next to it, keeps every earlier configuration the
 run was launched with, and records per-stage status in ``state.json`` so a
-rerun can see what already finished. Every launch appends its provenance to
-``launches.jsonl`` and names the recorded settings a relaunch changed.
+rerun can see what already finished. Its ``run`` wraps the stage sequence a
+subclass implements, so an exception that ends the run is written to the
+pipeline log with the stage it happened in and marked in the state, and a
+run whose units partly failed ends with a unit-level summary and a non-zero
+exit once its reports are written.
 """
 
 from __future__ import annotations
@@ -12,12 +15,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from rich.markup import escape
+
 from pipelines.shared.orchestration.resumed_run import ResumedRun
 from tools.data.io                              import FileIO
 from tools.monitoring.logger                    import Logger
 from tools.runtime.config_cli                   import ConfigCli
 from tools.runtime.git_state                    import RunProvenance
 from tools.runtime.run_tag                      import RunTag
+
+
+class PartialRun(SystemExit):
+    """Exit raised once a run wrote its reports with some of its units failed, so the shell and the console record a failure."""
 
 
 class StagedPipeline:
@@ -34,6 +43,7 @@ class StagedPipeline:
         state_path      : Path of the JSON file recording per-stage status.
         launches_path   : JSON-lines file gaining one record per launch: start time, stage, resume source, archived recording and provenance.
         provenance      : Commit, host, interpreter and library versions of this launch, from RunProvenance.
+        current_stage   : Name of the stage in progress, recorded as failed when an exception ends the run inside it.
         archived_config : Path the recording of the earlier launch was moved to, or None when this launch kept it.
         config_changes  : Recorded leaves this launch rewrote, mapped to their (recorded, current) values; empty for a first launch or an unchanged relaunch.
         logger          : Logger writing into the pipeline directory.
@@ -59,6 +69,7 @@ class StagedPipeline:
         self.resumed       = resumed
         self.run_tag       = config.run_tag or RunTag.now()
         config.run_tag     = self.run_tag
+        self.current_stage = "setup"
 
         self.run_dir       = Path(config.paths.log_base_dir) / self.run_tag
         self.pipeline_dir  = self.run_dir / "pipeline"
@@ -160,6 +171,10 @@ class StagedPipeline:
 
         self._log_config_changes()
 
+    def _begin_stage(self, stage_name: str) -> None:
+        """Names the stage that is starting, so an exception escaping it is attributed to it."""
+        self.current_stage = stage_name
+
     def _mark_stage(self, stage_name: str, status: str) -> None:
         """Records a stage's status with a timestamp and flushes state to disk."""
         self.state["stages"][stage_name] = {
@@ -168,3 +183,97 @@ class StagedPipeline:
         }
 
         FileIO.save_json(self.state, self.state_path, indent=2)
+
+    def _finish(self, training_results: list[dict], inference_results: list[dict], outputs: dict) -> None:
+        """Marks the pipeline completed or partial from the unit results and logs the end summary.
+
+        Args:
+            training_results  : One training stage result per planned unit, each carrying ``name`` and ``status``.
+            inference_results : One inference stage result per unit, empty when the inference stage was skipped, which the summary says instead of counting zero inferences.
+            outputs           : Report locations appended to the summary table.
+
+        Raises:
+            PartialRun : If any unit failed training or inference, after every failed unit was logged; the reports are already written at this point.
+        """
+        failed_training  = [result["name"] for result in training_results if result["status"] != "DONE"]
+        failed_inference = [result["name"] for result in inference_results if result["status"] == "FAILED"]
+        failed           = len(failed_training) + len(failed_inference)
+        planned          = len(training_results)
+        title            = "Done" if not failed else f"Partial: {failed} of {planned} units failed"
+
+        self._mark_stage("pipeline", "completed" if not failed else "partial")
+
+        inference = {"Inference": "stage skipped"}
+        if inference_results:
+            inference = {
+                "Inferred"          : sum(1 for result in inference_results if result["status"] == "DONE"),
+                "Inference failed"  : len(failed_inference),
+                "Inference skipped" : sum(1 for result in inference_results if result["status"] == "SKIPPED"),
+            }
+
+        self.logger.section("Pipeline summary")
+        self.logger.kv_table({
+            "Units planned"   : planned,
+            "Trained"         : sum(1 for result in training_results if result["status"] == "DONE"),
+            "Training failed" : len(failed_training),
+            **inference,
+            **outputs,
+            "Pipeline logs"   : str(self.pipeline_dir),
+        }, title=title)
+
+        if not failed:
+            return
+
+        self.logger.error(title)
+        for name in failed_training:
+            self.logger.error(f"training failed: {name}")
+        for name in failed_inference:
+            self.logger.error(f"inference failed: {name}")
+
+        raise PartialRun(f"{title} ({len(failed_training)} training, {len(failed_inference)} inference); the reports cover the units that finished, see {self.pipeline_dir}")
+
+    def _record_abort(self, error: BaseException) -> None:
+        """Logs the stage an escaping exception ended the run in and marks it and the pipeline failed.
+
+        A SystemExit with a zero code is a deliberate clean exit and leaves the
+        state as the run recorded it.
+
+        Args:
+            error : Exception escaping the stage sequence.
+        """
+        if not Logger.aborted(error):
+            return
+
+        self.logger.error(f"Aborted in stage '{self.current_stage}' by {type(error).__name__}: {escape(str(error))}")
+
+        for stage_name in dict.fromkeys((self.current_stage, "pipeline")):
+            self._mark_stage(stage_name, "failed")
+
+    def _execute(self) -> None:
+        """Runs the stage sequence of the pipeline; implemented by subclasses."""
+        raise NotImplementedError
+
+    def run(self) -> None:
+        """Runs the stage sequence inside the pipeline logger, recording any exception that ends it.
+
+        The logger closes with an ABORTED banner and the traceback when an
+        exception escapes, and with the END banner otherwise; a partial run
+        counts as ended, its exit is raised once the log is closed.
+
+        Raises:
+            PartialRun    : If the stage sequence finished with failed units.
+            BaseException : Whatever else the stage sequence raised, after it was logged and marked in the state.
+        """
+        partial = None
+
+        with self.logger:
+            try:
+                self._execute()
+            except PartialRun as error:
+                partial = error
+            except BaseException as error:
+                self._record_abort(error)
+                raise
+
+        if partial is not None:
+            raise partial
