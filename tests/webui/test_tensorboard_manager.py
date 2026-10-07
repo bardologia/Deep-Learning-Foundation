@@ -2,7 +2,7 @@
 
 Covers the mapping from training entry points to their logdir configuration keys, the
 one-instance-per-logdir lifecycle (start, reuse, replace a dead process, stop with a
-terminate-then-kill escalation), the run-directory listing, and the small helpers for
+terminate-then-kill escalation), the run-directory tree, and the small helpers for
 stderr tails, status transitions and free ports.
 """
 
@@ -314,27 +314,53 @@ def test_stop_all_terminates_every_live_process(manager, launcher, tmp_path):
     assert manager.list_instances() == []
 
 
-def test_listing_logdirs_counts_distinct_event_directories(manager, launcher, tmp_path):
-    """Listing reports each run directory, its number of event directories and whether it is being served."""
+def test_the_run_tree_classifies_runs_sets_and_groups(manager, launcher, tmp_path):
+    """Folders of runs become sets, folders of further run folders become groups, and run-free folders are dropped."""
     root = tmp_path / "runs"
-    _events(root / "run_a" / "tensorboard", 2)
-    _events(root / "run_b" / "tensorboard" / "train", 1)
-    _events(root / "run_b" / "tensorboard" / "val", 1)
-    (root / "run_c").mkdir(parents=True)
-    (root / ".hidden").mkdir()
+    _events(root / "solo" / "tensorboard", 2)
+    _events(root / "backbone" / "run_a" / "tensorboard", 1)
+    _events(root / "backbone" / "run_b" / "tensorboard" / "train", 1)
+    _events(root / "backbone" / "run_b" / "tensorboard" / "val", 1)
+    _events(root / "sweep" / "loose" / "tensorboard", 1)
+    _events(root / "sweep" / "arm_on" / "seed0" / "tensorboard", 1)
+    _events(root / "sweep" / "arm_on" / "seed1" / "tensorboard", 1)
+    (root / "sweep" / "arm_off" / "seed0" / "tensorboard").mkdir(parents=True)
+    (root / "empty" / "logs").mkdir(parents=True)
+    (root / ".hidden" / "tensorboard").mkdir(parents=True)
     (root / "notes.md").write_text("x")
 
-    manager.ensure(str(root / "run_a"), "python")
-    payload = manager.list_logdirs(str(root))
-    entries = {entry["name"]: entry for entry in payload["logdirs"]}
+    manager.ensure(str(root / "backbone"), "python")
+    payload = manager.run_tree(str(root))
+    nodes   = {node["name"]: node for node in payload["tree"]}
 
     assert payload["ok"] is True
-    assert sorted(entries) == ["run_a", "run_b", "run_c"]
-    assert entries["run_a"]["run_count"] == 1
-    assert entries["run_b"]["run_count"] == 2
-    assert entries["run_c"]["run_count"] == 0
-    assert entries["run_a"]["running"] is not None
-    assert entries["run_b"]["running"] is None
+    assert sorted(nodes) == ["backbone", "solo", "sweep"]
+
+    assert (nodes["solo"]["kind"], nodes["solo"]["run_count"])         == ("run", 1)
+    assert (nodes["backbone"]["kind"], nodes["backbone"]["run_count"]) == ("set", 2)
+    assert (nodes["sweep"]["kind"], nodes["sweep"]["run_count"])       == ("group", 3)
+
+    assert nodes["backbone"]["children"] == []
+    assert nodes["backbone"]["running"] is not None
+    assert nodes["sweep"]["running"] is None
+
+    children = {node["name"]: node for node in nodes["sweep"]["children"]}
+
+    assert sorted(children) == ["arm_on", "loose"]
+    assert (children["loose"]["kind"], children["loose"]["run_count"])   == ("run", 1)
+    assert (children["arm_on"]["kind"], children["arm_on"]["run_count"]) == ("set", 2)
+    assert children["arm_on"]["path"] == str(root / "sweep" / "arm_on")
+
+
+def test_the_run_tree_does_not_descend_into_run_directories(manager, tmp_path):
+    """Event folders nested inside a run directory do not surface as runs of their own."""
+    root = tmp_path / "runs"
+    _events(root / "run_a" / "tensorboard", 1)
+    _events(root / "run_a" / "inference" / "pass_1" / "tensorboard", 1)
+
+    payload = manager.run_tree(str(root))
+
+    assert [(node["name"], node["kind"], node["run_count"]) for node in payload["tree"]] == [("run_a", "run", 1)]
 
 
 def test_run_dirs_for_pid_matches_writer_pid_and_time(manager, tmp_path):
@@ -365,9 +391,9 @@ def test_an_event_file_directly_in_the_root_maps_to_the_root(manager, tmp_path):
     assert manager.run_dirs_for_pid(root, 42, since=900.0) == [root]
 
 
-def test_listing_logdirs_refuses_a_missing_root(manager, tmp_path):
+def test_the_run_tree_refuses_a_missing_root(manager, tmp_path):
     """A non-existent runs root is refused with an explanatory error."""
-    payload = manager.list_logdirs(str(tmp_path / "nowhere"))
+    payload = manager.run_tree(str(tmp_path / "nowhere"))
 
     assert payload["ok"] is False
     assert "runs root not found" in payload["error"]

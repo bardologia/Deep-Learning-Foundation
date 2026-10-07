@@ -34,7 +34,7 @@ class TensorboardRouter(SubRouter):
     def declare(self, table: RouteTable) -> None:
         """Registers the /api/tensorboard routes."""
         table.add("GET",  "/api/tensorboard",         self.instances)
-        table.add("GET",  "/api/tensorboard/logdirs", self.logdirs)
+        table.add("GET",  "/api/tensorboard/tree",    self.tree)
         table.add("POST", "/api/tensorboard/start",   self.start)
         table.wildcard("POST", "/api/tensorboard/", "/stop", self.stop)
 
@@ -42,8 +42,8 @@ class TensorboardRouter(SubRouter):
         """Answers with the running TensorBoard instances."""
         exchange.send_json({"instances": self.tensorboard.list_instances()})
 
-    def logdirs(self, exchange: HttpExchange) -> None:
-        """Answers with the log directories under the backbone training runs root."""
+    def tree(self, exchange: HttpExchange) -> None:
+        """Answers with the folder tree of runs under the backbone training runs root."""
         interpreter = self.launcher.preferred_interpreter("train_backbone")
         runs_root   = self.launcher.runs_root("train_backbone", interpreter)
 
@@ -51,7 +51,7 @@ class TensorboardRouter(SubRouter):
             exchange.send_json({"ok": False, "error": "could not resolve runs root"}, 400)
             return
 
-        exchange.send_result(self.tensorboard.list_logdirs(runs_root))
+        exchange.send_result(self.tensorboard.run_tree(runs_root))
 
     def start(self, exchange: HttpExchange) -> None:
         """Starts, or reuses, a TensorBoard instance for the requested log directory."""

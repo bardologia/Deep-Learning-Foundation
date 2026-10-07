@@ -27,6 +27,8 @@ class TensorboardView {
     this.timer = null;
     this.active = false;
     this.pickerOpen = false;
+    this.tree = [];
+    this.expanded = new Set();
 
     this.openBtn.addEventListener("click", () => {
       const inst = this._selected();
@@ -177,7 +179,7 @@ class TensorboardView {
     this.pickerOpen = true;
     this.picker.hidden = false;
     this.browseBtn.classList.add("is-active");
-    this._loadLogdirs();
+    this._loadTree();
   }
 
   _closeBrowse() {
@@ -186,39 +188,92 @@ class TensorboardView {
     this.browseBtn.classList.remove("is-active");
   }
 
-  async _loadLogdirs() {
+  async _loadTree() {
     this.pickerList.innerHTML = `<p class="tb-picker__msg">Scanning run directories…</p>`;
     this.pickerRoot.textContent = "";
-    const data = await Api.get("/api/tensorboard/logdirs");
+    const data = await Api.get("/api/tensorboard/tree");
     if (data.error || data.ok === false) {
       this.pickerList.innerHTML = `<p class="tb-picker__msg">${SharedCharts.esc(data.error || "No runs root available.")}</p>`;
       return;
     }
-    this.pickerRoot.textContent = data.runs_root || "";
-    this._renderPicker(data.logdirs || []);
+    this.pickerRoot.textContent = data.runs_root;
+    this.tree = data.tree;
+    this._renderPicker();
   }
 
-  _renderPicker(logdirs) {
+  _renderPicker() {
+    const scroll = this.pickerList.scrollTop;
     this.pickerList.innerHTML = "";
-    const withRuns = logdirs.filter((d) => d.run_count > 0);
-    if (!withRuns.length) {
+    if (!this.tree.length) {
       this.pickerList.innerHTML = `<p class="tb-picker__msg">No directories with TensorBoard event data found.</p>`;
       return;
     }
-    withRuns.forEach((dir) => {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "tb-logdir" + (dir.running ? " is-running" : "");
-      row.title = dir.path;
-      const runs = dir.run_count === 1 ? "1 run" : `${dir.run_count} runs`;
-      const state = dir.running ? "live" : "launch";
-      row.innerHTML =
-        `<span class="tb-logdir__name">${dir.name}</span>` +
-        `<span class="tb-logdir__count">${runs}</span>` +
-        `<span class="tb-logdir__state">${state}</span>`;
-      row.addEventListener("click", () => this._launchLogdir(dir));
-      this.pickerList.appendChild(row);
+    this._renderNodes(this.tree, 0);
+    this.pickerList.scrollTop = scroll;
+  }
+
+  _renderNodes(nodes, depth) {
+    nodes.forEach((node) => {
+      const isGroup = node.kind === "group";
+      this.pickerList.appendChild(isGroup ? this._groupRow(node, depth) : this._launchRow(node, depth));
+      if (isGroup && this.expanded.has(node.path)) this._renderNodes(node.children, depth + 1);
     });
+  }
+
+  _groupRow(node, depth) {
+    const open = this.expanded.has(node.path);
+    const row = this._treeRow(depth);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "tb-logdir tb-logdir--group" + (open ? " is-open" : "");
+    toggle.title = node.path;
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.innerHTML = `<span class="tb-logdir__chevron" aria-hidden="true"></span>` + this._nodeLabel(node);
+    toggle.addEventListener("click", () => this._toggleNode(node));
+
+    const all = document.createElement("button");
+    all.type = "button";
+    all.className = "tb-logdir__all" + (node.running ? " is-running" : "");
+    all.title = `Serve all ${node.run_count} runs under ${node.path}`;
+    all.textContent = node.running ? "live" : "open all";
+    all.addEventListener("click", () => this._launchLogdir(node));
+
+    row.append(toggle, all);
+    return row;
+  }
+
+  _launchRow(node, depth) {
+    const row = this._treeRow(depth);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tb-logdir" + (node.running ? " is-running" : "");
+    button.title = node.path;
+    button.innerHTML =
+      `<span class="tb-logdir__chevron is-leaf" aria-hidden="true"></span>` +
+      this._nodeLabel(node) +
+      `<span class="tb-logdir__state">${node.running ? "live" : "launch"}</span>`;
+    button.addEventListener("click", () => this._launchLogdir(node));
+    row.appendChild(button);
+    return row;
+  }
+
+  _treeRow(depth) {
+    const row = document.createElement("div");
+    row.className = "tb-node";
+    row.style.setProperty("--depth", depth);
+    return row;
+  }
+
+  _nodeLabel(node) {
+    const runs = node.run_count === 1 ? "1 run" : `${node.run_count} runs`;
+    return `<span class="tb-logdir__name">${SharedCharts.esc(node.name)}</span><span class="tb-logdir__count">${runs}</span>`;
+  }
+
+  _toggleNode(node) {
+    if (this.expanded.has(node.path)) this.expanded.delete(node.path);
+    else this.expanded.add(node.path);
+    this._renderPicker();
   }
 
   async _launchLogdir(dir) {

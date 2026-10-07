@@ -43,6 +43,7 @@ class TensorboardManager:
         "tune"                      : ("paths.log_base_dir",),
     }
 
+    RUN_EVENT_FOLDER  = "tensorboard"
     STARTUP_TIMEOUT_S = 90.0
     PROBE_INTERVAL_S  = 0.5
     STOP_GRACE_S      = 10.0
@@ -194,15 +195,22 @@ class TensorboardManager:
                     return record["id"]
         return None
 
-    def list_logdirs(self, runs_root: str) -> dict:
-        """Lists candidate log directories directly under a runs root.
+    def run_tree(self, runs_root: str) -> dict:
+        """Lists the training runs under a runs root as a folder tree.
+
+        A run is a directory holding a ``tensorboard`` folder with event files, the
+        layout every training run writes. Folders without runs below them are left
+        out. Each remaining folder is a ``set`` when all its listed children are
+        runs, so serving it shows exactly those runs, and a ``group`` when it holds
+        further folders of runs, so it is browsed into rather than served whole.
 
         Args:
-            runs_root : Directory whose immediate subdirectories are training runs.
+            runs_root : Directory the run folders sit under, at any depth.
 
         Returns:
-            Dictionary with ``ok``, the resolved ``runs_root`` and a ``logdirs`` list of
-            entries carrying name, path, event-run count and any running instance id;
+            Dictionary with ``ok``, the resolved ``runs_root`` and a ``tree`` list of
+            nodes carrying name, path, kind (``run``, ``set`` or ``group``), run
+            count, any running instance id and, for groups only, their child nodes;
             ``ok`` is False with an ``error`` when the root does not exist.
         """
 
@@ -210,20 +218,60 @@ class TensorboardManager:
         if not root.is_dir():
             return {"ok": False, "error": f"runs root not found: {runs_root}"}
 
-        entries = []
-        for entry in sorted(root.iterdir()):
-            if not entry.is_dir() or entry.name.startswith("."):
+        tree = self._tree_children(root)
+
+        self.logger.info(f"tensorboard run tree: {sum(node['run_count'] for node in tree)} runs under {root}")
+        return {"ok": True, "runs_root": str(root), "tree": tree}
+
+    def _tree_children(self, directory: Path) -> list:
+        """Returns the tree nodes of a directory's visible subfolders that hold runs."""
+
+        nodes = []
+        for entry in sorted(directory.iterdir()):
+            if entry.name.startswith(".") or not entry.is_dir():
                 continue
 
-            entries.append({
-                "name"      : entry.name,
-                "path"      : str(entry),
-                "run_count" : self._count_event_runs(entry),
-                "running"   : self.running_logdir(str(entry)),
-            })
+            node = self._tree_node(entry)
+            if node["run_count"]:
+                nodes.append(node)
 
-        self.logger.info(f"tensorboard logdirs: listed {len(entries)} under {root}")
-        return {"ok": True, "runs_root": str(root), "logdirs": entries}
+        return nodes
+
+    def _tree_node(self, directory: Path) -> dict:
+        """Returns the tree node of one directory, classified as a run, a set or a group.
+
+        A run directory is not descended into, so checkpoints, inference outputs
+        and figures inside runs are never walked.
+
+        Args:
+            directory : Directory to classify.
+
+        Returns:
+            Node dictionary; its run count is zero when no event files exist below it.
+        """
+
+        events = directory / self.RUN_EVENT_FOLDER
+        if events.is_dir():
+            return self._tree_entry(directory, "run", int(self.has_event_files(events)), [])
+
+        children = self._tree_children(directory)
+        count    = sum(child["run_count"] for child in children)
+
+        if all(child["kind"] == "run" for child in children):
+            return self._tree_entry(directory, "set", count, [])
+        return self._tree_entry(directory, "group", count, children)
+
+    def _tree_entry(self, directory: Path, kind: str, run_count: int, children: list) -> dict:
+        """Returns the JSON-safe tree node of a classified directory."""
+
+        return {
+            "name"      : directory.name,
+            "path"      : str(directory),
+            "kind"      : kind,
+            "run_count" : run_count,
+            "running"   : self.running_logdir(str(directory)),
+            "children"  : children,
+        }
 
     def has_event_files(self, directory: str | Path) -> bool:
         """Returns whether any TensorBoard event file exists under a directory."""
@@ -290,15 +338,6 @@ class TensorboardManager:
 
         stamp = next((float(part) for part in parts[anchor + 1:] if part.isdigit()), None)
         return stamp, pid
-
-    def _count_event_runs(self, directory: Path) -> int:
-        """Returns the number of distinct directories holding tfevents files."""
-
-        parents = set()
-        for event in directory.rglob("*tfevents*"):
-            if event.is_file():
-                parents.add(event.parent)
-        return len(parents)
 
     def get(self, tb_id: str) -> dict | None:
         """Returns the raw instance record for an id, or None when unknown."""
