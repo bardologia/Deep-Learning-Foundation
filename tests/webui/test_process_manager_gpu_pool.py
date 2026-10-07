@@ -94,6 +94,41 @@ def test_launch_keeps_an_explicit_pool_file_override(manager, tmp_path):
         record = dict(manager.jobs[result["job_id"]])
 
     assert record["overrides"]["gpus_file"] == str(chosen)
+    assert record["request"]["overrides"]["gpus_file"] == str(chosen)
+
+    manager.stop(result["job_id"])
+
+
+def test_the_stored_request_omits_the_per_job_pool_file(manager):
+    """The request kept for a retry carries the overrides as sent, without the injected pool file."""
+    result = manager.launch("train_backbone", sys.executable, {"epochs": "3"}, "tune_dataloader", False)
+
+    with manager.lock:
+        record = dict(manager.jobs[result["job_id"]])
+
+    assert record["request"] == {"overrides": {"epochs": "3"}, "follow_up": "tune_dataloader", "finalize": {}}
+    assert "gpus_file" in record["overrides"]
+
+    manager.stop(result["job_id"])
+
+
+def test_a_recovered_pool_file_under_gpu_pools_dir_is_dropped_from_the_request(manager, tmp_path):
+    """An adopted command line loses the pool file the console injected, but keeps one chosen elsewhere."""
+    injected = str(manager.paths.gpu_pools_dir / "abc.json")
+    chosen   = str(tmp_path / "mine.json")
+
+    assert manager._without_pool_file({"epochs": "3", "gpus_file": injected}) == {"epochs": "3"}
+    assert manager._without_pool_file({"epochs": "3", "gpus_file": chosen}) == {"epochs": "3", "gpus_file": chosen}
+    assert manager._without_pool_file({"epochs": "3"}) == {"epochs": "3"}
+
+
+def test_attach_finalize_stores_the_switches_on_the_request(manager):
+    """The finalize switches a launch was sent with land on its stored request."""
+    result = manager.launch("train_backbone", sys.executable)
+    manager.attach_finalize(result["job_id"], {"compare_trials": True})
+
+    with manager.lock:
+        assert manager.jobs[result["job_id"]]["request"]["finalize"] == {"compare_trials": True}
 
     manager.stop(result["job_id"])
 

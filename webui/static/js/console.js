@@ -496,7 +496,8 @@ class TileUnitPicker {
 
 
 class ConsoleTile {
-  static GPU_POLL_MS = 4000;
+  static GPU_POLL_MS   = 4000;
+  static LIVE_STATUSES = new Set(["pending", "running", "queued", "scheduled"]);
 
   constructor(job, manager, host) {
     this.job = job;
@@ -551,12 +552,18 @@ class ConsoleTile {
     this.stopBtn.className = "btn btn--mini btn--danger";
     this.stopBtn.addEventListener("click", () => this._stop());
 
+    this.retryBtn = document.createElement("button");
+    this.retryBtn.className = "btn btn--mini";
+    this.retryBtn.textContent = "Retry";
+    this.retryBtn.title = "Reopen the launch page with this job's overrides, interpreter and run mode filled in, ready to adjust and launch again";
+    this.retryBtn.addEventListener("click", () => this.manager.retry(this.job));
+
     this.closeBtn = document.createElement("button");
     this.closeBtn.className = "btn btn--mini";
     this.closeBtn.textContent = "Close";
     this.closeBtn.addEventListener("click", () => this.manager.close(this.job.job_id));
 
-    bar.append(this.nameEl, this.metaEl, this.badgeEl, this.gpuBtn, this.tbBtn, this.logBtn, this.stopBtn, this.closeBtn);
+    bar.append(this.nameEl, this.metaEl, this.badgeEl, this.gpuBtn, this.tbBtn, this.logBtn, this.stopBtn, this.retryBtn, this.closeBtn);
 
     this.gpuTimer = null;
     this.gpus = new TileGpuPanel(this);
@@ -784,6 +791,7 @@ class ConsoleTile {
     this.badgeEl.textContent = status;
     this.stopBtn.textContent = status === "scheduled" || status === "queued" ? "Cancel" : "Stop";
     this.stopBtn.disabled = status !== "running" && status !== "scheduled" && status !== "queued";
+    this.retryBtn.hidden = ConsoleTile.LIVE_STATUSES.has(status);
 
     if (this.units.length) {
       this.unitsSig = null;
@@ -1032,6 +1040,7 @@ class RunConsole {
     this.listError = null;
     this.tiles = new Map();
     this.dismissed = new Set();
+    this.launchView = null;
     this._fitTimer = null;
 
     window.addEventListener("resize", () => this.queueFit());
@@ -1123,6 +1132,16 @@ class RunConsole {
   toggle(jobId) {
     if (this.tiles.has(jobId)) this.close(jobId);
     else this.open(jobId);
+  }
+
+  retry(job) {
+    this.launchView.pendingImport = {
+      name      : `${job.script} · ${job.started.replace("T", " ")}`,
+      script    : job.script,
+      overrides : job.request.overrides,
+      launch    : { interpreter: job.interpreter, detach: job.detach, follow_up: job.request.follow_up, finalize: job.request.finalize },
+    };
+    window.router.go(`launch/${job.script}`);
   }
 
   async stop(jobId) {

@@ -203,7 +203,7 @@ class LaunchView extends ConfigForm {
     this.loadSeq = 0;
     this.copyControl = new window.RunConfigCopy(this);
     this.templateControl = new window.ConfigTemplates(this);
-    this.pendingTemplate = null;
+    this.pendingImport = null;
     this.runMode = null;
     this._wireTabs();
     this._wireKeys();
@@ -270,14 +270,35 @@ class LaunchView extends ConfigForm {
   }
 
   _importPending() {
-    const entry = this.pendingTemplate;
-    this.pendingTemplate = null;
+    const entry = this.pendingImport;
+    this.pendingImport = null;
 
     if (!entry || !this.config || entry.script !== this.key) return;
 
     const outcome = this.applyRunConfig(entry.overrides);
-    const parts   = [`Imported "${entry.name}": ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`, ...ConfigForm.outcomeParts(outcome)];
+    const verb    = entry.launch ? "Retrying" : "Imported";
+    const parts   = [`${verb} "${entry.name}": ${outcome.applied} override${outcome.applied === 1 ? "" : "s"} set`, ...ConfigForm.outcomeParts(outcome)];
+    if (entry.launch) parts.push(...this._restoreLaunch(entry.launch));
     Toast.show(parts.join(" · "), ConfigForm.outcomeKind(outcome));
+  }
+
+  _restoreLaunch(launch) {
+    const notes    = [];
+    const interp   = document.getElementById("launch-interpreter");
+    const followEl = document.getElementById("launch-follow");
+
+    this.detach = Boolean(launch.detach);
+    if (interp && [...interp.options].some((opt) => opt.value === launch.interpreter)) interp.value = launch.interpreter;
+    else notes.push(`interpreter ${launch.interpreter} is no longer listed, using the preferred one`);
+
+    if (followEl) followEl.value = launch.follow_up && [...followEl.options].some((opt) => opt.value === launch.follow_up) ? launch.follow_up : "";
+
+    ConfigForm.FINALIZE_STEPS.forEach((step) => {
+      this.finalize[step.key] = Boolean(launch.finalize[step.key]);
+    });
+
+    this._refresh();
+    return notes;
   }
 
   _usesModelPanels(cfg) {

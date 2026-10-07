@@ -272,7 +272,7 @@ class ProcessManager:
             if not self.paths.script_entry(follow_up)["path"].exists():
                 return {"ok": False, "error": f"follow-up script '{follow_up}' not found"}
 
-        record = self._make_record(key, interpreter, self._clean_overrides(overrides), detach)
+        record = self._make_record(key, interpreter, self._clean_overrides(overrides), detach, follow_up)
         stream = JobStream(self.logger)
 
         with self.lock:
@@ -324,7 +324,7 @@ class ProcessManager:
             if not self.paths.script_entry(follow_up)["path"].exists():
                 return {"ok": False, "error": f"follow-up script '{follow_up}' not found"}
 
-        record                 = self._make_record(key, interpreter, self._clean_overrides(overrides), detach)
+        record                 = self._make_record(key, interpreter, self._clean_overrides(overrides), detach, follow_up)
         record["status"]       = "queued"
         record["queue_follow"] = follow_up
         stream                 = JobStream(self.logger)
@@ -345,16 +345,22 @@ class ProcessManager:
             still_queued = record["status"] == "queued"
         return {"ok": True, "job_id": record["job_id"], "queued": still_queued}
 
-    def _make_record(self, key: str, interpreter: str, overrides: dict, detach: bool = False) -> dict:
+    def _make_record(self, key: str, interpreter: str, overrides: dict, detach: bool = False, follow_up: str | None = None) -> dict:
         """Builds a pending job record with a fresh id, rendered command and description.
+
+        The record keeps the launch request as the form sent it under ``request``
+        (overrides before the per-job pool file, the follow-up key and the
+        finalize switches), so the console can reopen the launch page with it.
 
         Args:
             key         : Registered script key.
             interpreter : Interpreter the script will run under.
             overrides   : Validated config overrides, extended with a GPU pool file for the scripts that support one.
             detach      : Whether the launch will pass --detach.
+            follow_up   : Script key chained after this one, dropped when the launch is detached.
         """
         job_id    = uuid.uuid4().hex[:12]
+        request   = {"overrides": dict(overrides), "follow_up": None if detach else follow_up, "finalize": {}}
         overrides = self._with_pool_file(key, overrides, job_id)
 
         return {
@@ -364,6 +370,7 @@ class ProcessManager:
             "description"  : self.describer.describe(key, interpreter, overrides),
             "interpreter"  : interpreter,
             "overrides"    : overrides,
+            "request"      : request,
             "detach"       : detach,
             "status"       : "pending",
             "pid"          : None,
@@ -388,6 +395,27 @@ class ProcessManager:
             return overrides
 
         return {**overrides, self.POOL_FIELD: str(self.paths.gpu_pools_dir / f"{job_id}.json")}
+
+    def _without_pool_file(self, overrides: dict) -> dict:
+        """Returns the overrides without a per-job pool file taken from gpu_pools_dir.
+
+        Args:
+            overrides : Overrides recovered from a command line; an explicit pool file elsewhere is kept.
+        """
+        pool = overrides.get(self.POOL_FIELD)
+        if pool is None or Path(pool).parent != self.paths.gpu_pools_dir:
+            return dict(overrides)
+        return {path: value for path, value in overrides.items() if path != self.POOL_FIELD}
+
+    def attach_finalize(self, job_id: str, flags: dict) -> None:
+        """Stores the finalize switches a launch was sent with on its job record.
+
+        Args:
+            job_id : Identifier of the job just launched or queued.
+            flags  : Finalize switches, one boolean per chain step key.
+        """
+        with self.lock:
+            self.jobs[job_id]["request"]["finalize"] = dict(flags)
 
     def _runtime_env(self, interpreter: str) -> dict:
         """Builds the child environment: unbuffered coloured output at a fixed terminal size.
@@ -1016,6 +1044,7 @@ class ProcessManager:
             "description"      : "",
             "interpreter"      : info["interpreter"],
             "overrides"        : overrides,
+            "request"          : {"overrides": self._without_pool_file(overrides), "follow_up": None, "finalize": {}},
             "detach"           : False,
             "status"           : "running",
             "pid"              : pid,
