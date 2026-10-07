@@ -10,6 +10,7 @@ class DatasetPicker {
     run_groups:   { endpoint: "/api/fs/run_groups", key: "groups", noun: "groups",   hint: "nothing selected = runs_dir itself is treated as one seed group", badge: (d) => ({ text: `${d.n_runs} runs`, tone: d.n_runs >= 2 ? "ok" : "warn" }) },
     experiments:  { endpoint: "/api/fs/experiments", key: "experiments", noun: "experiments", hint: "nothing selected = every experiment found is mailed; missing seed aggregates and comparisons are written first", badge: (d) => ({ text: `${d.kind} · ${d.n_trials} trial${d.n_trials === 1 ? "" : "s"} · ${d.n_comparisons ? `${d.n_comparisons} comparison${d.n_comparisons === 1 ? "" : "s"}` : "no comparison yet"}`, tone: d.n_comparisons >= 1 ? "ok" : "warn" }) },
     param_trials: { endpoint: "/api/fs/param_trials", key: "trials", noun: "trials", hint: "select 2 or more trials to compare across datasets", badge: (d) => (d.dataset ? { text: d.dataset, tone: "ok" } : null) },
+    secondaries:  { endpoint: "/api/fs/secondaries", key: "secondaries", noun: "secondaries", hint: "nothing selected = the primary alone, no secondary channel", query: "dataset", none: (n) => `none of ${n} secondaries`, badge: (d) => (d.standard ? { text: "standard", tone: "ok" } : null) },
   };
 
   constructor(view, leaf, spec) {
@@ -31,6 +32,7 @@ class DatasetPicker {
     this.stale = [];
     this.reloadTimer = null;
     this.baseLabel = "";
+    this.standard = [];
     this.multiLoadSeq = 0;
   }
 
@@ -56,7 +58,7 @@ class DatasetPicker {
     else this._buildSingle();
 
     if (this.spec.datasetFrom) {
-      this.view._onDependency(this.spec.datasetFrom, () => this._scheduleSingleReload());
+      this.view._onDependency(this.spec.datasetFrom, () => (this.spec.multi ? this._scheduleReload() : this._scheduleSingleReload()));
     }
 
     return { el: this.el, input: this.select, reset: () => this._reset() };
@@ -303,6 +305,11 @@ class DatasetPicker {
       seeds.title = "select only multi-seed run groups";
       head.appendChild(seeds);
     }
+    if (this.spec.standardButton) {
+      const standard = window.LaunchWidgetDom.mini("Standard", () => this._setStandard());
+      standard.title = "select exactly the standard secondaries every training config starts from";
+      head.appendChild(standard);
+    }
     head.appendChild(window.LaunchWidgetDom.mini("Reload", () => this._loadMulti()));
 
     this.dropBtn = window.LaunchWidgetDom.mini("Drop missing", () => this._dropStale());
@@ -344,15 +351,28 @@ class DatasetPicker {
     }
   }
 
+  _datasetQuery() {
+    const source = this.view._leafByPath(this.spec.datasetFrom);
+    return source ? String(this.view._effective(source) || "") : "";
+  }
+
   async _loadMulti() {
     const mode  = DatasetPicker.MULTI_MODES[this.spec.mode];
-    const bases = this._baseList();
+    const bases = mode.query === "dataset" ? [this._datasetQuery()] : this._baseList();
     const seq   = ++this.multiLoadSeq;
 
     this.count.textContent = "listing...";
     this.hint.textContent = "";
 
-    const parts = (bases.length ? bases : [""]).map((b) => `base=${encodeURIComponent(b)}`);
+    if (mode.query === "dataset" && !bases[0]) {
+      this.items = [];
+      this.standard = [];
+      this.count.textContent = `no ${mode.noun}`;
+      this.body.innerHTML = `<p class="picker__empty">select a dataset first</p>`;
+      return;
+    }
+
+    const parts = (bases.length ? bases : [""]).map((b) => `${mode.query || "base"}=${encodeURIComponent(b)}`);
     if (mode.params) parts.push(mode.params);
     else if (this.spec.units) parts.push("units=1");
     if (this.spec.markerFrom) {
@@ -374,7 +394,8 @@ class DatasetPicker {
       return;
     }
 
-    this.baseLabel = res.base || bases.join(", ");
+    this.baseLabel = res.base || res.dataset || bases.join(", ");
+    this.standard  = res.standard || [];
 
     this.items = (res[mode.key] || []).filter((d) => (this.spec.validOnly ? d.is_dataset : true));
 
@@ -483,6 +504,17 @@ class DatasetPicker {
     this._commitMulti();
   }
 
+  _setStandard() {
+    const standard = new Set(this.standard);
+    this.stale = [];
+    this.items.forEach((d) => {
+      if (standard.has(d.name)) this.selected.add(d.name);
+      else this.selected.delete(d.name);
+    });
+    this._renderItems();
+    this._commitMulti();
+  }
+
   _dropStale() {
     if (!this.stale.length) return;
 
@@ -501,7 +533,7 @@ class DatasetPicker {
     const mode = DatasetPicker.MULTI_MODES[this.spec.mode];
     const picked = this.items.filter((d) => this.selected.has(d.name)).length;
 
-    this.count.textContent = picked || this.stale.length ? `${picked + this.stale.length} of ${this.items.length + this.stale.length} selected` : `all ${this.items.length} ${mode.noun}`;
+    this.count.textContent = picked || this.stale.length ? `${picked + this.stale.length} of ${this.items.length + this.stale.length} selected` : mode.none ? mode.none(this.items.length) : `all ${this.items.length} ${mode.noun}`;
     this.hint.textContent = this.stale.length ? `kept ${this.stale.join(", ")}: not under ${this.baseLabel}` : picked ? "" : (this.spec.hint || mode.hint);
     if (this.dropBtn) this.dropBtn.hidden = !this.stale.length;
     this.board.classList.toggle("is-dirty", this.view.dirty[this.leaf.path] !== undefined);

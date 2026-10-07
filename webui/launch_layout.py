@@ -119,6 +119,7 @@ class LaunchLayout:
     PICK_DATASET  = {"kind": "dataset", "mode": "datasets", "baseFromParent": True, "validOnly": True}
     PICK_PARAMS   = {"kind": "dataset", "mode": "params", "datasetFrom": "paths.dataset_path"}
     PICK_DATASETS = {"kind": "dataset", "mode": "datasets", "multi": True, "baseFrom": "dataset_base_path", "validOnly": True}
+    PICK_CHANNELS = {"kind": "dataset", "mode": "secondaries", "multi": True, "datasetFrom": "paths.dataset_path", "standardButton": True}
 
     MULTI_K       = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add K, Enter", "empty": "select at least one K"}
     MULTI_LAMBDA  = {"kind": "multi", "numeric": True, "placeholder": "add lambda, Enter", "empty": "select at least one lambda"}
@@ -277,11 +278,13 @@ class LaunchLayout:
             ]},
         ],
         "paths_rest": [
-            {"title": "Run paths", "fields": ["log_base_dir", "secondary_labels", "fingerprint_dataset"]},
+            {"title": "Run paths", "fields": ["log_base_dir", "fingerprint_dataset"]},
+            {"title": "Secondary channels", "fields": [{"path": "secondary_labels", "widget": PICK_CHANNELS}]},
         ],
 
         "paths_train": [
-            {"title": "Run paths", "fields": ["secondary_labels", "fingerprint_dataset"]},
+            {"title": "Run paths", "fields": ["fingerprint_dataset"]},
+            {"title": "Secondary channels", "fields": [{"path": "secondary_labels", "widget": PICK_CHANNELS}]},
         ],
         "input": [
             {"title": "Primary", "fields": [{"gate": "use_primary", "fields": ["primary_representation"]}]},
@@ -1137,9 +1140,9 @@ class LaunchLayout:
                             {"path": "paths.dataset_path", "widget": PICK_DATASET},
                             {"path": "paths.parameters_path", "widget": PICK_PARAMS},
                             "paths.log_base_dir",
-                            "paths.secondary_labels",
                             "paths.fingerprint_dataset",
                         ]},
+                        {"title": "Secondary channels", "fields": [{"path": "paths.secondary_labels", "widget": PICK_CHANNELS}]},
                     ]},
                 ]},
             ],
@@ -1520,10 +1523,10 @@ class LaunchLayout:
                             {"path": "paths.dataset_path", "widget": PICK_DATASET},
                             {"path": "paths.parameters_path", "widget": PICK_PARAMS},
                             "paths.log_base_dir",
-                            "paths.secondary_labels",
                             "paths.fingerprint_dataset",
                             "output_dir",
                         ]},
+                        {"title": "Secondary channels", "fields": [{"path": "paths.secondary_labels", "widget": PICK_CHANNELS}]},
                     ]},
                 ]},
             ],

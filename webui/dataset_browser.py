@@ -1,13 +1,15 @@
-"""Filesystem discovery of datasets, training runs, experiments and extracted parameter files.
+"""Filesystem discovery of datasets, training runs, experiments, extracted parameter files and secondary channels.
 
 Backs the web UI pickers by walking dataset roots and run roots, reporting which
 directories look like datasets, which runs carry checkpoints or inference output,
-which experiments exist and how many trials and comparisons they hold, and which
-parameter-extraction trials are complete.
+which experiments exist and how many trials and comparisons they hold, which
+parameter-extraction trials are complete, and which secondary channels a
+dataset's stack holds.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -15,7 +17,7 @@ from web_logger import WebLogger
 
 
 class DatasetBrowser:
-    """Lists datasets, runs, run groups, experiments and parameter files under given roots.
+    """Lists datasets, runs, run groups, experiments, parameter files and secondary channels under given roots.
 
     Every public method returns a JSON-ready dict carrying an ``ok`` flag, so the
     web UI can surface bad paths as errors instead of raising.
@@ -30,6 +32,7 @@ class DatasetBrowser:
     PARAM_SUFFIX    = ".npy"
     PARAM_META      = "param_extraction_meta.json"
     PARAM_FILE      = "parameters.npy"
+    LAYOUT_FILE     = "dataset.json"
     MAX_DEPTH       = 3
     CHECKPOINT_NAME = "best_model.pt"
     INFERENCE_DIR   = "inference"
@@ -261,6 +264,39 @@ class DatasetBrowser:
 
         self.logger.info(f"params: found {len(files)} under {params_dir}")
         return {"ok": True, "dataset": str(dataset), "params_root": str(params_dir), "files": files}
+
+    def secondaries(self, raw_dataset: str) -> dict:
+        """Lists the secondary channels of a dataset's stack.
+
+        Args:
+            raw_dataset : Absolute path of the dataset directory.
+
+        Returns:
+            Dict with ``ok``, the dataset path, the ``reference`` channel label,
+            the ``standard`` secondary labels every training config starts from,
+            and a ``secondaries`` list of entries in stack order carrying ``name``
+            and ``standard``; ``ok`` is False with an ``error`` when the dataset
+            records no channel labels.
+        """
+        from configuration.training.general.run import TrainingPathsConfig
+
+        dataset = self._directory(raw_dataset)
+        if dataset is None:
+            return {"ok": False, "error": f"not a directory: {raw_dataset}"}
+
+        layout_path = dataset / self.DATA_MARKER / self.LAYOUT_FILE
+        if not layout_path.is_file():
+            return {"ok": False, "error": f"no {self.DATA_MARKER}/{self.LAYOUT_FILE} under {dataset}"}
+
+        channel_labels = json.loads(layout_path.read_text(encoding="utf-8"))["channel_labels"]
+        if not channel_labels:
+            return {"ok": False, "error": f"{layout_path} records no channel labels; generate the dataset again"}
+
+        standard = list(TrainingPathsConfig().secondary_labels)
+        entries  = [{"name": label, "standard": label in standard} for label in channel_labels[1:]]
+
+        self.logger.info(f"secondaries: {len(entries)} of {dataset}, reference {channel_labels[0]}")
+        return {"ok": True, "dataset": str(dataset), "reference": channel_labels[0], "standard": standard, "secondaries": entries}
 
     def param_trials(self, raw_base: str) -> dict:
         """Lists completed parameter-extraction trials found anywhere under a root.
