@@ -97,12 +97,13 @@ class ResumedRun:
         LOCATION_FIELDS : Leaves the resume itself sets from the run's location and its own nature, left out of the change report.
         LOCATOR         : Locator finding the run root and its recorded configuration.
         config_class    : Entry configuration class of the pipeline.
-        launch_config : Configuration of the current launch, already carrying the machine profile and the command-line overrides.
-        cli_overrides : Overrides typed on the current command line, keyed by dotted path.
-        root          : Staged run directory being resumed.
-        config_path   : Recorded configuration inside that run.
-        recorded      : Flattened recorded configuration, keyed by dotted path.
-        changed       : Recorded leaves this launch rewrote, mapped to their (recorded, new) values; filled by `load`.
+        launch_config   : Configuration of the current launch, already carrying the machine profile and the command-line overrides.
+        cli_overrides   : Overrides typed on the current command line, keyed by dotted path.
+        root            : Staged run directory being resumed.
+        config_path     : Recorded configuration inside that run.
+        recorded        : Flattened recorded configuration, keyed by dotted path.
+        baseline        : Flattened recording as loaded into today's configuration class, the reference of the change report; filled by `load`.
+        changed         : Recorded leaves this launch rewrote, mapped to their (recorded, new) values; filled by `load` and brought up to date by `refresh`.
     """
 
     LAUNCH_FIELDS   = ("gpus", "gpus_file", "poll_interval_s", "stage", "resume_from")
@@ -123,6 +124,7 @@ class ResumedRun:
         self.root          = self.LOCATOR.root(launch_config.resume_from)
         self.config_path   = self.LOCATOR.config_path(self.root)
         self.recorded      = FileIO.load_json(self.config_path)
+        self.baseline      = {}
         self.changed       = {}
 
     def _launch_overrides(self) -> dict:
@@ -142,16 +144,14 @@ class ResumedRun:
         Raises:
             KeyError : If the recording does not match the configuration class of today's code; propagated from the strict loader.
         """
-        config   = ConfigCli.load_resolved(self.config_class(), self.config_path)
-        recorded = ConfigCli.to_mapping(config)
+        config        = ConfigCli.load_resolved(self.config_class(), self.config_path)
+        self.baseline = ConfigCli.to_mapping(config)
 
         overrides = self._launch_overrides()
         ConfigCli.apply_overrides(config, overrides)
 
         self._settle_location(config)
-
-        current      = ConfigCli.to_mapping(config)
-        self.changed = {path: (recorded[path], current[path]) for path in recorded if path not in self.LOCATION_FIELDS and current[path] != recorded[path]}
+        self.refresh(config)
 
         return config
 
@@ -160,6 +160,20 @@ class ResumedRun:
         config.run_tag            = self.root.name
         config.paths.log_base_dir = self.root.parent
         config.resume             = True
+
+    def refresh(self, config) -> None:
+        """Recomputes the changed leaves against the configuration as it finally stands.
+
+        An entry may derive further leaves after loading, such as the warmup
+        curriculum fields inherited from a typed complete-stage override; the
+        pipeline calls this with the configuration it runs, so those leaves
+        reach the change report too.
+
+        Args:
+            config : Configuration the launch runs with.
+        """
+        current      = ConfigCli.to_mapping(config)
+        self.changed = {path: (self.baseline[path], current[path]) for path in self.baseline if path not in self.LOCATION_FIELDS and current[path] != self.baseline[path]}
 
     def log(self, logger: Logger) -> None:
         """Logs where the configuration came from and every leaf this launch changed."""

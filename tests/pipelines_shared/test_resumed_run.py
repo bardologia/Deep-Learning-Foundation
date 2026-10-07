@@ -162,3 +162,24 @@ def test_tuning_resume_locates_the_recording_beside_the_study_database(tmp_path)
     assert config.paths.log_base_dir == run_dir.parent
     assert config.tuning.n_trials    == 20
     assert config.resume_from        == ""
+
+
+def test_refresh_reports_a_leaf_the_entry_derived_after_loading(tmp_path):
+    """A leaf set after the recording was loaded, such as a warmup field inherited from a typed complete-stage override, joins the change table once the run is refreshed with its final configuration."""
+    from configuration.training import CurriculumInheritance, default_curriculum
+
+    run_dir = _recorded_run(tmp_path)
+
+    launch, cli = _launch(str(run_dir), ["--curriculum.complete.weight_mse_curve", "0.25"])
+    resumed     = ResumedRun(CrossValidationConfig, launch, cli.overrides)
+    config      = resumed.load()
+
+    inherited = CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
+
+    assert inherited == {"weight_mse_curve": 0.25}
+    assert "curriculum.warmup.weight_mse_curve" not in resumed.changed
+
+    resumed.refresh(config)
+
+    assert resumed.changed["curriculum.complete.weight_mse_curve"] == (1.0, 0.25)
+    assert resumed.changed["curriculum.warmup.weight_mse_curve"]   == (1.0, 0.25)
