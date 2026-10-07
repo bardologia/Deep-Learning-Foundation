@@ -182,7 +182,7 @@ class BenchmarkPipeline(StagedPipeline):
             "Run dir"   : str(self.run_dir),
         }, title="Configuration")
 
-        self._log_resumed()
+        self._log_launch()
 
         try:
             self._validate_sweep()
