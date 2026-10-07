@@ -26,6 +26,11 @@ def _logger(tmp_path, name) -> Logger:
     return Logger(log_dir=str(tmp_path / "logs"), name=name, level="ERROR")
 
 
+def _activity_threshold(test_data_dir, params_dir) -> float:
+    """Returns the activity threshold the test parameter run was generated with."""
+    return GaussianConfig.from_dataset(test_data_dir, params_dir / "parameters.npy").activity_threshold
+
+
 def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
     """Returns a backbone dataset config over three contiguous row splits of the test data."""
     ic = InputConfig(
@@ -60,7 +65,7 @@ def _backbone_config(test_data_dir, params_dir) -> DatasetConfig:
 def test_backbone_pipeline_writes_metadata_and_stats(test_data_dir, params_dir, tmp_path):
     """The backbone pipeline writes its metadata files and returns normalized datasets and loaders."""
     config   = _backbone_config(test_data_dir, params_dir)
-    pipeline = DatasetPipeline(config, tmp_path, logger=_logger(tmp_path, "bb_pipe"), seed=0)
+    pipeline = DatasetPipeline(config, tmp_path, _activity_threshold(test_data_dir, params_dir), logger=_logger(tmp_path, "bb_pipe"), seed=0)
 
     train_loader, val_loader, test_loader, datasets = pipeline.run()
 
@@ -85,7 +90,7 @@ def test_backbone_pipeline_train_order_reproducible(test_data_dir, params_dir, t
     def _first_batch(run_dir):
         """Returns the first training batch of a backbone pipeline run seeded at 7 under run_dir."""
         config   = _backbone_config(test_data_dir, params_dir)
-        pipeline = DatasetPipeline(config, run_dir, logger=_logger(run_dir, "bb_repro"), seed=7)
+        pipeline = DatasetPipeline(config, run_dir, _activity_threshold(test_data_dir, params_dir), logger=_logger(run_dir, "bb_repro"), seed=7)
         loaders  = pipeline.run()
         x, _     = next(iter(loaders[0]))
         return x.numpy()
@@ -103,7 +108,7 @@ def test_backbone_pipeline_rectangular_patches_yield_rectangular_batches(test_da
     config       = _backbone_config(test_data_dir, params_dir)
     config.patch = PatchConfig(size=(8, 16), stride=(4, 8))
 
-    pipeline = DatasetPipeline(config, tmp_path, logger=_logger(tmp_path, "bb_rect"), seed=0)
+    pipeline = DatasetPipeline(config, tmp_path, _activity_threshold(test_data_dir, params_dir), logger=_logger(tmp_path, "bb_rect"), seed=0)
 
     train_loader, _val_loader, _test_loader, _datasets = pipeline.run()
     x, y = next(iter(train_loader))
@@ -125,8 +130,9 @@ def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, pa
         use_derived=True, derived_representation=Representation.ANGLE_ONLY,
     )
 
-    full_datasets    = DatasetPipeline(full,    tmp_path / "full",    logger=_logger(tmp_path, "bb_full"),    seed=0).run()[3]
-    trimmed_datasets = DatasetPipeline(trimmed, tmp_path / "trimmed", logger=_logger(tmp_path, "bb_trimmed"), seed=0).run()[3]
+    threshold        = _activity_threshold(test_data_dir, params_dir)
+    full_datasets    = DatasetPipeline(full,    tmp_path / "full",    threshold, logger=_logger(tmp_path, "bb_full"),    seed=0).run()[3]
+    trimmed_datasets = DatasetPipeline(trimmed, tmp_path / "trimmed", threshold, logger=_logger(tmp_path, "bb_trimmed"), seed=0).run()[3]
 
     full_train    = full_datasets["train"]
     trimmed_train = trimmed_datasets["train"]
@@ -149,7 +155,7 @@ def test_backbone_pipeline_rejects_rot90_with_rectangular_patch(test_data_dir, p
     config.augmentation.p_rot90 = 0.5
 
     with pytest.raises(ValueError, match="rectangular patch"):
-        DatasetPipeline(config, tmp_path, logger=_logger(tmp_path, "bb_rot90"), seed=0)
+        DatasetPipeline(config, tmp_path, _activity_threshold(test_data_dir, params_dir), logger=_logger(tmp_path, "bb_rot90"), seed=0)
 
 
 @pytest.mark.dataset
@@ -344,12 +350,13 @@ def test_backbone_preparation_threads_the_training_resume_flag(tmp_path, monkeyp
     import pipelines.backbone.dataset.pipeline as module
     monkeypatch.setattr(module, "DatasetPipeline", _CapturingDatasetPipeline)
 
-    gaussian       = SimpleNamespace(n_default_gaussians=3, x_min=-5.0, x_max=25.0)
+    gaussian       = SimpleNamespace(n_default_gaussians=3, x_min=-5.0, x_max=25.0, activity_threshold=2e-3)
     trainer_config = SimpleNamespace(gaussian=gaussian, training=SimpleNamespace(resume=True))
     dataset_config = SimpleNamespace(n_gaussians=None, x_axis=None)
 
     module.BackboneDatasetPreparation(dataset_config, trainer_config, tmp_path, _logger(tmp_path, "prep_resume"), seed=0).run()
 
-    assert _CapturingDatasetPipeline.captured["resume"] is True
+    assert _CapturingDatasetPipeline.captured["resume"]             is True
+    assert _CapturingDatasetPipeline.captured["activity_threshold"] == 2e-3
 
 

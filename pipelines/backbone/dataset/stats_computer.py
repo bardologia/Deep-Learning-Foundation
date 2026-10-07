@@ -383,10 +383,10 @@ class StatsComputer:
     @staticmethod
     def compute_output_stats(
         dataset,
-        n_gaussians   : int,
-        output_config : "OutputConfig",
-        amp_threshold : float = 1e-3,
-        logger        : Optional[Logger] = None,
+        n_gaussians        : int,
+        output_config      : "OutputConfig",
+        activity_threshold : float,
+        logger             : Optional[Logger] = None,
     ) -> Stats:
         """Fits the output-side normalization statistics over the active Gaussian slots.
 
@@ -394,11 +394,11 @@ class StatsComputer:
         exceeds the activity threshold, so empty slots do not drag the statistics down.
 
         Args:
-            dataset       : Train-split dataset, either a PatchDataset or a MultiRegionDataset.
-            n_gaussians   : Number of Gaussian slots to pool over.
-            output_config : Output configuration selecting the channels and their strategies.
-            amp_threshold : Amplitude above which a Gaussian slot counts as active.
-            logger        : Logger receiving the role table, or None to stay silent.
+            dataset            : Train-split dataset, either a PatchDataset or a MultiRegionDataset.
+            n_gaussians        : Number of Gaussian slots to pool over.
+            output_config      : Output configuration selecting the channels and their strategies.
+            activity_threshold : Amplitude above which a Gaussian slot counts as active, as recorded by the label run.
+            logger             : Logger receiving the role table, or None to stay silent.
 
         Returns:
             Statistics carrying only the output half.
@@ -414,7 +414,7 @@ class StatsComputer:
                 a_flat   = params[g * 3 + 0].ravel().astype(np.float64)
                 mu_flat  = params[g * 3 + 1].ravel().astype(np.float64)
                 sig_flat = params[g * 3 + 2].ravel().astype(np.float64)
-                active   = a_flat > amp_threshold
+                active   = a_flat > activity_threshold
 
                 amp_pool_vals.append(a_flat[active])
                 mu_pool_vals.append(mu_flat[active])
@@ -441,25 +441,27 @@ class StatsComputer:
     @staticmethod
     def compute(
         dataset,
-        logger        : Logger,
-        input_config  : InputConfig,
-        output_config : "OutputConfig",
-        n_secondaries : int,
-        n_derived     : int,
-        n_gaussians   : int,
-        normalization : NormalizationConfig = None,
+        logger             : Logger,
+        input_config       : InputConfig,
+        output_config      : "OutputConfig",
+        n_secondaries      : int,
+        n_derived          : int,
+        n_gaussians        : int,
+        activity_threshold : float,
+        normalization      : NormalizationConfig = None,
     ) -> Stats:
         """Fits both halves of the normalization and merges them under the output clamp.
 
         Args:
-            dataset          : Train-split dataset the statistics are fitted on.
-            logger           : Logger receiving the fitting tables.
-            input_config     : Selection and representation of the input groups.
-            output_config    : Output configuration selecting the parameter channels.
-            n_secondaries    : Number of secondary channels in the stack.
-            n_derived : Number of derived channel layers in the stack.
-            n_gaussians      : Number of Gaussian slots the output covers.
-            normalization    : Normalization configuration; defaults are used when omitted.
+            dataset            : Train-split dataset the statistics are fitted on.
+            logger             : Logger receiving the fitting tables.
+            input_config       : Selection and representation of the input groups.
+            output_config      : Output configuration selecting the parameter channels.
+            n_secondaries      : Number of secondary channels in the stack.
+            n_derived          : Number of derived channel layers in the stack.
+            n_gaussians        : Number of Gaussian slots the output covers.
+            activity_threshold : Amplitude above which a Gaussian slot counts as active, as recorded by the label run.
+            normalization      : Normalization configuration; defaults are used when omitted.
 
         Returns:
             The complete statistics of the run, input, output and clamp.
@@ -477,10 +479,11 @@ class StatsComputer:
         )
 
         output_only = StatsComputer.compute_output_stats(
-            dataset       = dataset,
-            n_gaussians   = n_gaussians,
-            output_config = output_config,
-            logger        = logger,
+            dataset            = dataset,
+            n_gaussians        = n_gaussians,
+            output_config      = output_config,
+            activity_threshold = activity_threshold,
+            logger             = logger,
         )
 
         return Stats.merge(input_only, output_only, normalization.clamp())

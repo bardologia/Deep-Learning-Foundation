@@ -269,7 +269,7 @@ class MaxBatchProbe(MaxBatchProbeBase):
         gaussian_cfg               = trainer_config.gaussian
         dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
 
-        dataset_pipeline = DatasetPipeline(config=dataset_config, training_run_directory=self.work_dir, logger=self.logger, seed=self.seed)
+        dataset_pipeline = DatasetPipeline(config=dataset_config, training_run_directory=self.work_dir, activity_threshold=gaussian_cfg.activity_threshold, logger=self.logger, seed=self.seed)
 
         profile_length        = dataset_pipeline.layout.profile_length
         dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)

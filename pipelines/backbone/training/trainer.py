@@ -185,8 +185,8 @@ class Trainer(BaseTrainer):
         if not self.tracker.active:
             return
 
-        self.param_sampler.begin(self.criterion.loss_cfg.amp_zero_thr)
-        self.slot_vitals.begin(self.criterion.loss_cfg.amp_zero_thr)
+        self.param_sampler.begin(self.criterion.gaussian_cfg.activity_threshold)
+        self.slot_vitals.begin(self.criterion.gaussian_cfg.activity_threshold)
         self.recon_figures.capture_reference(val_loader, self.criterion)
 
     def _after_eval(self, val_loss: float, epoch: int) -> None:

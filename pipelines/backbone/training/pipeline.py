@@ -99,6 +99,7 @@ class TrainingPipeline:
         dataset_pipeline = DatasetPipeline(
             config                 = self.dataset_config,
             training_run_directory = Path(run_directory),
+            activity_threshold     = gaussian_cfg.activity_threshold,
             logger                 = logger,
             seed                   = self.seed,
             resume                 = self.trainer_config.training.resume,

@@ -30,7 +30,7 @@ class LossScaleProbe:
         loss_cfg     : Copy of the loss stage with every probed term enabled at weight 1.0.
     """
 
-    SHAPING_NOTE = "Raw values are shaped by the initial-stage loss config (matching, active normalization, presence balance, amp_zero_thr)."
+    SHAPING_NOTE = "Raw values are shaped by the initial-stage loss config (matching, active normalization, presence balance) and the label run's activity threshold."
 
     def __init__(self, probe_cfg, loss_cfg, gaussian_cfg, norm_stats=None, logger=None):
         """Builds a loss configuration with the probed terms enabled at unit weight.
