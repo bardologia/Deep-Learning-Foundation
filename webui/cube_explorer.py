@@ -64,6 +64,25 @@ class SliceFigureArchiver(PlotBase):
     }
 
     def render(self, data: np.ndarray, z_values: np.ndarray, vmin: float, vmax: float, source: str, axis: str, row: int, col: int, space: str, path: Path, cmap: str = "jet", label: str | None = None) -> Path:
+        """Saves one z cut through the cube as a figure.
+
+        Args:
+            data     : Cut of shape (z bins, samples along the free axis).
+            z_values : z axis, ascending, one entry per row of data.
+            vmin     : Lower colour limit.
+            vmax     : Upper colour limit.
+            source   : Cube key, one of the keys of LABELS.
+            axis     : "col" for a fixed column, "row" for a fixed row.
+            row      : Row index of the cut, shown in the title of a row cut.
+            col      : Column index of the cut, shown in the title of a column cut.
+            space    : "normalized" labels the colourbar as per-column normalised, else physical intensity.
+            path     : Output image path.
+            cmap     : Colormap name.
+            label    : Optional run label prefixed to the title.
+
+        Returns:
+            The written figure path.
+        """
         x_label   = "row index" if axis == "col" else "col index"
         title_pos = f"col = {col}" if axis == "col" else f"row = {row}"
         y_label   = "z bin" if source == "full" else "z"
@@ -92,6 +111,23 @@ class SliceFigureArchiver(PlotBase):
             PlotBase.use_style(previous)
 
     def render_transect(self, data: np.ndarray, z_values: np.ndarray, vmin: float, vmax: float, source: str, start: tuple, end: tuple, space: str, path: Path, cmap: str = "jet") -> Path:
+        """Saves one z cut along a straight transect as a figure.
+
+        Args:
+            data     : Cut of shape (z bins, samples along the transect).
+            z_values : z axis, ascending, one entry per row of data.
+            vmin     : Lower colour limit.
+            vmax     : Upper colour limit.
+            source   : Cube key, one of the keys of LABELS.
+            start    : (row, column) of the transect start.
+            end      : (row, column) of the transect end.
+            space    : "normalized" labels the colourbar as per-column normalised, else physical intensity.
+            path     : Output image path.
+            cmap     : Colormap name.
+
+        Returns:
+            The written figure path.
+        """
         cbar   = "intensity (per-column normalised)" if space == "normalized" else "intensity"
         extent = [0, int(data.shape[1]), float(z_values[0]), float(z_values[-1])]
 
@@ -739,6 +775,14 @@ class CubeExplorer:
         return {"ok": True, "cube": meta}
 
     def detach_second(self, cube_id: str) -> dict:
+        """Drops the attached comparison cube and its difference source.
+
+        Args:
+            cube_id : Id of the loaded cube.
+
+        Returns:
+            Dict with ``ok`` and the updated ``cube`` metadata, or ``ok`` False when another cube is loaded.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -771,6 +815,16 @@ class CubeExplorer:
         }
 
     def profiles(self, cube_id: str, row: int, col: int) -> dict:
+        """Returns every source's z profile at one pixel, ordered by ascending z.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            row     : Row pixel index, clipped into range.
+            col     : Column pixel index, clipped into range.
+
+        Returns:
+            Dict with ``ok``, the clipped indices and per source the ``z_values`` and ``values``, or ``ok`` False when another cube is loaded.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -790,6 +844,17 @@ class CubeExplorer:
         return {"ok": True, "row": row, "col": col, "sources": sources}
 
     def slice_ssim(self, cube_id: str, row: int, col: int, space: str = "physical") -> dict:
+        """Scores the column and row cuts of every source against the ground truth by SSIM.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            row     : Row pixel index of the row cut, clipped into range.
+            col     : Column pixel index of the column cut, clipped into range.
+            space   : "normalized" peak-normalises every column before scoring, else physical values.
+
+        Returns:
+            Dict with ``ok`` and per cut axis the SSIM of each source of the GT's shape; both empty without a GT cube.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -839,6 +904,20 @@ class CubeExplorer:
         return value if np.isfinite(value) else None
 
     def slice_png(self, cube_id: str, source: str, axis: str, row: int, col: int, space: str = "physical", cmap: str = "jet") -> bytes | None:
+        """Renders one z cut of the loaded cube as a PNG.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            source  : Cube key to render.
+            axis    : "col" or "row".
+            row     : Row pixel index, clipped into range.
+            col     : Column pixel index, clipped into range.
+            space   : "physical" or "normalized".
+            cmap    : Colormap name.
+
+        Returns:
+            PNG bytes, or None when the cube, source or axis is unknown.
+        """
         entry = self._entry(cube_id, source)
         if entry is None or axis not in ("col", "row"):
             return None
@@ -854,6 +933,18 @@ class CubeExplorer:
         return buf.getvalue()
 
     def plane_png(self, cube_id: str, source: str, frac: float, space: str = "physical", cmap: str = "jet") -> bytes | None:
+        """Renders one constant-z plane of the loaded cube as a PNG.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            source  : Cube key to render.
+            frac    : Position of the plane along the ascending z axis, in [0, 1].
+            space   : "normalized" scales the plane by its own peak, else the source's colour limits apply.
+            cmap    : Colormap name.
+
+        Returns:
+            PNG bytes of the (rows, columns) plane, or None when the cube or source is unknown.
+        """
         entry = self._entry(cube_id, source)
         if entry is None:
             return None
@@ -883,6 +974,17 @@ class CubeExplorer:
         return buf.getvalue()
 
     def param_map_png(self, cube_id: str, source: str, field: str, slot: int) -> bytes | None:
+        """Renders one Gaussian parameter field, the active-slot count or a prediction error map as a PNG.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            source  : "pred", "gt" or "error".
+            field   : "amp", "mu", "sigma" or "count".
+            slot    : Slot index, clipped into range; ignored for the count.
+
+        Returns:
+            PNG bytes, or None when no parameter blocks are loaded or the source or field is unknown.
+        """
         resolved = self._param_state(cube_id)
         if resolved is None or field not in (*self.PARAM_FIELDS, "count"):
             return None
@@ -909,6 +1011,16 @@ class CubeExplorer:
         return buf.getvalue()
 
     def param_cbar_png(self, cube_id: str, source: str, field: str) -> bytes | None:
+        """Renders the colourbar ramp matching one parameter map as a PNG.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            source  : "pred", "gt" or "error".
+            field   : "amp", "mu", "sigma" or "count".
+
+        Returns:
+            PNG bytes, or None when the map would not render.
+        """
         resolved = self._param_state(cube_id)
         if resolved is None or field not in (*self.PARAM_FIELDS, "count"):
             return None
@@ -921,6 +1033,14 @@ class CubeExplorer:
         return self.cbar_png(cmap)
 
     def cbar_png(self, cmap: str) -> bytes | None:
+        """Renders a horizontal colourbar ramp of one supported colormap as a PNG.
+
+        Args:
+            cmap : Colormap name.
+
+        Returns:
+            PNG bytes, or None for a colormap outside the supported set.
+        """
         if cmap not in ("viridis", "inferno", "coolwarm", "jet", "gray"):
             return None
 
@@ -931,6 +1051,16 @@ class CubeExplorer:
         return buf.getvalue()
 
     def params_at(self, cube_id: str, row: int, col: int) -> dict:
+        """Reads every Gaussian slot of every parameter source at one pixel.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            row     : Row pixel index, clipped into range.
+            col     : Column pixel index, clipped into range.
+
+        Returns:
+            Dict with ``ok``, the clipped indices, the slot count, the activity threshold and per source one entry per slot, or ``ok`` False without parameter blocks.
+        """
         resolved = self._param_state(cube_id)
         if resolved is None:
             return {"ok": False, "error": "no parameter cubes are loaded"}
@@ -1016,6 +1146,17 @@ class CubeExplorer:
         return None
 
     def points_bin(self, cube_id: str, source: str, amp_min: float, max_points: int) -> bytes | None:
+        """Packs a point cloud of one source above an amplitude floor as binary rows.
+
+        Args:
+            cube_id    : Id of the loaded cube.
+            source     : Parameter source or curve source listed in CLOUD_CURVE_SOURCES.
+            amp_min    : Minimum amplitude for a point to be kept.
+            max_points : Cap on emitted points, evenly subsampled; zero keeps all.
+
+        Returns:
+            A four-float32 header followed by rows of (row, column, z, amplitude), or None when the source is not cloud-renderable.
+        """
         if source in self.PARAM_SOURCES:
             return self._param_points(cube_id, source, amp_min, max_points)
         if source in self.CLOUD_CURVE_SOURCES:
@@ -1093,6 +1234,14 @@ class CubeExplorer:
         return header.tobytes() + np.ascontiguousarray(rows).tobytes()
 
     def aux_grid_bin(self, cube_id: str) -> bytes | None:
+        """Packs the aux map relative to its median as a binary grid.
+
+        Args:
+            cube_id : Id of the loaded cube.
+
+        Returns:
+            A four-float32 header (rows, columns, median, 0) followed by the float32 grid, or None without an aux map.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return None
@@ -1109,6 +1258,20 @@ class CubeExplorer:
         return header.tobytes() + np.ascontiguousarray(grid).tobytes()
 
     def metric_overlay_png(self, cube_id: str, key: str, vmin: float, vmax: float, keep_min: float, keep_max: float, alpha: float) -> bytes | None:
+        """Blends one metric map over the primary amplitude map as a PNG.
+
+        Args:
+            cube_id  : Id of the loaded cube.
+            key      : Metric map name.
+            vmin     : Lower colour limit; a range that is not increasing falls back to the map's own percentiles.
+            vmax     : Upper colour limit.
+            keep_min : Lowest value painted; pixels outside the keep range show the primary only.
+            keep_max : Highest value painted.
+            alpha    : Opacity of the metric colours, clipped into [0, 1].
+
+        Returns:
+            PNG bytes, or None when the map is unknown.
+        """
         resolved = self._metric_state(cube_id, key)
         if resolved is None:
             return None
@@ -1132,6 +1295,17 @@ class CubeExplorer:
         return buf.getvalue()
 
     def metric_value_at(self, cube_id: str, key: str, row: int, col: int) -> dict:
+        """Reads one metric map at one pixel.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            key     : Metric map name.
+            row     : Row pixel index, clipped into range.
+            col     : Column pixel index, clipped into range.
+
+        Returns:
+            Dict with ``ok``, the clipped indices, the key and the value (None when not finite), or ``ok`` False for an unknown map.
+        """
         resolved = self._metric_state(cube_id, key)
         if resolved is None:
             return {"ok": False, "error": f"unknown metric map: {key}"}
@@ -1158,6 +1332,16 @@ class CubeExplorer:
     HIGH_IS_CONFIDENT = ("pixel_r2", "pixel_cos", "label_r2")
 
     def selective_metrics(self, cube_id: str, key: str, coverage: float) -> dict:
+        """Scores the pixel metrics over the most confident share of pixels under one confidence layer.
+
+        Args:
+            cube_id  : Id of the loaded cube.
+            key      : Metric map used as the confidence layer; maps in HIGH_IS_CONFIDENT keep their highest values, the rest their lowest.
+            coverage : Share of finite pixels kept, clipped into [0.01, 1].
+
+        Returns:
+            Dict with ``ok``, the achieved coverage, the threshold, the direction, the kept and total pixel counts and one row per pixel metric with its kept and full means, or ``ok`` False with the reason.
+        """
         resolved = self._metric_state(cube_id, key)
         if resolved is None:
             return {"ok": False, "error": f"unknown confidence layer: {key}"}
@@ -1213,6 +1397,21 @@ class CubeExplorer:
         }
 
     def transect_png(self, cube_id: str, source: str, row0: int, col0: int, row1: int, col1: int, space: str = "physical", cmap: str = "jet") -> bytes | None:
+        """Renders the z cut along a straight transect between two pixels as a PNG.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            source  : Cube key to render.
+            row0    : Row of the start pixel.
+            col0    : Column of the start pixel.
+            row1    : Row of the end pixel.
+            col1    : Column of the end pixel.
+            space   : "physical" or "normalized".
+            cmap    : Colormap name.
+
+        Returns:
+            PNG bytes, or None when the cube or source is unknown.
+        """
         entry = self._entry(cube_id, source)
         if entry is None:
             return None
@@ -1224,6 +1423,20 @@ class CubeExplorer:
         return buf.getvalue()
 
     def save_transect(self, cube_id: str, row0: int, col0: int, row1: int, col1: int, space: str = "physical", cmap: str = "jet") -> dict:
+        """Saves the transect cut of every source as paper-style figures under the run.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            row0    : Row of the start pixel.
+            col0    : Column of the start pixel.
+            row1    : Row of the end pixel.
+            col1    : Column of the end pixel.
+            space   : "physical" or "normalized".
+            cmap    : Colormap name.
+
+        Returns:
+            Dict with ``ok``, the output ``dir``, its path ``rel`` to the run and the written ``files``, or ``ok`` False with the reason.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -1277,6 +1490,18 @@ class CubeExplorer:
         return data[order], z_values, float(vmin), float(vmax)
 
     def save_slices(self, cube_id: str, row: int, col: int, space: str = "physical", cmap: str = "jet") -> dict:
+        """Saves the column and row cuts of every source as paper-style figures under the run.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            row     : Row pixel index, clipped into range.
+            col     : Column pixel index, clipped into range.
+            space   : "physical" or "normalized".
+            cmap    : Colormap name.
+
+        Returns:
+            Dict with ``ok``, the output ``dir``, its path ``rel`` to the run, the clipped indices and the written ``files``, or ``ok`` False with the reason.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
