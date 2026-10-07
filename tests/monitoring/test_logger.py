@@ -3,12 +3,26 @@
 from __future__ import annotations
 
 import logging
+import os
+import socket
+import sys
 import time
+from dataclasses import dataclass
 
 import pytest
 
-from tools.monitoring        import logger as logger_module
-from tools.monitoring.logger import Logger, NullLogger, LiveMonitor, get_console
+from tools.monitoring              import logger as logger_module
+from tools.monitoring.logger       import Logger, NullLogger, LiveMonitor, get_console
+from tools.runtime.config_cli      import ConfigCli
+from tools.runtime.detacher        import Detacher
+from tools.runtime.machine_profile import MachineProfile
+
+
+@dataclass
+class EntryConfig:
+    """Two-leaf config standing in for an entry configuration."""
+    seed    : int = 42
+    workers : int = 8
 
 
 def _read_log(log_dir, name="experiment"):
@@ -44,6 +58,27 @@ def test_init_without_log_dir_has_no_file_handler():
     logger.close()
 
 
+def test_init_raises_when_the_log_dir_lies_under_a_file(tmp_path):
+    """Verifies an unusable log directory raises at construction instead of running without a log file."""
+    blocker = tmp_path / "afile"
+    blocker.write_text("x")
+
+    with pytest.raises(NotADirectoryError):
+        Logger(log_dir=str(blocker / "logs"), name="exp_blocked")
+
+
+def test_relative_log_dir_resolves_against_the_repository_root(tmp_path, monkeypatch):
+    """Verifies a relative log directory is taken from the repository root, not from the working directory."""
+    target = tmp_path / "logs"
+    monkeypatch.chdir(tmp_path)
+
+    logger = Logger(log_dir=os.path.relpath(target, Logger.REPO_ROOT), name="exp_root")
+    logger.close()
+
+    assert logger.log_dir == str(target)
+    assert (target / "exp_root.log").is_file()
+
+
 def test_level_parsing_known(tmp_path):
     """Verifies an uppercase level name sets the underlying logging level."""
     logger = Logger(log_dir=str(tmp_path), name="exp_lvl", level="DEBUG")
@@ -62,13 +97,10 @@ def test_level_parsing_case_insensitive(tmp_path):
     logger.close()
 
 
-def test_level_parsing_unknown_defaults_info(tmp_path):
-    """Verifies an unrecognised level name falls back to INFO."""
-    logger = Logger(log_dir=str(tmp_path), name="exp_lvl3", level="BOGUS")
-
-    assert logger.logger.level == logging.INFO
-
-    logger.close()
+def test_level_parsing_unknown_raises(tmp_path):
+    """Verifies an unrecognised level name is refused instead of silently becoming INFO."""
+    with pytest.raises(ValueError, match="Unknown log level 'BOGUS'"):
+        Logger(log_dir=str(tmp_path), name="exp_lvl3", level="BOGUS")
 
 
 def test_info_written_to_file(tmp_path):
@@ -171,6 +203,83 @@ def test_header_banner_written(tmp_path):
     assert ">>> END exp_head" in contents
 
 
+def test_header_names_host_pid_and_command(tmp_path, monkeypatch):
+    """Verifies the file banner records the host and pid and the header records the command line."""
+    monkeypatch.setattr(sys, "argv", ["train_backbone.py", "--seeds", "[0,1,2]"])
+    logger = Logger(log_dir=str(tmp_path), name="exp_host")
+    logger.close()
+
+    contents = _read_log(tmp_path, "exp_host")
+
+    assert f"host {socket.gethostname()}" in contents
+    assert f"pid {os.getpid()}" in contents
+    assert "Command : train_backbone.py --seeds '[0,1,2]'" in contents
+
+
+def test_header_names_the_detached_output(tmp_path, monkeypatch):
+    """Verifies a detached child names its redirected stdout file in the log header."""
+    monkeypatch.setattr(Detacher, "output_path", "/runs/logs/train_backbone_20261002.out")
+    logger = Logger(log_dir=str(tmp_path), name="exp_detached")
+    logger.close()
+
+    assert "Detached output : /runs/logs/train_backbone_20261002.out" in _read_log(tmp_path, "exp_detached")
+
+
+def test_header_reports_the_configuration_sources_of_the_parsed_command_line(tmp_path, monkeypatch):
+    """Verifies a Logger opened after ConfigCli parsed the process arguments records the profile state and every override."""
+    cli = ConfigCli(EntryConfig(), profile=MachineProfile(None))
+    cli.apply(["--seed", "7"])
+    monkeypatch.setattr(ConfigCli, "parsed", cli)
+
+    logger = Logger(log_dir=str(tmp_path), name="exp_sources")
+    logger.close()
+
+    text = _read_log(tmp_path, "exp_sources")
+
+    assert "Configuration sources" in text
+    assert f"disabled by an empty {MachineProfile.ENV_VAR}" in text
+    assert "seed" in text and "command line" in text
+    assert "42" in text and "7" in text
+
+
+def test_header_without_a_parsed_command_line_names_no_sources(tmp_path, monkeypatch):
+    """Verifies a process whose configuration no ConfigCli parsed gets the plain header."""
+    monkeypatch.setattr(ConfigCli, "parsed", None)
+
+    logger = Logger(log_dir=str(tmp_path), name="exp_plain")
+    logger.close()
+
+    assert "Configuration sources" not in _read_log(tmp_path, "exp_plain")
+
+
+def test_default_file_mode_appends_to_an_earlier_run(tmp_path):
+    """Verifies a second run of the same name keeps the first run's record above its own banner."""
+    first = Logger(log_dir=str(tmp_path), name="exp_append")
+    first.info("first attempt")
+    first.close()
+
+    second = Logger(log_dir=str(tmp_path), name="exp_append")
+    second.info("second attempt")
+    second.close()
+
+    contents = _read_log(tmp_path, "exp_append")
+
+    assert contents.count(">>> RUN exp_append") == 2
+    assert contents.index("first attempt") < contents.index("second attempt")
+
+
+def test_truncate_mode_replaces_an_earlier_run(tmp_path):
+    """Verifies file_mode 'w' still truncates when a caller asks for it."""
+    first = Logger(log_dir=str(tmp_path), name="exp_trunc")
+    first.info("first attempt")
+    first.close()
+
+    second = Logger(log_dir=str(tmp_path), name="exp_trunc", file_mode="w")
+    second.close()
+
+    assert "first attempt" not in _read_log(tmp_path, "exp_trunc")
+
+
 def test_fmt_duration_scales():
     """Verifies duration formatting switches between seconds, minutes, and hours."""
     assert Logger._fmt_duration(12.34)   == "12.3s"
@@ -268,6 +377,7 @@ def test_timer_logs_failure_and_reraises(tmp_path):
     contents = _read_log(tmp_path, "exp_timer_fail")
 
     assert "phase failed after" in contents
+    assert "ValueError: boom" in contents
     assert "phase completed in" not in contents
 
 
@@ -310,15 +420,71 @@ def test_context_manager_closes(tmp_path):
 
 
 def test_context_manager_logs_exception(tmp_path):
-    """Verifies an exception escaping the context manager is recorded before the duration line."""
+    """Verifies an exception escaping the context manager is recorded with its traceback under an ABORTED banner."""
     with pytest.raises(RuntimeError):
         with Logger(log_dir=str(tmp_path), name="exp_ctx_exc"):
             raise RuntimeError("model diverged")
 
     contents = _read_log(tmp_path, "exp_ctx_exc")
 
-    assert "Aborted by RuntimeError: model diverged" in contents
-    assert "[End] Duration:" in contents
+    assert "[ERROR] [Aborted] RuntimeError: model diverged" in contents
+    assert "Traceback (most recent call last)" in contents
+    assert "[ERROR] >>> ABORTED exp_ctx_exc" in contents
+    assert "[Aborted] Duration:" in contents
+    assert ">>> END exp_ctx_exc" not in contents
+    assert contents.index("Traceback") < contents.index(">>> ABORTED")
+
+
+def test_close_with_error_records_the_abort(tmp_path):
+    """Verifies close(error) from a caller's except branch writes the same abort record as the context manager."""
+    logger = Logger(log_dir=str(tmp_path), name="exp_close_err")
+    try:
+        raise FloatingPointError("train loss is non-finite at step 12")
+    except FloatingPointError as exc:
+        logger.close(exc)
+
+    contents = _read_log(tmp_path, "exp_close_err")
+
+    assert "[Aborted] FloatingPointError: train loss is non-finite at step 12" in contents
+    assert ">>> ABORTED exp_close_err" in contents
+    assert ">>> END exp_close_err" not in contents
+
+
+def test_clean_system_exit_closes_as_completed(tmp_path):
+    """Verifies SystemExit with code 0 ends the log with END, while a non-zero code counts as an abort."""
+    with pytest.raises(SystemExit):
+        with Logger(log_dir=str(tmp_path), name="exp_exit0"):
+            raise SystemExit(0)
+    with pytest.raises(SystemExit):
+        with Logger(log_dir=str(tmp_path), name="exp_exit2"):
+            raise SystemExit(2)
+
+    assert ">>> END exp_exit0" in _read_log(tmp_path, "exp_exit0")
+    assert ">>> ABORTED exp_exit2" in _read_log(tmp_path, "exp_exit2")
+
+
+def test_close_with_an_error_whose_text_looks_like_markup(tmp_path):
+    """An exception message holding a closing tag such as [/tmp/x] still reaches the file with its ABORTED banner instead of raising a MarkupError."""
+    logger = Logger(log_dir=str(tmp_path), name="markup_abort", level="INFO")
+
+    logger.close(RuntimeError("cannot open [/tmp/x] [bold]"))
+
+    contents = _read_log(tmp_path, "markup_abort")
+
+    assert "[Aborted] RuntimeError: cannot open [/tmp/x] [bold]" in contents
+    assert ">>> ABORTED markup_abort" in contents
+
+
+def test_timer_failure_text_that_looks_like_markup_reaches_the_file(tmp_path):
+    """A failing phase whose exception text holds a closing tag is logged verbatim."""
+    logger = Logger(log_dir=str(tmp_path), name="markup_timer")
+    with pytest.raises(OSError):
+        with logger.timer("load"):
+            raise OSError("cannot read [/data/x]")
+    logger.close()
+
+    assert "load failed after" in _read_log(tmp_path, "markup_timer")
+    assert "OSError: cannot read [/data/x]" in _read_log(tmp_path, "markup_timer")
 
 
 def test_close_removes_all_handlers(tmp_path):
