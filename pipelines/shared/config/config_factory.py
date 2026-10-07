@@ -112,7 +112,7 @@ class ConfigFactory:
         """
         training         = self.config.training
         scheduler_epochs = training.scheduler_epochs if training.scheduler_epochs is not None else training.epochs
-        lr_scale         = (training.batch_size / training.lr_reference_batch_size if training.scale_lr_with_batch else 1.0) * training.lr_multiplier
+        lr_scale         = training.lr_scale()
 
         return BackboneTrainerConfig(
             **self._base_trainer_kwargs(logdir),

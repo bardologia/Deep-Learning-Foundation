@@ -141,6 +141,17 @@ def test_tuning_config_positive_trials():
     assert cfg.early_stop_patience > 0
 
 
+def test_training_queue_lr_scale_follows_the_batch_rule():
+    """The scale is the batch over the reference batch times the multiplier when scaling is on, the multiplier alone when off."""
+    cfg = TrainingQueueConfig(batch_size=256, lr_reference_batch_size=256, lr_multiplier=2.0)
+
+    assert cfg.lr_scale()    == 2.0
+    assert cfg.lr_scale(128) == 1.0
+
+    cfg.scale_lr_with_batch = False
+    assert cfg.lr_scale(64) == 2.0
+
+
 def test_tuning_entry_config_subconfigs():
     """Verifies the tuning entry carries the tuning, JEPA coupling, paths and GPU sub-configs with a positive batch size."""
     cfg = TuningEntryConfig()
