@@ -33,6 +33,7 @@ class ConfigRegistry:
         "dataset"          : "Dataset",
         "architectures"    : "Model Architectures",
         "training"         : "Training",
+        "resources"        : "Resource Monitoring",
         "inference"        : "Inference",
         "benchmark"        : "Benchmark",
         "cross_validation" : "Cross-validation",
@@ -41,7 +42,7 @@ class ConfigRegistry:
         "diagnostics"      : "Diagnostics",
     }
 
-    SECTION_ORDER = ["synthesis", "param_extraction", "normalization", "dataset", "architectures", "training", "inference", "benchmark", "cross_validation", "tuning", "comparison", "diagnostics"]
+    SECTION_ORDER = ["synthesis", "param_extraction", "normalization", "dataset", "architectures", "training", "resources", "inference", "benchmark", "cross_validation", "tuning", "comparison", "diagnostics"]
 
     def __init__(self, paths: ProjectPaths) -> None:
         """Loads the description file and prepares an empty parse cache.

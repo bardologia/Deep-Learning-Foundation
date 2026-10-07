@@ -1,7 +1,7 @@
 """Training configuration dataclasses for every model family.
 
 Re-exports the shared optimization, runtime, loss and pretraining configs
-alongside the backbone, JEPA, autoencoder, unrolled and dual entry configs.
+alongside the backbone, JEPA, autoencoder and dual entry configs.
 """
 
 from configuration.training.general import (
@@ -14,7 +14,6 @@ from configuration.training.general import (
     OverfitCheckConfig,
     TrainingLoopConfig,
     MemoryConfig,
-    ResourceConfig,
     CurriculumInheritance,
     LossConfig,
     LossCurriculumConfig,

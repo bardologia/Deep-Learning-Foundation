@@ -13,11 +13,11 @@ from configuration.training.general.optimization import (
     EarlyStoppingConfig,
     GradientClipperConfig,
 )
+from configuration.resources import ResourceConfig
 from configuration.training.general.runtime import (
     IOConfig,
     TrainingLoopConfig,
     MemoryConfig,
-    ResourceConfig,
 )
 from configuration.training.general.loss import (
     CurriculumInheritance,

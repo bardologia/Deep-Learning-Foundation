@@ -14,7 +14,8 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from configuration.training.general.runtime       import ResourceConfig, TrainingLoopConfig
+from configuration.resources                      import ResourceConfig
+from configuration.training.general.runtime       import TrainingLoopConfig
 from configuration.training.image_autoencoder     import ImageAeLossConfig, ImageAeTrainerConfig
 from models.image_autoencoder                     import IMAGE_AE_CONFIG_REGISTRY, get_image_autoencoder
 from pipelines.image_autoencoder.training.trainer import Trainer

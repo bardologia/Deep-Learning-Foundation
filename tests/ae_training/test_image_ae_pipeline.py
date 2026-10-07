@@ -18,7 +18,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from configuration.architectures.image_autoencoder import Conv2dImageAutoencoderConfig
 from configuration.dataset                         import AugmentationConfig
 from configuration.training                        import ImageAeEntryConfig
-from configuration.training.general.runtime        import ResourceConfig, TrainingLoopConfig
+from configuration.resources                       import ResourceConfig
+from configuration.training.general.runtime        import TrainingLoopConfig
 from configuration.training.image_autoencoder      import ImageAeLossConfig, ImageAeTrainerConfig
 from models.image_autoencoder                      import IMAGE_AE_CONFIG_REGISTRY
 from pipelines.autoencoder_common                  import training as autoencoder_training
