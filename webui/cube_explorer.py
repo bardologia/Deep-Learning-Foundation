@@ -6,7 +6,8 @@ metric overlays and point clouds as PNG or packed binary payloads. Cubes are
 indexed by z bin, row pixel and column pixel. A load reads every file whole
 through a shared pool of concurrent chunk reads, books its progress by bytes,
 times every stage and keeps the last few loaded cubes in memory. The slice
-collector renders the same cuts across many runs into one folder.
+collector renders the same cuts across many runs into a basket that is saved as
+a folder and can be mailed.
 """
 
 from __future__ import annotations
@@ -15,12 +16,14 @@ import io
 import json
 import os
 import re
+import smtplib
 import sys
 import threading
 import time
 import traceback
 from collections        import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses        import replace
 from datetime           import datetime
 from pathlib            import Path
 
@@ -31,11 +34,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
-from catalog_roots            import CatalogRoots, RunScanner
-from lru_cache                import LruCache
-from tools.data.gaussians     import GaussianActivity
-from tools.reporting.plotting import PlotBase
-from web_logger               import WebLogger
+from catalog_roots                 import CatalogRoots, RunScanner
+from configuration.diagnostics     import ReportMailEntryConfig
+from lru_cache                     import LruCache
+from tools.data.archives           import ArchivePacker
+from tools.data.gaussians          import GaussianActivity
+from tools.reporting.plotting      import PlotBase
+from tools.reporting.report_mailer import ReportMailer
+from web_logger                    import WebLogger
 
 
 class SliceFigureArchiver(PlotBase):
@@ -1873,14 +1879,43 @@ class CubeExplorer:
 
 
 class SliceCollector:
+    """Renders the same slices across many runs for side-by-side comparison.
 
-    SOURCES    = ("pred", "gt", "full")
-    AXES       = ("col", "row")
-    MAX_RUNS   = 24
-    MAX_POINTS = 24
-    CACHE_CAP  = 16
+    Opens stamps lazily through an LRU cache of lightweight contexts, so several
+    runs can be previewed and collected without displacing the cube loaded in
+    the Cube tab. A collection renders a basket of slices, each entry carrying
+    its own run, source, cut axis, point, value space and colormap.
+
+    Attributes:
+        cubes       : Explorer supplying the readers, archiver and cut helpers.
+        logger      : Web logger for render and collection reporting.
+        lock        : Guards the context cache.
+        render_lock : Serialises figure writing during a collection.
+        contexts    : LRU cache of opened stamp contexts, keyed by stamp directory.
+        SOURCES     : Cube keys a slice can be drawn from.
+        AXES        : Cut axes, "col" for a fixed column and "row" for a fixed row.
+        SPACES      : Value spaces a slice can be drawn in.
+        ITEM_KEYS   : Keys every basket entry carries.
+        MAX_RUNS    : Most cubes one collection may span.
+        MAX_ITEMS   : Most basket entries one collection may hold.
+        CACHE_CAP   : Contexts kept open at once.
+    """
+
+    SOURCES   = ("pred", "gt", "full")
+    AXES      = ("col", "row")
+    SPACES    = ("physical", "normalized")
+    ITEM_KEYS = ("id", "source", "axis", "row", "col", "space", "cmap")
+    MAX_RUNS  = 24
+    MAX_ITEMS = 400
+    CACHE_CAP = 16
 
     def __init__(self, cubes: CubeExplorer, logger: WebLogger) -> None:
+        """Stores the explorer and logger and prepares the context cache.
+
+        Args:
+            cubes  : Explorer supplying the readers, archiver and cut helpers.
+            logger : Web logger for render and collection reporting.
+        """
         self.cubes       = cubes
         self.logger      = logger
         self.lock        = threading.Lock()
@@ -1888,6 +1923,16 @@ class SliceCollector:
         self.contexts    = OrderedDict()
 
     def info(self, cube_id: str) -> dict:
+        """Describes one collectable cube.
+
+        Args:
+            cube_id : Stamp directory path.
+
+        Returns:
+            Dict with ``ok``, the stamp id, run, group and stamp names, the cube's
+            row and column extents, the available ``sources`` and their
+            intensity limits, or ``ok`` False with the reason.
+        """
         try:
             context = self._context(cube_id)
         except Exception as exc:
@@ -1909,8 +1954,59 @@ class SliceCollector:
             "intensity" : {s: [entries[s]["vmin"], entries[s]["vmax"]] for s in entries},
         }
 
+    def primary_png(self, cube_id: str) -> bytes | None:
+        """Renders the primary amplitude map of a collectable cube as a PNG.
+
+        The map is cropped to the cube region, so image pixel (row, column) is
+        cube pixel (row, column). It is rendered once per context and cached.
+
+        Args:
+            cube_id : Stamp directory path.
+
+        Returns:
+            Greyscale PNG bytes of the (row, column) amplitude map in dB, or
+            None when the cube cannot be opened or its primary channel is
+            missing; the reason is logged.
+        """
+        try:
+            context = self._context(cube_id)
+        except Exception as error:
+            self.logger.warning(f"primary map for {cube_id} failed while opening the cube: {error}")
+            return None
+
+        if context is None:
+            self.logger.warning(f"primary map refused: unknown cube id {cube_id}")
+            return None
+
+        if context["primary_png"] is None:
+            try:
+                primary = self.cubes._primary_db(context["reader"], context["n_rows"], context["n_cols"])
+            except (FileNotFoundError, ValueError) as error:
+                self.logger.warning(f"primary map for {cube_id} unavailable: {error}")
+                return None
+            context["primary_png"] = CubeExplorer._encode_primary(primary, CubeExplorer._primary_clim(primary))
+
+        return context["primary_png"]
+
     def slice_png(self, cube_id: str, source: str, axis: str, row: int, col: int, space: str = "physical", cmap: str = "jet", vmin: float | None = None, vmax: float | None = None) -> bytes | None:
-        if source not in self.SOURCES or axis not in self.AXES or space not in ("physical", "normalized"):
+        """Renders one slice of a collectable cube as a PNG.
+
+        Args:
+            cube_id : Stamp directory path.
+            source  : Cube key to render.
+            axis    : "col" or "row".
+            row     : Row pixel index, clipped into range.
+            col     : Column pixel index, clipped into range.
+            space   : "physical" or "normalized".
+            cmap    : Colormap name.
+            vmin    : Optional lower colour limit, honoured only in physical space.
+            vmax    : Optional upper colour limit, honoured only in physical space.
+
+        Returns:
+            PNG bytes, or None when the arguments are invalid, the cube cannot be
+            opened or carries no such source; the reason is logged.
+        """
+        if source not in self.SOURCES or axis not in self.AXES or space not in self.SPACES:
             return None
 
         try:
@@ -1925,6 +2021,7 @@ class SliceCollector:
 
         entry = context["entries"].get(source)
         if entry is None:
+            self.logger.warning(f"slice render refused: {cube_id} carries no '{source}' cube")
             return None
 
         data, z_values, lo, hi = self._cut(entry, axis, row, col, space)
@@ -1935,105 +2032,229 @@ class SliceCollector:
         plt.imsave(buf, np.flipud(data), cmap=CubeExplorer._entry_cmap(entry, cmap), vmin=lo, vmax=hi, **CubeExplorer.PNG_ENCODE)
         return buf.getvalue()
 
-    def collect(self, ids: list, points: list, sources: list, axes: list, space: str = "physical", cmap: str = "jet", shared: bool = True, name: str = "") -> dict:
-        ids     = list(dict.fromkeys(str(i) for i in ids if i))
-        sources = list(dict.fromkeys(sources))
-        axes    = list(dict.fromkeys(axes))
+    def collect(self, items: list, shared: bool = True, name: str = "", reuse: bool = False) -> dict:
+        """Renders and archives a basket of slices, each with its own cut and styling.
 
-        if not ids:
-            return {"ok": False, "error": "select at least one run"}
-        if len(ids) > self.MAX_RUNS:
-            return {"ok": False, "error": f"at most {self.MAX_RUNS} runs per collection, got {len(ids)}"}
-        if space not in ("physical", "normalized"):
-            return {"ok": False, "error": f"unknown space: {space}"}
-        if not sources or any(s not in self.SOURCES for s in sources):
-            return {"ok": False, "error": f"sources must be a non-empty subset of {self.SOURCES}"}
-        if not axes or any(a not in self.AXES for a in axes):
-            return {"ok": False, "error": f"axes must be a non-empty subset of {self.AXES}"}
+        Figures land under ``<runs root>/slice_collections/<name>`` in one folder
+        per point and cut, next to a ``collection.json`` manifest that also
+        records the validated request.
 
+        Args:
+            items  : Basket entries, dicts carrying the ITEM_KEYS; duplicates are dropped, at most MAX_ITEMS entries over at most MAX_RUNS cubes.
+            shared : When True, the physical-space figures of one source share the widest colour range across every basket run carrying that source.
+            name   : Collection folder name; sanitised, and defaulted to a timestamp.
+            reuse  : When True, an existing folder of that name whose manifest records the same basket and scale is returned as it is instead of refused.
+
+        Returns:
+            Dict with ``ok``, the output ``dir``, the resolved ``name``, the
+            written ``files``, the run-source pairs of basket entries whose run
+            lacks that source as ``missing``, the number of runs and whether an
+            existing folder was ``reused``, or ``ok`` False with the reason.
+        """
         try:
-            points   = self._points(points)
-            contexts = []
-            for cube_id in ids:
-                context = self._context(cube_id)
-                if context is None:
-                    return {"ok": False, "error": f"unknown cube id: {cube_id}"}
-                contexts.append(context)
+            plan = self._plan(items, name)
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
-        labels  = self._labels(contexts)
-        title   = re.sub(r"[^A-Za-z0-9._-]+", "_", name or "").strip("._")
-        title   = title or datetime.now().strftime("collection_%Y%m%d_%H%M%S")
-        out_dir = contexts[0]["root"] / "slice_collections" / title
-        clims   = {source: self._shared_clim(contexts, source, space) if shared else None for source in sources}
-        missing = [{"label": label, "source": source} for source in sources for context, label in zip(contexts, labels) if source not in context["entries"]]
+        items, ids, contexts, labels, title, out_dir = plan
+        request = {"items": items, "shared": bool(shared)}
 
-        files = []
+        if out_dir.exists():
+            earlier = self._earlier(out_dir, request) if reuse else None
+            if earlier is None:
+                differs = " for a different basket" if reuse else ""
+                return {"ok": False, "error": f"a collection named '{title}' already exists at {out_dir}{differs}; pick another name or delete it first"}
+            return earlier
+
+        clims = self._basket_clims(items, contexts) if shared else {}
+
+        files   = []
+        entries = []
+        missing = []
         with self.render_lock:
-            for row, col in points:
-                point_dir = out_dir / f"row{row:04d}_col{col:04d}"
-                for source in sources:
-                    clim = clims[source]
-                    for axis in axes:
-                        cut_dir = point_dir / f"{axis}_{source}_{space}"
-                        for context, label in zip(contexts, labels):
-                            entry = context["entries"].get(source)
-                            if entry is None:
-                                continue
+            for item in items:
+                context = contexts[item["id"]]
+                label   = labels[item["id"]]
+                entry   = context["entries"].get(item["source"])
+                if entry is None:
+                    gap = {"label": label, "source": item["source"]}
+                    if gap not in missing:
+                        missing.append(gap)
+                    continue
 
-                            row_i = int(np.clip(row, 0, context["n_rows"] - 1))
-                            col_i = int(np.clip(col, 0, context["n_cols"] - 1))
-                            data, z_values, vmin, vmax = self._cut(entry, axis, row_i, col_i, space)
-                            if clim is not None:
-                                vmin, vmax = clim
+                row_i = int(np.clip(item["row"], 0, context["n_rows"] - 1))
+                col_i = int(np.clip(item["col"], 0, context["n_cols"] - 1))
+                data, z_values, vmin, vmax = self._cut(entry, item["axis"], row_i, col_i, item["space"])
 
-                            saved = self.cubes.archiver.render(data, z_values, vmin, vmax, source, axis, row_i, col_i, space, cut_dir / f"{label}.png", cmap=CubeExplorer._entry_cmap(entry, cmap), label=label)
-                            files.append(str(saved.relative_to(out_dir)))
+                clim = clims.get(item["source"]) if item["space"] == "physical" else None
+                if clim is not None:
+                    vmin, vmax = clim
+
+                cut_dir = out_dir / f"row{item['row']:04d}_col{item['col']:04d}" / f"{item['axis']}_{item['source']}_{item['space']}_{item['cmap']}"
+                saved   = self.cubes.archiver.render(data, z_values, vmin, vmax, item["source"], item["axis"], row_i, col_i, item["space"], cut_dir / f"{label}.png", cmap=CubeExplorer._entry_cmap(entry, item["cmap"]), label=label)
+                rel     = str(saved.relative_to(out_dir))
+
+                files.append(rel)
+                entries.append({**item, "label": label, "file": rel})
 
         if not files:
-            return {"ok": False, "error": "no figures rendered; none of the selected runs carry the requested sources"}
+            return {"ok": False, "error": "no figures rendered; none of the basket runs carry the requested sources"}
 
         manifest = {
             "name"    : title,
             "created" : datetime.now().isoformat(timespec="seconds"),
-            "space"   : space,
-            "cmap"    : cmap,
             "shared"  : bool(shared),
-            "axes"    : axes,
-            "sources" : sources,
-            "points"  : [{"row": row, "col": col} for row, col in points],
-            "clims"   : {source: (list(clim) if clim else None) for source, clim in clims.items()},
-            "runs"    : [{"id": str(c["stamp_dir"]), "run": c["run"], "group": c["group"], "stamp": c["stamp"], "label": label} for c, label in zip(contexts, labels)],
+            "clims"   : {source: list(clim) for source, clim in clims.items()},
+            "runs"    : [{"id": str(contexts[i]["stamp_dir"]), "run": contexts[i]["run"], "group": contexts[i]["group"], "stamp": contexts[i]["stamp"], "label": labels[i]} for i in ids],
+            "points"  : [{"row": row, "col": col} for row, col in dict.fromkeys((item["row"], item["col"]) for item in items)],
+            "items"   : entries,
             "missing" : missing,
             "files"   : files,
+            "request" : request,
         }
         (out_dir / "collection.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-        self.logger.ok(f"collected {len(files)} slice figures from {len(contexts)} runs into {out_dir}")
-        return {"ok": True, "dir": str(out_dir), "name": title, "files": files, "missing": missing, "runs": len(contexts)}
+        self.logger.ok(f"collected {len(files)} slice figures from {len(ids)} runs into {out_dir}")
+        return {"ok": True, "dir": str(out_dir), "name": title, "files": files, "missing": missing, "runs": len(ids), "reused": False}
 
-    def _points(self, raw) -> list:
+    def _plan(self, raw: list, name: str) -> tuple:
+        """Validates a basket and resolves its runs, labels and output folder.
+
+        Args:
+            raw  : Basket entries as posted.
+            name : Requested collection name.
+
+        Returns:
+            Tuple of the validated entries, the cube ids in first-use order,
+            their contexts keyed by id, their file labels keyed by id, the
+            sanitised collection name and the collection folder.
+
+        Raises:
+            ValueError : If an entry is invalid, the basket spans more than MAX_RUNS cubes, or a cube id is unknown.
+        """
+        items = self._items(raw)
+        ids   = list(dict.fromkeys(item["id"] for item in items))
+        if len(ids) > self.MAX_RUNS:
+            raise ValueError(f"at most {self.MAX_RUNS} runs per collection, got {len(ids)}")
+
+        contexts = {}
+        for cube_id in ids:
+            context = self._context(cube_id)
+            if context is None:
+                raise ValueError(f"unknown cube id: {cube_id}")
+            contexts[cube_id] = context
+
+        labels  = dict(zip(ids, self._labels([contexts[cube_id] for cube_id in ids])))
+        title   = re.sub(r"[^A-Za-z0-9._-]+", "_", name or "").strip("._")
+        title   = title or datetime.now().strftime("collection_%Y%m%d_%H%M%S")
+        out_dir = contexts[ids[0]]["root"] / "slice_collections" / title
+
+        return items, ids, contexts, labels, title, out_dir
+
+    def _items(self, raw) -> list:
+        """Validates and deduplicates the basket entries.
+
+        Args:
+            raw : List of dicts carrying the ITEM_KEYS.
+
+        Returns:
+            Unique entries in request order, each a dict of the ITEM_KEYS with
+            integer ``row`` and ``col`` and string values otherwise.
+
+        Raises:
+            ValueError : If the basket is empty or not a list, exceeds MAX_ITEMS, or an entry lacks a key, names an unknown source, axis, space or colormap, or holds a negative index.
+        """
         if not isinstance(raw, list) or not raw:
-            raise ValueError("points must be a non-empty list of {row, col}")
-        if len(raw) > self.MAX_POINTS:
-            raise ValueError(f"at most {self.MAX_POINTS} points per collection, got {len(raw)}")
+            raise ValueError("the basket is empty; add slices before exporting")
+        if len(raw) > self.MAX_ITEMS:
+            raise ValueError(f"at most {self.MAX_ITEMS} slices per collection, got {len(raw)}")
 
-        points = []
-        seen   = set()
+        items = []
+        seen  = set()
         for entry in raw:
-            row, col = int(entry["row"]), int(entry["col"])
-            if row < 0 or col < 0:
-                raise ValueError(f"point row={row}, col={col} is negative")
-            if (row, col) in seen:
-                continue
-            seen.add((row, col))
-            points.append((row, col))
+            absent = [key for key in self.ITEM_KEYS if key not in entry]
+            if absent:
+                raise ValueError(f"basket entry {entry} lacks {absent}")
 
-        return points
+            item = {key: str(entry[key]) for key in self.ITEM_KEYS}
+            item["row"], item["col"] = int(entry["row"]), int(entry["col"])
+
+            if item["source"] not in self.SOURCES:
+                raise ValueError(f"unknown source '{item['source']}'; expected one of {self.SOURCES}")
+            if item["axis"] not in self.AXES:
+                raise ValueError(f"unknown axis '{item['axis']}'; expected one of {self.AXES}")
+            if item["space"] not in self.SPACES:
+                raise ValueError(f"unknown space '{item['space']}'; expected one of {self.SPACES}")
+            if item["cmap"] not in CubeExplorer.CMAPS:
+                raise ValueError(f"unknown colormap '{item['cmap']}'; expected one of {CubeExplorer.CMAPS}")
+            if item["row"] < 0 or item["col"] < 0:
+                raise ValueError(f"point row={item['row']}, col={item['col']} is negative")
+
+            key = tuple(item[k] for k in self.ITEM_KEYS)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+
+        return items
+
+    @staticmethod
+    def _earlier(out_dir: Path, request: dict) -> dict | None:
+        """Returns an existing collection written for exactly this request, or None.
+
+        Args:
+            out_dir : Existing collection folder.
+            request : Validated basket entries and scale flag of the new request.
+
+        Returns:
+            The collect result describing that folder with ``reused`` True, or
+            None when it holds no manifest or its manifest records another
+            request.
+        """
+        manifest_path = out_dir / "collection.json"
+        if not manifest_path.is_file():
+            return None
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest["request"] != request:
+            return None
+
+        return {"ok": True, "dir": str(out_dir), "name": manifest["name"], "files": manifest["files"], "missing": manifest["missing"], "runs": len(manifest["runs"]), "reused": True}
+
+    def _basket_clims(self, items: list, contexts: dict) -> dict:
+        """Returns the shared colour range of every source drawn in physical space.
+
+        Args:
+            items    : Validated basket entries.
+            contexts : Opened stamp contexts keyed by cube id.
+
+        Returns:
+            Dict from source to its (vmin, vmax) envelope over the basket runs
+            whose physical-space entries draw that source; sources without a
+            usable envelope are left out.
+        """
+        clims = {}
+        for source in dict.fromkeys(item["source"] for item in items if item["space"] == "physical"):
+            ids  = dict.fromkeys(item["id"] for item in items if item["space"] == "physical" and item["source"] == source)
+            clim = self._shared_clim([contexts[cube_id] for cube_id in ids], source, "physical")
+            if clim is not None:
+                clims[source] = clim
+
+        return clims
 
     @staticmethod
     def _labels(contexts: list) -> list:
+        """Builds one unique file label per context.
+
+        Run names are used as-is, prefixed with their group when the name repeats
+        and suffixed with the stamp name when that is still not unique.
+
+        Args:
+            contexts : Opened stamp contexts, in collection order.
+
+        Returns:
+            One label per context, in the same order.
+        """
         counts = {}
         for context in contexts:
             counts[context["run"]] = counts.get(context["run"], 0) + 1
@@ -2055,6 +2276,17 @@ class SliceCollector:
 
     @staticmethod
     def _shared_clim(contexts: list, source: str, space: str) -> tuple[float, float] | None:
+        """Returns the colour range covering one source across every context.
+
+        Args:
+            contexts : Opened stamp contexts.
+            source   : Cube key whose limits are merged.
+            space    : Only "physical" yields shared limits.
+
+        Returns:
+            The (vmin, vmax) envelope, or None in normalised space, when no
+            context carries the source or when the envelope is degenerate.
+        """
         if space != "physical":
             return None
 
@@ -2068,7 +2300,23 @@ class SliceCollector:
 
     @staticmethod
     def _cut(entry: dict, axis: str, row: int, col: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
-        cube               = entry["cube"]
+        """Extracts one z slice from a lazily held cube.
+
+        Unlike the explorer's cut, the cube here may still be memory-mapped or
+        complex, so the slice is materialised and reduced to magnitude first.
+
+        Args:
+            entry : Context entry holding the cube and its z axis.
+            axis  : "col" for a fixed column, "row" for a fixed row.
+            row   : Row pixel index, clipped into range.
+            col   : Column pixel index, clipped into range.
+            space : "normalized" to peak-normalise columns, else "physical".
+
+        Returns:
+            Tuple of the float32 slice of shape (z bins, samples) ordered by
+            ascending z, the z axis, and the colour limits.
+        """
+        cube                = entry["cube"]
         n_z, n_rows, n_cols = cube.shape
 
         row  = int(np.clip(row, 0, n_rows - 1))
@@ -2078,11 +2326,19 @@ class SliceCollector:
 
         data, vmin, vmax = CubeExplorer._normalize_cut(entry, data, space)
 
-        order   = np.argsort(entry["z_axis"])
+        order    = np.argsort(entry["z_axis"])
         z_values = np.asarray(entry["z_axis"], dtype=np.float64)[order]
         return data[order], z_values, float(vmin), float(vmax)
 
     def _context(self, cube_id: str) -> dict | None:
+        """Returns the cached or freshly built context of a stamp.
+
+        Args:
+            cube_id : Stamp directory path.
+
+        Returns:
+            The stamp context, or None when the id is unknown.
+        """
         reader = self.cubes._open_source(cube_id)
         if reader is None:
             return None
@@ -2103,6 +2359,20 @@ class SliceCollector:
         return context
 
     def _build_context(self, reader: StampReader) -> dict:
+        """Opens the cubes of a stamp without materialising them.
+
+        Args:
+            reader : Reader of the stamp to open.
+
+        Returns:
+            Context with the stamp directory, its reader and runs root, the run,
+            group and stamp names, the row and column extents, the lazily held
+            ``entries`` per source and an empty ``primary_png`` slot filled on
+            the first map request.
+
+        Raises:
+            ValueError : If the stamp lies outside every catalogued runs root, the prediction cube is not three-dimensional, or a source disagrees with it spatially.
+        """
         stamp_dir = reader.stamp_dir
         root      = self._root_for(stamp_dir)
         if root is None:
@@ -2128,18 +2398,30 @@ class SliceCollector:
 
         run_dir = reader.run_dir
         return {
-            "stamp_dir" : stamp_dir,
-            "root"      : root,
-            "run"       : run_dir.name,
-            "group"     : str(run_dir.relative_to(root).parent),
-            "stamp"     : stamp_dir.name,
-            "n_rows"    : n_rows,
-            "n_cols"    : n_cols,
-            "entries"   : entries,
+            "stamp_dir"   : stamp_dir,
+            "reader"      : reader,
+            "root"        : root,
+            "run"         : run_dir.name,
+            "group"       : str(run_dir.relative_to(root).parent),
+            "stamp"       : stamp_dir.name,
+            "n_rows"      : n_rows,
+            "n_cols"      : n_cols,
+            "entries"     : entries,
+            "primary_png" : None,
         }
 
     @staticmethod
     def _entry(raw: np.ndarray, z_axis: np.ndarray) -> dict:
+        """Wraps a lazily held cube with colour limits from a bounded subsample.
+
+        Args:
+            raw    : Memory-mapped cube of shape (z bins, rows, columns), possibly complex.
+            z_axis : Curve z axis, or bin indices for the full reference cube.
+
+        Returns:
+            Entry with the untouched ``cube``, its ``z_axis`` and the 1st and 99th
+            percentile colour limits estimated on a bounded subsample.
+        """
         vmin, vmax = CubeExplorer._colour_limits(raw)
 
         return {
@@ -2150,5 +2432,167 @@ class SliceCollector:
         }
 
     def _root_for(self, stamp_dir: Path) -> Path | None:
+        """Returns the catalogued runs root containing the stamp, or None."""
         return self.cubes.roots.enclosing(stamp_dir)
 
+
+class SliceCollectionMailer:
+    """Mails a slice basket as a rendered collection packed into zip attachments.
+
+    The basket is rendered through the collector first, so every mailed
+    collection also stays on disk under ``slice_collections``. The folder is then
+    packed into size-capped volumes under its ``mail`` subfolder and sent through
+    the report mailer, one message per volume, with the SMTP settings of the
+    report-mail entry config.
+
+    Attributes:
+        collector : Slice collector rendering the basket.
+        logger    : Web logger for packing and submission messages.
+        defaults  : Report-mail entry config supplying the sender, SMTP endpoint, password variable, subject prefix and attachment cap.
+        ADDRESS   : Pattern one recipient address must match.
+    """
+
+    ADDRESS = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
+
+    def __init__(self, collector: SliceCollector, logger: WebLogger) -> None:
+        """Stores the collector and logger and reads the mail defaults.
+
+        Args:
+            collector : Slice collector rendering the basket.
+            logger    : Web logger for packing and submission messages.
+        """
+        self.collector = collector
+        self.logger    = logger
+        self.defaults  = ReportMailEntryConfig()
+
+    def settings(self) -> dict:
+        """Describes the mail defaults the basket form starts from.
+
+        Returns:
+            Dict with ``ok``, the default ``recipient``, the ``sender``, whether
+            the SMTP password variable is set (``ready``), its name and the
+            attachment cap in megabytes.
+        """
+        return {
+            "ok"                : True,
+            "recipient"         : self.defaults.recipient,
+            "sender"            : self.defaults.sender,
+            "ready"             : bool(os.environ.get(self.defaults.password_env)),
+            "password_env"      : self.defaults.password_env,
+            "max_attachment_mb" : self.defaults.max_attachment_mb,
+        }
+
+    def _recipients(self, raw: str) -> list:
+        """Splits and validates a comma- or semicolon-separated address list.
+
+        Args:
+            raw : Address list typed in the basket form.
+
+        Returns:
+            The addresses in typed order.
+
+        Raises:
+            ValueError : If the list is empty or an address is malformed.
+        """
+        addresses = [part.strip() for part in re.split(r"[,;]", raw or "") if part.strip()]
+        if not addresses:
+            raise ValueError("enter at least one recipient address")
+
+        malformed = [address for address in addresses if not self.ADDRESS.match(address)]
+        if malformed:
+            raise ValueError(f"malformed recipient address: {', '.join(malformed)}")
+
+        return addresses
+
+    def _pack(self, out_dir: Path, result: dict) -> list:
+        """Packs the rendered collection and its manifest into zip volumes.
+
+        Args:
+            out_dir : Collection folder written by the collector.
+            result  : Collector result naming the collection and its figures.
+
+        Returns:
+            Paths of the written volumes under ``<out_dir>/mail``, whose members
+            sit under ``<name>/`` so unpacking every volume rebuilds the folder.
+        """
+        name    = result["name"]
+        entries = [(out_dir / "collection.json", f"{name}/collection.json")]
+        entries += [(out_dir / rel, f"{name}/{rel}") for rel in result["files"]]
+
+        max_bytes = int(self.defaults.max_attachment_mb * 1024 * 1024)
+        return ArchivePacker(entries, out_dir / "mail", name, max_bytes, self.logger).pack()
+
+    def _body(self, out_dir: Path, note: str, volumes: list) -> str:
+        """Writes the plain-text message body from the collection manifest.
+
+        Args:
+            out_dir : Collection folder holding ``collection.json``.
+            note    : Free text typed in the basket form, placed first; may be empty.
+            volumes : Written zip volumes.
+
+        Returns:
+            The message body.
+        """
+        manifest = json.loads((out_dir / "collection.json").read_text(encoding="utf-8"))
+
+        lines = [note.strip(), ""] if note.strip() else []
+        lines.append(f"Slice collection '{manifest['name']}': {len(manifest['files'])} figures from {len(manifest['runs'])} runs, colour scale {'shared per source' if manifest['shared'] else 'per run'}.")
+        lines.append("")
+        lines.append("Runs:")
+        lines += [f"  {run['label']}  ({run['group']}/{run['run']}, stamp {run['stamp']})" for run in manifest["runs"]]
+        lines.append("")
+        lines.append("Points: " + ", ".join(f"row {point['row']} col {point['col']}" for point in manifest["points"]))
+
+        if manifest["missing"]:
+            lines.append("Skipped, run lacks the source: " + ", ".join(f"{gap['label']} {gap['source']}" for gap in manifest["missing"]))
+        if len(volumes) > 1:
+            lines.append(f"The collection is split over {len(volumes)} messages; unpack every volume into one folder to rebuild it.")
+
+        lines.append("")
+        lines.append(f"Saved on the console host under {out_dir}")
+        return "\n".join(lines)
+
+    def mail(self, items: list, shared: bool = True, name: str = "", recipient: str = "", note: str = "") -> dict:
+        """Renders the basket, packs it and mails it to the given recipients.
+
+        Args:
+            items     : Basket entries, as accepted by ``SliceCollector.collect``.
+            shared    : Whether physical-space figures of one source share a colour range.
+            name      : Collection folder name; sanitised, and defaulted to a timestamp.
+            recipient : Comma- or semicolon-separated recipient addresses.
+            note      : Free text placed at the top of the message body.
+
+        Returns:
+            The collector result extended with the ``recipient`` line and the
+            mailed ``volumes`` names, or ``ok`` False with the reason; when
+            sending fails after rendering, the result still names the saved
+            ``dir``. A basket already saved under the same name is mailed
+            from that folder without rendering it again.
+        """
+        try:
+            recipients = self._recipients(recipient)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+        if not os.environ.get(self.defaults.password_env):
+            return {"ok": False, "error": f"SMTP password not found: add export {self.defaults.password_env}=<app password> to the machine profile env and restart the console"}
+
+        result = self.collector.collect(items, shared, name, reuse=True)
+        if not result["ok"]:
+            return result
+
+        out_dir = Path(result["dir"])
+        config  = replace(self.defaults, recipient=", ".join(recipients))
+        volumes = self._pack(out_dir, result)
+        body    = self._body(out_dir, note, volumes)
+        mailer  = ReportMailer(config, self.logger)
+
+        try:
+            for index, volume in enumerate(volumes, start=1):
+                suffix = f" [{index}/{len(volumes)}]" if len(volumes) > 1 else ""
+                mailer.send(f"{config.subject_prefix}: slice collection {result['name']}{suffix}", body, [volume])
+        except (smtplib.SMTPException, OSError) as exc:
+            self.logger.error(f"mailing slice collection {result['name']} failed after rendering: {exc}")
+            return {"ok": False, "error": f"saved to {out_dir}, but mailing failed: {exc}", "dir": str(out_dir)}
+
+        return {**result, "recipient": config.recipient, "volumes": [volume.name for volume in volumes]}

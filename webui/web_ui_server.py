@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib     import Path
 
 from config_registry                   import ConfigRegistry
-from cube_explorer                     import CubeExplorer, SliceCollector
+from cube_explorer                     import CubeExplorer, SliceCollectionMailer, SliceCollector
 from dataset_browser                   import DatasetBrowser
 from energy_meter                      import JobEnergyMeter
 from equation_library                  import EquationLibrary
@@ -150,6 +150,7 @@ class WebUIServer:
         self.results           = ResultsBrowser(self.logger)
         self.cubes             = CubeExplorer(self.logger)
         self.slices            = SliceCollector(self.cubes, self.logger)
+        self.slice_mail        = SliceCollectionMailer(self.slices, self.logger)
         self.datasets          = DatasetBrowser(self.logger)
         self.leaderboard       = RunLeaderboard(self.logger)
         self.curves            = TrainingCurves(self.logger)
@@ -171,7 +172,7 @@ class WebUIServer:
             LeaderboardRouter(self.leaderboard),
             CurvesRouter(self.curves),
             CubeRouter(self.cubes),
-            SliceRouter(self.slices),
+            SliceRouter(self.slices, self.slice_mail),
             FitLabRouter(self.fitlab),
             ProbeRouter(self.probe),
             SurveyRouter(self.survey),
