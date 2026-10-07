@@ -32,6 +32,8 @@ class RunLauncher:
         finalizer   : Walker of the compare-and-mail chain a launch switched on.
     """
 
+    DDP_LOG_PARTS = ("ddp", "logs")
+
     def __init__(self, paths: ProjectPaths, logger: WebLogger, resolver: ScriptConfigResolver, processes: ProcessManager, tensorboard: TensorboardManager, notifier) -> None:
         """Stores the collaborators and builds the finalize-chain walker over them."""
         self.paths       = paths
@@ -102,7 +104,35 @@ class RunLauncher:
         """Returns whether an entry point writes TensorBoard event files."""
         return self.tensorboard.logdir_keys(key) is not None
 
-    def job_run_spec(self, job_id: str, root: Path) -> dict | None:
+    def _job_units(self, job_id: str) -> list[dict]:
+        """Returns the fan-out unit records of a job, empty without a progress snapshot."""
+        info = self.processes.progress(job_id)
+        if not info.get("ok") or "progress" not in info:
+            return []
+        return info["progress"].get("units") or []
+
+    def _ddp_run_dir(self, units: list) -> Path | None:
+        """Returns the canonical run directory of a data-parallel job, or None for any other job.
+
+        A data-parallel fan-out lists only its secondary ranks as units, each
+        logging to ``<run>/ddp/logs/rank<N>.log``. Rank zero runs in a child
+        process of the job and writes the run's own event files, so neither the
+        unit names nor the job's pid lead to it; the shared log directory does.
+
+        Args:
+            units : Fan-out unit records of the job.
+
+        Returns:
+            The run directory, or None when the job has no units or any unit logs
+            outside a ``ddp/logs`` directory.
+        """
+        logs = [self._unit_log(unit) for unit in units]
+        if not logs or any(log is None or log.parent.parts[-2:] != self.DDP_LOG_PARTS for log in logs):
+            return None
+
+        return logs[0].parent.parent.parent
+
+    def job_run_spec(self, units: list, root: Path) -> dict | None:
         """Returns the run directories of one console job's fan-out units, by label.
 
         Each unit is resolved to the run directory holding its event files, twin
@@ -110,15 +140,15 @@ class RunLauncher:
         directories' paths relative to the launch's log directory.
 
         Args:
-            job_id : Job whose unit registry is resolved.
-            root   : Log directory the launch resolved to.
+            units : Fan-out unit records of the job.
+            root  : Log directory the launch resolved to.
 
         Returns:
             Mapping of run label to run directory, or None when the job has no
             units or none of them resolved to a directory with event files.
         """
         run_dirs = []
-        for unit in self._job_units(job_id):
+        for unit in units:
             run_dir = self._unit_run_dir(unit, root)
             if run_dir is not None and run_dir not in run_dirs:
                 run_dirs.append(run_dir)
@@ -138,13 +168,6 @@ class RunLauncher:
 
         return spec
 
-    def _job_units(self, job_id: str) -> list[dict]:
-        """Returns the fan-out unit records of a job, empty without a progress snapshot."""
-        info = self.processes.progress(job_id)
-        if not info.get("ok") or "progress" not in info:
-            return []
-        return info["progress"].get("units") or []
-
     def _unit_run_dir(self, unit: dict, root: Path) -> Path | None:
         """Returns the run directory holding one fan-out unit's event files.
 
@@ -161,12 +184,9 @@ class RunLauncher:
             The unit's run directory, or None when no directory with event files
             is found, as for a unit that has not started writing yet.
         """
-        raw = unit.get("log")
-        if not raw:
+        log = self._unit_log(unit)
+        if log is None:
             return None
-
-        log = Path(raw)
-        log = log if log.is_absolute() else self.paths.repo_root / log
 
         name = unit.get("name") or ""
         for directory in self._bounded_ancestors(log.parent, root):
@@ -178,6 +198,15 @@ class RunLauncher:
             return log.parent
 
         return None
+
+    def _unit_log(self, unit: dict) -> Path | None:
+        """Returns a unit's log path made absolute against the repository root, or None when it has none."""
+        raw = unit.get("log")
+        if not raw:
+            return None
+
+        log = Path(raw)
+        return log if log.is_absolute() else self.paths.repo_root / log
 
     @staticmethod
     def _bounded_ancestors(start: Path, root: Path) -> list[Path]:
@@ -223,10 +252,11 @@ class RunLauncher:
     def job_tensorboard(self, record: dict) -> dict:
         """Starts, or reuses, a TensorBoard instance scoped to one console job's runs.
 
-        A fan-out job whose units resolved to run directories is served exactly
-        those directories, an in-process single run is served the run directory
-        its pid wrote event files into, and any other job is served the log
-        directory its launch resolved to.
+        A data-parallel job is served rank zero's event folder only, leaving out
+        the secondary ranks' mirrors. A fan-out job whose units resolved to run
+        directories is served exactly those directories, an in-process single
+        run is served the run directory its pid wrote event files into, and any
+        other job is served the log directory its launch resolved to.
 
         Args:
             record : Job record carrying the script key, overrides, interpreter, job id, pid and start timestamp.
@@ -242,7 +272,12 @@ class RunLauncher:
         if not root:
             return {"ok": False, "error": "could not resolve the job's log directory"}
 
-        spec = self.job_run_spec(record["job_id"], Path(root))
+        units   = self._job_units(record["job_id"])
+        ddp_run = self._ddp_run_dir(units)
+        if ddp_run is not None:
+            return self.tensorboard.ensure_spec({ddp_run.name: str(ddp_run / self.tensorboard.RUN_EVENT_FOLDER)}, record["interpreter"])
+
+        spec = self.job_run_spec(units, Path(root))
         if spec:
             return self.tensorboard.ensure_spec(spec, record["interpreter"])
 
