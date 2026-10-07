@@ -31,8 +31,9 @@ A block carries one finalize switch per post-experiment step: the seed
 comparison aggregating each trial's seed runs, the trial comparison writing the
 experiment's comparison reports, and the report mailer sending the experiment
 bundle. The enabled steps are chained in that order onto the block's successful
-end. The chain runs on the block's trial-sweep directory inside the isolated
-workspace and does not gate the block's successors: they launch as soon as the
+end. The chain runs on the block's trial-sweep directory, inside the isolated
+workspace when the sequence has one and under the entry's own log directory
+otherwise, and does not gate the block's successors: they launch as soon as the
 block's own job finishes, while the chain runs beside them. A failed chain step
 marks the block finalize_failed, which still satisfies its successors but ends
 the sequence as failed.
@@ -401,11 +402,13 @@ class SequenceRunner:
         Returns:
             Pair of the launch overrides and the leaf defaults keyed by path;
             the overrides are None when the entry could not be resolved, and
-            the leaves are empty when no resolution was needed.
+            the leaves are empty when no resolution was needed. A block with
+            finalize steps on always resolves, since its sweep directory is
+            derived from the leaf defaults.
         """
         overrides = dict(block["overrides"])
         dataset   = entry["dataset"]["dataset_path"]
-        if not dataset and not run_dir:
+        if not dataset and not run_dir and not any(block["finalize"].values()):
             return overrides, {}
 
         resolved = self.resolver.resolve(block["script"], interpreter)
@@ -642,7 +645,7 @@ class SequenceRunner:
             if block_state["status"] != "running":
                 continue
             status = self._job_status(block_state["job_id"])
-            if status in self.ENDED_OK and any(blocks[block_id]["finalize"].values()) and state["run_dir"]:
+            if status in self.ENDED_OK and any(blocks[block_id]["finalize"].values()):
                 block_state["status"]   = "finalizing"
                 block_state["finalize"] = {"steps": list(self.chain.steps(blocks[block_id]["finalize"])), "step": 0, "job_id": None, "launching": False}
             elif status in self.ENDED_OK:

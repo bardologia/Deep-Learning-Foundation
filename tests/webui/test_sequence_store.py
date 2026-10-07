@@ -532,12 +532,12 @@ def test_save_cleans_the_finalize_switches(store):
     assert result["entry"]["blocks"][1]["finalize"] == {"compare_seeds": False, "compare_trials": False, "mail_experiment_reports": False}
 
 
-def test_save_refuses_a_finalize_switch_without_isolation(store):
-    """A finalize switch needs the isolated workspace, so saving one on with isolation off is refused."""
+def test_save_keeps_a_finalize_switch_without_isolation(store):
+    """A finalize switch does not need the isolated workspace: the chain runs on the entry's own sweep directory instead."""
     sequence_id = store.create("seq")["entry"]["sequence_id"]
 
     result = store.save(sequence_id, _definition([_block("a1", finalize={"compare_seeds": True})]))
 
-    assert not result["ok"]
-    assert "finalize" in result["error"]
-    assert "Isolated dir" in result["error"]
+    assert result["ok"]
+    assert result["entry"]["isolate"] is False
+    assert result["entry"]["blocks"][0]["finalize"]["compare_seeds"] is True
