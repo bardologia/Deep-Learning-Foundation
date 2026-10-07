@@ -426,6 +426,7 @@ class LaunchView extends ConfigForm {
       tab.textContent = label;
       tab.addEventListener("click", () => {
         this._setValue(leaf, value);
+        this._fireDependents(leaf.path, value);
         paint();
         this._paintTypeCard(value);
         this._reloadModelsForType();

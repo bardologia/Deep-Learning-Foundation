@@ -133,6 +133,13 @@ class LaunchLayout:
 
     DUAL_TRUNK_EXCLUDE = ["features", "init_mode", "*_lr", "*_wd"]
 
+    CV_MODEL_BY_TYPE = {"field": "training_type", "models": {
+        "backbone"            : "backbone_name",
+        "jepa"                : "backbone_name",
+        "profile_autoencoder" : "autoencoder.ae_model_name",
+        "image_autoencoder"   : "image_autoencoder.ae_model_name",
+    }}
+
     MULTI_FIT_MODES = {"kind": "multi", "empty": "select at least one fit mode", "choices": [
         {"value": "sigma",        "label": "sigma only"},
         {"value": "amp",          "label": "amplitude only"},
@@ -801,7 +808,7 @@ class LaunchLayout:
             "sections": [
                 {"key": "model", "title": "Model", "panels": [
                     {"kind": "special", "panel": "model_card", "fields": ["backbone_name", "backbone_head"], "headGate": {"when": {"field": "profile_autoencoder_run", "set": True}, "only": ["conv"], "hint": JEPA_HEAD_HINT}},
-                    {"kind": "fields", "groups": [{"title": "Architecture overrides", "fields": ["model_overrides"]}]},
+                    {"kind": "special", "panel": "arch_overrides", "modelFrom": "backbone_name", "fields": ["model_overrides"]},
                     {"kind": "fields", "title": "Autoencoders", "note": JEPA_COUPLING_NOTE, "groups": [
                         {"title": "Profile autoencoder", "fields": [
                             "profile_autoencoder_logdir",
@@ -1012,18 +1019,18 @@ class LaunchLayout:
                         {"title": "Parameter trunk (gaussian heads)", "fields": [
                             {"path": "dual.params_backbone", "widget": CH_TRUNK},
                             {"path": "dual.params_input",    "widget": MULTI_TRUNK_INPUT},
-                            "dual.params_overrides",
                         ]},
                         {"title": "Existence trunk (presence gate)", "fields": [
                             {"path": "dual.existence_backbone", "widget": CH_TRUNK},
                             {"path": "dual.existence_input",    "widget": MULTI_TRUNK_INPUT},
-                            "dual.existence_overrides",
                         ]},
                     ]},
+                    {"kind": "special", "panel": "arch_overrides", "title": "Parameter trunk architecture", "modelFrom": "dual.params_backbone",    "exclude": DUAL_TRUNK_EXCLUDE, "fields": ["dual.params_overrides"]},
+                    {"kind": "special", "panel": "arch_overrides", "title": "Existence trunk architecture", "modelFrom": "dual.existence_backbone", "exclude": DUAL_TRUNK_EXCLUDE, "fields": ["dual.existence_overrides"]},
                     {"kind": "hidden", "fields": ["dual.model_name"]},
                 ]},
                 {"key": "overrides", "title": "Architecture overrides", "panels": [
-                    {"kind": "fields", "groups": [{"title": "Architecture overrides", "fields": ["model_overrides"]}]},
+                    {"kind": "special", "panel": "arch_overrides", "title": "Architecture overrides", "modelBy": CV_MODEL_BY_TYPE, "fields": ["model_overrides"]},
                 ]},
                 {"key": "folds", "title": "Folds", "panels": [
                     {"kind": "hidden", "fields": ["gpus_file"]},
@@ -1718,6 +1725,8 @@ class LaunchLayout:
             expanded = {"kind": "special", "panel": panel["panel"], "fields": list(panel["fields"])}
             if "modelFrom" in panel:
                 expanded["modelFrom"] = panel["modelFrom"]
+            if "modelBy" in panel:
+                expanded["modelBy"] = copy.deepcopy(panel["modelBy"])
             if "title" in panel:
                 expanded["title"] = panel["title"]
             if "exclude" in panel:
@@ -1920,6 +1929,19 @@ class LaunchLayout:
                     continue
                 if panel.get("modelFrom") and panel["modelFrom"] not in known:
                     problems.append(f"special panel {panel['panel']} reads unknown model field {panel['modelFrom']}")
+                if panel.get("modelBy"):
+                    if panel.get("modelFrom"):
+                        problems.append(f"special panel {panel['panel']} declares both modelFrom and modelBy; a model source is either one field or one switch")
+                    if panel["panel"] != "arch_overrides":
+                        problems.append(f"special panel {panel['panel']} carries a modelBy switch, which only arch_overrides panels support")
+                    switch = panel["modelBy"]
+                    if switch.get("field") not in known:
+                        problems.append(f"special panel {panel['panel']} switches its model on unknown field {switch.get('field')}")
+                    if not switch.get("models") or not all(isinstance(path, str) for path in switch["models"].values()):
+                        problems.append(f"special panel {panel['panel']} needs a non-empty value-to-field mapping in modelBy.models")
+                    for value, path in (switch.get("models") or {}).items():
+                        if path not in known:
+                            problems.append(f"special panel {panel['panel']} reads unknown model field {path} for {switch['field']}={value}")
                 if "exclude" in panel:
                     if panel["panel"] != "arch_overrides":
                         problems.append(f"special panel {panel['panel']} carries an exclude list, which only arch_overrides panels support")
