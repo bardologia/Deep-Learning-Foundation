@@ -191,6 +191,7 @@ class QueuedStage(ExperimentStage):
             splits         = self._scored_splits(),
             inference_base = self._inference_base,
             trainer_resume = bool(self.config.training.resume),
+            resume         = bool(self.config.resume),
         )
 
 
@@ -420,10 +421,13 @@ class UnitStatusReport:
         splits         : Dataset splits whose inference completion is reported, empty when the stage scores nothing.
         inference_base : Callable returning the directory holding a unit's inference stamps.
         trainer_resume : Whether unfinished units continue from their trainer state.
+        resume         : Whether the stage reuses completed units; without it a completed unit refuses to train over its finished run and fails.
         trainer_state  : Name of the rolling trainer state file.
     """
 
-    def __init__(self, items: list[str], unit_dir: Callable[[str], Path], stage_dir: Path, splits: list[str], inference_base: Callable[[Path], Path], trainer_resume: bool, trainer_state: str = QueuedStage.TRAINER_STATE) -> None:
+    REFUSED = "complete, refused (resume off)"
+
+    def __init__(self, items: list[str], unit_dir: Callable[[str], Path], stage_dir: Path, splits: list[str], inference_base: Callable[[Path], Path], trainer_resume: bool, resume: bool, trainer_state: str = QueuedStage.TRAINER_STATE) -> None:
         """Binds the report to the units of one stage and the rules that locate their artifacts."""
         self.items          = list(items)
         self.unit_dir       = unit_dir
@@ -431,12 +435,13 @@ class UnitStatusReport:
         self.splits         = list(splits)
         self.inference_base = inference_base
         self.trainer_resume = trainer_resume
+        self.resume         = resume
         self.trainer_state  = trainer_state
 
     def _training_status(self, directory: Path) -> str:
         """Returns the training status word of one unit directory."""
         if CompletionMarker.is_complete(directory):
-            return "complete"
+            return "complete" if self.resume else self.REFUSED
         if not directory.is_dir():
             return "new"
         if self.trainer_resume and (directory / self.trainer_state).is_file():
@@ -471,12 +476,16 @@ class UnitStatusReport:
         return rows
 
     def log(self, logger: Logger, title: str) -> None:
-        """Logs the unit table and a one-line count of what the stage will do."""
-        rows     = self.rows()
-        complete = sum(1 for row in rows if row["Training"] == "complete")
-        resumed  = sum(1 for row in rows if row["Training"] == "resumes from checkpoint")
-        fresh    = len(rows) - complete - resumed
+        """Logs the unit table and a one-line count of what the stage will do, warning about completed units that refuse to train with resume off."""
+        rows      = self.rows()
+        complete  = sum(1 for row in rows if row["Training"] == "complete")
+        refused   = [row["Unit"] for row in rows if row["Training"] == self.REFUSED]
+        resumed   = sum(1 for row in rows if row["Training"] == "resumes from checkpoint")
+        fresh     = len(rows) - complete - len(refused) - resumed
 
         logger.subsection(title)
         logger.metrics_table(rows, columns=["Unit", "Directory", "Training", "Inference"])
         logger.info(f"{complete} unit(s) complete, {resumed} resume from their checkpoint, {fresh} train from scratch")
+
+        if refused:
+            logger.warning(f"resume is off: {len(refused)} completed unit(s) hold a finished run that is never overwritten in place, so they refuse to train and fail; set resume=True to reuse them or launch under a new run_tag: {', '.join(refused)}")
