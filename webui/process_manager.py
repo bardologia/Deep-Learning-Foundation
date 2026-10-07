@@ -1881,9 +1881,18 @@ class ServerDetacher:
             return
 
         deadline = time.monotonic() + self.ESCAPE_TIMEOUT_S
-        while scope not in Path("/proc/self/cgroup").read_text():
+        while True:
+            try:
+                cgroup_text = Path("/proc/self/cgroup").read_text()
+            except OSError as exc:
+                self.shield_error = f"failed to read /proc/self/cgroup: {exc}"
+                self.logger.error(self.shield_error)
+                return
+
+            if scope in cgroup_text:
+                break
             if time.monotonic() > deadline:
-                self.shield_error = f"session escape did not land within {self.ESCAPE_TIMEOUT_S:.0f}s: process still in {Path('/proc/self/cgroup').read_text().strip()}"
+                self.shield_error = f"session escape did not land within {self.ESCAPE_TIMEOUT_S:.0f}s: process still in {cgroup_text.strip()}"
                 self.logger.error(self.shield_error)
                 return
             time.sleep(0.1)
