@@ -265,7 +265,8 @@ class TileGpuPanel {
 
 
 class TileUnitPicker {
-  static FILTER_MIN = 8;
+  static FILTER_MIN  = 8;
+  static MENU_MARGIN = 10;
 
   constructor(tile) {
     this.tile  = tile;
@@ -474,8 +475,16 @@ class TileUnitPicker {
     this.menu.hidden = false;
     this.btn.classList.add("is-open");
     this._renderMenu();
+    this.fitMenu();
     document.addEventListener("mousedown", this._docClick);
     if (!this.filter.hidden) this.filter.focus();
+  }
+
+  fitMenu() {
+    if (this.menu.hidden) return;
+
+    const room = this.tile.root.getBoundingClientRect().bottom - this.menu.getBoundingClientRect().top - TileUnitPicker.MENU_MARGIN;
+    this.menu.style.setProperty("--menu-room", `${Math.max(0, Math.floor(room))}px`);
   }
 
   _closeMenu() {
@@ -593,6 +602,11 @@ class ConsoleTile {
     this.term = main.term;
     this.fitAddon = main.fit;
 
+    this.streamLost = false;
+    this.resizer = new ResizeObserver(() => this.manager.queueFit());
+    this.resizer.observe(this.outEl);
+    this.resizer.observe(this.unitEl);
+
     this.logBtn.hidden = !job.log_path;
 
     this.setStatus(job.status);
@@ -627,7 +641,21 @@ class ConsoleTile {
   _connect() {
     this.source = new EventSource(`/api/jobs/${this.job.job_id}/stream`);
     this.source.onmessage = (ev) => this._onEvent(ev);
-    this.source.onerror = () => this._disconnect();
+    this.source.onerror = () => this._onStreamError();
+  }
+
+  _onStreamError() {
+    if (this.source.readyState === EventSource.CLOSED) {
+      this._disconnect();
+      return;
+    }
+    if (this.streamLost) return;
+    this.streamLost = true;
+    this._note("live stream interrupted, reconnecting — the job list keeps the status current meanwhile", "33");
+  }
+
+  get streamOpen() {
+    return this.source !== null && this.source.readyState === EventSource.OPEN;
   }
 
   _disconnect() {
@@ -638,6 +666,8 @@ class ConsoleTile {
   }
 
   _onEvent(ev) {
+    this.streamLost = false;
+
     let data;
     try {
       data = JSON.parse(ev.data);
@@ -764,8 +794,32 @@ class ConsoleTile {
     else {
       const hadTimer = Boolean(this.gpuTimer);
       this._unwatchGpus();
-      if (hadTimer) this._pollProgress();
+      if (hadTimer && status !== "untracked") this._pollProgress();
     }
+  }
+
+  syncFromList(job) {
+    if (job.pid && job.pid !== this.job.pid) {
+      this.job.pid = job.pid;
+      this.metaEl.textContent = this._meta(this._baseMeta(job));
+    }
+    if (job.log_path && !this.job.log_path) {
+      this.job.log_path = job.log_path;
+      this.logBtn.hidden = false;
+    }
+    if (job.status === this.job.status || this.streamOpen) return;
+
+    this._note(`process ${job.status} — reported by the job list, the live stream missed it`, job.status === "finished" ? "36" : "31");
+    this.setStatus(job.status);
+  }
+
+  markUntracked() {
+    if (this.job.status === "untracked") return;
+
+    this._disconnect();
+    this._closeUnitStream();
+    this._note("the console no longer tracks this job (it restarted or pruned its history); a process still running reappears in the job list as an adopted job", "33");
+    this.setStatus("untracked");
   }
 
   _watchGpus() {
@@ -830,7 +884,14 @@ class ConsoleTile {
   }
 
   _renderUnits(units) {
+    const selected = this.selectedUnit != null ? this.units[this.selectedUnit] : null;
     this.units = units;
+
+    if (selected) {
+      const index = units.findIndex((u) => u.log === selected.log);
+      if (index < 0) this._selectUnit(null);
+      else this.selectedUnit = index;
+    }
     const sig = units.map((u) => `${u.log}\u0000${u.status}`).join("\u0001");
     if (sig === this.unitsSig) return;
     this.unitsSig = sig;
@@ -915,6 +976,7 @@ class ConsoleTile {
   }
 
   fit() {
+    this.picker.fitMenu();
     if (this.log.showing) return;
 
     if (this.selectedUnit == null) this._fitInto(this.term, this.fitAddon, this.outEl, "opened");
@@ -947,6 +1009,7 @@ class ConsoleTile {
   }
 
   dispose() {
+    this.resizer.disconnect();
     this._disconnect();
     this.picker._closeMenu();
     this._closeUnitStream();
@@ -971,15 +1034,20 @@ class RunConsole {
     this.dismissed = new Set();
     this._fitTimer = null;
 
-    window.addEventListener("resize", () => this._queueFit());
+    window.addEventListener("resize", () => this.queueFit());
+    document.fonts.ready.then(() => this.queueFit());
     setInterval(() => {
       if (document.hidden) return;
-      if (this.listError || this.jobs.some((j) => RunConsole.isLive(j))) this.refresh();
+      if (this.listError || this.jobs.some((j) => RunConsole.isLive(j)) || this._hasLiveTile()) this.refresh();
     }, RunConsole.LIST_POLL_MS);
   }
 
   static isLive(job) {
     return job.status === "running";
+  }
+
+  _hasLiveTile() {
+    return Array.from(this.tiles.values()).some((tile) => RunConsole.isLive(tile.job));
   }
 
   async refresh() {
@@ -993,10 +1061,20 @@ class RunConsole {
 
     this.listError = null;
     this.jobs = data.jobs;
+    this._syncTiles();
     this.jobs
       .filter((j) => RunConsole.isLive(j) && !this.dismissed.has(j.job_id) && !this.tiles.has(j.job_id))
       .forEach((j) => this.open(j.job_id));
     this._renderList();
+  }
+
+  _syncTiles() {
+    const listed = new Map(this.jobs.map((j) => [j.job_id, j]));
+    this.tiles.forEach((tile, jobId) => {
+      const job = listed.get(jobId);
+      if (job) tile.syncFromList(job);
+      else tile.markUntracked();
+    });
   }
 
   async launch(scriptKey, interpreter, label, request) {
@@ -1051,10 +1129,11 @@ class RunConsole {
     const res = await Api.post(`/api/jobs/${jobId}/stop`, {});
     if (res.ok) Toast.show("Stop signal sent", "ok");
     else Toast.show(res.error || "Could not stop", "error");
+    setTimeout(() => this.refresh(), 1500);
   }
 
   onShow() {
-    this._queueFit();
+    this.queueFit();
   }
 
   _layout() {
@@ -1064,10 +1143,10 @@ class RunConsole {
     const rows = Math.max(1, Math.ceil(n / cols));
     this.tilesEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     this.tilesEl.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
-    this._queueFit();
+    this.queueFit();
   }
 
-  _queueFit() {
+  queueFit() {
     clearTimeout(this._fitTimer);
     this._fitTimer = setTimeout(() => this.tiles.forEach((t) => t.fit()), 120);
   }
