@@ -175,3 +175,16 @@ class TrainingQueueConfig:
     train_rows : tuple[int, int] = (1000, 1358)
     val_rows   : tuple[int, int] = (1358, 1434)
     test_rows  : tuple[int, int] = (1434, 1512)
+
+    def lr_scale(self, batch_size: int | None = None) -> float:
+        """Returns the multiplier the base learning rates take at a batch size.
+
+        Args:
+            batch_size : Batch size the rule is evaluated at; None takes this config's own batch size.
+
+        Returns:
+            The ratio of the batch to the reference batch when scaling is on, else one, times the learning-rate multiplier.
+        """
+        batch = self.batch_size if batch_size is None else batch_size
+
+        return (batch / self.lr_reference_batch_size if self.scale_lr_with_batch else 1.0) * self.lr_multiplier
