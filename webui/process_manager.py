@@ -1736,7 +1736,7 @@ class ServerDetacher:
     APPLY_TIMEOUT_S  = 30.0
     ESCAPE_TIMEOUT_S = 5.0
     LOG_NAME         = "webui_server.log"
-    SCOPE_PREFIX     = "tomosar-webui"
+    SCOPE_PREFIX     = "ml-template-webui"
     SERVE_SCRIPT     = Path(__file__).resolve().with_name("serve.py")
     SHIELDED_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM, signal.SIGQUIT)
 

@@ -172,7 +172,7 @@ def test_detach_survives_termination_signals(server):
     assert "scope" in result and "shield_error" in result
 
     if not result["shield_error"]:
-        assert result["scope"] == f"tomosar-webui-{proc.pid}.scope"
+        assert result["scope"] == f"ml-template-webui-{proc.pid}.scope"
         cgroup = Path(f"/proc/{proc.pid}/cgroup").read_text()
         assert result["scope"] in cgroup
 
