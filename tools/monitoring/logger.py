@@ -205,6 +205,7 @@ class Logger:
         self.config     = config
 
         self._section_started: Optional[datetime] = None
+        self._adopted         : list[str]          = []
 
         if self.log_dir:
             os.makedirs(self.log_dir, exist_ok=True)
@@ -524,6 +525,21 @@ class Logger:
             return False
         return not (isinstance(error, SystemExit) and error.code in (0, None))
 
+    def adopt(self, name: str) -> None:
+        """Writes the records of another standard-library logger into this run's log file until the run closes.
+
+        The adopted logger keeps its own console handlers; only the file gains
+        its records, at their own level and with any traceback they carry.
+
+        Args:
+            name : Name of the logger whose records are adopted, such as 'optuna'.
+        """
+        if self._file_handler is None:
+            return
+
+        logging.getLogger(name).addHandler(self._file_handler)
+        self._adopted.append(name)
+
     def close(self, error: Optional[BaseException] = None) -> None:
         """Prints the closing rule with the total run duration and releases every handler.
 
@@ -552,6 +568,10 @@ class Logger:
             self.console.print(Rule(Text(f"END {self.name}", style="section"), style="cyan"))
             self._file_banner(f">>> END {self.name}")
             self.logger.info(f"[End] Duration: {duration}")
+
+        for name in self._adopted:
+            logging.getLogger(name).removeHandler(self._file_handler)
+        self._adopted = []
 
         for handler in self.logger.handlers[:]:
             handler.close()

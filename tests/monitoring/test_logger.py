@@ -562,3 +562,26 @@ def test_live_monitor_shares_the_progress_refresh_rate():
 
     with logger_module.LiveMonitor(console) as monitor:
         assert monitor._live.refresh_per_second == logger_module.PROGRESS_REFRESH_HZ
+
+
+def test_adopt_writes_another_loggers_records_into_the_file_until_close(tmp_path):
+    """Verifies an adopted logger's warnings, traceback included, land in the log file, and stop landing there once the run closes."""
+    lg      = Logger(log_dir=str(tmp_path), name="adopt_run")
+    foreign = logging.getLogger("adopt_foreign_library")
+    foreign.setLevel(logging.WARNING)
+
+    lg.adopt("adopt_foreign_library")
+    try:
+        raise ValueError("objective returned nan")
+    except ValueError:
+        foreign.warning("Trial 3 failed", exc_info=True)
+
+    lg.close()
+    foreign.warning("after close")
+
+    text = _read_log(tmp_path, "adopt_run")
+    assert "[WARNING] Trial 3 failed" in text
+    assert "ValueError: objective returned nan" in text
+    assert "after close" not in text
+    assert lg.logger.handlers == []
+    assert foreign.handlers   == []
