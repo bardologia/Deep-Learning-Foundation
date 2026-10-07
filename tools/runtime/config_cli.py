@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import sys
 import types
 import typing
 from dataclasses import fields, is_dataclass
@@ -27,12 +28,13 @@ class ConfigCli:
     """Applies the machine profile and --dotted.path overrides to a nested dataclass configuration.
 
     Attributes:
-        config            : Configuration dataclass whose leaves become CLI options.
-        overrides         : Leaf path to value for every override that was applied.
-        profile           : Machine profile whose roots and hardware rules were applied to the defaults.
-        profile_overrides : Leaf path to value for every default the machine profile rewrote.
-        parser            : Argument parser holding one option per editable leaf.
-        BOOTSTRAP_FLAGS   : Flags owned by the entry points rather than the config, which are tolerated among the unparsed arguments.
+        config             : Configuration dataclass whose leaves become CLI options.
+        overrides          : Leaf path to value for every override that was applied.
+        profile            : Machine profile whose roots and hardware rules were applied to the defaults.
+        profile_overrides  : Leaf path to value for every default the machine profile rewrote.
+        parser             : Argument parser holding one option per editable leaf.
+        BOOTSTRAP_FLAGS    : Flags owned by the entry points rather than the config, which are tolerated among the unparsed arguments.
+        BOOTSTRAP_SWITCHES : Bootstrap flags that never take a value, so a token after them is never consumed as theirs.
     """
 
     BOOTSTRAP_FLAGS = (
@@ -45,6 +47,7 @@ class ConfigCli:
         "--run-tag", "--run-dir", "--run-name",
         "--fold", "--split",
     )
+    BOOTSTRAP_SWITCHES = ("--help-config", "--detach", "--nohup", "--trial")
 
     def __init__(self, config, description: str | None = None, profile: MachineProfile | None = None) -> None:
         """Applies the machine profile and builds a parser exposing every editable leaf as an option.
@@ -92,12 +95,12 @@ class ConfigCli:
             The mutated configuration.
 
         Raises:
-            ValueError : If an unrecognized option is present.
+            ValueError : If an unrecognized option or a stray value is present.
             SystemExit : After printing the configuration help.
         """
         args, leftover = self.parser.parse_known_args(argv)
 
-        self._reject_unknown_options(leftover)
+        self._reject_unknown_options(leftover, sys.argv[1:] if argv is None else list(argv))
 
         if getattr(args, "_help", False) or getattr(args, "_help_config", False):
             self._print_config_help()
@@ -117,30 +120,65 @@ class ConfigCli:
 
         return self.config
 
-    def _reject_unknown_options(self, leftover: list[str]) -> None:
-        """Raises on unparsed options that are neither config paths nor bootstrap flags.
+    def _reject_unknown_options(self, leftover: list[str], argv: list[str]) -> None:
+        """Raises on unparsed tokens: unknown options, and values left over after an override.
+
+        Bootstrap flags and the one value each value-taking flag carries are the
+        only tokens allowed through. A value is accepted only when it directly
+        follows such a flag on the command line, so ``--seeds 0 1 2`` fails
+        naming the stray values instead of silently applying ``--seeds 0``,
+        also when a switch such as ``--trial`` precedes it.
 
         Args:
-            leftover : Tokens argparse could not consume.
+            leftover : Tokens argparse could not consume, in command-line order.
+            argv     : Full argument list, used to place every leftover token and name the option a stray value followed.
 
         Raises:
-            ValueError : If any leftover token looks like an unknown option.
+            ValueError : If any leftover token is an unknown option or a stray value.
         """
         offenders = []
+        stray     = []
+        pending   = list(leftover)
+        previous  = None
 
-        for token in leftover:
-            if not token.startswith("--") and not token.startswith("-"):
-                continue
+        for token in argv:
+            if pending and token == pending[0]:
+                pending.pop(0)
 
-            name = token.split("=", 1)[0]
-            if name in self.BOOTSTRAP_FLAGS:
-                continue
+                if token.startswith("-"):
+                    name = token.split("=", 1)[0]
+                    if name not in self.BOOTSTRAP_FLAGS:
+                        offenders.append(name)
+                elif not self._takes_value(previous):
+                    stray.append(token)
 
-            offenders.append(name)
+            previous = token
 
         if offenders:
             keys = ", ".join(sorted(set(offenders)))
             raise ValueError(f"Unrecognized override option(s): {keys}. Known overrides: --<path> from {type(self.config).__name__}; bootstrap flags: {', '.join(self.BOOTSTRAP_FLAGS)}")
+
+        if stray:
+            option = self._option_before(stray[0], argv)
+            raise ValueError(f"Stray value(s) {stray} after {option}: every override takes exactly one value, so a list is written as {option} a,b,c or {option} [a,b,c]")
+
+    def _takes_value(self, token: str | None) -> bool:
+        """Returns whether a command-line token is a bootstrap flag written without "=" that carries the next token as its value."""
+        if token is None or not token.startswith("-") or "=" in token:
+            return False
+
+        return token in self.BOOTSTRAP_FLAGS and token not in self.BOOTSTRAP_SWITCHES
+
+    @staticmethod
+    def _option_before(token: str, argv: list[str]) -> str:
+        """Returns the option that precedes the given token on the command line, or a generic label."""
+        index = argv.index(token) if token in argv else 0
+
+        for previous in reversed(argv[:index]):
+            if previous.startswith("-"):
+                return previous.split("=", 1)[0]
+
+        return "the command"
 
     @classmethod
     def apply_profile(cls, config, profile: MachineProfile) -> dict:

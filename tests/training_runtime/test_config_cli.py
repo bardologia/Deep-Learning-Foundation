@@ -184,6 +184,41 @@ def test_unknown_option_rejected():
         ConfigCli(cfg).apply(["--does-not-exist", "5"])
 
 
+def test_stray_values_after_an_override_are_rejected():
+    """Verifies space-separated list values are refused with a message naming the option and the accepted forms."""
+    cfg = _config()
+    with pytest.raises(ValueError, match=r"Stray value\(s\) \['1', '2'\] after --layers"):
+        ConfigCli(cfg).apply(["--layers", "0", "1", "2"])
+
+    assert cfg.layers == [16, 32]
+
+
+def test_stray_value_after_a_switch_is_not_taken_as_its_value():
+    """Verifies a list value is refused when a value-less switch such as --trial stands before the override, instead of the stray being swallowed as the switch's value."""
+    cfg = _config()
+    with pytest.raises(ValueError, match=r"Stray value\(s\) \['1'\] after --layers"):
+        ConfigCli(cfg).apply(["--trial", "--layers", "0", "1"])
+
+    assert cfg.layers == [16, 32]
+
+
+def test_stray_value_is_matched_to_the_flag_it_follows():
+    """Verifies a value-taking bootstrap flag accepts only the token right after it, so a stray later on the line is still refused."""
+    cfg = _config()
+    with pytest.raises(ValueError, match=r"Stray value\(s\) \['1'\] after --layers"):
+        ConfigCli(cfg).apply(["--gpu", "--layers", "0", "1"])
+
+    ConfigCli(cfg).apply(["--worker", "train", "--trial", "--seed", "4"])
+    assert cfg.seed == 4
+
+
+def test_bootstrap_flag_values_are_not_stray():
+    """Verifies the value of a bootstrap flag passes through while a later override still applies."""
+    cfg = _config()
+    ConfigCli(cfg).apply(["--run-tag", "sweep_a", "--seed", "3"])
+    assert cfg.seed == 3
+
+
 def test_bootstrap_flags_not_rejected():
     """Verifies that bootstrap flags such as --gpu are ignored instead of rejected."""
     cfg = _config()
