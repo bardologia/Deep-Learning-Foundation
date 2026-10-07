@@ -1,8 +1,9 @@
-"""Tests the staged pipeline base: its launch record and the configuration changes a relaunch reports.
+"""Tests the staged pipeline base: its launch record, the configuration changes a relaunch reports, and how a run ends.
 
 Covers the provenance line every launch appends, the archived recording and
-the warning a relaunch with other settings logs, and the resumed-run report
-that replaces that warning."""
+the warning a relaunch with other settings logs, the resumed-run report that
+replaces that warning, the stage an exception is attributed to, the partial
+exit of a run whose units failed, and the clean exit that is not an abort."""
 
 from __future__ import annotations
 
@@ -10,7 +11,10 @@ import json
 from dataclasses import dataclass, field
 from pathlib     import Path
 
-from pipelines.shared.orchestration.staged_pipeline import StagedPipeline
+import pytest
+
+from pipelines.shared.orchestration.staged_pipeline import PartialRun, StagedPipeline
+from tools.data.io                                  import FileIO
 from tools.runtime.git_state                        import GitState
 
 
@@ -31,13 +35,18 @@ class StagedConfig:
 
 
 class StubPipeline(StagedPipeline):
-    """Staged pipeline with no stages of its own."""
+    """Staged pipeline whose stage sequence is a callable the test supplies."""
 
     LOGGER_NAME = "stub_pipeline"
 
-    def __init__(self, config, resumed=None) -> None:
-        """Prepares the run directory."""
+    def __init__(self, config, stages=None, resumed=None) -> None:
+        """Binds the stage sequence and prepares the run directory."""
+        self.stages = stages
         super().__init__(config, Path("main/stub.py"), resumed=resumed)
+
+    def _execute(self) -> None:
+        """Runs the supplied stage sequence."""
+        self.stages(self)
 
 
 def _config(tmp_path, **kwargs) -> StagedConfig:
@@ -140,3 +149,78 @@ def test_a_resumed_launch_refreshes_and_logs_the_resumed_report_instead_of_the_r
     assert resumed.logged    is True
     assert resumed.refreshed is changed
     assert "differ from the configuration this run recorded" not in _log(second)
+
+
+def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_path):
+    """An exception escaping a stage is re-raised after the pipeline log names the stage and state.json marks it and the pipeline failed."""
+    def stages(pipeline):
+        """Fails inside the training stage."""
+        pipeline._begin_stage("training")
+        raise RuntimeError("queue died")
+
+    pipeline = StubPipeline(_config(tmp_path), stages)
+
+    with pytest.raises(RuntimeError, match="queue died"):
+        pipeline.run()
+
+    state = FileIO.load_json(pipeline.state_path)
+    text  = _log(pipeline)
+
+    assert state["stages"]["training"]["status"] == "failed"
+    assert state["stages"]["pipeline"]["status"] == "failed"
+    assert "Aborted in stage 'training' by RuntimeError: queue died" in text
+    assert ">>> ABORTED stub_pipeline" in text
+
+
+def test_a_clean_system_exit_is_not_recorded_as_an_abort(tmp_path):
+    """A SystemExit with code zero ends the run with the END banner and leaves the stage state untouched."""
+    def stages(pipeline):
+        """Ends the stage sequence deliberately."""
+        raise SystemExit(0)
+
+    pipeline = StubPipeline(_config(tmp_path), stages)
+
+    with pytest.raises(SystemExit):
+        pipeline.run()
+
+    assert not pipeline.state_path.exists()
+    assert ">>> END stub_pipeline" in _log(pipeline)
+    assert "Aborted" not in _log(pipeline)
+
+
+def test_failed_units_end_the_run_as_partial_with_a_non_zero_exit(tmp_path):
+    """A run whose training and inference units partly failed is marked partial, names each unit and exits non-zero after the END banner."""
+    def stages(pipeline):
+        """Finishes with one failed training unit and one failed inference unit."""
+        training  = [{"name": "a", "status": "DONE"}, {"name": "b", "status": "FAILED"}, {"name": "c", "status": "DONE"}]
+        inference = [{"name": "a", "status": "DONE"}, {"name": "b", "status": "SKIPPED"}, {"name": "c", "status": "FAILED"}]
+        pipeline._finish(training, inference, {"Reports": "reports/"})
+
+    pipeline = StubPipeline(_config(tmp_path), stages)
+
+    with pytest.raises(PartialRun, match="Partial: 2 of 3 units failed"):
+        pipeline.run()
+
+    text = _log(pipeline)
+
+    assert FileIO.load_json(pipeline.state_path)["stages"]["pipeline"]["status"] == "partial"
+    assert "training failed: b" in text
+    assert "inference failed: c" in text
+    assert ">>> END stub_pipeline" in text
+    assert ">>> ABORTED" not in text
+
+
+def test_a_run_whose_units_all_finished_ends_as_done_and_says_when_inference_was_skipped(tmp_path):
+    """A run with every unit trained is marked completed, and a skipped inference stage is named instead of counting zero inferences."""
+    def stages(pipeline):
+        """Finishes with every unit trained and no inference stage."""
+        pipeline._finish([{"name": "a", "status": "DONE"}, {"name": "b", "status": "DONE"}], [], {})
+
+    pipeline = StubPipeline(_config(tmp_path), stages)
+    pipeline.run()
+
+    text = _log(pipeline)
+
+    assert FileIO.load_json(pipeline.state_path)["stages"]["pipeline"]["status"] == "completed"
+    assert "Units planned   : 2" in text
+    assert "Inference       : stage skipped" in text
