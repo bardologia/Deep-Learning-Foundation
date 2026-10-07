@@ -53,3 +53,16 @@ def test_ensure_restores_an_inherited_allocation_mask(tmp_path, monkeypatch):
 
     assert env["CUDA_VISIBLE_DEVICES"] == "2,3"
     assert "MLTEMPLATE_INHERITED_CUDA_MASK" not in env
+
+
+def test_detached_child_takes_its_output_path_out_of_the_environment(monkeypatch):
+    """The detached child records its .out path for its own log headers and removes it from the environment its subprocesses inherit."""
+    monkeypatch.setattr(module.signal, "signal", lambda *args: None)
+    monkeypatch.setattr(Detacher, "output_path", None)
+    monkeypatch.setenv(Detacher.ENV_FLAG, "1")
+    monkeypatch.setenv(Detacher.OUT_ENV, "/runs/logs/train_backbone_20261003.out")
+
+    Detacher().ensure()
+
+    assert Detacher.output_path == "/runs/logs/train_backbone_20261003.out"
+    assert Detacher.OUT_ENV not in module.os.environ
