@@ -94,6 +94,34 @@ def test_log_file_is_written_with_stdout(tmp_path, logger_stub):
     assert "hello_log" in log_text
 
 
+def test_a_relaunch_appends_to_the_log_behind_a_banner_per_attempt(tmp_path, logger_stub):
+    """Verifies a unit launched twice keeps the first attempt's output and opens each attempt with a banner naming the unit and the device."""
+    queue = GpuQueue(gpus=[2], logger=logger_stub, poll_interval_s=0.0, handle_signals=False)
+
+    queue.run([_job(tmp_path, "a", _ok_command("first_attempt"))])
+    queue.run([_job(tmp_path, "a", _ok_command("second_attempt"))])
+
+    lines   = (tmp_path / "a" / "worker.log").read_text().splitlines()
+    banners = [index for index, line in enumerate(lines) if line.startswith("=====")]
+
+    assert len(banners) == 2
+    assert all(lines[index].endswith("launch of a on GPU 2 =====") for index in banners)
+    assert banners[0] < lines.index("first_attempt") < banners[1] < lines.index("second_attempt")
+
+
+def test_the_banner_of_a_restarted_unit_counts_its_preemptions(tmp_path, logger_stub):
+    """Verifies the attempt after a preemption says how many preemptions came before it."""
+    queue          = GpuQueue(gpus=[0], logger=logger_stub, poll_interval_s=0.0, handle_signals=False)
+    job            = _job(tmp_path, "a", _ok_command())
+    queue.progress = GpuProgressFile(tmp_path / "progress.json", [job], logger_stub)
+
+    assert queue._launch_banner(job, 0).endswith("launch of a on GPU 0 =====")
+
+    queue.progress.preempt(job)
+
+    assert queue._launch_banner(job, 1).endswith("launch of a on GPU 1 (restart after 1 preemption(s)) =====")
+
+
 def test_gpu_flag_is_appended_to_command(tmp_path, logger_stub):
     """Verifies the assigned device index is appended to the command as --gpu."""
     capture_path = tmp_path / "args.txt"

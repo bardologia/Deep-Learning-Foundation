@@ -765,8 +765,24 @@ class GpuQueue:
         if not gpu_pool and not self.running:
             self.logger.warning(f"GPU pool is empty — {len(queue)} jobs parked until a device is added back to {self.pool.path}")
 
+    def _launch_banner(self, job: GpuJob, gpu_id: int) -> str:
+        """Returns the line opening one attempt in a unit's console log: the time, the unit, the device and, on a restart, the preemptions before it.
+
+        Args:
+            job    : Unit about to start; its log path keys the progress ledger.
+            gpu_id : Device the attempt runs on.
+        """
+        preemptions = 0 if self.progress is None else self.progress.units[str(job.log_path)]["preemptions"]
+        restart     = f" (restart after {preemptions} preemption(s))" if preemptions else ""
+
+        return f"===== {datetime.now():%Y-%m-%d %H:%M:%S} launch of {job.name} on GPU {gpu_id}{restart} ====="
+
     def _launch(self, job: GpuJob, gpu_id: int) -> dict:
         """Starts one worker subprocess pinned to a device.
+
+        The console log is appended to, behind a banner naming the attempt, so
+        a relaunch after a crash, a resume or a preemption keeps the output of
+        the attempts before it, the traceback that explains a failure included.
 
         Args:
             job    : Unit to run; its command receives --gpu <gpu_id>.
@@ -779,7 +795,10 @@ class GpuQueue:
         job.log_path.parent.mkdir(parents=True, exist_ok=True)
 
         command = job.command + ["--gpu", str(gpu_id)]
-        log_fh  = open(job.log_path, "w", encoding="utf-8")
+        log_fh  = open(job.log_path, "a", encoding="utf-8")
+
+        log_fh.write(self._launch_banner(job, gpu_id) + "\n")
+        log_fh.flush()
 
         try:
             process = subprocess.Popen(command, stdout=log_fh, stderr=log_fh, env=InheritedCudaMask.restored())
