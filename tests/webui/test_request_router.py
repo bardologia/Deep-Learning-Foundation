@@ -26,7 +26,7 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 145
+ROUTE_COUNT   = 146
 SECTION_COUNT = 41
 
 RESOLUTIONS = [
@@ -76,6 +76,7 @@ RESOLUTIONS = [
     ("GET",  "/api/sequences",                     SequenceRouter),
     ("POST", "/api/sequences/abc/start",           SequenceRouter),
     ("POST", "/api/sequences/abc/release",         SequenceRouter),
+    ("GET",  "/api/sequences/abc/study",           SequenceRouter),
     ("GET",  "/api/system",                        SystemRouter),
     ("POST", "/api/gpu-schedule",                  SystemRouter),
     ("GET",  "/api/gpu-guard/history",             SystemRouter),

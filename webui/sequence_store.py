@@ -122,6 +122,10 @@ class SequenceStore:
     def decide(self, sequence_id: str, block_id: str, path: str, choice: str) -> dict:
         """Records the verdict of one decision axis and re-stamps the sequence.
 
+        A verdict outside the declared options joins them, so a value recorded
+        off a finished run, which no option list could anticipate, shows in the
+        picker like a chosen candidate.
+
         Args:
             sequence_id : Identifier of the sequence holding the deciding block.
             block_id    : Identifier of the block that decides the axis.
@@ -145,7 +149,9 @@ class SequenceStore:
             return {"ok": False, "error": f"block '{block['title']}' does not decide '{path}'"}
 
         decision["choice"] = str(choice)
-        result             = self.save(sequence_id, entry)
+        if decision["choice"] and decision["choice"] not in decision["options"]:
+            decision["options"].append(decision["choice"])
+        result = self.save(sequence_id, entry)
 
         if result["ok"]:
             self.logger.ok(f"sequence {sequence_id}: '{block['name'] or block['title']}' {'decided ' + path + ' = ' + str(choice) if choice else 'reopened ' + path}")

@@ -37,6 +37,18 @@ otherwise, and does not gate the block's successors: they launch as soon as the
 block's own job finishes, while the chain runs beside them. A failed chain step
 marks the block finalize_failed, which still satisfies its successors but ends
 the sequence as failed.
+
+A tuning block that declares decisions records its own verdict: once its job
+ended, the block enters ``deciding``, the runner reads the best configuration
+the run wrote, splits it over the declared axes, ``model_overrides`` and
+``training.batch_size``, and records each through the store, which re-stamps the
+sequence; only then does the block count as done for its successors. A missing
+or ambiguous best configuration fails the block. While the block runs, the
+board reads the study snapshots its workers write into the workspace.
+
+The notifier is told about the moments that need a person: a block held at its
+checkpoint, a recorded verdict, a failed block or finalize step, and the end of
+the sequence.
 """
 
 from __future__ import annotations
@@ -51,6 +63,7 @@ from web_logger import WebLogger
 
 from configuration.reference_layout import ReferenceLayout
 from finalize_chain                 import FinalizeChain
+from sequence_decisions             import TuningVerdict
 
 
 class SequenceRunner:
@@ -62,6 +75,7 @@ class SequenceRunner:
         launcher         : Run launcher executing local blocks.
         resolver         : Config resolver used to find which dataset fields a block's entry exposes.
         chain            : Derivation of the compare-and-mail chain appended to finalize blocks.
+        verdict          : Reader of the best configuration a finished tuning block records as its verdict.
         notifier         : Job notifier block failures and sequence endings are pushed through.
         logger           : Console logger.
         active           : Live sequence states keyed by sequence id.
@@ -82,6 +96,7 @@ class SequenceRunner:
         self.launcher  = launcher
         self.resolver  = resolver
         self.chain     = FinalizeChain()
+        self.verdict   = TuningVerdict()
         self.notifier  = notifier
         self.logger    = logger
         self.active    = {}
@@ -311,13 +326,14 @@ class SequenceRunner:
     @staticmethod
     def _fresh_block_state() -> dict:
         """Returns the initial live state of one block."""
-        return {"status": "pending", "job_id": None, "error": "", "experiment_dir": "", "finalize": None}
+        return {"status": "pending", "job_id": None, "error": "", "experiment_dir": "", "finalize": None, "verdict": None}
 
     @staticmethod
     def _copy_block_state(block_state: dict) -> dict:
-        """Returns a snapshot copy of one block's live state, its finalize chain included."""
+        """Returns a snapshot copy of one block's live state, its finalize chain and verdict states included."""
         finalize = block_state["finalize"]
-        return {**block_state, "finalize": dict(finalize) if finalize else None}
+        verdict  = block_state["verdict"]
+        return {**block_state, "finalize": dict(finalize) if finalize else None, "verdict": dict(verdict) if verdict else None}
 
     def _resume_workspace(self, entry: dict, resume_dir: str) -> tuple:
         """Validates the workspace of a previous execution against the sequences tree.
@@ -608,6 +624,19 @@ class SequenceRunner:
         else:
             self.logger.ok(f"sequence {entry['sequence_id']}: block '{block['title']}' finalize step '{step}' running as job {job_id}")
 
+    def _finish(self, block: dict, block_state: dict) -> None:
+        """Moves a block whose work ended into deciding when it records a verdict off its run, else into done.
+
+        Args:
+            block       : Block definition, read fresh from the store.
+            block_state : Its live state, mutated in place under the runner lock.
+        """
+        if self.verdict.records(block):
+            block_state["status"]  = "deciding"
+            block_state["verdict"] = {"launching": False, "values": {}}
+        else:
+            block_state["status"] = "done"
+
     def _advance(self, sequence_id: str, state: dict) -> list:
         """Advances one running sequence: syncs jobs, walks finalize chains, marks ready blocks.
 
@@ -649,7 +678,7 @@ class SequenceRunner:
                 block_state["status"]   = "finalizing"
                 block_state["finalize"] = {"steps": list(self.chain.steps(blocks[block_id]["finalize"])), "step": 0, "job_id": None, "launching": False}
             elif status in self.ENDED_OK:
-                block_state["status"] = "done"
+                self._finish(blocks[block_id], block_state)
             elif status in self.ENDED_BAD:
                 block_state["status"] = "failed"
                 block_state["error"]  = f"job {block_state['job_id']} ended as {status}"
@@ -675,10 +704,16 @@ class SequenceRunner:
 
             if chain["job_id"] is None and not chain["launching"]:
                 if chain["step"] >= len(chain["steps"]):
-                    block_state["status"] = "done"
+                    self._finish(blocks[block_id], block_state)
                 else:
                     chain["launching"] = True
                     launches.append(("finalize", entry, blocks[block_id], self._copy_block_state(block_state), state["run_dir"]))
+
+        for block_id, block_state in state["blocks"].items():
+            if block_state["status"] == "deciding" and not block_state["verdict"]["launching"]:
+                block_state["verdict"]["launching"] = True
+                launches.append(("verdict", entry, blocks[block_id], state["run_dir"]))
+
         changed  = True
         while changed:
             changed = False
@@ -702,7 +737,9 @@ class SequenceRunner:
                     continue
 
                 if block["checkpoint"] and block_id not in self.released[sequence_id]:
-                    block_state["status"] = "held"
+                    if block_state["status"] != "held":
+                        block_state["status"] = "held"
+                        self.notifier.system_alert(f"sequence block held: {block['title']}", f"sequence '{entry['name']}': '{block['name'] or block['title']}' waits at its checkpoint; release it in the Sequences tab to continue", "default")
                     continue
 
                 block_state["status"] = "launching"
@@ -710,7 +747,7 @@ class SequenceRunner:
                 changed = True
 
         statuses = [block_state["status"] for block_state in state["blocks"].values()]
-        if any(status in ("running", "launching", "finalizing") for status in statuses):
+        if any(status in ("running", "launching", "finalizing", "deciding") for status in statuses):
             state["status"] = "running"
         elif any(status == "held" for status in statuses):
             state["status"] = "held"
@@ -771,6 +808,116 @@ class SequenceRunner:
                 staging.replace(path)
                 self.persisted[sequence_id] = text
 
+    def study_progress(self, sequence_id: str, block_id: str) -> dict:
+        """Returns the study snapshots a tuning block's workers wrote into the execution workspace.
+
+        Args:
+            sequence_id : Identifier of the sequence holding the block.
+            block_id    : Identifier of the tuning block.
+
+        Returns:
+            Result with ``studies``, the last snapshot per tuned model keyed by
+            the model directory; ``ok`` False with an error when the sequence or
+            block is unknown, the block runs no tuning study, has no fixed run
+            tag, or the sequence never ran in an isolated workspace.
+        """
+        entry = self.store.get(sequence_id)
+        if entry is None:
+            return {"ok": False, "error": "sequence not found"}
+
+        block = next((item for item in entry["blocks"] if item["block_id"] == block_id), None)
+        if block is None:
+            return {"ok": False, "error": "block not found"}
+        if block["script"] != self.verdict.SCRIPT:
+            return {"ok": False, "error": f"block '{block['title']}' runs no tuning study"}
+
+        run_tag = block["overrides"].get("run_tag", "")
+        if run_tag in ("", "None"):
+            return {"ok": False, "error": "the block needs a fixed 'run_tag' to locate its study"}
+
+        with self.lock:
+            state   = self.active.get(sequence_id)
+            run_dir = state["run_dir"] if state is not None else ""
+
+        if not run_dir:
+            return {"ok": False, "error": "the sequence has not run in an isolated workspace, so there is no study to read"}
+
+        files = {path.parent.name: json.loads(path.read_text(encoding="utf-8")) for path in sorted(Path(run_dir).glob(f"{run_tag}/*/{self.verdict.PROGRESS}"))}
+        return {"ok": True, "studies": files}
+
+    def _leaves(self, script: str, interpreter: str) -> dict:
+        """Returns an entry's resolved leaf defaults keyed by path.
+
+        Args:
+            script      : Entry-point key to resolve.
+            interpreter : Interpreter the entry resolves under.
+
+        Raises:
+            ValueError : If the entry's configuration cannot be resolved.
+        """
+        resolved = self.resolver.resolve(script, interpreter)
+        if not resolved.get("ok"):
+            raise ValueError(f"could not resolve the config of '{script}': {resolved.get('error', 'unknown error')}")
+
+        return {leaf["path"]: str(leaf["value"]) for leaf in resolved["leaves"]}
+
+    def _record_verdict(self, entry: dict, block: dict, run_dir: str) -> None:
+        """Records a finished tuning block's best configuration as its verdict and moves the block on.
+
+        Runs outside the runner lock: locating the best configuration resolves
+        the entry's config leaves, and recording the verdict re-stamps the
+        whole sequence through the store. A block that left deciding meanwhile
+        keeps the status it has and nothing is recorded. A verdict that cannot
+        be read fails the block, so its successors never run on the untuned
+        recipe by accident.
+
+        Args:
+            entry   : Sequence definition the block belongs to.
+            block   : Block definition, read fresh from the store.
+            run_dir : Isolated workspace directory of this execution, or empty.
+        """
+        interpreter = block["interpreter"] or self.launcher.preferred_interpreter(block["script"])
+        values      = {}
+        error       = ""
+
+        try:
+            axes              = self.verdict.axes(block)
+            overrides, leaves = self._launch_overrides(entry, block, interpreter, run_dir)
+            if overrides is None:
+                raise ValueError(f"could not resolve the config of '{block['script']}' to locate its best configuration")
+            if not leaves:
+                leaves = self._leaves(block["script"], interpreter)
+
+            values = self.verdict.values(self.verdict.read(self.verdict.run_dir(overrides, leaves, run_dir)), axes)
+            for axis, value in values.items():
+                result = self.store.decide(entry["sequence_id"], block["block_id"], axis, value)
+                if not result["ok"]:
+                    raise ValueError(result["error"])
+        except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
+            error = str(exc)
+
+        with self.lock:
+            state       = self.active.get(entry["sequence_id"])
+            block_state = state["blocks"].get(block["block_id"]) if state else None
+            stale       = block_state is None or block_state["status"] != "deciding"
+
+            if not stale and error:
+                block_state["status"] = "failed"
+                block_state["error"]  = f"verdict not recorded: {error}"
+            elif not stale:
+                block_state["status"]            = "done"
+                block_state["verdict"]["values"] = values
+
+        if stale:
+            self.logger.warning(f"sequence {entry['sequence_id']}: block '{block['title']}' left deciding while its verdict was read; nothing recorded")
+        elif error:
+            self.logger.error(f"sequence {entry['sequence_id']}: block '{block['title']}' failed to record its verdict: {error}")
+            self.notifier.system_alert(f"sequence block failed: {block['title']}", f"sequence '{entry['name']}': verdict not recorded: {error}")
+        else:
+            recorded = ", ".join(f"{axis} = {value}" for axis, value in values.items())
+            self.logger.ok(f"sequence {entry['sequence_id']}: block '{block['title']}' recorded {recorded}")
+            self.notifier.system_alert(f"sequence block decided: {block['title']}", f"sequence '{entry['name']}': '{block['name'] or block['title']}' recorded {recorded}", "default")
+
     def scan(self) -> None:
         """Runs one advance pass over every running or held sequence, then launches what it marked.
 
@@ -788,6 +935,8 @@ class SequenceRunner:
         for launch in launches:
             if launch[0] == "block":
                 self._launch_block(*launch[1:])
+            elif launch[0] == "verdict":
+                self._record_verdict(*launch[1:])
             else:
                 self._launch_finalize_step(*launch[1:])
 
