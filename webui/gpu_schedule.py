@@ -720,7 +720,7 @@ class GpuSchedule:
         self.logger.muted(f"gpu schedule armed from {self.path} (enabled={self.settings['enabled']}, greedy={self.settings['greedy']}, charity={self.settings['charity']}, every {self.INTERVAL:.0f}s)")
 
     def state(self) -> dict:
-        """Returns the schedule settings plus the current phase, pools and charity state."""
+        """Returns the schedule settings plus the current phase, pools, charity state and the phase of every hour of this week."""
         with self.lock:
             settings = dict(self.settings)
             last     = self.last_tick
@@ -730,7 +730,10 @@ class GpuSchedule:
             given    = dict(self.last_charity) if self.last_charity else None
             waiting  = sorted({gpu for record in self.applied.values() for gpu in record["withheld"]})
 
-        phase = self.phase(datetime.now())
+        moment = datetime.now()
+        monday = (moment - timedelta(days=moment.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        phase  = self.phase(moment)
+        week   = [self.phase(monday + timedelta(hours=hour)) for hour in range(7 * 24)]
 
         return {
             **settings,
@@ -743,6 +746,8 @@ class GpuSchedule:
             "last_charity" : given,
             "window"       : self.week_window().label(),
             "night_window" : self.night_window().label(),
+            "week"         : week,
+            "week_hour"    : (moment - monday).total_seconds() / 3600,
             "last_tick"    : last,
             "last_sweep"   : swept,
             "path"         : str(self.path),

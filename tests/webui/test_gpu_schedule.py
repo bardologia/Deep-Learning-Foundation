@@ -775,6 +775,26 @@ def test_state_reports_the_pool_that_applies_right_now(schedule):
     assert "20:00 to 08:00 every day"     == state["night_window"]
 
 
+def test_state_lists_the_phase_of_every_hour_of_the_week(schedule):
+    """The week list holds one phase per hour from Monday 00:00 and the current hour indexes the phase in force."""
+    scheduler, _processes, _system = schedule
+
+    state = scheduler.state()
+    week  = state["week"]
+
+    assert len(week) == 7 * 24
+    assert week[0 * 24 + 7]  == "weekend"
+    assert week[0 * 24 + 8]  == "weekday"
+    assert week[1 * 24 + 3]  == "night"
+    assert week[2 * 24 + 15] == "weekday"
+    assert week[2 * 24 + 20] == "night"
+    assert week[4 * 24 + 17] == "weekday"
+    assert week[4 * 24 + 18] == "weekend"
+    assert week[5 * 24 + 12] == "weekend"
+    assert 0 <= state["week_hour"] < 7 * 24
+    assert week[int(state["week_hour"])] == state["phase"]
+
+
 @pytest.mark.parametrize("payload, reason", [
     ({"enabled": "yes"},                    "true or false"),
     ({"greedy": "sure"},                    "true or false"),
