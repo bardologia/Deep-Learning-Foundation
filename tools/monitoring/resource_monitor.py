@@ -8,6 +8,7 @@ configured thresholds are crossed, and reports peak usage at shutdown.
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 
@@ -67,8 +68,10 @@ class ResourceMonitor:
         psutil.cpu_percent(None, percpu=False)
 
     def _init_nvml(self):
-        """Opens NVML handles for the visible devices, leaving GPU sampling off on failure."""
+        """Opens NVML handles for the visible devices, keeping the failure that leaves GPU sampling off."""
         self._nvml_ok     = False
+        self._nvml_error  = ""
+        self._nvml_failed = set()
         self._gpu_handles = []
         selected          = self._visible_indices()
 
@@ -77,8 +80,15 @@ class ResourceMonitor:
             indices           = range(pynvml.nvmlDeviceGetCount()) if selected is None else selected
             self._gpu_handles = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in indices]
             self._nvml_ok     = True
-        except Exception:
-            pass
+        except Exception as error:
+            self._nvml_error = f"{type(error).__name__}: {error}"
+
+    @staticmethod
+    def _cuda_available() -> bool:
+        """Whether torch is loaded in this process and can see a CUDA device, read without importing torch."""
+        torch = sys.modules.get("torch")
+
+        return torch is not None and torch.cuda.is_available()
 
     @staticmethod
     def _visible_indices():
@@ -272,10 +282,26 @@ class ResourceMonitor:
                     
                     gpu_total += total_gb
                     gpu_used += used_gb
-                except Exception:
+                except Exception as error:
+                    self._warn_device(i, error)
                     continue
         
         return gpu_used, gpu_total
+
+    def _warn_device(self, index, error):
+        """Warns once per device whose NVML queries fail, since its figures drop out of every later sample.
+
+        Args:
+            index : Position of the device among this run's visible devices.
+            error : Exception the NVML query raised.
+        """
+        if index in self._nvml_failed:
+            return
+
+        self._nvml_failed.add(index)
+
+        if self.logger is not None:
+            self.logger.warning(f"[ResourceMonitor] NVML query failed for gpu{index} ({type(error).__name__}: {error}): its VRAM and utilisation are missing from this run's totals and system/gpu{index}_* scalars from now on")
 
     def _update_peak_metrics(self, metrics):
         """Raises each tracked peak to the value seen in this sample."""
@@ -380,16 +406,20 @@ class ResourceMonitor:
             return
         
         tb_effective = self.log_to_tb and self.tracker is not None and getattr(self.tracker, "writer", None) is not None
+        nvml         = f"True ({len(self._gpu_handles)} GPUs; VRAM figures aggregate the devices named by CUDA_VISIBLE_DEVICES, gpu0 being this run's cuda:0)" if self._nvml_ok else f"False ({self._nvml_error})"
 
         self.logger.section("[Resource Monitor]")
         self.logger.kv_table({
             "Enabled"         : self.enabled,
             "Poll interval"   : f"{self.interval:.1f} s",
-            "NVML available"  : f"{self._nvml_ok} ({len(self._gpu_handles)} GPUs; VRAM figures aggregate the devices named by CUDA_VISIBLE_DEVICES, gpu0 being this run's cuda:0)",
+            "NVML available"  : nvml,
             "TB logging"      : f"{self.log_to_tb} (effective: {tb_effective})",
             "Warn thresholds" : f"RAM>={self.warn_ram_pct:g}%  VRAM>={self.warn_vram_pct:g}%  SHM>={self.warn_shm_pct:g}%",
             "Warn cooldown"   : f"{self.warn_cooldown_s:g} s per warning kind",
         })
+
+        if not self._nvml_ok and self._cuda_available():
+            self.logger.warning(f"[ResourceMonitor] NVML unavailable ({self._nvml_error}) on a CUDA-capable process: GPU utilisation, the VRAM threshold warnings and the system/gpu* scalars are off for this run")
 
     def start(self):
         """Starts the daemon sampling thread, or returns immediately when disabled."""
