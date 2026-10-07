@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.data.io         import FileIO
-from tools.runtime.run_tag import RunTag
+from tools.data.io           import FileIO
+from tools.runtime.git_state import RunProvenance
+from tools.runtime.run_tag   import RunTag
 
 
 class CompletionMarker:
@@ -44,7 +45,11 @@ class CompletionMarker:
 
     @staticmethod
     def stamp(directory: Path, payload: dict) -> Path:
-        """Writes the marker with a completion timestamp merged into the payload.
+        """Writes the marker with a completion timestamp and the writer's provenance merged into the payload.
+
+        Every marker records the commit, host and library versions of the
+        process that finished the work, so two outputs can be traced to the
+        code that produced them.
 
         Args:
             directory : Run directory the marker is written into.
@@ -54,5 +59,5 @@ class CompletionMarker:
             Path of the written marker.
         """
         path = CompletionMarker.path(directory)
-        FileIO.save_json({"completed_at": RunTag.timestamp(), **payload}, path)
+        FileIO.save_json({"completed_at": RunTag.timestamp(), **payload, "provenance": RunProvenance.collect()}, path)
         return path
