@@ -1,12 +1,28 @@
+"""Interactive server-side backend for the web UI cube explorer tabs.
+
+Opens the cubes written by inference (prediction, ground truth and the full
+reference cube of the dataset run) and renders slices, planes, parameter maps,
+metric overlays and point clouds as PNG or packed binary payloads. Cubes are
+indexed by z bin, row pixel and column pixel. A load reads every file whole
+through a shared pool of concurrent chunk reads, books its progress by bytes,
+times every stage and keeps the last few loaded cubes in memory. The slice
+collector renders the same cuts across many runs into one folder.
+"""
+
 from __future__ import annotations
 
 import io
 import json
+import os
 import re
+import sys
 import threading
-from collections import OrderedDict
-from datetime    import datetime
-from pathlib     import Path
+import time
+import traceback
+from collections        import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime           import datetime
+from pathlib            import Path
 
 import matplotlib
 
@@ -16,12 +32,22 @@ import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
 from catalog_roots            import CatalogRoots, RunScanner
+from lru_cache                import LruCache
 from tools.data.gaussians     import GaussianActivity
 from tools.reporting.plotting import PlotBase
 from web_logger               import WebLogger
 
 
 class SliceFigureArchiver(PlotBase):
+    """Renders publication-styled slice and transect figures to disk.
+
+    Wraps the shared plotting base so every saved cut carries axis labels, a z
+    axis and a colourbar, using the paper style regardless of the style active
+    elsewhere in the process.
+
+    Attributes:
+        LABELS : Figure title of every cube source.
+    """
 
     LABELS = {
         "pred"    : "Prediction",
@@ -84,18 +110,434 @@ class SliceFigureArchiver(PlotBase):
             PlotBase.use_style(previous)
 
 
+class LoadProgress:
+    """Thread-safe byte counter a cube load reports its file reads through.
+
+    Besides the overall fraction it tracks every file currently in flight with
+    its bytes landed so far, so a stalled load names the file it is waiting on.
+
+    Attributes:
+        lock     : Guards the counters and the in-flight table.
+        total    : Bytes the load plans to read.
+        done     : Bytes read so far.
+        files    : Files in flight, keyed by path, each as [bytes done, bytes total].
+        listener : Callable receiving the fraction done and the in-flight snapshot after every advance, or None.
+    """
+
+    def __init__(self, listener=None) -> None:
+        """Starts an empty counter, optionally forwarding progress to a listener.
+
+        Args:
+            listener : Callable taking the fraction done and the in-flight snapshot, or None for a silent counter.
+        """
+        self.lock     = threading.Lock()
+        self.total    = 0
+        self.done     = 0
+        self.files    = {}
+        self.listener = listener
+
+    def plan(self, n_bytes: int) -> None:
+        """Adds bytes to the planned total.
+
+        Args:
+            n_bytes : Bytes a later stage of the load will read.
+        """
+        with self.lock:
+            self.total += int(n_bytes)
+
+    def begin(self, path: Path, n_bytes: int) -> None:
+        """Registers a file whose chunks are about to land.
+
+        Args:
+            path    : File being read.
+            n_bytes : Bytes that will be read from it.
+        """
+        with self.lock:
+            self.files[str(path)] = [0, int(n_bytes)]
+
+    def advance(self, path: Path, n_bytes: int) -> None:
+        """Books bytes of one file as read and publishes the fraction done.
+
+        Args:
+            path    : File the bytes came from, registered through ``begin``.
+            n_bytes : Bytes that just landed.
+        """
+        with self.lock:
+            key        = str(path)
+            self.done += int(n_bytes)
+            self.files[key][0] += int(n_bytes)
+            if self.files[key][0] >= self.files[key][1]:
+                del self.files[key]
+
+            fraction = min(1.0, self.done / self.total) if self.total else 0.0
+            reading  = self._snapshot()
+
+        if self.listener is not None:
+            self.listener(fraction, reading)
+
+    def _snapshot(self) -> list:
+        """Lists the files in flight, most bytes outstanding first, with the caller holding the lock."""
+        rows = [{"file": "/".join(Path(key).parts[-5:]), "done": done, "total": total} for key, (done, total) in self.files.items()]
+        rows.sort(key=lambda row: row["done"] - row["total"])
+        return rows
+
+
+class NpyReader:
+    """Reads ``.npy`` files whole through a shared pool of concurrent chunk reads.
+
+    Every file is split into fixed-size chunks that are pulled with ``pread``
+    by a process-wide thread pool, so one large file and many small ones alike
+    keep several requests in flight against the disk or mount, and every chunk
+    books its bytes on the load's progress counter as it lands. Pool tasks are
+    leaf reads only, so callers may wait on them from any thread without
+    deadlock.
+
+    Attributes:
+        progress     : Counter receiving the byte count of every chunk read.
+        CHUNK_BYTES  : Size of one pread request.
+        READ_WORKERS : Threads of the shared read pool.
+        POOL         : Process-wide pool the chunks are read on.
+    """
+
+    CHUNK_BYTES  = 16 * 1024 * 1024
+    READ_WORKERS = min(32, os.cpu_count() or 4)
+    POOL         = ThreadPoolExecutor(max_workers=READ_WORKERS, thread_name_prefix="npy-read")
+
+    def __init__(self, progress: LoadProgress) -> None:
+        """Stores the progress counter the reads report to.
+
+        Args:
+            progress : Counter receiving the byte count of every chunk read.
+        """
+        self.progress = progress
+
+    def header(self, path: Path) -> tuple[tuple, np.dtype]:
+        """Returns the shape and dtype recorded in a ``.npy`` header without reading the data.
+
+        Args:
+            path : File written by ``np.save``.
+        """
+        with open(path, "rb") as handle:
+            shape, _, dtype = self._parse_header(handle, path)
+
+        return shape, dtype
+
+    def read(self, path: Path) -> np.ndarray:
+        """Reads one whole ``.npy`` file into a fresh C-ordered array.
+
+        Args:
+            path : File written by ``np.save``.
+        """
+        return self.read_many([path])[0]
+
+    def read_many(self, paths: list) -> list:
+        """Reads several ``.npy`` files at once, all their chunks in flight together.
+
+        Args:
+            paths : Files written by ``np.save``.
+
+        Returns:
+            One array per path, in order, with the shape and dtype each header declares.
+
+        Raises:
+            ValueError : If a header version is unsupported, an array is Fortran-ordered or a file ends before its data does.
+        """
+        handles = [open(path, "rb") for path in paths]
+        try:
+            targets = []
+            chunks  = []
+            for handle, path in zip(handles, paths):
+                shape, dtype, offset = self._open_header(handle, path)
+                target               = self._target(path, handle, offset, shape, dtype)
+                targets.append(target)
+                chunks.extend((target, start, start, min(self.CHUNK_BYTES, target["buffer"].nbytes - start)) for start in range(0, target["buffer"].nbytes, self.CHUNK_BYTES))
+
+            list(self.POOL.map(self._pull, chunks))
+        finally:
+            for handle in handles:
+                handle.close()
+
+        return [target["array"] for target in targets]
+
+    def read_band(self, path: Path, lo: int, hi: int) -> np.ndarray:
+        """Reads rows ``lo:hi`` along the second axis of a 3D ``.npy`` cube.
+
+        Each z plane stores its rows contiguously, so the band is one contiguous
+        read per plane and the bytes outside it are never touched.
+
+        Args:
+            path : File written by ``np.save`` holding a C-ordered cube of shape (planes, rows, columns).
+            lo   : First row of the band.
+            hi   : One past the last row of the band.
+
+        Returns:
+            Array of shape (planes, hi - lo, columns).
+
+        Raises:
+            ValueError : If the file is not a 3D cube, the band falls outside its rows, or the file ends before its data does.
+        """
+        with open(path, "rb") as handle:
+            shape, dtype, offset = self._open_header(handle, path)
+            if len(shape) != 3:
+                raise ValueError(f"{path} is not a 3D cube: shape={shape}")
+            if lo < 0 or hi > shape[1] or lo >= hi:
+                raise ValueError(f"rows [{lo}:{hi}] fall outside the {shape[1]} rows of {path}")
+
+            target     = self._target(path, handle, offset, (shape[0], hi - lo, shape[2]), dtype)
+            plane_size = shape[1] * shape[2] * dtype.itemsize
+            band_size  = (hi - lo) * shape[2] * dtype.itemsize
+            row_start  = lo * shape[2] * dtype.itemsize
+            chunks     = [(target, plane * plane_size + row_start, plane * band_size, band_size) for plane in range(shape[0])]
+            list(self.POOL.map(self._pull, chunks))
+
+        return target["array"]
+
+    def _open_header(self, handle, path: Path) -> tuple[tuple, np.dtype, int]:
+        """Parses an open file's header and returns its shape, dtype and data offset, refusing Fortran order."""
+        shape, fortran, dtype = self._parse_header(handle, path)
+        if fortran:
+            raise ValueError(f"{path} is Fortran-ordered; cube files are written C-ordered")
+
+        return shape, dtype, handle.tell()
+
+    def _target(self, path: Path, handle, offset: int, shape: tuple, dtype: np.dtype) -> dict:
+        """Allocates the array a file's chunks land in and registers it with the progress counter."""
+        array  = np.empty(shape, dtype=dtype)
+        buffer = memoryview(array.reshape(-1).view(np.uint8))
+        self.progress.begin(path, buffer.nbytes)
+        return {"path": path, "fd": handle.fileno(), "offset": offset, "array": array, "buffer": buffer}
+
+    def _pull(self, chunk: tuple) -> None:
+        """Reads one chunk with pread into its place in the target buffer and books its bytes.
+
+        Args:
+            chunk : Tuple of (target, byte offset into the file's data, byte offset into the buffer, byte count).
+
+        Raises:
+            ValueError : If the file ends before the chunk does.
+        """
+        target, src, dst, count = chunk
+        done                    = 0
+        while done < count:
+            got = os.preadv(target["fd"], [target["buffer"][dst + done:dst + count]], target["offset"] + src + done)
+            if not got:
+                raise ValueError(f"{target['path']} ends after {src + done} data bytes")
+
+            done += got
+            self.progress.advance(target["path"], got)
+
+    @staticmethod
+    def _parse_header(handle, path: Path) -> tuple[tuple, bool, np.dtype]:
+        """Consumes the magic and header of an open ``.npy`` file and returns (shape, fortran, dtype).
+
+        Raises:
+            ValueError : If the file uses a format version other than 1.0 or 2.0.
+        """
+        version = np.lib.format.read_magic(handle)
+        if version == (1, 0):
+            return np.lib.format.read_array_header_1_0(handle)
+        if version == (2, 0):
+            return np.lib.format.read_array_header_2_0(handle)
+
+        raise ValueError(f"{path} uses .npy format version {version}; only 1.0 and 2.0 are read")
+
+
+class StampReader:
+    """Reads the cubes, metrics and metric maps of one inference stamp directory.
+
+    A stamp directory lives at ``<run>/inference/<stamp>`` and holds a ``cubes``
+    folder plus ``metrics.json``.
+
+    Attributes:
+        stamp_dir       : Directory of the completed inference stamp.
+        npy             : Chunked file reader booking every whole-file read on the load's progress counter.
+        METRIC_EXCLUDED : Name fragments of the cube files that are not metric maps.
+        CURVE_SOURCES   : Curve cube keys a full load reads from the stamp.
+        PARAM_SOURCES   : Parameter block keys a full load reads from the stamp.
+    """
+
+    METRIC_EXCLUDED = ("_curves", "params_")
+    CURVE_SOURCES   = ("pred", "gt")
+    PARAM_SOURCES   = ("pred", "gt")
+
+    def __init__(self, stamp_dir: Path, progress: LoadProgress) -> None:
+        """Stores the inference stamp directory and the load's progress counter.
+
+        Args:
+            stamp_dir : Directory of the completed inference stamp.
+            progress  : Counter the whole-file reads report to.
+        """
+        self.stamp_dir = stamp_dir
+        self.npy       = NpyReader(progress)
+
+    @property
+    def run_dir(self) -> Path:
+        """Run directory that owns this inference stamp."""
+        return self.stamp_dir.parent.parent
+
+    def metrics(self) -> dict:
+        """Returns the parsed ``metrics.json`` payload of the stamp.
+
+        Raises:
+            FileNotFoundError : If the stamp holds no ``metrics.json``.
+        """
+        path = self.stamp_dir / "metrics.json"
+        if not path.is_file():
+            raise FileNotFoundError(f"metrics.json missing in {self.stamp_dir}; rerun inference to regenerate it")
+
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def cache_key(self) -> str:
+        """Returns the key under which a load of this stamp is kept in memory."""
+        return str(self.stamp_dir)
+
+    def byte_plan(self) -> int:
+        """Returns the bytes a full load of this stamp reads: curve cubes, parameter blocks and metric maps."""
+        planned = 0
+        for path in (self.stamp_dir / "cubes").glob("*.npy"):
+            stem     = path.stem
+            is_curve = stem.endswith("_curves")
+            is_param = stem.startswith("params_")
+            if is_curve and stem[:-len("_curves")] not in self.CURVE_SOURCES:
+                continue
+            if is_param and stem[len("params_"):] not in self.PARAM_SOURCES:
+                continue
+
+            planned += path.stat().st_size
+
+        return planned
+
+    def curves(self, name: str, view: bool = False) -> np.ndarray | None:
+        """Reads a curve cube of shape (z bins, rows, columns).
+
+        The whole file is read into memory in one pass of concurrent chunk
+        reads, which is the fastest access pattern on the disks and network
+        mounts the runs live on. Callers that only touch a few lines of the
+        cube ask for a memory-mapped view.
+
+        Args:
+            name : Cube key such as "pred" or "gt".
+            view : When True the file is memory-mapped instead of read into RAM.
+
+        Returns:
+            The cube, or None when the stamp carries no such cube.
+        """
+        path = self.stamp_dir / "cubes" / f"{name}_curves.npy"
+        if not path.is_file():
+            return None
+
+        return np.load(path, mmap_mode="r") if view else self.npy.read(path)
+
+    def param_block(self, name: str) -> np.ndarray | None:
+        """Loads a Gaussian parameter cube of shape (3 * n_slots, rows, columns).
+
+        Channels run amplitude, mu and sigma per slot.
+
+        Args:
+            name : Parameter source, "pred" or "gt".
+
+        Returns:
+            The float32 parameter cube, or None when the stamp stores none.
+        """
+        path = self.stamp_dir / "cubes" / f"params_{name}.npy"
+        if not path.is_file():
+            return None
+
+        return np.asarray(self.npy.read(path), dtype=np.float32)
+
+    def metric_maps(self, n_rows: int, n_cols: int) -> dict:
+        """Loads every per-pixel metric map matching the cube footprint.
+
+        Args:
+            n_rows : Row extent the map must have, in pixels.
+            n_cols : Column extent the map must have, in pixels.
+
+        Returns:
+            Mapping from map name to a float32 array of shape (n_rows, n_cols);
+            curve and parameter cubes are skipped, as are arrays of other shapes.
+        """
+        kept = []
+        for path in sorted((self.stamp_dir / "cubes").glob("*.npy")):
+            if any(marker in path.name for marker in self.METRIC_EXCLUDED):
+                continue
+
+            shape, _ = self.npy.header(path)
+            if shape == (n_rows, n_cols):
+                kept.append(path)
+
+        arrays = self.npy.read_many(kept)
+        return {path.stem: np.asarray(raw, dtype=np.float32) for path, raw in zip(kept, arrays)}
+
+
+class LoadTimer:
+    """Books the wall time of the named stages of one cube load.
+
+    Attributes:
+        stages  : Seconds spent per stage, in completion order.
+        started : Clock reading when the load began.
+        last    : Clock reading at the end of the previous stage.
+    """
+
+    def __init__(self) -> None:
+        """Starts the clock."""
+        self.stages  = {}
+        self.started = time.perf_counter()
+        self.last    = self.started
+
+    def lap(self, stage: str) -> None:
+        """Books the time elapsed since the previous lap under ``stage``.
+
+        Args:
+            stage : Name of the stage that just ended; repeated names accumulate.
+        """
+        now                = time.perf_counter()
+        self.stages[stage] = round(self.stages.get(stage, 0.0) + now - self.last, 3)
+        self.last          = now
+
+    def total(self) -> float:
+        """Seconds elapsed since the clock started."""
+        return time.perf_counter() - self.started
+
+    def summary(self) -> str:
+        """Renders the stage times as comma-separated ``stage 1.23 s`` items."""
+        return ", ".join(f"{stage} {seconds:.2f} s" for stage, seconds in self.stages.items())
+
+
 class CubeExplorer:
+    """Loads one cube at a time and serves views of it to the web UI.
+
+    Serves one loaded cube at a time behind a lock: its per-source curve cubes,
+    the primary amplitude map in dB, Gaussian parameter blocks, metric maps and
+    the cropped aux map. Loading runs in a background thread whose progress is
+    polled through ``load_status``; the last few loaded cubes stay in memory so
+    switching back to one is immediate.
+
+    Attributes:
+        logger      : Web logger for load and save reporting.
+        archiver    : Figure writer used when saving slices and transects.
+        roots       : Catalogue of runs roots the user has opened.
+        scanner     : Scanner listing inference stamps under a root.
+        lock        : Guards the loaded cube and the load status.
+        loaded      : Currently loaded cube state, or None.
+        load_thread : Background thread of the running load, or None.
+        status_at   : Clock reading of the last change to the load status.
+        cube_cache  : Recently loaded cube states keyed by reader cache key.
+        status      : Load state machine payload polled by the front end.
+    """
 
     SOURCES             = ("pred", "predb", "diff", "gt", "full")
     PARAM_SOURCES       = ("pred", "gt")
     CLOUD_CURVE_SOURCES = ("full",)
     PARAM_FIELDS        = {"amp": 0, "mu": 1, "sigma": 2}
     PARAM_BAD           = "#10151a"
+    CUBE_CACHE_ENTRIES  = 8
+    LIMIT_SAMPLE        = 1_000_000
+    STALL_FRAMES        = 4
+    PNG_ENCODE          = {"format": "png", "pil_kwargs": {"compress_level": 1}}
 
     CMAPS = ("jet", "viridis", "inferno", "turbo", "gray")
 
-    METRIC_EXCLUDED = ("_curves", "params_")
-    METRIC_LABELS   = {
+    METRIC_LABELS = {
         "pixel_mse"                : "MSE",
         "pixel_mae"                : "MAE",
         "pixel_r2"                 : "R2",
@@ -112,15 +554,31 @@ class CubeExplorer:
     }
 
     def __init__(self, logger: WebLogger) -> None:
-        self.logger   = logger
-        self.archiver = SliceFigureArchiver()
-        self.roots    = CatalogRoots()
-        self.scanner  = RunScanner(self.roots)
-        self.lock     = threading.Lock()
-        self.loaded   = None
-        self.status   = {"state": "idle", "id": None, "progress": 0.0, "stage": "", "error": ""}
+        """Prepares an idle explorer with an empty runs-root catalogue and an empty cube cache.
+
+        Args:
+            logger : Web logger for load and save reporting.
+        """
+        self.logger      = logger
+        self.archiver    = SliceFigureArchiver()
+        self.roots       = CatalogRoots()
+        self.scanner     = RunScanner(self.roots)
+        self.lock        = threading.Lock()
+        self.loaded      = None
+        self.load_thread = None
+        self.status_at   = time.perf_counter()
+        self.cube_cache  = LruCache(self.CUBE_CACHE_ENTRIES)
+        self.status      = {"state": "idle", "id": None, "progress": 0.0, "stage": "", "error": ""}
 
     def list_cubes(self, base: str) -> dict:
+        """Lists the inference stamps carrying a prediction cube under a runs root.
+
+        Args:
+            base : Runs root to scan.
+
+        Returns:
+            Dict with ``ok``, the resolved ``root`` and the ``cubes`` entries, or ``ok`` False with the reason.
+        """
         scanned = self.scanner.stamps(base)
         if not scanned["ok"]:
             return {"ok": False, "error": scanned["error"], "cubes": []}
@@ -128,9 +586,24 @@ class CubeExplorer:
         return {"ok": True, "root": scanned["root"], "cubes": scanned["entries"]}
 
     def start_load(self, cube_id: str) -> dict:
-        stamp_dir = self._stamp_dir(cube_id)
-        if stamp_dir is None:
+        """Starts loading a cube in a background thread, or serves it from memory.
+
+        A cube loaded recently is swapped in at once, with any attached
+        comparison dropped; otherwise a background thread reads it and stores
+        the result for later switches.
+
+        Args:
+            cube_id : Stamp directory path.
+
+        Returns:
+            Dict with ``ok`` True once the load was started or the cube is
+            already loaded, otherwise ``ok`` False with the reason.
+        """
+        reader = self._open_source(cube_id, LoadProgress(self._publish_progress))
+        if reader is None:
             return {"ok": False, "error": f"unknown cube id: {cube_id}"}
+
+        cached = self.cube_cache.get(reader.cache_key())
 
         with self.lock:
             if self.status["state"] == "loading":
@@ -138,55 +611,110 @@ class CubeExplorer:
             if self.status["state"] == "ready" and self.status["id"] == cube_id and self.loaded is not None:
                 return {"ok": True}
 
-            self.loaded = None
-            self.status = {"state": "loading", "id": cube_id, "progress": 0.0, "stage": "scanning sources", "error": ""}
+            if cached is not None:
+                cached["meta"] = {**cached["meta"], "timings": {"total": 0.0, "stages": {"memory": 0.0}}}
+                self.loaded    = cached
+                self.status    = {"state": "ready", "id": cube_id, "progress": 1.0, "stage": "ready", "error": ""}
+            else:
+                self.loaded = None
+                self.status = {"state": "loading", "id": cube_id, "progress": 0.0, "stage": "scanning sources", "reading": [], "error": ""}
 
-        threading.Thread(target=self._load_worker, args=(cube_id, stamp_dir), daemon=True).start()
+        if cached is not None:
+            self.detach_second(cube_id)
+            self.logger.info(f"cube served from memory: {cube_id}")
+            return {"ok": True}
+
+        self.status_at   = time.perf_counter()
+        self.load_thread = threading.Thread(target=self._load_worker, args=(cube_id, reader), daemon=True)
+        self.load_thread.start()
         return {"ok": True}
 
+    def _publish_progress(self, fraction: float, reading: list) -> None:
+        """Writes the fraction of planned bytes read and the files in flight into the polled load status."""
+        with self.lock:
+            if self.status["state"] == "loading":
+                self.status["progress"] = fraction
+                self.status["reading"]  = reading
+                self.status_at          = time.perf_counter()
+
     def load_status(self) -> dict:
+        """Returns the current load state, with the cube metadata once ready.
+
+        While a load runs the payload also carries ``stalled_for``, the seconds
+        since the status last changed, and ``where``, the innermost frames of
+        the load thread, so a load that stops moving names the code it sits in.
+        """
         with self.lock:
             payload = dict(self.status)
             if payload["state"] == "ready" and self.loaded is not None:
                 payload["cube"] = self.loaded["meta"]
+            if payload["state"] == "loading":
+                payload["stalled_for"] = round(time.perf_counter() - self.status_at, 1)
+                payload["where"]       = self._load_thread_frames()
+
         return payload
 
+    def _load_thread_frames(self) -> list:
+        """Returns the innermost STALL_FRAMES frames of the load thread as ``file:line function`` strings."""
+        thread = self.load_thread
+        frame  = sys._current_frames().get(thread.ident) if thread is not None else None
+        if frame is None:
+            return []
+
+        return [f"{Path(entry.filename).name}:{entry.lineno} {entry.name}" for entry in traceback.extract_stack(frame)[-self.STALL_FRAMES:]]
+
     def primary_png(self, cube_id: str) -> bytes | None:
+        """Renders the primary amplitude map of the loaded cube in dB as a greyscale PNG.
+
+        Args:
+            cube_id : Id of the loaded cube.
+
+        Returns:
+            PNG bytes, or None when another cube is loaded.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return None
             primary = self.loaded["primary"]
+            clim    = self.loaded["primary_clim"]
 
-        vmin, vmax = np.percentile(primary, [1.0, 99.0])
-
-        buf = io.BytesIO()
-        plt.imsave(buf, primary, cmap="gray", vmin=float(vmin), vmax=float(vmax), format="png")
-        return buf.getvalue()
+        return self._encode_primary(primary, clim)
 
     def attach_second(self, cube_id: str, other_id: str) -> dict:
+        """Attaches a second run's prediction cube for side-by-side comparison.
+
+        Args:
+            cube_id  : Id of the loaded cube.
+            other_id : Stamp directory of the run to compare against.
+
+        Returns:
+            Dict with ``ok`` and the updated ``cube`` metadata carrying the
+            ``predb`` and ``diff`` sources, or ``ok`` False with the reason.
+        """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
             pred = self.loaded["entries"]["pred"]
 
-        other_dir = self._stamp_dir(other_id)
-        if other_dir is None:
+        other = self._open_source(other_id)
+        if other is None:
             return {"ok": False, "error": f"unknown cube id: {other_id}"}
         if other_id == cube_id:
             return {"ok": False, "error": "pick a different inference result to compare against"}
 
-        raw = np.load(other_dir / "cubes" / "pred_curves.npy", mmap_mode="r")
+        raw = other.curves("pred")
         if raw.shape != pred["cube"].shape:
             return {"ok": False, "error": f"comparison cube shape {tuple(raw.shape)} does not match {tuple(pred['cube'].shape)}"}
 
-        other_axis = self._curve_axis(other_dir, raw.shape[0])
+        other_axis = self._curve_axis(other, raw.shape[0])
         if not np.allclose(other_axis, pred["z_axis"]):
             return {"ok": False, "error": "comparison cube covers a different z axis"}
 
-        predb = self._ingest(raw, pred["z_axis"], lambda: None)
+        predb = self._ingest(raw, pred["z_axis"])
         diff  = self._diff_entry(pred, predb)
 
-        run_dir = other_dir.parent.parent
+        run_dir   = other.run_dir
+        other_dir = other.stamp_dir
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return {"ok": False, "error": "cube not loaded"}
@@ -223,10 +751,8 @@ class CubeExplorer:
 
     @staticmethod
     def _diff_entry(pred: dict, predb: dict) -> dict:
-        cube = pred["cube"] - predb["cube"]
-
-        sample = cube[:, :: max(1, cube.shape[1] // 256), :: max(1, cube.shape[2] // 256)]
-        sample = np.abs(sample[np.isfinite(sample)])
+        cube   = pred["cube"] - predb["cube"]
+        sample = np.abs(CubeExplorer._limit_sample(cube))
         peak   = float(np.percentile(sample, 99.0)) if sample.size else 1.0
         peak   = peak if peak > 0.0 else 1.0
 
@@ -318,7 +844,7 @@ class CubeExplorer:
         data, z_values, vmin, vmax = self._cut(entry, axis, row, col, space)
 
         buf = io.BytesIO()
-        plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, format="png")
+        plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, **self.PNG_ENCODE)
         return buf.getvalue()
 
     def plane_png(self, cube_id: str, source: str, frac: float, space: str = "physical", cmap: str = "jet") -> bytes | None:
@@ -347,7 +873,7 @@ class CubeExplorer:
             vmin, vmax = entry["vmin"], entry["vmax"]
 
         buf = io.BytesIO()
-        plt.imsave(buf, np.nan_to_num(data, nan=vmin), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, format="png")
+        plt.imsave(buf, np.nan_to_num(data, nan=vmin), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, **self.PNG_ENCODE)
         return buf.getvalue()
 
     def param_map_png(self, cube_id: str, source: str, field: str, slot: int) -> bytes | None:
@@ -373,7 +899,7 @@ class CubeExplorer:
         palette.set_bad(color=self.PARAM_BAD)
 
         buf = io.BytesIO()
-        plt.imsave(buf, data, cmap=palette, vmin=vmin, vmax=vmax, format="png")
+        plt.imsave(buf, data, cmap=palette, vmin=vmin, vmax=vmax, **self.PNG_ENCODE)
         return buf.getvalue()
 
     def param_cbar_png(self, cube_id: str, source: str, field: str) -> bytes | None:
@@ -395,7 +921,7 @@ class CubeExplorer:
         ramp = np.tile(np.linspace(0.0, 1.0, 256), (12, 1))
 
         buf = io.BytesIO()
-        plt.imsave(buf, ramp, cmap=cmap, vmin=0.0, vmax=1.0, format="png")
+        plt.imsave(buf, ramp, cmap=cmap, vmin=0.0, vmax=1.0, **self.PNG_ENCODE)
         return buf.getvalue()
 
     def params_at(self, cube_id: str, row: int, col: int) -> dict:
@@ -596,7 +1122,7 @@ class CubeExplorer:
         blend   = np.where(keep[..., None], base * (1.0 - alpha) + colored * alpha, base)
 
         buf = io.BytesIO()
-        plt.imsave(buf, blend.astype(np.float32), format="png")
+        plt.imsave(buf, blend.astype(np.float32), **self.PNG_ENCODE)
         return buf.getvalue()
 
     def metric_value_at(self, cube_id: str, key: str, row: int, col: int) -> dict:
@@ -688,7 +1214,7 @@ class CubeExplorer:
         data, z_values, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
 
         buf = io.BytesIO()
-        plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, format="png")
+        plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, **self.PNG_ENCODE)
         return buf.getvalue()
 
     def save_transect(self, cube_id: str, row0: int, col0: int, row1: int, col1: int, space: str = "physical", cmap: str = "jet") -> dict:
@@ -698,8 +1224,8 @@ class CubeExplorer:
             entries = self.loaded["entries"]
             meta    = self.loaded["meta"]
 
-        stamp_dir = self._stamp_dir(cube_id)
-        if stamp_dir is None:
+        reader = self._open_source(cube_id)
+        if reader is None:
             return {"ok": False, "error": f"unknown cube id: {cube_id}"}
         if space not in ("physical", "normalized"):
             return {"ok": False, "error": f"unknown space: {space}"}
@@ -709,7 +1235,7 @@ class CubeExplorer:
         col0 = int(np.clip(col0, 0, meta["n_cols"] - 1))
         col1 = int(np.clip(col1, 0, meta["n_cols"] - 1))
 
-        run_dir = stamp_dir.parent.parent
+        run_dir = reader.run_dir
         rel     = Path("figures") / "cube_transects" / f"row{row0:04d}_col{col0:04d}_to_row{row1:04d}_col{col1:04d}"
         out_dir = run_dir / rel
 
@@ -751,8 +1277,8 @@ class CubeExplorer:
             entries = self.loaded["entries"]
             meta    = self.loaded["meta"]
 
-        stamp_dir = self._stamp_dir(cube_id)
-        if stamp_dir is None:
+        reader = self._open_source(cube_id)
+        if reader is None:
             return {"ok": False, "error": f"unknown cube id: {cube_id}"}
         if space not in ("physical", "normalized"):
             return {"ok": False, "error": f"unknown space: {space}"}
@@ -760,7 +1286,7 @@ class CubeExplorer:
         row = int(np.clip(row, 0, meta["n_rows"] - 1))
         col = int(np.clip(col, 0, meta["n_cols"] - 1))
 
-        run_dir = stamp_dir.parent.parent
+        run_dir = reader.run_dir
         rel     = Path("figures") / "cube_slices" / f"row{row:04d}_col{col:04d}"
         out_dir = run_dir / rel
 
@@ -808,7 +1334,17 @@ class CubeExplorer:
                 return None
             return self.loaded["entries"].get(source)
 
-    def _stamp_dir(self, cube_id: str) -> Path | None:
+    def _open_source(self, cube_id: str, progress: LoadProgress | None = None) -> StampReader | None:
+        """Resolves a cube id to a reader.
+
+        Args:
+            cube_id  : Stamp directory path.
+            progress : Byte counter the reader's whole-file reads report to; a silent counter when None.
+
+        Returns:
+            A StampReader for a stamp directory that lies under a catalogued root
+            and carries a prediction cube, else None.
+        """
         if not cube_id:
             return None
 
@@ -817,17 +1353,26 @@ class CubeExplorer:
             return None
         if not (stamp_dir / "cubes" / "pred_curves.npy").is_file():
             return None
-        return stamp_dir
 
-    def _load_worker(self, cube_id: str, stamp_dir: Path) -> None:
+        return StampReader(stamp_dir, LoadProgress() if progress is None else progress)
+
+    def _load_worker(self, cube_id: str, reader: StampReader) -> None:
+        """Loads a cube in the background and publishes the ready or error status.
+
+        Args:
+            cube_id : Id of the cube being loaded.
+            reader  : Reader opened for that id.
+        """
         try:
-            entries, meta, primary, params, metric_maps, aux = self._load_all(stamp_dir)
+            entries, meta, primary, params, metric_maps, aux, timer = self._load_all(reader)
+            meta["timings"] = {"total": round(timer.total(), 3), "stages": timer.stages}
 
             with self.lock:
-                self.loaded = {"id": cube_id, "entries": entries, "meta": meta, "primary": primary, "params": params, "metric_maps": metric_maps, "aux": aux}
+                self.loaded = {"id": cube_id, "entries": entries, "meta": meta, "primary": primary, "primary_clim": self._primary_clim(primary), "params": params, "metric_maps": metric_maps, "aux": aux}
                 self.status = {"state": "ready", "id": cube_id, "progress": 1.0, "stage": "ready", "error": ""}
+                self.cube_cache.put(reader.cache_key(), self.loaded)
 
-            self.logger.muted(f"cube ready: {cube_id} sources={meta['sources']}")
+            self.logger.info(f"cube ready in {timer.total():.1f} s: {cube_id} sources={meta['sources']} ({timer.summary()})")
         except Exception as exc:
             with self.lock:
                 self.loaded = None
@@ -835,43 +1380,45 @@ class CubeExplorer:
 
             self.logger.error(f"cube load failed: {cube_id}: {exc}")
 
-    def _load_all(self, stamp_dir: Path) -> tuple[dict, dict, np.ndarray, dict, dict, np.ndarray | None]:
-        cubes_dir = stamp_dir / "cubes"
-        pred_raw  = np.load(cubes_dir / "pred_curves.npy", mmap_mode="r")
-        if pred_raw.ndim != 3:
-            raise ValueError(f"pred_curves.npy is not a 3D cube: shape={pred_raw.shape}")
+    def _load_all(self, reader: StampReader) -> tuple[dict, dict, np.ndarray, dict, dict, np.ndarray | None, LoadTimer]:
+        """Reads every available source and map of one cube.
 
-        n_z, n_rows, n_cols = pred_raw.shape
-        curve_axis         = self._curve_axis(stamp_dir, n_z)
+        Every stage books its wall time on a LoadTimer and names itself in the
+        load status the front end polls, so a slow load names the stage that
+        cost it; the progress fraction itself follows the bytes the reader's
+        whole-file reads book against the plan made here.
 
-        plan    = [("pred", pred_raw, curve_axis)]
-        gt_path = cubes_dir / "gt_curves.npy"
-        if gt_path.is_file():
-            plan.append(("gt", np.load(gt_path, mmap_mode="r"), curve_axis))
+        Args:
+            reader : Stamp reader to pull from.
 
-        full_raw = self._full_raw(stamp_dir, n_rows, n_cols)
-        if full_raw is not None:
-            plan.append(("full", full_raw, np.arange(full_raw.shape[0], dtype=np.float64)))
+        Returns:
+            Tuple of the per-source entries, the front-end metadata payload, the
+            primary amplitude map in dB of shape (rows, columns), the parameter
+            blocks, the metric maps, the cropped aux map (None when the dataset
+            run publishes none) and the stage timer.
 
-        total = sum(raw.shape[0] for _, raw, _ in plan)
-        done  = [0]
+        Raises:
+            ValueError : If the prediction cube is not three-dimensional or another source's spatial shape disagrees with it.
+        """
+        timer = LoadTimer()
 
-        def advance(source: str) -> None:
-            done[0] += 1
+        def stage(name: str, load):
+            """Names the running stage in the load status, runs it and books its time."""
             with self.lock:
-                self.status["progress"] = done[0] / total
-                self.status["stage"]    = source
+                self.status["stage"] = name
+                self.status_at       = time.perf_counter()
 
-        entries = {}
-        for source, raw, z_axis in plan:
-            if raw.shape[1:] != (n_rows, n_cols):
-                raise ValueError(f"source '{source}' spatial shape {raw.shape[1:]} does not match pred {(n_rows, n_cols)}")
-            entries[source] = self._ingest(raw, z_axis, lambda s=source: advance(s))
+            result = load()
+            timer.lap(name)
+            return result
 
-        primary     = self._primary_db(stamp_dir, n_rows, n_cols)
-        params      = self._load_params(cubes_dir, n_rows, n_cols)
-        metric_maps = self._load_metric_maps(cubes_dir, n_rows, n_cols)
-        aux         = self._load_aux(stamp_dir, n_rows, n_cols)
+        entries, curve_axis = self._read_sources(reader, stage)
+        _, n_rows, n_cols   = entries["pred"]["cube"].shape
+
+        primary     = stage("primary",     lambda: self._primary_db(reader, n_rows, n_cols))
+        params      = stage("params",      lambda: self._load_params(reader, n_rows, n_cols))
+        metric_maps = stage("metric maps", lambda: reader.metric_maps(n_rows, n_cols))
+        aux         = stage("aux",         lambda: self._load_aux(reader, n_rows, n_cols))
 
         meta = {
             "sources"     : [s for s in self.SOURCES if s in entries],
@@ -881,15 +1428,83 @@ class CubeExplorer:
             "x_min"       : float(curve_axis[0]),
             "x_max"       : float(curve_axis[-1]),
             "intensity"   : {s: [entries[s]["vmin"], entries[s]["vmax"]] for s in entries},
-            "params"      : self._params_meta(params, curve_axis, stamp_dir),
+            "params"      : self._params_meta(params, curve_axis, reader),
             "metric_maps" : self._metric_maps_meta(metric_maps),
             "attached"    : None,
             "aux"         : aux is not None,
         }
-        return entries, meta, primary, params, metric_maps, aux
+        return entries, meta, primary, params, metric_maps, aux, timer
 
-    def _load_aux(self, stamp_dir: Path, n_rows: int, n_cols: int) -> np.ndarray | None:
-        resolved = self._preproc_layout(stamp_dir)
+    def _read_sources(self, reader: StampReader, stage) -> tuple[dict, np.ndarray]:
+        """Reads the prediction cube, then the remaining sources concurrently.
+
+        The prediction cube fixes the footprint every other source must match
+        and the z axis the curve sources share. Ground truth and the full
+        reference cube are then fetched in parallel threads and each is
+        ingested as soon as it arrives.
+
+        Args:
+            reader : Stamp reader to pull from.
+            stage  : Load-step runner taking a stage name and a thunk, returning the thunk's result.
+
+        Returns:
+            Tuple of the per-source entries and the curve z axis.
+
+        Raises:
+            ValueError : If the prediction cube is not three-dimensional or another source's spatial shape disagrees with it.
+        """
+        reader.npy.progress.plan(reader.byte_plan())
+
+        pred_raw = stage("pred", lambda: reader.curves("pred"))
+        if pred_raw.ndim != 3:
+            raise ValueError(f"pred_curves.npy is not a 3D cube: shape={pred_raw.shape}")
+
+        n_z, n_rows, n_cols = pred_raw.shape
+        curve_axis          = self._curve_axis(reader, n_z)
+        entries             = {"pred": stage("pred", lambda: self._ingest(pred_raw, curve_axis))}
+
+        reader.npy.progress.plan(self._preproc_plan(reader, n_rows))
+        with self.lock:
+            self.status["stage"] = "gt, full"
+
+        def fetch(source: str) -> tuple:
+            """Reads one optional source and returns it with its z axis."""
+            if source == "full":
+                raw = self._full_raw(reader, n_rows, n_cols)
+                return source, raw, None if raw is None else np.arange(raw.shape[0], dtype=np.float64)
+
+            return source, reader.curves(source), curve_axis
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(fetch, source) for source in ("gt", "full")]
+
+            for future in as_completed(futures):
+                source, raw, z_axis = future.result()
+                if raw is None:
+                    stage(source, lambda: None)
+                    continue
+                if raw.shape[1:] != (n_rows, n_cols):
+                    raise ValueError(f"source '{source}' spatial shape {raw.shape[1:]} does not match pred {(n_rows, n_cols)}")
+
+                entries[source] = stage(source, lambda: self._ingest(raw, z_axis))
+
+        return entries, curve_axis
+
+    def _load_aux(self, reader: StampReader, n_rows: int, n_cols: int) -> np.ndarray | None:
+        """Crops the aux map of the dataset run to the cube footprint.
+
+        Args:
+            reader : Stamp reader identifying the dataset run.
+            n_rows : Row extent of the cube, in pixels.
+            n_cols : Column extent of the cube, in pixels.
+
+        Returns:
+            Float32 aux map of shape (n_rows, n_cols), or None when the dataset run publishes none.
+
+        Raises:
+            ValueError : If the aux map does not cover the cube region.
+        """
+        resolved = self._preproc_layout(reader)
         if resolved is None:
             return None
 
@@ -903,27 +1518,13 @@ class CubeExplorer:
         if not aux_path.is_file():
             return None
 
-        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(stamp_dir, layout, n_rows, n_cols)
+        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(reader, layout, n_rows, n_cols)
 
-        raw = np.load(aux_path, mmap_mode="r")
+        raw = reader.npy.read(aux_path)
         if raw.ndim != 2 or row_hi > raw.shape[0] or col_hi > raw.shape[1] or row_lo < 0 or col_lo < 0:
             raise ValueError(f"aux_full shape {raw.shape} does not cover the cube region row[{row_lo}:{row_hi}] col[{col_lo}:{col_hi}]")
 
         return np.asarray(raw[row_lo:row_hi, col_lo:col_hi], dtype=np.float32)
-
-    def _load_metric_maps(self, cubes_dir: Path, n_rows: int, n_cols: int) -> dict:
-        maps = {}
-        for path in sorted(cubes_dir.glob("*.npy")):
-            if any(marker in path.name for marker in self.METRIC_EXCLUDED):
-                continue
-
-            raw = np.load(path, mmap_mode="r")
-            if raw.ndim != 2 or raw.shape != (n_rows, n_cols):
-                continue
-
-            maps[path.stem] = np.asarray(raw, dtype=np.float32)
-
-        return maps
 
     def _metric_maps_meta(self, metric_maps: dict) -> list:
         layers = []
@@ -950,14 +1551,26 @@ class CubeExplorer:
             vmax = vmin + 1.0
         return vmin, vmax
 
-    def _load_params(self, cubes_dir: Path, n_rows: int, n_cols: int) -> dict:
+    def _load_params(self, reader: StampReader, n_rows: int, n_cols: int) -> dict:
+        """Loads the Gaussian parameter blocks of a stamp and checks them against the cube footprint.
+
+        Args:
+            reader : Stamp reader to pull from.
+            n_rows : Row extent of the cube, in pixels.
+            n_cols : Column extent of the cube, in pixels.
+
+        Returns:
+            Mapping from source to its float32 block of shape (3 * n_slots, n_rows, n_cols).
+
+        Raises:
+            ValueError : If a block is not a (3K, row, col) cube or its footprint differs from the cube's.
+        """
         params = {}
         for source in self.PARAM_SOURCES:
-            path = cubes_dir / f"params_{source}.npy"
-            if not path.is_file():
+            raw = reader.param_block(source)
+            if raw is None:
                 continue
 
-            raw = np.asarray(np.load(path), dtype=np.float32)
             if raw.ndim != 3 or raw.shape[0] % 3 != 0 or raw.shape[0] == 0:
                 raise ValueError(f"params_{source}.npy is not a (3K, row, col) cube: shape={raw.shape}")
             if raw.shape[1:] != (n_rows, n_cols):
@@ -967,12 +1580,12 @@ class CubeExplorer:
 
         return params
 
-    def _params_meta(self, params: dict, curve_axis: np.ndarray, stamp_dir: Path) -> dict | None:
+    def _params_meta(self, params: dict, curve_axis: np.ndarray, reader: StampReader) -> dict | None:
         if not params:
             return None
 
         n_slots   = next(iter(params.values())).shape[0] // 3
-        threshold = self._activity_threshold(stamp_dir)
+        threshold = self._activity_threshold(reader)
         has_error = "pred" in params and "gt" in params
 
         ranges = {
@@ -997,18 +1610,18 @@ class CubeExplorer:
             "ranges"    : ranges,
         }
 
-    def _activity_threshold(self, stamp_dir: Path) -> float:
+    def _activity_threshold(self, reader: StampReader) -> float:
         """Returns the activity threshold the stamp's parameter cubes were scored with.
 
         Args:
-            stamp_dir : Inference stamp whose metrics.json is read.
+            reader : Reader of the inference stamp whose metrics.json is read.
 
         Raises:
             KeyError : If the metrics carry no activity_threshold, which inference written before the field existed lacks.
         """
-        metrics = self._metrics(stamp_dir)
+        metrics = reader.metrics()
         if "activity_threshold" not in metrics:
-            raise KeyError(f"metrics.json of {stamp_dir} has no activity_threshold, so the parameter overlays cannot tell active slots apart; re-run inference for it")
+            raise KeyError(f"metrics.json of {reader.stamp_dir} has no activity_threshold, so the parameter overlays cannot tell active slots apart; re-run inference for it")
 
         return float(metrics["activity_threshold"])
 
@@ -1021,38 +1634,96 @@ class CubeExplorer:
                 high = max(high, float(np.nanpercentile(channels, 99.0)))
         return high if high > 0.0 else 1.0
 
-    def _ingest(self, raw: np.ndarray, z_axis: np.ndarray, advance) -> dict:
-        cube = np.empty(raw.shape, dtype=np.float32)
+    def _ingest(self, raw: np.ndarray, z_axis: np.ndarray) -> dict:
+        """Wraps an in-memory cube as a float32 entry with display colour limits.
 
-        for i in range(raw.shape[0]):
-            plane   = np.asarray(raw[i])
-            cube[i] = np.abs(plane) if np.iscomplexobj(plane) else plane
-            advance()
+        Args:
+            raw    : Cube of shape (z bins, rows, columns); complex cubes are reduced to their magnitude.
+            z_axis : Curve z axis, or bin indices for the full reference cube.
 
-        sample = cube[:, :: max(1, cube.shape[1] // 256), :: max(1, cube.shape[2] // 256)]
-        sample = sample[np.isfinite(sample)]
-        vmin, vmax = (np.percentile(sample, [1.0, 99.0]) if sample.size else (0.0, 1.0))
+        Returns:
+            Entry with the float32 ``cube``, its ``z_axis`` and the 1st and 99th
+            percentile colour limits estimated on a bounded subsample.
+        """
+        cube       = np.abs(raw).astype(np.float32) if np.iscomplexobj(raw) else np.asarray(raw, dtype=np.float32)
+        vmin, vmax = self._colour_limits(cube)
 
         return {
             "cube"   : cube,
             "z_axis" : z_axis,
-            "vmin"   : float(vmin),
-            "vmax"   : float(vmax),
+            "vmin"   : vmin,
+            "vmax"   : vmax,
         }
 
-    def _metrics(self, stamp_dir: Path) -> dict:
-        metrics_path = stamp_dir / "metrics.json"
-        if not metrics_path.is_file():
-            raise FileNotFoundError(f"metrics.json missing in {stamp_dir}; rerun inference to regenerate it")
+    @classmethod
+    def _colour_limits(cls, raw: np.ndarray) -> tuple[float, float]:
+        """Estimates 1st and 99th percentile colour limits on a bounded subsample.
 
-        return json.loads(metrics_path.read_text(encoding="utf-8"))
+        Args:
+            raw : Cube of any shape; complex values are reduced to their magnitude.
 
-    def _curve_axis(self, stamp_dir: Path, n_z: int) -> np.ndarray:
-        metrics = self._metrics(stamp_dir)
+        Returns:
+            Tuple (vmin, vmax), or (0, 1) when the cube holds no finite value.
+        """
+        sample = cls._limit_sample(raw)
+        sample = np.abs(sample) if np.iscomplexobj(sample) else sample
+        if not sample.size:
+            return 0.0, 1.0
+
+        vmin, vmax = np.percentile(sample, [1.0, 99.0])
+        return float(vmin), float(vmax)
+
+    @classmethod
+    def _limit_sample(cls, raw: np.ndarray) -> np.ndarray:
+        """Returns at most LIMIT_SAMPLE finite values taken at a fixed stride over the flattened cube."""
+        flat   = raw.reshape(-1)
+        sample = np.asarray(flat[:: max(1, flat.size // cls.LIMIT_SAMPLE)])
+
+        return sample[np.isfinite(sample)]
+
+    def _curve_axis(self, reader: StampReader, n_z: int) -> np.ndarray:
+        """Returns the n_z evenly spaced z bin centres recorded in the stamp's metrics."""
+        metrics = reader.metrics()
         return np.linspace(float(metrics["x_axis_min"]), float(metrics["x_axis_max"]), n_z)
 
-    def _preproc_layout(self, stamp_dir: Path) -> tuple[Path, dict] | None:
-        meta_path = stamp_dir.parent.parent / "meta" / "dataset_creation_config.json"
+    def _preproc_plan(self, reader: StampReader, n_rows: int) -> int:
+        """Returns the bytes of the dataset artifacts a load reads: the full cube's row band, the primary channel and the aux map.
+
+        Args:
+            reader : Stamp reader identifying the dataset run.
+            n_rows : Row extent of the cube, in pixels, sizing the full cube's band.
+        """
+        resolved = self._preproc_layout(reader)
+        if resolved is None:
+            return 0
+
+        preproc_dir, layout = resolved
+        planned             = 0
+        for key in ("primary", "aux_full"):
+            name = layout["artifacts"].get(key)
+            path = preproc_dir / "data" / name if name else None
+            if path is not None and path.is_file():
+                planned += path.stat().st_size
+
+        cube_name = layout["artifacts"].get("cube_full")
+        cube_path = preproc_dir / "data" / cube_name if cube_name else None
+        if cube_path is not None and cube_path.is_file():
+            shape, dtype = reader.npy.header(cube_path)
+            planned     += shape[0] * n_rows * shape[2] * dtype.itemsize
+
+        return planned
+
+    def _preproc_layout(self, reader: StampReader) -> tuple[Path, dict] | None:
+        """Resolves the dataset run backing a cube and its dataset layout.
+
+        Args:
+            reader : Stamp reader whose run records the dataset run it was trained on.
+
+        Returns:
+            Tuple of the dataset run directory and its parsed ``dataset.json``, or
+            None when the run records no dataset run or its layout is missing.
+        """
+        meta_path = reader.run_dir / "meta" / "dataset_creation_config.json"
         if not meta_path.is_file():
             return None
 
@@ -1065,52 +1736,99 @@ class CubeExplorer:
         layout = json.loads(layout_path.read_text(encoding="utf-8"))
         return preproc_dir, layout
 
-    def _crop_bounds(self, stamp_dir: Path, layout: dict, n_rows: int, n_cols: int) -> tuple[int, int, int, int]:
-        metrics = self._metrics(stamp_dir)
-        if "split_region" not in metrics:
-            raise KeyError(f"metrics.json in {stamp_dir} has no split_region; rerun inference to regenerate it")
+    def _crop_bounds(self, reader: StampReader, layout: dict, n_rows: int, n_cols: int) -> tuple[int, int, int, int]:
+        """Returns the cube region as row and column bounds into the dataset's cropped arrays.
 
-        row_start, az_end, col_start, rg_end = (int(v) for v in metrics["split_region"])
-        if (az_end - row_start, rg_end - col_start) != (n_rows, n_cols):
+        Args:
+            reader : Stamp reader whose metrics record the split region.
+            layout : Parsed ``dataset.json`` carrying the global crop.
+            n_rows : Row extent of the cube, in pixels.
+            n_cols : Column extent of the cube, in pixels.
+
+        Raises:
+            KeyError   : If the stamp's metrics carry no split_region.
+            ValueError : If the split region does not match the cube footprint.
+        """
+        metrics = reader.metrics()
+        if "split_region" not in metrics:
+            raise KeyError(f"metrics.json in {reader.stamp_dir} has no split_region; rerun inference to regenerate it")
+
+        row_start, row_end, col_start, col_end = (int(v) for v in metrics["split_region"])
+        if (row_end - row_start, col_end - col_start) != (n_rows, n_cols):
             raise ValueError(f"split_region {metrics['split_region']} does not match the {n_rows}x{n_cols} cube")
 
         global_crop = layout["global_crop"]
 
         row_lo = row_start - global_crop[0]
-        row_hi = az_end   - global_crop[0]
+        row_hi = row_end   - global_crop[0]
         col_lo = col_start - global_crop[2]
-        col_hi = rg_end   - global_crop[2]
+        col_hi = col_end   - global_crop[2]
         return row_lo, row_hi, col_lo, col_hi
 
-    def _full_raw(self, stamp_dir: Path, n_rows: int, n_cols: int) -> np.ndarray | None:
-        resolved = self._preproc_layout(stamp_dir)
+    def _full_raw(self, reader: StampReader, n_rows: int, n_cols: int, view: bool = False) -> np.ndarray | None:
+        """Crops the full reference cube of the dataset run to the cube footprint.
+
+        Only the row band the cube covers is read from the file, one contiguous
+        read per z plane; callers that only touch a few lines of it ask for a
+        memory-mapped view instead.
+
+        Args:
+            reader : Stamp reader identifying the dataset run.
+            n_rows : Row extent of the cube, in pixels.
+            n_cols : Column extent of the cube, in pixels.
+            view   : When True the file is memory-mapped and the crop returned as a view of it.
+
+        Returns:
+            Crop of shape (z bins, n_rows, n_cols), or None when the dataset run publishes no full cube.
+
+        Raises:
+            ValueError : If the full cube is not three-dimensional or does not cover the cube region.
+        """
+        resolved = self._preproc_layout(reader)
         if resolved is None:
             return None
 
         preproc_dir, layout = resolved
 
-        tomo_name = layout["artifacts"].get("cube_full")
-        if not tomo_name:
+        cube_name = layout["artifacts"].get("cube_full")
+        if not cube_name:
             return None
 
-        tomo_path = preproc_dir / "data" / tomo_name
-        if not tomo_path.is_file():
+        cube_path = preproc_dir / "data" / cube_name
+        if not cube_path.is_file():
             return None
 
-        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(stamp_dir, layout, n_rows, n_cols)
+        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(reader, layout, n_rows, n_cols)
 
-        raw = np.load(tomo_path, mmap_mode="r")
-        if raw.ndim != 3:
-            raise ValueError(f"full cube is not a 3D cube: shape={raw.shape}")
-        if row_lo < 0 or col_lo < 0 or row_hi > raw.shape[1] or col_hi > raw.shape[2]:
-            raise ValueError(f"cube region row[{row_lo}:{row_hi}] col[{col_lo}:{col_hi}] falls outside the full cube {raw.shape}")
+        shape, _ = reader.npy.header(cube_path)
+        if len(shape) != 3:
+            raise ValueError(f"full cube is not a 3D cube: shape={shape}")
+        if row_lo < 0 or col_lo < 0 or row_hi > shape[1] or col_hi > shape[2]:
+            raise ValueError(f"cube region row[{row_lo}:{row_hi}] col[{col_lo}:{col_hi}] falls outside the full cube {shape}")
 
-        return raw[:, row_lo:row_hi, col_lo:col_hi]
+        if view:
+            return np.load(cube_path, mmap_mode="r")[:, row_lo:row_hi, col_lo:col_hi]
 
-    def _primary_db(self, stamp_dir: Path, n_rows: int, n_cols: int) -> np.ndarray:
-        resolved = self._preproc_layout(stamp_dir)
+        return np.ascontiguousarray(reader.npy.read_band(cube_path, row_lo, row_hi)[:, :, col_lo:col_hi])
+
+    def _primary_db(self, reader: StampReader, n_rows: int, n_cols: int) -> np.ndarray:
+        """Crops the primary channel and returns its amplitude in dB.
+
+        Args:
+            reader : Stamp reader identifying the dataset run.
+            n_rows : Row extent of the cube, in pixels.
+            n_cols : Column extent of the cube, in pixels.
+
+        Returns:
+            Float32 map of shape (n_rows, n_cols) holding 20 log10 of the amplitude.
+
+        Raises:
+            FileNotFoundError : If the dataset run or its primary channel cannot be found.
+            ValueError        : If the primary channel is not 2D or does not cover the cube region.
+        """
+        resolved = self._preproc_layout(reader)
         if resolved is None:
-            raise FileNotFoundError(f"cannot resolve the preprocessing run for {stamp_dir}; the primary channel is required for the cube map")
+            raise FileNotFoundError(f"cannot resolve the preprocessing run for {reader.stamp_dir}; the primary channel is required for the cube map")
 
         preproc_dir, layout = resolved
 
@@ -1122,9 +1840,9 @@ class CubeExplorer:
         if not primary_path.is_file():
             raise FileNotFoundError(f"primary channel missing: {primary_path}")
 
-        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(stamp_dir, layout, n_rows, n_cols)
+        row_lo, row_hi, col_lo, col_hi = self._crop_bounds(reader, layout, n_rows, n_cols)
 
-        raw = np.load(primary_path, mmap_mode="r")
+        raw = reader.npy.read(primary_path)
         if raw.ndim != 2:
             raise ValueError(f"primary channel is not a 2D image: shape={raw.shape}")
         if row_lo < 0 or col_lo < 0 or row_hi > raw.shape[0] or col_hi > raw.shape[1]:
@@ -1133,10 +1851,30 @@ class CubeExplorer:
         amplitude = np.abs(np.asarray(raw[row_lo:row_hi, col_lo:col_hi])).astype(np.float32)
         return 20.0 * np.log10(np.maximum(amplitude, 1e-12))
 
+    @staticmethod
+    def _primary_clim(primary: np.ndarray) -> tuple[float, float]:
+        """Returns the 1st and 99th percentile of a primary amplitude map, in dB."""
+        return tuple(float(v) for v in np.percentile(primary, [1.0, 99.0]))
+
+    @classmethod
+    def _encode_primary(cls, primary: np.ndarray, clim: tuple[float, float]) -> bytes:
+        """Encodes a primary amplitude map as a greyscale PNG.
+
+        Args:
+            primary : Float array of shape (rows, columns) holding the amplitude in dB.
+            clim    : Grey-scale limits (vmin, vmax) in dB.
+
+        Returns:
+            PNG bytes of the map, one image pixel per cube pixel.
+        """
+        buf = io.BytesIO()
+        plt.imsave(buf, primary, cmap="gray", vmin=float(clim[0]), vmax=float(clim[1]), **cls.PNG_ENCODE)
+        return buf.getvalue()
+
 
 class SliceCollector:
 
-    SOURCES    = ("pred", "gt", "reduced", "full")
+    SOURCES    = ("pred", "gt", "full")
     AXES       = ("col", "row")
     MAX_RUNS   = 24
     MAX_POINTS = 24
@@ -1177,10 +1915,15 @@ class SliceCollector:
 
         try:
             context = self._context(cube_id)
-        except Exception:
+        except Exception as error:
+            self.logger.warning(f"slice render for {cube_id} failed while opening the cube: {error}")
             return None
 
-        entry = None if context is None else context["entries"].get(source)
+        if context is None:
+            self.logger.warning(f"slice render refused: unknown cube id {cube_id}")
+            return None
+
+        entry = context["entries"].get(source)
         if entry is None:
             return None
 
@@ -1189,7 +1932,7 @@ class SliceCollector:
             lo, hi = float(vmin), float(vmax)
 
         buf = io.BytesIO()
-        plt.imsave(buf, np.flipud(data), cmap=CubeExplorer._entry_cmap(entry, cmap), vmin=lo, vmax=hi, format="png")
+        plt.imsave(buf, np.flipud(data), cmap=CubeExplorer._entry_cmap(entry, cmap), vmin=lo, vmax=hi, **CubeExplorer.PNG_ENCODE)
         return buf.getvalue()
 
     def collect(self, ids: list, points: list, sources: list, axes: list, space: str = "physical", cmap: str = "jet", shared: bool = True, name: str = "") -> dict:
@@ -1340,17 +2083,17 @@ class SliceCollector:
         return data[order], z_values, float(vmin), float(vmax)
 
     def _context(self, cube_id: str) -> dict | None:
-        stamp_dir = self.cubes._stamp_dir(cube_id)
-        if stamp_dir is None:
+        reader = self.cubes._open_source(cube_id)
+        if reader is None:
             return None
 
-        key = str(stamp_dir)
+        key = reader.cache_key()
         with self.lock:
             if key in self.contexts:
                 self.contexts.move_to_end(key)
                 return self.contexts[key]
 
-        context = self._build_context(stamp_dir)
+        context = self._build_context(reader)
 
         with self.lock:
             self.contexts[key] = context
@@ -1359,33 +2102,31 @@ class SliceCollector:
 
         return context
 
-    def _build_context(self, stamp_dir: Path) -> dict:
-        root = self._root_for(stamp_dir)
+    def _build_context(self, reader: StampReader) -> dict:
+        stamp_dir = reader.stamp_dir
+        root      = self._root_for(stamp_dir)
         if root is None:
             raise ValueError(f"{stamp_dir} is outside every catalogued runs root")
 
-        cubes_dir = stamp_dir / "cubes"
-        pred_raw  = np.load(cubes_dir / "pred_curves.npy", mmap_mode="r")
+        pred_raw = reader.curves("pred", view=True)
         if pred_raw.ndim != 3:
             raise ValueError(f"pred_curves.npy is not a 3D cube: shape={pred_raw.shape}")
 
         n_z, n_rows, n_cols = pred_raw.shape
-        curve_axis         = self.cubes._curve_axis(stamp_dir, n_z)
+        curve_axis          = self.cubes._curve_axis(reader, n_z)
 
         entries = {"pred": self._entry(pred_raw, curve_axis)}
-        for source in ("gt", "reduced"):
-            path = cubes_dir / f"{source}_curves.npy"
-            if path.is_file():
-                raw = np.load(path, mmap_mode="r")
-                if raw.shape[1:] != (n_rows, n_cols):
-                    raise ValueError(f"source '{source}' spatial shape {raw.shape[1:]} does not match pred {(n_rows, n_cols)}")
-                entries[source] = self._entry(raw, curve_axis)
+        gt_raw  = reader.curves("gt", view=True)
+        if gt_raw is not None:
+            if gt_raw.shape[1:] != (n_rows, n_cols):
+                raise ValueError(f"source 'gt' spatial shape {gt_raw.shape[1:]} does not match pred {(n_rows, n_cols)}")
+            entries["gt"] = self._entry(gt_raw, curve_axis)
 
-        full_raw = self.cubes._full_raw(stamp_dir, n_rows, n_cols)
+        full_raw = self.cubes._full_raw(reader, n_rows, n_cols, view=True)
         if full_raw is not None:
             entries["full"] = self._entry(full_raw, np.arange(full_raw.shape[0], dtype=np.float64))
 
-        run_dir = stamp_dir.parent.parent
+        run_dir = reader.run_dir
         return {
             "stamp_dir" : stamp_dir,
             "root"      : root,
@@ -1399,16 +2140,13 @@ class SliceCollector:
 
     @staticmethod
     def _entry(raw: np.ndarray, z_axis: np.ndarray) -> dict:
-        sample = np.asarray(raw[:, :: max(1, raw.shape[1] // 256), :: max(1, raw.shape[2] // 256)])
-        sample = np.abs(sample) if np.iscomplexobj(sample) else sample
-        sample = sample[np.isfinite(sample)]
-        vmin, vmax = (np.percentile(sample, [1.0, 99.0]) if sample.size else (0.0, 1.0))
+        vmin, vmax = CubeExplorer._colour_limits(raw)
 
         return {
             "cube"   : raw,
             "z_axis" : z_axis,
-            "vmin"   : float(vmin),
-            "vmax"   : float(vmax),
+            "vmin"   : vmin,
+            "vmax"   : vmax,
         }
 
     def _root_for(self, stamp_dir: Path) -> Path | None:
