@@ -233,11 +233,21 @@ class JobRouter(SubRouter):
             exchange : Request being answered.
             job_id   : Job identifier taken from the wildcard path segment.
 
+        A job stream honours the browser's ``Last-Event-ID`` on a reconnect, so
+        only the events after the last one received are replayed. A sub-unit
+        stream is a fresh tail of the unit's log on every request and replays
+        from its own start.
+
         Returns:
-            None. Answers 404 when the job or the requested sub-unit has no open stream.
+            None. Answers 404 when the job or the requested sub-unit has no open
+            stream, 400 when the unit index or the Last-Event-ID is not an integer.
         """
         unit = self._unit_index(exchange)
         if unit == "invalid":
+            return
+
+        last_id = self._last_event_id(exchange)
+        if last_id == "invalid":
             return
 
         backend = self._backend(job_id)
@@ -247,7 +257,7 @@ class JobRouter(SubRouter):
             if not opened.get("ok"):
                 exchange.send_json(opened, 404)
                 return
-            self._pump_stream(exchange, opened["stream"], opened["stop"])
+            self._pump_stream(exchange, opened["stream"], opened["stop"], 0)
             return
 
         stream = backend.get_stream(job_id)
@@ -255,7 +265,7 @@ class JobRouter(SubRouter):
             exchange.send_json({"error": "unknown job"}, 404)
             return
 
-        self._pump_stream(exchange, stream, None)
+        self._pump_stream(exchange, stream, None, last_id)
 
     def _unit_index(self, exchange: HttpExchange) -> int | str | None:
         """Returns the requested sub-unit index, None when absent, "invalid" after answering 400."""
@@ -269,16 +279,31 @@ class JobRouter(SubRouter):
             exchange.send_json({"ok": False, "error": f"invalid unit index '{raw}'"}, 400)
             return "invalid"
 
-    def _pump_stream(self, exchange: HttpExchange, stream, stop) -> None:
+    def _last_event_id(self, exchange: HttpExchange) -> int | str:
+        """Returns the Last-Event-ID a reconnecting browser sent, 0 when absent, "invalid" after answering 400."""
+        raw = exchange.header("Last-Event-ID")
+        if not raw:
+            return 0
+
+        if not raw.isdigit():
+            exchange.send_json({"ok": False, "error": f"invalid Last-Event-ID '{raw}'"}, 400)
+            return "invalid"
+
+        return int(raw)
+
+    def _pump_stream(self, exchange: HttpExchange, stream, stop, last_id: int) -> None:
         """Forwards events from a log stream to the client as server-sent events.
 
-        Sends a keepalive comment every 15 seconds of silence, stops on the stream's end
-        event or a broken connection, and always unsubscribes and sets `stop`.
+        Every numbered event goes out with its ``id`` line, so the browser can
+        name the last one it received when it reconnects. Sends a keepalive
+        comment every 15 seconds of silence, stops on the stream's end event or
+        a broken connection, and always unsubscribes and sets `stop`.
 
         Args:
             exchange : Request being answered, carrying the raw handler.
             stream   : Event stream to subscribe to.
             stop     : Event set on teardown to release a sub-unit tail, or None.
+            last_id  : Id of the last event the client already holds; 0 replays the whole buffer.
         """
         handler = exchange.handler
         handler.send_response(200)
@@ -287,7 +312,7 @@ class JobRouter(SubRouter):
         handler.send_header("Connection", "keep-alive")
         handler.end_headers()
 
-        sub = stream.subscribe()
+        sub = stream.subscribe(last_id)
         try:
             while True:
                 try:
@@ -297,8 +322,8 @@ class JobRouter(SubRouter):
                     handler.wfile.flush()
                     continue
 
-                payload = json.dumps(event)
-                handler.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                head = f"id: {event['id']}\n" if "id" in event else ""
+                handler.wfile.write(f"{head}data: {json.dumps(event)}\n\n".encode("utf-8"))
                 handler.wfile.flush()
 
                 if event.get("type") == "end":

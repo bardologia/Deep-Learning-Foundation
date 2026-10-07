@@ -40,14 +40,17 @@ class JobStream:
     """Broadcasts one job's output events to every attached console viewer.
 
     A replay buffer lets a late subscriber catch up, and a viewer whose queue
-    fills is truncated rather than allowed to stall the publisher.
+    fills is truncated rather than allowed to stall the publisher. Every
+    published event carries a running ``id``, so a viewer that reconnects
+    replays only the events after the last one it received.
 
     Attributes:
-        logger      : Console logger warning about truncated viewers.
-        buffer      : Replay buffer of the most recent events, capped at 4000.
-        subscribers : Queues of the currently attached viewers.
-        dropped     : Total events dropped across all truncations.
-        lock        : Guards the buffer and the subscriber list.
+        logger        : Console logger warning about truncated viewers.
+        buffer        : Replay buffer of the most recent events, capped at 4000.
+        subscribers   : Queues of the currently attached viewers.
+        dropped       : Total events dropped across all truncations.
+        lock          : Guards the buffer, the subscriber list and the event counter.
+        event_counter : Id of the last published event.
     """
 
     QUEUE_LIMIT = 8000
@@ -61,16 +64,19 @@ class JobStream:
         self.logger      = logger
         self.buffer      = deque(maxlen=4000)
         self.subscribers = []
-        self.dropped     = 0
-        self.lock        = threading.Lock()
+        self.dropped       = 0
+        self.lock          = threading.Lock()
+        self.event_counter = 0
 
     def publish(self, event: dict) -> None:
-        """Appends an event to the replay buffer and pushes it to every viewer.
+        """Numbers an event, appends it to the replay buffer and pushes it to every viewer.
 
         Args:
-            event : Stream event, typically a chunk of output, a status change or the terminating end marker.
+            event : Stream event, typically a chunk of output, a status change or the terminating end marker; its ``id`` is set here.
         """
         with self.lock:
+            self.event_counter += 1
+            event["id"]         = self.event_counter
             self.buffer.append(event)
             overflowed = 0
             for sub in list(self.subscribers):
@@ -105,12 +111,17 @@ class JobStream:
 
         return dropped
 
-    def subscribe(self) -> queue.Queue:
-        """Attaches a viewer and returns its queue, pre-filled with the replay buffer."""
+    def subscribe(self, last_event_id: int = 0) -> queue.Queue:
+        """Attaches a viewer and returns its queue, pre-filled with the buffered events after ``last_event_id``.
+
+        Args:
+            last_event_id : Id of the last event the viewer already holds; 0 replays the whole buffer.
+        """
         sub = queue.Queue(maxsize=self.QUEUE_LIMIT)
         with self.lock:
             for event in self.buffer:
-                sub.put_nowait(event)
+                if event["id"] > last_event_id:
+                    sub.put_nowait(event)
             self.subscribers.append(sub)
         return sub
 

@@ -309,7 +309,7 @@ def test_a_viewer_that_falls_behind_is_truncated_with_a_marker(manager, monkeypa
 
     assert stream.dropped == 4
     assert "stream truncated: 4 event(s) dropped" in drained[0]["data"]
-    assert drained[-1] == {"type": "end"}
+    assert drained[-1] == {"type": "end", "id": 5}
 
 
 def test_the_queued_event_names_the_job_holding_the_queue(manager):
