@@ -1,11 +1,14 @@
 """Base scheduler that dispatches pipeline sessions one at a time.
 
 Subclasses supply the session list, the callable that executes one session and
-the labels used for result keys and log messages; the base class runs them
-through a single-worker process pool and reports the collected outputs.
+the labels used for result keys and log messages; the base class runs each
+session in its own single-worker process pool and reports its outputs and its
+own duration as soon as it finishes.
 """
 
 from __future__ import annotations
+
+import time
 
 from tools.monitoring.logger  import Logger
 from tools.orchestration.pool import ProcessPoolRunner
@@ -48,7 +51,11 @@ class SequentialSessionScheduler:
         return {name: str(path) for name, path in outputs.items()}
 
     def run(self) -> dict:
-        """Dispatches every session sequentially and collects their outputs.
+        """Dispatches every session in turn, reporting each one's outputs as soon as it finishes.
+
+        Each session runs in a fresh one-worker pool, so its completion line
+        carries its own duration and the outputs of the sessions that finished
+        are logged even when a later one raises.
 
         Returns:
             Mapping from each session's result key to the outputs dict its
@@ -63,13 +70,17 @@ class SequentialSessionScheduler:
 
         self.logger.subsection(f"Dispatching {len(sessions)} {self.SESSION_NOUN} sequentially")
 
-        runner    = ProcessPoolRunner(logger=self.logger, max_workers=1)
-        completed = runner.run(sessions, self._session_runner(), self._result_key)
-
+        runner  = ProcessPoolRunner(logger=self.logger, max_workers=1)
         results = {}
-        for session, outputs in completed:
+
+        for session in sessions:
+            started   = time.perf_counter()
+            completed = runner.run([session], self._session_runner(), self._result_key)
+            outputs   = completed[0][1]
+
             results[self._result_key(session)] = outputs
-            self.logger.section(self._completion_message(session))
+
+            self.logger.subsection(f"{self._completion_message(session)} in {time.perf_counter() - started:.1f} s")
             self.logger.kv_table(self._outputs_table(outputs), title="Outputs")
 
         return results
