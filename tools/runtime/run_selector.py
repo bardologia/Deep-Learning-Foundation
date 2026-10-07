@@ -116,8 +116,9 @@ class RunSelector:
     def _lookup(self, run_dirs: list[Path], names: list[str]) -> list[Path]:
         """Resolves run names or relative paths, expanding parent names to their runs.
 
-        Names that resolve ambiguously across runs are not matched directly and
-        fall through to the nested expansion.
+        A bare name shared by several runs, such as the seed directory name every
+        trial of a sweep carries, is refused with the candidates listed, since
+        reporting it as missing would send the user hunting for a run that exists.
 
         Args:
             run_dirs : Discovered runs.
@@ -127,14 +128,15 @@ class RunSelector:
             The matched runs, deduplicated and in resolution order.
 
         Raises:
+            ValueError        : If a name matches several runs; the message lists them relative to the runs root.
             FileNotFoundError : If a name matches neither a run nor a parent directory holding runs.
         """
         by_key    = {}
-        ambiguous = set()
+        ambiguous = {}
         for run_dir in run_dirs:
             for key in (run_dir.name, str(run_dir.relative_to(self.runs_dir))):
                 if key in by_key and by_key[key] != run_dir:
-                    ambiguous.add(key)
+                    ambiguous.setdefault(key, [by_key[key]]).append(run_dir)
                 by_key[key] = run_dir
 
         for key in ambiguous:
@@ -142,6 +144,10 @@ class RunSelector:
 
         selection = []
         for name in names:
+            if name in ambiguous:
+                candidates = ", ".join(str(run_dir.relative_to(self.runs_dir)) for run_dir in ambiguous[name])
+                raise ValueError(f"run name '{name}' is ambiguous under {self.runs_dir}: {candidates}; pass the path relative to {self.runs_dir}")
+
             run_dir = by_key.get(name)
             if run_dir is not None:
                 selection.append(run_dir)
