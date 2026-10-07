@@ -1087,7 +1087,12 @@ class CubeCloud {
     this.yaw += (ev.clientX - this.dragging.x) * 0.008;
     this.pitch = Math.min(1.55, Math.max(0.05, this.pitch + (ev.clientY - this.dragging.y) * 0.006));
     this.dragging = { x: ev.clientX, y: ev.clientY };
-    this._draw();
+    if (!this._dragRaf) {
+      this._dragRaf = requestAnimationFrame(() => {
+        this._dragRaf = null;
+        this._draw();
+      });
+    }
   }
 
   _onWheel(ev) {
@@ -1209,6 +1214,8 @@ class CubeCloud {
 class CubeView {
   static LABELS = { pred: "pred", predb: "pred B", diff: "A − B", gt: "gt", full: "reference" };
   static HOLD_SAVE_MS = 4000;
+  static STATUS_TIMEOUT_MS = 15000;
+  static STALL_AFTER_S = 5;
   static HOLD_HINT_MS = 800;
   static SWEEP_CACHE_BYTES = 192 * 1024 * 1024;
 
@@ -1469,11 +1476,9 @@ class CubeView {
     this.polling = true;
 
     while (true) {
-      let st;
-      try {
-        st = await Api.get("/api/cubes/status");
-      } catch (e) {
-        this._failLoad("Backend unreachable.");
+      const st = await Api.get("/api/cubes/status", CubeView.STATUS_TIMEOUT_MS);
+      if (st.error) {
+        this._failLoad(st.error);
         break;
       }
 
@@ -1483,7 +1488,7 @@ class CubeView {
       }
 
       if (st.state === "loading") {
-        this._setProgress(st.progress || 0, st.stage || "loading");
+        this._setProgress(st.progress || 0, st.stage || "loading", st.reading || [], st.stalled_for || 0, st.where || []);
         await new Promise((r) => setTimeout(r, 400));
         continue;
       }
@@ -1501,22 +1506,32 @@ class CubeView {
     this.polling = false;
   }
 
+  _slowestStage(timings) {
+    const [stage, seconds] = Object.entries(timings.stages).sort((a, b) => b[1] - a[1])[0];
+    return `${stage} ${seconds.toFixed(1)} s`;
+  }
+
   _failLoad(message) {
     this.progress.hidden = true;
     this.hint.textContent = message;
     this.hint.hidden = false;
   }
 
-  _setProgress(frac, stage) {
+  _setProgress(frac, stage, reading = [], stalledFor = 0, where = []) {
     const pct                      = Math.max(0, Math.min(100, Math.round(frac * 100)));
     this.progressFill.style.width  = `${pct}%`;
     const label                    = CubeView.LABELS[stage] || stage;
-    this.progressLabel.textContent = `${label} — ${pct}%`;
+    const mb                       = (bytes) => (bytes / 1048576).toFixed(0);
+    const inFlight                 = reading.slice(0, 2).map((row) => `${row.file} ${mb(row.done)}/${mb(row.total)} MB`).join(", ");
+    const tail                     = reading.length ? ` · ${reading.length} file${reading.length === 1 ? "" : "s"} in flight: ${inFlight}` : "";
+    const stall                    = stalledFor >= CubeView.STALL_AFTER_S ? ` · no progress for ${Math.round(stalledFor)} s, worker at ${where.slice(-2).join(" < ") || "unknown"}` : "";
+    this.progressLabel.textContent = `${label} — ${pct}%${tail}${stall}`;
   }
 
   _display(meta) {
     this.meta = meta;
     this.progress.hidden = true;
+    this.coords.textContent = `loaded in ${meta.timings.total.toFixed(1)} s (${this._slowestStage(meta.timings)}) · hover the image to cut every cube · click to lock the slices`;
     this._clearBitmapCache();
 
     const css = getComputedStyle(this.stage);
