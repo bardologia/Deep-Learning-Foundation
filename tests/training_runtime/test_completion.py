@@ -32,6 +32,19 @@ def test_stamp_makes_directory_complete_and_stores_payload(tmp_path):
     assert payload["completed_at"]
 
 
+def test_stamp_records_the_writer_provenance(tmp_path):
+    """Verifies every marker carries the commit, host and library versions of the process that wrote it."""
+    import socket
+
+    CompletionMarker.stamp(tmp_path, {"stage": "inference", "split": "test"})
+
+    provenance = CompletionMarker.payload(tmp_path)["provenance"]
+
+    assert set(provenance) == {"git_commit", "host", "python", "conda_env", "machine_profile", "numpy", "torch", "cuda", "config_sources"}
+    assert provenance["host"] == socket.gethostname()
+    assert provenance["git_commit"]
+
+
 def test_clear_removes_marker(tmp_path):
     """Verifies clearing removes the marker so the directory is incomplete again."""
     CompletionMarker.stamp(tmp_path, {"stage": "training"})
