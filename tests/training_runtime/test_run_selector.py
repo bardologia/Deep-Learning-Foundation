@@ -2,7 +2,8 @@
 
 Covers unique names and root-relative paths, the expansion of a parent directory
 name to the runs beneath it, the refusal of a name several runs share with the
-candidates listed, and the missing-run error for a name nothing matches."""
+candidates listed, the missing-run error for a name nothing matches, and the
+report selector finding stamps under the inference family sub-directories."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from tests.conftest             import RecordingLogger
-from tools.runtime.run_selector import RunSelector
+from tools.runtime.run_selector import ReportRunSelector, RunSelector
 
 MARKER = "best_model.pt"
 
@@ -68,3 +69,15 @@ def test_a_name_nothing_matches_is_still_reported_as_missing(tmp_path):
     with pytest.raises(FileNotFoundError, match="No run 'nope'"):
         RunSelector(root, MARKER, RecordingLogger()).filter(["nope"])
 
+
+def test_the_report_selector_finds_reports_under_a_family_subdirectory(tmp_path):
+    """Verifies a run whose stamps sit under inference/<family>/ is offered beside a run with direct stamps, its reports ordered by stamp name."""
+    for relative in ("run_profile/inference/profile_ae/20260102_000000", "run_profile/inference/profile_ae/20260101_000000", "run_direct/inference/20260103_000000"):
+        (tmp_path / relative).mkdir(parents=True)
+        (tmp_path / relative / "report.md").write_text("# report\n")
+
+    selector = ReportRunSelector(tmp_path, "inference", "report.md", RecordingLogger())
+    reports  = selector._reports_of(tmp_path / "run_profile" / "inference")
+
+    assert selector.all() == [tmp_path / "run_direct", tmp_path / "run_profile"]
+    assert [path.parent.name for path in reports] == ["20260101_000000", "20260102_000000"]
