@@ -1,8 +1,9 @@
 """API routes for building, saving and executing experiment sequences.
 
 Serves the sequence store (create, save, list, delete) and the sequence runner
-(start, resume scan, stop, checkpoint release), attaching each sequence's live
-execution state to its definition.
+(start, resume scan, stop, checkpoint release, the study snapshots of a running
+tuning block), attaching each sequence's live execution state to its
+definition.
 """
 
 from __future__ import annotations
@@ -28,9 +29,10 @@ class SequenceRouter(SubRouter):
         super().__init__(("/api/sequences",))
 
     def declare(self, table: RouteTable) -> None:
-        """Registers the listing, create, detail, save, delete and execution routes."""
+        """Registers the listing, create, study, detail, save, delete and execution routes; the study route precedes the detail route, whose empty suffix would otherwise claim it."""
         table.add("GET",  "/api/sequences", self.listing)
         table.add("POST", "/api/sequences", self.create)
+        table.wildcard("GET",  "/api/sequences/", "/study",   self.study)
         table.wildcard("GET",  "/api/sequences/", "",         self.detail)
         table.wildcard("POST", "/api/sequences/", "/save",    self.save)
         table.wildcard("POST", "/api/sequences/", "/decide",  self.decide)
@@ -60,6 +62,10 @@ class SequenceRouter(SubRouter):
             return
 
         exchange.send_json({"ok": True, "entry": entry, "state": self.runner.state(sequence_id)})
+
+    def study(self, exchange: HttpExchange, sequence_id: str) -> None:
+        """Answers with the study snapshots of the tuning block named by the ``block`` query parameter."""
+        exchange.send_result(self.runner.study_progress(sequence_id, exchange.text("block")))
 
     def save(self, exchange: HttpExchange, sequence_id: str) -> None:
         """Replaces one sequence's definition with the validated body."""

@@ -1293,6 +1293,7 @@ main { margin-left: var(--navw); }
 .seq-block.is-done      { border-color: var(--accent-2); }
 .seq-block.is-failed    { border-color: var(--danger); background: rgba(185, 28, 28, 0.04); }
 .seq-block.is-finalizing { border-color: var(--accent-2); border-style: dashed; }
+.seq-block.is-deciding   { border-color: var(--accent-2); border-style: dashed; }
 .seq-block.is-finalize_failed { border-color: var(--danger); }
 .seq-block.is-cancelled { border-color: var(--line-strong); opacity: 0.7; }
 .seq-block.is-skipped { opacity: 0.55; }
@@ -1307,7 +1308,7 @@ main { margin-left: var(--navw); }
 }
 .seq-block.is-checkpoint.is-done::after, .seq-block.is-checkpoint.is-bypassed::after { color: var(--accent-2); border-color: var(--accent-2); }
 @media (prefers-reduced-motion: no-preference) {
-  .seq-block.is-running:not(.is-selected), .seq-block.is-launching:not(.is-selected), .seq-block.is-finalizing:not(.is-selected) { animation: seq-block-beacon 1.8s ease-out infinite; }
+  .seq-block.is-running:not(.is-selected), .seq-block.is-launching:not(.is-selected), .seq-block.is-finalizing:not(.is-selected), .seq-block.is-deciding:not(.is-selected) { animation: seq-block-beacon 1.8s ease-out infinite; }
   .seq-block.is-held:not(.is-selected) { animation: seq-block-beacon-warn 2.2s ease-out infinite; }
   .seq-block.is-held.is-checkpoint::after { animation: seq-state-pulse 2.2s var(--ease) infinite; }
 }
@@ -1344,6 +1345,8 @@ p.seq-block__flag--finalize { color: var(--accent-2); }
 .seq-block.is-failed  .seq-block__state::before { opacity: 1; }
 .seq-block.is-finalizing .seq-block__state { color: var(--accent-2); }
 .seq-block.is-finalizing .seq-block__state::before { opacity: 1; animation: seq-state-pulse 1.6s var(--ease) infinite; }
+.seq-block.is-deciding .seq-block__state { color: var(--accent-2); }
+.seq-block.is-deciding .seq-block__state::before { opacity: 1; animation: seq-state-pulse 1.6s var(--ease) infinite; }
 .seq-block.is-finalize_failed .seq-block__state { color: var(--danger); }
 .seq-block.is-finalize_failed .seq-block__state::before { opacity: 1; }
 
@@ -1354,6 +1357,7 @@ p.seq-block__flag--finalize { color: var(--accent-2); }
 @media (prefers-reduced-motion: reduce) {
   .seq-block.is-running .seq-block__state::before { animation: none; }
   .seq-block.is-finalizing .seq-block__state::before { animation: none; }
+  .seq-block.is-deciding .seq-block__state::before { animation: none; }
 }
 .seq-block__title { font-family: var(--display); font-size: 14px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
 .seq-block__meta { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin: 0; overflow-wrap: anywhere; }
@@ -1434,6 +1438,7 @@ p.seq-block__flag--finalize { color: var(--accent-2); }
 .seq-decide__add { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .seq-decide__picker { flex: 1; min-width: 200px; max-width: 380px; }
 p.seq-block__flag--decide { color: var(--accent-2); }
+p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 
 .seq-copy { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .seq-copy .rail-copy__dir { width: auto; flex: 1; min-width: 220px; max-width: 380px; }

@@ -31,6 +31,7 @@ LEAVES = {
     "train_jepa"                : {"paths.dataset_path": "/data/default", "logdir": "runs/jepa", "model_overrides": "{}", "training.batch_size": "256", "curriculum.enabled": "False", "embedding_loss.use_embedding_mse": "True"},
     "train_profile_autoencoder" : {"paths.dataset_path": "/data/default", "logdir": "runs/profile_autoencoder", "model_overrides": "{}", "training.batch_size": "8192", "ae_model_name": "mlp_ae", "ae_loss.use_mse_curve": "True"},
     "cross_validate"            : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "model_overrides": "{}", "run_tag": "None", "paths.log_base_dir": "runs/cross_validation", "training_type": "backbone", "training.batch_size": "256", "curriculum.enabled": "True", "jepa.curriculum.enabled": "False", "jepa.embedding_loss.use_embedding_mse": "True", "autoencoder.ae_model_name": "mlp_ae", "autoencoder.ae_loss.use_mse_curve": "True"},
+    "tune"                      : {"paths.dataset_path": "/data/default", "paths.parameters_path": "/data/default/params.npy", "run_tag": "None", "paths.log_base_dir": "runs/tuning", "training_type": "backbone", "training.batch_size": "256", "curriculum.enabled": "True"},
 }
 
 
@@ -80,7 +81,7 @@ class SequencePaths:
         scripts       : Entry-point keys treated as present in the repository.
     """
 
-    def __init__(self, root: Path, scripts: tuple = ("train_backbone", "infer_backbone", "benchmark", "generate_dataset", "train_jepa", "train_profile_autoencoder", "cross_validate")) -> None:
+    def __init__(self, root: Path, scripts: tuple = ("train_backbone", "infer_backbone", "benchmark", "generate_dataset", "train_jepa", "train_profile_autoencoder", "cross_validate", "tune")) -> None:
         """Points the sequences directory at ``<root>/logs/sequences`` and records the known scripts."""
         self.repo_root     = root
         self.runs_dir      = root / "runs"
@@ -366,6 +367,24 @@ def test_decide_records_a_verdict_and_restamps_the_sequence(store):
     assert result["ok"]
     assert saved["a1"]["decisions"][0]["choice"] == "7"
     assert saved["b2"]["overrides"] == {"training.seed": "7"}
+
+
+def test_decide_adds_a_verdict_outside_the_options_to_them(store):
+    """A verdict no option anticipated, as a finished run records, joins the options and stamps downstream."""
+    sequence_id = store.create("seq")["entry"]["sequence_id"]
+    store.save(sequence_id, _definition([
+        _block("t1", script="tune", decisions=[{"path": "model_overrides", "options": [], "waiting": "", "choice": ""}]),
+        _block("c2", script="cross_validate", predecessors=["t1"]),
+    ]))
+
+    result = store.decide(sequence_id, "t1", "model_overrides", "{'dropout': 0.3}")
+
+    assert result["ok"], result
+    blocks = {block["block_id"]: block for block in result["entry"]["blocks"]}
+    assert blocks["t1"]["decisions"][0]["options"] == ["{'dropout': 0.3}"]
+    assert blocks["t1"]["decisions"][0]["choice"]  == "{'dropout': 0.3}"
+    assert blocks["c2"]["overrides"]["model_overrides"] == "{'dropout': 0.3}"
+    assert blocks["c2"]["field_notes"]["model_overrides"] == "frozen"
 
 
 def test_decide_reopens_the_question_when_the_choice_is_cleared(store):

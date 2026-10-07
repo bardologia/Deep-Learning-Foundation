@@ -229,6 +229,21 @@ def test_a_checkpoint_block_holds_until_released(rig):
     assert _block_state(runner, sequence_id, "b2")["status"] == "running"
 
 
+def test_a_held_block_is_announced_once(rig):
+    """The notifier is told when a block reaches its checkpoint, and not again on later scans."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_block("a1", checkpoint=True)])
+
+    runner.start_sequence(sequence_id)
+    runner.scan()
+    runner.scan()
+
+    held = [alert for alert in runner.notifier.alerts if alert[0].startswith("sequence block held")]
+    assert len(held) == 1
+    assert "release it in the Sequences tab" in held[0][1]
+    assert held[0][2] == "default"
+
+
 def test_release_refuses_a_block_that_is_not_held(rig):
     """Releasing a pending or unknown block is refused."""
     store, processes, launcher, runner = rig
@@ -870,6 +885,183 @@ def test_a_skipped_mail_block_starts_without_the_smtp_password(rig, monkeypatch)
     monkeypatch.delenv(ReportMailEntryConfig.password_env)
 
     assert runner.start_sequence(sequence_id)["ok"]
+
+
+def _tune_block(block_id: str, **extra) -> dict:
+    """Returns a tuning block recording its best configuration as the model_overrides verdict."""
+    return _block(block_id, script="tune", overrides={"run_tag": "tag"}, decisions=[{"path": "model_overrides", "options": [], "waiting": "", "choice": ""}], **extra)
+
+
+def _write_best_config(runner: SequenceRunner, sequence_id: str, params: dict, model: str = "unet_skip-set_pred") -> None:
+    """Writes the best-configuration file a tuning run leaves for one model inside the execution workspace."""
+    path = Path(runner.state(sequence_id)["run_dir"]) / "tag" / model / "best_config.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"model": model, "trial": 7, "val_loss": 0.1, "params": params}))
+
+
+def test_a_tuning_block_records_its_best_configuration_as_the_downstream_model_overrides(rig):
+    """A finished tuning block reads its best configuration, records the verdict, and its successor launches with the stamped overrides."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_tune_block("t1"), _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    _write_best_config(runner, sequence_id, {"encoder_lr": 0.0003, "dropout": 0.25})
+    processes.finish("job-0")
+    runner.scan()
+
+    assert _block_state(runner, sequence_id, "t1")["status"] == "done"
+    assert _block_state(runner, sequence_id, "t1")["verdict"]["values"] == {"model_overrides": "{'encoder_lr': 0.0003, 'dropout': 0.25}"}
+
+    blocks = {block["block_id"]: block for block in store.get(sequence_id)["blocks"]}
+    assert blocks["t1"]["decisions"][0]["choice"] == "{'encoder_lr': 0.0003, 'dropout': 0.25}"
+    assert blocks["c2"]["overrides"]["model_overrides"] == "{'encoder_lr': 0.0003, 'dropout': 0.25}"
+    assert blocks["c2"]["field_notes"]["model_overrides"] == "frozen"
+
+    runner.scan()
+    assert launcher.calls[-1]["key"] == "cross_validate"
+    assert launcher.calls[-1]["overrides"]["model_overrides"] == "{'encoder_lr': 0.0003, 'dropout': 0.25}"
+
+    decided = [alert for alert in runner.notifier.alerts if alert[0].startswith("sequence block decided")]
+    assert len(decided) == 1
+    assert "model_overrides = {'encoder_lr': 0.0003, 'dropout': 0.25}" in decided[0][1]
+
+
+def test_a_tuning_block_holds_its_successor_until_the_verdict_is_recorded(rig):
+    """The successor stays pending while the block is deciding, and the sequence still counts as running."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_tune_block("t1"), _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    _write_best_config(runner, sequence_id, {"dropout": 0.1})
+    processes.finish("job-0")
+
+    with runner.lock:
+        launches = runner._advance(sequence_id, runner.active[sequence_id])
+
+    assert [launch[0] for launch in launches] == ["verdict"]
+    assert _block_state(runner, sequence_id, "t1")["status"] == "deciding"
+    assert _block_state(runner, sequence_id, "c2")["status"] == "pending"
+    assert runner.state(sequence_id)["status"] == "running"
+
+
+def test_a_tuning_block_without_a_best_configuration_fails_and_skips_its_successor(rig):
+    """A tuning run that left no best configuration fails the block instead of letting the successor run untuned."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_tune_block("t1"), _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    processes.finish("job-0")
+    runner.scan()
+    runner.scan()
+
+    state = _block_state(runner, sequence_id, "t1")
+    assert state["status"] == "failed"
+    assert "best_config.json" in state["error"]
+    assert _block_state(runner, sequence_id, "c2")["status"] == "skipped"
+    assert runner.state(sequence_id)["status"] == "failed"
+    assert store.get(sequence_id)["blocks"][0]["decisions"][0]["choice"] == ""
+
+
+def test_a_tuning_block_with_two_best_configurations_fails(rig):
+    """Two tuned models leave two best configurations, which one model_overrides verdict cannot carry."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_tune_block("t1")], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    _write_best_config(runner, sequence_id, {"dropout": 0.1}, model="unet_skip-set_pred")
+    _write_best_config(runner, sequence_id, {"dropout": 0.2}, model="resunet-set_pred")
+    processes.finish("job-0")
+    runner.scan()
+
+    assert _block_state(runner, sequence_id, "t1")["status"] == "failed"
+    assert "found 2" in _block_state(runner, sequence_id, "t1")["error"]
+
+
+def test_a_tuning_block_records_the_batch_size_on_its_own_axis(rig):
+    """A study that sampled the batch size stamps it downstream as training.batch_size beside the model overrides."""
+    store, processes, launcher, runner = rig
+    block       = _block("t1", script="tune", overrides={"run_tag": "tag"}, decisions=[{"path": "model_overrides", "options": [], "waiting": "", "choice": ""}, {"path": "training.batch_size", "options": [], "waiting": "", "choice": ""}])
+    sequence_id = _saved(store, [block, _block("c2", script="cross_validate", predecessors=["t1"])], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    _write_best_config(runner, sequence_id, {"dropout": 0.2, "features": [32, 64, 128, 256], "batch_size": 512})
+    processes.finish("job-0")
+    runner.scan()
+
+    assert _block_state(runner, sequence_id, "t1")["status"] == "done"
+    blocks = {block["block_id"]: block for block in store.get(sequence_id)["blocks"]}
+    assert blocks["c2"]["overrides"]["model_overrides"]     == "{'dropout': 0.2, 'features': [32, 64, 128, 256]}"
+    assert blocks["c2"]["overrides"]["training.batch_size"] == "512"
+    assert blocks["c2"]["field_notes"]["training.batch_size"] == "frozen"
+    assert blocks["t1"]["decisions"][1]["choice"] == "512"
+
+
+def test_a_tuning_block_that_sampled_the_batch_without_declaring_its_axis_fails(rig):
+    """A sampled batch size with no axis to land on fails the block instead of being dropped."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_tune_block("t1")], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    _write_best_config(runner, sequence_id, {"dropout": 0.2, "batch_size": 512})
+    processes.finish("job-0")
+    runner.scan()
+
+    assert _block_state(runner, sequence_id, "t1")["status"] == "failed"
+    assert "no 'training.batch_size' axis" in _block_state(runner, sequence_id, "t1")["error"]
+
+
+def test_a_tuning_block_declaring_another_axis_fails_to_record(rig):
+    """A tuning block may only record model_overrides and the batch size; any other axis fails the block loudly."""
+    store, processes, launcher, runner = rig
+    block       = _block("t1", script="tune", overrides={"run_tag": "tag"}, decisions=[{"path": "training.epochs", "options": ["60"], "waiting": "", "choice": ""}])
+    sequence_id = _saved(store, [block], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    processes.finish("job-0")
+    runner.scan()
+
+    assert _block_state(runner, sequence_id, "t1")["status"] == "failed"
+    assert "records only the 'model_overrides' and 'training.batch_size' axes" in _block_state(runner, sequence_id, "t1")["error"]
+
+
+def test_a_tuning_block_without_decisions_is_plainly_done(rig):
+    """A tuning block that declares no axis records nothing and counts as done as soon as its job ends."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_block("t1", script="tune", overrides={"run_tag": "tag"})], isolate=True)
+
+    runner.start_sequence(sequence_id)
+    processes.finish("job-0")
+    runner.scan()
+
+    assert _block_state(runner, sequence_id, "t1")["status"] == "done"
+    assert _block_state(runner, sequence_id, "t1")["verdict"] is None
+
+
+def test_study_progress_reads_the_workspace_snapshots(rig):
+    """A tuning block answers with the study snapshot its workers wrote under the workspace, keyed by model."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_tune_block("t1")], isolate=True)
+    snapshot    = {"trials": {"complete": 40, "pruned": 5, "fail": 1, "running": 4}, "finished": 46, "target": 3999, "best": {"trial": 12, "value": 0.39, "params": {}}, "stalled": 28, "plateau_patience": 400, "trials_per_hour": 23.0, "eta_target_h": 172.1}
+
+    runner.start_sequence(sequence_id)
+    study = Path(runner.state(sequence_id)["run_dir"]) / "tag" / "unet_skip-set_pred" / "study_progress.json"
+    study.parent.mkdir(parents=True)
+    study.write_text(json.dumps(snapshot))
+
+    assert runner.study_progress(sequence_id, "t1") == {"ok": True, "studies": {"unet_skip-set_pred": snapshot}}
+
+
+def test_study_progress_refuses_what_it_cannot_read(rig):
+    """An unknown block, a block without a study, and a sequence that never ran are all refused with a reason."""
+    store, processes, launcher, runner = rig
+    sequence_id = _saved(store, [_tune_block("t1"), _block("b2", predecessors=["t1"])], isolate=True)
+
+    assert runner.study_progress(sequence_id, "zz")["error"] == "block not found"
+    assert "runs no tuning study" in runner.study_progress(sequence_id, "b2")["error"]
+    assert "has not run" in runner.study_progress(sequence_id, "t1")["error"]
+
+    runner.start_sequence(sequence_id)
+    assert runner.study_progress(sequence_id, "t1") == {"ok": True, "studies": {}}
 
 
 def _experiment_tree(run_dir: str, mode: str = "curriculum", trials: tuple = ("rung_a", "rung_b")) -> Path:

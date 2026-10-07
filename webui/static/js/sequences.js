@@ -93,6 +93,34 @@ class SequenceBoard {
     error.title       = state.error;
   }
 
+  paintStudy(blockId, result) {
+    if (!this.surface) return;
+    const el = this.surface.querySelector(`.seq-block[data-block="${blockId}"]`);
+    if (!el) return;
+    let flag = el.querySelector(".seq-block__flag--study");
+    const lines = Object.entries(result.studies || {}).map(([model, study]) => SequenceBoard.describeStudy(model, study, Object.keys(result.studies).length > 1));
+    if (!lines.length) {
+      if (flag) flag.remove();
+      return;
+    }
+    if (!flag) {
+      flag           = document.createElement("p");
+      flag.className = "seq-block__flag seq-block__flag--study";
+      el.querySelector(".seq-block__actions").before(flag);
+    }
+    flag.textContent = lines.join(" | ");
+    flag.title       = "study snapshot read from the workspace; refreshed every minute";
+  }
+
+  static describeStudy(model, study, named) {
+    const counts  = study.trials || {};
+    const done    = (counts.complete || 0) + (counts.pruned || 0) + (counts.fail || 0);
+    const best    = study.best ? `best ${Number(study.best.value).toPrecision(4)} @ ${study.best.trial}` : "no completed trial yet";
+    const stalled = study.stalled === null || study.stalled === undefined ? "" : ` \u00b7 stalled ${study.stalled}/${study.plateau_patience}`;
+    const eta     = study.eta_target_h === null || study.eta_target_h === undefined ? "" : ` \u00b7 ETA ${Number(study.eta_target_h).toFixed(1)} h`;
+    return `${named ? `${model}: ` : ""}\u25d4 ${done} of ${study.target} (${counts.pruned || 0} pruned, ${counts.fail || 0} failed, ${counts.running || 0} running) \u00b7 ${best}${stalled} \u00b7 ${Number(study.trials_per_hour || 0).toFixed(1)}/h${eta}`;
+  }
+
   _paintJob(el, state) {
     let job = el.querySelector(".seq-block__job");
     if (!state.job_id) {
@@ -113,11 +141,12 @@ class SequenceBoard {
     job.title = `Open job ${state.job_id} in the console`;
   }
 
-  static STATUSES = ["idle", "pending", "held", "launching", "running", "finalizing", "done", "failed", "finalize_failed", "cancelled", "skipped", "bypassed"];
-  static ACTIVE   = ["launching", "running", "finalizing"];
-  static SETTLED  = ["done", "skipped", "bypassed"];
-  static BROKEN   = ["failed", "finalize_failed", "cancelled"];
-  static SVG_NS   = "http://www.w3.org/2000/svg";
+  static STATUSES     = ["idle", "pending", "held", "launching", "running", "finalizing", "deciding", "done", "failed", "finalize_failed", "cancelled", "skipped", "bypassed"];
+  static ACTIVE       = ["launching", "running", "finalizing", "deciding"];
+  static STUDY_STATES = ["running", "deciding", "done"];
+  static SETTLED      = ["done", "skipped", "bypassed"];
+  static BROKEN       = ["failed", "finalize_failed", "cancelled"];
+  static SVG_NS       = "http://www.w3.org/2000/svg";
   static MARGIN   = 48;
   static GRID     = 24;
   static PORT_Y   = 34;
@@ -613,12 +642,25 @@ class SequencesView extends ConfigForm {
 
   _startPoll() {
     this._stopPoll();
-    this.pollTimer = setInterval(() => this._poll(), 3000);
+    this.pollTimer  = setInterval(() => this._poll(), 3000);
+    this.studyTimer = setInterval(() => this._pollStudies(), 60000);
+    this._pollStudies();
   }
 
   _stopPoll() {
     clearInterval(this.pollTimer);
-    this.pollTimer = null;
+    clearInterval(this.studyTimer);
+    this.pollTimer  = null;
+    this.studyTimer = null;
+  }
+
+  async _pollStudies() {
+    if (!this.current || !this.live || !this.board) return;
+    const blocks = this.current.blocks.filter((block) => block.script === "tune" && SequenceBoard.STUDY_STATES.includes((this.live.blocks[block.block_id] || {}).status));
+    for (const block of blocks) {
+      const res = await Api.get(`/api/sequences/${this.current.sequence_id}/study?block=${block.block_id}`);
+      if (res && res.ok) this.board.paintStudy(block.block_id, res);
+    }
   }
 
   async _poll() {
@@ -655,6 +697,7 @@ class SequencesView extends ConfigForm {
     this.host.appendChild(layout);
     if (this.board) this.board.redraw();
     this._paintStatus();
+    this._pollStudies();
   }
 
   _buildRail() {

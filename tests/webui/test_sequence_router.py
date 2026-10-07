@@ -183,6 +183,24 @@ def test_decide_route_freezes_the_verdict_into_the_later_blocks(rig):
     assert saved["b2"]["field_notes"] == {"training.seed": "frozen"}
 
 
+def test_study_route_answers_the_tuning_block_snapshots(rig):
+    """The study route names the block in its query and answers with the runner's snapshots."""
+    router, store, runner, processes = rig
+    sequence_id = store.create("seq")["entry"]["sequence_id"]
+    store.save(sequence_id, _definition([_block("t1", script="tune", overrides={"run_tag": "tag"})], isolate=True))
+    runner.start_sequence(sequence_id)
+
+    handler = _request(router, "GET", f"/api/sequences/{sequence_id}/study?block=t1")
+
+    assert handler.status == 200
+    assert json.loads(handler.wfile.getvalue()) == {"ok": True, "studies": {}}
+
+    handler = _request(router, "GET", f"/api/sequences/{sequence_id}/study?block=zz")
+
+    assert handler.status == 400
+    assert json.loads(handler.wfile.getvalue())["error"] == "block not found"
+
+
 def test_decide_route_reports_an_unknown_axis(rig):
     """Deciding an axis the block never declared answers with an error result."""
     router, store, runner, processes = rig

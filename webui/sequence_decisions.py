@@ -22,11 +22,21 @@ is resolved against that family's namespace first and against the bare path
 second, so a family axis never lands on the identically named field of another
 family while the axes no family namespaces, ``training.seed`` and the rest of the
 shared configuration, keep resolving bare.
+
+A tuning block records its own verdict: the best configuration its study
+found is split into a ``model_overrides`` value and, when the study sampled it,
+a ``training.batch_size`` value, read off the run once the block finished, so
+the tuned parameters reach the blocks after it the way every other verdict
+does.
 """
 
 from __future__ import annotations
 
-from web_logger import WebLogger
+import json
+from pathlib import Path
+
+from config_value_render import ConfigValueRenderer
+from web_logger          import WebLogger
 
 
 class SequenceDecisions:
@@ -289,3 +299,116 @@ class SequenceDecisions:
                     self._stamp(target, entry_path, value, "frozen" if frozen else "waiting", entry_defaults)
 
         return ""
+
+
+class TuningVerdict:
+    """Reads the verdict a finished tuning block records off its best configuration.
+
+    A tuning run writes one ``best_config.json`` per tuned model under
+    ``<log_base_dir>/<run_tag>/<model>/``. The sampled parameters of the best
+    trial are fields of the model configuration, which a ``model_overrides``
+    axis carries to the blocks after it, plus the batch size when the study
+    sampled it, which the ``training.batch_size`` axis carries.
+
+    Attributes:
+        SCRIPT      : Entry-point key of the blocks that record such a verdict.
+        MODEL_AXIS  : Axis carrying the model-configuration parameters.
+        BATCH_AXIS  : Axis carrying the batch size.
+        BATCH_PARAM : Name of the batch-size parameter in the study, as the tuning search space names it.
+        FILENAME    : Name of the best-configuration file the tuning scheduler writes per model.
+        PROGRESS    : Name of the study snapshot the tuning workers rewrite after every trial, beside the best configuration.
+    """
+
+    SCRIPT      = "tune"
+    MODEL_AXIS  = "model_overrides"
+    BATCH_AXIS  = "training.batch_size"
+    BATCH_PARAM = "batch_size"
+    FILENAME    = "best_config.json"
+    PROGRESS    = "study_progress.json"
+
+    def records(self, block: dict) -> bool:
+        """Returns whether a block records a verdict off its run when it finishes."""
+        return block["script"] == self.SCRIPT and bool(block["decisions"])
+
+    def axes(self, block: dict) -> list:
+        """Returns the axes a tuning block records, refusing any it cannot answer.
+
+        Args:
+            block : Tuning block whose decisions are checked.
+
+        Raises:
+            ValueError : If the block declares an axis other than ``model_overrides`` or ``training.batch_size``.
+        """
+        paths   = [decision["path"] for decision in block["decisions"]]
+        unknown = [path for path in paths if path not in (self.MODEL_AXIS, self.BATCH_AXIS)]
+        if unknown:
+            raise ValueError(f"a tuning block records only the '{self.MODEL_AXIS}' and '{self.BATCH_AXIS}' axes, but '{block['title']}' declares {unknown}; drop those axes")
+
+        return paths
+
+    def values(self, params: dict, axes: list) -> dict:
+        """Returns the value of each declared axis, split off the best trial's parameters.
+
+        Args:
+            params : Parameters of the best trial as the best-configuration file holds them.
+            axes   : Axes the block declares.
+
+        Returns:
+            Mapping from axis to its rendered value.
+
+        Raises:
+            ValueError : If a declared axis has nothing sampled to carry, or a sampled group has no declared axis to land on, so a verdict would be lost.
+        """
+        model  = {name: value for name, value in params.items() if name != self.BATCH_PARAM}
+        values = {}
+
+        for axis in axes:
+            if axis == self.MODEL_AXIS:
+                if not model:
+                    raise ValueError(f"the study sampled no model parameter, so there is no '{self.MODEL_AXIS}' verdict to record; drop the axis or search a model group")
+                values[axis] = ConfigValueRenderer.render(model)
+            else:
+                if self.BATCH_PARAM not in params:
+                    raise ValueError(f"the block declares '{self.BATCH_AXIS}' but the study did not sample the batch size; drop the axis or search the batch size")
+                values[axis] = str(int(params[self.BATCH_PARAM]))
+
+        if model and self.MODEL_AXIS not in axes:
+            raise ValueError(f"the study sampled model parameters but the block declares no '{self.MODEL_AXIS}' axis, so that verdict would be lost; declare it")
+        if self.BATCH_PARAM in params and self.BATCH_AXIS not in axes:
+            raise ValueError(f"the study sampled the batch size but the block declares no '{self.BATCH_AXIS}' axis, so that verdict would be lost; declare it")
+
+        return values
+
+    def run_dir(self, overrides: dict, leaves: dict, run_dir: str) -> Path:
+        """Returns the tuning run directory a launch wrote, from its effective run tag and log base.
+
+        Args:
+            overrides : Launch overrides, a sequence's workspace already injected.
+            leaves    : Resolved leaf defaults of the tune entry, keyed by path.
+            run_dir   : Isolated workspace directory of the execution, or empty.
+
+        Raises:
+            ValueError : If the run tag was left to the timestamp default, which cannot be located afterwards.
+        """
+        run_tag = overrides.get("run_tag", "") or leaves.get("run_tag", "")
+        if run_tag in ("", "None"):
+            raise ValueError("a tuning block that records a verdict needs a fixed 'run_tag' to locate its best configuration; set one on the block")
+
+        base = overrides.get("paths.log_base_dir", "") or leaves.get("paths.log_base_dir", "") or run_dir
+
+        return Path(base) / run_tag
+
+    def read(self, tuning_dir: Path) -> dict:
+        """Returns the best trial's parameters of the one model a tuning run tuned.
+
+        Args:
+            tuning_dir : Tuning run directory holding one model directory with a best-configuration file.
+
+        Raises:
+            ValueError : If the run holds no best configuration or several, since one verdict cannot carry two models' parameters.
+        """
+        found = sorted(Path(tuning_dir).glob(f"*/{self.FILENAME}"))
+        if len(found) != 1:
+            raise ValueError(f"expected exactly one {self.FILENAME} under {tuning_dir} to record as the verdict, found {len(found)}{': ' + ', '.join(str(path) for path in found) if found else ''}; a tuning block that records a verdict tunes one model")
+
+        return dict(json.loads(found[0].read_text(encoding="utf-8"))["params"])
