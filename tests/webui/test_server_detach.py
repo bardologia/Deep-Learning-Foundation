@@ -5,6 +5,8 @@ The server tests drive a real ``serve.py`` process over HTTP: they check that th
 front-end process together with every other console on the same root while sparing
 consoles on other roots, and that a detached server shields itself, surviving SIGHUP,
 SIGTERM and SIGINT while reporting its log file, holding scope and any shield failure.
+A unit test checks that an unreadable cgroup file during the session escape lands in
+the shield error.
 """
 
 from __future__ import annotations
@@ -20,7 +22,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.webui.conftest import WEBUI_ROOT
+from process_manager import ServerDetacher
+from web_logger      import WebLogger
+
+from tests.webui.conftest import WEBUI_ROOT, StubPaths
 
 
 def _free_port() -> int:
@@ -184,3 +189,19 @@ def test_detach_survives_termination_signals(server):
 
     again = _post(port, "/api/system/detach")
     assert again["ok"] is True and again["detached"] is True
+
+
+def test_unreadable_cgroup_file_lands_in_the_shield_error(tmp_path, monkeypatch):
+    """A failed read of /proc/self/cgroup after the scope move is recorded in shield_error and no scope is claimed."""
+    detacher = ServerDetacher(StubPaths(tmp_path), WebLogger())
+
+    def unreadable(self, *args, **kwargs):
+        raise OSError("procfs unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(subprocess, "run", lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, "", ""))
+        patch.setattr(Path, "read_text", unreadable)
+        detacher._escape_session()
+
+    assert detacher.shield_error == "failed to read /proc/self/cgroup: procfs unavailable"
+    assert detacher.scope        == ""
