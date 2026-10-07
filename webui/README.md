@@ -110,7 +110,10 @@ contract and never writes to a config file.
   widget each one gets. It is the single source of truth for the form and refuses to build
   a section containing a field it does not claim, so a new config field surfaces as a loud
   failure rather than a silently missing control. `config_descriptions.json` supplies the
-  per-field help text under the same strictness.
+  per-field help text under the same strictness. The secondary-channel field of every
+  training form is a picker fed by `/api/fs/secondaries`, which reads the selected
+  dataset's channel labels from its `data/dataset.json`; the standard channels of the
+  training paths default are flagged and a Standard button restores them.
 - **Overrides.** Edited fields are appended to the command as `--<dotted.path> <value>`,
   which `ConfigCli` coerces to the field's type. The command preview always shows exactly
   what will run.

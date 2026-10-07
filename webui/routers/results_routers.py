@@ -71,6 +71,7 @@ class DatasetRouter(SubRouter):
         table.add("GET", "/api/fs/experiments",  self.experiments)
         table.add("GET", "/api/fs/param_trials", self.param_trials)
         table.add("GET", "/api/fs/params",       self.params)
+        table.add("GET", "/api/fs/secondaries",  self.secondaries)
 
     def dataset_roots(self, exchange: HttpExchange) -> None:
         """Answers with the datasets found under the requested base directory."""
@@ -95,6 +96,10 @@ class DatasetRouter(SubRouter):
     def params(self, exchange: HttpExchange) -> None:
         """Answers with the parameter runs belonging to one dataset."""
         exchange.send_result(self.datasets.params(exchange.text("dataset")))
+
+    def secondaries(self, exchange: HttpExchange) -> None:
+        """Answers with the secondary channels of one dataset."""
+        exchange.send_result(self.datasets.secondaries(exchange.text("dataset")))
 
 
 class LeaderboardRouter(SubRouter):

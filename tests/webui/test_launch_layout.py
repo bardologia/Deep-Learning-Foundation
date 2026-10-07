@@ -102,6 +102,20 @@ def test_every_widget_reference_names_a_real_field(key, flow_config):
         assert target in paths, f"{key}: {field} reads {reference} from '{target}', which is not a field of {flow_config.__name__}"
 
 
+@pytest.mark.parametrize("key, flow_config", _TRAINING_PAGES)
+def test_secondary_labels_pick_secondaries_from_the_page_dataset(key, flow_config):
+    """Every page exposing secondary_labels renders it as the secondaries picker fed by a dataset path the page carries."""
+    paths = {path for path, _value in ConfigCli._leaves(flow_config())}
+    if "paths.secondary_labels" not in paths:
+        return
+
+    layout = LaunchLayout().build(key, [{"path": path} for path in paths])
+    widget = layout["widgets"]["paths.secondary_labels"]
+    assert widget["mode"] == "secondaries"
+    assert widget["multi"] is True
+    assert widget["datasetFrom"] in paths
+
+
 @pytest.mark.parametrize("key, flow_config", _INFERENCE_PAGES)
 def test_inference_layout_claims_every_config_field_exactly_once(key, flow_config):
     """Every inference page layout claims each field of its entry config exactly once."""
