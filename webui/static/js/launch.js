@@ -877,8 +877,12 @@ class LaunchView extends ConfigForm {
       this.controls[typeLeaf.path] = { leaf: typeLeaf, reset: repaint };
     }
 
+    const requested = this.activeSection;
     this._renderLayout(host, cfg);
-    if (this._chainsFinalize()) this._appendLaunchFinalize();
+    if (this._chainsFinalize()) {
+      this._appendLaunchFinalize();
+      if (requested === "finalize") this._setActiveSection(requested);
+    }
 
     this._renderFacts();
   }
