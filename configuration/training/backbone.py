@@ -18,7 +18,8 @@ from configuration.normalization.general         import NormalizationConfig
 from configuration.training.general.ablation     import AblationCatalog
 from configuration.training.general.loss         import LossConfig, LossCurriculumConfig
 from configuration.training.general.optimization import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
-from configuration.training.general.runtime      import IOConfig, MemoryConfig, OverfitCheckConfig, ResourceConfig, TrainingLoopConfig
+from configuration.resources                     import ResourceConfig
+from configuration.training.general.runtime      import IOConfig, MemoryConfig, OverfitCheckConfig, TrainingLoopConfig
 from configuration.training.general.pretraining  import PretrainConfig
 from configuration.training.general.trials       import TrialCatalog
 

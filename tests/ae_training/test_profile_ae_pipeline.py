@@ -18,7 +18,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from configuration.architectures.profile_autoencoder import MlpAutoencoderConfig
 from configuration.dataset                           import ProfileDatasetConfig, SplitRegions
 from configuration.training                          import ProfileAeEntryConfig
-from configuration.training.general.runtime          import ResourceConfig, TrainingLoopConfig
+from configuration.resources                         import ResourceConfig
+from configuration.training.general.runtime          import TrainingLoopConfig
 from configuration.training.profile_autoencoder      import ProfileAeLossConfig, ProfileAeTrainerConfig
 from models.profile_autoencoder                      import PROFILE_AE_CONFIG_REGISTRY
 from pipelines.profile_autoencoder.training          import pipeline as profile_pipeline

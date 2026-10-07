@@ -16,7 +16,6 @@ from configuration.training.general.runtime import (
     OverfitCheckConfig,
     TrainingLoopConfig,
     MemoryConfig,
-    ResourceConfig,
 )
 from configuration.training.general.loss import (
     CurriculumInheritance,

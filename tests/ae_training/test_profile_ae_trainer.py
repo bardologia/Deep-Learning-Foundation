@@ -14,7 +14,8 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from configuration.training.general.runtime         import ResourceConfig, TrainingLoopConfig
+from configuration.resources                        import ResourceConfig
+from configuration.training.general.runtime         import TrainingLoopConfig
 from configuration.training.profile_autoencoder     import ProfileAeLossConfig, ProfileAeTrainerConfig
 from models.profile_autoencoder                     import PROFILE_AE_CONFIG_REGISTRY, get_profile_autoencoder
 from pipelines.profile_autoencoder.training.trainer import Trainer

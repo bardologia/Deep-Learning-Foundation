@@ -10,7 +10,8 @@ from configuration.architectures.image_autoencoder  import Conv2dImageAutoencode
 from configuration.dataset                          import AugmentationConfig
 from configuration.normalization.general            import NormalizationConfig
 from configuration.training.general.optimization    import EarlyStoppingConfig, GradientClipperConfig, OptimizerConfig, SchedulerConfig, WarmupConfig
-from configuration.training.general.runtime         import IOConfig, MemoryConfig, OverfitCheckConfig, ResourceConfig, TrainingLoopConfig
+from configuration.resources                        import ResourceConfig
+from configuration.training.general.runtime         import IOConfig, MemoryConfig, OverfitCheckConfig, TrainingLoopConfig
 from configuration.training.general.pretraining     import PretrainConfig
 from configuration.training.general.trainer         import SharedSubConfigInheritance
 
