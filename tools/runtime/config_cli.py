@@ -2,8 +2,8 @@
 
 Walks a config dataclass tree, applies the machine profile to its defaults, exposes
 every editable leaf as a --dotted.path flag, coerces the given strings to the leaf's
-current type or annotation, and handles persisting and reloading the resolved
-configuration of a run.
+current type or annotation, records where every non-default value came from, and
+handles persisting and reloading the resolved configuration of a run.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import json
 import sys
 import types
 import typing
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from enum        import Enum
 from pathlib     import Path
 
@@ -24,18 +24,40 @@ from .machine_profile import FieldRule, MachineProfile
 _SUPPORTED_TYPES = (bool, int, float, str, Path, list, tuple, dict)
 
 
+@dataclass(frozen=True)
+class ConfigSource:
+    """One rewrite of a configuration leaf and where it came from.
+
+    Attributes:
+        path   : Dotted path of the leaf.
+        origin : ``profile rebase``, ``profile set``, ``profile cap`` or ``command line``.
+        before : Value the leaf held before the rewrite.
+        after  : Value the rewrite installed.
+    """
+
+    path   : str
+    origin : str
+    before : object
+    after  : object
+
+
 class ConfigCli:
     """Applies the machine profile and --dotted.path overrides to a nested dataclass configuration.
 
     Attributes:
-        config             : Configuration dataclass whose leaves become CLI options.
-        overrides          : Leaf path to value for every override that was applied.
-        profile            : Machine profile whose roots and hardware rules were applied to the defaults.
-        profile_overrides  : Leaf path to value for every default the machine profile rewrote.
-        parser             : Argument parser holding one option per editable leaf.
-        BOOTSTRAP_FLAGS    : Flags owned by the entry points rather than the config, which are tolerated among the unparsed arguments.
-        BOOTSTRAP_SWITCHES : Bootstrap flags that never take a value, so a token after them is never consumed as theirs.
+        config              : Configuration dataclass whose leaves become CLI options.
+        overrides           : Leaf path to value for every command-line override that was applied.
+        profile             : Machine profile whose roots and hardware rules were applied to the defaults.
+        profile_overrides   : Leaf path to value for every default the machine profile rewrote.
+        sources             : Every rewrite of a default in application order, the profile's first and the command line's after them.
+        unmatched_overrides : ``Class.field`` keys of the profile's config_overrides that name no leaf of this configuration.
+        parser              : Argument parser holding one option per editable leaf.
+        parsed              : The instance that parsed this process's own command line, or None; run logs and provenance records read it.
+        BOOTSTRAP_FLAGS     : Flags owned by the entry points rather than the config, which are tolerated among the unparsed arguments.
+        BOOTSTRAP_SWITCHES  : Bootstrap flags that never take a value, so a token after them is never consumed as theirs.
     """
+
+    parsed : "ConfigCli | None" = None
 
     BOOTSTRAP_FLAGS = (
         "--help-config",
@@ -62,11 +84,13 @@ class ConfigCli:
             description : Text shown in the generated help.
             profile     : Machine profile to apply; None loads the one the environment selects.
         """
-        self.config            = config
-        self.overrides : dict  = {}
-        self.profile           = MachineProfile.current() if profile is None else profile
-        self.profile_overrides = self.apply_profile(config, self.profile)
-        self.parser            = argparse.ArgumentParser(description=description, add_help=False, allow_abbrev=False)
+        self.config              = config
+        self.overrides : dict    = {}
+        self.profile             = MachineProfile.current() if profile is None else profile
+        self.sources             = self.apply_profile(config, self.profile)
+        self.profile_overrides   = {source.path: source.after for source in self.sources}
+        self.unmatched_overrides = self.unmatched_config_overrides(config, self.profile)
+        self.parser              = argparse.ArgumentParser(description=description, add_help=False, allow_abbrev=False)
 
         self.parser.add_argument("-h", "--help", action="store_true", dest="_help")
         self.parser.add_argument("--help-config", action="store_true", dest="_help_config")
@@ -87,6 +111,8 @@ class ConfigCli:
         """Parses the arguments and writes every override into the config.
 
         Also honours the help and detach bootstrap flags before applying overrides.
+        Parsing the process's own arguments records this instance as ``parsed``,
+        so the run log header and the provenance records can report the sources.
 
         Args:
             argv : Argument list to parse; defaults to the process arguments.
@@ -117,6 +143,10 @@ class ConfigCli:
             value = self._coerce(raw, current, self._annotation(self.config, path))
             self.set_path(self.config, path, value)
             self.overrides[path] = value
+            self.sources.append(ConfigSource(path, "command line", current, value))
+
+        if argv is None:
+            ConfigCli.parsed = self
 
         return self.config
 
@@ -181,7 +211,7 @@ class ConfigCli:
         return "the command"
 
     @classmethod
-    def apply_profile(cls, config, profile: MachineProfile) -> dict:
+    def apply_profile(cls, config, profile: MachineProfile) -> list[ConfigSource]:
         """Rewrites the config defaults the machine profile claims and returns what changed.
 
         Path leaves and path-valued strings below a reference-layout root are rebased
@@ -194,25 +224,45 @@ class ConfigCli:
             profile : Machine profile supplying the anchors and rules.
 
         Returns:
-            Mapping of dotted leaf path to the value the profile wrote.
+            One record per leaf whose value changed, with the default, the written value and the kind of rule that wrote it.
         """
         anchors = profile.path_anchors()
         rules   = profile.field_rules()
-        applied = {}
+        applied = []
 
         if not anchors and not rules:
             return applied
 
         for path, value, owners in cls._owned_leaves(config):
-            rewritten = cls._profile_value(path.rsplit(".", 1)[-1], value, owners, anchors, rules)
+            rewritten, origin = cls._profile_value(path.rsplit(".", 1)[-1], value, owners, anchors, rules)
 
             if rewritten is value or (type(rewritten) is type(value) and rewritten == value):
                 continue
 
             cls.set_path(config, path, rewritten)
-            applied[path] = rewritten
+            applied.append(ConfigSource(path, origin, value, rewritten))
 
         return applied
+
+    @classmethod
+    def unmatched_config_overrides(cls, config, profile: MachineProfile) -> list[str]:
+        """Returns the profile's explicit ``Class.field`` overrides that name no leaf of this config.
+
+        Args:
+            config  : Configuration dataclass the profile was applied to.
+            profile : Machine profile whose config_overrides are checked.
+
+        Returns:
+            The unmatched keys, sorted; a key matches when a leaf has that field name under a dataclass of that name.
+        """
+        matched = set()
+
+        for path, _value, owners in cls._owned_leaves(config):
+            field = path.rsplit(".", 1)[-1]
+            for owner in owners:
+                matched.add(f"{owner}.{field}")
+
+        return sorted(key for key in profile.config_overrides if key not in matched)
 
     @classmethod
     def _owned_leaves(cls, config, prefix: str = ""):
@@ -234,8 +284,8 @@ class ConfigCli:
                 yield path, value, owners
 
     @classmethod
-    def _profile_value(cls, field: str, value, owners: tuple, anchors: list, rules: list):
-        """Returns the leaf value after the path rebase and the matching field rules.
+    def _profile_value(cls, field: str, value, owners: tuple, anchors: list, rules: list) -> tuple:
+        """Returns the leaf value after the path rebase and the matching field rules, with the origin of the last change.
 
         Args:
             field   : Field name of the leaf.
@@ -245,16 +295,21 @@ class ConfigCli:
             rules   : Field rules from the profile.
 
         Returns:
-            The rewritten value, or the original object when nothing applies.
+            Pair of the rewritten value, or the original object when nothing applies, and the origin label of the last rewrite (``profile rebase``, ``profile set`` or ``profile cap``), None when nothing applied.
         """
         current = value
+        origin  = None
 
         if isinstance(current, Path):
             rebased = MachineProfile.rebase(str(current), anchors)
-            current = current if rebased is None else Path(rebased)
+            if rebased is not None:
+                current = Path(rebased)
+                origin  = "profile rebase"
         elif isinstance(current, str) and current:
             rebased = MachineProfile.rebase(current, anchors)
-            current = current if rebased is None else rebased
+            if rebased is not None:
+                current = rebased
+                origin  = "profile rebase"
 
         for rule in rules:
             if rule.field != field or (rule.owner is not None and rule.owner not in owners):
@@ -263,8 +318,9 @@ class ConfigCli:
                 continue
 
             current = cls._ruled_value(current, rule)
+            origin  = f"profile {rule.kind}"
 
-        return current
+        return current, origin
 
     @classmethod
     def _ruled_value(cls, current, rule: FieldRule):
@@ -473,6 +529,39 @@ class ConfigCli:
 
         return annotation
 
+    def sources_mapping(self) -> dict:
+        """Returns where every non-default value came from, as a JSON-serializable mapping.
+
+        Returns:
+            Mapping with ``machine_profile`` (path and state), ``leaves`` (one entry per rewrite with path, origin, before and after) and ``unmatched_config_overrides``.
+        """
+        return {
+            "machine_profile"            : {"path": None if self.profile.path is None else str(self.profile.path), "state": self.profile.state},
+            "leaves"                     : [{"path": source.path, "origin": source.origin, "before": self._plain(source.before), "after": self._plain(source.after)} for source in self.sources],
+            "unmatched_config_overrides" : list(self.unmatched_overrides),
+        }
+
+    def report(self, logger) -> None:
+        """Logs which machine profile applied, every default it rewrote, every command-line override and the overrides that matched nothing.
+
+        Args:
+            logger : Logger the configuration-sources tables are written on.
+        """
+        from_profile = [source for source in self.sources if source.origin != "command line"]
+
+        logger.kv_table({
+            "Machine profile"            : self.profile.describe(),
+            "Defaults rewritten"         : len(from_profile),
+            "Command-line overrides"     : len(self.overrides),
+            "Unmatched config_overrides" : ", ".join(self.unmatched_overrides) or "none",
+        }, title="Configuration sources")
+
+        if not self.sources:
+            return
+
+        rows = [{"Leaf": source.path, "Origin": source.origin, "Before": self._plain(source.before), "After": self._plain(source.after)} for source in self.sources]
+        logger.metrics_table(rows, columns=["Leaf", "Origin", "Before", "After"])
+
     def _print_config_help(self) -> None:
         """Prints every override path with its type and default, plus the execution flags."""
         rows  = [(path, type(value).__name__ if value is not None else "any", repr(value)) for path, value in self._leaves(self.config)]
@@ -503,6 +592,18 @@ class ConfigCli:
             cls.set_path(config, path, value)
         return config
 
+    @staticmethod
+    def _plain(value):
+        """Returns a leaf value in its JSON form: paths as strings, enums as their values, tuples as lists."""
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, tuple):
+            return list(value)
+
+        return value
+
     @classmethod
     def to_mapping(cls, config) -> dict:
         """Flattens the config into a JSON-serializable dotted-path mapping.
@@ -518,14 +619,8 @@ class ConfigCli:
         """
         mapping = {}
         for path, value in cls._leaves(config):
-            if isinstance(value, Path):
-                mapping[path] = str(value)
-            elif isinstance(value, Enum):
-                mapping[path] = value.value
-            elif isinstance(value, tuple):
-                mapping[path] = list(value)
-            elif value is None or isinstance(value, _SUPPORTED_TYPES):
-                mapping[path] = value
+            if cls.is_editable(value):
+                mapping[path] = cls._plain(value)
         return mapping
 
     @classmethod
