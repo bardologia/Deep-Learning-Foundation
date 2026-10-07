@@ -1413,7 +1413,8 @@ class ProcessManager:
         Returns:
             Mapping with "ok" True, the written "gpus", the "preempted" devices
             and a "parked" flag, or "ok" False with an "error" when the job is
-            unknown, not running, has no pool, or the selection is invalid.
+            unknown, not running, has no pool, the selection is invalid, or the
+            pool file cannot be written.
         """
         with self.lock:
             record = self.jobs.get(job_id)
@@ -1440,7 +1441,10 @@ class ProcessManager:
         if not edit.gpus and not park:
             return {"ok": False, "error": "select at least one GPU, or confirm parking to hold the experiment"}
 
-        GpuPoolFile(pool, self.logger).write(edit.gpus, edit.preempt)
+        try:
+            GpuPoolFile(pool, self.logger).write(edit.gpus, edit.preempt)
+        except OSError as exc:
+            return {"ok": False, "error": f"failed to write pool file: {exc}"}
 
         if edit.preempt:
             self.logger.warning(f"job {job_id} frees GPU {edit.preempt} now — the runs on them stop and restart from the head of the queue")

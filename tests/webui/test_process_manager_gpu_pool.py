@@ -20,6 +20,7 @@ from configuration.cross_validation.general import CrossValidationConfig
 from configuration.inference                import BackboneInferenceEntryConfig, DualInferenceEntryConfig, ImageAeInferenceEntryConfig, ProfileAeInferenceEntryConfig
 from configuration.training                 import BackboneEntryConfig, DualEntryConfig, ImageAeEntryConfig, JepaEntryConfig, ProfileAeEntryConfig
 from configuration.tuning.general           import TuningEntryConfig
+from tools.orchestration.gpu_queue          import GpuPoolFile
 
 from tests.webui.conftest import SLEEP_LONG, wait_for_status, wait_until_finished
 
@@ -149,6 +150,32 @@ def test_set_gpus_writes_the_pool_file_of_a_running_fan_out(manager):
     assert applied == {"ok": True, "gpus": [0, 2, 3], "parked": False, "preempted": []}
     assert json.loads(pool.read_text()) == {"gpus": [0, 2, 3]}
     assert manager.gpu_pool(job_id)["gpus"] == [0, 2, 3]
+
+    manager.stop(job_id)
+
+
+def test_set_gpus_reports_a_pool_file_write_failure(manager, monkeypatch):
+    """set_gpus returns the OSError of a failed pool file write as an error and leaves the pool unchanged."""
+    result = manager.launch("train_backbone", sys.executable)
+    job_id = result["job_id"]
+
+    assert wait_for_status(manager, job_id, "running")
+
+    pool = _pool_path(manager, job_id)
+    pool.parent.mkdir(parents=True, exist_ok=True)
+    pool.write_text(json.dumps({"gpus": [0]}))
+
+    def refuse(self, gpus, preempt):
+        """Fails the write as a full disk would."""
+        raise OSError("disk full")
+
+    monkeypatch.setattr(GpuPoolFile, "write", refuse)
+
+    applied = manager.set_gpus(job_id, [0, 1])
+
+    assert applied["ok"] is False
+    assert "failed to write pool file: disk full" in applied["error"]
+    assert json.loads(pool.read_text()) == {"gpus": [0]}
 
     manager.stop(job_id)
 
