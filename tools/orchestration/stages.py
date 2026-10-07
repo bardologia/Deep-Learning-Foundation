@@ -50,7 +50,14 @@ class ExperimentStage:
         self.run_tag      = run_tag
         self.logger       = logger
         self.run_dir      = Path(run_dir) if run_dir is not None else Path(config.paths.log_base_dir) / run_tag
-        self.pool_file    = Path(pool_file) if pool_file is not None else GpuPoolFile.resolve(config.gpus_file, self.run_dir)
+        self._pool_file   = Path(pool_file) if pool_file is not None else None
+
+    @property
+    def pool_file(self) -> Path:
+        """Live-editable GPU pool file, resolved from the config on first use so a stage that runs no queue never reads gpus_file."""
+        if self._pool_file is None:
+            self._pool_file = GpuPoolFile.resolve(self.config.gpus_file, self.run_dir)
+        return self._pool_file
 
     def _run_queue(self, jobs: list[GpuJob]) -> list[dict]:
         """Runs the jobs on a GPU queue and returns their results as dictionaries.
