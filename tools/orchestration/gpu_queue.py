@@ -525,14 +525,16 @@ class GpuQueue:
         handle_signals       : Whether SIGTERM and SIGINT are trapped to kill workers.
         terminate_deadline_s : Grace period before a worker is killed outright.
         pool                 : Optional live-editable pool file, or None for a fixed pool.
+        resume_hint          : Sentence the abort messages end with, saying how the caller's experiment is resumed; empty when the caller gave none.
         progress             : Progress ledger, created once jobs are queued.
         running              : In-flight records holding the job, gpu, process, log handle and start time.
         retiring             : Devices removed from the pool that still hold a job in flight.
+        results              : Outcomes of the jobs that finished during the current or last run, in completion order; what an abort leaves behind for the caller to report.
     """
 
     EMPTY_POOL_MESSAGE = "at least one GPU id is required; an empty gpus list would poll forever without launching any job"
 
-    def __init__(self, gpus: list[int], logger: Logger, poll_interval_s: float = 5.0, handle_signals: bool = True, terminate_deadline_s: float = 30.0, pool_file: Path | None = None) -> None:
+    def __init__(self, gpus: list[int], logger: Logger, poll_interval_s: float = 5.0, handle_signals: bool = True, terminate_deadline_s: float = 30.0, pool_file: Path | None = None, resume_hint: str = "") -> None:
         """Initializes the scheduler over a non-empty device pool.
 
         Args:
@@ -542,6 +544,7 @@ class GpuQueue:
             handle_signals       : Traps SIGTERM and SIGINT to terminate workers when True.
             terminate_deadline_s : Seconds a worker gets to exit before being killed.
             pool_file            : Path of the live-editable pool file, or None to keep the pool fixed.
+            resume_hint          : How the caller's experiment is resumed after an abort, appended to the abort messages; empty for no advice.
 
         Raises:
             ValueError : If gpus is empty, which would poll forever without launching.
@@ -555,9 +558,11 @@ class GpuQueue:
         self.handle_signals       = handle_signals
         self.terminate_deadline_s = terminate_deadline_s
         self.pool                 = GpuPoolFile(pool_file, logger) if pool_file is not None else None
+        self.resume_hint          = resume_hint
         self.progress             : GpuProgressFile | None = None
         self.running              : list[dict] = []
         self.retiring             : set[int] = set()
+        self.results              : list[GpuJobResult] = []
 
     def _install_signal_handlers(self) -> dict:
         """Traps SIGTERM and SIGINT and returns the handlers that were replaced."""
@@ -572,7 +577,7 @@ class GpuQueue:
         return previous
 
     def _stop_workers(self, records: list[dict]) -> None:
-        """Terminates the given workers, kills those still alive past the deadline, and closes their logs.
+        """Terminates the given workers, kills and names those still alive past the deadline, and closes their logs.
 
         Args:
             records : In-flight records whose processes are stopped.
@@ -588,21 +593,22 @@ class GpuQueue:
             except subprocess.TimeoutExpired:
                 record["process"].kill()
                 record["process"].wait()
+                self.logger.warning(f"[GPU {record['gpu']}] {record['job'].name} did not exit within {self.terminate_deadline_s:.0f}s of SIGTERM; killed")
 
             record["log_fh"].close()
 
-    def _shutdown_running(self) -> int:
+    def _shutdown_running(self) -> list[str]:
         """Terminates every in-flight worker, killing those past the deadline.
 
         Returns:
-            Number of workers that were shut down.
+            The units that were shut down, each as 'name (GPU g)'.
         """
-        self._stop_workers(self.running)
+        stopped = [f"{record['job'].name} (GPU {record['gpu']})" for record in self.running]
 
-        terminated   = len(self.running)
+        self._stop_workers(self.running)
         self.running = []
 
-        return terminated
+        return stopped
 
     def _terminate_running(self, signum, frame) -> None:
         """Signal handler that stops all workers and exits with 128 plus the signal number.
@@ -614,11 +620,15 @@ class GpuQueue:
         Raises:
             SystemExit : Always, with status 128 + signum.
         """
-        terminated = self._shutdown_running()
+        stopped = self._shutdown_running()
 
-        self.logger.warning(f"Received signal {signum} — terminated {terminated} workers, resume with --resume")
+        self.logger.warning(f"Received signal {signum} — terminated {len(stopped)} workers: {', '.join(stopped) or 'none'}{self._resume_suffix()}")
 
         sys.exit(128 + signum)
+
+    def _resume_suffix(self) -> str:
+        """Returns the resume hint as a clause for an abort message, or nothing when the caller gave none."""
+        return f"; {self.resume_hint}" if self.resume_hint else ""
 
     def _reap(self, running: list[dict], gpu_pool: list[int], results: list[GpuJobResult]) -> None:
         """Collects exited workers, appends their results and frees their devices.
@@ -847,18 +857,19 @@ class GpuQueue:
         resize applied during an earlier pass carries into this one. Reaps
         finished workers, honours pool-file resizes and preemptions,
         dispatches queued jobs onto free devices and publishes progress once
-        per poll interval, until nothing is queued or in flight. Any worker still running when the loop
-        aborts is terminated so no unsupervised job keeps holding a GPU.
+        per poll interval, until nothing is queued or in flight. Any worker
+        still running when the loop aborts is terminated so no unsupervised
+        job keeps holding a GPU.
 
         Args:
             jobs : Units to run, dispatched in list order.
 
         Returns:
-            One result per job, in completion order.
+            One result per job, in completion order; the same list stays on ``results`` when the loop aborts.
         """
-        queue   = list(jobs)
-        results : list[GpuJobResult] = []
+        queue = list(jobs)
 
+        self.results  = []
         self.running  = []
         self.retiring = set()
 
@@ -875,7 +886,7 @@ class GpuQueue:
 
         try:
             while queue or self.running:
-                self._reap(self.running, gpu_pool, results)
+                self._reap(self.running, gpu_pool, self.results)
                 self._reconcile(gpu_pool, queue)
 
                 while queue and gpu_pool:
@@ -883,7 +894,7 @@ class GpuQueue:
                     gpu_id = gpu_pool.pop(0)
                     self.running.append(self._launch(job, gpu_id))
 
-                self._publish_progress(queue, gpu_pool, results)
+                self._publish_progress(queue, gpu_pool, self.results)
 
                 if queue or self.running:
                     time.sleep(self.poll_interval_s)
@@ -891,9 +902,9 @@ class GpuQueue:
             self.gpus = sorted(gpu_pool)
         finally:
             if self.running:
-                terminated = self._shutdown_running()
-                self.logger.error(f"Scheduler aborted with {terminated} workers still in flight — terminated them so no unsupervised job keeps holding a GPU; resume with --resume")
+                stopped = self._shutdown_running()
+                self.logger.error(f"Scheduler aborted with {len(stopped)} workers still in flight — terminated {', '.join(stopped)} so no unsupervised job keeps holding a GPU{self._resume_suffix()}")
 
             self._restore_signal_handlers(previous_handlers)
 
-        return results
+        return self.results

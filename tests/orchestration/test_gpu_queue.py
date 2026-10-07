@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -495,6 +496,43 @@ def _launch_sleeper(queue: GpuQueue, tmp_path: Path, name: str, gpu: int) -> dic
     queue.running.append(record)
 
     return record
+
+
+def _stubborn_command() -> list[str]:
+    """Returns a command that ignores SIGTERM, says so on stdout and then sleeps for 30 s."""
+    return [sys.executable, "-c", "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(30)"]
+
+
+def test_a_worker_ignoring_sigterm_is_killed_and_named(tmp_path):
+    """Verifies a worker still alive past the deadline is killed with a warning naming it, and the shutdown returns the stopped units."""
+    logger = RecordingLogger()
+    queue  = GpuQueue(gpus=[0, 1], logger=logger, poll_interval_s=0.0, handle_signals=False, terminate_deadline_s=1.0)
+    job    = _job(tmp_path, "stubborn", _stubborn_command())
+    record = queue._launch(job, 1)
+    queue.running.append(record)
+
+    deadline = time.monotonic() + 20.0
+    while "ready" not in job.log_path.read_text() and time.monotonic() < deadline:
+        time.sleep(0.05)
+
+    stopped = queue._shutdown_running()
+
+    assert stopped                      == ["stubborn (GPU 1)"]
+    assert record["process"].returncode == -signal.SIGKILL
+    assert logger.warnings              == ["[GPU 1] stubborn did not exit within 1s of SIGTERM; killed"]
+
+
+def test_a_signal_names_the_units_it_terminated(tmp_path):
+    """Verifies the signal handler's warning lists the units cut off, not only their count."""
+    logger = RecordingLogger()
+    queue  = GpuQueue(gpus=[0], logger=logger, poll_interval_s=0.0, handle_signals=False, resume_hint="resume with --resume")
+    _launch_sleeper(queue, tmp_path, "a", 0)
+
+    with pytest.raises(SystemExit) as exit_info:
+        queue._terminate_running(signal.SIGTERM, None)
+
+    assert exit_info.value.code == 128 + signal.SIGTERM
+    assert logger.warnings      == [f"Received signal {int(signal.SIGTERM)} — terminated 1 workers: a (GPU 0); resume with --resume"]
 
 
 def test_parse_reads_the_preempt_list_and_defaults_it_to_empty():
@@ -1098,3 +1136,45 @@ def test_units_run_against_the_restored_mask(tmp_path, logger_stub, monkeypatch)
     queue.run([_job(tmp_path, "env_probe", command)])
 
     assert "ABSENT" in (tmp_path / "env_probe" / "worker.log").read_text()
+
+
+def test_an_abort_keeps_the_finished_results_and_names_the_callers_resume_route(tmp_path, monkeypatch):
+    """Verifies the results reaped before an abort stay on the queue and the abort message ends with the caller's hint."""
+    logger  = RecordingLogger()
+    linger  = [sys.executable, "-c", "import time; time.sleep(30)"]
+    queue   = GpuQueue(gpus=[0, 1], logger=logger, poll_interval_s=0.0, handle_signals=False, resume_hint="resubmit the sweep")
+    publish = GpuQueue._publish_progress
+
+    def publish_then_fail(self, pending, gpu_pool, results):
+        """Publishes as usual, then fails the sweep once a job has finished."""
+        publish(self, pending, gpu_pool, results)
+        if results:
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(GpuQueue, "_publish_progress", publish_then_fail)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        queue.run([_job(tmp_path, "quick", _ok_command()), _job(tmp_path, "slow", linger)])
+
+    assert [result.name for result in queue.results] == ["quick"]
+    assert queue.running == []
+    assert logger.errors[-1].endswith("; resubmit the sweep")
+    assert "--resume" not in logger.errors[-1]
+
+
+def test_without_a_resume_hint_the_signal_message_gives_no_advice(tmp_path):
+    """Verifies a caller that passes no hint gets the termination message alone, not a flag the caller lacks."""
+    logger  = RecordingLogger()
+    queue   = GpuQueue(gpus=[0], logger=logger, poll_interval_s=0.0, handle_signals=False)
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    log_fh  = open(tmp_path / "slow.log", "w")
+
+    queue.running = [{"job": _job(tmp_path, "slow", _ok_command()), "gpu": 0, "process": process, "log_fh": log_fh, "started": time.monotonic()}]
+
+    with pytest.raises(SystemExit) as stop:
+        queue._terminate_running(signal.SIGTERM, None)
+
+    assert stop.value.code == 128 + signal.SIGTERM
+    assert process.poll() is not None
+    assert "terminated 1 workers: slow (GPU 0)" in logger.warnings[-1]
+    assert "resume" not in logger.warnings[-1]
