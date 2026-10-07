@@ -15,7 +15,7 @@ from tools.runtime.completion             import CompletionMarker
 
 def _trainer_config() -> BackboneTrainerConfig:
     """Returns a backbone trainer config with five Gaussians over a -20 to 80 metre height axis."""
-    gaussian = GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=80.0)
+    gaussian = GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=80.0, activity_threshold=1e-4)
 
     return BackboneTrainerConfig(gaussian=gaussian)
 

@@ -100,7 +100,7 @@ def spock_normalizer() -> Normalizer:
 
 def gaussian_config(n_gaussians: int) -> GaussianConfig:
     """Returns a Gaussian config with n_gaussians slots over the X_MIN to X_MAX z range."""
-    return GaussianConfig(n_default_gaussians=n_gaussians, x_min=X_MIN, x_max=X_MAX)
+    return GaussianConfig(n_default_gaussians=n_gaussians, x_min=X_MIN, x_max=X_MAX, activity_threshold=1e-4)
 
 
 def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all_losses: bool = False, length: int = X_LEN, sampler=None, norm_stats: Normalizer | None = None) -> Loss:
