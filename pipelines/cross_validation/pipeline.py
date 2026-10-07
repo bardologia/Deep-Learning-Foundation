@@ -146,7 +146,7 @@ class CrossValidationPipeline(StagedPipeline):
                 "Run dir"          : str(self.run_dir),
             }, title="Configuration")
 
-            self._log_resumed()
+            self._log_launch()
 
             if self.config.stage == "compare":
                 reports_dir = self._run_reports(planner)
