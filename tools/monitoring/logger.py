@@ -53,7 +53,7 @@ class LiveMonitor:
 
     def __enter__(self):
         """Starts the live display and returns the monitor."""
-        self._live = Live(self._render(), console=self.console, refresh_per_second=4, transient=False)
+        self._live = Live(self._render(), console=self.console, refresh_per_second=PROGRESS_REFRESH_HZ, transient=False)
         self._live.__enter__()
         return self
 
@@ -125,8 +125,21 @@ def get_console() -> Console:
     return _CONSOLE
 
 
+PROGRESS_REFRESH_HZ = 8.0
+
+
 def _make_progress(console: Console, transient: bool = False) -> Progress:
-    """Returns a progress bar with the spinner, count, percentage and time columns."""
+    """Returns a progress bar with the spinner, count, percentage and time columns.
+
+    The console is forced into terminal mode so the bars render inside the web
+    console's tiles, whose stdout is a file the tile tails. Every refresh
+    rewrites the whole bar with cursor-control sequences, so the refresh rate
+    is also the write rate of that file. The bars redraw at Rich's default of
+    8 Hz so the spinner and the counters move as they do in a terminal; a
+    throttled rate left the tiles frozen for a minute between redraws. A log
+    line printed through the console redraws the bar as well, so the tail of
+    the file always ends with the current bar.
+    """
 
     return Progress(
         SpinnerColumn(style="cyan"),
@@ -138,7 +151,7 @@ def _make_progress(console: Console, transient: bool = False) -> Progress:
         TimeRemainingColumn(),
         console=console,
         transient=transient,
-        refresh_per_second=8,
+        refresh_per_second=PROGRESS_REFRESH_HZ,
     )
 
 

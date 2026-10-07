@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import pytest
 
+from tools.monitoring        import logger as logger_module
 from tools.monitoring.logger import Logger, NullLogger, LiveMonitor, get_console
 
 
@@ -365,3 +367,32 @@ def test_null_logger_swallows_everything():
     assert nl.section("y")         is None
     assert nl.anything("a", b=2)   is None
     assert nl.kv_table({"k": "v"}) is None
+
+
+def test_progress_bars_refresh_at_rich_default_rate_so_console_tiles_stay_live():
+    """A unit's stdout is a file the console tile tails; the bar redraws at Rich's default 8 Hz so the tile animates instead of freezing between redraws."""
+    console  = logger_module.Console(force_terminal=True, file=open("/dev/null", "w"))
+    progress = logger_module._make_progress(console)
+
+    assert logger_module.PROGRESS_REFRESH_HZ == 8.0
+    assert progress.live.refresh_per_second == logger_module.PROGRESS_REFRESH_HZ
+
+
+def test_progress_bars_stop_without_waiting_for_the_next_redraw():
+    """Leaving the progress context returns at once instead of waiting out the refresh interval."""
+    console  = logger_module.Console(force_terminal=True, file=open("/dev/null", "w"))
+    progress = logger_module._make_progress(console)
+    started  = time.monotonic()
+
+    with progress:
+        progress.add_task("epoch", total=10)
+
+    assert time.monotonic() - started < 2.0
+
+
+def test_live_monitor_shares_the_progress_refresh_rate():
+    """The metric panel redraws at the same rate as the progress bars."""
+    console = logger_module.Console(theme=logger_module._THEME, force_terminal=True, file=open("/dev/null", "w"))
+
+    with logger_module.LiveMonitor(console) as monitor:
+        assert monitor._live.refresh_per_second == logger_module.PROGRESS_REFRESH_HZ
