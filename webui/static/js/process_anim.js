@@ -407,7 +407,7 @@ class ProcessAnimator {
       ctx.fillStyle = "rgba(4,7,10,0.78)"; ctx.fillRect(cxp - 12, cyp - 22, cw + 24, ch + 66);
       ctx.strokeStyle = "rgba(120,200,220,0.28)"; ctx.lineWidth = 1; ctx.strokeRect(cxp - 12, cyp - 22, cw + 24, ch + 66);
       this._texDraw("J(K)=\\mathrm{MSE}+\\lambda\\sum_k a_k", cxp - 2, cyp - 20, 14, { align: "left", color: "rgba(178,206,200,0.95)" });
-      const jmax = J(1) * 1.12;
+      const jmax = Math.max(...[1, 2, 3, 4, 5].map(J)) * 1.12;
       for (let k = 1; k <= Math.min(done, 5); k++) {
         const bw2 = 30, bx = cxp + (k - 1) * (bw2 + 14) + 4;
         const mseH = (mse(finalModel(k)) / jmax) * ch;
