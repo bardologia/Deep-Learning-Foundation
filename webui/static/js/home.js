@@ -1062,7 +1062,7 @@ class StatusBoard {
       `<div class="strip__actions">` +
       `<button type="button" class="impact__arm" id="sb-detach" title="Detach the backend from your terminal AND login session (retroactive nohup + own systemd scope with lingering): monitors and sequences survive SSH logout, session cleanup and stray SIGTERMs; only SIGKILL or the kill front end button stop it">keep-alive: --</button>` +
       `<button type="button" class="impact__arm" id="sb-impact-arm" title="When armed, auto-nukes all your processes if you slow other users too much">auto-nuke: --</button>` +
-      `<button type="button" class="impact__arm" id="sb-kill-ui" title="Stop ONLY this web console's server process: running and detached jobs survive and are re-adopted on the next start, but queued launches, watchdogs and TensorBoard viewers die with it">kill front end</button>` +
+      `<button type="button" class="impact__arm" id="sb-kill-ui" title="Stop EVERY web console server of this project, this one and any instance left behind by earlier keep-alive launches: running and detached jobs survive and are re-adopted on the next start, but queued launches, watchdogs and TensorBoard viewers die with them">kill front end</button>` +
       `<button type="button" class="wd__nuke" id="sb-nuke" title="Kill every process running under your user">` +
       `<span class="wd__nuke-sym" aria-hidden="true">&#9762;</span><span class="wd__nuke-txt">NUKE</span>` +
       `</button>` +
@@ -1334,7 +1334,7 @@ class StatusBoard {
     if (!btn) return;
 
     btn.addEventListener("click", async () => {
-      const ok = window.confirm("Kill the front end: this stops ONLY the web console server. Running jobs keep going and are re-adopted on the next start; queued launches and TensorBoard viewers are lost. Continue?");
+      const ok = window.confirm("Kill the front end: this stops EVERY web console server of this project, this one and any other instance still running. Running jobs keep going and are re-adopted on the next start; queued launches and TensorBoard viewers are lost. Continue?");
       if (!ok) return;
 
       btn.disabled = true;
@@ -1344,7 +1344,8 @@ class StatusBoard {
           this._serverDown = true;
           btn.textContent = "front end: down";
           btn.classList.add("is-armed");
-          Toast.show(`front end stopped (pid ${res.pid}) — running jobs keep going; restart it from the terminal (webui/run.sh)`, "ok");
+          const others = res.siblings.length ? `, plus ${res.siblings.length} other instance(s): pids ${res.siblings.join(", ")}` : "";
+          Toast.show(`front end stopped (pid ${res.pid}${others}); running jobs keep going; restart it from the terminal (webui/run.sh)`, "ok");
         } else {
           Toast.show(`shutdown failed: ${(res && res.error) || "unknown error"}`, "error");
           btn.disabled = false;

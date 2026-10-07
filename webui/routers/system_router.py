@@ -102,8 +102,9 @@ class SystemRouter(SubRouter):
         exchange.send_result(self.detacher.detach(), 500)
 
     def shutdown(self, exchange: HttpExchange) -> None:
-        """Answers with the server state and then shuts the console down."""
-        exchange.send_json({"ok": True, **self.detacher.state()})
+        """Force-kills every other console on this root, answers with the server state, then shuts this console down."""
+        siblings = self.detacher.kill_siblings()
+        exchange.send_json({"ok": True, "siblings": siblings, **self.detacher.state()})
         self.detacher.shutdown()
 
     def schedule(self, exchange: HttpExchange) -> None:
