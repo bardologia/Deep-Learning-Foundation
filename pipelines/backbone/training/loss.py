@@ -24,7 +24,7 @@ class Loss:
 
     Attributes:
         z_axis          : The z sample positions, of shape (profile_length,).
-        gaussian_cfg    : Gaussian head configuration (parameters per Gaussian, axis bounds).
+        gaussian_cfg    : Gaussian head configuration (parameters per Gaussian, axis bounds, activity threshold of the label run).
         loss_cfg        : Active loss-stage configuration; swapped by the curriculum.
         norm_stats      : Normalizer converting between normalized and physical parameters.
         dx              : The z sample spacing.
@@ -168,7 +168,7 @@ class Loss:
 
         weights = w.reshape(1, 1, -1, 1, 1)
 
-        active     = (gt_phys[:, :, 0:1] > cfg.amp_zero_thr).to(pred.dtype)
+        active     = (gt_phys[:, :, 0:1] > self.gaussian_cfg.activity_threshold).to(pred.dtype)
         param_mask = torch.ones_like(pred)
         param_mask[:, :, 1:] = active.expand_as(pred[:, :, 1:])
 
@@ -203,7 +203,7 @@ class Loss:
 
         diff = (pred_phys - gt_phys).abs()
 
-        active_mask = (gt_phys[:, :, 0] > self.loss_cfg.amp_zero_thr).to(pred_phys.dtype)
+        active_mask = (gt_phys[:, :, 0] > self.gaussian_cfg.activity_threshold).to(pred_phys.dtype)
         n_active    = active_mask.sum().clamp(min=1.0)
 
         return {
@@ -245,7 +245,7 @@ class Loss:
         gt      = gt_gauss[     :, : gt_gaussians * ppg].reshape(batch_size, gt_gaussians, ppg, height, width)
         gt_phys = gt_phys_gauss[:, : gt_gaussians * ppg].reshape(batch_size, gt_gaussians, ppg, height, width)
 
-        return ParamMatcher.match(pred, pred_phys, gt, gt_phys, method=self.loss_cfg.param_matching.value, active_thr=self.loss_cfg.amp_zero_thr)
+        return ParamMatcher.match(pred, pred_phys, gt, gt_phys, method=self.loss_cfg.param_matching.value, active_thr=self.gaussian_cfg.activity_threshold)
 
     def _prepare(self, pred_params, gt_params):
         """Denormalizes, clamps and renders both predictions and targets.
@@ -344,9 +344,8 @@ class Loss:
             under- and over-count fractions, and the count accuracy conditioned
             on each ground-truth component count.
         """
-        cfg = self.loss_cfg
         ppg = self.gaussian_cfg.params_per_gaussian
-        thr = cfg.amp_zero_thr
+        thr = self.gaussian_cfg.activity_threshold
 
         Bp, Cp, Hp, Wp = pred_params_phys.shape
         pred_amp       = pred_params_phys.reshape(Bp, Cp // ppg, ppg, Hp, Wp)[:, :, 0]

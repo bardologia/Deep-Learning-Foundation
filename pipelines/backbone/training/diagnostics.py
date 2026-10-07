@@ -39,9 +39,9 @@ class ParamSampler:
 
         self._reset_store()
 
-    def begin(self, amp_zero_thr: float) -> None:
-        """Opens a sampling window with the given active-amplitude threshold."""
-        self.thr    = amp_zero_thr
+    def begin(self, activity_threshold: float) -> None:
+        """Opens a sampling window with the label run's active-amplitude threshold."""
+        self.thr    = activity_threshold
         self.active = True
         self._reset_store()
 
@@ -114,9 +114,9 @@ class SlotVitals:
         self._reset_val()
         self._reset_grad()
 
-    def begin(self, amp_zero_thr: float) -> None:
-        """Opens an observation window with the given active-amplitude threshold."""
-        self.thr    = amp_zero_thr
+    def begin(self, activity_threshold: float) -> None:
+        """Opens an observation window with the label run's active-amplitude threshold."""
+        self.thr    = activity_threshold
         self.active = True
         self._reset_val()
 
@@ -246,10 +246,10 @@ class ExampleSelector:
     AMP_RATIO_MIN        = 2.0
     CATEGORIES           = ("single_gaussian", "two_overlapping", "two_separated", "two_distant")
 
-    def __init__(self, params_per_gaussian: int, amp_zero_thr: float):
-        """Stores the channel count per Gaussian and the active-amplitude threshold."""
+    def __init__(self, params_per_gaussian: int, activity_threshold: float):
+        """Stores the channel count per Gaussian and the label run's active-amplitude threshold."""
         self.ppg = params_per_gaussian
-        self.thr = amp_zero_thr
+        self.thr = activity_threshold
 
     @torch.no_grad()
     def _batch_candidates(self, phys: torch.Tensor, offset: int) -> dict:
@@ -474,7 +474,7 @@ class ReconstructionFigures:
         if self._images is not None or self._disabled:
             return
 
-        selector = ExampleSelector(criterion.gaussian_cfg.params_per_gaussian, criterion.loss_cfg.amp_zero_thr)
+        selector = ExampleSelector(criterion.gaussian_cfg.params_per_gaussian, criterion.gaussian_cfg.activity_threshold)
         selected = selector.select(loader, criterion.norm_stats.denormalize_output)
 
         for name in ExampleSelector.CATEGORIES:

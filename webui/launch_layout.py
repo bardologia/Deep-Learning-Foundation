@@ -202,7 +202,6 @@ class LaunchLayout:
                 "inactive_weight",
                 "amp_focal_gamma",
                 "amp_focal_delta",
-                "amp_zero_thr",
             ]},
             {"title": "Regularization", "fields": [
                 {"gate": "use_smoothness_tv", "fields": [{"path": "weight_smoothness_tv", "widget": NUM_WEIGHT}]},

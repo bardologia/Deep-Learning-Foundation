@@ -226,7 +226,7 @@ def test_output_denormalization_torch_and_numpy_agree():
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameters, tmp_path):
+def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameters, param_extraction_meta, tmp_path):
     """Statistics fitted on a real 24x24 window are finite, positive in scale, and round-trip."""
     derived     = np.ascontiguousarray(np.asarray(derived[:4, :24, :24]))
     primary = derived[:1]
@@ -248,7 +248,7 @@ def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameter
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_real", level="ERROR")
     stats  = StatsComputer.compute(
         dataset=ds, logger=logger, input_config=ic, output_config=oc,
-        n_secondaries=0, n_derived=4, n_gaussians=params.shape[0] // 3,
+        n_secondaries=0, n_derived=4, n_gaussians=params.shape[0] // 3, activity_threshold=float(param_extraction_meta["activity_threshold"]),
     )
     logger.close()
 

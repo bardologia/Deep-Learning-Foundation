@@ -36,18 +36,20 @@ class DatasetPipeline:
     Attributes:
         config                 : Dataset configuration driving crops, patching, channels and normalization.
         training_run_directory : Run directory receiving the stats and metadata files.
+        activity_threshold     : Amplitude above which a Gaussian slot counts as active when the output statistics are fitted, as recorded by the label run.
         layout                 : Layout of the preprocessing artifacts this dataset is cut from.
         cropper                : Loader of the per-split crops out of those artifacts.
         metadata_writer        : Writer of the dataset, crop and patch metadata.
         augmenter              : Augmenter applied to the train split.
     """
 
-    def __init__(self, config : DatasetConfig, training_run_directory : Path, logger : Logger | None = None, seed : int = 0, resume : bool = False) -> None:
+    def __init__(self, config : DatasetConfig, training_run_directory : Path, activity_threshold : float, logger : Logger | None = None, seed : int = 0, resume : bool = False) -> None:
         """Validates the split geometry and wires the crop, metadata and augmentation components.
 
         Args:
             config                 : Dataset configuration of the run.
             training_run_directory : Directory the run writes its metadata into.
+            activity_threshold     : Amplitude above which a Gaussian slot counts as active when the output statistics are fitted, as recorded by the label run.
             logger                 : Logger to use; a run-local dataset_pipeline logger is created when omitted.
             seed                   : Seed of the augmentation generator and of the dataloader shuffling.
             resume                 : Whether this run resumes an existing one, in which case the stored normalization statistics must match instead of being overwritten.
@@ -57,6 +59,7 @@ class DatasetPipeline:
         """
         self.config                 = config
         self.training_run_directory = Path(training_run_directory)
+        self.activity_threshold     = float(activity_threshold)
         self.seed                   = int(seed)
         self.resume                 = bool(resume)
 
@@ -87,6 +90,7 @@ class DatasetPipeline:
                 "Derived"            : f"use={ic.use_derived} rep={ic.derived_representation.value}",
                 "Aux"                : f"use={ic.use_aux}",
                 "Output Parameters"  : ",".join(oc.role_names),
+                "Activity Threshold" : f"{self.activity_threshold:g}",
                 "Patch Size"         : config.patch.size,
                 "Patch Stride"       : config.patch.stride,
                 "Symmetric Padding"  : config.patch.use_symmetric_padding,
@@ -197,14 +201,15 @@ class DatasetPipeline:
         train_ds, train_patcher = self._build_dataset("train")
 
         norm_stats = StatsComputer.compute(
-            dataset       = train_ds,
-            logger        = self.logger,
-            input_config  = self.config.input_config,
-            output_config = self.config.output_config,
-            n_secondaries = train_ds.n_secondaries,
-            n_derived     = train_ds.n_derived,
-            n_gaussians   = self.config.n_gaussians,
-            normalization = self.config.normalization,
+            dataset            = train_ds,
+            logger             = self.logger,
+            input_config       = self.config.input_config,
+            output_config      = self.config.output_config,
+            n_secondaries      = train_ds.n_secondaries,
+            n_derived          = train_ds.n_derived,
+            n_gaussians        = self.config.n_gaussians,
+            activity_threshold = self.activity_threshold,
+            normalization      = self.config.normalization,
         )
 
         self._persist_stats(norm_stats)
@@ -281,7 +286,7 @@ class BackboneDatasetPreparation:
         gaussian_cfg                    = self.trainer_config.gaussian
         self.dataset_config.n_gaussians = gaussian_cfg.n_default_gaussians
 
-        dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_directory, logger=self.logger, seed=self.seed, resume=self.trainer_config.training.resume)
+        dataset_pipeline = DatasetPipeline(self.dataset_config, self.run_directory, activity_threshold=gaussian_cfg.activity_threshold, logger=self.logger, seed=self.seed, resume=self.trainer_config.training.resume)
         z_len            = dataset_pipeline.profile_length
         z_axis           = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, z_len)
 

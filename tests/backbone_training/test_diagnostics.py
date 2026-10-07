@@ -204,7 +204,7 @@ def _single_only_loader(hw=8):
 def test_selector_finds_all_categories():
     """The selector assigns the expected pixels to the single, overlapping, separated and distant categories."""
     criterion = build_loss(n_gaussians=2)
-    selector  = ExampleSelector(params_per_gaussian=3, amp_zero_thr=1e-3)
+    selector  = ExampleSelector(params_per_gaussian=3, activity_threshold=1e-3)
     selected  = selector.select(_category_loader(), criterion.norm_stats.denormalize_output)
 
     assert selected["single_gaussian"] == [(0, 1, 1), (0, 2, 2), (0, 3, 3)]

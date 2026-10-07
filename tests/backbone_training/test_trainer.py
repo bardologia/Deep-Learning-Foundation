@@ -444,15 +444,16 @@ def test_curriculum_swap_replaces_loss_config(tmp_path):
     assert trainer.criterion.loss_generation == 1
 
 
-def test_slot_diagnostics_follow_the_curriculum_threshold(tmp_path):
-    """Verifies the parameter sampler and slot vitals adopt the amplitude-zero threshold of the active stage."""
+def test_slot_diagnostics_adopt_the_label_run_threshold(tmp_path):
+    """Verifies the parameter sampler and slot vitals use the label run's activity threshold, unchanged by a curriculum swap."""
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
     config           = tiny_trainer_config(n_gaussians=2, epochs=1)
 
-    config.curriculum.enabled    = True
-    config.curriculum.swap_epoch = 0
-    config.curriculum.warmup     = LossConfig(use_param_l1=True, weight_param_l1=1.0, amp_zero_thr=1e-4)
-    config.curriculum.complete   = LossConfig(use_param_l1=True, weight_param_l1=1.0, amp_zero_thr=1e-1)
+    config.gaussian.activity_threshold = 2.5e-3
+    config.curriculum.enabled          = True
+    config.curriculum.swap_epoch       = 0
+    config.curriculum.warmup           = LossConfig(use_param_l1=True, weight_param_l1=1.0)
+    config.curriculum.complete         = LossConfig(use_param_l1=True, weight_param_l1=1.0, use_active_normalization=True)
 
     logger  = Logger(log_dir=str(tmp_path / "logs"), name="thr", level="ERROR")
     trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
@@ -462,14 +463,14 @@ def test_slot_diagnostics_follow_the_curriculum_threshold(tmp_path):
 
     trainer._before_validation(0, val_loader)
 
-    assert trainer.param_sampler.thr == pytest.approx(1e-4)
-    assert trainer.slot_vitals.thr   == pytest.approx(1e-4)
+    assert trainer.param_sampler.thr == pytest.approx(2.5e-3)
+    assert trainer.slot_vitals.thr   == pytest.approx(2.5e-3)
 
     trainer.curriculum_controller.maybe_swap(epoch=0)
     trainer._before_validation(1, val_loader)
 
-    assert trainer.param_sampler.thr == pytest.approx(1e-1)
-    assert trainer.slot_vitals.thr   == pytest.approx(1e-1)
+    assert trainer.param_sampler.thr == pytest.approx(2.5e-3)
+    assert trainer.slot_vitals.thr   == pytest.approx(2.5e-3)
 
 
 def test_curriculum_swap_applies_the_scheduled_learning_rate(tmp_path):

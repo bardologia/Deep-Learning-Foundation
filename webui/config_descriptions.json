@@ -1129,7 +1129,6 @@
         "inactive_weight": "Loss multiplier for slots with GT amplitude at or below amp_zero_thr; ignored when presence_balance is on",
         "amp_focal_gamma": "Focal exponent upweighting hard amplitude errors; 0 disables focal weighting entirely",
         "amp_focal_delta": "Denominator offset controlling how fast the amplitude focal weighting saturates; only active when amp_focal_gamma>0",
-        "amp_zero_thr": "GT amplitude threshold marking a Gaussian slot inactive, used for matching, presence weighting, and occupancy stats",
         "use_smoothness_tv": "Enable total-variation penalty on normalized parameter maps across spatial neighbors",
         "weight_smoothness_tv": "Relative weight of the spatial total-variation smoothness term in the weighted-average loss",
         "use_total_power": "Enable relative-error term matching integrated total power of predicted vs target curves",

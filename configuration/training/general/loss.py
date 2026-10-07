@@ -59,7 +59,6 @@ class LossConfig:
         inactive_weight          : Weight given to empty slots.
         amp_focal_gamma          : Focusing exponent of the amplitude focal weighting; 0 disables it.
         amp_focal_delta          : Amplitude scale of that focal weighting.
-        amp_zero_thr             : Amplitude below which a ground-truth slot counts as empty.
         use_smoothness_tv        : Whether the spatial total-variation regulariser is active.
         weight_smoothness_tv     : Weight of that regulariser.
         use_total_power          : Whether the total-power matching term is active.
@@ -117,8 +116,6 @@ class LossConfig:
     inactive_weight          : float = 1.0
     amp_focal_gamma          : float = 0.0
     amp_focal_delta          : float = 0.5
-
-    amp_zero_thr : float = 1e-4
 
     use_smoothness_tv    : bool  = False
     weight_smoothness_tv : float = 1e-4

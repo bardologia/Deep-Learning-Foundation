@@ -277,7 +277,7 @@ class ImageFeedAdapter:
 
         dataset_config.n_gaussians = gaussian_config.n_default_gaussians
 
-        dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, logger=self.logger, seed=self.config.seed)
+        dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, activity_threshold=gaussian_config.activity_threshold, logger=self.logger, seed=self.config.seed)
         profile_length   = dataset_pipeline.profile_length
 
         dataset_config.z_axis = GaussianAxis.build(gaussian_config.x_min, gaussian_config.x_max, profile_length)
@@ -435,7 +435,7 @@ class BackboneFeedAdapter:
         patch                    = dataset_config.patch
         patch.size, patch.stride = ModelBuilder.square_patch([name], patch.size, patch.stride)
 
-        dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, logger=self.logger, seed=self.config.seed)
+        dataset_pipeline = DatasetPipeline(dataset_config, self.work_dir, activity_threshold=gaussian_cfg.activity_threshold, logger=self.logger, seed=self.config.seed)
         profile_length   = dataset_pipeline.profile_length
 
         dataset_config.z_axis = GaussianAxis.build(gaussian_cfg.x_min, gaussian_cfg.x_max, profile_length)
