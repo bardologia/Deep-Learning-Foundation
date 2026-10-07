@@ -1539,6 +1539,7 @@ p.seq-block__flag--decide { color: var(--accent-2); }
 .badge--scheduled { background: rgba(161, 98, 7, 0.10); color: var(--warn); }
 .badge--queued { background: rgba(161, 98, 7, 0.10); color: var(--warn); }
 .badge--cancelled { background: rgba(20, 30, 40, 0.05); color: var(--ink-faint); }
+.badge--untracked { background: rgba(20, 30, 40, 0.05); color: var(--ink-faint); }
 
 .job-item__follow {
   display: flex; align-items: center; gap: 8px;
@@ -1570,8 +1571,8 @@ p.seq-block__flag--decide { color: var(--accent-2); }
 .console-tile__bar .btn { flex: none; }
 .console-tile__name { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--glass-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .console-tile__meta { font-family: var(--mono); font-size: 11px; color: var(--glass-dim); margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
-.console-tile__out { flex: 1; min-height: 0; min-width: 0; padding: 10px 12px; overflow: hidden; }
-.console-tile__out .xterm { height: 100%; }
+.console-tile__out { flex: 1; min-height: 0; min-width: 0; padding: 0; overflow: hidden; }
+.console-tile__out .xterm { height: 100%; padding: 10px 12px; }
 .console-tile__gpus {
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   border-bottom: 1px solid var(--glass-line); background: var(--glass-bg-2);
@@ -1604,7 +1605,7 @@ p.seq-block__flag--decide { color: var(--accent-2); }
 .console-tile__unitcount { font-family: var(--mono); font-size: 11px; color: var(--glass-dim); white-space: nowrap; }
 .console-tile__unitmenu {
   position: absolute; top: calc(100% + 4px); left: 12px; right: 12px; z-index: 40;
-  max-height: 300px; overflow-y: auto; scrollbar-width: thin;
+  max-height: min(300px, var(--menu-room, 300px)); overflow-y: auto; scrollbar-width: thin;
   background: var(--glass-bg-2); border: 1px solid var(--glass-line); border-radius: var(--r-card);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); padding: 4px 0;
 }
