@@ -7,7 +7,8 @@ time, a detach flag, an isolation flag that gives every execution its own fresh
 run directory, and per-block checkpoint marks that hold the chain until
 released. A block carries one finalize switch per post-experiment step (the
 seed comparison, the trial comparison and the report mailing); the runner
-chains the enabled steps onto its end inside the isolated workspace. A block
+chains the enabled steps onto its end, inside the isolated workspace when the
+sequence has one and on the entry's own sweep directory otherwise. A block
 may also declare the configuration axes it decides; every
 save stamps those decisions onto the blocks they govern, which writes the
 per-block field notes labelling config paths as ``frozen`` (an earlier block's
@@ -86,9 +87,8 @@ class SequenceStore:
         Returns:
             Result carrying the stored entry, or ``ok`` False with an error when
             the sequence is unknown, a block script does not exist, an edge points
-            at a missing block, the graph has a cycle, a finalize switch lacks the
-            isolation it needs, or an entry point of a block cannot be resolved
-            to stamp the declared decisions.
+            at a missing block, the graph has a cycle, or an entry point of a
+            block cannot be resolved to stamp the declared decisions.
         """
         with self.lock:
             current = self._read(sequence_id)
@@ -96,7 +96,7 @@ class SequenceStore:
                 return {"ok": False, "error": "sequence not found"}
 
             blocks = [self._clean_block(block) for block in list(payload.get("blocks") or [])]
-            error  = self._validate(blocks) or self._validate_finalize(blocks, bool(payload.get("isolate")))
+            error  = self._validate(blocks)
             if error:
                 return {"ok": False, "error": error}
 
@@ -193,19 +193,6 @@ class SequenceStore:
                 return f"block '{block['title']}' links to itself"
 
         return "the sequence has a cycle" if self.order(blocks) is None else ""
-
-    def _validate_finalize(self, blocks: list, isolate: bool) -> str:
-        """Returns an error message when a finalize switch lacks the isolated workspace it needs, else an empty string.
-
-        The finalize chain compares the block's trial sweep and mails the
-        experiment bundle out of the execution's workspace, so it only exists
-        for isolated sequences.
-        """
-        marked = [block["title"] for block in blocks if any(block["finalize"].values())]
-        if marked and not isolate:
-            return f"block '{marked[0]}' has finalize steps on, which compare and mail out of the execution workspace; turn 'Isolated dir' on or the finalize switches off"
-
-        return ""
 
     def order(self, blocks: list) -> list | None:
         """Returns the block ids in a topological order, or None when the graph has a cycle.

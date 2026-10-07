@@ -1247,7 +1247,7 @@ class SequencesView extends ConfigForm {
   }
 
   _blockFinalizeSection(block) {
-    const note = "The chain needs the sequence's isolated workspace and an entry that writes a sweep; the enabled steps run in the order listed, without holding back the blocks after this one.";
+    const note = "The chain needs an entry that writes a sweep: it runs inside the sequence's isolated workspace when there is one and on the entry's own sweep directory otherwise. The enabled steps run in the order listed, without holding back the blocks after this one.";
 
     this._appendFinalizeSection(block.finalize || {}, note, async (key, next) => {
       const previous = { ...(block.finalize || {}) };
