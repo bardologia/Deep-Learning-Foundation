@@ -349,3 +349,14 @@ def test_table_render_extraction_meta(param_extraction_meta):
         table.add_row(str(k), ScalarFormatter.format_scalar(v) if not isinstance(v, (dict, list)) else "...")
     lines = table.render()
     assert all(line.count("|") == 3 for line in lines)
+
+
+def test_table_add_row_escapes_pipes_so_the_row_keeps_its_columns():
+    """Verifies a pipe inside a cell is escaped, leaving the rendered row with one separator per column boundary."""
+    table = MarkdownTable(["metric", "description"])
+    table.add_row("peak", "mean |Δ peak| in metres")
+
+    row = table.render()[2]
+
+    assert "\\|Δ peak\\|" in row
+    assert row.replace("\\|", "").count("|") == 3
