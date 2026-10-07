@@ -39,7 +39,7 @@ class ProcessPoolRunner:
             List of (job, result) pairs in completion order.
 
         Raises:
-            Exception : Re-raises the first worker failure after cancelling the remaining futures.
+            Exception : Re-raises the first worker failure after cancelling the queued futures and waiting, with a warning naming them, for those already running.
         """
         job_list = list(jobs)
         workers  = max(1, min(self.max_workers, len(job_list)) if self.max_workers is not None else len(job_list))
@@ -58,6 +58,10 @@ class ProcessPoolRunner:
                     self.logger.error(f"Job {label_fn(job)} failed after {time.perf_counter() - started:.1f} s with {len(results)}/{len(job_list)} jobs already finished: {error}")
                     for other in futures:
                         other.cancel()
+
+                    in_flight = [label_fn(futures[other]) for other in futures if other.running()]
+                    if in_flight:
+                        self.logger.warning(f"Waiting for {len(in_flight)} in-flight job(s) to finish before re-raising, since a running worker cannot be cancelled: {', '.join(in_flight)}")
                     raise
 
                 results.append((job, result))
