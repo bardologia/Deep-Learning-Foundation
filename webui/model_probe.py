@@ -49,6 +49,7 @@ class ModelProbe:
     PERTURBATIONS   = ("drop_channel", "scale_channel", "noise")
     FLIPS           = (("none", ()), ("row", (2,)), ("col", (3,)), ("both", (2, 3)))
     CONTAINER_TYPES = ("ModuleList", "ModuleDict", "Sequential")
+    FUSED_LEAVES    = ("attention_dropout",)
     LOADER_NAME     = "model_probe"
     CHECKPOINT      = "best_model.pt"
     CONFIG_NAMES    = (RunArtifacts.BACKBONE_CONFIG, RunArtifacts.DUAL_CONFIG)
@@ -144,11 +145,22 @@ class ModelProbe:
             self.status["stage"]    = stage
 
     def _probe_layers(self, model) -> list[str]:
-        """Returns the names of leaf modules worth probing, containers excluded."""
+        """Returns the names of leaf modules worth probing.
+
+        Containers are excluded, and so are the attention dropout leaves named in
+        FUSED_LEAVES: the fused attention kernel applies their probability without
+        calling the module, so they never produce an activation to show.
+
+        Args:
+            model : Module whose leaf modules are listed.
+
+        Returns:
+            Dotted names of the probeable leaf modules.
+        """
         from tools.diagnostics.activation_recorder import ActivationRecorder
 
         modules = dict(model.named_modules())
-        return [name for name in ActivationRecorder(model).leaf_names() if type(modules[name]).__name__ not in self.CONTAINER_TYPES]
+        return [name for name in ActivationRecorder(model).leaf_names() if type(modules[name]).__name__ not in self.CONTAINER_TYPES and name.rsplit(".", 1)[-1] not in self.FUSED_LEAVES]
 
     @classmethod
     def _loader_class(cls, is_dual: bool):

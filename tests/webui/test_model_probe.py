@@ -457,6 +457,15 @@ def test_probe_layers_skips_container_modules():
     assert layers == ["conv"]
 
 
+def test_probe_layers_skip_the_attention_dropout_the_fused_kernel_never_calls():
+    """Layer discovery leaves out the attention dropout leaf, which never fires on the fused attention path."""
+    from models.blocks import MultiHeadSelfAttention
+
+    layers = ModelProbe(SilentLogger())._probe_layers(MultiHeadSelfAttention(8, num_heads=2))
+
+    assert layers == ["query_key_value", "output_projection", "output_dropout"]
+
+
 def test_layers_and_map_need_a_loaded_model():
     """Layer listing and the overview map both fail before a run is loaded."""
     probe = ModelProbe(SilentLogger())
