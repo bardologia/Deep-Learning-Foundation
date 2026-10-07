@@ -230,11 +230,11 @@ def test_trial_name_filter_expands_to_the_seed_runs(tmp_path):
 
 
 def test_ambiguous_bare_seed_name_raises(tmp_path):
-    """A bare seed name matching several trials raises FileNotFoundError."""
+    """A bare seed name matching several trials raises ValueError naming it as ambiguous."""
     for trial in ("trial_a", "trial_b"):
         _seed_run(tmp_path, trial, 0)
 
     entry = TensorboardExportEntryConfig(runs_dir=tmp_path, run_filter=["seed0"])
 
-    with pytest.raises(FileNotFoundError, match="seed0"):
+    with pytest.raises(ValueError, match="run name 'seed0' is ambiguous"):
         TensorboardExportBatch(entry, RecordingLogger()).run()
