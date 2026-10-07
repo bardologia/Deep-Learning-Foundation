@@ -1,18 +1,21 @@
 """Tests for the dataclass-backed command line override layer.
 
-Covers leaf flattening, type coercion of CLI tokens, resolved-config
-persistence and the argv round trip provided by ConfigCli.
+Covers leaf flattening, type coercion of CLI tokens, the source records of
+typed overrides, the rejection of stray values, resolved-config persistence
+and the argv round trip provided by ConfigCli.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib     import Path
 
 import pytest
 
-from tools.runtime.config_cli import ConfigCli
+from tools.runtime.config_cli      import ConfigCli, ConfigSource
+from tools.runtime.machine_profile import MachineProfile
 
 
 @dataclass
@@ -67,6 +70,38 @@ def test_apply_overrides_nested_float():
 
     assert cfg.nested.lr             == 0.5
     assert cli.overrides["nested.lr"] == 0.5
+
+
+def test_typed_overrides_are_recorded_with_the_value_they_replaced():
+    """Each command-line override becomes a source record holding the leaf, the previous value and the new one."""
+    cfg = _config()
+    cli = ConfigCli(cfg, profile=MachineProfile(None))
+    cli.apply(["--seed", "7", "--paths.log_base_dir", "/tmp/run"])
+
+    assert cli.sources == [ConfigSource("paths.log_base_dir", "command line", Path("logs"), Path("/tmp/run")), ConfigSource("seed", "command line", 42, 7)]
+
+    mapping = cli.sources_mapping()
+
+    assert mapping["machine_profile"] == {"path": None, "state": "disabled"}
+    assert mapping["leaves"]          == [{"path": "paths.log_base_dir", "origin": "command line", "before": "logs", "after": "/tmp/run"}, {"path": "seed", "origin": "command line", "before": 42, "after": 7}]
+    assert mapping["unmatched_config_overrides"] == []
+    assert json.dumps(mapping)
+
+
+def test_only_the_parse_of_the_process_arguments_is_recorded(monkeypatch):
+    """An explicit argv leaves the process record alone; parsing sys.argv records the instance for logs and provenance."""
+    monkeypatch.setattr(ConfigCli, "parsed", None)
+
+    ConfigCli(_config(), profile=MachineProfile(None)).apply(["--seed", "7"])
+
+    assert ConfigCli.parsed is None
+
+    monkeypatch.setattr(sys, "argv", ["entry.py", "--seed", "3"])
+    cli = ConfigCli(_config(), profile=MachineProfile(None))
+    cli.apply()
+
+    assert ConfigCli.parsed is cli
+    assert cli.config.seed == 3
 
 
 def test_apply_override_int():

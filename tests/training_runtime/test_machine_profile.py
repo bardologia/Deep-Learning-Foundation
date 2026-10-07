@@ -4,7 +4,8 @@ Covers the environment-driven location, schema refusal, section defaults, the
 longest-anchor-first rebase of reference-layout paths, the hardware and mail field
 rules, explicit Class.field overrides, the shell twin written beside the profile,
 the refusal of a named profile file that is missing, the one-line state of a
-profile, and the reporting of rewritten defaults in the config help.
+profile, the reporting of rewritten defaults in the config help, and the source
+records that say which profile applied and what it rewrote.
 """
 
 from __future__ import annotations
@@ -86,6 +87,28 @@ FULL_DATA = {
     "hardware" : {"gpu_pool": [1], "vram_budget_gb": 7.5, "cpu_workers": 6, "gif_workers": 3, "max_workers": 4},
     "mail"     : {"sender": "me@example.org", "recipient": "you@example.org"},
 }
+
+
+class TableLogger:
+    """Logger stub keeping the tables ConfigCli.report writes.
+
+    Attributes:
+        kv_tables : Key-value tables received, as (title, mapping) pairs.
+        rows      : Rows of every metrics table received, concatenated.
+    """
+
+    def __init__(self) -> None:
+        """Starts with no tables recorded."""
+        self.kv_tables = []
+        self.rows      = []
+
+    def kv_table(self, data, title=None, **kwargs) -> None:
+        """Records a key-value table with its title."""
+        self.kv_tables.append((title, dict(data)))
+
+    def metrics_table(self, rows, columns, title=None, **kwargs) -> None:
+        """Records the rows of a metrics table."""
+        self.rows.extend(dict(row) for row in rows)
 
 
 def _profile(tmp_path: Path, data: dict) -> MachineProfile:
@@ -262,6 +285,54 @@ def test_a_dataset_path_alone_leaves_the_other_roots_relative(tmp_path):
     assert config.paths.dataset_path == Path("/data/me/scene")
     assert config.paths.log_base_dir == ReferenceLayout.RUNS_ROOT / "benchmark"
     assert config.logdir             == str(ReferenceLayout.RUNS_ROOT)
+
+
+def test_sources_name_the_kind_of_rule_behind_each_rewritten_default(tmp_path):
+    """Every rewrite records the leaf, the default, the written value and whether a rebase, a set or a cap did it."""
+    profile = _profile(tmp_path, FULL_DATA)
+    cli     = ConfigCli(EntryConfig(), profile=profile)
+    origins = {source.path: source.origin for source in cli.sources}
+    changes = {source.path: (source.before, source.after) for source in cli.sources}
+
+    assert origins["paths.dataset_path"] == "profile rebase"
+    assert origins["logdir"]             == "profile rebase"
+    assert origins["gpus"]               == "profile set"
+    assert origins["loader.num_workers"] == "profile cap"
+    assert changes["loader.num_workers"] == (16, 4)
+    assert changes["paths.dataset_path"] == (ReferenceLayout.DATASET_DIR, Path("/data/me/scene"))
+    assert set(origins) == set(cli.profile_overrides)
+    assert cli.unmatched_overrides == []
+
+
+def test_config_overrides_that_name_no_leaf_are_listed(tmp_path):
+    """An explicit Class.field override matching nothing in this config is reported instead of vanishing."""
+    profile = _profile(tmp_path, {**FULL_DATA, "config_overrides": {"EntryConfig.seed": 7, "LoaderSection.num_wrokers": 2}})
+    cli     = ConfigCli(EntryConfig(), profile=profile)
+
+    assert cli.unmatched_overrides == ["LoaderSection.num_wrokers"]
+    assert cli.sources_mapping()["unmatched_config_overrides"] == ["LoaderSection.num_wrokers"]
+
+
+def test_report_logs_the_profile_state_and_one_row_per_rewritten_leaf(tmp_path):
+    """The report names the profile file, counts the rewrites and lists each leaf with its origin and both values."""
+    profile = _profile(tmp_path, FULL_DATA)
+    cli     = ConfigCli(EntryConfig(), profile=profile)
+    cli.apply(["--seed", "9"])
+    logger  = TableLogger()
+
+    cli.report(logger)
+
+    title, summary = logger.kv_tables[0]
+    by_leaf        = {row["Leaf"]: row for row in logger.rows}
+
+    assert title == "Configuration sources"
+    assert summary["Machine profile"]            == f"{tmp_path / 'machine.json'} (loaded)"
+    assert summary["Defaults rewritten"]         == len(cli.profile_overrides)
+    assert summary["Command-line overrides"]     == 1
+    assert summary["Unmatched config_overrides"] == "none"
+    assert by_leaf["loader.num_workers"] == {"Leaf": "loader.num_workers", "Origin": "profile cap", "Before": 16, "After": 4}
+    assert by_leaf["seed"]               == {"Leaf": "seed", "Origin": "command line", "Before": 42, "After": 9}
+    assert by_leaf["paths.dataset_path"]["After"] == "/data/me/scene"
 
 
 def test_command_line_flags_override_the_profile(tmp_path):
