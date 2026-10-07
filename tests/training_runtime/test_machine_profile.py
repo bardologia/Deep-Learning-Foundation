@@ -3,7 +3,8 @@
 Covers the environment-driven location, schema refusal, section defaults, the
 longest-anchor-first rebase of reference-layout paths, the hardware and mail field
 rules, explicit Class.field overrides, the shell twin written beside the profile,
-and the reporting of rewritten defaults in the config help.
+the refusal of a named profile file that is missing, the one-line state of a
+profile, and the reporting of rewritten defaults in the config help.
 """
 
 from __future__ import annotations
@@ -116,9 +117,10 @@ def test_location_follows_the_environment_variable(monkeypatch, tmp_path):
     assert MachineProfile.location() == Path.home() / ".config" / "ml-template" / "machine.json"
 
 
-def test_current_returns_an_absent_profile_when_the_file_is_missing(monkeypatch, tmp_path):
-    """A missing file yields a profile that exists is False and applies nothing."""
-    monkeypatch.setenv(MachineProfile.ENV_VAR, str(tmp_path / "none.json"))
+def test_current_returns_an_absent_profile_when_the_default_location_holds_none(monkeypatch, tmp_path):
+    """With the variable unset, a missing file at the default location yields a profile that exists is False and applies nothing."""
+    monkeypatch.delenv(MachineProfile.ENV_VAR, raising=False)
+    monkeypatch.setattr(MachineProfile, "default_path", classmethod(lambda cls: tmp_path / "none.json"))
 
     profile = MachineProfile.current()
 
@@ -126,6 +128,25 @@ def test_current_returns_an_absent_profile_when_the_file_is_missing(monkeypatch,
     assert profile.path == tmp_path / "none.json"
     assert profile.path_anchors() == []
     assert profile.field_rules()  == []
+
+
+def test_current_refuses_a_named_file_that_is_missing(monkeypatch, tmp_path):
+    """A path named by the variable must exist, so a mistyped or moved profile fails instead of running on the reference defaults."""
+    monkeypatch.setenv(MachineProfile.ENV_VAR, str(tmp_path / "moved.json"))
+
+    with pytest.raises(FileNotFoundError, match=f"{MachineProfile.ENV_VAR} names .*moved.json"):
+        MachineProfile.current()
+
+
+def test_describe_and_state_follow_the_profile_location(tmp_path):
+    """A loaded, an absent and a disabled profile each describe themselves in one line."""
+    loaded = _profile(tmp_path, FULL_DATA)
+    absent = MachineProfile(tmp_path / "none.json")
+    off    = MachineProfile(None)
+
+    assert loaded.state == "loaded"   and loaded.describe() == f"{tmp_path / 'machine.json'} (loaded)"
+    assert absent.state == "absent"   and absent.describe().startswith(f"absent at {tmp_path / 'none.json'}")
+    assert off.state    == "disabled" and MachineProfile.ENV_VAR in off.describe()
 
 
 def test_load_refuses_another_schema(tmp_path):

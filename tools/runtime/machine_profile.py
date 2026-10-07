@@ -98,11 +98,30 @@ class MachineProfile:
 
     @classmethod
     def current(cls) -> "MachineProfile":
-        """Returns the profile at the selected location, or an absent profile when there is none."""
-        path = cls.location()
+        """Returns the profile the environment selects.
 
-        if path is None or not path.is_file():
+        A disabled profile and a missing file at the unset default location both
+        yield an absent profile, the latter being how a checkout runs before the
+        installer wrote one. A file named explicitly by ``MLTEMPLATE_MACHINE_PROFILE``
+        must exist, so a mistyped or moved path fails here instead of silently
+        running with the reference-layout defaults.
+
+        Returns:
+            The loaded profile, or an absent one when profiles are disabled or the default location holds none.
+
+        Raises:
+            FileNotFoundError : If ``MLTEMPLATE_MACHINE_PROFILE`` names a file that does not exist.
+        """
+        named = os.environ.get(cls.ENV_VAR)
+        path  = cls.location()
+
+        if path is None:
             return cls(path)
+
+        if not path.is_file():
+            if named is None:
+                return cls(path)
+            raise FileNotFoundError(f"{cls.ENV_VAR} names {path} but no file is there; fix the variable, run ./install.sh to write the profile, or set the variable to an empty value to run without one")
 
         return cls.load(path)
 
@@ -142,6 +161,23 @@ class MachineProfile:
     def env_path(self) -> Path | None:
         """Location of the shell twin, beside the profile file."""
         return None if self.path is None else self.path.with_name(self.ENV_FILE_NAME)
+
+    @property
+    def state(self) -> str:
+        """``loaded`` when a file was read, ``absent`` when the location holds none, ``disabled`` when profiles are off."""
+        if self.path is None:
+            return "disabled"
+
+        return "loaded" if self.exists else "absent"
+
+    def describe(self) -> str:
+        """Returns one line naming the profile file and its state, for run logs and provenance records."""
+        if self.path is None:
+            return f"disabled by an empty {self.ENV_VAR}"
+        if self.exists:
+            return f"{self.path} (loaded)"
+
+        return f"absent at {self.path}; the reference-layout defaults apply"
 
     def section(self, name: str) -> dict:
         """Returns one section merged over its defaults.
