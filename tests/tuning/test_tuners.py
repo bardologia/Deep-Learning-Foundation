@@ -357,7 +357,7 @@ class _FakeTrainerConfig:
         self.early_stopping = _FakeEarlyStop()
         self.io             = _FakeIO()
         self.curriculum     = LossCurriculumConfig(complete=LossConfig(use_param_l1=True))
-        self.gaussian       = GaussianConfig(n_default_gaussians=3, x_min=-20.0, x_max=80.0)
+        self.gaussian       = GaussianConfig(n_default_gaussians=3, x_min=-20.0, x_max=80.0, activity_threshold=1e-4)
 
 
 class _FakeDatasetConfig:

@@ -209,7 +209,7 @@ def _square_patch_dataset_config() -> DatasetConfig:
 
 def _square_patch_trainer_config() -> BackboneTrainerConfig:
     """Returns a minimal five-Gaussian backbone trainer config."""
-    return BackboneTrainerConfig(gaussian=GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=40.0))
+    return BackboneTrainerConfig(gaussian=GaussianConfig(n_default_gaussians=5, x_min=-20.0, x_max=40.0, activity_threshold=1e-4))
 
 
 def test_pipeline_squares_the_patch_for_square_only_backbones():
