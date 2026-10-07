@@ -69,7 +69,7 @@ class TemplatesView {
   }
 
   _open(entry) {
-    this.launchView.pendingImport = entry;
+    this.launchView.pendingImport = { name: entry.name, script: entry.script, overrides: entry.overrides, launch: null };
     window.router.go(`launch/${entry.script}`);
   }
 
