@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from pipelines.shared.inference.run_classifier import InferenceLayout
+
 
 class RunSelector:
     """Selects run directories that contain a given marker file.
@@ -201,6 +203,9 @@ class RunSelector:
 class ReportRunSelector(RunSelector):
     """Selects runs by the Markdown reports under their inference directory.
 
+    Reports are looked for directly under an inference stamp and, for the
+    families that nest their stamps, under the family sub-directory first.
+
     Attributes:
         report_filename : Report file name looked for inside each inference output.
     """
@@ -217,8 +222,17 @@ class ReportRunSelector(RunSelector):
         super().__init__(runs_dir, inference_dirname, logger, action="collect")
         self.report_filename = report_filename
 
+    def _reports_of(self, inference_dir: Path) -> list[Path]:
+        """Returns the reports under one inference directory, direct stamps and family sub-directories alike, ordered by stamp name."""
+        reports = list(inference_dir.glob(f"*/{self.report_filename}"))
+
+        for family in InferenceLayout.SUBDIRS.values():
+            reports += list(inference_dir.glob(f"{family}/*/{self.report_filename}"))
+
+        return sorted((path for path in reports if path.is_file()), key=lambda path: path.parent.name)
+
     def _discover(self) -> list[Path]:
-        """Returns the sorted runs holding at least one report.
+        """Returns the sorted runs holding at least one report in either inference layout.
 
         Raises:
             FileNotFoundError : If the runs root is missing or holds no report.
@@ -226,8 +240,8 @@ class ReportRunSelector(RunSelector):
         if not self.runs_dir.is_dir():
             raise FileNotFoundError(f"Runs directory does not exist: {self.runs_dir}")
 
-        reports  = self.runs_dir.rglob(f"{self.marker}/*/{self.report_filename}")
-        run_dirs = sorted({path.parent.parent.parent for path in reports if path.is_file()})
+        inference_dirs = {path for path in self.runs_dir.rglob(self.marker) if path.is_dir()}
+        run_dirs       = sorted(inference_dir.parent for inference_dir in inference_dirs if self._reports_of(inference_dir))
 
         if not run_dirs:
             raise FileNotFoundError(f"No '{self.report_filename}' found in any '{self.marker}' output under {self.runs_dir}")
@@ -238,7 +252,7 @@ class ReportRunSelector(RunSelector):
         """Logs a numbered table of the runs with their report count and newest stamp."""
         rows = []
         for index, run_dir in enumerate(run_dirs, start=1):
-            reports = sorted(path for path in (run_dir / self.marker).glob(f"*/{self.report_filename}") if path.is_file())
+            reports = self._reports_of(run_dir / self.marker)
             rows.append({
                 "#"       : index,
                 "Run"     : str(run_dir.relative_to(self.runs_dir)),
