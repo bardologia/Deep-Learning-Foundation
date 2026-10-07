@@ -121,7 +121,13 @@ class Tracker:
         self._emit("add_figure", tag, figure, step, close=True)
 
     def log_histogram(self, tag, values, step=None, bins="auto") -> None:
-        """Logs a histogram of an array-like, ignoring writer-side binning failures.
+        """Logs a histogram of the finite values of an array-like, and scalars saying what was left out.
+
+        Non-finite values make the writer's automatic binning fail, which used
+        to drop the whole histogram silently, so they are removed first and
+        counted under ``diagnostics/<tag>_nonfinite``; an array with no finite
+        value logs ``diagnostics/<tag>_empty`` instead of a histogram. The two
+        charts appear only when something is wrong, which is the signal.
 
         Args:
             tag    : Tag suffix appended to the active scope.
@@ -129,11 +135,18 @@ class Tracker:
             step   : Step to log at; defaults to the tracker's global step.
             bins   : Binning strategy forwarded to the writer.
         """
-        v = np.asarray(values).ravel().astype(np.float32)
-        try:
-            self._emit("add_histogram", tag, v, step, bins=bins)
-        except (ValueError, RuntimeError):
-            pass
+        v       = np.asarray(values).ravel().astype(np.float32)
+        finite  = v[np.isfinite(v)]
+        dropped = v.size - finite.size
+
+        if dropped:
+            self._emit("add_scalar", f"diagnostics/{tag}_nonfinite", float(dropped), step)
+
+        if finite.size == 0:
+            self._emit("add_scalar", f"diagnostics/{tag}_empty", 1.0, step)
+            return
+
+        self._emit("add_histogram", tag, finite, step, bins=bins)
 
     def log_memory(self, step=None, device=None) -> None:
         """Logs peak CUDA allocated memory in GB, or does nothing without CUDA.

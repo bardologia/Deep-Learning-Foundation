@@ -154,6 +154,44 @@ def test_log_histogram_records_float32_array():
     assert bins == "auto"
 
 
+def test_log_histogram_drops_non_finite_values_and_counts_them():
+    """Verifies NaN and Inf entries leave the histogram and are counted under a diagnostics scalar at the same step."""
+    w = RecordingWriter()
+    t = Tracker(writer=w)
+    t.log_histogram("param_hist/mu", [1.0, np.nan, np.inf, 2.0, -np.inf], step=3)
+
+    tag, values, step, _bins = w.histograms[0]
+
+    assert tag == "param_hist/mu"
+    assert values.tolist() == [1.0, 2.0]
+    assert step == 3
+    assert ("diagnostics/param_hist/mu_nonfinite", 3.0, 3) in w.scalars
+
+
+def test_log_histogram_of_nothing_finite_logs_an_empty_marker_instead():
+    """Verifies an empty array, or one with no finite value, logs no histogram but a diagnostics/<tag>_empty scalar."""
+    w = RecordingWriter()
+    t = Tracker(writer=w)
+    t.log_histogram("grad", [], step=1)
+    t.log_histogram("grad", [np.nan, np.nan], step=2)
+
+    assert w.histograms == []
+    assert ("diagnostics/grad_empty", 1.0, 1) in w.scalars
+    assert ("diagnostics/grad_empty", 1.0, 2) in w.scalars
+    assert ("diagnostics/grad_nonfinite", 2.0, 2) in w.scalars
+    assert not any(tag == "diagnostics/grad_nonfinite" and step == 1 for tag, _value, step in w.scalars)
+
+
+def test_log_histogram_of_finite_values_logs_no_diagnostics():
+    """Verifies a healthy histogram leaves the diagnostics charts absent, so their appearance alone is the signal."""
+    w = RecordingWriter()
+    t = Tracker(writer=w)
+    t.log_histogram("weights", [0.5, 0.25], step=1)
+
+    assert len(w.histograms) == 1
+    assert w.scalars == []
+
+
 def test_log_figure_delegates_with_close():
     """Verifies figures are forwarded unchanged with the close flag set."""
     w = RecordingWriter()
