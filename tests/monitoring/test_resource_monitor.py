@@ -393,7 +393,7 @@ def test_run_survives_sample_exception(monkeypatch):
 
 
 def test_nvml_unavailable_path_has_no_gpu_handles(monkeypatch):
-    """Verifies a failed NVML init leaves no GPU handles and zeroed VRAM metrics."""
+    """Verifies a failed NVML init leaves no GPU handles and zeroed VRAM metrics, and keeps the failure."""
     def fail_init():
         raise RuntimeError("no nvml")
 
@@ -403,11 +403,57 @@ def test_nvml_unavailable_path_has_no_gpu_handles(monkeypatch):
 
     assert m._nvml_ok     is False
     assert m._gpu_handles == []
+    assert m._nvml_error  == "RuntimeError: no nvml"
 
     metrics = m.sample()
 
     assert metrics["vram_used_gb"] == 0.0
     assert metrics["vram_pct"]     == 0.0
+
+
+def test_nvml_failure_is_named_in_the_startup_table_and_warned_on_a_cuda_process(monkeypatch):
+    """Verifies the startup row carries the NVML error and the warning fires only when torch can see a CUDA device."""
+    def fail_init():
+        raise RuntimeError("driver/library version mismatch")
+
+    monkeypatch.setattr(rm.pynvml, "nvmlInit", fail_init)
+    monkeypatch.setattr(ResourceMonitor, "_cuda_available", staticmethod(lambda: False))
+
+    logger = CollectingLogger()
+    m      = ResourceMonitor(FakeConfig(), logger=logger)
+    m._log_startup_info()
+
+    assert logger.kv_tables[0]["NVML available"] == "False (RuntimeError: driver/library version mismatch)"
+    assert logger.warnings == []
+
+    monkeypatch.setattr(ResourceMonitor, "_cuda_available", staticmethod(lambda: True))
+    m._log_startup_info()
+
+    assert len(logger.warnings) == 1
+    assert "driver/library version mismatch" in logger.warnings[0]
+    assert "system/gpu*" in logger.warnings[0]
+
+
+def test_a_device_whose_queries_fail_is_warned_about_once(monkeypatch):
+    """Verifies a device dropping out of the NVML totals is named once, with the error, and not on every sample."""
+    def broken_memory(handle):
+        raise RuntimeError("GPU is lost")
+
+    monkeypatch.setattr(rm.pynvml, "nvmlInit", lambda: None)
+    monkeypatch.setattr(rm.pynvml, "nvmlDeviceGetCount", lambda: 1)
+    monkeypatch.setattr(rm.pynvml, "nvmlDeviceGetHandleByIndex", lambda index: f"handle{index}")
+    monkeypatch.setattr(rm.pynvml, "nvmlDeviceGetMemoryInfo", broken_memory)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    logger = CollectingLogger()
+    m      = ResourceMonitor(FakeConfig(), logger=logger)
+
+    m.sample()
+    m.sample()
+
+    assert len(logger.warnings) == 1
+    assert "gpu0" in logger.warnings[0] and "GPU is lost" in logger.warnings[0]
+    assert m._nvml_failed == {0}
 
 
 def test_handles_cover_only_the_visible_devices(monkeypatch):
