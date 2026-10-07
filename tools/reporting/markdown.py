@@ -80,7 +80,10 @@ class MarkdownTable:
         self.rows    = []
 
     def add_row(self, *cells: Any) -> "MarkdownTable":
-        """Appends one row, padding short rows and rendering None as the placeholder.
+        """Appends one row, padding short rows, rendering None as the placeholder and escaping pipes.
+
+        A literal pipe inside a cell would end the cell early and shift every later
+        column, so each one is written as an escaped pipe, which renders as "|".
 
         Args:
             *cells : Cell values in column order; missing trailing cells are padded.
@@ -89,7 +92,7 @@ class MarkdownTable:
             This table, for chaining.
         """
         padded = list(cells) + [None] * (len(self.columns) - len(cells))
-        self.rows.append([self.EMPTY if c is None else str(c) for c in padded])
+        self.rows.append([self.EMPTY if c is None else str(c).replace("|", "\\|") for c in padded])
         return self
 
     def is_empty(self) -> bool:
