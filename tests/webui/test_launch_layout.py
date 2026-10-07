@@ -409,6 +409,62 @@ def test_the_backbone_page_carries_an_arch_panel_reading_the_backbone_field():
     assert panels == [{"kind": "special", "panel": "arch_overrides", "fields": ["model_overrides"], "modelFrom": "backbone_name"}]
 
 
+def _arch_panels(key, flow_config) -> list:
+    """Returns the architecture override panels of one built page, in layout order."""
+    leaves = [{"path": path} for path, _value in ConfigCli._leaves(flow_config())]
+    layout = LaunchLayout().build(key, leaves)
+    return [panel for section in layout["sections"] for panel in section["panels"] if panel.get("panel") == "arch_overrides"]
+
+
+def test_the_cross_validation_page_switches_its_arch_panel_on_the_training_type():
+    """The cross-validation model overrides follow the training type, reading the backbone, JEPA or autoencoder model field."""
+    panels   = _arch_panels("cross_validate", CrossValidationConfig)
+    by_field = {panel["fields"][0]: panel for panel in panels}
+
+    switch = by_field["model_overrides"]["modelBy"]
+    assert switch["field"] == "training_type"
+    assert switch["models"] == {"backbone": "backbone_name", "jepa": "backbone_name", "profile_autoencoder": "autoencoder.ae_model_name", "image_autoencoder": "image_autoencoder.ae_model_name"}
+    assert "modelFrom" not in by_field["model_overrides"]
+
+    assert by_field["dual.params_overrides"]["modelFrom"]    == "dual.params_backbone"
+    assert by_field["dual.existence_overrides"]["modelFrom"] == "dual.existence_backbone"
+    assert by_field["dual.params_overrides"]["exclude"] == LaunchLayout.DUAL_TRUNK_EXCLUDE
+
+
+def test_the_jepa_page_carries_an_arch_panel_reading_the_backbone_field():
+    """The JEPA page exposes its model overrides through the architecture panel of the backbone."""
+    panels = _arch_panels("train_jepa", JepaEntryConfig)
+
+    assert panels == [{"kind": "special", "panel": "arch_overrides", "fields": ["model_overrides"], "modelFrom": "backbone_name"}]
+
+
+def test_an_arch_panel_switching_on_an_unknown_field_is_rejected():
+    """A model switch naming a field or a model path that does not exist fails validation."""
+    engine = LaunchLayout()
+    leaves = [{"path": path} for path, _value in ConfigCli._leaves(CrossValidationConfig())]
+
+    for broken in ({"field": "no_such_field", "models": {"backbone": "backbone_name"}}, {"field": "training_type", "models": {"backbone": "no_such_model"}}):
+        layout = engine._expand("cross_validate")
+        panel  = next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("fields") == ["model_overrides"])
+        panel["modelBy"] = broken
+
+        with pytest.raises(LayoutError):
+            engine._validate("cross_validate", layout, leaves)
+
+
+def test_an_arch_panel_with_both_model_sources_is_rejected():
+    """A panel declaring both a fixed model field and a switch fails validation."""
+    engine = LaunchLayout()
+    layout = engine._expand("cross_validate")
+    leaves = [{"path": path} for path, _value in ConfigCli._leaves(CrossValidationConfig())]
+
+    panel = next(panel for section in layout["sections"] for panel in section["panels"] if panel.get("fields") == ["model_overrides"])
+    panel["modelFrom"] = "backbone_name"
+
+    with pytest.raises(LayoutError):
+        engine._validate("cross_validate", layout, leaves)
+
+
 def test_the_dual_page_carries_one_arch_panel_per_trunk():
     """The dual page exposes a titled architecture panel per trunk, each with its own override field, model field and exclusion list."""
     leaves = [{"path": path} for path, _value in ConfigCli._leaves(DualEntryConfig())]

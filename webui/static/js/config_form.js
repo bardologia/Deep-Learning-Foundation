@@ -243,9 +243,10 @@ class ConfigForm {
     }
 
     if (panel.panel === "arch_overrides") {
-      const leaf      = this.byPath.get(panel.fields[0]);
-      const modelLeaf = panel.modelFrom ? this.byPath.get(panel.modelFrom) : null;
-      if (!leaf || !modelLeaf || !this.modelFamilies || !this.modelFamilies.length) return this._buildPathsPanel(panel.title || "Architecture overrides", panel.fields);
+      const leaf       = this.byPath.get(panel.fields[0]);
+      const modelLeaf  = panel.modelFrom ? this.byPath.get(panel.modelFrom) : null;
+      const switchLeaf = panel.modelBy ? this.byPath.get(panel.modelBy.field) : null;
+      if (!leaf || !(modelLeaf || switchLeaf) || !this.modelFamilies || !this.modelFamilies.length) return this._buildPathsPanel(panel.title || "Architecture overrides", panel.fields);
       return new window.ArchOverridesPanel(this, leaf, modelLeaf, panel).build();
     }
 

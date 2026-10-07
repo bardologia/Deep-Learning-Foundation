@@ -114,6 +114,10 @@ contract and never writes to a config file.
   training form is a picker fed by `/api/fs/secondaries`, which reads the selected
   dataset's channel labels from its `data/dataset.json`; the standard channels of the
   training paths default are flagged and a Standard button restores them.
+  An `arch_overrides` panel reads its model field either from one path (`modelFrom`) or
+  from a switch (`modelBy`: a field plus a value-to-field mapping), which is how the
+  cross-validation form shows the architecture fields of the backbone, JEPA trunk or
+  autoencoder its training type selects; a type without a mapping edits the raw dict.
 - **Overrides.** Edited fields are appended to the command as `--<dotted.path> <value>`,
   which `ConfigCli` coerces to the field's type. The command preview always shows exactly
   what will run.
