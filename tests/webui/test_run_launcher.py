@@ -107,11 +107,12 @@ class StubTensorboard:
 
 
 class StubProcesses:
-    """Process manager stand-in recording launch and enqueue calls.
+    """Process manager stand-in recording launch, enqueue and finalize-attach calls.
 
     Attributes:
         launched : Argument tuples passed to launch.
         queued   : Argument tuples passed to enqueue.
+        attached : (job id, finalize flags) pairs passed to attach_finalize.
         ok       : Whether the calls report success.
         units    : Fan-out unit records served by progress, or None for no snapshot.
         jobs     : Job records keyed by job id, read by the finalize-chain walker.
@@ -122,6 +123,7 @@ class StubProcesses:
         """Starts with empty launch and queue logs and the units to serve."""
         self.launched = []
         self.queued   = []
+        self.attached = []
         self.ok       = ok
         self.units    = units
         self.jobs     = {}
@@ -148,6 +150,10 @@ class StubProcesses:
         with self.lock:
             self.jobs[job_id] = {"status": "queued"}
         return {"ok": self.ok, "job_id": job_id, "queued": True}
+
+    def attach_finalize(self, job_id: str, flags: dict) -> None:
+        """Records the finalize flags stored on a job."""
+        self.attached.append((job_id, flags))
 
     def finish(self, job_id: str, status: str = "finished") -> None:
         """Moves one job to a terminal status."""
@@ -295,6 +301,28 @@ def test_a_launch_with_finalize_switches_registers_its_chain(monkeypatch):
     assert pending[0]["job_id"]    == result["job_id"]
     assert pending[0]["steps"]     == ["compare_trials"]
     assert pending[0]["experiment_dir"] == "/data/runs/curriculum"
+    assert processes.attached == [(result["job_id"], FinalizeChain.flags({"compare_trials": True}))]
+
+
+def test_a_launch_without_switches_stores_all_finalize_flags_off():
+    """Every launch stores a full set of finalize flags on its job, all off when none were sent."""
+    processes = StubProcesses()
+    launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
+
+    result = launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, True)
+
+    assert processes.attached == [(result["job_id"], FinalizeChain.flags(None))]
+    assert not any(processes.attached[0][1].values())
+
+
+def test_a_refused_launch_stores_no_finalize_flags():
+    """A launch the process manager refuses attaches nothing."""
+    processes = StubProcesses(ok=False)
+    launcher  = _launcher(StubResolver({"logdir": "/data/runs"}), processes)
+
+    launcher.execute("train_backbone", "/envs/Dune/bin/python", {}, None, False, False)
+
+    assert processes.attached == []
 
 
 def test_a_launch_whose_chain_cannot_run_is_refused_before_it_starts():

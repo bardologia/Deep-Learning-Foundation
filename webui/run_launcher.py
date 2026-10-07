@@ -12,7 +12,7 @@ import threading
 from datetime import datetime
 from pathlib  import Path
 
-from finalize_chain         import RunFinalizer
+from finalize_chain         import FinalizeChain, RunFinalizer
 from process_manager        import ProcessManager
 from project_paths          import ProjectPaths
 from script_config_resolver import ScriptConfigResolver
@@ -264,9 +264,11 @@ class RunLauncher:
     def execute(self, key: str, interpreter: str, overrides: dict, follow_up: str | None, detach: bool, queue: bool, finalize: dict | None = None) -> dict:
         """Launches or queues an entry point, starts TensorBoard for training runs and registers its finalize chain.
 
-        The chain is derived before the run starts, so a launch whose entry
-        writes no sweep the chain can compare, or which mails without the SMTP
-        password on the server, is refused instead of failing hours later.
+        The finalize switches are stored on the job record, so the console can
+        retry the job with them. The chain is derived before the run starts, so
+        a launch whose entry writes no sweep the chain can compare, or which
+        mails without the SMTP password on the server, is refused instead of
+        failing hours later.
 
         Args:
             key         : Entry-point key to run.
@@ -296,6 +298,8 @@ class RunLauncher:
 
         if not result.get("ok"):
             return result
+
+        self.processes.attach_finalize(result["job_id"], FinalizeChain.flags(finalize))
 
         if plan is not None:
             self.finalizer.watch(result["job_id"], plan)

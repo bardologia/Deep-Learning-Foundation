@@ -138,6 +138,7 @@ class App {
     window.scriptPanel = this.scriptPanel;
 
     this.launchView = new window.LaunchView(this.runConsole, this.project || {});
+    this.runConsole.launchView = this.launchView;
 
     this.ablationView = new window.AblationView(this.runConsole, this.project || {});
 

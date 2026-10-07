@@ -221,6 +221,17 @@ def test_queue_respects_follow_up_chain(manager, tmp_path):
     assert (tmp_path / "argv.txt").exists()
 
 
+def test_the_stored_request_keeps_the_follow_up_key_unless_detached(manager):
+    """The retry request remembers the follow-up script of an attached launch and drops it for a detached one."""
+    attached = manager.enqueue("sleep_ok", sys.executable, follow_up="args_dump")
+    detached = manager.enqueue("sleep_ok", sys.executable, follow_up="args_dump", detach=True)
+
+    assert job_record(manager, attached["job_id"])["request"]["follow_up"] == "args_dump"
+    assert job_record(manager, detached["job_id"])["request"]["follow_up"] is None
+
+    manager.stop_all()
+
+
 def test_resolve_follow_up_leaves_a_cancelled_follow_up_alone(manager):
     """A follow-up cancelled between the parent's exit and its resolution never starts."""
     parent    = manager.launch("sleep_long", sys.executable, follow_up="args_dump")
