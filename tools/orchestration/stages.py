@@ -178,6 +178,47 @@ class QueuedStage(ExperimentStage):
         """Returns the dataset splits whose inference completion the status report lists."""
         return [self.config.inference.split]
 
+    def _dispatch(self, items: list[str]) -> list[dict]:
+        """Runs the given units on the GPU queue and returns their results, marked as run by this launch."""
+        if not items:
+            return []
+
+        return [{**result, "reused": False} for result in self._run_queue([self._job(item) for item in items])]
+
+    def _reused(self, items: list[str], synthetic: Callable[[str], dict]) -> list[dict]:
+        """Returns the results of reused units, keeping the device, duration and return code an earlier launch recorded.
+
+        A reused unit is not run again, so its stand-in result knows neither
+        where nor how long it ran; the results file the earlier launch wrote
+        does, and is read before this launch replaces it.
+
+        Args:
+            items     : Names of the reused units.
+            synthetic : Builds the stand-in result of one unit.
+
+        Returns:
+            One result per unit, marked reused.
+        """
+        if not items:
+            return []
+
+        earlier = {result["name"]: result for result in FileIO.load_json(self.results_path)} if self.results_path.is_file() else {}
+        results = []
+        carried = 0
+
+        for item in items:
+            result = {**synthetic(item), "reused": True}
+            if item in earlier and earlier[item]["status"] == "DONE":
+                result["gpu"]        = earlier[item]["gpu"]
+                result["duration_s"] = earlier[item]["duration_s"]
+                result["returncode"] = earlier[item]["returncode"]
+                carried             += 1
+            results.append(result)
+
+        self.logger.info(f"{carried} of {len(items)} reused unit(s) keep the GPU and duration recorded in {self.results_path}; {len(items) - carried} have none on record")
+
+        return results
+
     def _inference_base(self, directory: Path) -> Path:
         """Returns the directory holding a unit's inference stamps."""
         return directory / "inference"
@@ -286,11 +327,9 @@ class QueuedTrainingStage(QueuedStage):
         for item in pending:
             self._purge_unfinished(item)
 
-        ran = []
-        if pending:
-            ran = self._run_queue([self._job(item) for item in pending])
-
-        results = self._order_results(ran + [self._cached_result(item) for item in cached], self.items)
+        reused  = self._reused(cached, self._cached_result)
+        ran     = self._dispatch(pending)
+        results = self._order_results(ran + reused, self.items)
 
         self._write_results(results, self.results_path)
         self._log_summary(results)
@@ -398,11 +437,9 @@ class QueuedInferenceStage(QueuedStage):
         for item in pending:
             self._purge_unfinished(item)
 
-        ran = []
-        if pending:
-            ran = self._run_queue([self._job(item) for item in pending])
-
-        results = ran + [self._static_result(item, "DONE") for item in cached] + [self._static_result(item, "SKIPPED") for item in skipped]
+        reused  = self._reused(cached, lambda item: self._static_result(item, "DONE"))
+        ran     = self._dispatch(pending)
+        results = ran + reused + [{**self._static_result(item, "SKIPPED"), "reused": False} for item in skipped]
         results = self._order_results(results, self.items)
 
         self._write_results(results, self.results_path)

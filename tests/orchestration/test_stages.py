@@ -137,6 +137,45 @@ def test_training_skips_completed_items_on_resume(tmp_path, logger):
     assert [r["name"] for r in results] == items
 
 
+def test_a_reused_training_unit_keeps_the_gpu_and_duration_of_its_earlier_launch(tmp_path, logger):
+    """Verifies resume carries the recorded device, duration and return code of a reused unit into the rewritten results, marked reused."""
+    items  = ["done_model", "todo_model"]
+    config = _config(tmp_path, resume=True)
+    stage  = QueuedTrainingStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=items, logger=logger)
+
+    _mark_complete(stage.stage_dir / "done_model")
+    stage.results_path.parent.mkdir(parents=True)
+    stage.results_path.write_text(json.dumps([{**_ran_result("done_model", gpu=1), "duration_s": 42.0}, _ran_result("todo_model", status="FAILED", returncode=1)]))
+    _patch_queue(stage, [])
+
+    stage.run()
+
+    saved = {result["name"]: result for result in json.loads(stage.results_path.read_text())}
+    assert saved["done_model"]["gpu"]        == 1
+    assert saved["done_model"]["duration_s"] == 42.0
+    assert saved["done_model"]["reused"]     is True
+    assert saved["todo_model"]["reused"]     is False
+    assert saved["todo_model"]["duration_s"] == 1.0
+
+
+def test_a_reused_inference_unit_keeps_its_recorded_duration(tmp_path, logger):
+    """Verifies the inference stage carries a reused unit's recorded duration as the training stage does."""
+    config = _config(tmp_path, resume=True)
+    stage  = QueuedInferenceStage(config=config, entry_script=Path("entry.py"), run_tag="t1", items=["model"], logger=logger)
+
+    _mark_complete(stage.stage_dir / "model")
+    _mark_inference_complete(stage.stage_dir / "model" / "inference" / "run0", "val")
+    stage.results_path.parent.mkdir(parents=True)
+    stage.results_path.write_text(json.dumps([{**_ran_result("model", gpu=1), "duration_s": 7.5}]))
+    _patch_queue(stage, [])
+
+    results = stage.run()
+
+    assert results[0]["duration_s"] == 7.5
+    assert results[0]["gpu"]        == 1
+    assert results[0]["reused"]     is True
+
+
 def test_status_report_warns_about_completed_units_retrained_with_resume_off(tmp_path):
     """Verifies that with resume off a completed unit is reported as retrained, not reused, and named in a warning."""
     from tools.orchestration.stages import UnitStatusReport
