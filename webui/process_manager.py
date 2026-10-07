@@ -1718,9 +1718,12 @@ class ServerDetacher:
     the logind session by moving the process into its own transient systemd user
     scope with lingering enabled, so session cleanup on logout cannot reap it.
     Once shielded, only SIGKILL or the console's shutdown route stop the server.
+    The shutdown route also force-kills every other console serving the same
+    repository root, so keep-alive servers left behind by earlier launches do
+    not accumulate.
 
     Attributes:
-        paths        : Project paths supplying the logs directory.
+        paths        : Project paths supplying the logs directory and the served root.
         logger       : Console logger, silenced once the server is detached.
         log_path     : File the server's output continues into after detaching.
         scope        : Transient systemd user scope now holding the process, empty until the escape succeeded.
@@ -1734,6 +1737,7 @@ class ServerDetacher:
     ESCAPE_TIMEOUT_S = 5.0
     LOG_NAME         = "webui_server.log"
     SCOPE_PREFIX     = "tomosar-webui"
+    SERVE_SCRIPT     = Path(__file__).resolve().with_name("serve.py")
     SHIELDED_SIGNALS = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM, signal.SIGQUIT)
 
     def __init__(self, paths: ProjectPaths, logger: WebLogger) -> None:
@@ -1768,6 +1772,76 @@ class ServerDetacher:
             if not self.applied.wait(self.APPLY_TIMEOUT_S):
                 return {"ok": False, "error": "detach was not applied by the main thread"}
         return {"ok": True, **self.state()}
+
+    def sibling_pids(self) -> list[int]:
+        """Returns the pids of every other console server of this user serving the same root.
+
+        A sibling is a process owned by this user whose command line runs the
+        console's serve.py on this server's repository root, given through
+        --root or implied by its absence. Consoles on other roots, such as test
+        servers under temporary roots, are not siblings. A process that exits
+        while /proc is read is not one.
+        """
+        own  = os.getpid()
+        uid  = os.getuid()
+        pids = []
+
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit() or int(entry) == own:
+                continue
+
+            pid = int(entry)
+            try:
+                if os.stat(f"/proc/{pid}").st_uid != uid:
+                    continue
+                argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+            except OSError:
+                continue
+
+            if self._served_root(argv) == self.paths.repo_root:
+                pids.append(pid)
+
+        return sorted(pids)
+
+    def _served_root(self, argv: list[bytes]) -> Path | None:
+        """Returns the repository root a console command line serves, or None for any other process.
+
+        Args:
+            argv : Null-split /proc/<pid>/cmdline entries of the candidate process.
+        """
+        parts = [part.decode(errors="replace") for part in argv if part]
+        if not any(part.endswith("serve.py") and Path(part).resolve() == self.SERVE_SCRIPT for part in parts):
+            return None
+
+        for index, part in enumerate(parts):
+            if part == "--root" and index + 1 < len(parts):
+                return Path(parts[index + 1]).resolve()
+            if part.startswith("--root="):
+                return Path(part[len("--root="):]).resolve()
+
+        return self.SERVE_SCRIPT.parent.parent
+
+    def kill_siblings(self) -> list[int]:
+        """Force-kills every other console server on this root and returns the pids that received the signal.
+
+        SIGKILL is the one signal a detached sibling cannot shield, so the
+        siblings get no grace period. Their running jobs are their own session
+        leaders and survive, exactly as they do when this server exits. A
+        sibling that exited before the signal reached it is left out.
+        """
+        killed = []
+
+        for pid in self.sibling_pids():
+            try:
+                os.kill(pid, signal.SIGKILL)
+                killed.append(pid)
+            except ProcessLookupError:
+                continue
+
+        if killed:
+            self.logger.warning(f"kill front end: SIGKILL sent to {len(killed)} other console server(s) on this root, pids {', '.join(map(str, killed))}")
+
+        return killed
 
     def shutdown(self) -> None:
         """Wakes the main thread's wait loop and asks it to return so the server can exit."""
