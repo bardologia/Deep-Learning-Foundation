@@ -82,6 +82,7 @@ RESOLUTIONS = [
     ("GET",  "/api/gpu-activity",                  SystemRouter),
     ("GET",  "/api/host-history",                  SystemRouter),
     ("GET",  "/api/server-log",                    SystemRouter),
+    ("GET",  "/api/tensorboard/tree",              TensorboardRouter),
     ("POST", "/api/tensorboard/tb-1/stop",         TensorboardRouter),
 ]
 
