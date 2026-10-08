@@ -60,8 +60,8 @@ class CrossValidationClusterScheduler(FoldUnitStage):
 
     @property
     def sweep_name(self) -> str:
-        """Name identifying the sweep on the cluster."""
-        return f"sweep_cross_validation_{self.config.training_type}"
+        """Name identifying the sweep on the cluster; the run tag keeps two concurrent runs from sharing job names and bundle manifests."""
+        return f"sweep_cross_validation_{self.config.training_type}_{self.run_tag}"
 
     @property
     def entry_flags(self) -> tuple:
