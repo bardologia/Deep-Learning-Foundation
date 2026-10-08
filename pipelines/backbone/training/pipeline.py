@@ -176,11 +176,13 @@ class TrainingPipeline:
         params      = f"{n_trainable:,} trainable" if n_total == n_trainable else f"{n_trainable:,} trainable ({n_total:,} total, {n_total - n_trainable:,} frozen)"
 
         self.logger.section("[Model Built]")
-        self.logger.subsection(f"Architecture : {self._architecture_label()}")
-        self.logger.subsection(f"Head         : {model_cfg.head}")
-        self.logger.subsection(f"In Channels  : {in_channels}")
-        self.logger.subsection(f"Out Channels : {out_channels}")
-        self.logger.subsection(f"Parameters   : {params}")
+        self.logger.kv_table({
+            "Architecture" : self._architecture_label(),
+            "Head"         : model_cfg.head,
+            "In Channels"  : in_channels,
+            "Out Channels" : out_channels,
+            "Parameters"   : params,
+        })
         return model, model_cfg
 
     def _architecture_label(self) -> str:
@@ -310,6 +312,7 @@ class TrainingPipeline:
             n_gaussians      = n_gaussians,
             seed             = self.seed,
         )
+        self.logger.ok(f"Run metadata saved : {self.run_metadata.run_directory}")
 
         try:
             self._run_overfit_check(train_dataset, in_channels, out_channels, z_axis)
