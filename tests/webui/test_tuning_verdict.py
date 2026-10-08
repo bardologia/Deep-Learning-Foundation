@@ -2,8 +2,9 @@
 
 Covers which blocks record one, the axes they may declare, how the tuning run
 directory follows from the launch's run tag and log base, how the best
-configuration is read, and how its parameters split over the model_overrides
-and training.batch_size axes.
+configuration is read, how its parameters split over the model_overrides
+and training.batch_size axes, and that its batch parameter and progress file
+names match the ones the tuners write.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from pathlib import Path
 import pytest
 
 from sequence_decisions import TuningVerdict
+
+from pipelines.tuning.tuners import SearchSpace, StudyProgress
 
 
 def _block(script: str, decisions: list) -> dict:
@@ -43,6 +46,16 @@ def test_the_axes_a_tuning_block_may_declare_are_model_overrides_and_the_batch_s
 
     with pytest.raises(ValueError, match="training.epochs"):
         verdict.axes(_block("tune", [_axis("model_overrides"), _axis("training.epochs")]))
+
+
+def test_the_batch_parameter_name_matches_the_search_space():
+    """The verdict splits the batch size off under the name the search space samples it by."""
+    assert TuningVerdict.BATCH_PARAM == SearchSpace.BATCH
+
+
+def test_the_progress_file_name_matches_the_workers_snapshot():
+    """The runner reads the snapshot under the name the study progress callback writes."""
+    assert TuningVerdict.PROGRESS == StudyProgress.FILENAME
 
 
 def test_the_run_dir_follows_the_effective_run_tag_and_log_base():
