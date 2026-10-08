@@ -303,6 +303,9 @@ class InferencePipeline:
     def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict, logger: Logger) -> dict:
         """Computes the core metric dictionary, annotates it with run provenance and writes metrics.json.
 
+        Pixels with an empty GT profile are warned about, since they bias the headline
+        cosine and peak statistics.
+
         Args:
             cfg       : Inference configuration supplying the worker count.
             result    : Inference result carrying the cubes and per-pixel maps.
@@ -310,7 +313,7 @@ class InferencePipeline:
             run       : Loaded run supplying the split, regions and track metadata.
             meta      : Run metadata resolving the metrics path.
             indices   : Slice-index arrays keyed by axis.
-            logger    : Run logger handed to the metric calculator.
+            logger    : Run logger handed to the metric calculator and receiving the empty-GT warning.
 
         Returns:
             The metric dictionary, also written to disk.
@@ -327,6 +330,9 @@ class InferencePipeline:
         )
 
         global_metrics["params_source"] = result.params_source
+
+        if global_metrics["n_pixels_gt_empty"]:
+            logger.warning(f"{global_metrics['n_pixels_gt_empty']} of {global_metrics['n_pixels']} pixels ({global_metrics['gt_empty_frac'] * 100.0:.2f}%) have an empty GT profile (every label Gaussian at zero amplitude); they score cosine 0 and a peak error measured from bin 0 inside the headline pixel_cosine_gt_* and pixel_peak_* statistics, which the pixel_*_nonempty statistics leave out")
 
         if result.extract_r2 is not None:
             finite = result.extract_r2[np.isfinite(result.extract_r2)]

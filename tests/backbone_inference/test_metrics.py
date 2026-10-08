@@ -9,12 +9,17 @@ and the switches that gate parameter-space and slot-organisation metrics.
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from pipelines.backbone.inference.metrics import BoundedProcessPool, Metrics, Result
-from tools.data.gaussians                 import GaussianActivity
+from configuration.inference                         import InferenceConfig
+from pipelines.backbone.inference.metrics            import BoundedProcessPool, Metrics, Result
+from pipelines.backbone.inference.pipeline           import InferencePipeline
+from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
+from tools.data.gaussians                            import GaussianActivity
+from tools.data.regions                              import CropRegion
 
 from tests.conftest import RecordingLogger, SilentLogger
 
@@ -730,6 +735,53 @@ def test_slice_ssim_counts_and_warns_about_non_finite_slices():
     assert out["ssim_gt_z_n_nonfinite"]   == 0
     assert out["ssim_gt_z_n_scored"]      == N_Z
     assert [msg for level, msg in logger.messages if level == "warning"] == [f"SSIM (gt) col: 2 of {pred.shape[2]} slices scored non-finite (degenerate slice, such as a constant reference) and are excluded from ssim_gt_col_mean"]
+
+
+def test_gt_empty_pixels_are_counted_and_left_out_of_the_nonempty_statistics():
+    """Pixels with an all-zero GT profile are counted, keep the headline cosine at 0, and are excluded from the _nonempty statistics."""
+    rng  = np.random.default_rng(7)
+    gt   = rng.uniform(0.5, 2.0, size=(N_Z, 4, 5)).astype(np.float32)
+    pred = gt.copy()
+
+    gt[:, 0, :2] = 0.0
+
+    stats = Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())._gt_empty_stats()
+
+    assert stats["n_pixels_gt_empty"]                     == 2
+    assert stats["gt_empty_frac"]                         == pytest.approx(2 / 20)
+    assert stats["pixel_cosine_gt_nonempty_min"]          == pytest.approx(1.0, abs=1e-5)
+    assert stats["pixel_peak_idx_d_gt_nonempty_max"]      == 0.0
+    assert stats["pixel_peak_err_units_mean_gt_nonempty"] == 0.0
+
+
+def test_metrics_stage_warns_about_gt_empty_pixels(tmp_path, monkeypatch):
+    """The pipeline's metric stage warns with the empty-GT count and the headline statistics it biases, and stays quiet without empty pixels."""
+    config = InferenceConfig(run_directory=tmp_path, output_subdir="metrics", device="cpu", cpu_workers=1)
+    meta   = InferenceMetadata(config)
+    meta.create_dirs()
+
+    run    = SimpleNamespace(n_gaussians=N_GAUSSIANS, activity_threshold=1e-4, split_name="test", split_region=CropRegion(0, 4, 0, 5), core_region=None, checkpoint_meta={"epoch": 3, "best_epoch": 3, "best_val_loss": 0.1})
+    result = SimpleNamespace(params_pred=None, params_gt=None, params_source="model", extract_r2=None, extract_floor=None)
+
+    for n_empty, expected in ((3, 1), (0, 0)):
+        monkeypatch.setattr(Metrics, "compute", lambda self, **kwargs: {"n_pixels": 20, "n_pixels_gt_empty": n_empty, "gt_empty_frac": n_empty / 20})
+        logger = RecordingLogger()
+
+        InferencePipeline(config)._evaluate_metrics(config, result, _x_axis(), run, meta, {"all_z_idx": None, "all_col_idx": None, "all_row_idx": None}, logger)
+
+        warnings = [msg for level, msg in logger.messages if level == "warning"]
+
+        assert len(warnings) == expected
+        if expected:
+            assert warnings[0].startswith("3 of 20 pixels (15.00%) have an empty GT profile")
+
+
+def test_gt_empty_split_raises():
+    """A split whose every GT profile is empty has nothing to score and raises."""
+    gt = np.zeros((N_Z, 3, 3), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="empty ground-truth profile"):
+        Metrics(_make_result(gt + 1.0, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())._gt_empty_stats()
 
 
 def test_label_quality_shape_mismatch_raises():

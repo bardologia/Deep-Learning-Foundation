@@ -46,7 +46,7 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, para
     assert metrics["split"]              == "test"
     assert metrics["activity_threshold"] == float(param_extraction_meta["activity_threshold"])
 
-    for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_z_mean", "active_frac_gt", "matched_recall"):
+    for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_z_mean", "active_frac_gt", "matched_recall", "pixel_cosine_gt_nonempty_mean", "gt_empty_frac"):
         assert np.isfinite(metrics[key]), key
 
     cubes = output_dir / "cubes"

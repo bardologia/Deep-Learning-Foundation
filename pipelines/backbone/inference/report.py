@@ -105,7 +105,7 @@ class Report:
     _DATASET_KEYS = frozenset({
         "gt_mean", "gt_std", "gt_max",
         "pred_mean", "pred_std", "pred_max",
-        "n_pixels", "n_z",
+        "n_pixels", "n_z", "n_pixels_gt_empty", "gt_empty_frac",
         "x_axis_min", "x_axis_max", "x_axis_step",
     })
 
