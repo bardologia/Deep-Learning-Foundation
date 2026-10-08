@@ -463,6 +463,12 @@ cosine and peak errors (the `*_nonempty` statistics), the SSIM means record how 
 slices they scored, and the normalization audit and the stratification tables record
 non-finite inputs and dropped bins.
 
+`--inference.compute_cube_ssim True` also scores the prediction against the raw cube with
+the same slice SSIM the headline runs against the labels, in raw intensity
+(`ssim_cube_*`) and unit area (`ssim_cube_norm_*`), and adds a report subsection. It is
+off by default because it runs two more full sweeps; the benchmark's inference block has
+the switch too.
+
 `scripts/export_slice_ssim.py <metrics.json>...` saves the per-slice SSIM of a stamp as
 `ssim_gt_col.npy` and `ssim_gt_row.npy` beside each file, in slice order with
 non-finite slices kept as NaN.
