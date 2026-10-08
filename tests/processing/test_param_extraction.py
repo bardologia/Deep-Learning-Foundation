@@ -276,6 +276,69 @@ def test_stage_save_replaces_an_existing_run_only_when_overwriting(tmp_path, mon
     assert any("adam_steps 3000 -> 500" in message for message in warnings)
 
 
+def test_pipeline_run_records_an_abort_in_the_group_log(tmp_path, monkeypatch):
+    """Verifies a failing extraction ends the group log with the error, the saved count and an ABORTED banner."""
+    from pipelines.processing.param_extraction import pipeline as pipeline_module
+
+    class _FailingExtractor:
+        """Extractor stand-in whose fit raises."""
+
+        def __init__(self, **kwargs):
+            """Ignores the fitter configuration."""
+            pass
+
+        def run(self, cube_path, z_range):
+            """Raises in place of fitting."""
+            raise RuntimeError("kernel blew up [/tmp/x]")
+
+    _dataset_stub(tmp_path)
+    monkeypatch.setattr(pipeline_module, "ParameterExtractor", _FailingExtractor)
+
+    entry = ExtractParamsEntryConfig(fit_k_values=[3], fit_lambda_values=[1e-2], fit_modes=["sigma"])
+    group = ExtractionPlanResolver(entry, [tmp_path]).resolve()[0]
+
+    with pytest.raises(RuntimeError, match="kernel blew up"):
+        pipeline_module.ParamExtractionPipeline(group).run()
+
+    log_text = (tmp_path / "params" / "logs" / "param_extraction_k3.log").read_text(encoding="utf-8")
+
+    assert "[Group Aborted]" in log_text
+    assert "0 of 1 permutations saved" in log_text
+    assert "RuntimeError: kernel blew up [/tmp/x]" in log_text
+    assert ">>> ABORTED param_extraction_k3" in log_text
+    assert ">>> END" not in log_text
+
+
+def test_inference_session_records_an_abort_in_the_run_log(tmp_path, monkeypatch):
+    """Verifies a failing inference stage ends the run's own log with the error and an ABORTED banner."""
+    from pipelines.processing.param_extraction import inference as inference_module
+
+    class _FailingPipeline:
+        """Inference pipeline stand-in whose run raises."""
+
+        def __init__(self, run_dir, logger, **kwargs):
+            """Ignores the run directory and settings."""
+            pass
+
+        def run(self):
+            """Raises in place of scoring the run."""
+            raise ValueError("metrics stage failed")
+
+    monkeypatch.setattr(inference_module, "ParamRunInferencePipeline", _FailingPipeline)
+
+    run_dir = tmp_path / "params" / "params_run"
+    run_dir.mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="metrics stage failed"):
+        inference_module.ParamInferenceSession(run_dir, True).execute()
+
+    log_text = (run_dir / "logs" / "param_extraction_inference.log").read_text(encoding="utf-8")
+
+    assert "ValueError: metrics stage failed" in log_text
+    assert ">>> ABORTED param_extraction_inference" in log_text
+    assert ">>> END" not in log_text
+
+
 def test_sigma_guess_matches_the_initialiser_sigmas():
     """Verifies the standalone sigma guess equals the sigmas the peak initialiser emits and stays below the height step."""
     from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
