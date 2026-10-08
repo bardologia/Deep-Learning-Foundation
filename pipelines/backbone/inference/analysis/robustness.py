@@ -458,10 +458,13 @@ class RobustnessRun(AnalysisRun):
             f"The noise tolerance is the interpolated sigma at which the loss doubles: σ {'≥' if tolerance['censored'] else '='} {tolerance['sigma']:.2f}."
         )
 
+        extremes   = [results["gain"][0], results["gain"][-1]] if len(results["gain"]) > 1 else results["gain"]
+        gain_label = "Gain " + " / ".join(f"{row['gain']:g}" for row in extremes) + " MSE"
+
         doc.kv_table({
-            "Clean curve MSE"     : f"{clean:.4g}",
-            "Noise tolerance σ"   : f"{'≥ ' if tolerance['censored'] else ''}{tolerance['sigma']:.2f}",
-            "Gain 0.5 / 2.0 MSE"  : " / ".join(f"{row['mse']:.4g}" for row in results["gain"] if row["gain"] in (0.5, 2.0)),
+            "Clean curve MSE"   : f"{clean:.4g}",
+            "Noise tolerance σ" : f"{'≥ ' if tolerance['censored'] else ''}{tolerance['sigma']:.2f}",
+            gain_label          : " / ".join(f"{row['mse']:.4g}" for row in extremes),
         })
 
         doc.heading("Input noise", level=2)
