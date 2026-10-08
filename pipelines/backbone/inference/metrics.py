@@ -425,24 +425,27 @@ class Metrics:
         """Computes SSIM for every requested slice of both cubes, in parallel over a process pool.
 
         Args:
-            pred          : Predicted cube of shape (n_z, row, col).
-            ref           : Reference cube of the same shape.
-            z_indices  : Z indices to score, or None to skip that axis.
-            col_indices : Range indices to score, or None to skip that axis.
-            row_indices    : Row indices to score, or None to skip that axis.
-            prefix        : Tag naming the reference variant, embedded in every metric key.
+            pred        : Predicted cube of shape (n_z, rows, cols).
+            ref         : Reference cube of the same shape.
+            z_indices   : Z indices to score, or None to skip that axis.
+            col_indices : Column indices to score, or None to skip that axis.
+            row_indices : Row indices to score, or None to skip that axis.
+            prefix      : Tag naming the reference variant, embedded in every metric key.
 
         Returns:
-            Scalar metrics keyed "ssim_<prefix>_<axis>_<i>" per slice plus a
-            "ssim_<prefix>_<axis>_mean" over the finite values of each axis.
+            Scalar metrics keyed "ssim_<prefix>_<axis>_<i>" per slice, plus per axis
+            "ssim_<prefix>_<axis>_mean" over the finite values, the number of slices that
+            mean covers as "ssim_<prefix>_<axis>_n_scored" and the number left out as
+            non-finite as "ssim_<prefix>_<axis>_n_nonfinite". Every axis that left slices
+            out is warned about on the run logger.
         """
 
         out   : Dict[str, float]                = {}
         specs : list[tuple[str, str, int, int]] = []
 
-        self._enqueue_specs(specs, prefix, z_indices,  axis=0, label="z")
+        self._enqueue_specs(specs, prefix, z_indices,   axis=0, label="z")
         self._enqueue_specs(specs, prefix, col_indices, axis=2, label="col")
-        self._enqueue_specs(specs, prefix, row_indices,    axis=1, label="row")
+        self._enqueue_specs(specs, prefix, row_indices, axis=1, label="row")
 
         if not specs:
             return out
@@ -452,9 +455,17 @@ class Metrics:
         for key, value in scored:
             out[key] = value
 
-        for label in {spec[1] for spec in specs}:
-            vals = [out[key] for key, lbl, _axis, _index in specs if lbl == label and np.isfinite(out[key])]
-            out[f"ssim_{prefix}_{label}_mean"] = float(np.mean(vals)) if vals else float("nan")
+        for label in sorted({spec[1] for spec in specs}):
+            values      = [out[key] for key, lbl, _axis, _index in specs if lbl == label]
+            finite      = [value for value in values if np.isfinite(value)]
+            n_nonfinite = len(values) - len(finite)
+
+            out[f"ssim_{prefix}_{label}_mean"]        = float(np.mean(finite)) if finite else float("nan")
+            out[f"ssim_{prefix}_{label}_n_scored"]    = len(finite)
+            out[f"ssim_{prefix}_{label}_n_nonfinite"] = n_nonfinite
+
+            if n_nonfinite:
+                self.logger.warning(f"SSIM ({prefix}) {label}: {n_nonfinite} of {len(values)} slices scored non-finite (degenerate slice, such as a constant reference) and are excluded from ssim_{prefix}_{label}_mean")
 
         return out
 

@@ -688,6 +688,50 @@ def test_label_quality_counts_pixels_with_a_constant_raw_profile():
     assert stats["label_r2_mean"] == pytest.approx(1.0, abs=1e-5)
 
 
+def _slice_cubes(seed: int = 0):
+    """Builds a prediction and unrelated labels large enough for a 7-pixel SSIM window on every slice.
+
+    Args:
+        seed : Seed of the random generator.
+
+    Returns:
+        Tuple of prediction and label cubes, each of shape (N_Z, 12, 10).
+    """
+    rng  = np.random.default_rng(seed)
+    pred = rng.uniform(0.5, 2.0, size=(N_Z, 12, 10)).astype(np.float32)
+    gt   = rng.uniform(0.5, 2.0, size=(N_Z, 12, 10)).astype(np.float32)
+
+    return pred, gt
+
+
+def _all_indices(cube: np.ndarray) -> dict:
+    """Returns every slice index of each axis of a cube, keyed as the pipeline passes them."""
+    n_z, n_rows, n_cols = cube.shape
+    return dict(z_indices=np.arange(n_z), col_indices=np.arange(n_cols), row_indices=np.arange(n_rows))
+
+
+def test_slice_ssim_counts_and_warns_about_non_finite_slices():
+    """Slices whose reference and prediction are both constant score NaN, are counted per axis, left out of the mean and warned about."""
+    pred, gt = _slice_cubes(seed=3)
+
+    pred[:, :, :2] = 0.0
+    gt[:, :, :2]   = 0.0
+
+    logger  = RecordingLogger()
+    metrics = Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=logger)
+
+    out = metrics._slice_ssim(pred, gt, prefix="gt", **_all_indices(pred))
+
+    finite = [out[f"ssim_gt_col_{i}"] for i in range(2, pred.shape[2])]
+
+    assert out["ssim_gt_col_n_nonfinite"] == 2
+    assert out["ssim_gt_col_n_scored"]    == pred.shape[2] - 2
+    assert out["ssim_gt_col_mean"]        == pytest.approx(float(np.mean(finite)))
+    assert out["ssim_gt_z_n_nonfinite"]   == 0
+    assert out["ssim_gt_z_n_scored"]      == N_Z
+    assert [msg for level, msg in logger.messages if level == "warning"] == [f"SSIM (gt) col: 2 of {pred.shape[2]} slices scored non-finite (degenerate slice, such as a constant reference) and are excluded from ssim_gt_col_mean"]
+
+
 def test_label_quality_shape_mismatch_raises():
     """A raw cube whose spatial shape differs from the labels raises ValueError."""
     curves = np.ones((N_Z, 4, 3), dtype=np.float32)
