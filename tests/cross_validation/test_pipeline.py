@@ -130,10 +130,17 @@ def test_pipeline_training_partial_when_a_fold_failed(tmp_path, test_data_dir, m
     install_fake_stages(monkeypatch, [], training_results=failed)
 
     pipeline = CrossValidationPipeline(pipeline_config(tmp_path, test_data_dir), entry_script=Path("e.py"))
-    pipeline.run()
+
+    with pytest.raises(SystemExit, match="Partial: 1 of 2 units failed"):
+        pipeline.run()
 
     state = json.loads(pipeline.state_path.read_text())
+    text  = (pipeline.pipeline_dir / "cross_validation_pipeline.log").read_text(encoding="utf-8")
+
     assert state["stages"]["training"]["status"] == "partial"
+    assert state["stages"]["reports"]["status"]  == "completed"
+    assert state["stages"]["pipeline"]["status"] == "partial"
+    assert "training failed: fold_1" in text
 
 
 @pytest.mark.dataset
@@ -143,10 +150,13 @@ def test_pipeline_inference_partial_when_failed(tmp_path, test_data_dir, monkeyp
     install_fake_stages(monkeypatch, [], inference_results=failed)
 
     pipeline = CrossValidationPipeline(pipeline_config(tmp_path, test_data_dir), entry_script=Path("e.py"))
-    pipeline.run()
+
+    with pytest.raises(SystemExit, match="Partial"):
+        pipeline.run()
 
     state = json.loads(pipeline.state_path.read_text())
     assert state["stages"]["inference"]["status"] == "partial"
+    assert state["stages"]["pipeline"]["status"]  == "partial"
 
 
 @pytest.mark.dataset
@@ -276,3 +286,34 @@ def test_pipeline_rejects_an_unsupported_inference_split(tmp_path, test_data_dir
 
     with pytest.raises(SystemExit, match="unknown inference split"):
         CrossValidationPipeline.validate_sweep(config)
+
+
+@pytest.mark.dataset
+def test_pipeline_abort_in_training_is_logged_and_marked_failed(tmp_path, test_data_dir, monkeypatch):
+    """A training stage that raises ends the run with the stage named in the log and marked failed in the state file."""
+    install_fake_stages(monkeypatch, [])
+
+    class FailingTraining:
+        """Training stage stub that dies while queueing."""
+        def __init__(self, **kwargs):
+            """Accepts the stage arguments."""
+            pass
+
+        def run(self):
+            """Raises as a GPU queue failure would."""
+            raise RuntimeError("no device left in the pool")
+
+    monkeypatch.setattr(pipeline_module, "FoldTrainingStage", FailingTraining, raising=True)
+
+    pipeline = CrossValidationPipeline(pipeline_config(tmp_path, test_data_dir), entry_script=Path("e.py"))
+
+    with pytest.raises(RuntimeError, match="no device left"):
+        pipeline.run()
+
+    state = json.loads(pipeline.state_path.read_text())
+    text  = (pipeline.pipeline_dir / "cross_validation_pipeline.log").read_text(encoding="utf-8")
+
+    assert state["stages"]["training"]["status"] == "failed"
+    assert state["stages"]["pipeline"]["status"] == "failed"
+    assert "Aborted in stage 'training' by RuntimeError: no device left in the pool" in text
+    assert ">>> ABORTED cross_validation_pipeline" in text

@@ -96,8 +96,8 @@ def _patch_stage_methods(pipeline, monkeypatch, order):
     """Replaces each pipeline stage method with a recorder appending its name to order."""
     monkeypatch.setattr(pipeline, "_run_size_match",  lambda: order.append("size_match") or {})
     monkeypatch.setattr(pipeline, "_run_max_batch",   lambda: order.append("max_batch") or {})
-    monkeypatch.setattr(pipeline, "_run_training",    lambda: order.append("training") or [{"status": "DONE"}])
-    monkeypatch.setattr(pipeline, "_run_inference",   lambda: order.append("inference") or [{"status": "DONE"}])
+    monkeypatch.setattr(pipeline, "_run_training",    lambda: order.append("training") or [{"name": "unet/seed0", "status": "DONE"}])
+    monkeypatch.setattr(pipeline, "_run_inference",   lambda: order.append("inference") or [{"name": "unet/seed0", "status": "DONE"}])
     monkeypatch.setattr(pipeline, "_run_comparison",  lambda: order.append("comparison") or (Path("/tmp/cmp")))
 
 
@@ -189,3 +189,129 @@ def test_unknown_stage_is_rejected(tmp_path):
 
     with pytest.raises(SystemExit, match="unknown benchmark stage"):
         pipeline.run()
+
+
+def test_an_exception_in_a_stage_is_logged_with_its_stage_and_marked_failed(tmp_path, monkeypatch):
+    """An exception escaping a stage is re-raised after the pipeline log names the stage and state.json marks it and the pipeline failed."""
+    pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
+
+    def failing_max_batch():
+        """Stands in for the probe stage and fails inside it."""
+        pipeline._begin_stage("max_batch")
+        raise RuntimeError("probe queue died")
+
+    monkeypatch.setattr(pipeline, "_run_size_match", lambda: {})
+    monkeypatch.setattr(pipeline, "_run_max_batch",  failing_max_batch)
+
+    with pytest.raises(RuntimeError, match="probe queue died"):
+        pipeline.run()
+
+    state = FileIO.load_json(pipeline.state_path)
+    text  = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
+
+    assert state["stages"]["max_batch"]["status"] == "failed"
+    assert state["stages"]["pipeline"]["status"]  == "failed"
+    assert "Aborted in stage 'max_batch' by RuntimeError: probe queue died" in text
+    assert ">>> ABORTED benchmark_pipeline" in text
+    assert ">>> END benchmark_pipeline" not in text
+
+
+def test_an_abort_overrides_the_completed_mark_of_an_earlier_launch(tmp_path, monkeypatch):
+    """A relaunch that fails no longer leaves the earlier launch's 'pipeline: completed' in the state file."""
+    earlier = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
+    earlier._mark_stage("pipeline", "completed")
+    earlier.logger.close()
+
+    pipeline = BenchmarkPipeline(_config(tmp_path, training_type="dual"), entry_script=ENTRY)
+
+    with pytest.raises(SystemExit, match="dual"):
+        pipeline.run()
+
+    state = FileIO.load_json(pipeline.state_path)
+
+    assert state["stages"]["validation"]["status"] == "failed"
+    assert state["stages"]["pipeline"]["status"]   == "failed"
+
+
+def test_a_clean_system_exit_is_not_recorded_as_an_abort(tmp_path, monkeypatch):
+    """A SystemExit with code zero ends the run with the END banner and leaves the stage state untouched."""
+    pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
+
+    def clean_exit():
+        """Ends the stage sequence deliberately."""
+        raise SystemExit(0)
+
+    monkeypatch.setattr(pipeline, "_execute", clean_exit)
+
+    with pytest.raises(SystemExit):
+        pipeline.run()
+
+    text = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
+
+    assert not pipeline.state_path.exists()
+    assert ">>> END benchmark_pipeline" in text
+    assert "Aborted" not in text
+
+
+def _unit_results(statuses: dict) -> list[dict]:
+    """Returns stage results named by unit with the given statuses."""
+    return [{"name": name, "status": status} for name, status in statuses.items()]
+
+
+def test_a_failed_training_unit_ends_the_run_as_partial_with_a_non_zero_exit(tmp_path, monkeypatch):
+    """A unit that failed training still gets the comparison written, then the run is marked partial, names the unit and exits non-zero with the END banner."""
+    pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
+
+    order = []
+    _patch_stage_methods(pipeline, monkeypatch, order)
+    monkeypatch.setattr(pipeline, "_run_training",  lambda: order.append("training") or _unit_results({"unet/seed0": "DONE", "unet/seed1": "FAILED", "resunet/seed0": "DONE"}))
+    monkeypatch.setattr(pipeline, "_run_inference", lambda: order.append("inference") or _unit_results({"unet/seed0": "DONE", "unet/seed1": "SKIPPED", "resunet/seed0": "DONE"}))
+
+    with pytest.raises(SystemExit, match="Partial: 1 of 3 units failed"):
+        pipeline.run()
+
+    state = FileIO.load_json(pipeline.state_path)
+    text  = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
+
+    assert order[-1] == "comparison"
+    assert state["stages"]["pipeline"]["status"] == "partial"
+    assert "training failed: unet/seed1" in text
+    assert "Partial: 1 of 3 units failed" in text
+    assert ">>> END benchmark_pipeline" in text
+    assert ">>> ABORTED" not in text
+
+
+def test_a_failed_inference_unit_counts_toward_the_partial_exit(tmp_path, monkeypatch):
+    """A unit whose training finished but whose inference failed makes the run partial as well."""
+    pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
+
+    order = []
+    _patch_stage_methods(pipeline, monkeypatch, order)
+    monkeypatch.setattr(pipeline, "_run_training",  lambda: _unit_results({"unet/seed0": "DONE", "unet/seed1": "DONE"}))
+    monkeypatch.setattr(pipeline, "_run_inference", lambda: _unit_results({"unet/seed0": "DONE", "unet/seed1": "FAILED"}))
+
+    with pytest.raises(SystemExit, match="Partial: 1 of 2 units failed"):
+        pipeline.run()
+
+    text = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
+
+    assert FileIO.load_json(pipeline.state_path)["stages"]["pipeline"]["status"] == "partial"
+    assert "inference failed: unet/seed1" in text
+
+
+def test_a_run_whose_units_all_finished_ends_as_done(tmp_path, monkeypatch):
+    """A run with every unit trained and inferred is marked completed and its summary counts the units, not the models."""
+    pipeline = BenchmarkPipeline(_config(tmp_path), entry_script=ENTRY)
+
+    order = []
+    _patch_stage_methods(pipeline, monkeypatch, order)
+    monkeypatch.setattr(pipeline, "_run_training",  lambda: _unit_results({"unet/seed0": "DONE", "unet/seed1": "DONE"}))
+    monkeypatch.setattr(pipeline, "_run_inference", lambda: _unit_results({"unet/seed0": "DONE", "unet/seed1": "DONE"}))
+
+    pipeline.run()
+
+    text = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
+
+    assert FileIO.load_json(pipeline.state_path)["stages"]["pipeline"]["status"] == "completed"
+    assert "Units planned     : 2" in text
+    assert "Training failed   : 0" in text

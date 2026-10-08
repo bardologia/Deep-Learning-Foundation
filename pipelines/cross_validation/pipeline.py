@@ -58,6 +58,7 @@ class CrossValidationPipeline(StagedPipeline):
 
     def _validate_sweep(self) -> None:
         """Validates this pipeline's own configuration."""
+        self._begin_stage("validation")
         self.validate_sweep(self.config)
 
     def _log_unit_status(self) -> None:
@@ -68,6 +69,8 @@ class CrossValidationPipeline(StagedPipeline):
         is launched. The stage itself warns about the run directories no unit
         claims while it reconciles.
         """
+        self._begin_stage("prepare")
+
         stage = FoldTrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, logger=self.logger)
 
         stage.status_report().log(self.logger, "Unit status")
@@ -78,6 +81,8 @@ class CrossValidationPipeline(StagedPipeline):
         Returns:
             One result dictionary per unit, each carrying a `status` key.
         """
+        self._begin_stage("training")
+
         stage   = FoldTrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, logger=self.logger)
         results = stage.run()
 
@@ -91,6 +96,8 @@ class CrossValidationPipeline(StagedPipeline):
         Returns:
             One result dictionary per unit, empty when inference is skipped.
         """
+        self._begin_stage("inference")
+
         if not self.config.runs_inference():
             self.logger.subsection("Inference skipped: inference_splits is empty; folds are compared on their training checkpoints alone")
             self._mark_stage("inference", "skipped")
@@ -112,77 +119,70 @@ class CrossValidationPipeline(StagedPipeline):
         Returns:
             Directory the reports were written to.
         """
+        self._begin_stage("reports")
+
         stage   = CrossValidationReportStage(config=self.config, run_tag=self.run_tag, planner=planner, logger=self.logger)
         out_dir = stage.run()
 
         self._mark_stage("reports", "completed")
         return out_dir
 
-    def run(self) -> None:
+    def _execute(self) -> None:
         """Runs the configured stage of the cross-validation experiment.
 
         The 'prepare' stage validates and logs the fold plan and the status
         of every unit on disk, 'compare' writes the reports from
         already-finished folds, and 'full' runs training, inference, and
         reporting in sequence.
+
+        Raises:
+            PartialRun : If a full run ends with failed units, after the reports are written.
         """
-        try:
-            self._validate_sweep()
+        self._validate_sweep()
 
-            planner = self.factory.planner()
+        planner = self.factory.planner()
 
-            self.logger.section("Cross-validation pipeline")
-            self.logger.kv_table({
-                "Run tag"          : self.run_tag,
-                "Training type"    : self.config.training_type,
-                "Model"            : FoldFamily.model_label(self.config),
-                "Folds"            : self.config.folds.n_folds,
-                "Row extent"       : f"[{self.config.folds.row_start}, {self.config.folds.row_end})",
-                "Inference splits" : ", ".join(self.config.inference_splits),
-                "GPUs"             : self.config.gpus,
-                "Resume"           : self.config.resume,
-                "Run dir"          : str(self.run_dir),
-            }, title="Configuration")
+        self.logger.section("Cross-validation pipeline")
+        self.logger.kv_table({
+            "Run tag"          : self.run_tag,
+            "Training type"    : self.config.training_type,
+            "Model"            : FoldFamily.model_label(self.config),
+            "Folds"            : self.config.folds.n_folds,
+            "Row extent"       : f"[{self.config.folds.row_start}, {self.config.folds.row_end})",
+            "Inference splits" : ", ".join(self.config.inference_splits),
+            "GPUs"             : self.config.gpus,
+            "Resume"           : self.config.resume,
+            "Run dir"          : str(self.run_dir),
+        }, title="Configuration")
 
-            self._log_launch()
+        self._log_launch()
 
-            if self.config.stage == "compare":
-                reports_dir = self._run_reports(planner)
-                self._mark_stage("pipeline", "completed")
-                self.logger.info(f"Report stage done: {reports_dir}")
-                return
-
-            self.logger.subsection("Fold plan")
-            rows = []
-            for plan in planner.plans():
-                train_regions = plan.split_regions.regions("train")
-                rows.append({
-                    "Fold"  : plan.fold_index,
-                    "Test"  : f"[{plan.split_regions.regions('test')[0].row_start}, {plan.split_regions.regions('test')[0].row_end})",
-                    "Val"   : f"[{plan.split_regions.regions('val')[0].row_start}, {plan.split_regions.regions('val')[0].row_end})",
-                    "Train" : ", ".join(f"[{r.row_start}, {r.row_end})" for r in train_regions),
-                })
-            self.logger.metrics_table(rows, ["Fold", "Test", "Val", "Train"])
-
-            if self.config.stage == "prepare":
-                self._log_unit_status()
-                self._mark_stage("prepare", "completed")
-                self.logger.info(f"Prepare stage done: fold plan validated, unit status listed and resolved config written to {self.pipeline_dir}")
-                return
-
-            training_results  = self._run_training()
-            inference_results = self._run_inference()
-            reports_dir       = self._run_reports(planner)
-
+        if self.config.stage == "compare":
+            reports_dir = self._run_reports(planner)
             self._mark_stage("pipeline", "completed")
+            self.logger.info(f"Report stage done: {reports_dir}")
+            return
 
-            self.logger.section("Pipeline summary")
-            self.logger.kv_table({
-                "Folds"         : self.config.folds.n_folds,
-                "Trained"       : sum(1 for r in training_results if r["status"] == "DONE"),
-                "Inferred"      : sum(1 for r in inference_results if r["status"] == "DONE"),
-                "Reports"       : str(reports_dir),
-                "Pipeline logs" : str(self.pipeline_dir),
-            }, title="Done")
-        finally:
-            self.logger.close()
+        self.logger.subsection("Fold plan")
+        rows = []
+        for plan in planner.plans():
+            train_regions = plan.split_regions.regions("train")
+            rows.append({
+                "Fold"  : plan.fold_index,
+                "Test"  : f"[{plan.split_regions.regions('test')[0].row_start}, {plan.split_regions.regions('test')[0].row_end})",
+                "Val"   : f"[{plan.split_regions.regions('val')[0].row_start}, {plan.split_regions.regions('val')[0].row_end})",
+                "Train" : ", ".join(f"[{r.row_start}, {r.row_end})" for r in train_regions),
+            })
+        self.logger.metrics_table(rows, ["Fold", "Test", "Val", "Train"])
+
+        if self.config.stage == "prepare":
+            self._log_unit_status()
+            self._mark_stage("prepare", "completed")
+            self.logger.info(f"Prepare stage done: fold plan validated, unit status listed and resolved config written to {self.pipeline_dir}")
+            return
+
+        training_results  = self._run_training()
+        inference_results = self._run_inference()
+        reports_dir       = self._run_reports(planner)
+
+        self._finish(training_results, inference_results, {"Folds": self.config.folds.n_folds, "Reports": str(reports_dir)})
