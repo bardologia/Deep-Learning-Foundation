@@ -172,6 +172,15 @@ def test_storage_and_paths_derived_from_tag(tmp_path):
     assert orch.storage_url.startswith("sqlite:///")
 
 
+def test_worker_argv_carries_the_worker_index(tmp_path):
+    """Each worker is told its index, which seeds its sampler apart from the others."""
+    orch = _orchestrator(tmp_path)
+    argv = orch.worker_argv("unet", "unet_testtag", 3, 2)
+
+    assert argv[argv.index("--worker-index") + 1] == "2"
+    assert argv[argv.index("--n-trials") + 1]     == "3"
+
+
 def test_load_or_create_study_is_minimize_and_idempotent(tmp_path):
     """Verifies that the study minimizes and is reused rather than duplicated."""
     orch  = _orchestrator(tmp_path)
@@ -382,7 +391,7 @@ def test_worker_rejects_unsupported_training_type(tmp_path):
     worker            = TuningWorker("testtag", cfg)
 
     with pytest.raises(ValueError, match="nonexistent_type"):
-        worker._build_tuner("gamma_net", cfg.tuning, StubLogger())
+        worker._build_tuner("unet", cfg.tuning, StubLogger(), 0)
 
 
 def test_image_ae_entry_template_forwards_normalization_and_augmentation(tmp_path):

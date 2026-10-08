@@ -2133,7 +2133,7 @@
       "fields": {
         "n_trials": "target number of completed trials per model's Optuna study, resumable across runs (existing completed/pruned trials count toward it)",
         "n_epochs": "training epochs evaluated per trial before scoring it, applied to both the training loop and its LR scheduler",
-        "base_seed": "base RNG seed: offset by GPU/worker id seeds the Optuna TPE sampler, offset by trial number seeds each trial's weight init and augmentation",
+        "base_seed": "base RNG seed: offset by the worker index seeds the Optuna TPE sampler, offset by trial number seeds each trial's weight init and augmentation",
         "early_stop_patience": "epochs without validation improvement before a trial's training is halted early",
         "pruner_n_startup_trials": "startup-trial count shared by optuna.pruners.MedianPruner (trials exempt from pruning) and the TPESampler (trials of random search before it switches to TPE)",
         "pruner_n_warmup_steps": "epochs within a trial before MedianPruner is allowed to prune that trial",

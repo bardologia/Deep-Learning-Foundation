@@ -31,18 +31,19 @@ def main() -> None:
     top; ``--resume`` with a run tag does the same for a run named by its tag.
 
     Raises:
-        SystemExit : If worker mode lacks ``--model``, ``--study-name``, ``--storage-url``, ``--n-trials``, ``--run-tag`` or ``--run-dir``, or if ``--resume`` is given without a run tag or with no resolved config at the expected path.
+        SystemExit : If worker mode lacks ``--model``, ``--study-name``, ``--storage-url``, ``--n-trials``, ``--worker-index``, ``--run-tag`` or ``--run-dir``, or if ``--resume`` is given without a run tag or with no resolved config at the expected path.
     """
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--worker",      action="store_true")
-    parser.add_argument("--resume",      action="store_true")
-    parser.add_argument("--model",       type=str,  default=None, help="(scheduler) tune only this model; (worker) model being tuned")
-    parser.add_argument("--gpu",         type=int,  default=0)
-    parser.add_argument("--n-trials",    type=int,  default=None)
-    parser.add_argument("--study-name",  type=str,  default=None)
-    parser.add_argument("--storage-url", type=str,  default=None)
-    parser.add_argument("--run-tag",     type=str,  default=None)
-    parser.add_argument("--run-dir",     type=str,  default=None)
+    parser.add_argument("--worker",       action="store_true")
+    parser.add_argument("--resume",       action="store_true")
+    parser.add_argument("--model",        type=str,  default=None, help="(scheduler) tune only this model; (worker) model being tuned")
+    parser.add_argument("--gpu",          type=int,  default=0)
+    parser.add_argument("--n-trials",     type=int,  default=None)
+    parser.add_argument("--worker-index", type=int,  default=None)
+    parser.add_argument("--study-name",   type=str,  default=None)
+    parser.add_argument("--storage-url",  type=str,  default=None)
+    parser.add_argument("--run-tag",      type=str,  default=None)
+    parser.add_argument("--run-dir",      type=str,  default=None)
     args, _ = parser.parse_known_args()
 
     if args.worker:
@@ -52,6 +53,8 @@ def main() -> None:
             sys.exit("ERROR: --worker requires --study-name and --storage-url")
         if args.n_trials is None:
             sys.exit("ERROR: --worker requires --n-trials")
+        if args.worker_index is None:
+            sys.exit("ERROR: --worker requires --worker-index")
         if args.run_tag is None or args.run_dir is None:
             sys.exit("ERROR: --worker requires --run-tag and --run-dir")
 
@@ -73,11 +76,12 @@ def main() -> None:
 
         worker = TuningWorker(tag=args.run_tag, config=config)
         worker.run_worker(
-            model_name  = args.model,
-            gpu_id      = args.gpu,
-            n_trials    = args.n_trials,
-            study_name  = args.study_name,
-            storage_url = args.storage_url,
+            model_name   = args.model,
+            gpu_id       = args.gpu,
+            worker_index = args.worker_index,
+            n_trials     = args.n_trials,
+            study_name   = args.study_name,
+            storage_url  = args.storage_url,
         )
 
     else:

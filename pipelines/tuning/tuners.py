@@ -739,6 +739,7 @@ class Tuner:
         log_dir             : Directory holding the trial runs and the best configuration.
         logger              : Logger of the tuning worker.
         emit_trial_docs     : Whether trial runs write documentation artifacts.
+        worker_index        : Index of the worker running this tuner, stamped on every trial as the ``worker`` user attribute so a study's trials can be traced to the worker that ran them.
         backbone_name       : Backbone part of the model key.
         head                : Head part of the model key.
         sampler             : Sampler drawing the trial parameters.
@@ -758,6 +759,7 @@ class Tuner:
         log_dir             : str,
         logger,
         emit_trial_docs     : bool = False,
+        worker_index        : int  = 0,
     ) -> None:
         """Builds the search space and the best-config writer for a backbone.
 
@@ -771,6 +773,7 @@ class Tuner:
             log_dir             : Directory holding the trial runs.
             logger              : Logger of the tuning worker.
             emit_trial_docs     : Whether trial runs write documentation artifacts.
+            worker_index        : Index of the worker running this tuner.
         """
         self.model_name          = model_name
         self.model_config_cls    = model_config_cls
@@ -781,6 +784,7 @@ class Tuner:
         self.log_dir             = log_dir
         self.logger              = logger
         self.emit_trial_docs     = emit_trial_docs
+        self.worker_index        = worker_index
 
         self.backbone_name, self.head = ModelBuilder.split_key(model_name)
 
@@ -818,6 +822,8 @@ class Tuner:
             The best validation loss reached by the shortened training run.
         """
         from pipelines.tuning.trial import TrialPipeline
+
+        trial.set_user_attr("worker", self.worker_index)
 
         model_config      = self.model_config_cls()
         model_config.head = self.head
@@ -901,6 +907,7 @@ class AeTuner:
         tune_cfg           : Tuning settings (epochs, patience, base seed).
         log_dir            : Directory holding the trial runs and the best configuration.
         logger             : Logger of the tuning worker.
+        worker_index       : Index of the worker running this tuner, stamped on every trial as the ``worker`` user attribute.
         sampler            : Sampler drawing the trial parameters.
         space              : Search space over the switched-on groups of the autoencoder's tunable parameters and the batch size.
         best_writer        : Callback persisting the best trial after each trial.
@@ -916,6 +923,7 @@ class AeTuner:
         tune_cfg,
         log_dir           : str,
         logger,
+        worker_index      : int = 0,
     ) -> None:
         """Builds the search space and the best-config writer for an autoencoder.
 
@@ -927,6 +935,7 @@ class AeTuner:
             tune_cfg           : Tuning settings.
             log_dir            : Directory holding the trial runs.
             logger             : Logger of the tuning worker.
+            worker_index       : Index of the worker running this tuner.
         """
         self.model_name         = model_name
         self.config_cls         = config_cls
@@ -935,6 +944,7 @@ class AeTuner:
         self.tune_cfg           = tune_cfg
         self.log_dir            = log_dir
         self.logger             = logger
+        self.worker_index       = worker_index
 
         self.sampler     = ParamSampler()
         self.space       = SearchSpace.of(config_cls, tune_cfg)
@@ -950,6 +960,8 @@ class AeTuner:
         Returns:
             The best reconstruction validation loss of the shortened run.
         """
+        trial.set_user_attr("worker", self.worker_index)
+
         sampled   = self.sampler.sample(trial, self.space)
         trial_dir = self.checkpoints.trial_dir(self.log_dir, trial.number)
 
@@ -1021,6 +1033,7 @@ class JepaTuner:
         tune_cfg         : Tuning settings (epochs, patience, base seed).
         log_dir          : Directory holding the trial runs and the best configuration.
         logger           : Logger of the tuning worker.
+        worker_index     : Index of the worker running this tuner, stamped on every trial as the ``worker`` user attribute.
         backbone_name    : Backbone part of the model key.
         head             : Head part of the model key.
         sampler          : Sampler drawing the trial parameters.
@@ -1038,6 +1051,7 @@ class JepaTuner:
         tune_cfg,
         log_dir        : str,
         logger,
+        worker_index   : int = 0,
     ) -> None:
         """Builds the search space, best-config writer and shared JEPA run tag.
 
@@ -1048,6 +1062,7 @@ class JepaTuner:
             tune_cfg         : Tuning settings.
             log_dir          : Directory holding the trial runs.
             logger           : Logger of the tuning worker.
+            worker_index     : Index of the worker running this tuner.
         """
         self.model_name       = model_name
         self.model_config_cls = model_config_cls
@@ -1055,6 +1070,7 @@ class JepaTuner:
         self.tune_cfg         = tune_cfg
         self.log_dir          = log_dir
         self.logger           = logger
+        self.worker_index     = worker_index
 
         self.backbone_name, self.head = ModelBuilder.split_key(model_name)
 
@@ -1076,6 +1092,8 @@ class JepaTuner:
             The best validation loss of the shortened JEPA run.
         """
         from pipelines.tuning.trial import TrialJepaPipeline
+
+        trial.set_user_attr("worker", self.worker_index)
 
         sampled   = self.sampler.sample(trial, self.space)
         trial_dir = self.checkpoints.trial_dir(self.log_dir, trial.number)

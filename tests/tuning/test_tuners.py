@@ -387,7 +387,7 @@ def test_study_progress_callback_logs_one_line_and_writes_the_snapshot(fake_logg
 
 
 def test_a_failing_trial_is_recorded_as_failed_and_the_worker_goes_on(fake_logger, tune_cfg, tmp_path, monkeypatch):
-    """A trial raising a divergence or device error ends as FAIL, is logged with its error, and the next trial still runs."""
+    """A trial raising a divergence or device error ends as FAIL, is logged, the next trial still runs, and both carry the worker's index."""
     class FlakyPipeline:
         """Training pipeline stub failing on the first trial only."""
         def __init__(self, *args, **kwargs):
@@ -411,12 +411,14 @@ def test_a_failing_trial_is_recorded_as_failed_and_the_worker_goes_on(fake_logge
         tune_cfg            = tune_cfg,
         log_dir             = str(tmp_path),
         logger              = fake_logger,
+        worker_index        = 3,
     )
 
     study   = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=0))
     summary = tuner.run(study, n_trials=2)
 
     assert [trial.state for trial in study.trials] == [TrialState.FAIL, TrialState.COMPLETE]
+    assert [trial.user_attrs["worker"] for trial in study.trials] == [3, 3]
     assert any("Trial 0 failed and is recorded as such: FloatingPointError" in message for message in fake_logger.errors)
     assert any(message.startswith("Trial 0 FAIL because FloatingPointError: train loss is non-finite at step 7 (") for message in fake_logger.infos)
     assert study.trials[0].user_attrs["fail_reason"] == "FloatingPointError: train loss is non-finite at step 7"
