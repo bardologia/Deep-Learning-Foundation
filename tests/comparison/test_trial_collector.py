@@ -245,3 +245,40 @@ def test_figure_section_marks_figures_absent_from_a_trial(tmp_path):
     assert "## `a.png`" in text
     assert "## `b.png`" in text
     assert text.count("_(not in this run)_") == 1
+
+
+def test_figure_subdir_outside_the_known_table_gets_its_own_gallery(tmp_path):
+    """Verifies a figure sub-directory absent from FIGURE_SUBDIRS is rendered as its own page and named in the log."""
+    _run_with_metrics(tmp_path / "run_x", 1.0)
+
+    stratified = tmp_path / "run_x" / "inference" / "20260101_000000" / "figures" / "stratified"
+    stratified.mkdir(parents=True)
+    (stratified / "bins.png").write_bytes(b"")
+
+    out_dir = tmp_path / "comparison"
+    logger  = RecordingLogger()
+
+    collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x"], logger=RecordingLogger(), inference_split="test")
+    written   = TrialComparisonReport(records=collector.collect(), out_dir=out_dir, compare_images=True, compare_gifs=True, embed_images=False, inference_split="test", logger=logger).write_all()
+
+    infos    = [message for level, message in logger.messages if level == "info"]
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert out_dir / "figures_stratified.md" in written
+    assert "# Figure Comparison – Stratified" in (out_dir / "figures_stratified.md").read_text()
+    assert any("outside FIGURE_SUBDIRS" in message and "stratified" in message for message in infos)
+    assert any("holds animations" in message for message in warnings)
+
+
+def test_galleries_warn_when_no_trial_holds_figures(tmp_path):
+    """Verifies enabling the figure galleries over trials without figures writes none and says so."""
+    _run_with_metrics(tmp_path / "run_x", 1.0)
+
+    logger    = RecordingLogger()
+    collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x"], logger=RecordingLogger(), inference_split="test")
+    written   = TrialComparisonReport(records=collector.collect(), out_dir=tmp_path / "comparison", compare_images=True, compare_gifs=False, embed_images=False, inference_split="test", logger=logger).write_all()
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert [path.name for path in written] == ["overview.md", "metrics_comparison.md", "comparison_summary.json"]
+    assert any("no figure gallery written" in message for message in warnings)
