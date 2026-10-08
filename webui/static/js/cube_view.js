@@ -2663,8 +2663,8 @@ class CubeView {
     this.progressLabel = refs.progressLabel;
 
     this.atLabels = {
-      range : this.slicesEl.querySelector('.cube-cutgroup__at[data-axis="col"]'),
-      row   : this.slicesEl.querySelector('.cube-cutgroup__at[data-axis="row"]'),
+      col : this.slicesEl.querySelector('.cube-cutgroup__at[data-axis="col"]'),
+      row : this.slicesEl.querySelector('.cube-cutgroup__at[data-axis="row"]'),
     };
 
     this.cubes = [];
@@ -3150,7 +3150,7 @@ class CubeView {
     this.coords.textContent   = "Hover the image to cut every cube · click to lock the slices";
     this.slicesAt.textContent = "";
     this.profAt.textContent   = "Hover a slice to read the profiles at that position.";
-    if (this.atLabels.range)   this.atLabels.range.textContent   = "";
+    if (this.atLabels.col) this.atLabels.col.textContent = "";
     if (this.atLabels.row) this.atLabels.row.textContent = "";
     this.stage.hidden = true;
     this.slicesEl.hidden = true;
@@ -3232,19 +3232,7 @@ class CubeView {
     this.progress.hidden = true;
     this.coords.textContent = `loaded in ${meta.timings.total.toFixed(1)} s (${this._slowestStage(meta.timings)}) · hover the image to cut every cube · click to lock the slices`;
     this._clearBitmapCache();
-
-    const css = getComputedStyle(this.stage);
-    this.colors = {
-      pred    : css.getPropertyValue("--src-pred").trim(),
-      predb   : css.getPropertyValue("--src-predb").trim(),
-      diff    : css.getPropertyValue("--src-diff").trim(),
-      gt      : css.getPropertyValue("--src-gt").trim(),
-      full    : css.getPropertyValue("--src-full").trim(),
-      range   : css.getPropertyValue("--cut-col").trim(),
-      row     : css.getPropertyValue("--cut-row").trim(),
-      accent  : css.getPropertyValue("--accent").trim(),
-      warn    : css.getPropertyValue("--warn").trim(),
-    };
+    this.colors = this._readColors();
 
     this._syncSpaceBtns();
     this._syncProfModeBtns();
@@ -3307,6 +3295,21 @@ class CubeView {
 
     const sweep = this._sweepFor(this.view);
     if (sweep) sweep.play();
+  }
+
+  _readColors() {
+    const css = getComputedStyle(this.stage);
+    return {
+      pred   : css.getPropertyValue("--src-pred").trim(),
+      predb  : css.getPropertyValue("--src-predb").trim(),
+      diff   : css.getPropertyValue("--src-diff").trim(),
+      gt     : css.getPropertyValue("--src-gt").trim(),
+      full   : css.getPropertyValue("--src-full").trim(),
+      col    : css.getPropertyValue("--cut-col").trim(),
+      row    : css.getPropertyValue("--cut-row").trim(),
+      accent : css.getPropertyValue("--accent").trim(),
+      warn   : css.getPropertyValue("--warn").trim(),
+    };
   }
 
   openAt(cubeId, row, col) {
@@ -3866,7 +3869,7 @@ class CubeView {
 
     this._revealSlices();
 
-    if (this.atLabels.range)   this.atLabels.range.textContent   = `col = ${col}`;
+    if (this.atLabels.col) this.atLabels.col.textContent = `col = ${col}`;
     if (this.atLabels.row) this.atLabels.row.textContent = `row = ${row}`;
 
     this.panels.forEach((panel) => {

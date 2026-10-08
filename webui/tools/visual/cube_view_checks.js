@@ -279,6 +279,27 @@ class CubeViewChecks {
     return { ranges, absent, present, byStd, byZ, fetched };
   }
 
+  cutColors() {
+    const { CubeView } = this.classes;
+    const strokes = [];
+    const ctx     = { drawImage: () => {}, setLineDash: () => {}, beginPath: () => {}, moveTo: () => {}, lineTo: () => {}, stroke: () => strokes.push(ctx.strokeStyle) };
+
+    this.sandbox.getComputedStyle = () => ({ getPropertyValue: (name) => ` ${name} ` });
+
+    const view  = Object.create(CubeView.prototype);
+    view.stage  = {};
+    view.colors = view._readColors();
+
+    const markers = {};
+    ["col", "row"].forEach((axis) => {
+      const panel = { axis, marker: 0.5, bitmap: { width: 4, height: 4 }, canvas: { width: 4, height: 4, getContext: () => ctx } };
+      view._paintSlice(panel);
+      markers[axis] = strokes.splice(0);
+    });
+
+    return { markers };
+  }
+
   async coverage() {
     const timers = { next: 0, live: new Map(), cleared: [] };
     this.sandbox.setInterval   = (handler) => { timers.next += 1; timers.live.set(timers.next, handler); return timers.next; };
