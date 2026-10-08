@@ -7,6 +7,7 @@ study opened from the run's SQLite storage.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import optuna
@@ -19,7 +20,7 @@ from pipelines.shared.config.config_factory import ConfigFactory
 from pipelines.shared.model.model_builder   import ModelBuilder
 from pipelines.tuning.storage               import TuningStorage
 from pipelines.tuning.trial                 import TrialImageAePipeline, TrialProfileAePipeline
-from pipelines.tuning.tuners                import AeTuner, JepaTuner, Tuner
+from pipelines.tuning.tuners                import AeTuner, JepaTuner, StudyProgress, Tuner
 from tools.monitoring.logger                import Logger
 
 
@@ -213,6 +214,37 @@ class TuningWorker:
 
         return dispatch[training_type](model_name, tune_cfg, logger, worker_index)
 
+    def _report_worker(self, logger: Logger, summary: dict, model_name: str, worker_index: int) -> None:
+        """Logs the worker's tally and ends the process as failed when every trial it ran failed.
+
+        Args:
+            logger       : Logger of this worker.
+            summary      : Tally returned by the tuner: trials run by state, best trial and stop reason.
+            model_name   : Model key the worker tuned.
+            worker_index : Index of this worker.
+
+        Raises:
+            SystemExit : If the worker ran trials and every one of them failed, so the queue records the job as FAILED rather than DONE.
+        """
+        best = "none" if summary["best_trial"] is None else f"trial {summary['best_trial']}, value {summary['best_value']:.6f}"
+
+        logger.kv_table({
+            "Trials run"         : summary["trials_run"],
+            "Complete"           : summary["complete"],
+            "Pruned"             : summary["pruned"],
+            "Failed"             : summary["failed"],
+            "Stop reason"        : summary["stop_reason"],
+            "Best (this worker)" : best,
+        }, title=f"Worker {worker_index} summary")
+
+        if summary["failed"] > 0:
+            logger.warning(f"[Worker {worker_index}] {summary['failed']} of {summary['trials_run']} trial(s) failed; each failure is named on its trial line above")
+
+        if summary["trials_run"] > 0 and summary["failed"] == summary["trials_run"]:
+            sys.exit(f"ERROR: worker {worker_index} of {model_name}: every one of its {summary['trials_run']} trial(s) failed, so its share brought nothing to the study")
+
+        logger.info(f"[Worker {worker_index}] — {model_name}  DONE")
+
     def run_worker(self, model_name: str, gpu_id: int, worker_index: int, n_trials: int, study_name: str, storage_url: str) -> None:
         """Optimizes this worker's share of a model's study on one GPU.
 
@@ -221,6 +253,13 @@ class TuningWorker:
         GPU, and identical seeds would make them propose the same random
         startup points into the same log.
 
+        The log is opened as a context manager, so a crash anywhere in the
+        worker, or the exit of a worker whose every trial failed, closes it
+        with the exception and an ABORTED banner instead of leaving it cut off
+        after the last trial line. It adopts Optuna's own logger, so the
+        warnings Optuna writes to stderr (a failed trial's traceback, a
+        rejected NaN value) also land in the durable log file.
+
         Args:
             model_name   : Model key to tune.
             gpu_id       : GPU index this worker owns.
@@ -228,36 +267,42 @@ class TuningWorker:
             n_trials     : Trials this worker contributes.
             study_name   : Name of the shared study to load.
             storage_url  : SQLAlchemy URL of the shared Optuna storage.
+
+        Raises:
+            SystemExit : If every trial this worker ran failed.
         """
         tune_cfg      = self.config.tuning
         model_log_dir = str(self.run_dir / model_name / f"worker{worker_index:02d}")
-        logger        = Logger(log_dir=model_log_dir, name=f"tune_worker{worker_index:02d}_{model_name}")
 
-        logger.section(f"[Worker {worker_index}] Tuning Worker — {model_name}")
-        logger.kv_table({
-            "Worker"  : worker_index,
-            "GPU"     : gpu_id,
-            "Trials"  : n_trials,
-            "Study"   : study_name,
-            "Storage" : storage_url,
-        })
+        with Logger(log_dir=model_log_dir, name=f"tune_worker{worker_index:02d}_{model_name}") as logger:
+            logger.adopt("optuna")
+            logger.section(f"[Worker {worker_index}] Tuning Worker — {model_name}")
 
-        tuner = self._build_tuner(model_name, tune_cfg, logger, worker_index)
+            tuner = self._build_tuner(model_name, tune_cfg, logger, worker_index)
 
-        pruner = optuna.pruners.MedianPruner(
-            n_startup_trials = tune_cfg.pruner_n_startup_trials,
-            n_warmup_steps   = tune_cfg.pruner_n_warmup_steps,
-        )
+            pruner = optuna.pruners.MedianPruner(
+                n_startup_trials = tune_cfg.pruner_n_startup_trials,
+                n_warmup_steps   = tune_cfg.pruner_n_warmup_steps,
+            )
 
-        sampler = optuna.samplers.TPESampler(
-            n_startup_trials = tune_cfg.pruner_n_startup_trials,
-            multivariate     = True,
-            constant_liar    = True,
-            seed             = tune_cfg.base_seed + worker_index,
-        )
+            sampler = optuna.samplers.TPESampler(
+                n_startup_trials = tune_cfg.pruner_n_startup_trials,
+                multivariate     = True,
+                constant_liar    = True,
+                seed             = tune_cfg.base_seed + worker_index,
+            )
 
-        study = optuna.load_study(study_name=study_name, storage=TuningStorage.open(storage_url), sampler=sampler, pruner=pruner)
-        tuner.run(study, n_trials)
+            study = optuna.load_study(study_name=study_name, storage=TuningStorage.open(storage_url), sampler=sampler, pruner=pruner)
 
-        logger.info(f"[Worker {worker_index}] — {model_name}  DONE")
-        logger.close()
+            logger.kv_table({
+                "Worker"          : worker_index,
+                "GPU"             : gpu_id,
+                "Trials"          : n_trials,
+                "Study"           : study_name,
+                "Storage"         : storage_url,
+                "Study on attach" : StudyProgress.phrase(StudyProgress.counts(study), tune_cfg.n_trials),
+            })
+
+            summary = tuner.run(study, n_trials)
+
+            self._report_worker(logger, summary, model_name, worker_index)
