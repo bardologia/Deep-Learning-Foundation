@@ -261,12 +261,35 @@ class ParamLoss:
     FRAC_CLAMP  = 1e-3
 
     @staticmethod
+    def presence_weights(active: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Returns the balanced per-slot weights derived from the batch active fraction.
+
+        Each slot k is balanced by its own active fraction f_k over the batch and
+        the spatial axes: active elements weigh 0.5 / f_k and inactive ones
+        0.5 / (1 - f_k), so both groups carry the same total weight. The
+        fraction is clamped to [FRAC_CLAMP, 1 - FRAC_CLAMP] before the division,
+        which caps either weight at 0.5 / FRAC_CLAMP for a slot that is almost
+        always empty or almost always occupied in the batch.
+
+        Args:
+            active : Active-slot indicator of shape (batch, gaussians, params, height, width), valued 0 or 1.
+
+        Returns:
+            Tuple of the active weights, the inactive weights and a clamp flag, each of shape (gaussians,); the flag is 1.0 for a slot whose fraction hit the clamp.
+        """
+        frac    = active.mean(dim=(0, 2, 3, 4))
+        clamped = ((frac < ParamLoss.FRAC_CLAMP) | (frac > 1.0 - ParamLoss.FRAC_CLAMP)).to(active.dtype)
+        frac    = frac.clamp(ParamLoss.FRAC_CLAMP, 1.0 - ParamLoss.FRAC_CLAMP)
+
+        return 0.5 / frac, 0.5 / (1.0 - frac), clamped
+
+    @staticmethod
     def presence_scale(active: torch.Tensor, balance: bool, active_weight: float, inactive_weight: float) -> torch.Tensor:
         """Returns per-element weights that trade off active against inactive slots.
 
         Args:
             active          : Active-slot indicator of shape (batch, gaussians, params, height, width), valued 0 or 1.
-            balance         : Whether to derive the weights per slot from the observed active fraction instead of using the supplied constants.
+            balance         : Whether to derive the weights per slot from the observed active fraction through presence_weights instead of using the supplied constants.
             active_weight   : Weight applied to active slots when balance is False.
             inactive_weight : Weight applied to inactive slots when balance is False.
 
@@ -274,9 +297,10 @@ class ParamLoss:
             Weight tensor broadcastable to the shape of active.
         """
         if balance:
-            frac            = active.mean(dim=(0, 2, 3, 4), keepdim=True).clamp(ParamLoss.FRAC_CLAMP, 1.0 - ParamLoss.FRAC_CLAMP)
-            active_weight   = 0.5 / frac
-            inactive_weight = 0.5 / (1.0 - frac)
+            active_weight, inactive_weight, _clamped = ParamLoss.presence_weights(active)
+
+            active_weight   = active_weight.reshape(1, -1, 1, 1, 1)
+            inactive_weight = inactive_weight.reshape(1, -1, 1, 1, 1)
 
         return active * active_weight + (1.0 - active) * inactive_weight
 

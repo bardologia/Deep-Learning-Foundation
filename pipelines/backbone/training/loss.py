@@ -83,6 +83,12 @@ class Loss:
         self.log_slot_presence_config(cfg, title="Slot-Presence Loss Config")
 
     @property
+    def param_term_evaluated(self) -> bool:
+        """Whether a presence-weighted parameter term is evaluated this stage, as a loss or for monitoring."""
+        cfg = self.loss_cfg
+        return bool(cfg.use_param_l1 or cfg.use_param_huber or cfg.use_param_mse or self.log_all_losses)
+
+    @property
     def slot_presence_active(self) -> bool:
         """Whether any presence-sensitive setting makes the occupancy statistics worth computing."""
         cfg = self.loss_cfg
@@ -144,14 +150,22 @@ class Loss:
     def log_slot_presence_config(self, cfg, title: str) -> None:
         """Logs the presence-balancing and amplitude-focal settings of a loss stage.
 
+        Under presence_balance the configured active and inactive weights are
+        not applied, the weights being derived per slot and batch from the
+        active fraction, so the table says so instead of printing idle constants.
+
         Args:
             cfg   : Loss-stage configuration whose presence settings are reported.
             title : Table title.
         """
+        if cfg.presence_balance:
+            weights = {"active_weight / inactive_weight": f"derived per slot and batch as 0.5/frac and 0.5/(1-frac) with frac clamped to [{ParamLoss.FRAC_CLAMP:g}, {1.0 - ParamLoss.FRAC_CLAMP:g}]; the configured {cfg.active_weight:g} / {cfg.inactive_weight:g} are not applied; applied values under loss_monitor/presence"}
+        else:
+            weights = {"active_weight": cfg.active_weight, "inactive_weight": cfg.inactive_weight}
+
         self.logger.kv_table({
             "presence_balance"         : cfg.presence_balance,
-            "active_weight"            : cfg.active_weight,
-            "inactive_weight"          : cfg.inactive_weight,
+            **weights,
             "amp_focal_gamma"          : cfg.amp_focal_gamma,
             "amp_focal_delta"          : cfg.amp_focal_delta,
             "use_active_normalization" : cfg.use_active_normalization,
@@ -377,6 +391,32 @@ class Loss:
         }
 
     @torch.no_grad()
+    def _presence_monitor(self, matched) -> dict:
+        """Reports the balanced presence weights this batch applied per slot and whether the fraction clamp engaged.
+
+        Args:
+            matched : The matcher output; the physical target tensor has shape (batch, n_gaussians, params_per_gaussian, height, width).
+
+        Returns:
+            Dict keyed presence/active_weight_slot{g}, presence/inactive_weight_slot{g}
+            and presence/clamped_slot{g}, the flag being 1.0 when the slot's active
+            fraction hit FRAC_CLAMP, so its epoch mean is the share of clamped batches.
+        """
+        _, _, _, gt_phys = matched
+
+        active = GaussianActivity.is_active(gt_phys[:, :, 0:1], self.gaussian_cfg.activity_threshold).to(gt_phys.dtype)
+
+        active_weight, inactive_weight, clamped = ParamLoss.presence_weights(active)
+
+        out: dict = {}
+        for g in range(active_weight.shape[0]):
+            out[f"presence/active_weight_slot{g}"]   = active_weight[g]
+            out[f"presence/inactive_weight_slot{g}"] = inactive_weight[g]
+            out[f"presence/clamped_slot{g}"]         = clamped[g]
+
+        return out
+
+    @torch.no_grad()
     def _occupancy(self, pred_params_phys, gt_phys) -> dict:
         """Reports how many Gaussian slots the prediction activates against the ground truth.
 
@@ -440,8 +480,9 @@ class Loss:
 
         Returns:
             Dict with the scalar `total_loss`, the weighted `components`, the
-            unweighted `monitor` values, the slot `occupancy` statistics and the
-            `physical` parameter errors.
+            unweighted `monitor` values (inactive terms, per-parameter L1 parts
+            and, under presence_balance, the applied per-slot presence weights),
+            the slot `occupancy` statistics and the `physical` parameter errors.
         """
         cfg = self.loss_cfg
 
@@ -502,6 +543,9 @@ class Loss:
 
         for pname, pval in per_param_l1.items():
             monitor[f"param_l1/{pname}"] = pval
+
+        if cfg.presence_balance and self.param_term_evaluated:
+            monitor.update(self._presence_monitor(matched))
 
         if self.slot_presence_active:
             occupancy = self._occupancy(pred_params_phys, gt_phys)
