@@ -70,7 +70,7 @@ def test_embedding_loss_set_curriculum_swaps_the_stage():
     warmup      = EmbeddingLossConfig(use_embedding_mse=True, use_curve_recon=False)
     complete    = EmbeddingLossConfig(use_embedding_mse=False, use_embedding_cosine=True, weight_embedding_cosine=1.0, use_curve_recon=False)
 
-    criterion = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)))
+    criterion = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)), SilentLogger())
     criterion.set_curriculum(complete)
 
     assert criterion.emb_cfg is complete
@@ -114,7 +114,7 @@ def test_controller_swaps_only_at_the_swap_epoch():
     warmup      = EmbeddingLossConfig()
     complete    = EmbeddingLossConfig(use_embedding_cosine=True)
 
-    criterion  = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)))
+    criterion  = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)), SilentLogger())
     controller = make_controller(JepaCurriculumConfig(enabled=True, swap_epoch=2), complete, criterion)
 
     assert not controller.maybe_swap(1)
@@ -130,7 +130,7 @@ def test_controller_never_swaps_when_disabled():
     z_axis      = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
     warmup      = EmbeddingLossConfig()
 
-    criterion  = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)))
+    criterion  = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)), SilentLogger())
     controller = make_controller(JepaCurriculumConfig(enabled=False, swap_epoch=0), EmbeddingLossConfig(), criterion)
 
     assert not any(controller.maybe_swap(epoch) for epoch in range(5))
@@ -203,7 +203,7 @@ def test_embedding_loss_generation_advances_on_each_swap():
     z_axis      = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
     warmup      = EmbeddingLossConfig(use_embedding_mse=True, use_curve_recon=False)
     complete    = EmbeddingLossConfig(use_embedding_mse=False, use_embedding_cosine=True, weight_embedding_cosine=1.0, use_curve_recon=False)
-    criterion   = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)))
+    criterion   = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)), SilentLogger())
 
     assert criterion.loss_generation == 0
 

@@ -3,7 +3,8 @@
 Covers the returned payload shape, gradient flow to the predictor and the stopgrad barrier at the
 target encoder, the zero at a matching embedding and growth with divergence, component weighting,
 the cosine and smooth-L1 embedding terms, every curve reconstruction kind, the rejection of an
-unknown kind, and the curve Sobolev term both alone and alongside curve reconstruction."""
+unknown kind, the curve Sobolev term both alone and alongside curve reconstruction, and the
+logging of the active terms at build and at every stage change."""
 
 from __future__ import annotations
 
@@ -15,10 +16,33 @@ from pipelines.jepa.training.coupling import TargetProvider
 from pipelines.jepa.training.loss     import Loss as EmbeddingLoss
 from tools.data.gaussians_torch       import GaussianCurve
 
+from tests.conftest      import SilentLogger
 from tests.jepa.conftest import EMBEDDING_DIM, N_GAUSSIANS, SPATIAL, make_autoencoder
 
 
-def build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad"):
+class _RecordingLogger(SilentLogger):
+    """Silent logger keeping the kv_table mappings and subsection lines it is handed.
+
+    Attributes:
+        tables : Mappings passed to kv_table, in call order.
+        lines  : Subsection lines, in call order.
+    """
+
+    def __init__(self):
+        """Starts with no tables or lines."""
+        self.tables = []
+        self.lines  = []
+
+    def kv_table(self, data, *args, **kwargs):
+        """Records the table mapping."""
+        self.tables.append(dict(data))
+
+    def subsection(self, message, *args, **kwargs):
+        """Records the line."""
+        self.lines.append(message)
+
+
+def build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, target_kind="stopgrad", logger=None):
     """Builds an embedding loss around the autoencoder with the given target-provider kind.
 
     Args:
@@ -28,6 +52,7 @@ def build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, tar
         profile_normalizer : Normalizer applied to the reconstructed target curves.
         emb_cfg            : Embedding loss configuration selecting the active terms and weights.
         target_kind        : Target provider kind, "stopgrad" or "live".
+        logger             : Logger handed to the loss; a silent one when omitted.
 
     Returns:
         The configured embedding loss.
@@ -41,7 +66,36 @@ def build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, emb_cfg, tar
         norm_stats          = norm_stats,
         params_per_gaussian = 3,
         profile_normalizer  = profile_normalizer,
+        logger              = logger if logger is not None else SilentLogger(),
     )
+
+
+def test_describe_terms_lists_every_enabled_term_with_its_weight():
+    """The banner names each enabled term with its weight and shape parameter, and says so when none is enabled."""
+    cfg = EmbeddingLossConfig(use_embedding_mse=True, weight_embedding_mse=2.0, use_embedding_cosine=True, weight_embedding_cosine=0.5, use_curve_recon=True, curve_kind="huber", weight_curve_recon=1.0, use_curve_sobolev=True, weight_curve_sobolev=0.1)
+
+    label = EmbeddingLoss.describe_terms(cfg)
+
+    assert label == "mse w=2  |  cosine w=0.5  |  curve_recon(huber) w=1  |  curve_sobolev w=0.1"
+    assert EmbeddingLoss.describe_terms(EmbeddingLossConfig(use_embedding_mse=False, use_curve_recon=False)) == "no terms enabled"
+
+
+def test_loss_logs_its_terms_at_build_and_after_every_stage_change(autoencoder, z_axis, norm_stats, profile_normalizer):
+    """Building the loss logs the initial stage's terms and provider; set_curriculum logs the new composition with its context."""
+    logger = _RecordingLogger()
+    warmup = EmbeddingLossConfig(use_embedding_mse=True, weight_embedding_mse=1.0, use_curve_recon=False)
+    main   = EmbeddingLossConfig(use_embedding_mse=False, use_embedding_cosine=True, weight_embedding_cosine=1.0, use_curve_recon=False)
+
+    loss = build_loss(autoencoder, z_axis, norm_stats, profile_normalizer, warmup, logger=logger)
+
+    assert logger.tables[0]["Active terms"]    == "mse w=1"
+    assert logger.tables[0]["Target provider"] == "stopgrad"
+
+    loss.set_curriculum(main)
+    loss.set_curriculum(main, context="re-applied on resume")
+
+    assert logger.lines == ["Active terms (curriculum swap) : cosine w=1", "Active terms (re-applied on resume) : cosine w=1"]
+    assert loss.loss_generation == 2
 
 
 def random_inputs(requires_grad=True):

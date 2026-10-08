@@ -20,6 +20,7 @@ from pipelines.shared.training.run_naming import RunNaming
 
 from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStats
 
+from tests.conftest          import SilentLogger
 from tests.jepa.conftest     import EMBEDDING_DIM, N_GAUSSIANS, PROFILE_LENGTH, SPATIAL, IdentityNormStats, make_autoencoder
 from tests.jepa.test_trainer import make_trainer_shim
 from tools.monitoring.logger  import NullLogger
@@ -31,7 +32,7 @@ def make_criterion(emb_cfg=None):
     autoencoder = make_autoencoder("none")
     z_axis      = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
     cfg         = emb_cfg or EmbeddingLossConfig(use_curve_recon=False)
-    return EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), cfg, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)))
+    return EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), cfg, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)), SilentLogger())
 
 
 def test_random_mask_ratio_is_respected():

@@ -25,6 +25,7 @@ from pipelines.shared.model.model_builder                import ModelBuilder
 from pipelines.shared.training.overfit_check             import OverfitCheck
 from pipelines.shared.training.run_naming                import JepaNamingSpec, RunNaming
 from pipelines.shared.training.training_runner           import EntryConfigTrainRunner
+from pipelines.jepa.training.loss                        import Loss as EmbeddingLoss
 from pipelines.jepa.training.trainer                     import JepaModule, Trainer
 from pipelines.shared.config.config_persistence          import ProfileAutoencoderConfigIO, ImageAutoencoderConfigIO
 from tools.runtime.reproducibility                       import Reproducibility
@@ -282,7 +283,7 @@ class TrainingPipeline:
 
         if self.autoencoder_cfg is not None:
             info["Target Provider"] = self.trainer_config.target_provider
-            info["Embedding Loss"]  = self._embedding_loss_label(self.trainer_config.embedding_loss)
+            info["Embedding Loss"]  = EmbeddingLoss.describe_terms(self.trainer_config.embedding_loss)
             info["Param Loss"]      = "inactive (profile AE coupled; the run name carries the embedding loss tokens)"
         else:
             info["Target Provider"] = "inactive (no profile AE)"
@@ -302,36 +303,6 @@ class TrainingPipeline:
 
         logger.section("[JEPA Module Built]")
         logger.kv_table(info)
-
-    @staticmethod
-    def _embedding_loss_label(emb) -> str:
-        """Formats the enabled embedding-loss terms and weights as one banner string.
-
-        Args:
-            emb : Embedding-loss configuration.
-
-        Returns:
-            Pipe-separated term description, or "no terms enabled".
-        """
-        terms = []
-        if emb.use_embedding_mse:
-            terms.append(f"mse w={emb.weight_embedding_mse:g}")
-        if emb.use_embedding_cosine:
-            terms.append(f"cosine w={emb.weight_embedding_cosine:g}")
-        if emb.use_embedding_smoothl1:
-            terms.append(f"smoothl1 w={emb.weight_embedding_smoothl1:g} beta={emb.smoothl1_beta:g}")
-        if emb.use_embedding_huber:
-            terms.append(f"huber w={emb.weight_embedding_huber:g} delta={emb.embedding_huber_delta:g}")
-        if emb.use_embedding_charbonnier:
-            terms.append(f"charbonnier w={emb.weight_embedding_charbonnier:g} eps={emb.embedding_charbonnier_eps:g}")
-        if emb.use_embedding_variance:
-            terms.append(f"variance w={emb.weight_embedding_variance:g} gamma={emb.variance_gamma:g}")
-        if emb.use_embedding_covariance:
-            terms.append(f"covariance w={emb.weight_embedding_covariance:g}")
-        if emb.use_curve_recon:
-            terms.append(f"curve_recon({emb.curve_kind}) w={emb.weight_curve_recon:g}")
-
-        return "  |  ".join(terms) if terms else "no terms enabled"
 
     def _build_backbone(self, in_channels: int, out_channels: int, patch_size, config=None):
         """Instantiates the backbone at the resolved input and output widths.

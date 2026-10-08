@@ -12,6 +12,7 @@ import torch
 
 from tools.data.gaussians_torch import GaussianCurve
 from tools.loss.curve_loss      import CurveLoss
+from tools.monitoring.logger    import Logger
 
 
 class Loss:
@@ -25,20 +26,22 @@ class Loss:
         norm_stats         : Normalizer denormalizing the ground-truth Gaussian parameters.
         ppg                : Number of parameters per Gaussian in the target parameter vector.
         profile_normalizer : Normalizer mapping rendered curves into the profile autoencoder's training scale.
+        logger             : Logger receiving the active-term table at build and the composition after every stage change.
         loss_generation    : Number of stage swaps applied so far; the checkpoint tracker restarts its best-loss baseline when it changes.
     """
 
-    def __init__(self, autoencoder, target_provider, embedding_cfg, z_axis, norm_stats, params_per_gaussian: int, profile_normalizer) -> None:
-        """Stores the coupled autoencoder, target provider and normalization pieces.
+    def __init__(self, autoencoder, target_provider, embedding_cfg, z_axis, norm_stats, params_per_gaussian: int, profile_normalizer, logger: Logger) -> None:
+        """Stores the coupled autoencoder, target provider and normalization pieces, and logs the active terms.
 
         Args:
             autoencoder         : Coupled profile autoencoder.
             target_provider     : TargetProvider for the target embedding branch.
-            embedding_cfg       : Embedding-loss configuration.
+            embedding_cfg       : Embedding-loss configuration of the stage training starts on.
             z_axis              : Z axis in metres, of length equal to the profile length.
             norm_stats          : Output normalizer of the training dataset.
             params_per_gaussian : Number of parameters per Gaussian (amplitude, mean, sigma).
             profile_normalizer  : Curve normalizer matching the profile autoencoder run.
+            logger              : Logger receiving the loss tables.
         """
         self.autoencoder        = autoencoder
         self.target_provider    = target_provider
@@ -47,10 +50,50 @@ class Loss:
         self.norm_stats         = norm_stats
         self.ppg                = params_per_gaussian
         self.profile_normalizer = profile_normalizer
+        self.logger             = logger
         self.loss_generation    = 0
 
+        self.logger.section("[Loss Function]")
+        self.logger.kv_table({
+            "Regime"          : "embedding match (profile autoencoder coupled)",
+            "Target provider" : target_provider.kind,
+            "Active terms"    : self.describe_terms(embedding_cfg),
+        })
+
+    @staticmethod
+    def describe_terms(emb) -> str:
+        """Formats the enabled embedding-loss terms and weights of a stage as one banner string.
+
+        Args:
+            emb : Embedding-loss configuration of one stage.
+
+        Returns:
+            Pipe-separated term description, or "no terms enabled".
+        """
+        terms = []
+        if emb.use_embedding_mse:
+            terms.append(f"mse w={emb.weight_embedding_mse:g}")
+        if emb.use_embedding_cosine:
+            terms.append(f"cosine w={emb.weight_embedding_cosine:g}")
+        if emb.use_embedding_smoothl1:
+            terms.append(f"smoothl1 w={emb.weight_embedding_smoothl1:g} beta={emb.smoothl1_beta:g}")
+        if emb.use_embedding_huber:
+            terms.append(f"huber w={emb.weight_embedding_huber:g} delta={emb.embedding_huber_delta:g}")
+        if emb.use_embedding_charbonnier:
+            terms.append(f"charbonnier w={emb.weight_embedding_charbonnier:g} eps={emb.embedding_charbonnier_eps:g}")
+        if emb.use_embedding_variance:
+            terms.append(f"variance w={emb.weight_embedding_variance:g} gamma={emb.variance_gamma:g}")
+        if emb.use_embedding_covariance:
+            terms.append(f"covariance w={emb.weight_embedding_covariance:g}")
+        if emb.use_curve_recon:
+            terms.append(f"curve_recon({emb.curve_kind}) w={emb.weight_curve_recon:g}")
+        if emb.use_curve_sobolev:
+            terms.append(f"curve_sobolev w={emb.weight_curve_sobolev:g}")
+
+        return "  |  ".join(terms) if terms else "no terms enabled"
+
     def set_curriculum(self, embedding_cfg, context: str = "curriculum swap") -> None:
-        """Replaces the embedding-loss stage configuration and advances the loss generation.
+        """Replaces the embedding-loss stage configuration, advances the loss generation and logs the new composition.
 
         Warmup and main-stage embedding losses live on different scales, so
         the generation step makes the checkpoint tracker restart its baseline
@@ -58,10 +101,12 @@ class Loss:
 
         Args:
             embedding_cfg : Embedding-loss configuration the criterion switches to.
-            context       : Label describing why the stage changed, kept for parity with the parameter loss interface.
+            context       : Label describing why the stage changed, quoted in the log line.
         """
         self.emb_cfg          = embedding_cfg
         self.loss_generation += 1
+
+        self.logger.subsection(f"Active terms ({context}) : {self.describe_terms(embedding_cfg)}")
 
     def _embedding_terms(self, z_hat, z_star) -> tuple[torch.Tensor, dict]:
         """Sums the enabled embedding-space terms between prediction and target.
