@@ -114,6 +114,18 @@ def test_resolver_rejects_an_explicit_subdir_of_another_split(tmp_path):
         _resolver("20240202_000000").resolve(run)
 
 
+def test_resolver_rejects_an_explicit_region_of_an_incomplete_group_naming_the_group(tmp_path):
+    """An explicit stamp of the right split that belongs to a region group missing regions is refused as partial, not as another split."""
+    run   = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
+    stamp = _stamp(run, "20261001_region0", {"m": 2.0}, split=None)
+    CompletionMarker.stamp(stamp, {"stage": "inference", "split": "test", "region_pass": {"index": 0, "count": 2, "group": "20261001"}})
+
+    with pytest.raises(ValueError, match="region group that is missing regions") as raised:
+        _resolver("20261001_region0").resolve(run)
+
+    assert "not on the configured split" not in str(raised.value)
+
+
 def test_resolver_picks_the_newest_completed_stamp_of_the_split(tmp_path):
     """Without an explicit subdirectory the newest stamp completed on the split wins, skipping newer unfinished and other-split stamps."""
     run    = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
