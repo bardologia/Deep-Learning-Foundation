@@ -3,7 +3,8 @@
 Covers autoencoder run-directory resolution, the head restriction under profile coupling,
 checkpoint presence and run-completion checks, the head passed into the overfit gate, z-axis
 agreement and the checkpoint record kept when loading a pretrained profile autoencoder, the
-persistence of that record, and closing the run metadata when dataset preparation fails."""
+provenance comparison of coupled runs, the persistence of that record, and closing the run
+metadata when dataset preparation fails."""
 
 from __future__ import annotations
 
@@ -13,11 +14,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from pipelines.jepa.training          import pipeline as jepa_pipeline
-from pipelines.jepa.training.pipeline import TrainingPipeline
-from tools.data.io                    import FileIO
-from tools.runtime.completion         import CompletionMarker
-from tests.conftest                   import SilentLogger
+from configuration.dataset                      import InputConfig, ProfileDatasetConfig, SplitRegions
+from configuration.normalization                import ChannelStats, ChannelStrategy, NormMethod
+from pipelines.backbone.dataset.stats           import Stats
+from pipelines.jepa.training                    import pipeline as jepa_pipeline
+from pipelines.jepa.training.pipeline           import CoupledRunProvenance, TrainingPipeline
+from pipelines.shared.config.config_persistence import ProfileDatasetConfigIO
+from tools.data.io                              import FileIO
+from tools.data.regions                         import CropRegion
+from tools.runtime.completion                   import CompletionMarker
+from tests.conftest                             import SilentLogger
 
 
 class _RecordingLogger(SilentLogger):
@@ -40,6 +46,45 @@ class _RecordingLogger(SilentLogger):
     def warning(self, message, *args, **kwargs):
         """Records the warning message."""
         self.warnings.append(message)
+
+
+def _split_regions():
+    """Returns one small crop per split."""
+    return SplitRegions(train=CropRegion(0, 8, 0, 8), val=CropRegion(8, 16, 0, 8), test=CropRegion(16, 24, 0, 8))
+
+
+def _channel_stats(loc, scale):
+    """Returns z-score channel statistics with the given per-channel locations and scales."""
+    strategies = [ChannelStrategy(norm_method=NormMethod.ZSCORE, apply_log1p=False) for _ in loc]
+    names      = [f"channel_{index}" for index in range(len(loc))]
+
+    return ChannelStats(loc=list(loc), scale=list(scale), names=names, strategies=strategies, clampable=[False] * len(loc))
+
+
+def _image_ae_meta(tmp_path, input_config, secondary_labels, loc, scale, preprocessing="/data/pp_a", parameters="/data/params_a"):
+    """Persists an image autoencoder run's dataset-creation config and input statistics into meta/ and returns that directory."""
+    meta_dir = tmp_path / "image_run" / "meta"
+    payload  = {
+        "preprocessing_run_directory" : preprocessing,
+        "parameters_path"             : parameters,
+        "secondary_labels"            : secondary_labels,
+        "input_config"                : input_config.as_dict(),
+    }
+
+    FileIO.save_json(payload, meta_dir / "dataset_creation_config.json")
+    FileIO.save_json({"input_stats": _channel_stats(loc, scale).as_dict(), "output_stats": None, "clamp": {}}, meta_dir / Stats.FILENAME)
+
+    return meta_dir
+
+
+def _jepa_dataset_config(input_config, secondary_labels, preprocessing="/data/pp_a", parameters="/data/params_a"):
+    """Returns a JEPA dataset-config stand-in with the fields the provenance comparison reads."""
+    return types.SimpleNamespace(
+        preprocessing_run_directory = Path(preprocessing),
+        parameters_path             = Path(parameters),
+        secondary_labels            = secondary_labels,
+        input_config                = input_config,
+    )
 
 
 def test_resolve_ae_run_returns_none_when_no_run():
@@ -161,10 +206,15 @@ def _axis_pipeline(tmp_path):
     FileIO.save_json({"model_name": "profile_ae", "git_commit": "abc1234"}, tmp_path / "meta" / "run_summary.json")
     CompletionMarker.stamp(tmp_path, {"stage": "training", "epochs_completed": 9, "epochs_total": 20, "early_stopped": True, "best_val_loss": 0.125, "best_epoch": 7})
 
-    pipe                 = TrainingPipeline.__new__(TrainingPipeline)
-    pipe.ae_model_name   = "mlp_ae"
-    pipe.autoencoder_cfg = config
-    pipe.trainer_config  = SimpleNamespace(profile_autoencoder_checkpoint=str(checkpoint_path))
+    dataset_config = ProfileDatasetConfig(preprocessing_run_directory=Path("/data/pp_a"), split_regions=_split_regions(), activity_threshold=1e-3, parameters_path=Path("/data/params_a"), n_gaussians=2)
+    ProfileDatasetConfigIO.save(dataset_config, tmp_path / "meta")
+
+    pipe                          = TrainingPipeline.__new__(TrainingPipeline)
+    pipe.ae_model_name            = "mlp_ae"
+    pipe.autoencoder_cfg          = config
+    pipe.profile_autoencoder_meta = tmp_path / "meta"
+    pipe.trainer_config           = SimpleNamespace(profile_autoencoder_checkpoint=str(checkpoint_path), gaussian=SimpleNamespace(n_default_gaussians=2, activity_threshold=1e-3))
+    pipe.dataset_config           = _jepa_dataset_config(InputConfig(), None)
 
     pipe.profile_ae_state     = None
     pipe.coupled_autoencoders = {}
@@ -226,9 +276,14 @@ def test_load_profile_autoencoder_records_and_logs_the_imported_checkpoint(tmp_p
     assert record["marker_backfilled"] is False
     assert record["git_commit"]        == "abc1234"
 
+    assert record["provenance"]["parameters_path"] == {"autoencoder_run": "/data/params_a", "this_run": "/data/params_a"}
+    assert record["provenance"]["n_gaussians"]     == {"autoencoder_run": 2, "this_run": 2}
+
     assert len(logger.tables) == 1
-    assert logger.tables[0]["Checkpoint epoch"] == 7
-    assert logger.tables[0]["Git commit"]       == "abc1234"
+    assert logger.tables[0]["Checkpoint epoch"]           == 7
+    assert logger.tables[0]["Git commit"]                 == "abc1234"
+    assert logger.tables[0]["parameters_path (AE run)"]   == "/data/params_a"
+    assert logger.tables[0]["parameters_path (this run)"] == "/data/params_a"
     assert "early stopped" in logger.tables[0]["Epochs completed"]
     assert logger.warnings == []
 
@@ -250,6 +305,124 @@ def test_load_profile_autoencoder_records_a_backfilled_marker_without_epoch_coun
     assert record["epochs_total"]      is None
     assert record["early_stopped"]     is None
     assert logger.tables[0]["Epochs completed"] == "not recorded (backfilled completion marker)"
+
+
+def test_load_profile_autoencoder_warns_when_the_parameter_run_differs(tmp_path):
+    """A JEPA run rendering its targets from another parameter run than the profile autoencoder is warned about, naming both paths."""
+    pipe   = _axis_pipeline(tmp_path)
+    logger = _RecordingLogger()
+
+    pipe.dataset_config = _jepa_dataset_config(InputConfig(), None, parameters="/data/params_b")
+
+    pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32), logger)
+
+    assert len(logger.warnings) == 1
+    assert "/data/params_a" in logger.warnings[0] and "/data/params_b" in logger.warnings[0]
+    assert pipe.coupled_autoencoders["profile"]["provenance"]["parameters_path"]["this_run"] == "/data/params_b"
+
+
+def test_profile_provenance_warns_on_mixture_settings_that_differ(tmp_path):
+    """A different Gaussian count or activity threshold between the two runs is reported as a warning each."""
+    logger   = _RecordingLogger()
+    config   = ProfileDatasetConfig(preprocessing_run_directory=Path("/data/pp_a"), split_regions=_split_regions(), activity_threshold=1e-3, parameters_path=Path("/data/params_a"), n_gaussians=5)
+    meta_dir = tmp_path / "meta"
+
+    ProfileDatasetConfigIO.save(config, meta_dir)
+
+    provenance = CoupledRunProvenance(_jepa_dataset_config(InputConfig(), None), logger)
+    record     = provenance.profile(meta_dir, types.SimpleNamespace(n_default_gaussians=3, activity_threshold=1e-2))
+
+    assert record["n_gaussians"]        == {"autoencoder_run": 5,    "this_run": 3}
+    assert record["activity_threshold"] == {"autoencoder_run": 1e-3, "this_run": 1e-2}
+    assert len(logger.warnings) == 2
+
+
+def test_image_provenance_rejects_a_different_input_config(tmp_path):
+    """An image autoencoder trained on another channel representation is refused even at the same channel count."""
+    trained_on = InputConfig(use_primary=True, use_secondaries=False, use_derived=False, use_aux=True)
+    this_run   = InputConfig(use_primary=True, use_secondaries=False, use_derived=True,  use_aux=False)
+    meta_dir   = _image_ae_meta(tmp_path, trained_on, ["CH01"], loc=[0.0, 0.0], scale=[1.0, 1.0])
+
+    provenance = CoupledRunProvenance(_jepa_dataset_config(this_run, ["CH01"]), _RecordingLogger())
+
+    with pytest.raises(ValueError, match="input_config"):
+        provenance.image(meta_dir, _channel_stats([0.0, 0.0], [1.0, 1.0]))
+
+
+def test_image_provenance_rejects_different_secondary_labels(tmp_path):
+    """An image autoencoder trained on other secondary channels is refused."""
+    meta_dir   = _image_ae_meta(tmp_path, InputConfig(), ["CH01", "CH02"], loc=[0.0, 0.0], scale=[1.0, 1.0])
+    provenance = CoupledRunProvenance(_jepa_dataset_config(InputConfig(), ("CH01", "CH03")), _RecordingLogger())
+
+    with pytest.raises(ValueError, match="secondary channels"):
+        provenance.image(meta_dir, _channel_stats([0.0, 0.0], [1.0, 1.0]))
+
+
+def test_image_provenance_is_silent_and_records_both_runs_when_everything_matches(tmp_path):
+    """Matching configuration, paths and statistics produce a record with no warning."""
+    logger     = _RecordingLogger()
+    meta_dir   = _image_ae_meta(tmp_path, InputConfig(), ["CH01"], loc=[0.5, -0.2], scale=[2.0, 0.5])
+    provenance = CoupledRunProvenance(_jepa_dataset_config(InputConfig(), ("CH01",)), logger)
+
+    record = provenance.image(meta_dir, _channel_stats([0.5, -0.2], [2.0, 0.5]))
+
+    assert logger.warnings == []
+    assert record["preprocessing_run_directory"]    == {"autoencoder_run": "/data/pp_a", "this_run": "/data/pp_a"}
+    assert record["secondary_labels"]               == ["CH01"]
+    assert record["input_config"]                   == InputConfig().as_dict()
+    assert record["input_stats"]["max_deviation"]   == 0.0
+    assert record["input_stats"]["autoencoder_run"] == {"loc": [0.5, -0.2], "scale": [2.0, 0.5]}
+
+
+def test_image_provenance_warns_on_paths_and_statistics_beyond_tolerance(tmp_path):
+    """Different preprocessing and parameter runs and shifted input statistics each raise one warning naming both values."""
+    logger     = _RecordingLogger()
+    meta_dir   = _image_ae_meta(tmp_path, InputConfig(), None, loc=[0.0, 0.0], scale=[1.0, 2.0])
+    provenance = CoupledRunProvenance(_jepa_dataset_config(InputConfig(), None, preprocessing="/data/pp_b", parameters="/data/params_b"), logger)
+
+    record = provenance.image(meta_dir, _channel_stats([0.0, 0.1], [1.0, 2.0]))
+
+    assert record["input_stats"]["max_deviation"] == pytest.approx(0.05)
+    assert len(logger.warnings) == 3
+    assert any("/data/pp_a" in message and "/data/pp_b" in message for message in logger.warnings)
+    assert any("autoencoder-scale units" in message for message in logger.warnings)
+
+
+def test_image_provenance_tolerates_statistics_within_tolerance(tmp_path):
+    """A shift below the tolerance, in autoencoder-scale units, is recorded without a warning."""
+    logger     = _RecordingLogger()
+    meta_dir   = _image_ae_meta(tmp_path, InputConfig(), None, loc=[0.0, 0.0], scale=[1.0, 2.0])
+    provenance = CoupledRunProvenance(_jepa_dataset_config(InputConfig(), None), logger)
+
+    record = provenance.image(meta_dir, _channel_stats([0.005, 0.0], [1.0, 2.01]))
+
+    assert logger.warnings == []
+    assert record["input_stats"]["max_deviation"] == pytest.approx(0.005)
+
+
+def test_image_provenance_rejects_a_different_channel_count_in_the_statistics(tmp_path):
+    """Statistics covering a different number of channels are an inconsistent input stack, not a tolerable shift."""
+    meta_dir   = _image_ae_meta(tmp_path, InputConfig(), None, loc=[0.0, 0.0], scale=[1.0, 1.0])
+    provenance = CoupledRunProvenance(_jepa_dataset_config(InputConfig(), None), _RecordingLogger())
+
+    with pytest.raises(ValueError, match="channels"):
+        provenance.image(meta_dir, _channel_stats([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]))
+
+
+def test_provenance_rows_pair_compared_items_and_summarise_the_statistics():
+    """The table rows show each compared item for both runs and reduce the statistics to their largest shift."""
+    record = {
+        "parameters_path"  : {"autoencoder_run": "/a", "this_run": "/b"},
+        "secondary_labels" : ["CH01"],
+        "input_stats"      : {"autoencoder_run": {}, "this_run": {}, "max_deviation": 0.25, "tolerance": 0.01},
+    }
+
+    rows = CoupledRunProvenance.rows(record)
+
+    assert rows["parameters_path (AE run)"]   == "/a"
+    assert rows["parameters_path (this run)"] == "/b"
+    assert rows["secondary_labels"]           == ["CH01"]
+    assert rows["Input stats shift"]          == "0.25 autoencoder-scale units (tolerance 0.01)"
 
 
 def test_save_metadata_persists_the_coupled_autoencoder_record(tmp_path):

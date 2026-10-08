@@ -13,6 +13,7 @@ from pathlib     import Path
 import numpy as np
 import torch
 
+from configuration.normalization                         import ChannelStats
 from configuration.training                              import JepaTrainerConfig
 from models                                              import get_backbone
 from models.profile_autoencoder                          import get_profile_autoencoder
@@ -21,17 +22,188 @@ from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalize
 from pipelines.shared.config.config_factory              import ConfigFactory
 from pipelines.shared.config.run_metadata                import TrainingRunMetadata
 from pipelines.backbone.dataset.pipeline                 import BackboneDatasetPreparation
+from pipelines.backbone.dataset.stats                    import Stats
 from pipelines.shared.model.model_builder                import ModelBuilder
 from pipelines.shared.training.overfit_check             import OverfitCheck
 from pipelines.shared.training.run_naming                import JepaNamingSpec, RunNaming
 from pipelines.shared.training.training_runner           import EntryConfigTrainRunner
 from pipelines.jepa.training.loss                        import Loss as EmbeddingLoss
 from pipelines.jepa.training.trainer                     import JepaModule, Trainer
-from pipelines.shared.config.config_persistence          import ProfileAutoencoderConfigIO, ImageAutoencoderConfigIO
+from pipelines.shared.config.config_persistence          import ProfileAutoencoderConfigIO, ImageAutoencoderConfigIO, ProfileDatasetConfigIO
 from tools.data.io                                       import FileIO
 from tools.runtime.completion                            import CompletionMarker
 from tools.runtime.reproducibility                       import Reproducibility
 from tools.runtime.run_tag                               import RunTag
+
+
+class CoupledRunProvenance:
+    """Compares the dataset provenance of a coupled autoencoder run with the JEPA run's own.
+
+    A frozen image encoder only ever saw the channel selection, the secondary
+    channels and the input normalization of its own run, so the channel
+    selection and the secondaries must match exactly; the preprocessing run,
+    the parameter run and the fitted input statistics may legitimately differ
+    (another split, another parameter run) and are reported as warnings naming
+    both values. A profile autoencoder is compared on the preprocessing and
+    parameter runs its curves were rendered from and on the mixture settings
+    behind those curves.
+
+    Attributes:
+        STATS_TOLERANCE : Largest per-channel shift of location or scale, in units of the autoencoder run's scale, accepted without a warning.
+        dataset_config  : Dataset configuration of the JEPA run.
+        logger          : Logger receiving the warnings.
+    """
+
+    STATS_TOLERANCE = 0.01
+
+    def __init__(self, dataset_config, logger) -> None:
+        """Binds this run's dataset configuration and the logger.
+
+        Args:
+            dataset_config : Dataset configuration of the JEPA run.
+            logger         : Logger receiving the warnings.
+        """
+        self.dataset_config = dataset_config
+        self.logger         = logger
+
+    @staticmethod
+    def _path(value):
+        """Returns a path value as a string, or None when it was not set."""
+        return None if value is None else str(value)
+
+    @staticmethod
+    def _labels(value):
+        """Returns the secondary labels as a list, or None when every secondary is loaded."""
+        return None if value is None else list(value)
+
+    def _compare(self, label: str, item: str, autoencoder_value, own_value) -> dict:
+        """Records one compared item, warning when the coupled run and this run disagree.
+
+        Args:
+            label             : Coupled autoencoder, "profile" or "image".
+            item              : Name of the compared item.
+            autoencoder_value : Value the autoencoder run was trained with.
+            own_value         : Value this JEPA run uses.
+
+        Returns:
+            Mapping with the autoencoder run's and this run's value.
+        """
+        if autoencoder_value != own_value:
+            self.logger.warning(f"The coupled {label} autoencoder was trained with {item} {autoencoder_value!r} but this JEPA run uses {own_value!r}; the imported weights were fitted on another {item}, which the JEPA result will reflect.")
+
+        return {"autoencoder_run": autoencoder_value, "this_run": own_value}
+
+    def _compare_input_stats(self, autoencoder_stats: ChannelStats, own_stats: ChannelStats) -> dict:
+        """Records both runs' input normalization and warns when they differ beyond the tolerance.
+
+        Args:
+            autoencoder_stats : Per-channel input statistics the image autoencoder run was trained with.
+            own_stats         : Per-channel input statistics fitted on this run's training split.
+
+        Returns:
+            Mapping with both runs' locations and scales, the largest shift in
+            autoencoder-scale units and the tolerance.
+
+        Raises:
+            ValueError : If the two statistics cover a different number of channels.
+        """
+        if autoencoder_stats.n_channels != own_stats.n_channels:
+            raise ValueError(f"The coupled image autoencoder's input normalization covers {autoencoder_stats.n_channels} channels but this run fitted {own_stats.n_channels}; the two runs do not assemble the same input stack.")
+
+        ae_loc    = np.asarray(autoencoder_stats.loc,   dtype=np.float64)
+        ae_scale  = np.asarray(autoencoder_stats.scale, dtype=np.float64)
+        own_loc   = np.asarray(own_stats.loc,           dtype=np.float64)
+        own_scale = np.asarray(own_stats.scale,         dtype=np.float64)
+
+        deviation = float(np.max(np.maximum(np.abs(ae_loc - own_loc), np.abs(ae_scale - own_scale)) / ae_scale))
+
+        if deviation > self.STATS_TOLERANCE:
+            self.logger.warning(f"Input normalization of this run differs from the coupled image autoencoder's: the largest per-channel shift of location or scale is {deviation:.3g} autoencoder-scale units (tolerance {self.STATS_TOLERANCE:g}); the frozen encoder receives inputs standardized with statistics it was not trained on. Autoencoder loc {ae_loc.round(4).tolist()} scale {ae_scale.round(4).tolist()}; this run loc {own_loc.round(4).tolist()} scale {own_scale.round(4).tolist()}.")
+
+        return {
+            "autoencoder_run" : {"loc": list(autoencoder_stats.loc), "scale": list(autoencoder_stats.scale)},
+            "this_run"        : {"loc": list(own_stats.loc),         "scale": list(own_stats.scale)},
+            "max_deviation"   : deviation,
+            "tolerance"       : self.STATS_TOLERANCE,
+        }
+
+    def image(self, meta_directory, input_stats: ChannelStats) -> dict:
+        """Checks an image autoencoder run against this run and returns the provenance record.
+
+        Args:
+            meta_directory : The image autoencoder run's meta directory, holding its dataset-creation config and normalization statistics.
+            input_stats    : Per-channel input statistics fitted on this run's training split.
+
+        Returns:
+            Record of the compared preprocessing run, parameter run, input
+            configuration, secondary labels and input statistics.
+
+        Raises:
+            ValueError : If the input configuration or the secondary labels differ, so the frozen encoder would receive channels it never saw.
+        """
+        payload           = FileIO.load_json(Path(meta_directory) / "dataset_creation_config.json")
+        autoencoder_stats = ChannelStats.from_dict(FileIO.load_json(Path(meta_directory) / Stats.FILENAME)["input_stats"])
+
+        own_input  = self.dataset_config.input_config.as_dict()
+        own_labels = self._labels(self.dataset_config.secondary_labels)
+        ae_labels  = self._labels(payload["secondary_labels"])
+
+        if payload["input_config"] != own_input:
+            raise ValueError(f"The coupled image autoencoder was trained on input_config {payload['input_config']} but this JEPA run assembles {own_input}; the frozen encoder never saw that channel representation. Match the input settings of the image autoencoder run or couple an autoencoder trained on them.")
+
+        if ae_labels != own_labels:
+            raise ValueError(f"The coupled image autoencoder was trained on secondary channels {ae_labels} but this JEPA run loads {own_labels}; the channel count may agree while the secondaries behind the channels do not. Match the secondary labels of the image autoencoder run or couple an autoencoder trained on them.")
+
+        return {
+            "preprocessing_run_directory" : self._compare("image", "preprocessing run", payload["preprocessing_run_directory"], self._path(self.dataset_config.preprocessing_run_directory)),
+            "parameters_path"             : self._compare("image", "parameters path",   payload["parameters_path"],             self._path(self.dataset_config.parameters_path)),
+            "input_config"                : own_input,
+            "secondary_labels"            : own_labels,
+            "input_stats"                 : self._compare_input_stats(autoencoder_stats, input_stats),
+        }
+
+    def profile(self, meta_directory, gaussian_cfg) -> dict:
+        """Checks a profile autoencoder run against this run and returns the provenance record.
+
+        Args:
+            meta_directory : The profile autoencoder run's meta directory, holding its persisted dataset configuration.
+            gaussian_cfg   : Gaussian mixture configuration of this run, whose curves the encoder will embed.
+
+        Returns:
+            Record of the compared preprocessing run, parameter run, Gaussian
+            count and activity threshold.
+        """
+        config = ProfileDatasetConfigIO.load(meta_directory)
+
+        return {
+            "preprocessing_run_directory" : self._compare("profile", "preprocessing run",  self._path(config.preprocessing_run_directory), self._path(self.dataset_config.preprocessing_run_directory)),
+            "parameters_path"             : self._compare("profile", "parameters path",    self._path(config.parameters_path),             self._path(self.dataset_config.parameters_path)),
+            "n_gaussians"                 : self._compare("profile", "n_gaussians",        config.n_gaussians,                             gaussian_cfg.n_default_gaussians),
+            "activity_threshold"          : self._compare("profile", "activity_threshold", config.activity_threshold,                      gaussian_cfg.activity_threshold),
+        }
+
+    @staticmethod
+    def rows(record: dict) -> dict:
+        """Formats a provenance record as log-table rows.
+
+        Args:
+            record : Record returned by `image` or `profile`.
+
+        Returns:
+            One row per plain item, a pair of rows (autoencoder run, this run)
+            per compared item, and a one-line summary of the input statistics.
+        """
+        rows = {}
+        for item, value in record.items():
+            if item == "input_stats":
+                rows["Input stats shift"] = f"{value['max_deviation']:.3g} autoencoder-scale units (tolerance {value['tolerance']:g})"
+            elif isinstance(value, dict) and "autoencoder_run" in value:
+                rows[f"{item} (AE run)"]   = value["autoencoder_run"]
+                rows[f"{item} (this run)"] = value["this_run"]
+            else:
+                rows[item] = value
+
+        return rows
 
 
 class TrainingPipeline:
@@ -52,7 +224,7 @@ class TrainingPipeline:
         backbone_name            : Registry name of the backbone.
         profile_ae_state         : Cached profile autoencoder state dict, loaded on first use.
         image_ae_state           : Cached image autoencoder state dict, loaded on first use.
-        coupled_autoencoders     : Per-coupling record of the imported checkpoint (epochs, validation loss, commit), keyed by "profile" or "image" once loaded.
+        coupled_autoencoders     : Per-coupling record of the imported checkpoint (epochs, validation loss, commit) and its dataset provenance, keyed by "profile" or "image" once loaded.
     """
 
     COUPLED_RECORD_FILENAME = "coupled_autoencoders.json"
@@ -243,7 +415,7 @@ class TrainingPipeline:
         if self.image_ae_cfg is not None:
             if self.image_ae_cfg.in_channels != dataset_in_channels:
                 raise ValueError(f"Image autoencoder was trained with in_channels={self.image_ae_cfg.in_channels} but the JEPA dataset produces {dataset_in_channels} input channels; the input representation and secondaries must match the image autoencoder run.")
-            image_autoencoder = self._load_image_autoencoder(logger)
+            image_autoencoder = self._load_image_autoencoder(logger, datasets["train"].normalizer.stats.input_stats)
             backbone_in       = self.image_ae_cfg.embedding_dim
 
         profile_autoencoder = None
@@ -335,12 +507,13 @@ class TrainingPipeline:
         """Instantiates the profile autoencoder and loads its pretrained weights.
 
         The checkpoint is read once; on that first load the imported run is
-        checked for completion, and its epoch, validation loss and commit are
+        checked for completion, its dataset provenance is compared with this
+        run's, and its epoch, validation loss, commit and provenance are
         recorded and logged.
 
         Args:
             z_axis : Z axis in metres of the JEPA dataset, compared against the axis stored in the checkpoint.
-            logger : Logger receiving the coupled-run table on the first load.
+            logger : Logger receiving the coupled-run table and provenance warnings on the first load.
 
         Returns:
             The profile autoencoder with the checkpoint state loaded.
@@ -354,8 +527,11 @@ class TrainingPipeline:
             ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
             self._validate_profile_axis(np.asarray(ckpt["z_axis"], dtype=np.float32), np.asarray(z_axis, dtype=np.float32), ckpt_path)
 
+            record               = self._checkpoint_record(ckpt_path, ckpt)
+            record["provenance"] = CoupledRunProvenance(self.dataset_config, logger).profile(self.profile_autoencoder_meta, self.trainer_config.gaussian)
+
             self.profile_ae_state                = ckpt["params"]
-            self.coupled_autoencoders["profile"] = self._checkpoint_record(ckpt_path, ckpt)
+            self.coupled_autoencoders["profile"] = record
             self._log_coupled(logger, "profile")
 
         autoencoder.load_state_dict(self.profile_ae_state)
@@ -376,15 +552,17 @@ class TrainingPipeline:
         if ae_axis.shape != jepa_axis.shape or not np.allclose(ae_axis, jepa_axis, rtol=1e-5, atol=1e-5):
             raise ValueError(f"Profile autoencoder checkpoint '{ckpt_path}' was trained on z axis [{ae_axis[0]:.3f}, {ae_axis[-1]:.3f}] with {ae_axis.size} bins, but the JEPA dataset produces axis [{jepa_axis[0]:.3f}, {jepa_axis[-1]:.3f}] with {jepa_axis.size} bins; retrain the profile autoencoder on this dataset's z axis before coupling it.")
 
-    def _load_image_autoencoder(self, logger):
+    def _load_image_autoencoder(self, logger, input_stats):
         """Instantiates the image autoencoder and loads its pretrained weights.
 
         The checkpoint is read once; on that first load the imported run is
-        checked for completion, and its epoch, validation loss and commit are
+        checked for completion, its dataset provenance and input normalization
+        are compared with this run's, and the checkpoint and provenance are
         recorded and logged.
 
         Args:
-            logger : Logger receiving the coupled-run table on the first load.
+            logger      : Logger receiving the coupled-run table and provenance warnings on the first load.
+            input_stats : Per-channel input statistics fitted on this run's training split.
 
         Returns:
             The image autoencoder with the checkpoint state loaded.
@@ -395,10 +573,12 @@ class TrainingPipeline:
         if self.image_ae_state is None:
             self.validate_checkpoint(ckpt_path, "image")
 
-            ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            ckpt                 = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            record               = self._checkpoint_record(ckpt_path, ckpt)
+            record["provenance"] = CoupledRunProvenance(self.dataset_config, logger).image(self.image_autoencoder_meta, input_stats)
 
             self.image_ae_state                = ckpt["params"]
-            self.coupled_autoencoders["image"] = self._checkpoint_record(ckpt_path, ckpt)
+            self.coupled_autoencoders["image"] = record
             self._log_coupled(logger, "image")
 
         autoencoder.load_state_dict(self.image_ae_state)
@@ -469,15 +649,18 @@ class TrainingPipeline:
         """
         record = self.coupled_autoencoders[label]
 
-        logger.section(f"[Coupled {label.title()} Autoencoder]")
-        logger.kv_table({
+        rows = {
             "Run directory"    : record["run_directory"],
             "Checkpoint"       : record["checkpoint"],
             "Checkpoint epoch" : record["epoch"],
             "Best epoch"       : f"{record['best_epoch']} (val_loss {record['best_val_loss']:.6g})",
             "Epochs completed" : "not recorded (backfilled completion marker)" if record["marker_backfilled"] else f"{record['epochs_completed']} of {record['epochs_total']}" + (" (early stopped)" if record["early_stopped"] else ""),
             "Git commit"       : record["git_commit"],
-        })
+        }
+        rows.update(CoupledRunProvenance.rows(record["provenance"]))
+
+        logger.section(f"[Coupled {label.title()} Autoencoder]")
+        logger.kv_table(rows)
 
     def _save_metadata(self, run_meta, backbone_cfg, z_len: int) -> None:
         """Writes the trainer, backbone, autoencoder, coupled-run and run-summary metadata files.
