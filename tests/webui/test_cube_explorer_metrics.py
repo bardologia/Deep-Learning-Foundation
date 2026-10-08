@@ -1,16 +1,20 @@
-"""Tests for the cube explorer's metric layers: overlays, pixel readouts, colour bars and selective scoring."""
+"""Tests for the cube explorer's metric layers: overlays, class legends, histograms, pixel readouts, colour bars and selective scoring."""
 
 from __future__ import annotations
 
 import io
-from pathlib import Path
+import json
+from pathlib      import Path
+from urllib.parse import quote
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from cube_explorer import CubeExplorer
+from cube_explorer        import CubeExplorer
+from routers.cube_routers import CubeRouter
+from routers.dispatch     import HttpExchange
 
-from tests.webui.conftest import N_COLS, N_ROWS, load_cube, loaded_cube, make_cube_run, open_explorer
+from tests.webui.conftest import N_COLS, N_ROWS, FakeHandler, load_cube, loaded_cube, make_cube_run, open_explorer
 
 
 def _loaded_explorer(base: Path) -> tuple[CubeExplorer, str]:
@@ -101,6 +105,50 @@ def test_cbar_png_whitelist(tmp_path):
 
     assert explorer.cbar_png("viridis")[:4] == b"\x89PNG"
     assert explorer.cbar_png("banana") is None
+
+
+def test_metric_histogram(tmp_path):
+    """Continuous layers bin over the robust range with the tails counted apart, and class layers count per class."""
+    explorer, cube_id = _class_explorer(tmp_path)
+
+    hist = explorer.metric_histogram(cube_id, "pixel_r2")
+    assert hist["ok"] and hist["kind"] == "continuous"
+    assert len(hist["edges"]) == len(hist["counts"]) + 1 == CubeExplorer.METRIC_HIST_BINS + 1
+    assert sum(hist["counts"]) + hist["n_low"] + hist["n_high"] == N_ROWS * N_COLS - 1
+    assert hist["n_low"] >= 1 and hist["n_high"] >= 1
+
+    modes = explorer.metric_histogram(cube_id, "failure_mode")
+    assert modes["ok"] and modes["kind"] == "classes"
+    assert modes["names"][0] == "ok" and len(modes["counts"]) == 6
+    assert sum(modes["counts"]) == N_ROWS * N_COLS
+
+    assert explorer.metric_histogram(cube_id, "banana")["ok"] is False
+    assert explorer.metric_histogram("wrong", "pixel_r2")["ok"] is False
+
+
+def test_metric_hist_route_answers_through_the_cube_router(tmp_path):
+    """The /api/cubes/metric_hist route answers a known layer with its counts and an unknown one with an error status."""
+    explorer, cube_id = _class_explorer(tmp_path)
+    router            = CubeRouter(explorer)
+
+    known   = FakeHandler("GET", f"/api/cubes/metric_hist?id={quote(cube_id)}&key=failure_mode")
+    unknown = FakeHandler("GET", f"/api/cubes/metric_hist?id={quote(cube_id)}&key=banana")
+
+    assert router.handle(HttpExchange.of(known)) and router.handle(HttpExchange.of(unknown))
+    assert known.status == 200 and json.loads(known.wfile.getvalue())["counts"] == [N_ROWS] * 6
+    assert unknown.status == 400
+
+
+def test_metric_histogram_rejects_a_layer_without_finite_values(tmp_path):
+    """A layer holding no finite value reports that instead of binning an empty array."""
+    stamp = make_cube_run(tmp_path, with_metrics=True)
+    np.save(stamp / "cubes" / "embedding_error.npy", np.full((N_ROWS, N_COLS), np.nan, dtype=np.float32))
+
+    explorer, cube_ids = open_explorer(tmp_path, expected=1)
+    load_cube(explorer, cube_ids[0])
+
+    result = explorer.metric_histogram(cube_ids[0], "embedding_error")
+    assert result["ok"] is False and "no finite value" in result["error"]
 
 
 def test_selective_metrics_keep_low_confidence_share(tmp_path):

@@ -248,12 +248,24 @@ class CubeViewChecks {
     this.sandbox.Api          = { get: async (url) => answer(new URLSearchParams(url.split("?")[1])) };
 
     const refs = {};
-    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open"].forEach((name) => {
+    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open", "histNote"].forEach((name) => {
       refs[name] = this._element({ innerHTML: "" });
     });
 
-    const host = { selectedId: "cube", meta: { n_rows: 4, n_cols: 6 }, _fmt: (value) => String(value) };
-    return { metrics: new CubeMetrics(refs, host), refs };
+    const drawn = { fills: [], strokes: 0, cleared: 0 };
+    const ctx   = {
+      setTransform : () => {},
+      clearRect    : () => { drawn.cleared += 1; },
+      fillRect     : (x, y, w, h) => drawn.fills.push({ color: ctx.fillStyle, x, w, h }),
+      beginPath    : () => {},
+      moveTo       : () => {},
+      lineTo       : () => {},
+      stroke       : () => { drawn.strokes += 1; },
+    };
+    refs.hist = this._element({ width: 0, height: 0, clientWidth: 240, clientHeight: 92, getContext: () => ctx });
+
+    const host = { selectedId: "cube", meta: { n_rows: 4, n_cols: 6 }, colors: { accent: "#a3c0ff", warn: "#fcd34d" }, _fmt: (value) => String(value) };
+    return { metrics: new CubeMetrics(refs, host), refs, host, drawn };
   }
 
   async legend() {
@@ -283,6 +295,47 @@ class CubeViewChecks {
     const continuous = shown();
 
     return { discrete, continuous, hover, readout };
+  }
+
+  async histogram() {
+    const legend   = [{ index: 0, name: "clean", color: "#4c78a8" }, { index: 1, name: "suspect", color: "#f58518" }];
+    const answers  = [];
+    const { metrics, refs, host, drawn } = this._metrics((query) => new Promise((resolve) => answers.push({ query, resolve })));
+
+    const classLayer      = { key: "label_suspect", label: "label suspect", vmin: 0, vmax: 1, classes: legend };
+    const continuousLayer = { key: "pixel_r2", label: "R2", vmin: 0, vmax: 1, classes: null };
+    const reset           = () => { drawn.fills = []; drawn.strokes = 0; };
+
+    metrics.layer = classLayer;
+    const classFetch = metrics._fetchHist();
+    answers.shift().resolve({ ok: true, kind: "classes", names: ["clean", "suspect"], counts: [30, 10] });
+    await classFetch;
+    const classes = { fills: drawn.fills.map((fill) => fill.color), heights: drawn.fills.map((fill) => fill.h), note: !refs.histNote.hidden };
+
+    reset();
+    metrics.layer = continuousLayer;
+    metrics._drawHist();
+    const stale = { fills: drawn.fills.length, cleared: drawn.cleared > 0 };
+
+    reset();
+    refs.vmin.value = "0.25";
+    refs.vmax.value = "0.75";
+    metrics.mode    = "above";
+    refs.thr.value  = "500";
+    const continuousFetch = metrics._fetchHist();
+    answers.shift().resolve({ ok: true, kind: "continuous", edges: [0, 0.25, 0.5, 0.75, 1], counts: [1, 4, 2, 0], n_low: 3, n_high: 1200 });
+    await continuousFetch;
+    const continuous = { fills: drawn.fills.length, band: drawn.fills[0].color, bars: drawn.fills[1].color, strokes: drawn.strokes, note: refs.histNote.hidden ? null : refs.histNote.textContent };
+
+    metrics.hist    = null;
+    metrics.histKey = null;
+    const lateFetch = metrics._fetchHist();
+    host.selectedId = "other";
+    answers.shift().resolve({ ok: true, kind: "continuous", edges: [0, 1], counts: [5], n_low: 0, n_high: 0 });
+    await lateFetch;
+    const late = { hist: metrics.hist, histKey: metrics.histKey };
+
+    return { classes, stale, continuous, late };
   }
 
   async run(name) {

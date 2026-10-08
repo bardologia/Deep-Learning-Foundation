@@ -1346,6 +1346,49 @@ class CubeExplorer:
 
         return payload
 
+    METRIC_HIST_BINS = 60
+
+    def metric_histogram(self, cube_id: str, key: str) -> dict:
+        """Returns the value distribution of one metric map.
+
+        Continuous layers are binned over their robust colour range, with the
+        values outside it counted separately as low and high tails; class
+        layers get one bin per class.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            key     : Metric map name.
+
+        Returns:
+            Dict with ``ok``, ``kind`` "continuous", the bin ``edges`` and ``counts`` and the tail counts ``n_low`` and ``n_high``, or ``ok``, ``kind`` "classes", the class ``names`` and per-class ``counts``; ``ok`` False when the layer is unknown or holds no finite value.
+        """
+        resolved = self._metric_state(cube_id, key)
+        if resolved is None:
+            return {"ok": False, "error": f"unknown metric map: {key}"}
+
+        data, _primary, _clim = resolved
+        finite = data[np.isfinite(data)]
+        if not finite.size:
+            return {"ok": False, "error": f"metric map '{key}' holds no finite value"}
+
+        classes = self.METRIC_CLASSES.get(key)
+        if classes is not None:
+            index  = np.clip(np.round(finite), 0, len(classes) - 1).astype(int)
+            counts = np.bincount(index, minlength=len(classes))
+            return {"ok": True, "kind": "classes", "names": list(classes), "counts": [int(v) for v in counts]}
+
+        lo, hi        = self._metric_range(data)
+        counts, edges = np.histogram(finite, bins=self.METRIC_HIST_BINS, range=(lo, hi))
+
+        return {
+            "ok"     : True,
+            "kind"   : "continuous",
+            "edges"  : [float(v) for v in edges],
+            "counts" : [int(v) for v in counts],
+            "n_low"  : int((finite < lo).sum()),
+            "n_high" : int((finite > hi).sum()),
+        }
+
     def _metric_state(self, cube_id: str, key: str) -> tuple[np.ndarray, np.ndarray, tuple[float, float]] | None:
         """Returns the metric map, the primary amplitude map and its cached colour limits."""
         with self.lock:

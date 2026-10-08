@@ -8,7 +8,8 @@ kept. The point cloud's section-cut plane must bound itself by the cloud's true 
 hide the points beyond it, and stop its sweep loop when the view or the tab is left. The
 parameter map's pixel readout must keep the pixel picked last when answers arrive out of
 order. Class metric layers must swap the colour bar for a named legend and read out class
-names.
+names, and the layer histogram must draw one coloured bar per class, shade the colour range,
+mark the keep threshold, and never draw a distribution fetched for another layer or cube.
 """
 
 from __future__ import annotations
@@ -162,3 +163,34 @@ def test_class_layers_read_out_class_names():
 
     assert observed["hover"] == "row = 1 · col = 2 · label suspect = suspect"
     assert "<td>suspect</td>" in observed["readout"] and "<td>0.25</td>" in observed["readout"]
+
+
+@NEEDS_JS
+def test_class_histogram_draws_one_bar_per_class_in_its_legend_colour():
+    """A class layer's histogram paints each class count in that class's legend colour, scaled to the largest."""
+    classes = _check("histogram")["classes"]
+
+    assert classes["fills"] == ["#4c78a8", "#f58518"]
+    assert classes["heights"][0] == pytest.approx(3 * classes["heights"][1])
+    assert not classes["note"]
+
+
+@NEEDS_JS
+def test_continuous_histogram_shades_the_range_marks_the_threshold_and_counts_the_tails():
+    """A continuous histogram shades the colour range, draws one bar per bin, marks the keep threshold and notes the tails."""
+    continuous = _check("histogram")["continuous"]
+
+    assert continuous["fills"] == 1 + 4
+    assert continuous["band"] == "rgba(163, 192, 255, 0.1)"
+    assert continuous["bars"] == "rgba(163, 192, 255, 0.72)"
+    assert continuous["strokes"] == 1
+    assert continuous["note"] == "3 px below and 1,200 px above the shown range"
+
+
+@NEEDS_JS
+def test_histogram_never_draws_a_distribution_of_another_layer_or_cube():
+    """Switching layers before the new distribution arrives clears the canvas, and an answer for a replaced cube is dropped."""
+    observed = _check("histogram")
+
+    assert observed["stale"] == {"fills": 0, "cleared": True}
+    assert observed["late"] == {"hist": None, "histKey": None}
