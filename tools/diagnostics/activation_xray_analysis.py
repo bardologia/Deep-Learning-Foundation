@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from tools.diagnostics.activation_recorder  import LayerActivationStats
 from tools.diagnostics.weight_xray_analysis import SEVERITY_RANK, Issue
+from tools.runtime.git_state                import RunProvenance
 
 
 class ActivationLayerReport:
@@ -135,7 +136,22 @@ class ActivationIssueDetector:
 
 
 class ActivationXraySummarizer:
-    """Condenses per-layer activation reports into a run-level summary."""
+    """Condenses per-layer activation reports into a run-level summary.
+
+    Attributes:
+        config     : Activation x-ray configuration whose capture settings and thresholds the summary records beside the verdict they produced.
+        THRESHOLDS : Configuration fields that decide every flag.
+    """
+
+    THRESHOLDS = ("dead_zero_frac_warn", "dead_zero_frac_critical", "dead_channel_frac_warn", "explode_abs_threshold", "constant_std_threshold", "channel_collapse_frac_warn")
+
+    def __init__(self, config) -> None:
+        """Initialises the summarizer.
+
+        Args:
+            config : Configuration exposing the checkpoint, split, device, batch settings and the detector thresholds.
+        """
+        self.config = config
 
     def build(self, reports: list[ActivationLayerReport], run_dir, n_batches: int, reused_modules: dict, silent_layers: dict) -> dict:
         """Builds the run-level summary of an activation x-ray.
@@ -148,10 +164,12 @@ class ActivationXraySummarizer:
             silent_layers  : Hooked leaf modules that never produced a tensor, mapped to their module type, which have no report.
 
         Returns:
-            Mapping with the run directory, the recorded, hooked and batch
+            Mapping with the run directory, the checkpoint, split, device and
+            batch settings of the capture, the recorded, hooked and batch
             counts, flagged layer and issue totals, severity and issue-code
             histograms, the five worst layer names, the reused modules, the
-            silent layers, and a textual verdict.
+            silent layers, the thresholds behind every flag, the code and host
+            provenance, and a textual verdict.
         """
         issues  = [issue for report in reports for issue in report.issues]
         flagged = [report for report in reports if report.severity != "ok"]
@@ -168,6 +186,11 @@ class ActivationXraySummarizer:
 
         return {
             "run_directory"   : str(run_dir),
+            "checkpoint"      : self.config.checkpoint_name,
+            "split"           : self.config.split,
+            "device"          : self.config.device,
+            "batch_size"      : self.config.batch_size,
+            "max_batches"     : self.config.max_batches,
             "layers"          : len(reports),
             "hooked_layers"   : len(reports) + len(silent_layers),
             "batches"         : n_batches,
@@ -178,6 +201,8 @@ class ActivationXraySummarizer:
             "worst_layers"    : [report.name for report in worst[:5]],
             "reused_modules"  : dict(reused_modules),
             "silent_layers"   : dict(silent_layers),
+            "thresholds"      : {name: getattr(self.config, name) for name in self.THRESHOLDS},
+            "provenance"      : RunProvenance.collect(),
             "verdict"         : self._verdict(severity_counts),
         }
 

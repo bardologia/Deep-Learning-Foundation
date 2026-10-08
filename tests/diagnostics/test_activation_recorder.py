@@ -142,7 +142,7 @@ def test_issue_detector_flags_dead_and_exploding_layers():
 
     reports  = ActivationIssueDetector(config).run(stats)
     by_name  = {report.name: report for report in reports}
-    summary  = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={})
+    summary  = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={})
 
     assert by_name["dead"].severity    == "critical"
     assert by_name["explode"].severity == "warning"
@@ -188,7 +188,7 @@ def test_summary_ranks_worst_layers_by_severity():
     }
 
     reports = ActivationIssueDetector(config).run(stats)
-    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={})
+    summary = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={})
 
     assert summary["worst_layers"][0] == "critical"
     assert "warned" in summary["worst_layers"]
@@ -353,7 +353,7 @@ def test_unshared_modules_are_not_reported_as_reused():
 def test_summary_carries_the_reused_modules():
     """The run summary persists which modules were recorded per call site."""
     reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
-    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={"pool": 4}, silent_layers={})
+    summary = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules={"pool": 4}, silent_layers={})
 
     assert summary["reused_modules"] == {"pool": 4}
 
@@ -399,8 +399,23 @@ def test_stats_raise_when_no_module_fired():
 def test_summary_counts_hooked_and_silent_layers():
     """The run summary tells the recorded layers from the hooked ones and names the silent leaves."""
     reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
-    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={"unused": "Conv2d"})
+    summary = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={"unused": "Conv2d"})
 
     assert summary["layers"]        == 1
     assert summary["hooked_layers"] == 2
     assert summary["silent_layers"] == {"unused": "Conv2d"}
+
+
+def test_summary_records_the_capture_settings_thresholds_and_provenance():
+    """The run summary persists the checkpoint, split, batch settings, every detector threshold and the code provenance."""
+    config  = ActivationXrayConfig(split="val", batch_size=2, max_batches=3, dead_zero_frac_warn=0.8)
+    reports = ActivationIssueDetector(config).run({"clean": _layer_stats("clean")})
+    summary = ActivationXraySummarizer(config).build(reports, "/tmp/run", n_batches=3, reused_modules={}, silent_layers={})
+
+    assert summary["checkpoint"]  == "best_model.pt"
+    assert summary["split"]       == "val"
+    assert summary["batch_size"]  == 2
+    assert summary["max_batches"] == 3
+    assert summary["thresholds"]["dead_zero_frac_warn"] == 0.8
+    assert set(summary["thresholds"]) == set(ActivationXraySummarizer.THRESHOLDS)
+    assert summary["provenance"]["git_commit"]
