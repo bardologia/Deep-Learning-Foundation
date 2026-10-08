@@ -111,7 +111,6 @@ class ParamExtractionComparisonConfig:
         run_tags     : Parameter folder names taking part in the comparison.
         pixel_sample : Number of pixels sampled for the statistics.
         block_size   : Side length in pixels of the blocks used for spatial statistics.
-        col_chunk  : Number of col lines read per chunk.
         make_plots   : Whether comparison figures are produced.
         output_dir   : Destination of the report; ``None`` derives it from the inputs.
     """
@@ -121,7 +120,6 @@ class ParamExtractionComparisonConfig:
 
     pixel_sample : int = 200000
     block_size   : int = 8
-    col_chunk    : int = 512
 
     make_plots : bool           = True
     output_dir : Optional[Path] = None
