@@ -65,6 +65,101 @@ class ExtractionOutcome:
         }
 
 
+class FitProgress:
+    """Counts the fitting kernel calls of an extraction, drives its console bar and logs a periodic progress line.
+
+    The unit of work is one kernel call on a chunk of up to gpu_pixel_batch_size
+    pixels for one mode and one K. A batch's chunk count is known once the
+    batch is loaded, so the total is extrapolated from the loaded batches until
+    the last one is in. The console bar advances on every call; the log file
+    gets one line per LOG_EVERY_SECONDS, since the bar never reaches it.
+
+    Attributes:
+        LOG_EVERY_SECONDS : Minimum seconds between two progress lines in the log.
+        logger            : Logger receiving the progress lines.
+        progress          : Rich progress handle the bar task lives in.
+        task              : Bar task counting kernel calls.
+        n_batches         : Number of col batches of the fit.
+        planned           : Kernel calls of the batches loaded so far.
+        batches_planned   : Number of batches whose kernel-call count is known.
+        done              : Kernel calls finished so far.
+        started           : perf_counter time the fit started.
+        last_line         : perf_counter time of the last progress line.
+    """
+
+    LOG_EVERY_SECONDS = 300.0
+
+    def __init__(self, logger: Logger, progress, n_batches: int) -> None:
+        """Adds the bar task and starts the clock.
+
+        Args:
+            logger    : Logger receiving the progress lines.
+            progress  : Rich progress handle from ``Logger.track``.
+            n_batches : Number of col batches of the fit.
+        """
+        self.logger          = logger
+        self.progress        = progress
+        self.task            = progress.add_task("  [section]Fitting kernel chunks[/section]", total=None)
+        self.n_batches       = n_batches
+        self.planned         = 0
+        self.batches_planned = 0
+        self.done            = 0
+        self.started         = perf_counter()
+        self.last_line       = self.started
+
+    @property
+    def total(self) -> int:
+        """Kernel calls of the whole fit, extrapolated from the loaded batches while some are still to load."""
+        if self.batches_planned == 0:
+            return 0
+
+        remaining = self.n_batches - self.batches_planned
+
+        return self.planned + round(self.planned / self.batches_planned * remaining)
+
+    def plan_batch(self, n_active: int, chunk_size: int, n_modes: int, k_max: int) -> int:
+        """Adds one loaded batch's kernel calls to the plan.
+
+        Args:
+            n_active   : Active pixels of the batch.
+            chunk_size : Pixels per kernel call.
+            n_modes    : Fit modes run on the batch.
+            k_max      : Mixture orders fitted per mode.
+
+        Returns:
+            Kernel calls one mode and one K take on this batch.
+        """
+        n_chunks              = -(-n_active // chunk_size)
+        self.planned         += n_chunks * n_modes * k_max
+        self.batches_planned += 1
+
+        self.progress.update(self.task, total=self.total)
+        return n_chunks
+
+    def advance(self, batch_tag: str, mode: str, K: int, chunk: int, n_chunks: int) -> None:
+        """Counts one finished kernel call and logs a progress line once LOG_EVERY_SECONDS have passed.
+
+        Args:
+            batch_tag : Label of the col batch.
+            mode      : Fit mode of the call.
+            K         : Mixture order of the call.
+            chunk     : One-based index of the chunk within this mode and K.
+            n_chunks  : Chunks this mode and K take on the batch.
+        """
+        self.done += 1
+        self.progress.advance(self.task)
+
+        now = perf_counter()
+        if now - self.last_line < self.LOG_EVERY_SECONDS:
+            return
+
+        self.last_line = now
+        elapsed        = now - self.started
+        eta            = elapsed / self.done * (self.total - self.done)
+
+        self.logger.subsection(f"{batch_tag} | mode {mode} | K={K} | chunk {chunk}/{n_chunks} | {self.done:,}/{self.total:,} kernel calls | elapsed {elapsed / 60:.1f} min | ETA {eta / 60:.1f} min")
+
+
 class SigmaFittingExtractor:
     """Fits Gaussian mixtures to every active pixel of a cube on GPU.
 
@@ -342,6 +437,8 @@ class SigmaFittingExtractor:
         N_act         : int,
         mode          : str,
         batch_tag     : str,
+        fit_progress  : FitProgress,
+        n_chunks      : int,
     ) -> dict:
         """Fits every mixture order from 1 to k_max for one batch and mode.
 
@@ -357,6 +454,8 @@ class SigmaFittingExtractor:
             N_act         : Number of active pixels in the batch.
             mode          : Fit mode selecting which parameters receive gradients.
             batch_tag     : Label used in log sections.
+            fit_progress  : Kernel-call counter advanced after every call.
+            n_chunks      : Kernel calls one K takes on this batch.
 
         Returns:
             Mapping from K to (amplitudes, means in metres, sigmas in metres,
@@ -405,11 +504,13 @@ class SigmaFittingExtractor:
                     self._materialize_chunk(pending, final_amps, final_mus, final_sigs, final_mse)
                 pending = (out_a, out_m, out_s, out_e, i_start, i_end)
 
+                fit_progress.advance(batch_tag, mode, K, i_start // B + 1, n_chunks)
+
             if pending is not None:
                 self._materialize_chunk(pending, final_amps, final_mus, final_sigs, final_mse)
 
             gpu_results[K] = (final_amps, final_mus, final_sigs, final_mse)
-            self.logger.subsection(f"K={K} done")
+            self.logger.subsection(f"K={K} done ({n_chunks} kernel calls)")
 
         gc.collect()
 
@@ -608,7 +709,7 @@ class SigmaFittingExtractor:
         total_attempted = 0
 
         with self.logger.track(transient=True) as progress:
-            bar_task = progress.add_task("  [section]Processing cols[/section]", total=n_col,)
+            fit_progress = FitProgress(self.logger, progress, n_batches)
 
             with ThreadPoolExecutor(max_workers=1) as load_pool, ThreadPoolExecutor(max_workers=1) as score_pool:
                 r               = 0
@@ -623,7 +724,6 @@ class SigmaFittingExtractor:
                         self.logger.subsection(f"Load wait : {perf_counter() - t_wait:.1f}s")
 
                         r_start = r
-                        r_count = r_end - r
                         batch_index += 1
                         batch_tag    = f"Batch {batch_index}/{n_batches}"
 
@@ -631,6 +731,7 @@ class SigmaFittingExtractor:
                             prefetch_future = load_pool.submit(self._load_batch, cube_mmap, r_end, n_col, n_row, H)
 
                         total_attempted += int(active.sum())
+                        n_chunks         = fit_progress.plan_batch(int(active.sum()), self.gpu_pixel_batch_size, len(self.modes), self.k_max)
 
                         batch = self._init_batch(profiles_flat, profiles_norm, active, safe_scale, z_axis, batch_tag)
 
@@ -639,7 +740,7 @@ class SigmaFittingExtractor:
                             n_total                                            = profiles_flat.shape[0]
 
                             for mode in self.modes:
-                                gpu_results = self._fit_all_K(inits, prof_norm_all, scale_all, z_ax_j, sigma_lower_j, sigma_upper_j, mu_lower_j, mu_upper_j, N_act, mode, batch_tag)
+                                gpu_results = self._fit_all_K(inits, prof_norm_all, scale_all, z_ax_j, sigma_lower_j, sigma_upper_j, mu_lower_j, mu_upper_j, N_act, mode, batch_tag, fit_progress, n_chunks)
 
                                 t_throttle = perf_counter()
                                 self._throttle_scorings(score_futures, self.MAX_PENDING_SCORINGS)
@@ -651,9 +752,8 @@ class SigmaFittingExtractor:
                         del profiles_flat, profiles_norm, safe_scale, active, batch
                         gc.collect()
 
-                        self.logger.subsection(f"{batch_tag} dispatched — cols {r_start}-{r_end} of {n_col}")
+                        self.logger.subsection(f"{batch_tag} dispatched — cols {r_start}-{r_end} of {n_col}, {fit_progress.done:,}/{fit_progress.total:,} kernel calls, {perf_counter() - fit_progress.started:.1f}s elapsed")
 
-                        progress.advance(bar_task, advance=r_count)
                         r = r_end
 
                     for future in score_futures:
