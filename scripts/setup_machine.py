@@ -507,11 +507,14 @@ class MachineSetup:
         if result.returncode != 0:
             raise RuntimeError(f"torch does not import under {interpreter}:\n{result.stderr.strip()[-2000:]}")
 
-        facts = json.loads(result.stdout.strip().splitlines()[-1])
+        facts   = json.loads(result.stdout.strip().splitlines()[-1])
+        reasons = " | ".join(line.strip() for line in result.stderr.strip().splitlines() if line.strip())[-600:]
         self.logger.kv_table({"torch": facts["torch"], "CUDA available": str(facts["cuda"]), "CUDA devices": str(facts["devices"])}, title="Interpreter")
 
         if self.facts["gpus"] and not facts["cuda"]:
-            self.logger.warning("a GPU was detected but torch cannot use it: check the torch build against the driver (see README section 1)")
+            self.logger.warning(f"a GPU was detected but torch cannot use it: {reasons or 'torch gave no reason on stderr'}; check the torch build against the driver (see README section 1)")
+        elif reasons:
+            self.logger.debug(f"torch probe stderr: {reasons}")
 
         entry = subprocess.run([interpreter, str(self.repo_root / "main" / "training" / "train_backbone.py"), "--help-config"], capture_output=True, text=True, cwd=str(self.repo_root), env=environ)
 

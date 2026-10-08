@@ -293,6 +293,28 @@ def test_a_cpu_machine_gets_the_plain_no_gpu_warning(tmp_path, logger_stub, monk
     assert warnings == ["no GPU detected: the console and the tests work, training and inference need an NVIDIA GPU"]
 
 
+def test_verification_quotes_torch_when_a_detected_gpu_is_unusable(tmp_path, logger_stub, monkeypatch):
+    """The CUDA warning carries torch's own stderr explanation instead of a generic hint."""
+    setup       = _setup(tmp_path, logger_stub)
+    interpreter = tmp_path / "fake-python"
+    warnings    = []
+
+    interpreter.write_text("#!/bin/sh\necho 'torch/cuda/__init__.py:1: UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version 12080).' >&2\necho '{\"torch\": \"2.8.0\", \"cuda\": false, \"devices\": 0}'\n")
+    interpreter.chmod(0o755)
+
+    setup.verify_env = True
+    setup.facts      = dict(FACTS)
+    setup.profile.data["machine"] = {"interpreter": str(interpreter)}
+    monkeypatch.setattr(setup.logger, "warning", warnings.append)
+
+    setup.verify()
+
+    assert len(warnings) == 1
+    assert warnings[0].startswith("a GPU was detected but torch cannot use it: ")
+    assert "The NVIDIA driver on your system is too old (found version 12080)" in warnings[0]
+    assert "README section 1" in warnings[0]
+
+
 def test_the_wizard_refuses_a_disabled_profile_location(logger_stub):
     """Without a location the wizard cannot save, which the profile reports."""
     with pytest.raises(RuntimeError, match=MachineProfile.ENV_VAR):
