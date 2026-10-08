@@ -113,19 +113,88 @@ class TrialTree:
         return sorted(stamps, key=lambda stamp: stamp.name)
 
 
+class ReportFreshness:
+    """Names every reused report and warns when the runs it summarises have moved on since it was written.
+
+    A reused report is stale when one of its runs completed an inference after
+    the report was written, or when the experiment now holds trials or seeds
+    the report does not cover. It is still mailed; each warning names what is
+    newer or missing.
+
+    Attributes:
+        inference_dirname : Directory of a run holding its inference stamps.
+        logger            : Logger receiving the reuse lines and the staleness warnings.
+        HINT              : Closing advice of every staleness warning.
+    """
+
+    HINT = "set regenerate_reports=True to rewrite it"
+
+    def __init__(self, inference_dirname: str, logger) -> None:
+        """Binds the check to the runs' inference directory name and the logger."""
+        self.inference_dirname = inference_dirname
+        self.logger            = logger
+
+    @staticmethod
+    def _written_at(stamp: Path) -> float:
+        """Returns when a report stamp was written: the modification time of the newest file directly inside it, in seconds since the epoch.
+
+        Raises:
+            FileNotFoundError : If the stamp holds no file.
+        """
+        times = [path.stat().st_mtime for path in stamp.iterdir() if path.is_file()]
+        if not times:
+            raise FileNotFoundError(f"Report stamp {stamp} holds no file")
+
+        return max(times)
+
+    def _newer_inference(self, runs: list[Path], split: str | None, since: float) -> list[Path]:
+        """Returns the completed inference stamps of the runs whose completion marker was written after a time, oldest first.
+
+        Args:
+            runs  : Runs whose inference stamps are listed.
+            split : Split the stamps must have scored, or None for every split.
+            since : Time in seconds since the epoch the markers are compared with.
+        """
+        stamps = [stamp for run in runs for stamp in TrialTree.inference_stamps(run / self.inference_dirname, split)]
+        newer  = [stamp for stamp in stamps if CompletionMarker.path(stamp).stat().st_mtime > since]
+
+        return sorted(newer, key=lambda stamp: CompletionMarker.path(stamp).stat().st_mtime)
+
+    def check(self, kind: str, stamp: Path, runs: list[Path], split: str | None, uncovered: list[str]) -> None:
+        """Logs the reuse of a report stamp and warns about the newer inference of its runs and the trials or seeds it does not cover.
+
+        Args:
+            kind      : Name of the report in the log lines, such as 'trial comparison'.
+            stamp     : Reused report stamp directory.
+            runs      : Runs whose inference the report summarises.
+            split     : Split whose inference counts as newer, or None for every split.
+            uncovered : Trials or seeds the experiment holds that the report does not cover.
+        """
+        self.logger.info(f"Reusing {kind} {stamp}")
+
+        newer = self._newer_inference(runs, split, self._written_at(stamp))
+        if newer:
+            self.logger.warning(f"Reused {kind} {stamp.name} predates {len(newer)} completed inference(s) of its runs, the newest {newer[-1]}; {self.HINT}")
+
+        if uncovered:
+            self.logger.warning(f"Reused {kind} {stamp.name} does not cover {', '.join(uncovered)}; {self.HINT}")
+
+
 class Experiment:
     """One mailable experiment: a directory of trial runs, their comparison and the configuration they ran with.
 
     Attributes:
-        KIND         : Name of the experiment kind in tables and messages.
-        SEARCH_BELOW : Whether the scan goes on below the experiment: a sweep directory may hold further experiments beside its trials, a run's tree holds none.
-        root         : Directory identifying the experiment.
-        trials_dir   : Directory holding the trial runs.
-        selected     : Trials the experiment is restricted to, or None for every trial under the trials directory.
+        KIND             : Name of the experiment kind in tables and messages.
+        SEARCH_BELOW     : Whether the scan goes on below the experiment: a sweep directory may hold further experiments beside its trials, a run's tree holds none.
+        SUMMARY_FILENAME : JSON file of a comparison stamp recording the split and the trials it compared.
+        root             : Directory identifying the experiment.
+        trials_dir       : Directory holding the trial runs.
+        selected         : Trials the experiment is restricted to, or None for every trial under the trials directory.
     """
 
-    KIND         = "sweep"
-    SEARCH_BELOW = True
+    KIND             = "sweep"
+    SEARCH_BELOW     = True
+    SUMMARY_FILENAME = "comparison_summary.json"
 
     def __init__(self, root: Path, trials_dir: Path, selected: list[Path] | None = None) -> None:
         """Binds the experiment to its root and the directory holding its trials."""
@@ -161,6 +230,20 @@ class Experiment:
     def comparison_report_names(self, configured: list[str]) -> list[str]:
         """Returns the report files gathered from a comparison stamp."""
         return list(configured)
+
+    def stamp_coverage(self, stamp: Path) -> tuple[str, list[str]] | None:
+        """Returns the split and the trial names a comparison stamp recorded, or None for a stamp written before comparisons carried a summary.
+
+        Args:
+            stamp : Trial-comparison stamp directory.
+        """
+        path = stamp / self.SUMMARY_FILENAME
+        if not path.is_file():
+            return None
+
+        payload = FileIO.load_json(path)
+
+        return payload["inference_split"], [trial["name"] for trial in payload["trials"]]
 
     def write_comparison(self, comparison_dirname: str, logger) -> Path:
         """Compares the trials as the trial-comparison entry does and returns the written stamp.
@@ -259,11 +342,17 @@ class CrossValidationExperiment(Experiment):
         return sorted(child for child in reports.iterdir() if child.is_dir())
 
     def _report_stamp(self, regenerate: bool, logger) -> Path:
-        """Returns the cross-fold report stamp to gather, writing one from the fold tree when missing or asked for."""
+        """Returns the cross-fold report stamp to gather, writing one from the fold tree when missing or asked for.
+
+        A reused stamp is named in the log and checked against the folds'
+        completed inference of every split, since the report covers them all.
+        """
         from pipelines.cross_validation.stages import CrossValidationReportRebuilder
 
         stamps = self._stamps()
         if stamps and not regenerate:
+            runs = [run for trial in self.trials() for run in TrialTree.runs(trial)]
+            ReportFreshness(InferenceLayout.DIRNAME, logger).check("cross-fold report", stamps[-1], runs, None, [])
             return stamps[-1]
 
         logger.info(f"{'Regenerating' if stamps else 'Writing'} the cross-fold report of {self.root} from its fold tree")
@@ -350,6 +439,18 @@ class BenchmarkExperiment(Experiment):
     def comparison_report_names(self, configured: list[str]) -> list[str]:
         """Returns the benchmark comparison's own report files."""
         return list(self.COMPARISON_REPORTS)
+
+    def stamp_coverage(self, stamp: Path) -> tuple[str, list[str]] | None:
+        """Returns the recorded split and the unit names a benchmark comparison stamp compared, or None for a stamp without its summary.
+
+        Args:
+            stamp : Benchmark comparison stamp directory, whose summary lists one entry per unit and was written on the recorded split.
+        """
+        path = stamp / self.SUMMARY_FILENAME
+        if not path.is_file():
+            return None
+
+        return self.inference_split(), [entry["name"] for entry in FileIO.load_json(path)]
 
     def write_comparison(self, comparison_dirname: str, logger) -> Path:
         """Runs the benchmark comparison stage over the run with the configuration and split it recorded and returns the stamp.
@@ -564,6 +665,7 @@ class ExperimentReportBundle(ReportBundle):
     Attributes:
         config     : Gathering config naming the staging directory, the comparison layout and the regeneration switch.
         experiment : Experiment being gathered.
+        freshness  : Check naming every reused seed aggregate and comparison and warning when it is stale.
     """
 
     def __init__(self, experiment: Experiment, config: ExperimentReportMailConfig, logger) -> None:
@@ -571,6 +673,7 @@ class ExperimentReportBundle(ReportBundle):
         super().__init__(config.staging_dir, config.embed_images, logger)
         self.config     = config
         self.experiment = experiment
+        self.freshness  = ReportFreshness(config.inference_dirname, logger)
 
     def _run_report(self, run_dir: Path, split: str) -> Path:
         """Returns the report of a single run's newest completed inference on the split.
@@ -606,6 +709,20 @@ class ExperimentReportBundle(ReportBundle):
 
         return sorted(path for path in inference.glob(f"*/{self.config.report_filename}") if path.is_file())
 
+    def _check_reused_aggregate(self, trial_dir: Path, report: Path, split: str) -> None:
+        """Names a reused seed aggregate and warns when the trial holds seeds it did not average or a seed completed an inference after it.
+
+        Args:
+            trial_dir : Seeded trial directory.
+            report    : Reused aggregate report.
+            split     : Split whose newer inference makes the aggregate stale.
+        """
+        averaged  = self._aggregate_record(report)["seed_runs"]
+        seeds     = TrialTree.seed_runs(trial_dir)
+        uncovered = [f"{trial_dir.name}/{seed.name}" for seed in seeds if seed.name not in averaged]
+
+        self.freshness.check(f"seed aggregate of {trial_dir.name}", report.parent, seeds, split, uncovered)
+
     def _aggregate_seeds(self, trial_dir: Path) -> None:
         """Writes the seed-aggregate report of a seeded trial, as the seed comparison entry does.
 
@@ -618,6 +735,35 @@ class ExperimentReportBundle(ReportBundle):
         self.logger.info(f"{trial_dir.name}: writing the seed-aggregate report over {len(TrialTree.seed_runs(trial_dir))} seed run(s)")
 
         SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name]), self.logger).run()
+
+    def _check_aggregate_split(self, trial_dir: Path, report: Path, split: str) -> None:
+        """Warns when a seed aggregate averaged an inference of another split, or an unfinished one, for any seed.
+
+        The seed comparison averages each seed's newest inference whatever
+        split it scored, while the trial comparison reads one split.
+
+        Args:
+            trial_dir : Seeded trial directory.
+            report    : Mailed aggregate report.
+            split     : Split the trial comparison reads.
+        """
+        outside = []
+        for seed, stamp_name in self._aggregate_record(report)["seed_inference"].items():
+            stamp = trial_dir / seed / self.config.inference_dirname / stamp_name
+
+            if not CompletionMarker.is_complete(stamp):
+                outside.append(f"{seed} ({stamp_name}, unfinished)")
+            elif CompletionMarker.payload(stamp)["split"] != split:
+                outside.append(f"{seed} ({stamp_name}, split {CompletionMarker.payload(stamp)['split']})")
+
+        if outside:
+            self.logger.warning(f"Seed aggregate {report.parent.name} of {trial_dir.name} averages inference outside the '{split}' split the comparison reads: {', '.join(outside)}")
+
+    def _aggregate_record(self, report: Path) -> dict:
+        """Returns the metrics file of a seed aggregate, which records the seed runs it averaged and the inference stamp read for each."""
+        from configuration.comparison import SeedComparisonConfig
+
+        return FileIO.load_json(report.parent / SeedComparisonConfig.metrics_filename)
 
     def _trial_report(self, trial_dir: Path, split: str) -> Path:
         """Returns the report mailed for one trial: a single run's newest report on the split, or a seeded trial's newest seed aggregate, written first when missing or asked for.
@@ -632,13 +778,43 @@ class ExperimentReportBundle(ReportBundle):
         if not TrialTree.seed_runs(trial_dir):
             return self._run_report(trial_dir, split)
 
-        if self.config.regenerate_reports or not self._seed_aggregates(trial_dir):
+        aggregates = self._seed_aggregates(trial_dir)
+        if aggregates and not self.config.regenerate_reports:
+            self._check_reused_aggregate(trial_dir, aggregates[-1], split)
+        else:
             self._aggregate_seeds(trial_dir)
+            aggregates = self._seed_aggregates(trial_dir)
 
-        return self._seed_aggregates(trial_dir)[-1]
+        self._check_aggregate_split(trial_dir, aggregates[-1], split)
 
-    def _comparison_stamp(self) -> Path | None:
-        """Returns the comparison stamp to gather, writing one when missing or asked for; None for an experiment of one trial."""
+        return aggregates[-1]
+
+    def _check_reused_comparison(self, stamp: Path, split: str) -> None:
+        """Names a reused comparison stamp and warns when it misses a trial, predates an inference of its runs, scored another split or carries no summary to tell.
+
+        Args:
+            stamp : Reused comparison stamp directory.
+            split : Split the mailed trial reports are taken from.
+        """
+        trials   = self.experiment.trials()
+        runs     = [run for trial in trials for run in TrialTree.runs(trial)]
+        coverage = self.experiment.stamp_coverage(stamp)
+
+        uncovered = [trial.name for trial in trials if trial.name not in coverage[1]] if coverage is not None else []
+
+        self.freshness.check("trial comparison", stamp, runs, split, uncovered)
+
+        if coverage is None:
+            self.logger.warning(f"Reused trial comparison {stamp.name} holds no {self.experiment.SUMMARY_FILENAME}, so the split and the trials it covers cannot be checked; {ReportFreshness.HINT}")
+        elif coverage[0] != split:
+            self.logger.warning(f"Reused trial comparison {stamp.name} scored split '{coverage[0]}' while the trial reports are taken from '{split}'; {ReportFreshness.HINT}")
+
+    def _comparison_stamp(self, split: str) -> Path | None:
+        """Returns the comparison stamp to gather, writing one when missing or asked for; None for an experiment of one trial.
+
+        Args:
+            split : Split the mailed trial reports are taken from, which a reused stamp is checked against.
+        """
         if len(self.experiment.trials()) < 2:
             self.logger.warning(f"{self.experiment.root.name}: a single trial, no trial comparison is written or attached")
             return None
@@ -647,6 +823,7 @@ class ExperimentReportBundle(ReportBundle):
         stamps = sorted(child for child in root.iterdir() if child.is_dir()) if root.is_dir() else []
 
         if stamps and not self.config.regenerate_reports:
+            self._check_reused_comparison(stamps[-1], split)
             return stamps[-1]
 
         self.logger.info(f"{'Regenerating' if stamps else 'Writing'} the trial comparison of {self.experiment.root}")
@@ -691,7 +868,7 @@ class ExperimentReportBundle(ReportBundle):
         split  = self.experiment.inference_split()
 
         staged  = [self._stage_report(self._trial_report(trial, split), f"{trial.name}.md") for trial in trials]
-        staged += [self._stage_file(path, f"comparison_{path.name}") for path in self._comparison_reports(self._comparison_stamp())]
+        staged += [self._stage_file(path, f"comparison_{path.name}") for path in self._comparison_reports(self._comparison_stamp(split))]
         staged += [self._stage_file(path, name) for path, name in self.experiment.extra_reports(self.config.regenerate_reports, self.logger)]
         staged += [self._stage_copy(path) for path in self.experiment.config_files(self.logger)]
 
