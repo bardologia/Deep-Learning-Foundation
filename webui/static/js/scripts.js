@@ -2,7 +2,7 @@
 
 class ScriptPanel {
   static SECTIONS = [
-    { category: "Data",        blurb: "From raw F-SAR products to training targets: beamform the stacks, fit the Gaussian targets, or import externally fitted parameter cubes." },
+    { category: "Data",        blurb: "From the bundled generator to training targets: synthesise the example dataset, then fit the Gaussian targets." },
     { category: "Training",    blurb: "Train one stage end to end, fan an experiment ladder across GPUs, or run the cumulative feature ablation." },
     { category: "Inference",   blurb: "Turn trained checkpoints into stitched cubes, metrics, and reports." },
     { category: "Analysis",    blurb: "Post-hoc work on finished runs: rebuild trial reports, diagnose trained models, and collect artifacts for publication." },
