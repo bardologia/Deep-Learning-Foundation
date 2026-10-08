@@ -13,7 +13,7 @@ from pathlib import Path
 
 import torch
 
-from tools.benchmarking                   import LoaderSpec, GpuFeedBenchmark, DataLoaderSweep, SweepReport
+from tools.benchmarking                   import LoaderSpec, GpuFeedBenchmark, GpuUtilizationSampler, DataLoaderSweep, SweepReport
 from tools.monitoring.logger              import Logger
 from tools.runtime.event_stream           import JsonEventStream
 from tools.runtime.reproducibility        import Reproducibility
@@ -28,6 +28,7 @@ class DataLoaderTuningPipeline:
         output_dir : Mode-specific directory holding results, logs, and figures.
         work_dir   : Scratch directory the dataset pipelines write into.
         figure_dir : Directory the sweep figures are written to.
+        gpu        : Requested index, torch name and NVML index, name and UUID of the measured device, set once the benchmark is built.
         logger     : Logger used for progress reporting.
         events     : Stream emitting machine-readable progress events.
     """
@@ -44,6 +45,7 @@ class DataLoaderTuningPipeline:
         self.figure_dir = self.output_dir / "figures"
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.gpu    = None
         self.logger = Logger(log_dir=str(self.output_dir / "logs"), name="dataloader_tuning", level="INFO")
         self.events = JsonEventStream("@TUNE")
 
@@ -63,6 +65,15 @@ class DataLoaderTuningPipeline:
 
         return FeedTargetFactory.build(self.config, self.work_dir, self.logger)
 
+    def _gpu(self) -> dict:
+        """Returns the device the sweep measures on: the requested index, the name torch reports, and the NVML index, name and UUID the utilisation is sampled from; None fields on a CPU run."""
+        if not torch.cuda.is_available():
+            return {"index": self.config.gpu, "name": None, "nvml_index": None, "nvml_name": None, "uuid": None}
+
+        nvml = GpuUtilizationSampler.nvml_device()
+
+        return {"index": self.config.gpu, "name": torch.cuda.get_device_name(0), "nvml_index": nvml["index"], "nvml_name": nvml["name"], "uuid": nvml["uuid"]}
+
     def _build_benchmark(self, target):
         """Builds the GPU feed benchmark for a target.
 
@@ -72,7 +83,11 @@ class DataLoaderTuningPipeline:
         Returns:
             A tuple (benchmark, device); the device is CUDA when available.
         """
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.gpu = self._gpu()
+
+        if self.gpu["uuid"] is not None:
+            self.logger.info(f"GPU utilisation is sampled from NVML device {self.gpu['nvml_index']} ({self.gpu['nvml_name']}, {self.gpu['uuid']}), the device torch computes on as cuda:0 ({self.gpu['name']}) for requested index {self.config.gpu}")
 
         return GpuFeedBenchmark(
             dataset        = target.dataset,
@@ -85,7 +100,7 @@ class DataLoaderTuningPipeline:
             seed           = self.config.seed,
             warmup_batches = self.config.warmup_batches,
             timed_batches  = self.config.timed_batches,
-            gpu_index      = self.config.gpu,
+            gpu_index      = None,
             cpu_threads    = self.config.cpu_threads,
         ), device
 
@@ -212,6 +227,7 @@ class DataLoaderTuningPipeline:
         payload = {
             "mode"           : self.config.mode,
             "device"         : str(device),
+            "gpu"            : self.gpu,
             "model_name"     : target.model_name,
             "sample"         : target.sample_text,
             "item_source"    : target.item_source,

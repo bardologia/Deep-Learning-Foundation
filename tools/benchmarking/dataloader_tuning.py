@@ -7,7 +7,6 @@ batch sizes and worker counts can be judged as CPU-bound or GPU-bound.
 from __future__ import annotations
 
 import gc
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -58,22 +57,27 @@ class LoaderSpec:
 class GpuUtilizationSampler:
     """Background sampler of GPU utilisation and VRAM use through NVML.
 
+    NVML numbers the physical devices, while torch numbers the ones
+    CUDA_VISIBLE_DEVICES exposes, possibly a share of the machine and in
+    another order; without an explicit NVML index the sampler therefore
+    finds the device torch computes on by its UUID, which both name alike.
+
     Attributes:
         logger     : Logger receiving NVML warnings.
         interval_s : Seconds between samples.
-        gpu_index  : NVML index of the sampled device.
+        gpu_index  : NVML index of the sampled device; None until start() has found the device torch computes on.
     """
     def __init__(self, logger: Logger, gpu_index: Optional[int] = None, interval_s: float = 0.05) -> None:
         """Prepares a sampler for one device without starting it.
 
         Args:
             logger     : Logger receiving NVML warnings.
-            gpu_index  : NVML device index, or None to infer it from the environment.
+            gpu_index  : NVML device index, or None to sample the CUDA device torch computes on.
             interval_s : Seconds between samples.
         """
         self.logger     = logger
         self.interval_s = float(interval_s)
-        self.gpu_index  = self._resolve_index(gpu_index)
+        self.gpu_index  = None if gpu_index is None else int(gpu_index)
 
         self._handle        = None
         self._nvml_ok       = False
@@ -86,30 +90,46 @@ class GpuUtilizationSampler:
         self._first_failure = None
 
     @staticmethod
-    def _resolve_index(gpu_index: Optional[int]) -> int:
-        """Returns the NVML index to sample, from the argument, CUDA_VISIBLE_DEVICES or torch."""
-        if gpu_index is not None:
-            return int(gpu_index)
+    def torch_uuid() -> str:
+        """Returns the NVML UUID of the CUDA device torch computes on."""
+        return f"GPU-{torch.cuda.get_device_properties(torch.cuda.current_device()).uuid}"
 
-        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-        if visible.strip():
-            return int(visible.split(",")[0])
+    @classmethod
+    def nvml_device(cls) -> dict:
+        """Returns the NVML index, name and UUID of the CUDA device torch computes on.
 
-        if torch.cuda.is_available():
-            return int(torch.cuda.current_device())
+        Raises:
+            pynvml.NVMLError : If NVML cannot be initialised or does not know the device.
+        """
+        pynvml.nvmlInit()
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByUUID(cls.torch_uuid())
+            return {"index": int(pynvml.nvmlDeviceGetIndex(handle)), "name": str(pynvml.nvmlDeviceGetName(handle)), "uuid": cls.torch_uuid()}
+        finally:
+            pynvml.nvmlShutdown()
 
-        return 0
+    def _label(self) -> str:
+        """Returns the sampled device as named in the warnings."""
+        return "the CUDA device in use" if self.gpu_index is None else f"GPU {self.gpu_index}"
 
     def start(self) -> None:
-        """Starts NVML and the sampling thread, warning and giving up if NVML is unavailable."""
+        """Starts NVML and the sampling thread, warning and giving up if there is no CUDA device or NVML is unavailable."""
+        if self.gpu_index is None and not torch.cuda.is_available():
+            self.logger.warning("[GpuUtilizationSampler] No CUDA device is visible and no NVML index was given; this sweep entry reports no GPU utilisation")
+            return
+
         try:
             pynvml.nvmlInit()
-            self._handle       = pynvml.nvmlDeviceGetHandleByIndex(self.gpu_index)
+            if self.gpu_index is None:
+                self._handle   = pynvml.nvmlDeviceGetHandleByUUID(self.torch_uuid())
+                self.gpu_index = int(pynvml.nvmlDeviceGetIndex(self._handle))
+            else:
+                self._handle   = pynvml.nvmlDeviceGetHandleByIndex(self.gpu_index)
             self._nvml_ok      = True
             self._nvml_started = True
         except Exception as error:
             self._nvml_ok = False
-            self.logger.warning(f"[GpuUtilizationSampler] NVML unavailable for GPU {self.gpu_index} ({type(error).__name__}: {error}); this sweep entry reports no GPU utilisation")
+            self.logger.warning(f"[GpuUtilizationSampler] NVML unavailable for {self._label()} ({type(error).__name__}: {error}); this sweep entry reports no GPU utilisation")
             return
 
         self._util_samples  = []
@@ -219,7 +239,7 @@ class GpuFeedBenchmark:
             seed           : Seed of the loader shuffling generator.
             warmup_batches : Batches consumed before timing starts.
             timed_batches  : Batches counted in each timing.
-            gpu_index      : NVML device index to sample, or None to infer it.
+            gpu_index      : NVML device index to sample, or None to sample the CUDA device torch computes on.
             cpu_threads    : Torch intra-op thread count, or None to leave it untouched.
         """
         self.dataset        = dataset

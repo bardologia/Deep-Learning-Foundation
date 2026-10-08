@@ -1916,7 +1916,7 @@
       "fields": {
         "mode": "feed pipeline to benchmark: synthetic, profile_autoencoder, image_autoencoder, or backbone",
         "model_name": "name of the model architecture built for the benchmark, defaults per mode (mlp_ae, conv2d_ae, resunet) when empty",
-        "gpu": "physical CUDA device index pinned via CUDA_VISIBLE_DEVICES by the entry script before the pipeline is built, and forwarded to GpuUtilizationSampler for NVML utilization/VRAM sampling",
+        "gpu": "physical CUDA device index pinned via CUDA_VISIBLE_DEVICES by the entry script before the pipeline is built; the NVML utilization/VRAM sampler finds that device by the UUID of the CUDA device torch computes on, and results.json records the requested index next to the NVML index, name and UUID",
         "seed": "random seed for reproducible dataset construction, DataLoader shuffling and synthetic-curve sampling",
         "use_amp": "enable bfloat16 autocast around the model forward pass in every warmup and timed train step across all three measurement phases",
         "pixel_subsample": "fraction of active (has-Gaussian) profile pixels kept when the profile dataset is built once, forwarded to ProfileAeEntryConfig in profile_autoencoder mode",

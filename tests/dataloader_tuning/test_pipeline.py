@@ -40,6 +40,26 @@ def _ok_record(batch_size, num_workers, prefetch_factor, pin_memory, samples_per
     }
 
 
+def test_the_measured_device_names_the_nvml_device_the_utilisation_comes_from(tmp_path, monkeypatch):
+    """The device record pairs the requested index and torch's name with the NVML index, name and UUID the sampler reads."""
+    from tools.benchmarking import GpuUtilizationSampler
+
+    pipeline = DataLoaderTuningPipeline(_config(tmp_path, gpu=1))
+    monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.torch.cuda.is_available", lambda: True)
+    monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.torch.cuda.get_device_name", lambda index: "Fake GPU")
+    monkeypatch.setattr(GpuUtilizationSampler, "nvml_device", classmethod(lambda cls: {"index": 5, "name": "Fake GPU", "uuid": "GPU-abc"}))
+
+    assert pipeline._gpu() == {"index": 1, "name": "Fake GPU", "nvml_index": 5, "nvml_name": "Fake GPU", "uuid": "GPU-abc"}
+
+
+def test_a_cpu_sweep_records_no_nvml_device(tmp_path, monkeypatch):
+    """Without a CUDA device the record keeps the requested index and leaves every device field empty."""
+    pipeline = DataLoaderTuningPipeline(_config(tmp_path, gpu=2))
+    monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.torch.cuda.is_available", lambda: False)
+
+    assert pipeline._gpu() == {"index": 2, "name": None, "nvml_index": None, "nvml_name": None, "uuid": None}
+
+
 def test_worker_counts_drops_counts_above_cores(tmp_path, monkeypatch):
     """Worker counts exceeding the CPU core count are discarded."""
     config   = _config(tmp_path, worker_counts=[0, 2, 1000000])
