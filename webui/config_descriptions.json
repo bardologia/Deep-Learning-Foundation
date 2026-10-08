@@ -2223,8 +2223,7 @@
         "params_dir": "Root directory holding the extracted-parameter dataset run subdirectories to compare",
         "run_tags": "Run subfolder names to include, empty auto-discovers every parameter-extraction run",
         "pixel_sample": "Maximum number of fitted pixels sampled when computing the dominant-z separation metric, the block-standard-deviation coherence metric ignores it",
-        "block_size": "Square block edge length in pixels (tiled over both row and range) used by the block-standard-deviation dominant-z coherence metric",
-        "col_chunk": "Column chunk width in pixels, declared but not read by the parameter-extraction comparison pipeline",
+        "block_size": "Square block edge length in pixels (tiled over both rows and cols) used by the block-standard-deviation dominant-z coherence metric",
         "make_plots": "Whether to render comparison plots for the collected parameter-extraction trials",
         "output_dir": "Destination for the comparison report; None writes to a _fit_comparison subfolder under params_dir"
       }

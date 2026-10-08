@@ -1219,7 +1219,7 @@ class LaunchLayout:
                             "params_dir",
                             {"path": "run_tags", "widget": {"kind": "dataset", "mode": "param_trials", "multi": True, "baseFrom": "params_dir"}},
                         ]},
-                        {"title": "Sampling", "fields": ["pixel_sample", "block_size", "col_chunk"]},
+                        {"title": "Sampling", "fields": ["pixel_sample", "block_size"]},
                         {"title": "Report", "fields": ["make_plots", "output_dir"]},
                     ]},
                 ]},
