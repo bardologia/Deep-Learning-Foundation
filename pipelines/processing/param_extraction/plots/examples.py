@@ -105,7 +105,7 @@ class ExampleFitPlotter(PlotBase):
         """Evaluates one pixel's mixture and its individual components.
 
         Args:
-            params      : Parameter vector of shape (3 * n_gaussians,) for a single pixel.
+            params : Parameter vector of shape (3 * n_gaussians,) for a single pixel.
             z_axis : Z axis of shape (z,), in metres.
 
         Returns:
@@ -117,8 +117,8 @@ class ExampleFitPlotter(PlotBase):
         """Reads the raw and preprocessed z profile of each sampled pixel.
 
         Args:
-            cube_path : Path of the cube of shape (z, row, col).
-            all_pixels    : Pixel indices of shape (n_pixels, 2) as (row, col).
+            cube_path  : Path of the cube of shape (z, row, col).
+            all_pixels : Pixel indices of shape (n_pixels, 2) as (row, col).
 
         Returns:
             Mapping from (row, col) to the raw amplitude profile and the
@@ -128,8 +128,8 @@ class ExampleFitPlotter(PlotBase):
 
         pixel_profiles : Dict[Tuple[int, int], Tuple[np.ndarray, np.ndarray]] = {}
         for row, col in all_pixels.tolist():
-            raw                      = np.abs(np.array(cube_mmap[:, row, col])).astype(np.float32)
-            processed                = ProfilePreprocessor.apply(raw, self.threshold_factor, self.truncation_index)
+            raw                        = np.abs(np.array(cube_mmap[:, row, col])).astype(np.float32)
+            processed                  = ProfilePreprocessor.apply(raw, self.threshold_factor, self.truncation_index)
             pixel_profiles[(row, col)] = (raw, processed)
 
         del cube_mmap
@@ -208,7 +208,7 @@ class ExampleFitPlotter(PlotBase):
     def _plot_example_fits(
         self,
         parameters_array : np.ndarray,
-        pixel_profiles   : Dict[Tuple[int, int], np.ndarray],
+        pixel_profiles   : Dict[Tuple[int, int], Tuple[np.ndarray, np.ndarray]],
         z_axis           : np.ndarray,
         pixels_by_k      : Dict[int, np.ndarray],
         r2_map           : np.ndarray,
@@ -218,8 +218,8 @@ class ExampleFitPlotter(PlotBase):
 
         Args:
             parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
-            pixel_profiles   : Mapping from (rows, cols) to the raw and target profiles.
-            height_axis      : Z axis of shape (height,), in metres.
+            pixel_profiles   : Mapping from (row, col) to the raw and target profiles.
+            z_axis           : Z axis of shape (n_z,), in metres.
             pixels_by_k      : Sampled pixel indices per selected model order.
             r2_map           : Per-pixel R-squared of shape (rows, cols).
             out_dir          : Directory the per-order subdirectories are created under.
@@ -240,17 +240,13 @@ class ExampleFitPlotter(PlotBase):
             k_dir.mkdir(parents=True, exist_ok=True)
 
             for row, col in pixels.tolist():
-                entry = pixel_profiles.get((row, col))
-                if entry is None:
-                    continue
-
-                raw, profile = entry
+                raw, profile = pixel_profiles[(row, col)]
                 raw          = raw.astype(np.float64)
                 profile      = profile.astype(np.float64)
                 params       = parameters_array[:, row, col].astype(np.float64)
                 total, comps = self._reconstruct_pixel(params, z_axis.astype(np.float64))
-                residual = profile - total
-                r2_val   = float(r2_map[row, col]) if np.isfinite(r2_map[row, col]) else float("nan")
+                residual     = profile - total
+                r2_val       = float(r2_map[row, col]) if np.isfinite(r2_map[row, col]) else float("nan")
 
                 saved[f"k{K}_row{row}_col{col}_fit"]      = self._plot_pixel_fit(z_axis, raw, profile, total, comps, params, comp_colors, k_color, k_label, row, col, r2_val, k_dir)
                 saved[f"k{K}_row{row}_col{col}_residual"] = self._plot_pixel_residual(z_axis, residual, row, col, r2_val, k_dir)
@@ -271,9 +267,9 @@ class ExampleFitPlotter(PlotBase):
         Args:
             parameters_array : Parameter stack of shape (3 * n_gaussians, row, col).
             best_k_map       : Selected model order of shape (row, col).
-            r2_map           : Per-pixel R-squared of the same shape.
-            z_axis      : Z axis of shape (z,), in metres.
-            cube_path    : Path of the cube of shape (z, row, col).
+            r2_map           : Per-pixel R-squared of the same shape; non-finite pixels are skipped.
+            z_axis           : Z axis of shape (z,), in metres.
+            cube_path        : Path of the cube of shape (z, row, col).
             out_dir          : Directory the per-order subdirectories are created under.
 
         Returns:
