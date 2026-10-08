@@ -117,6 +117,20 @@ forward with the animation and a click landing on the chip that was clicked.
 node stage_chips.js /tmp/stages.json
 ```
 
+## Cube view harness
+
+`cube_view_checks.js` loads `cube_view.js` under plain node with no DOM and no server,
+runs one named scenario against the real cube page classes with stubbed `fetch` and
+ImageBitmaps, and prints what it observed as JSON. The `bitmaps` scenario trims, clears
+and releases the slice bitmaps and replaces a cut panel's image, recording which bitmaps
+were closed. `tests/webui/test_cube_view_lifecycle.py` drives it, which is the contract
+that keeps evicted and replaced slices from holding image memory while never closing a
+bitmap a sweep still draws.
+
+```
+node cube_view_checks.js bitmaps
+```
+
 ## Repo-map diagram harness
 
 `render_diagram.js` renders a single repo-map schema (one folder/diagram from
