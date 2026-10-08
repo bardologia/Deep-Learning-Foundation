@@ -441,3 +441,91 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 
     assert records["unet/seed1"].training_result["status"] == "DONE"
     assert records["unet/seed2"].training_result["status"] == "PARTIAL"
+
+
+def _seeded_benchmark_run(tmp_path: Path, seed_metrics: dict) -> Path:
+    """Writes a benchmark run with one unet seed per entry, stamping a test inference for the seeds given metrics.
+
+    Args:
+        tmp_path     : Directory the run is created in.
+        seed_metrics : Metric payload per seed directory name, None for a seed without inference.
+
+    Returns:
+        The run directory.
+    """
+    pipe = tmp_path / "pipeline"
+    pipe.mkdir(parents=True)
+    _write_json(pipe / "size_match.json", {})
+    _write_json(pipe / "training_results.json", [{"name": f"unet/{seed}", "status": "DONE", "duration_s": 10.0, "log_file": str(tmp_path / "training" / "unet" / seed / "worker.log")} for seed in seed_metrics])
+
+    for seed, metrics in seed_metrics.items():
+        (tmp_path / "training" / "unet" / seed).mkdir(parents=True)
+        if metrics is None:
+            continue
+        inference_dir = tmp_path / "training" / "unet" / seed / "inference" / "run_a"
+        inference_dir.mkdir(parents=True)
+        _write_json(inference_dir / "metrics.json", metrics)
+        _write_json(inference_dir / CompletionMarker.FILENAME, {"stage": "inference", "split": "test"})
+
+    return tmp_path
+
+
+def test_seed_collector_warns_about_a_seed_without_metrics_and_records_the_seeds_used(tmp_path, recording_logger):
+    """A seed whose inference never produced metrics is named in a warning and the dispersion records how many seeds each mean used."""
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}, "seed3": None})
+    collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
+
+    records = collector.collect()
+
+    assert records[0].metrics["curve_rmse_gt"] == 3.0
+    assert collector.seed_dispersion["unet"]["n_seeds"]       == 3
+    assert collector.seed_dispersion["unet"]["n_used"]        == {"curve_rmse_gt": 2}
+    assert collector.seed_dispersion["unet"]["missing_seeds"] == ["seed3"]
+    assert any(level == "warning" and message.startswith("unet:") and "seed3" in message and "cover 2 of 3 seeds" in message for level, message in recording_logger.messages)
+    assert ("warning", "1 of 1 seed-swept models average fewer seeds than they trained: ['unet']") in recording_logger.messages
+
+
+def test_seed_collector_names_a_metric_that_is_non_finite_in_one_seed(tmp_path, recording_logger):
+    """A metric that is NaN in one seed is averaged over the others and the warning names the metric and the seeds the means cover."""
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0, "overall_r2_gt": 0.5}, "seed2": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}})
+    collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
+
+    records = collector.collect()
+
+    assert records[0].metrics["overall_r2_gt"] == 0.5
+    assert collector.seed_dispersion["unet"]["n_used"] == {"curve_rmse_gt": 2, "overall_r2_gt": 1}
+    assert any(level == "warning" and message.startswith("unet:") and "overall_r2_gt" in message and "cover 1 to 2 of 2 seeds" in message for level, message in recording_logger.messages)
+
+
+def test_seed_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path, recording_logger):
+    """A metric no seed reports as finite disappears from the model mean with a warning naming it."""
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan")}, "seed2": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}})
+    collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
+
+    records = collector.collect()
+
+    assert "overall_r2_gt" not in records[0].metrics
+    assert any(level == "warning" and message.startswith("unet:") and "overall_r2_gt" in message and "cover 0 to 2 of 2 seeds" in message for level, message in recording_logger.messages)
+
+
+def test_seed_collector_stays_quiet_when_every_seed_scored(tmp_path, recording_logger):
+    """Seeds that all carry finite metrics produce no coverage warning and a full n_used."""
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}})
+    collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
+
+    collector.collect()
+
+    assert collector.seed_dispersion["unet"]["n_used"] == {"curve_rmse_gt": 2}
+    assert [message for level, message in recording_logger.messages if level == "warning" and "seed" in message and "cover" in message] == []
+
+
+def test_seed_collector_keeps_the_per_run_records_beside_the_aggregates(tmp_path, recording_logger):
+    """The per-seed records stay available after aggregation, so the comparison can check them against the plan."""
+    run_dir   = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": None})
+    collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
+
+    records = collector.collect()
+
+    assert [record.name for record in records]        == ["unet"]
+    assert [record.name for record in collector.runs] == ["unet/seed1", "unet/seed2"]
+    assert [record.has_inference for record in collector.runs] == [True, False]
