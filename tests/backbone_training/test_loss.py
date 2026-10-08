@@ -17,6 +17,7 @@ from configuration.training.backbone        import default_curriculum
 from configuration.training.general.loss    import LossConfig, ParamMatching
 from pipelines.backbone.training.loss       import Loss
 from pipelines.backbone.training.loss_terms import LOSS_TERMS, LossComponentCatalog
+from tools.loss.param_loss                  import ParamLoss
 from tools.monitoring.logger                import NullLogger
 from tools.monitoring.tracker               import NullTracker
 
@@ -370,6 +371,65 @@ def test_slot_presence_knobs_log_occupancy():
     assert "pred_active_slot1" in out["occupancy"]
     assert "gt_active_slot0"   in out["occupancy"]
     assert out["occupancy"]["gt_active_frac"].item() == pytest.approx(1.0)
+
+
+def test_presence_balance_reports_the_derived_slot_weights():
+    """Verifies presence balancing records the per-slot weights it applied and whether the fraction clamp engaged, instead of the idle constants."""
+    cfg  = LossConfig(use_param_l1=True, weight_param_l1=1.0, presence_balance=True, active_weight=2.0, inactive_weight=0.5)
+    loss = build_loss(n_gaussians=2, loss_cfg=cfg)
+    gt   = valid_param_tensor(2, 2, 5, 5, seed=41)
+
+    gt[:, 3, :, :3] = 0.0
+
+    out     = loss(valid_param_tensor(2, 2, 5, 5, seed=42), gt)
+    monitor = out["monitor"]
+
+    assert monitor["presence/active_weight_slot0"].item()   == pytest.approx(0.5 / (1.0 - ParamLoss.FRAC_CLAMP))
+    assert monitor["presence/clamped_slot0"].item()         == 1.0
+    assert monitor["presence/active_weight_slot1"].item()   == pytest.approx(0.5 / 0.4)
+    assert monitor["presence/inactive_weight_slot1"].item() == pytest.approx(0.5 / 0.6)
+    assert monitor["presence/clamped_slot1"].item()         == 0.0
+
+
+def test_presence_weights_absent_without_balance_or_param_term():
+    """Verifies the presence weights are recorded only when balancing is on and a parameter term is evaluated."""
+    constants = build_loss(n_gaussians=2, loss_cfg=LossConfig(use_param_l1=True, weight_param_l1=1.0, presence_balance=False))
+    curve     = build_loss(n_gaussians=2, loss_cfg=LossConfig(use_mse_curve=True, weight_mse_curve=1.0, presence_balance=True))
+    gt        = valid_param_tensor(2, 2, 5, 5, seed=43)
+    pred      = valid_param_tensor(2, 2, 5, 5, seed=44)
+
+    assert not any(key.startswith("presence/") for key in constants(pred, gt)["monitor"])
+    assert not any(key.startswith("presence/") for key in curve(pred, gt)["monitor"])
+
+
+class _TableRecorder(NullLogger):
+    """Null logger that keeps every kv_table mapping so configuration tables can be asserted.
+
+    Attributes:
+        tables : (title, mapping) pairs in call order.
+    """
+
+    def __init__(self):
+        """Starts with no recorded table."""
+        self.tables = []
+
+    def kv_table(self, data, title=None, **kwargs):
+        """Records one configuration table."""
+        self.tables.append((title, dict(data)))
+
+
+def test_slot_presence_table_states_the_derived_weights_under_balance():
+    """Verifies the Slot-Presence table says the configured constants are not applied under presence_balance instead of printing them as in force."""
+    logger = _TableRecorder()
+    cfg    = LossConfig(use_param_l1=True, weight_param_l1=1.0, presence_balance=True, active_weight=2.0, inactive_weight=0.5)
+
+    Loss(z_axis=x_axis_tensor(), logger=logger, tracker=NullTracker(), gaussian_cfg=gaussian_config(2), loss_cfg=cfg, norm_stats=identity_normalizer(6))
+
+    table = next(table for title, table in logger.tables if title == "Slot-Presence Loss Config")
+
+    assert "active_weight" not in table
+    assert "derived per slot and batch" in table["active_weight / inactive_weight"]
+    assert "2 / 0.5 are not applied" in table["active_weight / inactive_weight"]
 
 
 def test_occupancy_absent_when_no_slot_presence_knobs():

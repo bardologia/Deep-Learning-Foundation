@@ -291,6 +291,23 @@ def test_presence_scale_clamps_degenerate_fractions():
     assert scale[:, 1].max().item() == pytest.approx(0.5 / (1.0 - ParamLoss.FRAC_CLAMP))
 
 
+def test_presence_weights_report_the_clamp_per_slot():
+    """Verifies presence_weights returns 0.5/frac and 0.5/(1-frac) per slot and flags only the slots whose fraction hit the clamp."""
+    b, g, h, w = 1, 3, 4, 4
+    active = torch.zeros(b, g, 1, h, w, dtype=torch.float64)
+    active[:, 0]          = 1.0
+    active[:, 1, :, :1]   = 1.0
+
+    active_weight, inactive_weight, clamped = ParamLoss.presence_weights(active)
+
+    assert active_weight.shape == (g,)
+    assert clamped.tolist() == [1.0, 0.0, 1.0]
+    assert active_weight[1].item()   == pytest.approx(0.5 / 0.25)
+    assert inactive_weight[1].item() == pytest.approx(0.5 / 0.75)
+    assert active_weight[2].item()   == pytest.approx(0.5 / ParamLoss.FRAC_CLAMP)
+    assert inactive_weight[0].item() == pytest.approx(0.5 / ParamLoss.FRAC_CLAMP)
+
+
 def test_presence_scale_default_is_identity():
     """Verifies presence scaling is all ones when balancing is disabled and both weights are unity."""
     active = torch.tensor([1.0, 0.0]).reshape(1, 2, 1, 1, 1)
