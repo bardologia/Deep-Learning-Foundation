@@ -797,6 +797,26 @@ def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_pa
     assert omitted == ["split test: ['overall_r2_gt'] non-finite in every fold, omitted from the cross-fold aggregate (cv_aggregate_report.md, cv_summary.json)"]
 
 
+def test_collector_sees_autoencoder_inference_under_the_family_subdir_and_counts_every_split(tmp_path):
+    """An autoencoder fold run scored under its family subdirectory is collected as inferred, and each configured split gets one coverage line naming the runs it misses."""
+    run_dir = build_run_dir(tmp_path, ["fold_0", "fold_1"], {})
+
+    for name in ("fold_0", "fold_1"):
+        stamp_split_inference(run_dir / "folds" / name / "inference" / "profile_ae", "val", {"mse_mean": 0.5})
+    stamp_split_inference(run_dir / "folds" / "fold_0" / "inference" / "profile_ae", "test", {"mse_mean": 0.4})
+
+    logger    = RecordingLogger()
+    collector = FoldCollector(run_dir=run_dir, splits=["val", "test"], training_type="profile_autoencoder", logger=logger)
+    records   = collector.collect()
+
+    collector.collect_by_split()
+
+    assert all(record.has_inference for record in records)
+    assert collector.scored_splits == {"fold_0": ["val", "test"], "fold_1": ["val"]}
+    assert ("info", "split val: 2/2 fold runs hold a completed inference with metrics") in logger.messages
+    assert ("warning", "split test: 1/2 fold runs hold a completed inference with metrics; missing: ['fold_1']") in logger.messages
+
+
 @pytest.mark.dataset
 def test_training_worker_refuses_a_finished_unit_when_resume_is_off(test_data_dir, tmp_path, monkeypatch):
     """With resume off a fold unit that already completed makes the worker exit instead of training over it or claiming it trained."""
