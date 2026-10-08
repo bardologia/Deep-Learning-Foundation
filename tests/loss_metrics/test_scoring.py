@@ -70,6 +70,18 @@ def test_r2_worse_than_mean_is_negative():
     assert out[0] < 0.0
 
 
+def test_r2_constant_reference_is_undefined():
+    """Verifies a reference constant along the reduced axis gives NaN, whether or not the prediction matches it, while other pixels keep their value."""
+    ref  = np.array([[1.0, 2.0, 3.0, 4.0], [0.0, 0.0, 0.0, 0.0], [2.0, 2.0, 2.0, 2.0]], dtype=np.float64)
+    pred = np.array([[1.0, 2.0, 3.0, 4.0], [0.0, 0.0, 0.0, 0.0], [5.0, 5.0, 5.0, 5.0]], dtype=np.float64)
+    out  = R2.pixel_map(pred, ref, axis=1)
+
+    assert out[0] == pytest.approx(1.0)
+    assert math.isnan(out[1])
+    assert math.isnan(out[2])
+    assert R2.undefined_count(out) == 2
+
+
 def test_orientation_lower_tokens():
     """Verifies error and loss metric names are classified as lower-is-better."""
     assert MetricOrientation.direction("curve_mse") == "lower"

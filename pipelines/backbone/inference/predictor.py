@@ -21,6 +21,7 @@ from pipelines.backbone.inference.loader             import Run
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.backbone.inference.metrics            import Metrics, Result
 from tools.data.gaussians                            import GaussianActivity, GaussianReconstructor
+from tools.metrics.scoring                           import R2
 from tools.monitoring.logger                         import Logger
 
 
@@ -543,14 +544,19 @@ class Predictor:
             for tmp in self.cube_dir.glob("_tmp_*.npy"):
                 tmp.unlink(missing_ok=True)
 
+        undefined_r2 = R2.undefined_count(pixel_r2)
+
         self.logger.section("[Inference: Results]")
         self.logger.kv_table({
             "Curves cube    (denorm)": pred_curves_cube.shape,
             "Params cube    (denorm)": params_pred_cube.shape,
             "GT params cube (denorm)": params_gt_cube.shape,
             "Mean pixel MSE (denorm)": f"{pixel_mse.mean():.4g}  (pred vs gt)",
-            "Mean pixel R²  (denorm)": f"{pixel_r2.mean():.4g}  (pred vs gt)",
+            "Mean pixel R²  (denorm)": f"{np.nanmean(pixel_r2):.4g}  (pred vs gt, over {pixel_r2.size - undefined_r2} of {pixel_r2.size} pixels)",
         })
+
+        if undefined_r2:
+            self.logger.warning(f"{undefined_r2} of {pixel_r2.size} pixels have a constant GT profile; their R² is undefined and excluded from the pixel_r2_gt statistics (counted as pixel_r2_gt_undefined_count)")
 
         return Result(
             pred_curves        = pred_curves_cube,

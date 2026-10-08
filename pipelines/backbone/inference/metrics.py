@@ -367,18 +367,30 @@ class Metrics:
     def _expand_pixel_stats(self, tagged_arrays: Tuple[Tuple[str, np.ndarray], ...]) -> Dict[str, float]:
         """Flattens moments and percentiles of several per-pixel maps into one tagged dictionary.
 
+        Every statistic is taken over the finite entries of its map, so pixels whose
+        metric is undefined (a NaN R² at a constant reference profile) are left out
+        instead of turning the whole statistic into NaN.
+
         Args:
             tagged_arrays : Pairs of metric tag and per-pixel map of shape (rows, cols).
 
         Returns:
             Scalar metrics keyed "<tag>_<statistic>" for each supplied map.
+
+        Raises:
+            ValueError : If a map holds no finite entry at all.
         """
 
         out: Dict[str, float] = {}
 
         for tag, arr in tagged_arrays:
-            out.update({f"{tag}_{k}": v for k, v in self._basic_stats(arr).items()})
-            out.update({f"{tag}_{k}": v for k, v in self._percentiles(arr).items()})
+            finite = arr[np.isfinite(arr)]
+
+            if not finite.size:
+                raise ValueError(f"{tag} holds no finite pixel; its statistics are undefined on this region")
+
+            out.update({f"{tag}_{k}": v for k, v in self._basic_stats(finite).items()})
+            out.update({f"{tag}_{k}": v for k, v in self._percentiles(finite).items()})
 
         return out
 
@@ -921,6 +933,8 @@ class Metrics:
             ("pixel_peak_idx_d_gt", self.result.pixel_peak_err_idx.astype(np.float32)),
         )))
 
+        metrics["pixel_r2_gt_undefined_count"] = R2.undefined_count(self.result.pixel_r2)
+
         metrics["pixel_peak_err_units_mean_gt"]   = float(self.result.pixel_peak_err_idx.mean())              * self.x_step
         metrics["pixel_peak_err_units_median_gt"] = float(np.median(self.result.pixel_peak_err_idx))          * self.x_step
         metrics["pixel_peak_err_units_p95_gt"]    = float(np.percentile(self.result.pixel_peak_err_idx, 95))  * self.x_step
@@ -951,8 +965,9 @@ class Metrics:
             full_curves : Raw cube of shape (n_z, rows, cols).
 
         Returns:
-            Tuple of the per-pixel label fit R² map of shape (rows, cols) and the scalar
-            statistics summarising it, including the split of prediction error by label quality.
+            Tuple of the per-pixel label fit R² map of shape (rows, cols), NaN where the
+            raw profile is constant, and the scalar statistics summarising its finite entries,
+            the count of undefined pixels and the split of prediction error by label quality.
 
         Raises:
             ValueError : If the GT cube and the raw cube disagree in shape, or if the R² map holds no finite value.
@@ -975,6 +990,7 @@ class Metrics:
             "label_r2_median"          : float(np.median(finite)),
             "label_r2_p05"             : float(np.percentile(finite, 5.0)),
             "label_r2_frac_below_half" : float((finite < 0.5).mean()),
+            "label_r2_undefined_count" : R2.undefined_count(r2_map),
         }
 
         stats.update(self._label_noise_split(r2_map))
