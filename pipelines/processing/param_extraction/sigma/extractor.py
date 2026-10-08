@@ -44,24 +44,24 @@ class SigmaFittingExtractor:
 
     def __init__(
         self,
-        logger             : Logger,
-        modes              : list,
-        lambda_values      : list,
-        k_max              : int                 = 5,
-        threshold_factor   : float               = 0.25,
-        truncation_index   : int                 = 170,
-        prominence_frac    : float               = 0.05,
-        sigma_init_divisor : float               = 1.0,
-        activity_threshold : float               = 1e-3,
-        col_batch_size     : int                 = 256,
-        adam_steps         : int                 = 2000,
-        adam_lr            : float               = 1e-2,
-        adam_b1            : float               = 0.9,
-        adam_b2            : float               = 0.999,
-        gpu_pixel_batch_size: int                 = 8192,
-        init_workers        : Optional[int]       = None,
-        peak_initialiser    : Optional[PeakInitialiser] = None,
-        kernel_backend      : Optional[tuple]     = None,
+        logger               : Logger,
+        modes                : list,
+        lambda_values        : list,
+        k_max                : int                       = 5,
+        threshold_factor     : float                     = 0.25,
+        truncation_index     : int                       = 170,
+        prominence_frac      : float                     = 0.05,
+        sigma_init_divisor   : float                     = 1.0,
+        activity_threshold   : float                     = 1e-3,
+        col_batch_size       : int                       = 256,
+        adam_steps           : int                       = 2000,
+        adam_lr              : float                     = 1e-2,
+        adam_b1              : float                     = 0.9,
+        adam_b2              : float                     = 0.999,
+        gpu_pixel_batch_size : int                       = 8192,
+        init_workers         : Optional[int]             = None,
+        peak_initialiser     : Optional[PeakInitialiser] = None,
+        kernel_backend       : Optional[tuple]           = None,
     ) -> None:
         """Configures the fitting grid, peak initialiser and JAX kernel backend.
 
@@ -71,11 +71,11 @@ class SigmaFittingExtractor:
             lambda_values        : Model-order penalties, one output permutation each.
             k_max                : Maximum number of Gaussians fitted per pixel.
             threshold_factor     : Relative floor applied by `ProfilePreprocessor`.
-            truncation_index     : Height-bin index above which profiles are cut.
+            truncation_index     : Z-bin index above which profiles are cut.
             prominence_frac      : Peak prominence as a fraction of the profile max.
             sigma_init_divisor   : Divides the heuristic initial sigma in metres.
             activity_threshold   : Minimum profile peak for a pixel to be fitted.
-            range_batch_size     : Number of range bins loaded per batch.
+            col_batch_size       : Number of cols loaded per batch.
             adam_steps           : Adam iterations run inside the kernel.
             adam_lr              : Adam learning rate.
             adam_b1              : Adam first-moment decay.
@@ -136,7 +136,7 @@ class SigmaFittingExtractor:
         self.logger.section("[GPU Parameter Extractor]")
         self.logger.subsection(f"JAX active devices : {self.devices}")
         self.logger.subsection(f"Backend            : {backend}")
-        self.logger.subsection(f"col_batch_size   : {col_batch_size}")
+        self.logger.subsection(f"col_batch_size     : {col_batch_size}")
         self.logger.subsection(f"gpu_pixel_batch    : {gpu_pixel_batch_size}")
         self.logger.subsection(f"adam_steps         : {adam_steps}")
         self.logger.subsection(f"adam_lr            : {adam_lr}")
@@ -153,24 +153,24 @@ class SigmaFittingExtractor:
         cube_path : Path,
         z_range   : Tuple[float, float],
     ) -> tuple:
-        """Memory-maps the cube and derives the height axis and fit bounds.
+        """Memory-maps the cube and derives the z axis and fit bounds.
 
         Args:
-            cube_path : Path to a (height, rows, cols) cube .npy.
-            height_range  : Lowest and highest z of the height axis, in metres.
+            cube_path : Path to a (z, rows, cols) cube .npy.
+            z_range   : Lowest and highest z of the axis, in metres.
 
         Returns:
-            Tuple of memmapped cube, its H/Az/R sizes, the numpy and JAX
-            height axes in metres, the sigma and mean clamp bounds in metres,
-            and the flattened parameter count 3 * k_max.
+            Tuple of memmapped cube, its H/n_row/n_col sizes, the numpy and JAX
+            z axes in metres, the sigma and mean clamp bounds in metres, and
+            the flattened parameter count 3 * k_max.
         """
 
         n_params_out = 3 * self.k_max
 
-        cube_mmap = np.load(str(cube_path), mmap_mode="r", allow_pickle=False)
-        H, n_row, n_col      = cube_mmap.shape
-        z_axis   = np.linspace(z_range[0], z_range[1], H, dtype=np.float32)
-        z_ax_j   = jnp.array(z_axis)
+        cube_mmap       = np.load(str(cube_path), mmap_mode="r", allow_pickle=False)
+        H, n_row, n_col = cube_mmap.shape
+        z_axis          = np.linspace(z_range[0], z_range[1], H, dtype=np.float32)
+        z_ax_j          = jnp.array(z_axis)
 
         h_span = float(z_axis[-1] - z_axis[0])
         dh     = h_span / (H - 1)
@@ -188,8 +188,8 @@ class SigmaFittingExtractor:
 
         self.logger.section("[Data Preparation]")
         self.logger.subsection(f"H            : {H}")
-        self.logger.subsection(f"n_row           : {n_row}")
-        self.logger.subsection(f"n_col            : {n_col}")
+        self.logger.subsection(f"n_row        : {n_row}")
+        self.logger.subsection(f"n_col        : {n_col}")
         self.logger.subsection(f"k_max        : {self.k_max}")
         self.logger.subsection(f"Total pixels : {n_col * n_row:,}")
         self.logger.subsection(f"Batches      : {-(-n_col // self.col_batch_size)}")
@@ -214,8 +214,8 @@ class SigmaFittingExtractor:
         """Triggers JAX compilation of the fitting kernel on dummy inputs.
 
         Args:
-            height_ax_j   : Height axis of shape (H,) in metres.
-            H             : Number of height bins.
+            z_ax_j        : Z axis of shape (H,) in metres.
+            H             : Number of z bins.
             sigma_lower_j : Lower sigma clamp in metres.
             sigma_upper_j : Upper sigma clamp in metres.
             mu_lower_j    : Lower mean clamp in metres.
@@ -246,20 +246,20 @@ class SigmaFittingExtractor:
         n_row     : int,
         H         : int,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
-        """Loads one range batch and returns raw, peak-normalised profiles.
+        """Loads one col batch and returns raw, peak-normalised profiles.
 
         Args:
-            cube_mmap : Memmapped complex cube of shape (H, Az, R).
-            r_start       : First range bin of the batch.
-            R             : Total number of range bins.
-            Az            : Number of row lines.
-            H             : Number of height bins.
+            cube_mmap : Memmapped complex cube of shape (H, n_row, n_col).
+            r_start   : First col of the batch.
+            n_col     : Total number of cols.
+            n_row     : Number of rows.
+            H         : Number of z bins.
 
         Returns:
-            Tuple of raw profiles of shape (r_count * Az, H), the same profiles
-            divided by their peak, the peak scale of shape (r_count * Az, 1),
-            an activity mask of shape (r_count * Az,), and the exclusive end
-            range bin.
+            Tuple of raw profiles of shape (r_count * n_row, H), the same
+            profiles divided by their peak, the peak scale of shape
+            (r_count * n_row, 1), an activity mask of shape (r_count * n_row,),
+            and the exclusive end col.
         """
 
         r_end = min(r_start + self.col_batch_size, n_col)
@@ -305,7 +305,7 @@ class SigmaFittingExtractor:
             inits         : Per-K tuple of initial amplitudes, means and sigmas, each of shape (N_act, K).
             prof_norm_all : Peak-normalised profiles of shape (N_act, H).
             scale_all     : Per-pixel peak scale of shape (N_act,).
-            height_ax_j   : Height axis of shape (H,) in metres.
+            z_ax_j        : Z axis of shape (H,) in metres.
             sigma_lower_j : Lower sigma clamp in metres.
             sigma_upper_j : Upper sigma clamp in metres.
             mu_lower_j    : Lower mean clamp in metres.
@@ -408,7 +408,7 @@ class SigmaFittingExtractor:
             profiles_norm : Peak-normalised profiles of shape (n_total, H).
             active        : Boolean activity mask of shape (n_total,).
             safe_scale    : Peak scale of shape (n_total, 1).
-            height_axis   : Height axis of shape (H,) in metres.
+            z_axis        : Z axis of shape (H,) in metres.
             batch_tag     : Label used in log sections.
 
         Returns:
@@ -466,9 +466,9 @@ class SigmaFittingExtractor:
             n_total      : Number of pixels in the batch, active or not.
             n_params_out : Flattened parameter count 3 * k_max.
             outputs      : Destination maps keyed by (mode, lambda_k).
-            r_start      : First range bin of the batch.
-            r_end        : Exclusive last range bin of the batch.
-            Az           : Number of row lines.
+            r_start      : First col of the batch.
+            r_end        : Exclusive last col of the batch.
+            n_row        : Number of rows.
             batch_tag    : Label used in log sections.
         """
 
@@ -532,22 +532,22 @@ class SigmaFittingExtractor:
         n_params_out  : int,
         outputs       : Dict[tuple, dict],
     ) -> int:
-        """Streams range batches through load, init, fit and scoring stages.
+        """Streams col batches through load, init, fit and scoring stages.
 
         Loading runs one batch ahead on its own thread and scoring runs in the
         background so the GPU stays busy while results are written.
 
         Args:
-            cube_mmap : Memmapped complex cube of shape (H, Az, R).
-            height_axis   : Height axis of shape (H,) in metres.
-            height_ax_j   : Device copy of the height axis.
+            cube_mmap     : Memmapped complex cube of shape (H, n_row, n_col).
+            z_axis        : Z axis of shape (H,) in metres.
+            z_ax_j        : Device copy of the z axis.
             sigma_lower_j : Lower sigma clamp in metres.
             sigma_upper_j : Upper sigma clamp in metres.
             mu_lower_j    : Lower mean clamp in metres.
             mu_upper_j    : Upper mean clamp in metres.
-            Az            : Number of row lines.
-            R             : Number of range bins.
-            H             : Number of height bins.
+            n_row         : Number of rows.
+            n_col         : Number of cols.
+            H             : Number of z bins.
             n_params_out  : Flattened parameter count 3 * k_max.
             outputs       : Destination maps keyed by (mode, lambda_k).
 
@@ -557,14 +557,14 @@ class SigmaFittingExtractor:
 
         n_batches = -(-n_col // self.col_batch_size)
 
-        self.logger.section("[Col Bin Loading]")
-        self.logger.subsection("Monolithic range batches, scoring runs in background while the next mode fits")
-        self.logger.subsection(f"Col batches : {n_batches} x {self.col_batch_size} bins")
+        self.logger.section("[Col Batch Loading]")
+        self.logger.subsection("Monolithic col batches, scoring runs in background while the next mode fits")
+        self.logger.subsection(f"Col batches : {n_batches} x {self.col_batch_size} cols")
 
         total_attempted = 0
 
         with self.logger.track(transient=True) as progress:
-            bar_task = progress.add_task("  [section]Processing range bins[/section]", total=n_col,)
+            bar_task = progress.add_task("  [section]Processing cols[/section]", total=n_col,)
 
             with ThreadPoolExecutor(max_workers=1) as load_pool, ThreadPoolExecutor(max_workers=1) as score_pool:
                 r               = 0
@@ -607,7 +607,7 @@ class SigmaFittingExtractor:
                         del profiles_flat, profiles_norm, safe_scale, active, batch
                         gc.collect()
 
-                        self.logger.subsection(f"{batch_tag} dispatched — range bins {r_start}-{r_end} of {n_col}")
+                        self.logger.subsection(f"{batch_tag} dispatched — cols {r_start}-{r_end} of {n_col}")
 
                         progress.advance(bar_task, advance=r_count)
                         r = r_end
@@ -634,15 +634,15 @@ class SigmaFittingExtractor:
         """Fits the whole cube and returns one parameter map per permutation.
 
         Args:
-            cube_path : Path to a (height, rows, cols) cube .npy.
-            height_range  : Lowest and highest z in metres.
+            cube_path : Path to a (z, rows, cols) cube .npy.
+            z_range   : Lowest and highest z in metres.
 
         Returns:
             Mapping from (mode, lambda_k) to a parameter map of shape
-            (3 * k_max, Az, R) — amplitude, mean in metres and sigma in metres
-            interleaved per Gaussian — and a diagnostics dict holding
-            `mse_per_k` and `penalised_per_k` of shape (k_max, Az, R), the
-            `best_k_map` of shape (Az, R) and the scalar `lambda_k`.
+            (3 * k_max, n_row, n_col) — amplitude, mean in metres and sigma in
+            metres interleaved per Gaussian — and a diagnostics dict holding
+            `mse_per_k` and `penalised_per_k` of shape (k_max, n_row, n_col),
+            the `best_k_map` of shape (n_row, n_col) and the scalar `lambda_k`.
         """
 
         (

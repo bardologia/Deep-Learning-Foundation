@@ -45,7 +45,7 @@ class PeakInitialiser:
 
         Args:
             raw_chunk       : Raw profiles of shape (chunk_N, H).
-            z_axis     : Z axis of shape (H,) in metres.
+            z_axis          : Z axis of shape (H,) in metres.
             K               : Number of Gaussians to initialise.
             sigma_guess     : Initial standard deviation in metres.
             min_dist        : Minimum peak separation in z bins.
@@ -107,7 +107,7 @@ class PeakInitialiser:
 
         Args:
             z_axis : Z axis of shape (H,) in metres.
-            K           : Number of Gaussians the z span is shared by.
+            K      : Number of Gaussians the z span is shared by.
 
         Returns:
             The larger of two z bins and one eighth of the span per
@@ -128,7 +128,7 @@ class PeakInitialiser:
 
         Args:
             prof_raw        : Raw profiles of shape (N, H).
-            z_axis     : Z axis of shape (H,) in metres.
+            z_axis          : Z axis of shape (H,) in metres.
             K               : Number of Gaussians to initialise.
             prominence_frac : Peak prominence as a fraction of the profile max.
             sigma_divisor   : Divides the heuristic initial sigma.

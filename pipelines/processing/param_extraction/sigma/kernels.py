@@ -20,11 +20,11 @@ class SigmaScan:
         """Returns the mean squared error of a Gaussian mixture against a profile.
 
         Args:
-            amps        : Gaussian amplitudes of shape (K,).
-            mus         : Gaussian means of shape (K,), in metres.
-            sigmas      : Gaussian standard deviations of shape (K,), in metres.
-            z_axis : Z axis of shape (H,), in metres.
-            profile     : Target profile of shape (H,).
+            amps    : Gaussian amplitudes of shape (K,).
+            mus     : Gaussian means of shape (K,), in metres.
+            sigmas  : Gaussian standard deviations of shape (K,), in metres.
+            z_axis  : Z axis of shape (H,), in metres.
+            profile : Target profile of shape (H,).
 
         Returns:
             Scalar MSE between the evaluated mixture and the profile.
@@ -70,7 +70,7 @@ class SigmaScan:
             amps_init    : Initial amplitudes of shape (B, K).
             mus_init     : Initial means of shape (B, K), in metres.
             sigmas_init  : Initial sigmas of shape (B, K), in metres.
-            height_axis  : Height axis of shape (H,), in metres.
+            z_axis       : Z axis of shape (H,), in metres.
             profiles     : Target profiles of shape (B, H).
             amp_mask     : 1.0 to let amplitudes move, 0.0 to freeze them.
             mu_mask      : 1.0 to let means move, 0.0 to freeze them.
@@ -185,7 +185,7 @@ class SigmaAdamKernel:
             amps_init   : Initial amplitudes of shape (B, K).
             mus_init    : Initial means of shape (B, K), in metres.
             sigmas_init : Initial sigmas of shape (B, K), in metres.
-            height_axis : Height axis of shape (H,), in metres.
+            z_axis      : Z axis of shape (H,), in metres.
             profiles    : Target profiles of shape (B, H).
             amp_mask    : Amplitude gradient mask, 1.0 free and 0.0 frozen.
             mu_mask     : Mean gradient mask, 1.0 free and 0.0 frozen.
@@ -266,7 +266,7 @@ class PmapSigmaAdamKernel:
             amps_init   : Initial amplitudes of shape (n, K).
             mus_init    : Initial means of shape (n, K), in metres.
             sigmas_init : Initial sigmas of shape (n, K), in metres.
-            height_axis : Height axis of shape (H,), in metres.
+            z_axis      : Z axis of shape (H,), in metres.
             profiles    : Target profiles of shape (n, H).
             amp_mask    : Amplitude gradient mask, 1.0 free and 0.0 frozen.
             mu_mask     : Mean gradient mask, 1.0 free and 0.0 frozen.
