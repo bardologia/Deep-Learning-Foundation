@@ -724,7 +724,7 @@ class ExperimentReportBundle(ReportBundle):
         self.freshness.check(f"seed aggregate of {trial_dir.name}", report.parent, seeds, split, uncovered)
 
     def _aggregate_seeds(self, trial_dir: Path) -> None:
-        """Writes the seed-aggregate report of a seeded trial, as the seed comparison entry does.
+        """Writes the seed-aggregate report of a seeded trial as the seed comparison entry does, logging through the mail run's logger.
 
         Args:
             trial_dir : Trial directory holding the seed runs.
@@ -734,7 +734,9 @@ class ExperimentReportBundle(ReportBundle):
 
         self.logger.info(f"{trial_dir.name}: writing the seed-aggregate report over {len(TrialTree.seed_runs(trial_dir))} seed run(s)")
 
-        SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name]), self.logger).run()
+        reports = SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name]), self.logger).run()
+
+        self.logger.ok(f"{trial_dir.name}: seed-aggregate report written to {reports[0]}")
 
     def _check_aggregate_split(self, trial_dir: Path, report: Path, split: str) -> None:
         """Warns when a seed aggregate averaged an inference of another split, or an unfinished one, for any seed.

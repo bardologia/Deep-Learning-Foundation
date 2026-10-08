@@ -276,6 +276,24 @@ def test_selector_raises_without_any_experiment(tmp_path):
         ExperimentSelector(tmp_path / "empty", "_comparison", RecordingLogger()).all()
 
 
+def _stage_recorded(entry_config, experiment) -> RecordingLogger:
+    """Stages one experiment's bundle and returns the logger that recorded it."""
+    logger = RecordingLogger()
+    ExperimentReportBundle(experiment, entry_config.to_config(experiment.label), logger).stage()
+    return logger
+
+
+def _warnings(logger: RecordingLogger) -> list[str]:
+    """Returns the warning lines a recording logger holds."""
+    return [message for level, message in logger.messages if level == "warning"]
+
+
+def _age(path: Path, seconds: float) -> None:
+    """Moves the modification time of a file into the past by the given number of seconds."""
+    mtime = path.stat().st_mtime - seconds
+    os.utime(path, (mtime, mtime))
+
+
 def test_bundle_stages_trial_reports_comparison_and_config_files(entry_config, workspace):
     """Verifies the bundle stages one report per trial, the comparison reports and the sweep's configuration files."""
     staged = _bundle(entry_config, Experiment(workspace / "exp_alpha", workspace / "exp_alpha")).stage()
@@ -314,6 +332,17 @@ def test_bundle_writes_the_missing_seed_aggregate_first(entry_config, tmp_path):
     assert "curve_rmse_gt" in staged[0].read_text(encoding="utf-8")
 
 
+def test_bundle_logs_the_seed_aggregation_in_the_mail_log(entry_config, tmp_path):
+    """Verifies the seed comparison run for a missing aggregate logs its written report through the mail run's logger."""
+    experiment_dir = _write_experiment(tmp_path / "ws", "exp_bare", aggregate=False)
+
+    logger = _stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir))
+
+    report = sorted((experiment_dir / "trial_a" / "inference").glob("*/report.md"))[0]
+    assert ("info", f"Seed-comparison report  : {report}") in logger.messages
+    assert ("ok", f"trial_a: seed-aggregate report written to {report}") in logger.messages
+
+
 def test_bundle_writes_the_missing_trial_comparison_first(entry_config, tmp_path):
     """Verifies a sweep without a comparison stamp gets one written over its trials before staging."""
     experiment_dir = _write_experiment(tmp_path / "ws", "exp_bare", comparison=False)
@@ -335,24 +364,6 @@ def test_bundle_regenerates_what_exists_when_asked(entry_config, workspace):
 
     assert len(list((experiment_dir / "trial_a" / "inference").glob("*/report.md"))) == 2
     assert len([child for child in (experiment_dir / "_comparison").iterdir() if child.is_dir()]) == 2
-
-
-def _stage_recorded(entry_config, experiment) -> RecordingLogger:
-    """Stages one experiment's bundle and returns the logger that recorded it."""
-    logger = RecordingLogger()
-    ExperimentReportBundle(experiment, entry_config.to_config(experiment.label), logger).stage()
-    return logger
-
-
-def _warnings(logger: RecordingLogger) -> list[str]:
-    """Returns the warning lines a recording logger holds."""
-    return [message for level, message in logger.messages if level == "warning"]
-
-
-def _age(path: Path, seconds: float) -> None:
-    """Moves the modification time of a file into the past by the given number of seconds."""
-    mtime = path.stat().st_mtime - seconds
-    os.utime(path, (mtime, mtime))
 
 
 def test_bundle_names_reused_reports_and_finds_them_current(entry_config, workspace):
