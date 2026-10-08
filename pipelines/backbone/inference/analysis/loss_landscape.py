@@ -130,11 +130,31 @@ class LandscapeEvaluator:
 
 
 class CutDiagnostics:
-    """Scalar descriptors of a 1-D loss cut through the trained point."""
+    """Scalar descriptors of a 1-D loss cut through the trained point.
+
+    Every descriptor refuses a cut holding a non-finite loss, since NaN compares
+    false against every threshold and would turn into a censored radius or a
+    minimum offset pointing at the NaN step.
+    """
 
     SHARPNESS_RADIUS = 0.1
     CURVATURE_RADIUS = 0.2
     RADIUS_FACTOR    = 2.0
+
+    @staticmethod
+    def require_finite(alphas: np.ndarray, cut: np.ndarray) -> None:
+        """Raises when the cut holds a non-finite loss.
+
+        Args:
+            alphas : Steps along the direction, shape (n_points,).
+            cut    : Loss at each step, shape (n_points,).
+
+        Raises:
+            ValueError : If any loss of the cut is NaN or infinite, naming the affected steps.
+        """
+        bad = ~np.isfinite(cut)
+        if bad.any():
+            raise ValueError(f"Loss cut holds {int(bad.sum())} non-finite value(s) at alpha {[round(float(a), 4) for a in alphas[bad]]}; its diagnostics are undefined")
 
     @classmethod
     def sharpness(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
@@ -146,7 +166,12 @@ class CutDiagnostics:
 
         Returns:
             The largest nearby loss over the centre loss, minus one.
+
+        Raises:
+            ValueError : If the cut holds a non-finite loss.
         """
+        cls.require_finite(alphas, cut)
+
         center = cut[np.argmin(np.abs(alphas))]
         near   = np.abs(alphas) <= cls.SHARPNESS_RADIUS + 1e-9
 
@@ -165,8 +190,10 @@ class CutDiagnostics:
             divided by the centre loss.
 
         Raises:
-            ValueError : If fewer than three samples fall inside the fitting radius.
+            ValueError : If the cut holds a non-finite loss, or fewer than three samples fall inside the fitting radius.
         """
+        cls.require_finite(alphas, cut)
+
         center = cut[np.argmin(np.abs(alphas))]
         near   = np.abs(alphas) <= cls.CURVATURE_RADIUS + 1e-9
 
@@ -192,7 +219,12 @@ class CutDiagnostics:
         Returns:
             Dictionary with the "radius" in direction steps and a "censored" flag set when
             the loss never crosses within the sampled span.
+
+        Raises:
+            ValueError : If the cut holds a non-finite loss.
         """
+        cls.require_finite(alphas, cut)
+
         center    = cut[np.argmin(np.abs(alphas))]
         threshold = cls.RADIUS_FACTOR * max(center, 1e-12)
         span      = float(np.abs(alphas).max())
@@ -217,9 +249,19 @@ class CutDiagnostics:
         radius = min(sides)
         return {"radius": float(radius), "censored": bool(radius >= span)}
 
-    @staticmethod
-    def min_offset(alphas: np.ndarray, cut: np.ndarray) -> float:
-        """Returns the step at which the cut attains its sampled minimum, zero when at the trained point."""
+    @classmethod
+    def min_offset(cls, alphas: np.ndarray, cut: np.ndarray) -> float:
+        """Returns the step at which the cut attains its sampled minimum, zero when at the trained point.
+
+        Args:
+            alphas : Steps along the direction, shape (n_points,).
+            cut    : Loss at each step, shape (n_points,).
+
+        Raises:
+            ValueError : If the cut holds a non-finite loss.
+        """
+        cls.require_finite(alphas, cut)
+
         return float(alphas[int(np.argmin(cut))])
 
 
@@ -273,8 +315,11 @@ class LossLandscapePlots(PlotBase):
             Path of the saved figure.
 
         Raises:
-            ValueError : If the sampled landscape is flat, leaving no range to contour.
+            ValueError : If the grid holds a non-finite loss, or if the sampled landscape is flat, leaving no range to contour.
         """
+        bad = ~np.isfinite(losses)
+        if bad.any():
+            raise ValueError(f"{int(bad.sum())} of {losses.size} landscape grid losses are non-finite; the perturbed model diverges inside the sampled plane, so shrink span or check the checkpoint")
         if not losses.max() > losses.min():
             raise ValueError(f"The sampled landscape is flat at {float(losses.min()):.6g} over the whole grid; a filled contour needs a loss range, so widen span or check that the loss depends on the perturbed weights")
 
@@ -360,22 +405,59 @@ class LossLandscapeRun(AnalysisRun):
 
         return evaluate
 
+    def _diagnose(self, alphas: np.ndarray, cuts: list[np.ndarray]) -> list[dict]:
+        """Describes every 1-D cut, flagging the cuts that hold a non-finite loss as invalid.
+
+        Args:
+            alphas : Steps along the directions, shape (n_points,).
+            cuts   : Loss of each direction, each of shape (n_points,).
+
+        Returns:
+            One entry per direction holding "valid", the "nonfinite_alphas" and, for a
+            valid cut, its sharpness, curvature, flatness radius and minimum offset.
+
+        Raises:
+            ValueError : If every cut holds a non-finite loss, leaving nothing to summarize.
+        """
+        diagnostics = []
+        for index, cut in enumerate(cuts):
+            nonfinite = alphas[~np.isfinite(cut)]
+
+            if nonfinite.size:
+                self.logger.warning(f"{self.run_dir.name}: direction {index}: {nonfinite.size}/{cut.size} cut losses are non-finite at alpha {', '.join(f'{alpha:+.3f}' for alpha in nonfinite)}; the cut is left out of the diagnostics")
+                diagnostics.append({"valid": False, "nonfinite_alphas": nonfinite.tolist()})
+                continue
+
+            diagnostics.append({
+                "valid"            : True,
+                "nonfinite_alphas" : [],
+                "sharpness"        : CutDiagnostics.sharpness(alphas, cut),
+                "curvature"        : CutDiagnostics.curvature(alphas, cut),
+                "flatness_radius"  : CutDiagnostics.flatness_radius(alphas, cut),
+                "min_offset"       : CutDiagnostics.min_offset(alphas, cut),
+            })
+
+        if not any(entry["valid"] for entry in diagnostics):
+            raise ValueError(f"Every one of the {len(cuts)} loss cuts of {self.run_dir} holds a non-finite loss; shrink span or check the checkpoint")
+
+        return diagnostics
+
     def _write_report(self, run, center: float, diagnostics: list[dict], figures: dict[str, Path]) -> Path:
         """Writes the markdown report of the landscape.
 
         Args:
             run         : Loaded run, used for the backbone name in the title.
             center      : Curve MSE at the trained weights.
-            diagnostics : Per-direction sharpness, curvature, flatness radius and minimum offset.
+            diagnostics : Per-direction validity, sharpness, curvature, flatness radius and minimum offset.
             figures     : Figure paths keyed by figure name.
 
         Returns:
             Path of the written report.
         """
-        sharpness  = np.array([entry["sharpness"] for entry in diagnostics])
-        curvature  = np.array([entry["curvature"] for entry in diagnostics])
-        radii      = np.array([entry["flatness_radius"]["radius"] for entry in diagnostics])
-        censored   = [entry["flatness_radius"]["censored"] for entry in diagnostics]
+        valid      = [entry for entry in diagnostics if entry["valid"]]
+        sharpness  = np.array([entry["sharpness"] for entry in valid])
+        curvature  = np.array([entry["curvature"] for entry in valid])
+        radii      = np.array([entry["flatness_radius"]["radius"] for entry in valid])
 
         doc = MarkdownDoc(title=f"Loss landscape: {run.backbone_name}")
         doc.paragraph(
@@ -383,21 +465,27 @@ class LossLandscapeRun(AnalysisRun):
             f"evaluated on {self.config.max_batches} '{self.config.split}' batches. Sharpness is the relative loss increase within ±{CutDiagnostics.SHARPNESS_RADIUS} of the centre; "
             f"curvature is the normalized quadratic coefficient fitted within ±{CutDiagnostics.CURVATURE_RADIUS}; the flatness radius is the interpolated step at which the loss "
             f"doubles (censored at the sampled span when it never does); the minimum offset flags cuts whose sampled minimum is not the trained point. "
-            "The objective is the physical curve MSE, not the training loss, so runs with different loss configurations stay comparable."
+            "The objective is the physical curve MSE, not the training loss, so runs with different loss configurations stay comparable. "
+            "A cut holding a non-finite loss is left out of the summary and listed with the steps where the perturbed model diverged."
         )
 
-        radius_cells = [f"{r:.3f}{' (≥ span)' if c else ''}" for r, c in zip(radii, censored)]
         doc.kv_table({
-            "Centre loss"      : f"{center:.4g}",
-            "Sharpness"        : f"{sharpness.mean():.3f} ± {sharpness.std():.3f}",
-            "Curvature"        : f"{curvature.mean():.3g} ± {curvature.std():.3g}",
-            "Flatness radius"  : f"{radii.mean():.3f} ± {radii.std():.3f}",
-            "Sharpest direction": int(np.argmax(sharpness)),
+            "Centre loss"        : f"{center:.4g}",
+            "Valid directions"   : f"{len(valid)} of {len(diagnostics)}",
+            "Sharpness"          : f"{sharpness.mean():.3f} ± {sharpness.std():.3f}",
+            "Curvature"          : f"{curvature.mean():.3g} ± {curvature.std():.3g}",
+            "Flatness radius"    : f"{radii.mean():.3f} ± {radii.std():.3f}",
+            "Sharpest direction" : diagnostics.index(valid[int(np.argmax(sharpness))]),
         })
 
         table = MarkdownTable(("Direction", "Sharpness", "Curvature", "Flatness radius", "Min offset"))
         for index, entry in enumerate(diagnostics):
-            table.add_row(str(index), f"{entry['sharpness']:.3f}", f"{entry['curvature']:.3g}", radius_cells[index], f"{entry['min_offset']:+.3f}")
+            if not entry["valid"]:
+                note = "non-finite at alpha " + ", ".join(f"{alpha:+.3f}" for alpha in entry["nonfinite_alphas"])
+                table.add_row(str(index), note, "—", "—", "—")
+                continue
+            radius = entry["flatness_radius"]
+            table.add_row(str(index), f"{entry['sharpness']:.3f}", f"{entry['curvature']:.3g}", f"{radius['radius']:.3f}{' (≥ span)' if radius['censored'] else ''}", f"{entry['min_offset']:+.3f}")
         doc.table(table)
 
         doc.heading("Figures", level=2)
@@ -441,23 +529,17 @@ class LossLandscapeRun(AnalysisRun):
                 grid = evaluator.grid(alphas_2d, alphas_2d, directions[0], directions[1], on_point)
 
         center = float(loss_fn())
+        if not np.isfinite(center):
+            raise ValueError(f"The curve MSE at the trained weights of {self.run_dir} is {center}; the landscape has no finite centre to perturb around")
 
-        diagnostics = [
-            {
-                "sharpness"       : CutDiagnostics.sharpness(alphas_1d, cut),
-                "curvature"       : CutDiagnostics.curvature(alphas_1d, cut),
-                "flatness_radius" : CutDiagnostics.flatness_radius(alphas_1d, cut),
-                "min_offset"      : CutDiagnostics.min_offset(alphas_1d, cut),
-            }
-            for cut in cuts
-        ]
-
-        sharpness = np.array([entry["sharpness"] for entry in diagnostics])
-        radii     = np.array([entry["flatness_radius"]["radius"] for entry in diagnostics])
+        diagnostics = self._diagnose(alphas_1d, cuts)
+        valid       = [entry for entry in diagnostics if entry["valid"]]
+        sharpness   = np.array([entry["sharpness"] for entry in valid])
+        radii       = np.array([entry["flatness_radius"]["radius"] for entry in valid])
 
         plots   = LossLandscapePlots()
         figures = {
-            "cuts"    : plots.cuts_overlay(alphas_1d, cuts, [entry["curvature"] for entry in diagnostics], center, self.output_dir / "cuts.png"),
+            "cuts"    : plots.cuts_overlay(alphas_1d, cuts, [entry["curvature"] if entry["valid"] else float("nan") for entry in diagnostics], center, self.output_dir / "cuts.png"),
             "contour" : plots.contour_2d(alphas_2d, alphas_2d, grid, self.output_dir / "contour.png", annotation=f"sharpness = {sharpness.mean():.2f} ± {sharpness.std():.2f}\nflatness radius = {radii.mean():.2f}"),
         }
 
@@ -476,7 +558,7 @@ class LossLandscapeRun(AnalysisRun):
 
         report_path = self._write_report(run, center, diagnostics, figures)
 
-        return AnalysisOutcome(payload, f"sharpness {sharpness.mean():.3f} ± {sharpness.std():.3f} over {len(cuts)} directions", report_path)
+        return AnalysisOutcome(payload, f"sharpness {sharpness.mean():.3f} ± {sharpness.std():.3f} over {len(valid)} of {len(cuts)} directions", report_path)
 
 
 class LossLandscapeBatch(RunBatch):
