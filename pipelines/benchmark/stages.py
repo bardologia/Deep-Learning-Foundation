@@ -715,10 +715,11 @@ class ComparisonStage(ExperimentStage):
         reference_model : Model key every other model is compared against.
         embed_images    : Whether figures are embedded into the reports.
         inference_split : Dataset split whose completed inference stamps supply each run's metrics.
+        planned_units   : Directory of every planned unit relative to the training directory, keyed by unit name, or None when the plan is unknown and every run under the training directory is compared.
     """
 
-    def __init__(self, config, run_tag: str, logger: Logger, reference_model: str, embed_images: bool, inference_split: str, run_dir: Path | None = None) -> None:
-        """Stores the comparison reference, figure embedding preference and the scored split.
+    def __init__(self, config, run_tag: str, logger: Logger, reference_model: str, embed_images: bool, inference_split: str, run_dir: Path | None = None, planned_units: dict[str, str] | None = None) -> None:
+        """Stores the comparison reference, figure embedding preference, the scored split and the unit plan.
 
         Args:
             config          : Benchmark configuration, or the standalone comparison entry configuration, supplying the paths.
@@ -728,22 +729,61 @@ class ComparisonStage(ExperimentStage):
             embed_images    : Whether figures are embedded into the reports.
             inference_split : Dataset split whose completed inference stamps are collected.
             run_dir         : Explicit run directory, or None to derive it from the configured log base and the run tag.
+            planned_units   : Directory of every planned unit relative to the training directory, keyed by unit name, or None for a standalone comparison without a plan.
         """
         super().__init__(config=config, run_tag=run_tag, logger=logger, run_dir=run_dir)
         self.reference_model = reference_model
         self.embed_images    = embed_images
         self.inference_split = inference_split
+        self.planned_units   = planned_units
+
+    def _check_coverage(self, runs: list) -> None:
+        """Logs what the collection covers against the plan and refuses an empty collection.
+
+        Args:
+            runs : Per-run records as collected from the training directory, before seed aggregation.
+
+        Raises:
+            SystemExit : If nothing was collected, since every report would be empty.
+        """
+        collected = [record.name for record in runs]
+        scored    = [record.name for record in runs if record.has_inference]
+
+        if not collected:
+            raise SystemExit(f"no run collected under {self.run_dir / 'training'}; nothing to compare")
+
+        summary = {"Collected": len(collected), "With inference": len(scored), "Without inference": len(collected) - len(scored)}
+
+        if self.planned_units is None:
+            self.logger.kv_table(summary, title="Collection (planned units unknown: every run under the training directory is compared)")
+            return
+
+        planned_dirs = set(self.planned_units.values())
+        missing      = [name for name, directory in self.planned_units.items() if directory not in collected]
+        unplanned    = [name for name in collected if name not in planned_dirs]
+
+        self.logger.kv_table({"Planned": len(self.planned_units), **summary, "Missing": len(missing), "Unplanned": len(unplanned)}, title="Collection against the plan")
+
+        for name in missing:
+            self.logger.warning(f"{name}: planned unit not collected, no run at training/{self.planned_units[name]}; absent from the reports")
+        for name in unplanned:
+            self.logger.warning(f"{name}: collected but planned by no unit; ranked in the reports beside the planned units")
 
     def run(self) -> Path:
         """Aggregates the run records over seeds and writes the reports.
 
         Returns:
             The timestamped directory the reports were written into.
+
+        Raises:
+            SystemExit : If no run was collected.
         """
         self.logger.section("Comparison reports")
 
         collector = BenchmarkSeedCollector(run_dir=self.run_dir, logger=self.logger, inference_split=self.inference_split)
         records   = collector.collect()
+
+        self._check_coverage(collector.runs)
 
         out_dir = self.run_dir / "comparison" / RunTag.now()
 

@@ -20,7 +20,8 @@ class BenchmarkPipeline(StagedPipeline):
     """Runs the architecture benchmark end to end or one of its stages.
 
     Attributes:
-        models : Model keys selected for this benchmark, skip list applied.
+        models         : Model keys selected for this benchmark, skip list applied.
+        training_stage : Training stage of this launch once built, whose unit plan the comparison is checked against.
     """
 
     LOGGER_NAME     = "benchmark_pipeline"
@@ -36,7 +37,8 @@ class BenchmarkPipeline(StagedPipeline):
             resumed      : Resumed-run description logged when the pipeline starts, or None for a fresh run.
         """
         super().__init__(config, entry_script, resumed=resumed)
-        self.models = self.select_models(config)
+        self.models         = self.select_models(config)
+        self.training_stage = None
 
     @classmethod
     def select_models(cls, config: BenchmarkConfig) -> list[str]:
@@ -165,16 +167,16 @@ class BenchmarkPipeline(StagedPipeline):
         """
         self._begin_stage("prepare")
 
-        stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
+        self.training_stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
 
-        stage.status_report().log(self.logger, "Unit status")
+        self.training_stage.status_report().log(self.logger, "Unit status")
 
     def _run_training(self) -> list[dict]:
         """Trains every benchmark unit on the GPU pool and returns the job results."""
         self._begin_stage("training")
 
-        stage   = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
-        results = stage.run()
+        self.training_stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
+        results             = self.training_stage.run()
 
         failed = [r for r in results if r["status"] != "DONE"]
         self._mark_stage("training", "completed" if not failed else "partial")
@@ -207,11 +209,24 @@ class BenchmarkPipeline(StagedPipeline):
         self._mark_stage("inference", "completed" if not failed else "partial")
         return results
 
+    def _unit_plan(self) -> dict[str, str]:
+        """Returns the directory of every planned unit relative to the training directory.
+
+        The plan comes from the training stage this launch built; a
+        compare-only launch reconciles the units against the training
+        directory itself, so renamed directories are matched through their
+        manifests.
+        """
+        if self.training_stage is None:
+            self.training_stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
+
+        return {item: self.training_stage.unit_name(item) for item in self.training_stage.items}
+
     def _run_comparison(self) -> Path:
-        """Writes the cross-model comparison reports and returns their output directory."""
+        """Writes the cross-model comparison reports, checked against the unit plan, and returns their output directory."""
         self._begin_stage("comparison")
 
-        stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, reference_model=self.config.size_match.reference_model, embed_images=self.config.comparison.embed_images, inference_split=self.config.inference.split)
+        stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, reference_model=self.config.size_match.reference_model, embed_images=self.config.comparison.embed_images, inference_split=self.config.inference.split, planned_units=self._unit_plan())
         out_dir = stage.run()
 
         self._mark_stage("comparison", "completed")

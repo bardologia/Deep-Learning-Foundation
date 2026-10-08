@@ -12,6 +12,7 @@ class BenchmarkSeedCollector(TrialCollector):
     """Collects benchmark runs and folds their per-seed repeats into one record each.
 
     Attributes:
+        runs            : Per-run records as collected from the training directory, before seed aggregation; populated by `collect`.
         seed_dispersion : Per-metric spread across seeds, populated by `collect`.
     """
 
@@ -24,6 +25,7 @@ class BenchmarkSeedCollector(TrialCollector):
             inference_split : Dataset split whose inference metrics are collected, or None for the training metrics.
         """
         super().__init__(run_dir=run_dir, logger=logger, inference_split=inference_split)
+        self.runs            = []
         self.seed_dispersion = {}
 
     def collect(self) -> list:
@@ -33,7 +35,8 @@ class BenchmarkSeedCollector(TrialCollector):
             One record per model unit, with the metrics averaged over its seeds.
         """
         aggregator = SeedRunAggregator()
-        records    = aggregator.aggregate(super().collect())
+        self.runs  = super().collect()
+        records    = aggregator.aggregate(self.runs)
 
         self.seed_dispersion = aggregator.seed_dispersion
         return records
