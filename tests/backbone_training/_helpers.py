@@ -103,7 +103,7 @@ def gaussian_config(n_gaussians: int) -> GaussianConfig:
     return GaussianConfig(n_default_gaussians=n_gaussians, x_min=X_MIN, x_max=X_MAX, activity_threshold=1e-4)
 
 
-def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all_losses: bool = False, length: int = X_LEN, sampler=None, norm_stats: Normalizer | None = None) -> Loss:
+def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all_losses: bool = False, length: int = X_LEN, sampler=None, norm_stats: Normalizer | None = None, logger=None) -> Loss:
     """Builds a training loss over the shared axis and configs.
 
     Args:
@@ -113,16 +113,17 @@ def build_loss(n_gaussians: int = 2, loss_cfg: LossConfig | None = None, log_all
         length         : Number of z bins on the axis.
         sampler        : Optional parameter sampler fed with denormalized predictions.
         norm_stats     : Output normalizer, defaulting to the identity normalizer.
+        logger         : Logger receiving the configuration tables and warnings, a null logger when omitted.
 
     Returns:
-        Loss bound to a null logger and tracker.
+        Loss bound to a null tracker.
     """
     n_channels = n_gaussians * 3
     loss_cfg   = loss_cfg if loss_cfg is not None else LossConfig(use_param_l1=True, weight_param_l1=1.0)
 
     return Loss(
         z_axis         = x_axis_tensor(length),
-        logger         = NullLogger(),
+        logger         = logger if logger is not None else NullLogger(),
         tracker        = NullTracker(),
         gaussian_cfg   = gaussian_config(n_gaussians),
         loss_cfg       = loss_cfg,

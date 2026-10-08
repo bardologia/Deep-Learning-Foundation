@@ -48,7 +48,7 @@ class Loss:
             slot_vitals    : Optional per-slot diagnostics observer.
 
         Raises:
-            ValueError : If the z axis holds fewer than two samples or does not increase.
+            ValueError : If the z axis holds fewer than two samples or does not increase, or if the stage enables no term or only terms whose weights sum to zero, which would make the total loss identically zero.
         """
         if z_axis.shape[0] < 2:
             raise ValueError(f"z_axis must contain at least 2 sample points, got length {z_axis.shape[0]}")
@@ -88,25 +88,58 @@ class Loss:
         cfg = self.loss_cfg
         return bool(cfg.presence_balance or cfg.use_active_normalization or cfg.amp_focal_gamma > 0.0 or self.log_all_losses)
 
+    @staticmethod
+    def active_weights(cfg) -> list[tuple[str, float]]:
+        """Returns the enabled terms of a stage with their weights, refusing a stage whose total would be identically zero.
+
+        Args:
+            cfg : Loss-stage configuration whose flags and weights are read.
+
+        Returns:
+            (term name, weight) pairs of the enabled terms, in LOSS_TERMS order.
+
+        Raises:
+            ValueError : If no term is enabled, or if the enabled weights do not sum to a positive value, since the total is divided by that sum and would otherwise be identically zero.
+        """
+        active = [(term.name, float(getattr(cfg, term.weight_key))) for term in LOSS_TERMS if getattr(cfg, term.use_flag)]
+
+        if not active:
+            raise ValueError("No loss term is enabled in this stage; the total loss would be identically zero and the run would train on nothing")
+
+        weight_sum = sum(weight for _name, weight in active)
+        if weight_sum <= 0.0:
+            raise ValueError(f"The enabled loss terms {dict(active)} have weights summing to {weight_sum:g}; the total is divided by that sum and must be positive, otherwise the run trains on nothing")
+
+        return active
+
     def log_active_terms(self, cfg, title: str) -> None:
         """Logs the enabled terms with their configured and weight-sum-normalized coefficients.
+
+        A term enabled at weight zero is computed on every batch, gradients
+        included, without reaching the total, so it is warned about by name.
 
         Args:
             cfg   : Loss-stage configuration whose flags and weights are reported.
             title : Table title.
+
+        Raises:
+            ValueError : If the stage enables no term or its enabled weights do not sum to a positive value.
         """
-        active     = [(term.name, float(getattr(cfg, term.weight_key))) for term in LOSS_TERMS if getattr(cfg, term.use_flag)]
+        active     = self.active_weights(cfg)
         weight_sum = sum(weight for _name, weight in active)
 
         active_rows = []
         for name, weight in active:
-            effective = weight / weight_sum if weight_sum > 0.0 else weight
-            active_rows.append({"Term": name, "Weight": f"{weight:g}", "Effective": f"{effective:g}"})
+            active_rows.append({"Term": name, "Weight": f"{weight:g}", "Effective": f"{weight / weight_sum:g}"})
 
         self.logger.metrics_table(active_rows, ["Term", "Weight", "Effective"], title=title)
+        self.logger.subsection(f"The total loss is divided by the active weight sum ({weight_sum:g}); the Effective column is the coefficient actually applied.")
 
-        if weight_sum > 0.0:
-            self.logger.subsection(f"The total loss is divided by the active weight sum ({weight_sum:g}); the Effective column is the coefficient actually applied.")
+        for name, weight in active:
+            if weight == 0.0:
+                self.logger.warning(f"Loss term '{name}' is enabled with weight 0; it is computed on every batch, gradients included, but contributes nothing to the total")
+            elif weight < 0.0:
+                self.logger.warning(f"Loss term '{name}' is enabled with a negative weight {weight:g}; the optimiser drives it up, not down")
 
     def log_slot_presence_config(self, cfg, title: str) -> None:
         """Logs the presence-balancing and amplitude-focal settings of a loss stage.
@@ -132,6 +165,7 @@ class Loss:
             context      : Label describing why the swap happens, used in the log.
 
         Raises:
+            ValueError : If the new configuration enables no term or only terms whose weights sum to zero.
         """
 
         self.loss_cfg       = complete_cfg
