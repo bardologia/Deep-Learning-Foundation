@@ -41,8 +41,8 @@ def _clipper_config(window: int = 4) -> SimpleNamespace:
     return SimpleNamespace(gradient_clipper=SimpleNamespace(clip_mode="adaptive_percentile", max_grad_norm=1.0, adaptive_window=window, adaptive_percentile=95.0, adaptive_mean_std_k=2.0, clip_epsilon=1e-6, log_histogram_freq=100))
 
 
-def _trainer(tmp_path, seed: int = 0) -> SimpleNamespace:
-    """Returns a trainer shim with every stateful component wired up, seeded by `seed`."""
+def _trainer(tmp_path, seed: int = 0, batch_size: int = 8, lr_scale: float = 1.0) -> SimpleNamespace:
+    """Returns a trainer shim with every stateful component wired up, seeded by `seed`, under the given batch geometry."""
     torch.manual_seed(seed)
 
     logger  = SilentLogger()
@@ -68,6 +68,10 @@ def _trainer(tmp_path, seed: int = 0) -> SimpleNamespace:
         val_losses         = [],
         global_step        = 0,
         device             = torch.device("cpu"),
+        config             = SimpleNamespace(optimizer=SimpleNamespace(lr_scale=lr_scale)),
+        micro_batch        = batch_size,
+        accumulation_steps = 1,
+        distributed        = SimpleNamespace(world_size=1),
         restored_states    = [],
         _on_state_restored = lambda state: None,
     )
@@ -148,6 +152,39 @@ def test_restore_missing_file_raises(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         TrainerState.restore(trainer, tmp_path / "absent.pt")
+
+
+def test_capture_records_the_batch_geometry(tmp_path):
+    """Verifies the saved state carries the micro-batch, accumulation window, rank count and LR scale it was trained under."""
+    state = TrainerState.capture(_trainer(tmp_path, batch_size=16, lr_scale=2.0), epoch=0)
+
+    assert state["batch_geometry"] == {"batch_size": 16, "accumulation_steps": 1, "world_size": 1, "lr_scale": 2.0}
+
+
+def test_restore_refuses_a_different_batch_geometry(tmp_path):
+    """Verifies a state saved under another micro-batch or LR scale is refused, naming each changed setting, before touching the trainer."""
+    path = tmp_path / "last.pt"
+    TrainerState.save(_trainer(tmp_path, batch_size=16, lr_scale=2.0), epoch=3, path=path)
+
+    target = _trainer(tmp_path, seed=1, batch_size=32, lr_scale=4.0)
+    before = {key: value.clone() for key, value in target.model.state_dict().items()}
+
+    with pytest.raises(ValueError, match=r"batch_size 16 -> 32, lr_scale 2.0 -> 4.0"):
+        TrainerState.restore(target, path)
+
+    for key, value in target.model.state_dict().items():
+        assert torch.equal(value, before[key])
+
+
+def test_restore_refuses_a_state_without_batch_geometry(tmp_path):
+    """Verifies a state saved before the geometry was recorded is refused rather than resumed unchecked."""
+    path  = tmp_path / "last.pt"
+    state = TrainerState.capture(_trainer(tmp_path), epoch=0)
+    del state["batch_geometry"]
+    torch.save(state, path)
+
+    with pytest.raises(KeyError, match="records no batch geometry"):
+        TrainerState.restore(_trainer(tmp_path), path)
 
 
 def test_rng_roundtrip_reproduces_draws(tmp_path):

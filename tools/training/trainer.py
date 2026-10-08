@@ -43,9 +43,10 @@ class BaseTrainer:
         run_dir      : Directory holding checkpoints, trainer state and completion markers.
         tracker      : Scalar/metric sink backed by the TensorBoard writer.
         model        : Module being trained, already moved to `device`.
-        x_axis       : Z sampling axis of shape (n_samples,), in metres.
+        z_axis       : Z sampling axis of shape (n_samples,), in metres.
         optimizer    : AdamW instance built over the subclass parameter groups.
         base_lrs     : Per-group learning rates after `optimizer.lr_scale` is applied.
+        micro_batch  : Batch size of the training loader, set when training starts; None for an in-memory batch list.
         global_step  : Number of micro-batches processed so far.
         train_losses : Mean training loss per completed epoch.
         val_losses   : Validation loss per epoch, NaN on epochs without evaluation.
@@ -142,6 +143,7 @@ class BaseTrainer:
         self.resume       = config.training.resume
         self.state_path   = TrainerState.path(self.run_dir)
         self.test_metrics = None
+        self.micro_batch  = None
 
         self.global_step  = 0
         self.train_losses = []
@@ -310,18 +312,16 @@ class BaseTrainer:
             val_loader   : Loader iterated during validation.
             test_loader  : Loader iterated for the final test evaluation.
         """
-        micro_batch = train_loader.batch_size if isinstance(train_loader, DataLoader) else None
-
         info = {
             "Train batches"      : len(train_loader),
             "Validation batches" : len(val_loader),
             "Test batches"       : len(test_loader),
         }
 
-        if micro_batch is not None:
+        if self.micro_batch is not None:
             world                        = self.distributed.world_size
-            info["Micro-batch size"]     = micro_batch
-            info["Effective batch size"] = f"{micro_batch * self.accumulation_steps * world} (micro-batch x {self.accumulation_steps} accumulation steps" + (f" x {world} DDP ranks)" if world > 1 else ")")
+            info["Micro-batch size"]     = self.micro_batch
+            info["Effective batch size"] = f"{self.micro_batch * self.accumulation_steps * world} (micro-batch x {self.accumulation_steps} accumulation steps" + (f" x {world} DDP ranks)" if world > 1 else ")")
         else:
             info["Micro-batch size"]     = "in-memory batch list (gate/probe run)"
 
@@ -766,6 +766,11 @@ class BaseTrainer:
     def _maybe_resume(self, loader_generator) -> int:
         """Restores trainer state from disk when resuming and returns the start epoch.
 
+        The resume table lists the restored early-stopping, warmup and
+        learning-rate position next to the epoch and step counts. A state saved
+        after early stopping fired is warned about, since `train` then skips
+        the epoch loop and goes straight to the final phase.
+
         Args:
             loader_generator : The training loader's RNG generator, whose state is restored alongside the trainer state.
 
@@ -776,14 +781,24 @@ class BaseTrainer:
             return 0
 
         start_epoch = TrainerState.restore(self, self.state_path, loader_generator)
+        geometry    = TrainerState.batch_geometry(self)
+        stopping    = self.early_stopping
+        warmup      = self.warmup
 
         self.logger.section("[Resumed Trainer State]")
         self.logger.kv_table({
-            "State path"  : str(self.state_path),
-            "Next epoch"  : f"{start_epoch + 1}/{self.epochs}",
-            "Global step" : self.global_step,
-            "Best val"    : f"{self.checkpoint.best_val_loss:.4f} @ epoch {self.checkpoint.best_epoch + 1}",
+            "State path"     : str(self.state_path),
+            "Next epoch"     : f"{start_epoch + 1}/{self.epochs}",
+            "Global step"    : self.global_step,
+            "Best val"       : f"{self.checkpoint.best_val_loss:.4f} @ epoch {self.checkpoint.best_epoch + 1}",
+            "Batch geometry" : f"micro-batch {geometry['batch_size'] if geometry['batch_size'] is not None else 'in-memory batch list'}, {geometry['accumulation_steps']} accumulation step(s), {geometry['world_size']} rank(s), lr_scale x{geometry['lr_scale']:.4g} (matches the saved state)",
+            "Early stopping" : f"{stopping.counter}/{stopping.patience} validation rounds without improvement, triggered={stopping.triggered}",
+            "Warmup"         : f"step {warmup.current_step}/{warmup.warmup_steps}, {'finished' if warmup.is_finished() else 'ramping'}",
+            "Current LRs"    : ", ".join(f"{lr:.4g}" for lr in self.lr_scheduler.effective_lrs()),
         })
+
+        if stopping.triggered:
+            self.logger.warning(f"the restored state had already early-stopped at epoch {start_epoch} (best epoch {stopping.best_epoch + 1}); no further epoch is trained, the run goes straight to the final checkpoint, the best-weight restore and the test evaluation")
 
         return start_epoch
 
@@ -871,6 +886,8 @@ class BaseTrainer:
             Tuple of the per-epoch training losses, the per-epoch validation losses
             (NaN on epochs without evaluation) and the best validation loss seen.
         """
+        self.micro_batch = train_loader.batch_size if isinstance(train_loader, DataLoader) else None
+
         self.logger.section(self.section_title)
         self._log_train_banner(train_loader, val_loader, test_loader)
         self.tracker.log_layout(self._scalars_page().layout())
