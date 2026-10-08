@@ -151,6 +151,11 @@ class ParamRunInferencePipeline:
         gc.collect()
 
         self.logger.section("[Param Extraction Inference Completed]")
+        self.logger.kv_table({
+            "Run Directory"   : str(self.run_dir),
+            "Metrics Summary" : str(summary_path),
+            "Plots Rendered"  : len(plot_paths),
+        })
 
         return {
             "metrics_summary"  : summary_path,
