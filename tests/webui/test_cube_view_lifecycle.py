@@ -20,7 +20,9 @@ scale it with the profiles, and never draw the slots of another pixel or cube. A
 the metric map must ask for the statistics of the rectangle it covers, swallow the click that
 ends it but no later one, and show only the answer for the latest rectangle of the current cube.
 Signed delta layers must use the diverging colour bar, and attaching or detaching a comparison
-must refresh the metric view's layers.
+must refresh the metric view's layers. A transect is a polyline traced click by click, with
+undo, an along-line metric strip that never shows an answer for a line that was shortened or
+cleared meanwhile, and named lines remembered per cube footprint.
 """
 
 from __future__ import annotations
@@ -237,6 +239,12 @@ def test_profile_csv_lists_every_source_sample_at_the_profiled_pixel():
 def test_transect_download_saves_each_drawn_panel_named_by_its_end_points():
     """The transect PNG button saves every drawn panel under the line's end points and skips undrawn ones."""
     assert _check("downloads")["line"] == [{"via": "canvas", "name": "group_run_a_stamp_1_transect_row1_col2_to_row5_col0_pred_physical.png"}]
+
+
+@NEEDS_JS
+def test_bent_transect_download_names_its_interior_vertices():
+    """A polyline's PNG names carry the same _via suffix as its saved figure folder."""
+    assert _check("downloads")["bent"] == ["group_run_a_stamp_1_transect_row1_col2_to_row5_col0_via1_pred_physical.png"]
 
 
 @NEEDS_JS
@@ -531,3 +539,78 @@ def test_loading_a_cube_while_the_figures_view_is_open_lists_its_figures():
     reloaded = _check("figures")["reloaded"]
 
     assert reloaded == {"figures": ["configure", "render"], "explorer": ["configure"]}
+
+
+@NEEDS_JS
+def test_transect_clicks_trace_a_polyline_and_skip_a_repeated_pixel():
+    """Each click adds a vertex, a click on the last vertex's pixel is ignored, and every line of two or more vertices asks for its strip."""
+    observed = _check("transect")
+
+    assert observed["configured"] == {"layers": ["pixel_mse", "pixel_r2"], "saved": [""], "undo": True, "strip": True}
+    assert observed["single"] == {"points": [[3, 2]], "asked": 0, "undo": False, "print": True, "at": "start row = 3 · col = 2 · click the next point"}
+    assert observed["traced"] == {"pts": ["3,2;3,5", "3,2;3,5;7,5"], "print": False, "at": "transect row 3,2 to row 7,5 · 3 points · click to extend", "segments": 2}
+
+
+@NEEDS_JS
+def test_transect_strip_draws_only_the_latest_line_and_skips_missing_samples():
+    """A strip answer overtaken by a longer line is dropped, and the latest one draws its finite samples and range."""
+    observed = _check("transect")
+
+    assert observed["overtaken"] == {"shown": False, "data": None}
+    assert observed["drawn"] == {"shown": True, "value": "1 … 3 over 3 samples", "strokes": 1, "segments": 2}
+    assert observed["picked"] == "-3 … -1 over 3 samples"
+
+
+@NEEDS_JS
+def test_transect_undo_shortens_the_line_and_hides_the_strip_below_two_points():
+    """Undo refetches the shorter line and, at one vertex left, hides the strip and drops its data."""
+    assert _check("transect")["afterUndo"] == {"shortened": ["3,2;3,5"], "points": 1, "strip": True, "data": None, "asked": 0}
+
+
+@NEEDS_JS
+def test_transect_strip_answers_for_an_undone_or_cleared_line_are_dropped():
+    """A strip answer landing after undo took the line below two points, or after Clear line, stays hidden."""
+    observed = _check("transect")
+
+    assert observed["lateAfterUndo"] == {"strip": True, "data": None}
+    assert observed["lateAfterClear"] == {"strip": True, "data": None, "points": 0}
+
+
+@NEEDS_JS
+def test_attaching_a_comparison_keeps_the_strip_layer_and_refetches_the_line():
+    """New delta layers join the strip select without losing the picked layer, and the traced line asks for its strip again."""
+    assert _check("transect")["attached"] == {"layers": ["pixel_mse", "pixel_r2", "delta_pixel_mse"], "kept": "pixel_r2", "refetched": ["3,2;3,5;7,5"]}
+
+
+@NEEDS_JS
+def test_saved_transects_are_kept_per_footprint_and_replay_onto_pixel_centres():
+    """Saving stores the vertices under the cube footprint, unnamed lines get a numbered name, and replaying redraws the line at pixel centres."""
+    observed = _check("transect")
+    line     = [[3, 2], [3, 5], [7, 5]]
+
+    assert observed["unnamed"] == [{"name": "line 1", "points": line}]
+    assert observed["named"] == {"stored": [{"name": "line 1", "points": line}, {"name": "ridge", "points": line}], "options": ["", "line 1", "ridge"], "selected": "ridge", "remove": False, "name": ""}
+    assert observed["replayed"]["points"] == [[3, 2, pytest.approx(2.5 / 6), pytest.approx(3.5 / 8)], [3, 5, pytest.approx(5.5 / 6), pytest.approx(3.5 / 8)], [7, 5, pytest.approx(5.5 / 6), pytest.approx(7.5 / 8)]]
+    assert observed["replayed"]["asked"] == ["3,2;3,5;7,5"]
+    assert observed["deleted"] == {"stored": ["line 1"], "options": ["", "line 1"]}
+
+
+@NEEDS_JS
+def test_transects_of_another_footprint_or_without_metric_maps_stay_apart():
+    """Another footprint lists none of the saved lines, a cube without metric maps asks for no strip, and saving a line of fewer than two points warns."""
+    observed = _check("transect")
+
+    assert observed["otherFootprint"] == {"options": [""], "layers": []}
+    assert observed["noLayers"] == {"asked": 0, "strip": True}
+    assert observed["refusedSave"] == ["Trace a line with at least two points first."]
+
+
+def test_transect_controls_are_on_the_page_once_and_wired_to_the_cube_view():
+    """Every transect control id appears once in the page and app.js hands each to the transect view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    refs = {"at": "at", "undo": "undo", "clear": "clear", "print": "print", "download": "download", "name": "name", "save": "save", "saved": "saved", "remove": "delete", "stripWrap": "strip-wrap", "stripLayer": "strip-layer", "stripVal": "strip-val", "strip": "strip", "map": "map", "overlay": "overlay", "grid": "grid"}
+    for ref, suffix in refs.items():
+        assert html.count(f'id="cube-transect-{suffix}"') == 1, suffix
+        assert re.search(rf'{ref}\s*: document\.getElementById\("cube-transect-{suffix}"\)', app), ref

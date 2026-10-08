@@ -719,15 +719,23 @@
       <div class="cube-view" data-view="transect" hidden>
         <div class="cube-pview">
           <div class="cube-pview__bar">
-            <span class="cube-z__at" id="cube-transect-at">Click a start point on the map, then an end point, to cut every cube along that line.</span>
-            <button type="button" class="btn btn--mini" id="cube-transect-clear" hidden>Clear line</button>
-            <button type="button" class="btn btn--mini" id="cube-transect-print" hidden title="Save the transect as paper-style figures under the run directory">Print</button>
-            <button type="button" class="btn btn--mini" id="cube-transect-download" hidden title="Download the visible transect panels as PNG files">PNG</button>
+            <span class="cube-z__at" id="cube-transect-at">Click points on the map to trace a polyline; every segment is cut through the cubes.</span>
+            <div class="cube-mctl" role="group" aria-label="Line editing">
+              <button type="button" class="btn btn--mini" id="cube-transect-undo" hidden title="Remove the last polyline point">Undo</button>
+              <button type="button" class="btn btn--mini" id="cube-transect-clear" hidden>Clear line</button>
+              <button type="button" class="btn btn--mini" id="cube-transect-print" hidden title="Save the transect as paper-style figures under the run directory">Print</button>
+              <button type="button" class="btn btn--mini" id="cube-transect-download" hidden title="Download the visible transect panels as PNG files">PNG</button>
+            </div>
+            <div class="cube-mctl" role="group" aria-label="Saved transects">
+              <input type="text" id="cube-transect-name" class="sc-name" placeholder="line name" spellcheck="false" autocomplete="off" aria-label="Transect line name" />
+              <button type="button" class="btn btn--mini" id="cube-transect-save" title="Remember this polyline for every cube with the same footprint">Save line</button>
+              <select id="cube-transect-saved" class="cube-mselect" title="Replay a saved polyline on the loaded cube"><option value="">saved lines…</option></select>
+              <button type="button" class="btn btn--mini" id="cube-transect-delete" hidden title="Forget the selected saved line">Delete</button>
+            </div>
             <div class="cube-spaces" role="group" aria-label="Value space">
               <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
             </div>
-            <span class="cube-elev__at" id="cube-transect-at">Click points on the map to trace a polyline; every segment is cut through the tomograms.</span>
           </div>
           <div class="cube-tview">
             <figure class="cube-pmap cube-pmap--transect">

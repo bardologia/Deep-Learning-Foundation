@@ -1046,40 +1046,68 @@ class CubeMetrics {
 }
 
 class CubeTransect {
-  constructor(refs, host) {
-    this.host = host;
-    this.atEl = refs.at;
-    this.clearBtn = refs.clear;
-    this.printBtn = refs.print;
-    this.downloadBtn = refs.download;
-    this.map = refs.map;
-    this.overlay = refs.overlay;
-    this.grid = refs.grid;
-    this.panels = refs.panels || [];
+  static HINT = "Click points on the map to trace a polyline; every segment is cut through the cubes.";
 
-    this.start = null;
-    this.end = null;
-    this.token = 0;
-    this.saving = false;
+  constructor(refs, host) {
+    this.host          = host;
+    this.atEl          = refs.at;
+    this.undoBtn       = refs.undo;
+    this.clearBtn      = refs.clear;
+    this.printBtn      = refs.print;
+    this.downloadBtn   = refs.download;
+    this.nameEl        = refs.name;
+    this.saveBtn       = refs.save;
+    this.savedSel      = refs.saved;
+    this.removeBtn     = refs.remove;
+    this.stripWrap     = refs.stripWrap;
+    this.stripLayerSel = refs.stripLayer;
+    this.stripValEl    = refs.stripVal;
+    this.stripCanvas   = refs.strip;
+    this.map           = refs.map;
+    this.overlay       = refs.overlay;
+    this.grid          = refs.grid;
+    this.panels        = refs.panels || [];
+
+    this.points    = [];
+    this.token     = 0;
+    this.saving    = false;
+    this.stripData = null;
 
     this.map.addEventListener("click", (ev) => this._onClick(ev));
+    this.undoBtn.addEventListener("click", () => this._undo());
     this.clearBtn.addEventListener("click", () => this._reset());
     this.printBtn.addEventListener("click", () => this._print());
     this.downloadBtn.addEventListener("click", () => this._download());
+    this.saveBtn.addEventListener("click", () => this._saveLine());
+    this.savedSel.addEventListener("change", () => this._loadLine());
+    this.removeBtn.addEventListener("click", () => this._deleteLine());
+    this.stripLayerSel.addEventListener("change", () => this._drawStrip());
   }
 
   configure() {
     this._reset();
     this.map.src = `/api/cubes/primary?id=${encodeURIComponent(this.host.selectedId)}`;
+    this._renderSaved();
+    this.renderStripLayers();
   }
 
   render() {
     this._applyVisibility();
-    if (this.start && this.end) this._fetchAll();
+    if (this.points.length >= 2) this._fetchAll();
   }
 
   syncSpace() {
-    if (this.host.view === "transect" && this.start && this.end) this._fetchAll();
+    if (this.host.view === "transect" && this.points.length >= 2) this._fetchAll();
+  }
+
+  renderStripLayers() {
+    const layers = (this.host.meta && this.host.meta.metric_maps) || [];
+    const kept   = this.stripLayerSel.value;
+
+    this.stripLayerSel.innerHTML = layers.map((layer) => `<option value="${SharedCharts.esc(layer.key)}">${SharedCharts.esc(layer.label)}</option>`).join("");
+    if (layers.some((layer) => layer.key === kept)) this.stripLayerSel.value = kept;
+
+    if (this.points.length >= 2) this._fetchStrip(this.token);
   }
 
   _applyVisibility() {
@@ -1090,14 +1118,24 @@ class CubeTransect {
   }
 
   _reset() {
-    this.start              = null;
-    this.end                = null;
-    this.overlay.innerHTML  = "";
-    this.grid.hidden        = true;
-    this.clearBtn.hidden    = true;
-    this.printBtn.hidden    = true;
-    this.downloadBtn.hidden = true;
-    this.atEl.textContent   = "Click a start point on the map, then an end point, to cut every cube along that line.";
+    this.token            += 1;
+    this.points            = [];
+    this.stripData         = null;
+    this.overlay.innerHTML = "";
+    this.grid.hidden       = true;
+    this.stripWrap.hidden  = true;
+    this.atEl.textContent  = CubeTransect.HINT;
+    this._syncButtons();
+  }
+
+  _syncButtons() {
+    const some = this.points.length >= 1;
+    const line = this.points.length >= 2;
+
+    this.undoBtn.hidden     = !some;
+    this.clearBtn.hidden    = !some;
+    this.printBtn.hidden    = !line;
+    this.downloadBtn.hidden = !line;
   }
 
   _pointFromEvent(ev) {
@@ -1116,37 +1154,53 @@ class CubeTransect {
     if (!this.host.meta) return;
     const point = this._pointFromEvent(ev);
 
-    if (!this.start || this.end) {
-      this.start              = point;
-      this.end                = null;
-      this.grid.hidden        = true;
-      this.printBtn.hidden    = true;
-      this.downloadBtn.hidden = true;
-      this.clearBtn.hidden    = false;
-      this.atEl.textContent   = `start row = ${point.row} · col = ${point.col} · click the end point`;
-      this._drawOverlay();
+    const last = this.points[this.points.length - 1];
+    if (last && last.row === point.row && last.col === point.col) return;
+
+    this.points.push(point);
+    this._afterChange();
+  }
+
+  _undo() {
+    if (!this.points.length) return;
+    this.points.pop();
+    this._afterChange();
+  }
+
+  _afterChange() {
+    this._drawOverlay();
+    this._syncButtons();
+
+    if (this.points.length < 2) {
+      this.token += 1;
+      this.stripData        = null;
+      this.grid.hidden      = true;
+      this.stripWrap.hidden = true;
+
+      const tail = this.points[this.points.length - 1];
+      this.atEl.textContent = tail ? `start row = ${tail.row} · col = ${tail.col} · click the next point` : CubeTransect.HINT;
       return;
     }
 
-    if (point.row === this.start.row && point.col === this.start.col) return;
-
-    this.end                = point;
-    this.printBtn.hidden    = false;
-    this.downloadBtn.hidden = false;
-    this.atEl.textContent   = `transect row ${this.start.row},${this.start.col} to row ${point.row},${point.col}`;
-    this._drawOverlay();
+    const head = this.points[0];
+    const tail = this.points[this.points.length - 1];
+    this.atEl.textContent = `transect row ${head.row},${head.col} to row ${tail.row},${tail.col} · ${this.points.length} points · click to extend`;
     this._fetchAll();
+  }
+
+  _pts() {
+    return this.points.map((p) => `${p.row},${p.col}`).join(";");
   }
 
   _drawOverlay() {
     let svg = "";
-    if (this.start) {
-      svg += `<circle cx="${this.start.fx * 100}" cy="${this.start.fy * 100}" r="0.8" class="cube-tdot" />`;
-    }
-    if (this.start && this.end) {
-      svg += `<line x1="${this.start.fx * 100}" y1="${this.start.fy * 100}" x2="${this.end.fx * 100}" y2="${this.end.fy * 100}" class="cube-tline" />`;
-      svg += `<circle cx="${this.end.fx * 100}" cy="${this.end.fy * 100}" r="0.8" class="cube-tdot" />`;
-    }
+    this.points.forEach((point, index) => {
+      if (index > 0) {
+        const prev = this.points[index - 1];
+        svg += `<line x1="${prev.fx * 100}" y1="${prev.fy * 100}" x2="${point.fx * 100}" y2="${point.fy * 100}" class="cube-tline" />`;
+      }
+      svg += `<circle cx="${point.fx * 100}" cy="${point.fy * 100}" r="0.8" class="cube-tdot" />`;
+    });
     this.overlay.innerHTML = svg;
   }
 
@@ -1161,11 +1215,13 @@ class CubeTransect {
       if (panel.root.hidden) return;
       this._fetch(panel, token);
     });
+
+    this._fetchStrip(token);
   }
 
   async _fetch(panel, token) {
     const url = `/api/cubes/transect?id=${encodeURIComponent(this.host.selectedId)}&source=${panel.source}` +
-      `&row0=${this.start.row}&col0=${this.start.col}&row1=${this.end.row}&col1=${this.end.col}&space=${this.host.space}&cmap=${this.host.cmap}`;
+      `&pts=${encodeURIComponent(this._pts())}&space=${this.host.space}&cmap=${this.host.cmap}`;
 
     const skeletonTimer = setTimeout(() => panel.root.classList.add("is-loading"), 120);
     try {
@@ -1188,20 +1244,140 @@ class CubeTransect {
     }
   }
 
+  async _fetchStrip(token) {
+    if (!this.stripLayerSel.options.length) {
+      this.stripData        = null;
+      this.stripWrap.hidden = true;
+      return;
+    }
+
+    const data = await Api.get(`/api/cubes/transect_metrics?id=${encodeURIComponent(this.host.selectedId)}&pts=${encodeURIComponent(this._pts())}`);
+    if (token !== this.token || !data || !data.ok) return;
+
+    this.stripData        = data;
+    this.stripWrap.hidden = false;
+    this._drawStrip();
+  }
+
+  _drawStrip() {
+    if (!this.stripData) return;
+
+    const key = this.stripLayerSel.value;
+    const row = this.stripData.rows.find((entry) => entry.key === key) || this.stripData.rows[0];
+    if (!row) return;
+
+    const canvas = this.stripCanvas;
+    const dpr    = window.devicePixelRatio || 1;
+    const w      = canvas.clientWidth || 320;
+    const h      = canvas.clientHeight || 70;
+    canvas.width  = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const finite = row.values.filter((value) => value !== null && Number.isFinite(value));
+    if (!finite.length) {
+      this.stripValEl.textContent = "no finite values along the line";
+      return;
+    }
+
+    const lo   = Math.min(...finite);
+    const hi   = Math.max(...finite);
+    const span = hi - lo || 1;
+    const pad  = 3;
+    const n    = row.values.length;
+    const xAt  = (i) => pad + (i / Math.max(1, n - 1)) * (w - 2 * pad);
+    const yAt  = (value) => h - pad - ((value - lo) / span) * (h - 2 * pad);
+
+    ctx.strokeStyle = CubeView.tint(this.host.colors.accent, 0.9);
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    let open = false;
+    row.values.forEach((value, i) => {
+      if (value === null || !Number.isFinite(value)) { open = false; return; }
+      const x = xAt(i);
+      const y = yAt(value);
+      if (!open) { ctx.moveTo(x, y); open = true; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    this.stripValEl.textContent = `${this.host._fmt(lo)} … ${this.host._fmt(hi)} over ${n} samples`;
+  }
+
+  _storeKey() {
+    const meta = this.host.meta;
+    return `cube-transects:${meta.n_rows}x${meta.n_cols}`;
+  }
+
+  _stored() {
+    return JSON.parse(localStorage.getItem(this._storeKey()) || "[]");
+  }
+
+  _renderSaved() {
+    const stored = this._stored();
+    this.savedSel.innerHTML = `<option value="">saved lines…</option>` +
+      stored.map((entry) => `<option value="${SharedCharts.esc(entry.name)}">${SharedCharts.esc(entry.name)} (${entry.points.length} pts)</option>`).join("");
+    this.removeBtn.hidden = true;
+  }
+
+  _saveLine() {
+    if (this.points.length < 2) {
+      Toast.show("Trace a line with at least two points first.", "warn");
+      return;
+    }
+
+    const name   = this.nameEl.value.trim() || `line ${this._stored().length + 1}`;
+    const stored = this._stored().filter((entry) => entry.name !== name);
+    stored.push({ name, points: this.points.map((p) => [p.row, p.col]) });
+
+    localStorage.setItem(this._storeKey(), JSON.stringify(stored));
+    this.nameEl.value = "";
+    this._renderSaved();
+    this.savedSel.value   = name;
+    this.removeBtn.hidden = false;
+    Toast.show(`Saved transect '${name}' for every cube with this footprint.`, "ok");
+  }
+
+  _loadLine() {
+    const name = this.savedSel.value;
+    this.removeBtn.hidden = !name;
+    if (!name || !this.host.meta) return;
+
+    const entry = this._stored().find((candidate) => candidate.name === name);
+    if (!entry) return;
+
+    const meta = this.host.meta;
+    this.points = entry.points.map(([row, col]) => {
+      const r = Math.min(meta.n_rows - 1, Math.max(0, row));
+      const c = Math.min(meta.n_cols - 1, Math.max(0, col));
+      return { row: r, col: c, fx: (c + 0.5) / meta.n_cols, fy: (r + 0.5) / meta.n_rows };
+    });
+    this._afterChange();
+  }
+
+  _deleteLine() {
+    const name = this.savedSel.value;
+    if (!name) return;
+
+    localStorage.setItem(this._storeKey(), JSON.stringify(this._stored().filter((entry) => entry.name !== name)));
+    this._renderSaved();
+    Toast.show(`Deleted saved transect '${name}'.`, "ok");
+  }
+
   async _print() {
-    if (!this.start || !this.end || this.saving) return;
+    if (this.points.length < 2 || this.saving) return;
 
     this.saving = true;
     this.printBtn.disabled = true;
 
     const res = await Api.post("/api/cubes/save_transect", {
-      id: this.host.selectedId,
-      row0: this.start.row,
-      col0: this.start.col,
-      row1: this.end.row,
-      col1: this.end.col,
-      space: this.host.space,
-      cmap: this.host.cmap,
+      id    : this.host.selectedId,
+      pts   : this.points.map((p) => [p.row, p.col]),
+      space : this.host.space,
+      cmap  : this.host.cmap,
     });
 
     this.saving = false;
@@ -1216,9 +1392,12 @@ class CubeTransect {
   }
 
   _download() {
-    if (!this.start || !this.end) return;
+    if (this.points.length < 2) return;
 
-    const tag = `${this.host.fileTag()}_transect_row${this.start.row}_col${this.start.col}_to_row${this.end.row}_col${this.end.col}`;
+    const head = this.points[0];
+    const tail = this.points[this.points.length - 1];
+    const via  = this.points.length > 2 ? `_via${this.points.length - 2}` : "";
+    const tag  = `${this.host.fileTag()}_transect_row${head.row}_col${head.col}_to_row${tail.row}_col${tail.col}${via}`;
     let count = 0;
 
     this.panels.forEach((panel) => {
@@ -2234,6 +2413,8 @@ class CubeView {
         else this._setView("explorer");
       }
     }
+
+    if (this.transect) this.transect.renderStripLayers();
 
     const sweep = this._sweepFor(this.view);
     if (sweep) sweep.render();

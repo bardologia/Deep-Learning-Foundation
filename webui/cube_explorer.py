@@ -113,8 +113,8 @@ class SliceFigureArchiver(PlotBase):
         finally:
             PlotBase.use_style(previous)
 
-    def render_transect(self, data: np.ndarray, z_values: np.ndarray, vmin: float, vmax: float, source: str, start: tuple, end: tuple, space: str, path: Path, cmap: str = "jet") -> Path:
-        """Saves one z cut along a straight transect as a figure.
+    def render_transect(self, data: np.ndarray, z_values: np.ndarray, vmin: float, vmax: float, source: str, points: list, space: str, path: Path, cmap: str = "jet") -> Path:
+        """Saves one z cut along a transect polyline as a figure.
 
         Args:
             data     : Cut of shape (z bins, samples along the transect).
@@ -122,8 +122,7 @@ class SliceFigureArchiver(PlotBase):
             vmin     : Lower colour limit.
             vmax     : Upper colour limit.
             source   : Cube key, one of the keys of LABELS.
-            start    : (row, column) of the transect start.
-            end      : (row, column) of the transect end.
+            points   : Ordered (row, column) vertices of the transect polyline, at least two.
             space    : "normalized" labels the colourbar as per-column normalised, else physical intensity.
             path     : Output image path.
             cmap     : Colormap name.
@@ -133,6 +132,9 @@ class SliceFigureArchiver(PlotBase):
         """
         cbar   = "intensity (per-column normalised)" if space == "normalized" else "intensity"
         extent = [0, int(data.shape[1]), float(z_values[0]), float(z_values[-1])]
+        start  = points[0]
+        end    = points[-1]
+        via    = f" via {len(points) - 2} points" if len(points) > 2 else ""
 
         previous = PlotBase.style
         PlotBase.use_style("paper")
@@ -141,7 +143,7 @@ class SliceFigureArchiver(PlotBase):
                 data,
                 x_label        = "sample along transect",
                 y_label        = "z bin" if source == "full" else "z",
-                title          = f"{self.LABELS[source]} — transect row{start[0]},col{start[1]} to row{end[0]},col{end[1]}",
+                title          = f"{self.LABELS[source]} — transect row{start[0]},col{start[1]} to row{end[0]},col{end[1]}{via}",
                 cmap           = cmap,
                 vmin           = vmin,
                 vmax           = vmax,
@@ -1647,41 +1649,82 @@ class CubeExplorer:
             "rows"      : rows,
         }
 
-    def transect_png(self, cube_id: str, source: str, row0: int, col0: int, row1: int, col1: int, space: str = "physical", cmap: str = "jet") -> bytes | None:
-        """Renders the z cut along a straight transect between two pixels as a PNG.
+    def transect_png(self, cube_id: str, source: str, points: list, space: str = "physical", cmap: str = "jet") -> bytes | None:
+        """Renders the z cut along a transect polyline as a PNG.
 
         Args:
             cube_id : Id of the loaded cube.
             source  : Cube key to render.
-            row0    : Row of the start pixel.
-            col0    : Column of the start pixel.
-            row1    : Row of the end pixel.
-            col1    : Column of the end pixel.
+            points  : Ordered (row, column) vertices of the polyline, at least two distinct ones after clipping.
             space   : "physical" or "normalized".
             cmap    : Colormap name.
 
         Returns:
-            PNG bytes, or None when the cube or source is unknown.
+            PNG bytes, or None when the cube or source is unknown or the polyline has fewer than two distinct vertices.
         """
         entry = self._entry(cube_id, source)
         if entry is None:
             return None
 
-        data, z_values, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
+        _, n_rows, n_cols = entry["cube"].shape
+        points            = self._clip_points(points, n_rows, n_cols)
+        if points is None:
+            return None
+
+        row_idx, col_idx           = self._path_indices(points)
+        data, z_values, vmin, vmax = self._transect_cut(entry, row_idx, col_idx, space)
 
         buf = io.BytesIO()
         plt.imsave(buf, np.flipud(data), cmap=self._entry_cmap(entry, cmap), vmin=vmin, vmax=vmax, **self.PNG_ENCODE)
         return buf.getvalue()
 
-    def save_transect(self, cube_id: str, row0: int, col0: int, row1: int, col1: int, space: str = "physical", cmap: str = "jet") -> dict:
-        """Saves the transect cut of every source as paper-style figures under the run.
+    def transect_metrics(self, cube_id: str, points: list) -> dict:
+        """Samples every metric map along a transect polyline.
 
         Args:
             cube_id : Id of the loaded cube.
-            row0    : Row of the start pixel.
-            col0    : Column of the start pixel.
-            row1    : Row of the end pixel.
-            col1    : Column of the end pixel.
+            points  : Ordered (row, column) vertices of the polyline, at least two distinct ones after clipping.
+
+        Returns:
+            Dict with ``ok``, the ``n_samples`` count, the sampled ``row`` and ``col`` indices and one entry per metric map in ``rows`` with its ``key``, ``label`` and ``values`` along the line (None where the map is not finite), or ``ok`` False when the cube is not loaded or the polyline is degenerate.
+        """
+        with self.lock:
+            if self.loaded is None or self.loaded["id"] != cube_id:
+                return {"ok": False, "error": "cube not loaded"}
+            maps = dict(self.loaded["metric_maps"])
+            meta = self.loaded["meta"]
+
+        points = self._clip_points(points, meta["n_rows"], meta["n_cols"])
+        if points is None:
+            return {"ok": False, "error": "a transect needs at least two distinct points"}
+
+        row_idx, col_idx = self._path_indices(points)
+
+        rows = []
+        for key in sorted(maps):
+            values = maps[key][row_idx, col_idx]
+            rows.append({
+                "key"    : key,
+                "label"  : self._metric_label(key),
+                "values" : [float(v) if np.isfinite(v) else None for v in values],
+            })
+
+        return {
+            "ok"        : True,
+            "n_samples" : int(row_idx.size),
+            "row"       : [int(v) for v in row_idx],
+            "col"       : [int(v) for v in col_idx],
+            "rows"      : rows,
+        }
+
+    def save_transect(self, cube_id: str, points: list, space: str = "physical", cmap: str = "jet") -> dict:
+        """Saves the transect cut of every source as paper-style figures under the run.
+
+        The output folder is named after the first and last vertex, with a ``_via<N>`` suffix counting the interior vertices of a bent line.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            points  : Ordered (row, column) vertices of the polyline, clipped into range.
             space   : "physical" or "normalized".
             cmap    : Colormap name.
 
@@ -1700,43 +1743,107 @@ class CubeExplorer:
         if space not in ("physical", "normalized"):
             return {"ok": False, "error": f"unknown space: {space}"}
 
-        row0 = int(np.clip(row0, 0, meta["n_rows"] - 1))
-        row1 = int(np.clip(row1, 0, meta["n_rows"] - 1))
-        col0 = int(np.clip(col0, 0, meta["n_cols"] - 1))
-        col1 = int(np.clip(col1, 0, meta["n_cols"] - 1))
+        points = self._clip_points(points, meta["n_rows"], meta["n_cols"])
+        if points is None:
+            return {"ok": False, "error": "a transect needs at least two distinct points"}
+
+        (row0, col0), (row1, col1) = points[0], points[-1]
+        via                        = f"_via{len(points) - 2}" if len(points) > 2 else ""
 
         run_dir = reader.run_dir
-        rel     = Path("figures") / "cube_transects" / f"row{row0:04d}_col{col0:04d}_to_row{row1:04d}_col{col1:04d}"
+        rel     = Path("figures") / "cube_transects" / f"row{row0:04d}_col{col0:04d}_to_row{row1:04d}_col{col1:04d}{via}"
         out_dir = run_dir / rel
+
+        row_idx, col_idx = self._path_indices(points)
 
         files = []
         for source in meta["sources"]:
             entry = entries[source]
-            data, z_values, vmin, vmax = self._transect_cut(entry, row0, col0, row1, col1, space)
-            saved = self.archiver.render_transect(data, z_values, vmin, vmax, source, (row0, col0), (row1, col1), space, out_dir / f"transect_{source}_{space}.png", cmap=self._entry_cmap(entry, cmap))
+            data, z_values, vmin, vmax = self._transect_cut(entry, row_idx, col_idx, space)
+            saved = self.archiver.render_transect(data, z_values, vmin, vmax, source, points, space, out_dir / f"transect_{source}_{space}.png", cmap=self._entry_cmap(entry, cmap))
             files.append(saved.name)
 
         self.logger.ok(f"saved {len(files)} transect figures to {out_dir}")
         return {"ok": True, "dir": str(out_dir), "rel": str(rel), "files": files}
 
+    @staticmethod
+    def _clip_points(points: list, n_rows: int, n_cols: int) -> list | None:
+        """Clips polyline vertices into the cube footprint and drops consecutive repeats.
+
+        Args:
+            points : Ordered (row, column) pairs.
+            n_rows : Row extent of the cube, in pixels.
+            n_cols : Column extent of the cube, in pixels.
+
+        Returns:
+            The clipped integer vertices with consecutive duplicates removed, or None when fewer than two distinct vertices remain.
+        """
+        clipped = []
+        for row, col in points:
+            vertex = (int(np.clip(int(row), 0, n_rows - 1)), int(np.clip(int(col), 0, n_cols - 1)))
+            if not clipped or clipped[-1] != vertex:
+                clipped.append(vertex)
+
+        return clipped if len(clipped) >= 2 else None
+
     @classmethod
-    def _transect_cut(cls, entry: dict, row0: int, col0: int, row1: int, col1: int, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
-        cube               = entry["cube"]
-        n_z, n_rows, n_cols = cube.shape
+    def _path_indices(cls, points: list) -> tuple[np.ndarray, np.ndarray]:
+        """Returns the pixel indices tracing a polyline segment by segment.
 
-        row0 = int(np.clip(row0, 0, n_rows - 1))
-        row1 = int(np.clip(row1, 0, n_rows - 1))
-        col0 = int(np.clip(col0, 0, n_cols - 1))
-        col1 = int(np.clip(col1, 0, n_cols - 1))
+        Args:
+            points : Ordered (row, column) vertices, at least two.
 
+        Returns:
+            Tuple of the integer row and column index arrays along the whole polyline, each interior vertex sampled once.
+        """
+        row_parts = []
+        col_parts = []
+        for (row0, col0), (row1, col1) in zip(points[:-1], points[1:]):
+            row_idx, col_idx = cls._line_indices(row0, col0, row1, col1)
+            if row_parts:
+                row_idx = row_idx[1:]
+                col_idx = col_idx[1:]
+            row_parts.append(row_idx)
+            col_parts.append(col_idx)
+
+        return np.concatenate(row_parts), np.concatenate(col_parts)
+
+    @staticmethod
+    def _line_indices(row0: int, col0: int, row1: int, col1: int) -> tuple[np.ndarray, np.ndarray]:
+        """Returns nearest-neighbour pixel indices sampling one straight segment at one point per pixel of its longer axis.
+
+        Args:
+            row0 : Row of the start pixel.
+            col0 : Column of the start pixel.
+            row1 : Row of the end pixel.
+            col1 : Column of the end pixel.
+
+        Returns:
+            Tuple of the integer row and column index arrays, both of the same length.
+        """
         samples = int(max(abs(row1 - row0), abs(col1 - col0))) + 1
         row_idx = np.round(np.linspace(row0, row1, samples)).astype(int)
         col_idx = np.round(np.linspace(col0, col1, samples)).astype(int)
-        data    = cube[:, row_idx, col_idx]
+        return row_idx, col_idx
+
+    @classmethod
+    def _transect_cut(cls, entry: dict, row_idx: np.ndarray, col_idx: np.ndarray, space: str) -> tuple[np.ndarray, np.ndarray, float, float]:
+        """Samples the cube at precomputed polyline indices.
+
+        Args:
+            entry   : Loaded cube entry.
+            row_idx : Row pixel index of every sample along the line.
+            col_idx : Column pixel index of every sample along the line.
+            space   : "normalized" to peak-normalise columns, else "physical".
+
+        Returns:
+            Tuple of the cut of shape (z bins, samples) ordered by ascending z, the ascending z axis and the colour limits.
+        """
+        data = entry["cube"][:, row_idx, col_idx]
 
         data, vmin, vmax = cls._normalize_cut(entry, data, space)
 
-        order   = np.argsort(entry["z_axis"])
+        order    = np.argsort(entry["z_axis"])
         z_values = np.asarray(entry["z_axis"], dtype=np.float64)[order]
         return data[order], z_values, float(vmin), float(vmax)
 

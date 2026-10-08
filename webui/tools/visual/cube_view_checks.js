@@ -383,13 +383,16 @@ class CubeViewChecks {
     const csvEntry = saved.splice(0)[0];
     const csv      = { name: csvEntry.name, type: csvEntry.source.type, text: await csvEntry.source.text() };
 
-    const transect       = Object.create(CubeTransect.prototype);
-    transect.host        = view;
-    transect.start       = { row: 1, col: 2 };
-    transect.end         = { row: 5, col: 0 };
-    transect.panels      = [{ root: { hidden: false }, canvas: { width: 40 }, source: "pred" }, { root: { hidden: false }, canvas: { width: 0 }, source: "gt" }];
+    const transect  = Object.create(CubeTransect.prototype);
+    transect.host   = view;
+    transect.points = [{ row: 1, col: 2 }, { row: 5, col: 0 }];
+    transect.panels = [{ root: { hidden: false }, canvas: { width: 40 }, source: "pred" }, { root: { hidden: false }, canvas: { width: 0 }, source: "gt" }];
     transect._download();
     const line = saved.splice(0).map((entry) => ({ via: entry.via, name: entry.name }));
+
+    transect.points = [{ row: 1, col: 2 }, { row: 1, col: 5 }, { row: 5, col: 0 }];
+    transect._download();
+    const bent = saved.splice(0).map((entry) => entry.name);
 
     const { metrics, refs } = this._metrics(() => ({}));
     const exported          = this._exports();
@@ -403,7 +406,153 @@ class CubeViewChecks {
     await metrics._downloadOverlay();
     const overlay = { saved: exported.saved.map((entry) => ({ via: entry.via, name: entry.name, source: entry.source })), toasts: exported.toasts.map((toast) => toast.kind) };
 
-    return { refused, cuts, csv, line, overlay, tag: view.fileTag() };
+    return { refused, cuts, csv, line, bent, overlay, tag: view.fileTag() };
+  }
+
+  _select() {
+    const select = this._element();
+    let html     = "";
+
+    Object.defineProperty(select, "innerHTML", {
+      get : () => html,
+      set : (value) => {
+        html                = value;
+        select.optionValues = [...value.matchAll(/<option value="([^"]*)"/g)].map((match) => match[1]);
+        select.value        = select.optionValues[0] || "";
+      },
+    });
+    Object.defineProperty(select, "options", { get: () => select.optionValues || [] });
+    return select;
+  }
+
+  _storage() {
+    const items = new Map();
+    return {
+      items,
+      getItem    : (key) => (items.has(key) ? items.get(key) : null),
+      setItem    : (key, value) => items.set(key, String(value)),
+      removeItem : (key) => items.delete(key),
+    };
+  }
+
+  _transect(meta) {
+    const { CubeTransect } = this.classes;
+    const asked  = [];
+    const toasts = [];
+
+    this.sandbox.SharedCharts      = { esc: (text) => String(text) };
+    this.sandbox.Api               = { get: (url) => new Promise((resolve) => asked.push({ query: new URLSearchParams(url.split("?")[1]), resolve })) };
+    this.sandbox.Toast             = { show: (text, kind) => toasts.push({ text, kind }) };
+    this.sandbox.fetch             = async () => ({ ok: false });
+    this.sandbox.localStorage      = this.sandbox.localStorage || this._storage();
+
+    const refs = {};
+    ["at", "undo", "clear", "print", "download", "name", "save", "remove", "stripWrap", "stripVal", "map", "grid"].forEach((name) => {
+      refs[name] = this._element({ innerHTML: "" });
+    });
+    refs.overlay    = this._element({ innerHTML: "" });
+    refs.saved      = this._select();
+    refs.stripLayer = this._select();
+
+    const { ctx, ops } = this._recordingCtx();
+    refs.strip         = this._element({ clientWidth: 200, clientHeight: 70, width: 0, height: 0, getContext: () => ctx });
+    refs.map.getBoundingClientRect = () => ({ left: 0, top: 0, width: 60, height: 80 });
+    refs.panels = [];
+
+    const host = { selectedId: "cube", meta, view: "transect", space: "physical", cmap: "jet", visible: new Set(meta.sources), colors: { accent: "#a3c0ff" }, _fmt: (value) => String(value) };
+    const transect = new CubeTransect(refs, host);
+    transect.configure();
+
+    return { transect, refs, host, asked, toasts, ops };
+  }
+
+  async transect() {
+    const layers = [{ key: "pixel_mse", label: "MSE" }, { key: "pixel_r2", label: "R2" }];
+    const meta   = { n_rows: 8, n_cols: 6, sources: ["pred"], metric_maps: layers };
+    const { transect, refs, host, asked, toasts, ops } = this._transect(meta);
+    const click  = (x, y) => refs.map.listeners.click({ clientX: x, clientY: y });
+    const strip  = (entry, values) => entry.resolve({ ok: true, n_samples: values.length, rows: [{ key: "pixel_mse", label: "MSE", values }, { key: "pixel_r2", label: "R2", values: values.map((v) => (v === null ? null : -v)) }] });
+
+    const configured = { layers: refs.stripLayer.options, saved: refs.saved.options, undo: refs.undo.hidden, strip: refs.stripWrap.hidden };
+
+    click(25, 35);
+    click(29, 39);
+    const single = { points: transect.points.map((p) => [p.row, p.col]), asked: asked.length, undo: refs.undo.hidden, print: refs.print.hidden, at: refs.at.textContent };
+
+    click(55, 35);
+    click(55, 75);
+    const traced = { pts: asked.map((entry) => entry.query.get("pts")), print: refs.print.hidden, at: refs.at.textContent, segments: (refs.overlay.innerHTML.match(/<line /g) || []).length };
+
+    strip(asked.shift(), [1, 2]);
+    await this._settle();
+    const overtaken = { shown: !refs.stripWrap.hidden, data: transect.stripData };
+
+    strip(asked.shift(), [1, null, 3]);
+    await this._settle();
+    const drawn = { shown: !refs.stripWrap.hidden, value: refs.stripVal.textContent, strokes: ops.strokes.length, segments: ops.strokes[0].points.length };
+
+    transect._undo();
+    const shortened = asked.splice(0).map((entry) => entry.query.get("pts"));
+    transect._undo();
+    const afterUndo = { shortened, points: transect.points.length, strip: refs.stripWrap.hidden, data: transect.stripData, asked: asked.length };
+
+    click(55, 35);
+    const pendingUndo = asked.shift();
+    transect._undo();
+    strip(pendingUndo, [4, 5]);
+    await this._settle();
+    const lateAfterUndo = { strip: refs.stripWrap.hidden, data: transect.stripData };
+
+    click(55, 35);
+    const pendingClear = asked.shift();
+    refs.clear.listeners.click();
+    strip(pendingClear, [4, 5]);
+    await this._settle();
+    const lateAfterClear = { strip: refs.stripWrap.hidden, data: transect.stripData, points: transect.points.length };
+
+    click(25, 35);
+    click(55, 35);
+    click(55, 75);
+    const superseded = asked.shift();
+    strip(asked.shift(), [1, 2, 3]);
+    strip(superseded, [7, 8]);
+    await this._settle();
+    refs.stripLayer.value = "pixel_r2";
+    refs.stripLayer.listeners.change();
+    const picked = refs.stripVal.textContent;
+
+    host.meta = { ...meta, metric_maps: [...layers, { key: "delta_pixel_mse", label: "Δ MSE" }] };
+    transect.renderStripLayers();
+    const attached = { layers: refs.stripLayer.options, kept: refs.stripLayer.value, refetched: asked.map((entry) => entry.query.get("pts")) };
+    asked.splice(0);
+
+    refs.save.listeners.click();
+    const unnamed = JSON.parse(this.sandbox.localStorage.getItem("cube-transects:8x6"));
+
+    refs.name.value = "ridge";
+    refs.save.listeners.click();
+    const named = { stored: JSON.parse(this.sandbox.localStorage.getItem("cube-transects:8x6")), options: refs.saved.options, selected: refs.saved.value, remove: refs.remove.hidden, name: refs.name.value };
+
+    refs.clear.listeners.click();
+    refs.saved.value = "ridge";
+    refs.saved.listeners.change();
+    const replayed = { points: transect.points.map((p) => [p.row, p.col, p.fx, p.fy]), asked: asked.map((entry) => entry.query.get("pts")), remove: refs.remove.hidden };
+    asked.splice(0);
+
+    refs.remove.listeners.click();
+    const deleted = { stored: JSON.parse(this.sandbox.localStorage.getItem("cube-transects:8x6")).map((entry) => entry.name), options: refs.saved.options };
+
+    const other = this._transect({ n_rows: 4, n_cols: 6, sources: ["pred"], metric_maps: [] });
+    const otherFootprint = { options: other.refs.saved.options, layers: other.refs.stripLayer.options };
+    other.refs.map.listeners.click({ clientX: 5, clientY: 5 });
+    other.refs.map.listeners.click({ clientX: 55, clientY: 75 });
+    const noLayers = { asked: other.asked.length, strip: other.refs.stripWrap.hidden };
+
+    other.refs.clear.listeners.click();
+    other.refs.save.listeners.click();
+    const refusedSave = toasts.concat(other.toasts).filter((toast) => toast.kind === "warn").map((toast) => toast.text);
+
+    return { configured, single, traced, overtaken, drawn, afterUndo, lateAfterUndo, lateAfterClear, picked, attached, unnamed, named, replayed, deleted, otherFootprint, noLayers, refusedSave };
   }
 
   _displayStub(view, extra) {
