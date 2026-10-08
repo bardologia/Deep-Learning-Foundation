@@ -11,14 +11,13 @@ from pathlib import Path
 
 import torch
 
-from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from tools.data.io                                   import FileIO
 from tools.diagnostics.activation_recorder           import ActivationRecorder, LayerActivationStats
 from tools.diagnostics.activation_xray_analysis      import ActivationIssueDetector, ActivationXraySummarizer
 from tools.diagnostics.activation_xray_plots         import ActivationXrayPlots
 from tools.diagnostics.weight_xray_analysis          import SEVERITY_RANK
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
-from tools.reporting.plotting                        import PlotBase
 
 
 class ActivationXrayRun(AnalysisRun):
@@ -160,17 +159,17 @@ class ActivationXrayRun(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Records, analyses, plots and reports the activations of this run.
 
-        Returns:
-            Payload with the "summary" verdict block, the ordered per-layer "layers"
-            statistics and the flat list of detected "issues", as written to JSON.
-        """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
+        Args:
+            run : Loaded run bundling the model, the dataloader and the dataset.
 
-        run       = self._load_run()
+        Returns:
+            The outcome whose payload holds the "summary" verdict block, the ordered
+            per-layer "layers" statistics and the flat list of detected "issues", as
+            written to JSON.
+        """
         recorder  = self._record(run)
         n_batches = min(self.config.max_batches, len(run.loader))
         all_stats = recorder.stats()
@@ -192,9 +191,7 @@ class ActivationXrayRun(AnalysisRun):
 
         report_path = self._write_report(run, reports, summary, figures)
 
-        self.logger.ok(f"{self.run_dir.name}: {summary['verdict']} ({summary['flagged_layers']}/{summary['layers']} layers flagged) -> {report_path}")
-
-        return payload
+        return AnalysisOutcome(payload, f"{summary['verdict']} ({summary['flagged_layers']}/{summary['layers']} layers flagged)", report_path)
 
 
 class ActivationXrayBatch(RunBatch):

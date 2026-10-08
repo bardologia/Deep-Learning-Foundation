@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import PredictionCurves
 from tools.data.io                                   import FileIO
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
@@ -303,6 +303,22 @@ class LossLandscapeRun(AnalysisRun):
     SUMMARY_FILENAME = "loss_landscape.json"
     REPORT_FILENAME  = "loss_landscape.md"
 
+    def __init__(self, run_dir: Path, config, logger) -> None:
+        """Binds the landscape to one run directory after checking the direction count.
+
+        Args:
+            run_dir : Directory of the training run to analyse.
+            config  : Landscape configuration.
+            logger  : Logger for progress reporting.
+
+        Raises:
+            ValueError : If fewer than two directions are configured, leaving no plane for the 2-D grid.
+        """
+        if config.n_directions < 2:
+            raise ValueError(f"The landscape needs at least 2 directions for the 2-D grid, got n_directions={config.n_directions}")
+
+        super().__init__(run_dir, config, logger)
+
     def _loss_fn(self, run):
         """Builds the objective evaluated at every landscape point.
 
@@ -387,24 +403,17 @@ class LossLandscapeRun(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Samples the 1-D cuts and the 2-D grid, diagnoses them and writes the report.
 
+        Args:
+            run : Loaded run bundling the model, the dataloader and the normalizer.
+
         Returns:
-            Payload with the backbone name, the split, the sampled span, the centre loss,
-            the 1-D steps and cuts, the 2-D steps and loss grid, and the per-direction
-            diagnostics.
-
-        Raises:
-            ValueError : If fewer than two directions are configured, leaving no plane for the 2-D grid.
+            The outcome whose payload holds the backbone name, the split, the sampled
+            span, the centre loss, the 1-D steps and cuts, the 2-D steps and loss grid,
+            and the per-direction diagnostics.
         """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
-
-        if self.config.n_directions < 2:
-            raise ValueError(f"The landscape needs at least 2 directions for the 2-D grid, got n_directions={self.config.n_directions}")
-
-        run     = self._load_run()
         loss_fn = self._loss_fn(run)
         module  = run.model.module
 
@@ -452,9 +461,7 @@ class LossLandscapeRun(AnalysisRun):
 
         report_path = self._write_report(run, center, diagnostics, figures)
 
-        self.logger.ok(f"{self.run_dir.name}: sharpness {sharpness.mean():.3f} ± {sharpness.std():.3f} over {len(cuts)} directions -> {report_path}")
-
-        return payload
+        return AnalysisOutcome(payload, f"sharpness {sharpness.mean():.3f} ± {sharpness.std():.3f} over {len(cuts)} directions", report_path)
 
 
 class LossLandscapeBatch(RunBatch):

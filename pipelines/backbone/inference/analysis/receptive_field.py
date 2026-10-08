@@ -17,7 +17,7 @@ import torch
 
 from matplotlib.patches import Ellipse
 
-from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import ModelDevice, ProbeWindows
 from tools.data.io                                   import FileIO
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
@@ -505,16 +505,15 @@ class RunReceptiveField(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Measures the ERF, writes the gradient maps, figures, JSON and report.
 
-        Returns:
-            The ERF measures plus the "report" path of the written markdown.
-        """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
+        Args:
+            run : Loaded run bundling the model and the dataset.
 
-        run     = self._load_run()
+        Returns:
+            The outcome whose payload holds the ERF measures.
+        """
         probes  = ProbeWindows(run, self.config.window)
         centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
@@ -569,9 +568,7 @@ class RunReceptiveField(AnalysisRun):
         self._write_summary(run, centers, measures)
         report_path = self._write_report(run, measures, masses, figure_paths)
 
-        self.logger.ok(f"{self.run_dir.name}: ERF σ row {sigma_row:.2f} px, col {sigma_col:.2f} px, s90 {radii[0.90]:.1f} px -> {report_path}")
-
-        return {**measures, "report": report_path}
+        return AnalysisOutcome(measures, f"ERF σ row {sigma_row:.2f} px, col {sigma_col:.2f} px, s90 {radii[0.90]:.1f} px", report_path)
 
 
 class ReceptiveFieldBatch(RunBatch):
