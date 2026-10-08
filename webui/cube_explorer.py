@@ -34,14 +34,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
-from catalog_roots                 import CatalogRoots, RunScanner
-from configuration.diagnostics     import ReportMailEntryConfig
-from lru_cache                     import LruCache
-from tools.data.archives           import ArchivePacker
-from tools.data.gaussians          import GaussianActivity
-from tools.reporting.plotting      import PlotBase
-from tools.reporting.report_mailer import ReportMailer
-from web_logger                    import WebLogger
+from catalog_roots                              import CatalogRoots, RunScanner
+from configuration.diagnostics                  import ReportMailEntryConfig
+from lru_cache                                  import LruCache
+from pipelines.backbone.inference.failure_modes import FailureModes
+from tools.data.archives                        import ArchivePacker
+from tools.data.gaussians                       import GaussianActivity
+from tools.reporting.plotting                   import PlotBase
+from tools.reporting.report_mailer              import ReportMailer
+from web_logger                                 import WebLogger
 
 
 class SliceFigureArchiver(PlotBase):
@@ -593,7 +594,19 @@ class CubeExplorer:
         "flip_consistency"         : "flip disagreement",
         "failure_mode"             : "failure mode",
         "label_suspect"            : "label suspect",
+        "extract_r2"               : "extract R2",
+        "embedding_error"          : "embedding err",
+        "embedding_cosine"         : "embedding cosine",
+        "decode_mse"               : "decode MSE",
+        "chain_mse"                : "chain MSE",
     }
+
+    METRIC_CLASSES = {
+        "failure_mode"  : FailureModes.MODES,
+        "label_suspect" : ("clean", "suspect"),
+    }
+
+    CLASS_COLORS = ("#4c78a8", "#f58518", "#54a24b", "#e45756", "#b279a2", "#eeca3b", "#72b7b2", "#9d755d", "#ff9da6", "#79706e")
 
     def __init__(self, logger: WebLogger) -> None:
         """Prepares an idle explorer with an empty runs-root catalogue and an empty cube cache.
@@ -1261,6 +1274,9 @@ class CubeExplorer:
     def metric_overlay_png(self, cube_id: str, key: str, vmin: float, vmax: float, keep_min: float, keep_max: float, alpha: float) -> bytes | None:
         """Blends one metric map over the primary amplitude map as a PNG.
 
+        Continuous layers are coloured through viridis over the colour range;
+        class layers paint each rounded class index in its fixed class colour.
+
         Args:
             cube_id  : Id of the loaded cube.
             key      : Metric map name.
@@ -1286,10 +1302,16 @@ class CubeExplorer:
         p_lo, p_hi = clim
         base       = (np.clip((primary - p_lo) / max(p_hi - p_lo, 1e-12), 0.0, 1.0))[..., None].repeat(3, axis=2)
 
-        norm    = np.clip((data - vmin) / max(vmax - vmin, 1e-12), 0.0, 1.0)
-        colored = plt.get_cmap("viridis")(norm)[..., :3]
-        keep    = np.isfinite(data) & (data >= keep_min) & (data <= keep_max)
-        blend   = np.where(keep[..., None], base * (1.0 - alpha) + colored * alpha, base)
+        classes = self.METRIC_CLASSES.get(key)
+        if classes is not None:
+            index   = np.clip(np.round(np.nan_to_num(data)), 0, len(classes) - 1).astype(int)
+            colored = self._class_rgb(len(classes))[index]
+        else:
+            norm    = np.clip((data - vmin) / max(vmax - vmin, 1e-12), 0.0, 1.0)
+            colored = plt.get_cmap("viridis")(norm)[..., :3]
+
+        keep  = np.isfinite(data) & (data >= keep_min) & (data <= keep_max)
+        blend = np.where(keep[..., None], base * (1.0 - alpha) + colored * alpha, base)
 
         buf = io.BytesIO()
         plt.imsave(buf, blend.astype(np.float32), **self.PNG_ENCODE)
@@ -1305,7 +1327,7 @@ class CubeExplorer:
             col     : Column pixel index, clipped into range.
 
         Returns:
-            Dict with ``ok``, the clipped indices, the key and the value (None when not finite), or ``ok`` False for an unknown map.
+            Dict with ``ok``, the clipped indices, the key and the value (None when not finite), plus the class ``name`` for a finite value of a class layer, or ``ok`` False for an unknown map.
         """
         resolved = self._metric_state(cube_id, key)
         if resolved is None:
@@ -1315,8 +1337,14 @@ class CubeExplorer:
         row = int(np.clip(row, 0, data.shape[0] - 1))
         col = int(np.clip(col, 0, data.shape[1] - 1))
 
-        value = float(data[row, col])
-        return {"ok": True, "row": row, "col": col, "key": key, "value": value if np.isfinite(value) else None}
+        value   = float(data[row, col])
+        payload = {"ok": True, "row": row, "col": col, "key": key, "value": value if np.isfinite(value) else None}
+
+        classes = self.METRIC_CLASSES.get(key)
+        if classes is not None and np.isfinite(value):
+            payload["name"] = classes[int(np.clip(round(value), 0, len(classes) - 1))]
+
+        return payload
 
     def _metric_state(self, cube_id: str, key: str) -> tuple[np.ndarray, np.ndarray, tuple[float, float]] | None:
         """Returns the metric map, the primary amplitude map and its cached colour limits."""
@@ -1761,16 +1789,45 @@ class CubeExplorer:
         return np.asarray(raw[row_lo:row_hi, col_lo:col_hi], dtype=np.float32)
 
     def _metric_maps_meta(self, metric_maps: dict) -> list:
+        """Describes each metric map with its display label, colour range and class legend.
+
+        Continuous layers carry their robust colour range and no legend; layers
+        listed in METRIC_CLASSES carry the full class index range and one named,
+        coloured legend entry per class so the front end renders them discretely.
+
+        Args:
+            metric_maps : Metric maps of the loaded cube keyed by name, each of shape (rows, cols).
+
+        Returns:
+            One dict per map with its ``key``, ``label``, ``vmin``, ``vmax`` and ``classes`` legend (None for continuous layers).
+        """
         layers = []
         for key, data in metric_maps.items():
-            vmin, vmax = self._metric_range(data)
+            classes = self.METRIC_CLASSES.get(key)
+            if classes is not None:
+                vmin, vmax = 0.0, float(len(classes) - 1)
+                legend     = [{"index": i, "name": name, "color": self.CLASS_COLORS[i % len(self.CLASS_COLORS)]} for i, name in enumerate(classes)]
+            else:
+                vmin, vmax = self._metric_range(data)
+                legend     = None
+
             layers.append({
-                "key"   : key,
-                "label" : self.METRIC_LABELS.get(key, key),
-                "vmin"  : vmin,
-                "vmax"  : vmax,
+                "key"     : key,
+                "label"   : self.METRIC_LABELS.get(key, key),
+                "vmin"    : vmin,
+                "vmax"    : vmax,
+                "classes" : legend,
             })
         return layers
+
+    @classmethod
+    def _class_rgb(cls, count: int) -> np.ndarray:
+        """Returns the class palette as a float RGB array of shape (count, 3) in [0, 1]."""
+        rgb = []
+        for i in range(count):
+            color = cls.CLASS_COLORS[i % len(cls.CLASS_COLORS)]
+            rgb.append([int(color[j:j + 2], 16) / 255.0 for j in (1, 3, 5)])
+        return np.asarray(rgb, dtype=np.float64)
 
     @staticmethod
     def _metric_range(data: np.ndarray) -> tuple[float, float]:
