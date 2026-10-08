@@ -89,15 +89,16 @@ class JepaRunLoader(RunLoader):
             dataset_in_channels : Input width the dataset yields.
 
         Returns:
-            The image autoencoder and the width the backbone then sees, or None
-            and the dataset width when the run has no frontend.
+            The image autoencoder, the width the backbone then sees and a
+            description for the reassembly table; None, the dataset width and
+            a line naming the absent config file when the run has no frontend.
         """
         if not ImageAutoencoderConfigIO.exists(self.meta_directory):
-            return None, dataset_in_channels
+            return None, dataset_in_channels, f"none (no {ImageAutoencoderConfigIO.FILENAME} in meta; the backbone consumes the {dataset_in_channels} dataset channels)"
 
         image_cfg, image_name = ImageAutoencoderConfigIO.load(self.meta_directory)
         image_autoencoder, _  = get_image_autoencoder(image_name, image_cfg)
-        return image_autoencoder, image_cfg.embedding_dim
+        return image_autoencoder, image_cfg.embedding_dim, f"{image_name} (embedding_dim={image_cfg.embedding_dim}; the backbone consumes its feature map)"
 
     def _build_model(self, backbone_name: str, in_channels: int, out_channels: int, patch_size):
         """Rebuilds the JEPA module: optional image frontend, backbone and profile autoencoder.
@@ -110,20 +111,27 @@ class JepaRunLoader(RunLoader):
 
         Returns:
             The assembled JEPA module, its backbone widened to the profile
-            embedding dimension.
+            embedding dimension; the reassembly is logged as a table.
         """
         ae_cfg, ae_name = ProfileAutoencoderConfigIO.load(self.meta_directory)
         model_config, _ = BackboneModelConfigIO.load(self.meta_directory)
         self.model_head = model_config.head
 
-        image_autoencoder, backbone_in = self._image_frontend(in_channels)
+        image_autoencoder, backbone_in, frontend = self._image_frontend(in_channels)
 
         overrides = {"in_channels": backbone_in, "out_channels": ae_cfg.embedding_dim}
         overrides.update(ModelBuilder.image_size_override(backbone_name, patch_size))
         backbone, _ = get_backbone(backbone_name, config=model_config, **overrides)
 
         profile_autoencoder, _  = get_profile_autoencoder(ae_name, ae_cfg)
-        self.profile_normalizer = ProfileNormalizer(ProfileStats.load(self.meta_directory))
+        self.profile_normalizer = ProfileNormalizer(ProfileStats.load(self.meta_directory, logger=self.logger))
+
+        self.logger.section("[JEPA Run Reassembled]")
+        self.logger.kv_table({
+            "Image frontend" : frontend,
+            "Profile AE"     : f"{ae_name} (embedding_dim={ae_cfg.embedding_dim}, profile_length={ae_cfg.profile_length}; decodes the predicted embedding into curves)",
+            "Backbone"       : f"{backbone_name} (head {model_config.head}, {backbone_in} -> {ae_cfg.embedding_dim} channels)",
+        })
 
         return JepaModule(backbone, profile_autoencoder=profile_autoencoder, image_autoencoder=image_autoencoder)
 
@@ -162,7 +170,7 @@ class JepaParamRunLoader(RunLoader):
 
         Returns:
             The JEPA module carrying the frontend and the backbone, with no
-            profile autoencoder.
+            profile autoencoder; the reassembly is logged as a table.
         """
         model_config, _       = BackboneModelConfigIO.load(self.meta_directory)
         self.model_head       = model_config.head
@@ -172,5 +180,12 @@ class JepaParamRunLoader(RunLoader):
         overrides = {"in_channels": image_cfg.embedding_dim, "out_channels": out_channels}
         overrides.update(ModelBuilder.image_size_override(backbone_name, patch_size))
         backbone, _ = get_backbone(backbone_name, config=model_config, **overrides)
+
+        self.logger.section("[JEPA Run Reassembled]")
+        self.logger.kv_table({
+            "Image frontend" : f"{image_name} (embedding_dim={image_cfg.embedding_dim}; the backbone consumes its feature map)",
+            "Profile AE"     : "none (the backbone predicts Gaussian parameters directly)",
+            "Backbone"       : f"{backbone_name} (head {model_config.head}, {image_cfg.embedding_dim} -> {out_channels} channels)",
+        })
 
         return JepaModule(backbone, profile_autoencoder=None, image_autoencoder=image_autoencoder)
