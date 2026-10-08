@@ -317,19 +317,29 @@ class SeedDisagreementMaps:
         return cubes
 
     def _offsets(self) -> tuple[int, int]:
-        """Returns the (rows, cols) scene offsets of the split region.
+        """Returns the (rows, cols) scene offsets of the split region every seed shares.
 
         Returns:
             The row and column start indices of the inferred region.
 
         Raises:
-            KeyError : If the metrics file carries no split region.
+            KeyError   : If a seed's metrics file carries no split region.
+            ValueError : If the seeds' inferences cover different regions, whose pixels cannot be compared.
         """
-        metrics = FileIO.load_json(self.inference_dirs[0] / self.metrics_filename)
-        if "split_region" not in metrics:
-            raise KeyError(f"{self.inference_dirs[0] / self.metrics_filename} has no split_region; re-run inference to regenerate it")
+        regions = {}
+        for seed, inference_dir in zip(self.seeds, self.inference_dirs):
+            metrics = FileIO.load_json(inference_dir / self.metrics_filename)
+            if "split_region" not in metrics:
+                raise KeyError(f"{inference_dir / self.metrics_filename} has no split_region; re-run inference for seed {seed} to regenerate it")
 
-        row_start, _az_end, col_start, _rg_end = (int(v) for v in metrics["split_region"])
+            regions[seed] = tuple(int(v) for v in metrics["split_region"])
+
+        if len(set(regions.values())) != 1:
+            raise ValueError(f"The seeds were inferred on different regions {regions}; their disagreement maps would compare unrelated pixels, so re-infer them on one region")
+
+        row_start, row_end, col_start, col_end = next(iter(regions.values()))
+        self.logger.info(f"Split region shared by all {len(self.seeds)} seeds: rows {row_start}..{row_end}, cols {col_start}..{col_end}")
+
         return row_start, col_start
 
     def _profile_map(self) -> np.ndarray:
