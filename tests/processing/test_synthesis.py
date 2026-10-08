@@ -10,7 +10,7 @@ import pytest
 
 from configuration.benchmark.general            import BenchmarkConfig
 from configuration.dataset.gaussian             import GaussianConfig
-from configuration.synthesis                    import SynthesisConfig
+from configuration.synthesis                    import GenerateDatasetEntryConfig, SynthesisConfig
 from pipelines.backbone.dataset.pipeline        import BackboneDatasetPreparation
 from pipelines.processing.synthesis.pipeline    import SyntheticDatasetPipeline
 from pipelines.processing.synthesis.writer      import DatasetWriter
@@ -33,6 +33,11 @@ def _tiny_config(tmp_path, **overrides) -> SynthesisConfig:
 
 def _generate(config, logger_stub):
     return SyntheticDatasetPipeline(config, logger=logger_stub).run()
+
+
+def _entry(config, tmp_path) -> GenerateDatasetEntryConfig:
+    """Returns the generate_dataset entry config running a synthesis config with its log under tmp_path/logs."""
+    return GenerateDatasetEntryConfig(synthesis=config, log_dir=tmp_path / "logs")
 
 
 def test_rejects_a_sigma_finer_than_the_z_bin(tmp_path):
@@ -181,7 +186,7 @@ def test_session_records_an_abort_in_its_log(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline_module.SyntheticDatasetPipeline, "run", failing_run)
 
     with pytest.raises(RuntimeError, match="scene stage failed"):
-        pipeline_module.SyntheticDatasetSession(_tiny_config(tmp_path), log_dir=tmp_path / "logs").execute()
+        pipeline_module.SyntheticDatasetSession(_entry(_tiny_config(tmp_path), tmp_path)).execute()
 
     log_text = (tmp_path / "logs" / "generate_dataset.log").read_text(encoding="utf-8")
 
@@ -190,19 +195,75 @@ def test_session_records_an_abort_in_its_log(tmp_path, monkeypatch):
     assert ">>> END" not in log_text
 
 
+def test_session_persists_the_entry_config(tmp_path):
+    """Verifies a finished generation records the resolved entry config and its provenance into the dataset's docs."""
+    from pipelines.processing.synthesis.pipeline import SyntheticDatasetSession
+    from tools.runtime.config_cli                import ConfigCli
+
+    config = _tiny_config(tmp_path, seed=123)
+
+    SyntheticDatasetSession(_entry(config, tmp_path)).execute()
+
+    loaded = ConfigCli.load_resolved(GenerateDatasetEntryConfig(), config.output_directory / "docs" / "resolved_entry_config.json")
+
+    assert loaded.synthesis.seed             == 123
+    assert loaded.synthesis.output_directory == config.output_directory
+    assert loaded.log_dir                    == tmp_path / "logs"
+    assert (config.output_directory / "docs" / "provenance.json").is_file()
+
+
+def test_session_writes_no_entry_config_when_the_pipeline_fails(tmp_path, monkeypatch):
+    """Verifies a failed generation leaves no copyable entry config behind."""
+    from pipelines.processing.synthesis import pipeline as pipeline_module
+
+    def failing_parameters(self, parameters, diagnostics):
+        """Raises in place of writing the parameter run."""
+        raise OSError("disk full")
+
+    monkeypatch.setattr(DatasetWriter, "write_parameters", failing_parameters)
+
+    config = _tiny_config(tmp_path)
+
+    with pytest.raises(OSError, match="disk full"):
+        pipeline_module.SyntheticDatasetSession(_entry(config, tmp_path)).execute()
+
+    assert (config.metadata_directory / "config_state.json").is_file()
+    assert not (config.output_directory / "docs" / "resolved_entry_config.json").exists()
+
+
 def test_session_refuses_a_finished_dataset_directory(tmp_path):
-    """Verifies a directory holding a layout or a parameter run is refused before the session log opens, naming what it holds."""
+    """Verifies a directory holding a layout, an entry config and a parameter run is refused before the session log opens, naming all of them."""
     from pipelines.processing.synthesis.pipeline import SyntheticDatasetSession
 
     config = _tiny_config(tmp_path)
     config.data_directory.mkdir(parents=True)
     (config.data_directory / "dataset.json").write_text("{}", encoding="utf-8")
+    (config.output_directory / "docs").mkdir()
+    (config.output_directory / "docs" / "resolved_entry_config.json").write_text("{}", encoding="utf-8")
     (config.output_directory / "params" / "params_k2").mkdir(parents=True)
 
-    with pytest.raises(FileExistsError, match=r"data/dataset.json, params/params_k2"):
-        SyntheticDatasetSession(config, log_dir=tmp_path / "logs").execute()
+    with pytest.raises(FileExistsError, match=r"data/dataset.json, docs/resolved_entry_config.json, params/params_k2"):
+        SyntheticDatasetSession(_entry(config, tmp_path)).execute()
 
     assert not (tmp_path / "logs").exists()
+
+
+@pytest.mark.parametrize("marker", ("data/dataset.json", "docs/resolved_entry_config.json", "params/params_k2"))
+def test_directory_guard_refuses_each_finished_dataset_marker(tmp_path, marker):
+    """Verifies a dataset layout, a resolved entry config or a parameter run alone makes the guard refuse the directory, naming it."""
+    from pipelines.processing.synthesis.writer import DatasetDirectoryGuard
+
+    output_dir = tmp_path / "ds"
+    target     = output_dir / marker
+
+    if marker.startswith("params/"):
+        target.mkdir(parents=True)
+    else:
+        target.parent.mkdir(parents=True)
+        target.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match=marker.replace(".", r"\.")):
+        DatasetDirectoryGuard(output_dir).leftovers()
 
 
 def test_session_warns_about_an_unfinished_run_and_writes_the_layout_last(tmp_path, monkeypatch):
@@ -230,7 +291,7 @@ def test_session_warns_about_an_unfinished_run_and_writes_the_layout_last(tmp_pa
     monkeypatch.setattr(DatasetWriter, "write_parameters", failing_parameters)
 
     with pytest.raises(OSError, match="disk full"):
-        pipeline_module.SyntheticDatasetSession(config, log_dir=tmp_path / "logs").execute()
+        pipeline_module.SyntheticDatasetSession(_entry(config, tmp_path)).execute()
 
     assert (config.metadata_directory / "config_state.json").is_file()
     assert not (config.data_directory / "dataset.json").exists()
