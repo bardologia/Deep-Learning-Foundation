@@ -3,8 +3,9 @@
 The pipeline samples smooth parameter fields, evaluates the profiles, cube and
 channels they imply, scores the mixture against the observed cube as a
 parameter run would, and writes the dataset with the generating commit. The
-session refuses a directory already holding a finished dataset and records an
-abort in its log.
+session refuses a directory already holding a finished dataset, records an
+abort in its log and, once the dataset is written, records the resolved entry
+config into the dataset's docs for the console's copy-from-run control.
 """
 
 from __future__ import annotations
@@ -15,16 +16,17 @@ from typing  import Any, Callable
 
 import numpy as np
 
-from configuration.synthesis                    import SynthesisConfig
-from pipelines.processing.synthesis.diagnostics import FitDiagnosticsBuilder
-from pipelines.processing.synthesis.fields      import WhiteNoiseSampler
-from pipelines.processing.synthesis.parameters  import ParameterFieldBuilder
-from pipelines.processing.synthesis.scene       import AuxFieldBuilder, ZAxis, ChannelBuilder, ProfileBuilder, CubeBuilder
-from pipelines.processing.synthesis.writer      import DatasetDirectoryGuard, DatasetWriter
-from tools.data.gaussians                       import GaussianActivity
-from tools.data.io                              import FileIO
-from tools.monitoring.logger                    import Logger
-from tools.runtime.git_state                    import RunProvenance
+from configuration.synthesis                       import GenerateDatasetEntryConfig, SynthesisConfig
+from pipelines.processing.synthesis.diagnostics    import FitDiagnosticsBuilder
+from pipelines.processing.synthesis.fields         import WhiteNoiseSampler
+from pipelines.processing.synthesis.parameters     import ParameterFieldBuilder
+from pipelines.processing.synthesis.scene          import AuxFieldBuilder, ZAxis, ChannelBuilder, ProfileBuilder, CubeBuilder
+from pipelines.processing.synthesis.writer         import DatasetDirectoryGuard, DatasetWriter
+from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
+from tools.data.gaussians                          import GaussianActivity
+from tools.data.io                                 import FileIO
+from tools.monitoring.logger                       import Logger
+from tools.runtime.git_state                       import RunProvenance
 
 
 class SyntheticDatasetPipeline:
@@ -224,26 +226,30 @@ class SyntheticDatasetSession:
     """One generation of a synthetic dataset with its own log.
 
     Attributes:
-        config  : Synthesis configuration describing the scene and the output directory.
-        log_dir : Directory the session log is written into.
+        entry_config : Resolved generate_dataset entry config, recorded into the dataset's docs once the dataset is written.
+        config       : Synthesis configuration describing the scene and the output directory.
+        log_dir      : Directory the session log is written into.
     """
 
-    def __init__(self, config: SynthesisConfig, log_dir: Path) -> None:
-        """Binds the session to a synthesis configuration and a log directory.
+    def __init__(self, entry_config: GenerateDatasetEntryConfig) -> None:
+        """Binds the session to the resolved entry config, its synthesis configuration and its log directory.
 
         Args:
-            config  : Synthesis configuration describing the scene and the output directory.
-            log_dir : Directory the session log is written into.
+            entry_config : Resolved generate_dataset entry config holding the synthesis configuration and the log directory.
         """
-        self.config  = config
-        self.log_dir = Path(log_dir)
+        self.entry_config = entry_config
+        self.config       = entry_config.synthesis
+        self.log_dir      = Path(entry_config.log_dir)
 
     def execute(self) -> dict:
-        """Refuses a finished dataset directory, opens the session log and runs the pipeline.
+        """Refuses a finished dataset directory, opens the session log, runs the pipeline and records the entry config.
 
         The directory is checked before the log is opened, and the log closes
         with the exception, its traceback and an ABORTED banner when a stage
-        raises.
+        raises. The entry config is written into the dataset's docs only after
+        the pipeline has written the dataset, the same ordering parameter
+        extraction uses, so a failed run leaves no config behind and every
+        dataset the launch console offers to copy from really finished.
 
         Returns:
             The output mapping returned by ``SyntheticDatasetPipeline.run``.
@@ -259,4 +265,8 @@ class SyntheticDatasetSession:
         with Logger(log_dir=str(self.log_dir), name="generate_dataset", level="INFO") as logger:
             guard.warn(leftovers, logger)
 
-            return SyntheticDatasetPipeline(self.config, logger=logger).run()
+            outputs = SyntheticDatasetPipeline(self.config, logger=logger).run()
+
+            ResolvedEntryConfigWriter.save(self.entry_config, self.config.output_directory, logger)
+
+            return outputs

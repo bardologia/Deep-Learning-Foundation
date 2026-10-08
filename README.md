@@ -114,6 +114,7 @@ data/cube_full.npy      (n_z, rows, cols)           complex64
 data/dataset.json       the layout that names those files
 meta/config_state.json  the crop, the z axis and the config that produced them
 params/params_k2/       parameters.npy, fit_diagnostics.npz, param_extraction_meta.json
+docs/                   resolved_entry_config.json and provenance.json of the generating run
 ```
 
 Everything downstream reads that directory, so this is the first thing to run on a fresh
@@ -121,9 +122,13 @@ clone. The tests are the exception: they synthesize their own copy of the scene 
 temporary directory, so they pass before you ever run the generator.
 
 The generator refuses an output directory that already holds a finished dataset (a
-`data/dataset.json` or any parameter run under `params/`); delete the directory to
-generate it again. It writes `dataset.json` last and records the generating commit in
-`dataset.json`, `meta/config_state.json` and the parameter run's metadata.
+`data/dataset.json`, a `docs/resolved_entry_config.json` or any parameter run under
+`params/`); delete the directory to generate it again. It writes `dataset.json` last and
+records the generating commit in `dataset.json`, `meta/config_state.json` and the
+parameter run's metadata. Only once the dataset is complete does it record the resolved
+entry config under `docs/`, so a failed run leaves nothing for the console's Copy
+configs control to offer, and a finished dataset can be copied from on the
+`generate_dataset` launch page.
 
 The parameter run also fixes the activity threshold, the amplitude above which a
 Gaussian slot counts as active. It is chosen once, by `SynthesisConfig.activity_threshold`
