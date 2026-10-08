@@ -52,6 +52,7 @@ def main() -> None:
             compare_images  = config.compare_images,
             compare_gifs    = config.compare_gifs,
             embed_images    = config.embed_images,
+            inference_split = config.inference_split,
             logger          = logger,
             seed_dispersion = collector.seed_dispersion,
         )

@@ -91,7 +91,7 @@ def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
     assert any(message.startswith("Aggregated 3 seed run(s) into 1 trial(s)") for message in oks)
 
     out_dir = tmp_path / "comparison"
-    TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
+    TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
 
     overview = (out_dir / "overview.md").read_text()
 
@@ -186,7 +186,7 @@ def test_report_annotates_seed_dispersion(tmp_path):
     records   = collector.collect()
 
     out_dir = tmp_path / "comparison"
-    report  = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion)
+    report  = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion)
     report.write_all()
 
     overview = (out_dir / "overview.md").read_text()
@@ -194,6 +194,32 @@ def test_report_annotates_seed_dispersion(tmp_path):
 
     assert "Seeds" in overview
     assert "±" in metrics
+
+
+def test_report_states_the_split_and_writes_a_json_summary(tmp_path):
+    """Verifies the overview names the split and comparison_summary.json records the split, every trial's stamp and the seed coverage."""
+    _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
+    _run_with_metrics(tmp_path / "trial_a" / "seed1", 4.0)
+    _run_with_metrics(tmp_path / "run_x", 1.0)
+
+    collector = TrialCollector(runs_dir=tmp_path, run_tags=["trial_a", "run_x"], logger=RecordingLogger(), inference_split="test")
+    records   = collector.collect()
+
+    out_dir = tmp_path / "comparison"
+    written = TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
+
+    summary = json.loads((out_dir / "comparison_summary.json").read_text())
+    by_name = {entry["name"]: entry for entry in summary["trials"]}
+
+    assert out_dir / "comparison_summary.json" in written
+    assert "`test` split" in (out_dir / "overview.md").read_text()
+    assert summary["inference_split"] == "test"
+    assert sorted(by_name) == ["run_x", "trial_a"]
+    assert by_name["run_x"]["inference_dir"].endswith("run_x/inference/20260101_000000")
+    assert by_name["run_x"]["metrics"] == {"curve_rmse_gt": 1.0}
+    assert by_name["trial_a"]["seed_dispersion"]["n_seeds"] == 2
+    assert by_name["trial_a"]["seed_dispersion"]["n_used"]  == {"curve_rmse_gt": 2}
+    assert "seed_dispersion" not in by_name["run_x"]
 
 
 def test_figure_section_marks_figures_absent_from_a_trial(tmp_path):
@@ -211,7 +237,7 @@ def test_figure_section_marks_figures_absent_from_a_trial(tmp_path):
     out_dir.mkdir()
 
     collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "run_y"], logger=RecordingLogger(), inference_split="test")
-    report    = TrialComparisonReport(records=collector.collect(), out_dir=out_dir, compare_images=True, compare_gifs=False, embed_images=False, logger=RecordingLogger())
+    report    = TrialComparisonReport(records=collector.collect(), out_dir=out_dir, compare_images=True, compare_gifs=False, embed_images=False, inference_split="test", logger=RecordingLogger())
 
     path = report._write_figure_section("profiles", "Profile reconstructions")
     text = path.read_text()
