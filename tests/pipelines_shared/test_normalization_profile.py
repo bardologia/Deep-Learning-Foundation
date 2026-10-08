@@ -56,6 +56,52 @@ def test_scale_floor_applied_for_zero_scale():
     assert np.isfinite(norm.inv_scale)
 
 
+class _ConstantDataset:
+    """Profile dataset stand-in whose every pixel renders the same curve.
+
+    Attributes:
+        z_axis : Z axis of shape (H,).
+        index  : Pixel index served by the dataset.
+        amps   : Amplitudes of shape (n_pixels, 1), all equal.
+        mus    : Means of shape (n_pixels, 1), all equal.
+        sigs   : Widths of shape (n_pixels, 1), all equal.
+    """
+
+    def __init__(self, n_pixels: int, amplitude: float):
+        """Builds n_pixels identical Gaussians of the given amplitude."""
+        self.z_axis = np.linspace(0.0, 1.0, 16, dtype=np.float32)
+        self.index  = np.arange(n_pixels)
+        self.amps   = np.full((n_pixels, 1), amplitude, dtype=np.float32)
+        self.mus    = np.full((n_pixels, 1), 0.5,       dtype=np.float32)
+        self.sigs   = np.full((n_pixels, 1), 0.1,       dtype=np.float32)
+
+    def __len__(self) -> int:
+        """Returns the pixel count."""
+        return int(self.index.shape[0])
+
+
+def test_compute_refuses_a_near_constant_training_sample(tmp_path):
+    """Curves with no variation after log1p raise, naming the sample size and the measured std, instead of persisting a floored scale."""
+    logger = Logger(log_dir=str(tmp_path / "logs"), name="prof_norm", level="ERROR")
+
+    with pytest.raises(ValueError, match=r"8 sampled training profiles .* below the scale floor"):
+        ProfileStatsComputer.compute(_ConstantDataset(8, amplitude=0.0), logger, max_samples=8)
+
+    logger.close()
+
+
+def test_compute_keeps_the_measured_scale_when_curves_vary(tmp_path):
+    """A sample with real variation returns its measured scale unchanged."""
+    logger  = Logger(log_dir=str(tmp_path / "logs"), name="prof_norm", level="ERROR")
+    dataset = _ConstantDataset(8, amplitude=5.0)
+
+    stats = ProfileStatsComputer.compute(dataset, logger, max_samples=8)
+    logger.close()
+
+    assert stats.scale > ProfileNormalizer.SCALE_FLOOR
+    assert np.isfinite(stats.loc)
+
+
 @pytest.mark.parametrize("loc, scale", [(float("nan"), 1.0), (0.0, float("inf"))])
 def test_non_finite_stats_are_rejected(loc, scale):
     """A NaN or infinite location or scale is rejected instead of normalizing to non-finite values."""

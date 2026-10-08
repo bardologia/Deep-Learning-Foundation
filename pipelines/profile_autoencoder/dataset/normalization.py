@@ -130,7 +130,10 @@ class ProfileStatsComputer:
             max_samples : Maximum number of curves sampled.
 
         Returns:
-            Statistics with the scale floored at `ProfileNormalizer.SCALE_FLOOR`.
+            Statistics with the measured location and scale.
+
+        Raises:
+            ValueError : If the sampled curves are (near-)constant, i.e. the measured scale is below `ProfileNormalizer.SCALE_FLOOR`; dividing by a floored scale would blow the normalized curves up by orders of magnitude.
         """
         logger.section("[Profile Normalization Statistics]")
 
@@ -148,7 +151,10 @@ class ProfileStatsComputer:
             "scale"     : f"{scale:.6f}",
         })
 
-        return ProfileStats(loc = loc, scale = max(scale, ProfileNormalizer.SCALE_FLOOR))
+        if scale < ProfileNormalizer.SCALE_FLOOR:
+            raise ValueError(f"The {len(indices):,} sampled training profiles are (near-)constant after log1p: measured std {scale:.3e} is below the scale floor {ProfileNormalizer.SCALE_FLOOR:g}, so standardizing by it would multiply every curve by more than {1.0 / ProfileNormalizer.SCALE_FLOOR:.0e}. The training split carries no usable profile variation; pick another split region or parameter run.")
+
+        return ProfileStats(loc = loc, scale = scale)
 
 
 class ProfileNormalizer:
