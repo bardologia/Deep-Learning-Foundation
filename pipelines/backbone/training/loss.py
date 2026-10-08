@@ -255,20 +255,24 @@ class Loss:
             matched : The matcher output; the physical prediction and target tensors have shape (batch, n_gaussians, params_per_gaussian, height, width).
 
         Returns:
-            Dict with the amplitude MAE over all slots, and the mean and sigma
-            MAE in metres restricted to the slots the ground truth marks active.
+            Dict with the amplitude MAE over all slots, the mean and sigma MAE in
+            metres restricted to the slots the ground truth marks active, and
+            gt_empty_batch, 1.0 when the batch holds no active ground-truth slot
+            so both metre errors are 0.0 by construction; its epoch mean is the
+            share of such batches.
         """
         _, pred_phys, _, gt_phys = matched
 
         diff = (pred_phys - gt_phys).abs()
 
         active_mask = GaussianActivity.is_active(gt_phys[:, :, 0], self.gaussian_cfg.activity_threshold).to(pred_phys.dtype)
-        n_active    = active_mask.sum().clamp(min=1.0)
+        n_active    = active_mask.sum()
 
         return {
-            "amp_mae"   : diff[:, :, 0].mean(),
-            "mu_mae"    : (diff[:, :, 1] * active_mask).sum() / n_active,
-            "sigma_mae" : (diff[:, :, 2] * active_mask).sum() / n_active,
+            "amp_mae"        : diff[:, :, 0].mean(),
+            "mu_mae"         : (diff[:, :, 1] * active_mask).sum() / n_active.clamp(min=1.0),
+            "sigma_mae"      : (diff[:, :, 2] * active_mask).sum() / n_active.clamp(min=1.0),
+            "gt_empty_batch" : (n_active == 0).to(pred_phys.dtype),
         }
 
     def _match_params(self, pred_gauss, gt_gauss, gt_phys_gauss, pred_phys_gauss):

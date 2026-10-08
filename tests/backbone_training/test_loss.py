@@ -162,8 +162,9 @@ def test_physical_errors_logged_without_active_param_term():
     out  = loss(pred, param_tensor(2, 2, 6, 6, seed=1))
 
     assert set(out["components"].keys()) == {"mse_curve"}
-    assert set(out["physical"].keys())   == {"amp_mae", "mu_mae", "sigma_mae"}
+    assert set(out["physical"].keys())   == {"amp_mae", "mu_mae", "sigma_mae", "gt_empty_batch"}
     assert all(torch.isfinite(v).item() for v in out["physical"].values())
+    assert out["physical"]["gt_empty_batch"].item() == 0.0
 
     out["total_loss"].backward()
 
@@ -400,6 +401,21 @@ def test_presence_weights_absent_without_balance_or_param_term():
 
     assert not any(key.startswith("presence/") for key in constants(pred, gt)["monitor"])
     assert not any(key.startswith("presence/") for key in curve(pred, gt)["monitor"])
+
+
+def test_physical_errors_flag_a_batch_without_active_gt_slots():
+    """Verifies the parameter errors flag a batch whose ground truth has no active slot, where the metre errors are zero by construction."""
+    loss = build_loss(n_gaussians=2)
+    gt   = valid_param_tensor(2, 2, 5, 5, seed=52)
+
+    gt[:, 0] = 0.0
+    gt[:, 3] = 0.0
+
+    out = loss(valid_param_tensor(2, 2, 5, 5, seed=51), gt)
+
+    assert out["physical"]["gt_empty_batch"].item() == 1.0
+    assert out["physical"]["mu_mae"].item()         == 0.0
+    assert out["physical"]["sigma_mae"].item()      == 0.0
 
 
 class _TableRecorder(NullLogger):
