@@ -144,6 +144,15 @@ def test_a_different_seed_moves_the_scene(tmp_path, logger_stub):
     assert not np.array_equal(np.load(first.parameters_directory / "parameters.npy"), np.load(second.parameters_directory / "parameters.npy"))
 
 
+def test_pipeline_times_every_stage(tmp_path, logger_stub):
+    """Verifies every generation stage records its wall-clock duration for the completion table."""
+    pipeline = SyntheticDatasetPipeline(_tiny_config(tmp_path), logger=logger_stub)
+    pipeline.run()
+
+    assert list(pipeline.stage_seconds) == ["Parameter fields", "Profiles and observations", "Parameter run scoring", "Dataset writing"]
+    assert all(seconds >= 0.0 for seconds in pipeline.stage_seconds.values())
+
+
 def test_session_records_an_abort_in_its_log(tmp_path, monkeypatch):
     """Verifies a failing generation ends the session log with the error and an ABORTED banner."""
     from pipelines.processing.synthesis import pipeline as pipeline_module
