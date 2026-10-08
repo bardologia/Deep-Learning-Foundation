@@ -118,7 +118,7 @@ class ImageAeRunLoader(RunArtifactLoader):
         model.load_state_dict(ckpt["params"])
         model.eval()
 
-        dataset, grid, region, _global_crop, _arrays = self._build_dataset(
+        dataset, grid, region, _layout, _arrays = self._build_dataset(
             dataset_config = dataset_config,
             split_name     = config.split,
             n_gaussians    = dataset_config.n_gaussians,

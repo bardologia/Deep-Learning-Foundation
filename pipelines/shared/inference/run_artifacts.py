@@ -128,7 +128,12 @@ class RunArtifactLoader:
         if ckpt_x_axis.shape != z_axis.shape or not np.allclose(ckpt_x_axis, z_axis, rtol=1e-5, atol=1e-5):
             raise ValueError(f"Checkpoint '{ckpt_path}' was trained on z axis [{ckpt_x_axis[0]:.3f}, {ckpt_x_axis[-1]:.3f}] with {ckpt_x_axis.size} bins, but the persisted dataset config produces axis [{z_axis[0]:.3f}, {z_axis[-1]:.3f}] with {z_axis.size} bins; every z metric would be reported in the wrong units.")
 
-    def _build_dataset(self, dataset_config : DatasetConfig, split_name : str, n_gaussians : int, norm_stats : Stats, load_cube : bool, region_override : Optional[CropRegion] = None) -> Tuple[PatchDataset, GridInfo, CropRegion, CropRegion, dict]:
+    @staticmethod
+    def _axis_label(axis: np.ndarray) -> str:
+        """Returns a z axis rendered as its bounds in metres and its bin count."""
+        return f"[{axis[0]:.3f}, {axis[-1]:.3f}] m, {axis.size} bins"
+
+    def _build_dataset(self, dataset_config : DatasetConfig, split_name : str, n_gaussians : int, norm_stats : Stats, load_cube : bool, region_override : Optional[CropRegion] = None) -> Tuple[PatchDataset, GridInfo, CropRegion, Layout, dict]:
         """Builds the patch dataset and stitching grid of one split.
 
         Args:
@@ -136,28 +141,31 @@ class RunArtifactLoader:
             split_name      : Split to load ("train", "val", "test").
             n_gaussians     : Number of Gaussian components per pixel in the targets.
             norm_stats      : Normalization statistics fitted at training time.
-            load_cube   : Whether the full cube is loaded alongside the inputs, needed for curve-space metrics.
-            region_override : Wider crop replacing the stored split region, used to extend a cross-validation fold over its guard bands.
+            load_cube       : Whether the full cube is loaded alongside the inputs, needed for curve-space metrics.
+            region_override : Wider crop replacing the stored split region, used to extend a cross-validation fold over its guard bands or to score one region of a split stored as several.
 
         Returns:
             Tuple of the patch dataset, the patch grid describing the tiling of
-            the region, the region actually loaded, the dataset's global crop,
-            and the raw split arrays keyed by array name.
+            the region, the region actually loaded, the dataset layout of the
+            preprocessing run, and the raw split arrays keyed by array name.
 
         Raises:
-            ValueError : The split is not a single contiguous region, so stitching is undefined, or the override does not contain the stored region.
+            ValueError : No override is given and the split is not a single contiguous region, so stitching is undefined, or the override contains none of the split's stored regions.
         """
         layout  = Layout(dataset_config.preprocessing_run_directory, logger=self.logger, parameters_path=dataset_config.parameters_path)
         cropper = Cropper(layout, dataset_config.split_regions, logger=self.logger, secondary_labels=dataset_config.secondary_labels)
 
         regions = dataset_config.split_regions.regions(split_name)
-        if len(regions) != 1:
-            raise ValueError(f"Inference requires a single contiguous region for split '{split_name}'; found {len(regions)} disjoint regions. Stitching is only defined over one rectangular crop.")
 
-        region = regions[0]
-        if region_override is not None:
-            if not region_override.contains(region):
-                raise ValueError(f"region_override {region_override.as_tuple()} must contain the stored '{split_name}' region {region.as_tuple()}; the override only widens the inferred crop, it never relocates it.")
+        if region_override is None:
+            if len(regions) != 1:
+                raise ValueError(f"Inference requires a single contiguous region for split '{split_name}'; found {len(regions)} disjoint regions. Stitching is only defined over one rectangular crop.")
+
+            region = regions[0]
+        else:
+            if not any(region_override.contains(stored) for stored in regions):
+                raise ValueError(f"region_override {region_override.as_tuple()} must contain the stored '{split_name}' region {[stored.as_tuple() for stored in regions]}; the override only widens the inferred crop, it never relocates it.")
+
             region = region_override
 
         arrays = cropper.load_split(region, load_cube=load_cube)
@@ -186,4 +194,4 @@ class RunArtifactLoader:
             aux           = arrays["aux"] if dataset_config.input_config.use_aux else None,
         )
 
-        return dataset, grid, region, layout.global_crop, arrays
+        return dataset, grid, region, layout, arrays
