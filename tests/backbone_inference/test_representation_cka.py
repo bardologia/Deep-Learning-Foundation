@@ -62,9 +62,39 @@ def test_debiasing_stays_low_for_independent_high_dimensional_features():
     assert value < 0.15
 
 
-def test_constant_features_score_zero():
-    """Constant features have no variance to align and score zero."""
-    assert _cka(np.ones((50, 4)), _features(n=50)) == 0.0
+def test_constant_features_have_undefined_cka():
+    """Constant features have no variance to align, so their CKA is undefined rather than a fake zero."""
+    assert np.isnan(_cka(np.ones((50, 4)), _features(n=50)))
+    assert np.isnan(_cka(np.zeros((50, 4)), _features(n=50)))
+
+
+def test_degenerate_layers_are_named_with_their_self_hsic():
+    """A dead and a constant layer are reported as degenerate, a varying layer is not."""
+    layers = {"dead": np.zeros((50, 4)), "constant": np.full((50, 4), 3.0), "live": _features(n=50)}
+
+    degenerate = CkaComputation.degenerate_layers(layers)
+
+    assert list(degenerate) == ["dead", "constant"]
+
+
+def test_degenerate_layer_is_left_out_of_alignment_and_divergence():
+    """A degenerate layer's NaN row neither lowers the alignment nor reads as a divergence depth."""
+    shared = _features(seed=21)
+    layers = {"live": shared, "dead": np.zeros((200, 8))}
+
+    matrix            = CkaComputation.cross_matrix(layers, {"live": shared})
+    forward, backward = CkaComputation.best_match_profiles(matrix)
+
+    assert np.isnan(matrix[1, 0])
+    assert np.isnan(forward[1])
+    assert CkaComputation.alignment_score(matrix) == pytest.approx(1.0)
+    assert CkaComputation.divergence_depth(forward) is None
+
+
+def test_alignment_of_a_fully_degenerate_side_is_refused():
+    """With no defined best match on one side the alignment is undefined and raises."""
+    with pytest.raises(ValueError, match="degenerate"):
+        CkaComputation.alignment_score(np.full((2, 3), np.nan))
 
 
 def test_best_match_profiles_and_divergence_depth():
