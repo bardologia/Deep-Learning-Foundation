@@ -575,7 +575,7 @@ class FlowLibrary:
             },
             {
                 "id": "schedule", "title": "Warmup, cosine schedule, curriculum", "phase": "Schedule & curriculum",
-                "note": "Each group's effective LR is its base rate times the per-epoch cosine factor (T = scheduler.epochs, which ConfigFactory installs from training.epochs = 60 unless scheduler_epochs is set, so the standalone SchedulerConfig default of 100 is never what a run gets; eta_min = 1e-6) times the per-step warmup factor (200 steps from start factor 0.1); at swap epoch 15 the loss curriculum moves from the warmup objective to the complete objective, and with the curriculum disabled the complete objective runs from the first epoch.",
+                "note": "Each group's effective LR is its base rate times the per-epoch cosine factor (T = scheduler.epochs, which ConfigFactory installs from training.epochs = 60 unless scheduler_epochs is set, so the standalone SchedulerConfig default of 100 is never what a run gets; eta_min = 1e-6) times the per-step warmup factor (warmup_fraction = 0.03 of the total optimiser steps, resolved into a step count at train start, from start factor 0.1); at swap epoch 15 the loss curriculum moves from the warmup objective to the complete objective, and with the curriculum disabled the complete objective runs from the first epoch.",
                 "inputs": [], "outputs": ["eta"],
                 "lines": [
                     [{"tex": r"F(t) = \tfrac{\eta_{\min}}{\eta_0} + \tfrac12\big(1 - \tfrac{\eta_{\min}}{\eta_0}\big)\big(1 + \cos\tfrac{\pi\min(t,T)}{T}\big)"}],
@@ -824,11 +824,11 @@ class FlowLibrary:
             },
             {
                 "id": "pae_schedule", "title": "Warmup and cosine schedule", "phase": "E - Optimiser step",
-                "note": "Each group's effective LR is its base rate times the cosine-annealing factor toward eta_min = 1e-6 over the epoch horizon T = scheduler.epochs, which the entry point resolves to training.epochs = 60, times a linear warmup ramping from warmup_start_factor = 0.1 over warmup_steps = 200 optimiser steps.",
+                "note": "Each group's effective LR is its base rate times the cosine-annealing factor toward eta_min = 1e-6 over the epoch horizon T = scheduler.epochs, which the entry point resolves to training.epochs = 60, times a linear warmup ramping from warmup_start_factor = 0.1 over warmup_fraction = 0.03 of the run's total optimiser steps, resolved into a step count at train start.",
                 "inputs": ["groups"], "outputs": ["eta"],
                 "lines": [
                     [{"tex": r"F(t) = \tfrac{\eta_{\min}}{\eta_0} + \tfrac12\big(1 - \tfrac{\eta_{\min}}{\eta_0}\big)\big(1 + \cos\tfrac{\pi\min(t,T)}{T}\big),\quad \eta_{\min} = 10^{-6},\ T = 60"}],
-                    [{"id": "eta", "tex": r"\eta_{\mathrm{eff}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\eta_0\,F(t)\,f_{\mathrm{w}}(s),\qquad f_{\mathrm{w}}(s) = \alpha_0 + (1-\alpha_0)\tfrac{s}{S},\ \ \alpha_0 = 0.1,\ S = 200"}],
+                    [{"id": "eta", "tex": r"\eta_{\mathrm{eff}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\eta_0\,F(t)\,f_{\mathrm{w}}(s),\qquad f_{\mathrm{w}}(s) = \alpha_0 + (1-\alpha_0)\tfrac{s}{S},\ \ \alpha_0 = 0.1,\ S = \mathrm{round}(0.03\,N_{\mathrm{steps}})"}],
                 ],
             },
             {
@@ -938,11 +938,11 @@ class FlowLibrary:
             },
             {
                 "id": "iae_schedule", "title": "Warmup and cosine schedule", "phase": "Schedule & checkpoint",
-                "note": "Each group's effective LR is its base rate times the per-epoch cosine factor (T = scheduler.epochs, resolved by the entry point to training.epochs = 60, eta_min = 1e-6) times the per-step linear warmup factor (200 steps, start factor 0.1).",
+                "note": "Each group's effective LR is its base rate times the per-epoch cosine factor (T = scheduler.epochs, resolved by the entry point to training.epochs = 60, eta_min = 1e-6) times the per-step linear warmup factor (warmup_fraction = 0.03 of the total optimiser steps, resolved into a step count at train start, start factor 0.1).",
                 "inputs": [], "outputs": ["eta"],
                 "lines": [
                     [{"tex": r"F(t) = \tfrac{\eta_{\min}}{\eta_0} + \tfrac12\big(1 - \tfrac{\eta_{\min}}{\eta_0}\big)\big(1 + \cos\tfrac{\pi\min(t,T)}{T}\big),\quad T = 60,\ \eta_{\min} = 10^{-6}"}],
-                    [{"id": "eta", "tex": r"\eta_{\mathrm{eff}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\eta_0\cdot F(t)\cdot f_{\mathrm{w}}(s),\qquad f_{\mathrm{w}}(s) = \alpha_0 + (1-\alpha_0)\tfrac{s}{S},\ \ \alpha_0 = 0.1,\ S = 200"}],
+                    [{"id": "eta", "tex": r"\eta_{\mathrm{eff}}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\eta_0\cdot F(t)\cdot f_{\mathrm{w}}(s),\qquad f_{\mathrm{w}}(s) = \alpha_0 + (1-\alpha_0)\tfrac{s}{S},\ \ \alpha_0 = 0.1,\ S = \mathrm{round}(0.03\,N_{\mathrm{steps}})"}],
                 ],
             },
             {

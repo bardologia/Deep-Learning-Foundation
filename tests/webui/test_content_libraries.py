@@ -9,6 +9,7 @@ and real configuration fields.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import shutil
@@ -16,6 +17,8 @@ import subprocess
 
 
 import pytest
+
+from configuration.training.general.optimization import WarmupConfig
 
 from equation_library        import EquationLibrary
 from flow_library            import FlowLibrary
@@ -186,6 +189,18 @@ def test_flow_sketch_catalogue_resolves_under_the_name_the_walkthrough_reads():
     assert set(sketches) == set(re.findall(r"^  (\w+): \{$", text, re.M))
     assert all(sketch["tip"] and sketch["markup"] for sketch in sketches.values())
     assert any(sketch["animated"] for sketch in sketches.values())
+
+
+def test_lr_warmup_content_follows_the_warmup_fraction_field(flows, equations):
+    """Schedule notes, formulas, sketch tooltips and the LR animation describe the warmup by the warmup_fraction field WarmupConfig carries."""
+    js      = WEBUI_ROOT / "static" / "js"
+    names   = {item.name for item in dataclasses.fields(WarmupConfig)}
+    stated  = f"warmup_fraction = {WarmupConfig().warmup_fraction}"
+    sources = {"flows": json.dumps(flows), "equations": json.dumps(equations), "flow_sketches.js": (js / "flow_sketches.js").read_text(), "process_anim.js": (js / "process_anim.js").read_text()}
+
+    assert "warmup_fraction" in names and "warmup_steps" not in names
+    assert sorted(name for name, text in sources.items() if re.search(r"(?<!n_)warmup_steps|\bS = 200\b|\bWS = 200\b|tfrac\{t\}\{200\}", text)) == []
+    assert sorted(name for name, text in sources.items() if stated not in text) == []
 
 
 
