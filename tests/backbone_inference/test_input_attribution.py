@@ -19,6 +19,7 @@ from pipelines.backbone.inference.probes                     import PredictionCu
 from tools.metrics.scoring                                   import RankCorrelation
 
 from tests.backbone_inference._helpers import StageLogger, build_run_directory
+from tests.conftest                    import RecordingLogger
 
 
 WINDOW = 16
@@ -60,7 +61,7 @@ def _windows(n_channels: int = 3, n_probes: int = 2) -> torch.Tensor:
 
 def test_gradient_attribution_concentrates_on_the_used_channel():
     """All amplitude and centre importance lands on the single channel the model reads."""
-    importance = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows())
+    importance, _kept = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows())
 
     assert importance["amp"]["share"][0] == pytest.approx(1.0)
     assert importance["amp"]["share"][1] == pytest.approx(0.0)
@@ -71,7 +72,7 @@ def test_gradient_attribution_concentrates_on_the_used_channel():
 
 def test_gradient_attribution_constant_family_is_nan():
     """A parameter family with no input dependence reports NaN importance."""
-    importance = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows())
+    importance, _kept = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows())
 
     assert np.all(np.isnan(importance["sigma"]["share"]))
     assert np.all(np.isnan(importance["sigma"]["grad_x_input"]))
@@ -89,12 +90,42 @@ def test_gradient_attribution_fully_dead_model_raises():
         GradientAttribution(_ConstantModel(), WINDOW).channel_importance(_windows())
 
 
+def test_gradient_attribution_counts_the_probes_each_family_kept():
+    """Families with an input gradient keep every probe, while the constant family keeps none."""
+    _importance, kept = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows(n_probes=3))
+
+    assert kept["amp"] == {"share": 3, "grad_x_input": 3}
+    assert kept["sigma"] == {"share": 0, "grad_x_input": 0}
+
+
+def test_gradient_attribution_refuses_a_non_finite_gradient():
+    """A NaN input gradient raises naming the family instead of silently dropping the probe."""
+    class _NanModel(torch.nn.Module):
+        """Model whose every output is the first input channel times NaN, so its gradient is NaN."""
+        def forward(self, x):
+            """Returns NaN-scaled copies of channel 0, shape (batch, 3, H, W)."""
+            return (x[:, :1] * float("nan")).expand(-1, 3, -1, -1)
+
+    with pytest.raises(ValueError, match="predicted amp at probe window 0 is non-finite"):
+        GradientAttribution(_NanModel(), WINDOW).channel_importance(_windows())
+
+
+def test_dropped_probes_are_warned_per_family(tmp_path):
+    """Only the family that left probes out is named, with the dropped and kept counts."""
+    logger = RecordingLogger()
+    run    = InputAttributionRun(tmp_path, InputAttributionConfig(), logger)
+
+    run._warn_dropped_probes({"amp": {"share": 4, "grad_x_input": 4}, "sigma": {"share": 1, "grad_x_input": 1}}, 4)
+
+    assert logger.messages == [("warning", f"{tmp_path.name}: gradient attribution of sigma: 3/4 probes had a zero gradient (share over 1, gradient x input over 1 probes)")]
+
+
 def test_grad_x_input_downweights_quiet_channels():
     """Plain gradient share stays balanced while gradient-times-input follows the channel magnitudes."""
     windows        = _windows()
     windows[:, 1] *= 0.01
 
-    importance = GradientAttribution(_TwoChannelModel(), WINDOW).channel_importance(windows)
+    importance, _kept = GradientAttribution(_TwoChannelModel(), WINDOW).channel_importance(windows)
 
     share = importance["amp"]["share"]
     gxi   = importance["amp"]["grad_x_input"]
@@ -107,8 +138,8 @@ def test_grad_x_input_downweights_quiet_channels():
 
 def test_combined_averages_only_live_families():
     """Combining across families skips the all-NaN family and stays finite."""
-    importance = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows())
-    combined   = GradientAttribution.combined(importance, "share")
+    importance, _kept = GradientAttribution(_ChannelZeroModel(), WINDOW).channel_importance(_windows())
+    combined          = GradientAttribution.combined(importance, "share")
 
     assert combined[0] == pytest.approx(1.0)
     assert np.isfinite(combined).all()
