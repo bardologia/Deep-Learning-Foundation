@@ -86,7 +86,7 @@ def test_the_browser_download_helper_lives_in_one_module():
 
 
 def test_the_cube_explorer_delegates_its_downloads():
-    """The cube explorer's PNG and CSV downloads all run through the shared exporter."""
+    """The cube explorer's PNG, CSV and story exports all run through the shared exporter."""
     text = (JS_DIR / "cube_view.js").read_text(encoding="utf-8")
 
     for call in ("FigureExport.download(", "FigureExport.saveCanvas(", "FigureExport.saveBitmap("):

@@ -31,7 +31,11 @@ names the profiled pixel's seed std. The selective-prediction mask paints only t
 coverage keeps, and its Play sweep runs the coverage down to 5% and back until the view, the tab or
 the mask is left. The timeline replays one cut at the shared focus across the run's sibling stamps,
 starting on the current one, never draws a frame or listing that lands late, names a stamp without
-the chosen source, and stops playing when its view or the tab is left.
+the chosen source, and stops playing when its view or the tab is left. A #/cube/<state> link reopens
+the cube, view, locked pixel, metric layer, value space and colormap, loads another cube first when it
+names one, and says so when its view is hidden or unknown or its cube is outside the runs root. The
+story recorder keeps named steps with their link state and a snapshot, replays them in order, copies
+their links, exports the snapshots through the shared exporter and stops playing with the tab.
 """
 
 from __future__ import annotations
@@ -891,3 +895,144 @@ def test_timeline_controls_are_on_the_page_once_and_wired_to_the_cube_view():
     for ref in ("source", "axis", "play", "pos", "at", "canvas", "label"):
         assert html.count(f'id="cube-timeline-{ref}"') == 1, ref
         assert re.search(rf'{ref}\s*: document\.getElementById\("cube-timeline-{ref}"\)', app), ref
+
+
+@NEEDS_JS
+def test_state_param_round_trips_the_cube_view_pixel_layer_space_and_colormap():
+    """The link state names the cube, view, value space, colormap, locked pixel (else the focus) and metric layer, and parses back to the same state."""
+    observed = _check("deepLink")
+
+    assert "row%3D2%26col%3D3" in observed["plain"]
+    assert observed["query"] == {"id": "/runs/a/inference/stamp_1", "view": "metrics", "space": "physical", "cmap": "jet", "row": "5", "col": "1", "layer": "pixel_mse"}
+    assert observed["parsed"] == {"id": "/runs/a/inference/stamp_1", "view": "metrics", "row": 5, "col": 1, "layer": "pixel_mse", "space": "physical", "cmap": "jet"}
+
+
+@NEEDS_JS
+def test_state_param_refuses_links_without_a_cube_and_says_so_for_unreadable_ones():
+    """A link without a cube id or param opens nothing, and one that cannot be decoded raises a warning instead of failing the tab."""
+    assert _check("deepLink")["refused"] == {"noId": None, "empty": None, "broken": None, "toasts": ["The cube link could not be read."]}
+
+
+@NEEDS_JS
+def test_a_link_to_the_loaded_cube_restores_its_settings_pixel_layer_and_view():
+    """Applying a link sets a known colormap and space, locks the pixel clamped into the cube, picks the layer and opens the view."""
+    applied = _check("deepLink")["applied"]
+
+    assert applied["calls"] == ["cmap viridis", "space normalized", "follow 7,0,0.08333333333333333,0.9375", "lock 7,0", "layer pixel_r2", "view metrics"]
+    assert applied["toasts"] == [] and applied["pending"] is None
+
+
+@NEEDS_JS
+def test_a_link_naming_a_hidden_or_unknown_view_opens_without_it_and_says_so():
+    """An unknown colormap or layer is skipped, and a view whose button is hidden or that does not exist leaves the current view with a warning."""
+    observed = _check("deepLink")
+
+    assert observed["hidden"] == {"calls": [], "toasts": ["This cube has no Parameters view; the link opened without it."]}
+    assert observed["unknown"] == {"calls": [], "toasts": ["The link names an unknown view 'sideways'; it opened without it."]}
+
+
+@NEEDS_JS
+def test_a_link_to_another_cube_loads_it_once_the_current_load_ends_and_applies_after_it():
+    """A link to another listed cube waits for a running load, then selects it, and its state applies once that load finishes; a failed load drops it."""
+    observed = _check("deepLink")
+
+    assert observed["waiting"] == {"calls": [], "toasts": [], "pending": True}
+    assert observed["selected"] == {"calls": ["select /runs/a/inference/stamp_2"], "toasts": [], "pending": True}
+    assert observed["failed"] == {"calls": [], "toasts": [], "pending": None}
+    assert observed["polled"] == {"calls": ["display", "follow 3,4,0.75,0.4375", "lock 3,4"], "toasts": [], "polling": False, "pending": None}
+
+
+@NEEDS_JS
+def test_a_link_outside_the_runs_root_is_refused_and_reentering_the_tab_applies_a_link():
+    """A cube missing from the listing is refused with a warning, and entering the tab again with a link refreshes the strip and applies it."""
+    observed = _check("deepLink")
+
+    assert observed["foreign"] == {"calls": [], "toasts": ["The linked cube is not in the current runs root."], "pending": None}
+    assert observed["reentered"] == {"calls": ["strip", "view explorer", "follow 1,1,0.25,0.1875", "lock 1,1"], "toasts": []}
+
+
+@NEEDS_JS
+def test_story_records_named_steps_with_snapshots_and_lists_them():
+    """Adding steps stores each link state under a trimmed or numbered name, keeps a snapshot when the view shows one, and lists every step with its buttons."""
+    observed = _check("story")
+
+    assert observed["emptyPlay"] == {"toasts": ["The story has no steps yet."], "timers": 0}
+    assert observed["opened"] == {"hidden": False, "hint": "No steps yet; set up a view and press Add step."}
+
+    added = observed["added"]
+    assert [step["name"] for step in added["steps"]] == ["overview", "step 2"]
+    assert added["steps"][0]["param"].endswith("row=2&col=3&layer=pixel_mse")
+    assert added["steps"][1]["param"].endswith("row=5&col=1&layer=pixel_mse")
+    assert added["snapshots"] == 1 and added["name"] == ""
+    assert added["rows"] == [["1. overview", "Go", "Copy link", "Remove"], ["2. step 2", "Go", "Copy link", "Remove"]]
+    assert added["hint"] == "2 steps · snapshots last until the page reloads"
+
+
+@NEEDS_JS
+def test_story_exports_snapshots_through_the_shared_exporter_and_copies_step_links():
+    """Snapshots download under numbered, slugged names, and a step's link points at the cube route with its state."""
+    observed = _check("story")
+
+    assert observed["exported"] == [{"name": "story_01_overview.png", "source": "data:image/png;base64,AAA"}]
+    assert observed["linked"] == ["http://host:8772/#/cube/id%3D%252Fruns%252Fa%252Finference%252Fstamp_1%26view%3Dexplorer%26space%3Dphysical%26cmap%3Djet%26row%3D5%26col%3D1%26layer%3Dpixel_mse"]
+    assert observed["none"] == {"saved": 0, "toast": ["warn"]}
+
+
+@NEEDS_JS
+def test_story_go_and_play_replay_the_steps_in_order_and_stop_with_the_tab():
+    """Go applies one step, Play applies every step in order and relabels its button, and leaving the tab stops it."""
+    observed = _check("story")
+
+    assert observed["went"][-2:] == ["layer pixel_mse", "view explorer"] and "lock 2,3" in observed["went"]
+    assert observed["playing"] == {"label": "Stop", "timers": 1}
+    assert "lock 2,3" in observed["first"]
+    assert observed["stopped"] == {"label": "Play", "timer": None, "timers": 0}
+    assert observed["replayed"] == {"calls": ["lock 2,3", "lock 5,1"], "label": "Play"}
+
+
+@NEEDS_JS
+def test_story_removes_and_clears_steps_and_refuses_without_a_cube():
+    """Removing a step drops it and its snapshot, Clear empties the story, and adding or linking without a loaded cube warns."""
+    observed = _check("story")
+
+    assert observed["removed"] == {"names": ["step 2"], "snapshots": 0, "rows": 1}
+    assert observed["cleared"] == {"steps": 0, "rows": 0, "hint": "No steps yet; set up a view and press Add step."}
+    assert observed["unloaded"] == {"toasts": ["Load a cube first.", "Load a cube first."], "steps": 0}
+
+
+@NEEDS_JS
+def test_links_are_shown_when_the_clipboard_is_unavailable():
+    """On a page without clipboard access the link is shown in a toast instead of failing."""
+    insecure = _check("story")["insecure"]
+
+    assert len(insecure) == 1 and insecure[0].startswith("http://host:8772/#/cube/id%3D")
+
+
+@NEEDS_JS
+def test_story_snapshot_takes_the_visible_canvas_else_the_visible_image():
+    """A snapshot prefers a drawn, visible canvas of the open view, else copies its visible image, else takes none."""
+    assert _check("story")["snapshots"] == {"canvas": "canvas", "img": "copy 6x8", "none": None, "drawn": ["map"]}
+
+
+def test_link_and_story_controls_are_on_the_page_once_and_wired_to_the_cube_view():
+    """The Link and Story buttons sit with the colormap in the mode bar, the story panel carries every control once, and app.js hands each to the cube view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    tools = html.split('<span class="cube-modes__tools">')[1].split("</span>")[0]
+    assert 'id="cube-link"' in tools and 'id="cube-story-toggle"' in tools and 'id="cube-cmap"' in tools
+
+    assert html.count('id="cube-link"') == 1
+    assert re.search(r'linkBtn\s*: document\.getElementById\("cube-link"\)', app)
+
+    refs = {"toggle": "story-toggle", "panel": "story", "name": "story-name", "add": "story-add", "play": "story-play", "export": "story-export", "clear": "story-clear", "hint": "story-hint", "list": "story-list"}
+    for ref, suffix in refs.items():
+        assert html.count(f'id="cube-{suffix}"') == 1, suffix
+        assert re.search(rf'{ref}\s*: document\.getElementById\("cube-{suffix}"\)', app), ref
+
+
+def test_the_cube_route_hands_its_link_state_to_the_cube_view():
+    """The router passes the #/cube/<state> parameter to the cube view's enter."""
+    app = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    assert 'if (route === "cube") this.cubeView.enter(param);' in app
