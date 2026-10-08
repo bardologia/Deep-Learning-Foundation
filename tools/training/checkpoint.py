@@ -385,6 +385,11 @@ class WeightSwa:
 class TrainerState:
     """Captures and restores the complete trainer state needed to resume a run.
 
+    The saved payload records the batch geometry the restored schedule is only
+    valid under: a resume under another micro-batch, accumulation window, rank
+    count or LR scale would continue the warmup position, the current learning
+    rates and the step counts of a different run, so it is refused.
+
     Attributes:
         FILENAME : File name of the rolling trainer state inside a run directory.
     """
@@ -395,6 +400,39 @@ class TrainerState:
     def path(run_dir) -> Path:
         """Returns the trainer-state path inside a run directory."""
         return Path(run_dir) / TrainerState.FILENAME
+
+    @staticmethod
+    def batch_geometry(trainer) -> dict:
+        """Returns the settings the saved schedule state depends on: the loader's micro-batch (None for an in-memory batch list), accumulation window, rank count and the batch-rule LR scale."""
+        return {
+            "batch_size"         : trainer.micro_batch,
+            "accumulation_steps" : int(trainer.accumulation_steps),
+            "world_size"         : int(trainer.distributed.world_size),
+            "lr_scale"           : float(trainer.config.optimizer.lr_scale),
+        }
+
+    @staticmethod
+    def _check_geometry(trainer, state: dict, path: Path) -> None:
+        """Refuses a saved state whose batch geometry differs from the trainer's.
+
+        Args:
+            trainer : Trainer about to be repopulated.
+            state   : Payload read from the trainer-state file.
+            path    : Path of that file, named in the errors.
+
+        Raises:
+            KeyError   : If the state predates batch-geometry recording, since the schedule it restores cannot be checked.
+            ValueError : If any geometry setting differs, naming each one with its saved and current value.
+        """
+        if "batch_geometry" not in state:
+            raise KeyError(f"trainer state {path} records no batch geometry; it was saved before the micro-batch, accumulation window, rank count and LR scale were captured, so the schedule it restores cannot be checked against this run. Start a fresh run instead of resuming it")
+
+        saved   = state["batch_geometry"]
+        current = TrainerState.batch_geometry(trainer)
+        changed = [f"{key} {saved[key]} -> {current[key]}" for key in current if saved[key] != current[key]]
+
+        if changed:
+            raise ValueError(f"resuming from {path} would continue under a different batch geometry ({', '.join(changed)}): the restored warmup position, learning rates and step counts were computed for the saved values. Resume with the recorded settings, or start a fresh run")
 
     @staticmethod
     def _rng_state(loader_generator) -> dict:
@@ -441,6 +479,7 @@ class TrainerState:
         return {
             "epoch"          : int(epoch),
             "global_step"    : int(trainer.global_step),
+            "batch_geometry" : TrainerState.batch_geometry(trainer),
             "model"          : trainer.model.state_dict(),
             "optimizer"      : trainer.optimizer.state_dict(),
             "ema"            : trainer.ema.state_dict(),
@@ -474,12 +513,16 @@ class TrainerState:
 
         Raises:
             FileNotFoundError : If no trainer state exists at the path.
+            KeyError          : If the state predates batch-geometry recording.
+            ValueError        : If the state was saved under another micro-batch, accumulation window, rank count or LR scale.
         """
         path = Path(path)
         if not path.is_file():
             raise FileNotFoundError(f"resume=True but no trainer state exists at {path}; start a fresh run or point run_name at a run that saved state")
 
         state = torch.load(str(path), map_location="cpu", weights_only=False)
+
+        TrainerState._check_geometry(trainer, state, path)
 
         trainer.model.load_state_dict(state["model"])
         trainer.optimizer.load_state_dict(state["optimizer"])
