@@ -186,7 +186,7 @@ class CubeSweep {
     if (this.axis === "row") {
       return `/api/cubes/slice?id=${id}&source=${source}&axis=row&row=${idx}&col=0&space=${space}&cmap=${cmap}`;
     }
-    return `/api/cubes/slice?id=${id}&source=${source}&axis=range&row=0&col=${idx}&space=${space}&cmap=${cmap}`;
+    return `/api/cubes/slice?id=${id}&source=${source}&axis=col&row=0&col=${idx}&space=${space}&cmap=${cmap}`;
   }
 
   _axisSteps(meta) {

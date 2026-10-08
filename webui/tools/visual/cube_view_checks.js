@@ -380,6 +380,19 @@ class CubeViewChecks {
     return { calls, value, moved, missing, layers };
   }
 
+  async sweepUrls() {
+    const { CubeSweep } = this.classes;
+    const host          = { selectedId: "stamp/a", space: "physical", cmap: "jet" };
+
+    const urls = {};
+    ["z", "row", "col"].forEach((axis) => {
+      const sweep = new CubeSweep({ axis }, host);
+      sweep.steps = 5;
+      urls[axis]  = sweep._url("pred", 3);
+    });
+    return urls;
+  }
+
   async pixel() {
     const { CubeParams } = this.classes;
     const pending = new Map();
