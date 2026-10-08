@@ -851,6 +851,41 @@ def test_kernel_masks_freeze_parameter_groups():
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_kernels_return_the_loss_trajectory_beside_the_fit():
+    """Verifies both kernels' fit returns the per-step loss and the late per-pixel loss, and that calling the kernel returns the same fit alone."""
+    import jax
+    import jax.numpy as jnp
+    from pipelines.processing.param_extraction.sigma.extractor import AdamConvergence
+    from pipelines.processing.param_extraction.sigma.kernels   import PmapSigmaAdamKernel, SigmaAdamKernel, SigmaScan
+
+    H      = 60
+    z_axis = np.linspace(-10.0, 30.0, H, dtype=np.float32)
+    target = np.exp(-((z_axis - 5.0) ** 2) / (2.0 * 4.0 ** 2)).astype(np.float32)
+    prof   = np.tile(target[None, :], (3, 1))
+    ones   = jnp.float32(1.0)
+    args   = (
+        jnp.array(np.full((3, 1), 0.6, dtype=np.float32)), jnp.array(np.full((3, 1), 2.0, dtype=np.float32)), jnp.array(np.full((3, 1), 6.0, dtype=np.float32)),
+        jnp.array(z_axis), jnp.array(prof), ones, ones, ones,
+        jnp.float32(z_axis[0]), jnp.float32(z_axis[-1]), jnp.float32(0.5), jnp.float32(20.0),
+        50, 0.05, 0.9, 0.999,
+    )
+
+    assert SigmaScan.mark_step(50) == 45
+
+    for kernel in (SigmaAdamKernel(), PmapSigmaAdamKernel(jax.devices()[:1])):
+        a_f, m_f, s_f, e_f, loss_sum, loss_mark = [np.array(out) for out in kernel.fit(*args)]
+        called                                  = [np.array(out) for out in kernel(*args)]
+
+        assert loss_sum.shape  == (50,)
+        assert loss_mark.shape == (3,)
+        assert loss_sum[-1] < loss_sum[0]
+        assert np.all(loss_mark >= e_f)
+        assert len(called) == 4
+        assert np.allclose(called[3], e_f)
+        assert 0 <= AdamConvergence.still_improving(loss_mark, e_f) <= 3
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
     """Verifies one extractor run yields every (mode, lambda) result, with lambda changing only the penalised score."""
     rng      = np.random.default_rng(0)
@@ -895,6 +930,11 @@ def test_group_extractor_shares_fits_across_modes_and_lambdas(logger, tmp_path):
 
     sigma_only, sigma_amp = results[("sigma", 1e-2)][1], results[("sigma_amp", 1e-2)][1]
     assert not np.allclose(sigma_only["mse_per_k"], sigma_amp["mse_per_k"], equal_nan=True)
+
+    assert sigma_only["adam_loss_curve"].shape     == (2, 40)
+    assert sigma_only["adam_improving_frac"].shape == (2,)
+    assert np.all(sigma_only["adam_loss_curve"][:, -1] <= sigma_only["adam_loss_curve"][:, 0])
+    assert np.all((sigma_only["adam_improving_frac"] >= 0.0) & (sigma_only["adam_improving_frac"] <= 1.0))
 
 
 @pytest.fixture(scope="module")
