@@ -104,7 +104,7 @@ def _result_and_metrics():
         "all_row_idx"   : np.arange(H),
     }
 
-    gm = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).compute(
+    gm = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).compute(
         z_indices   = indices["all_z_idx"],
         col_indices = indices["all_col_idx"],
         row_indices = indices["all_row_idx"],

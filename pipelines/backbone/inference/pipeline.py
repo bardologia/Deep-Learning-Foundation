@@ -257,7 +257,7 @@ class InferencePipeline:
         result.params_pred   = predicted.params
         result.params_source = "extracted"
         result.extract_r2    = predicted.fit_r2
-        result.extract_floor = self._extraction_floor(result, reference.params, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold)
+        result.extract_floor = self._extraction_floor(result, reference.params, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger)
 
         if cfg.save_cubes:
             np.save(meta.cube_dir / "params_pred.npy", predicted.params)
@@ -267,7 +267,7 @@ class InferencePipeline:
         logger.subsection(f"Extraction floor (same extractor on GT curves vs exact GT parameters) : μ MAE = {result.extract_floor['matched_mu_mae']:.4g}, σ MAE = {result.extract_floor['matched_sig_mae']:.4g}")
 
     @staticmethod
-    def _extraction_floor(result, reference_params: np.ndarray, z_axis_np: np.ndarray, n_gaussians: int, cpu_workers: int, active_amp_thr: float) -> dict:
+    def _extraction_floor(result, reference_params: np.ndarray, z_axis_np: np.ndarray, n_gaussians: int, cpu_workers: int, active_amp_thr: float, logger: Logger) -> dict:
         """Scores the extractor's own refit of the GT curves against the exact GT parameters.
 
         Args:
@@ -277,6 +277,7 @@ class InferencePipeline:
             n_gaussians      : Gaussian count K.
             cpu_workers      : Worker count for the metric computation.
             active_amp_thr   : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
+            logger           : Run logger handed to the metric calculator.
 
         Returns:
             Matched-Gaussian metrics describing the best accuracy the extractor could reach.
@@ -291,15 +292,15 @@ class InferencePipeline:
             pixel_cosine       = result.pixel_cosine,
             pixel_peak_err_idx = result.pixel_peak_err_idx,
             cube_directory     = result.cube_directory,
-            row_offset     = result.row_offset,
-            col_offset       = result.col_offset,
+            row_offset         = result.row_offset,
+            col_offset         = result.col_offset,
             params_pred        = reference_params,
             params_gt          = result.params_gt,
         )
 
-        return Metrics(floor, z_axis_np, n_gaussians, cpu_workers, active_amp_thr).matched_gaussian_metrics()
+        return Metrics(floor, z_axis_np, n_gaussians, cpu_workers, active_amp_thr, logger).matched_gaussian_metrics()
 
-    def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict) -> dict:
+    def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict, logger: Logger) -> dict:
         """Computes the core metric dictionary, annotates it with run provenance and writes metrics.json.
 
         Args:
@@ -309,6 +310,7 @@ class InferencePipeline:
             run       : Loaded run supplying the split, regions and track metadata.
             meta      : Run metadata resolving the metrics path.
             indices   : Slice-index arrays keyed by axis.
+            logger    : Run logger handed to the metric calculator.
 
         Returns:
             The metric dictionary, also written to disk.
@@ -316,10 +318,10 @@ class InferencePipeline:
 
         param_space = result.params_pred is not None and result.params_gt is not None
 
-        global_metrics = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold).compute(
-            z_indices      = indices["all_z_idx"],
-            col_indices     = indices["all_col_idx"],
-            row_indices        = indices["all_row_idx"],
+        global_metrics = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger).compute(
+            z_indices         = indices["all_z_idx"],
+            col_indices       = indices["all_col_idx"],
+            row_indices       = indices["all_row_idx"],
             param_space       = param_space,
             slot_organization = result.params_source == "model",
         )
@@ -386,7 +388,7 @@ class InferencePipeline:
             logger         : Logger for the result line.
         """
 
-        r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold).label_quality(run.full_curves)
+        r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger).label_quality(run.full_curves)
 
         result.label_r2 = r2_map
         global_metrics["label_quality_status"] = "computed"
@@ -658,7 +660,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Metrics]")
         indices        = self._compute_slice_indices(cfg, _N_z, _row, _col)
-        global_metrics = self._evaluate_metrics(cfg, result, z_axis_np, run, meta, indices)
+        global_metrics = self._evaluate_metrics(cfg, result, z_axis_np, run, meta, indices, logger)
         logger.subsection(f"Global metrics written : {meta.metrics_path}")
 
         self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics)

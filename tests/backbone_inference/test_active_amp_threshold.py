@@ -14,6 +14,8 @@ from pipelines.backbone.inference.failure_modes import FailureModes
 from pipelines.backbone.inference.metrics       import Metrics, Result
 from tools.metrics.gaussian_matching            import GaussianMatcher
 
+from tests.conftest import SilentLogger
+
 
 N_GAUSSIANS = 2
 N_Z         = 16
@@ -77,7 +79,7 @@ def _metrics(params_pred: np.ndarray, params_gt: np.ndarray, thr: float) -> dict
     """Returns the matched-Gaussian metrics of the cube pair at the given activity threshold."""
     z_axis = np.linspace(-20.0, 80.0, N_Z).astype(np.float32)
 
-    return Metrics(_result(params_pred, params_gt), z_axis, N_GAUSSIANS, 1, active_amp_thr=thr).matched_gaussian_metrics()
+    return Metrics(_result(params_pred, params_gt), z_axis, N_GAUSSIANS, 1, active_amp_thr=thr, logger=SilentLogger()).matched_gaussian_metrics()
 
 
 def test_raised_threshold_flips_hungarian_assignment():
