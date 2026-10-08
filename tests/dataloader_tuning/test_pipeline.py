@@ -272,8 +272,8 @@ def test_run_exits_with_reason_when_no_configuration_succeeds(tmp_path, monkeypa
 
     class FakeSweep:
         """Sweep stub replaying prerecorded out-of-memory records through the result callback."""
-        def __init__(self, benchmark, specs, on_result):
-            """Stores the per-result callback and ignores the benchmark and specs."""
+        def __init__(self, benchmark, specs, on_result, on_start):
+            """Stores the per-result callback and ignores the benchmark, specs and start callback."""
             self.on_result = on_result
         def run(self):
             """Replays the out-of-memory records and returns them."""
@@ -316,8 +316,8 @@ def test_run_selects_highest_throughput_config(tmp_path, monkeypatch):
 
     class FakeSweep:
         """Sweep stub replaying prerecorded successful records through the result callback."""
-        def __init__(self, benchmark, specs, on_result):
-            """Stores the per-result callback and ignores the benchmark and specs."""
+        def __init__(self, benchmark, specs, on_result, on_start):
+            """Stores the per-result callback and ignores the benchmark, specs and start callback."""
             self.on_result = on_result
         def run(self):
             """Replays the successful records and returns them."""
@@ -364,8 +364,8 @@ def _replay_sweeps(monkeypatch, phases: list):
 
     class ReplaySweep:
         """Sweep stub replaying the next prerecorded phase through the result callback."""
-        def __init__(self, benchmark, specs, on_result):
-            """Stores the per-result callback and ignores the benchmark and specs."""
+        def __init__(self, benchmark, specs, on_result, on_start):
+            """Stores the per-result callback and ignores the benchmark, specs and start callback."""
             self.on_result = on_result
 
         def run(self):
@@ -378,6 +378,28 @@ def _replay_sweeps(monkeypatch, phases: list):
             return phase
 
     monkeypatch.setattr("pipelines.dataloader_tuning.pipeline.DataLoaderSweep", ReplaySweep)
+
+
+def test_sweep_lines_carry_their_position_and_the_run_ends_with_a_summary(tmp_path, monkeypatch):
+    """Each result line says where it sits in its phase, and the run ends with ok and out-of-memory counts and a warning for a CPU-bound pick."""
+    config   = _config(tmp_path, batch_sizes=[256, 512], worker_counts=[2], refine=False, save_figures=False)
+    pipeline = DataLoaderTuningPipeline(config)
+    starving = {**_ok_record(256, 2, 4, True, 1000.0), "data_wait_fraction": 0.4, "feed_ratio": 0.5}
+    _replay_sweeps(monkeypatch, [[starving, {"status": "oom", "batch_size": 512, "num_workers": 2, "prefetch_factor": 4, "pin_memory": True, "persistent_workers": True}]])
+
+    subsections = []
+    tables      = []
+    warnings    = []
+    pipeline.logger.subsection = subsections.append
+    pipeline.logger.kv_table   = lambda data, title=None: tables.append((title, dict(data)))
+    pipeline.logger.warning    = warnings.append
+
+    pipeline.run()
+
+    assert subsections[0].startswith("[main 1/2] bs=  256 workers=2")
+    assert subsections[1] == "[main 2/2] bs=512 workers=2 -> oom"
+    assert ("Sweep summary", {"Main sweep": "1 ok, 1 out of memory", "Refinement": "not run", "Saturated": "0 of 1 working specs"}) in tables
+    assert any(message.startswith("No configuration reached the 5% data-wait target") for message in warnings)
 
 
 def test_a_sweep_with_no_working_configuration_records_its_measurements(tmp_path, monkeypatch):

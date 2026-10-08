@@ -130,6 +130,17 @@ def test_sweep_on_result_callback_invoked_per_record():
     assert len(collected) == 2
 
 
+def test_sweep_announces_each_spec_before_measuring_it():
+    """Verifies the start callback sees every spec before its result arrives, so a hang names the spec it belongs to."""
+    specs  = [LoaderSpec(64, 1), LoaderSpec(64, 2)]
+    events = []
+
+    sweep = DataLoaderSweep(FakeBenchmark({s.label: 100.0 for s in specs}), specs, on_result=lambda record: events.append(("result", record["num_workers"])), on_start=lambda spec: events.append(("start", spec.num_workers)))
+    sweep.run()
+
+    assert events == [("start", 1), ("result", 1), ("start", 2), ("result", 2)]
+
+
 def test_sweep_marks_oom_specs_and_continues():
     """Verifies an out-of-memory spec is recorded as 'oom' without aborting the sweep."""
     specs   = [LoaderSpec(64, 1), LoaderSpec(512, 1)]
