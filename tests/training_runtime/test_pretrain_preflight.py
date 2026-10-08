@@ -1,7 +1,8 @@
 """Tests for the pre-training preflight step wired into the train runner.
 
-Covers where preflight artefacts are written, the disabled no-op path and
-run directory resolution before the preflight is constructed.
+Covers where preflight artefacts are written, the refusal on a resumed run,
+the warning on a GPU other processes occupy, the disabled no-op path and run
+directory resolution before the preflight is constructed.
 """
 
 from __future__ import annotations
@@ -31,10 +32,11 @@ class _PretrainStub:
 class _TrainingStub:
     """Training settings stub with resume disabled."""
 
-    batch_size      : int  = 1
-    num_workers     : int  = 0
-    prefetch_factor : int  = 2
-    resume          : bool = False
+    batch_size          : int  = 1
+    num_workers         : int  = 0
+    prefetch_factor     : int  = 2
+    resume              : bool = False
+    scale_lr_with_batch : bool = True
 
 
 @dataclass
@@ -147,6 +149,50 @@ def test_resumed_run_refuses_to_probe_and_records_the_refusal(tmp_path, monkeypa
 
     assert ">>> ABORTED pretrain" in written
     assert "[Aborted] RuntimeError: pretraining probes" in written
+
+
+def test_occupied_gpu_context_is_a_warning(tmp_path, monkeypatch):
+    """Verifies a CUDA context above a bare one is warned about in pretrain.log, naming the mask and the batch-size consequence."""
+    monkeypatch.setattr(preflight_module, "PretrainOrchestrator", _FakeOrchestrator)
+    monkeypatch.setattr(preflight_module.TrainStepMemoryProbe, "measure_context", staticmethod(lambda device: 3.25))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+
+    run_directory = tmp_path / "run_image_ae_x"
+
+    PretrainPreflight(
+        pretrain_config = _pretrain(find_batch_size=True),
+        training_config = _training(),
+        build_trainer   = lambda logger: None,
+        run_directory   = run_directory,
+        label           = "image_ae",
+    ).run()
+
+    written = (run_directory / "pretrain" / "logs" / "pretrain.log").read_text(encoding="utf-8")
+
+    assert "WARNING" in written
+    assert "CUDA context 3.25 GB on CUDA_VISIBLE_DEVICES=1 exceeds a bare context" in written
+    assert "smaller training.batch_size" in written
+
+
+def test_bare_gpu_context_is_not_warned(tmp_path, monkeypatch):
+    """Verifies a context within a bare CUDA context logs only the measurement."""
+    monkeypatch.setattr(preflight_module, "PretrainOrchestrator", _FakeOrchestrator)
+    monkeypatch.setattr(preflight_module.TrainStepMemoryProbe, "measure_context", staticmethod(lambda device: 0.4))
+
+    run_directory = tmp_path / "run_image_ae_x"
+
+    PretrainPreflight(
+        pretrain_config = _pretrain(find_batch_size=True),
+        training_config = _training(),
+        build_trainer   = lambda logger: None,
+        run_directory   = run_directory,
+        label           = "image_ae",
+    ).run()
+
+    written = (run_directory / "pretrain" / "logs" / "pretrain.log").read_text(encoding="utf-8")
+
+    assert "CUDA context before the probe builds anything: 0.40 GB" in written
+    assert "exceeds a bare context" not in written
 
 
 def test_disabled_preflight_creates_nothing(tmp_path, monkeypatch):

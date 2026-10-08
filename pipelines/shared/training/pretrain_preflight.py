@@ -11,6 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing  import Callable, Optional
 
+import os
+
 import torch
 
 from tools.monitoring.logger    import Logger
@@ -67,6 +69,25 @@ class PretrainPreflight:
         probes = ", ".join(self._enabled_probes())
 
         raise RuntimeError(f"pretraining probes ({probes}) cannot run on a run resuming from {TrainerState.FILENAME}: they would rewrite the recorded training.batch_size={self.training.batch_size}, num_workers/prefetch_factor or lr_multiplier under the restored optimizer, scheduler and warmup state. A run that probed records its probes switched off; pass --pretrain.<probe> false for each probe typed or recorded before that, or start a fresh run")
+
+    def _warn_occupied_device(self, logger: Logger, context_gb: float) -> None:
+        """Warns when the CUDA context measured before the probe exceeds a bare context, which means other processes hold memory on the GPU.
+
+        The context is read as total minus free memory, so memory held by a
+        neighbour process shrinks the budget the batch-size finder measures
+        against and can lower the batch size, and with the batch rule the
+        learning-rate scale, of the whole run.
+
+        Args:
+            logger     : Preflight logger receiving the warning.
+            context_gb : Device memory in GB occupied before the probe built anything.
+        """
+        if context_gb <= TrainStepMemoryProbe.CONTEXT_WARN_GB:
+            return
+
+        mask = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
+
+        logger.warning(f"CUDA context {context_gb:.2f} GB on CUDA_VISIBLE_DEVICES={mask} exceeds a bare context ({TrainStepMemoryProbe.CONTEXT_WARN_GB:g} GB): other processes are using this GPU and their memory counts against the probe budget, so the batch-size finder can settle on a smaller training.batch_size, and with scale_lr_with_batch={self.training.scale_lr_with_batch} a smaller learning-rate scale, than on a free GPU")
 
     def _build_context(self, logger: Logger, device: torch.device, context_gb: float) -> PretrainContext:
         """Builds the probe context around a freshly constructed trainer.
@@ -128,6 +149,7 @@ class PretrainPreflight:
             context_gb = TrainStepMemoryProbe.measure_context(device)
 
             logger.subsection(f"CUDA context before the probe builds anything: {context_gb:.2f} GB")
+            self._warn_occupied_device(logger, context_gb)
 
             orchestrator = PretrainOrchestrator(
                 pretrain_config = self.pretrain,

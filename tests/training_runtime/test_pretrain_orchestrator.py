@@ -143,8 +143,8 @@ def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch, tm
     assert any(kind == "trial" for kind, _ in order[:tune_index])
 
 
-def test_batch_finder_caps_ceiling_at_dataset_size(tmp_path):
-    """Verifies that the search ceiling never exceeds the dataset length."""
+def test_batch_finder_caps_ceiling_at_dataset_size(tmp_path, recording_logger):
+    """Verifies that the search ceiling never exceeds the dataset length, and that lowering it is a warning."""
     order    = []
     training = _training()
 
@@ -152,13 +152,14 @@ def test_batch_finder_caps_ceiling_at_dataset_size(tmp_path):
         pretrain_config = _pretrain(find_batch_size=True),
         training_config = training,
         build_context   = lambda: _context(order, training, dataset=list(range(3))),
-        logger          = _Logger(),
+        logger          = recording_logger,
         result_dir      = tmp_path,
         label           = "m",
     ).run()
 
     assert training.batch_size == 2
     assert [size for kind, size in order if kind == "trial"] == [1, 2]
+    assert ("warning", "Ceiling lowered from 8 to 3: the dataset holds 3 samples, so the batch-size finder cannot try the configured maximum") in recording_logger.messages
 
 
 def test_all_flags_off_is_a_noop(tmp_path):

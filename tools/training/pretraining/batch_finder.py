@@ -17,12 +17,15 @@ class TrainStepMemoryProbe:
     understate the true peak by roughly an order of magnitude.
 
     Attributes:
-        trainer       : Trainer supplying the optimizer, the loss and the AMP setting.
-        dataset       : Dataset the probe batches are drawn from.
-        measure_steps : Number of training steps taken per trial.
-        device        : CUDA device the peak is measured on.
-        context_gb    : Fixed device memory in GB already held outside the probe, added to every reported peak.
+        CONTEXT_WARN_GB : Fixed device memory in GB above which the measured context exceeds a bare CUDA context, meaning other processes hold memory on the device.
+        trainer         : Trainer supplying the optimizer, the loss and the AMP setting.
+        dataset         : Dataset the probe batches are drawn from.
+        measure_steps   : Number of training steps taken per trial.
+        device          : CUDA device the peak is measured on.
+        context_gb      : Fixed device memory in GB already held outside the probe, added to every reported peak.
     """
+
+    CONTEXT_WARN_GB = 1.5
 
     def __init__(self, trainer, dataset: Dataset, measure_steps: int, device: torch.device, context_gb: float = 0.0) -> None:
         """Stores the probe inputs.
