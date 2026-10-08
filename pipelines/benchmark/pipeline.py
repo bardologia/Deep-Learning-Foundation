@@ -156,8 +156,24 @@ class BenchmarkPipeline(StagedPipeline):
         return results
 
     def _run_inference(self) -> list[dict]:
-        """Runs inference over every trained unit and returns the job results."""
+        """Runs inference over every trained unit, or skips the stage when the benchmark scores nothing.
+
+        The skip is logged with its reason and marked in the state; a family
+        without an inference stage that was asked to infer is warned about.
+
+        Returns:
+            One result dictionary per unit, empty when inference is skipped.
+        """
         self._begin_stage("inference")
+
+        if not self.config.runs_inference():
+            if self.config.infer_after:
+                self.logger.warning(f"infer_after is on, but training_type '{self.config.training_type}' has no inference stage in the benchmark; it is ignored")
+
+            reason = "infer_after is off" if not self.config.infer_after else f"training_type '{self.config.training_type}' has no inference stage"
+            self.logger.subsection(f"Inference skipped: {reason}; models are compared on their training checkpoints alone")
+            self._mark_stage("inference", "skipped")
+            return []
 
         stage   = InferenceStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
         results = stage.run()
@@ -215,7 +231,7 @@ class BenchmarkPipeline(StagedPipeline):
             return
 
         training_results  = self._run_training()
-        inference_results = self._run_inference() if self.config.runs_inference() else []
+        inference_results = self._run_inference()
         comparison_dir    = self._run_comparison()
 
         self._finish(training_results, inference_results, {"Models": len(self.models), "Comparison": str(comparison_dir)})

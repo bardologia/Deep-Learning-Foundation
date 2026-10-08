@@ -119,19 +119,46 @@ def test_run_executes_stages_in_expected_order(tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_run_skips_size_match_and_inference_for_autoencoder(tmp_path, monkeypatch):
-    """Verifies an autoencoder run probes, trains and compares without size match or inference."""
+    """Verifies an autoencoder run probes, trains and compares without size match or inference, warns that infer_after is ignored, and logs and marks the skipped inference stage."""
     pipeline = BenchmarkPipeline(_config(tmp_path, training_type="profile_autoencoder"), entry_script=ENTRY)
 
     order = []
     _patch_stage_methods(pipeline, monkeypatch, order)
+    monkeypatch.delattr(pipeline, "_run_inference")
 
     pipeline.run()
+
+    state = FileIO.load_json(pipeline.state_path)
+    text  = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
 
     assert "size_match" not in order
     assert "inference"  not in order
     assert "max_batch"  in order
     assert "training"   in order
     assert "comparison" in order
+    assert state["stages"]["inference"]["status"] == "skipped"
+    assert "infer_after is on, but training_type 'profile_autoencoder' has no inference stage in the benchmark; it is ignored" in text
+    assert "Inference skipped: training_type 'profile_autoencoder' has no inference stage" in text
+    assert "Inference       : stage skipped" in text
+
+
+def test_run_with_infer_after_off_logs_and_marks_the_skipped_inference(tmp_path, monkeypatch):
+    """A backbone run with infer_after off skips the inference stage with a line naming the reason and a 'skipped' mark, without a warning."""
+    pipeline = BenchmarkPipeline(_config(tmp_path, infer_after=False), entry_script=ENTRY)
+
+    order = []
+    _patch_stage_methods(pipeline, monkeypatch, order)
+    monkeypatch.delattr(pipeline, "_run_inference")
+
+    pipeline.run()
+
+    state = FileIO.load_json(pipeline.state_path)
+    text  = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
+
+    assert "inference" not in order
+    assert state["stages"]["inference"]["status"] == "skipped"
+    assert "Inference skipped: infer_after is off" in text
+    assert "has no inference stage in the benchmark" not in text
 
 
 def test_run_rejects_unsupported_training_type(tmp_path):
