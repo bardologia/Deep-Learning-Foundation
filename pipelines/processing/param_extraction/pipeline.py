@@ -13,7 +13,7 @@ from typing  import Dict, Tuple
 import numpy as np
 
 from configuration.param_extraction                import ExtractionConfig
-from pipelines.processing.param_extraction.io      import ExtractionMetadataManager, ParameterIO
+from pipelines.processing.param_extraction.io      import ExtractionMetadataManager, ParameterIO, ParameterRunDirectory
 from pipelines.processing.param_extraction.queue   import ExtractionGroup
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from tools.data.gaussians                          import GaussianSlotSorter
@@ -136,9 +136,10 @@ class ParamExtractionPipeline:
         parameter_extractor : Fitter driving the group's permutations.
         parameter_io        : Writer for the parameter stacks and diagnostics.
         entry_config        : Resolved entry config persisted into every permutation's docs, or None.
+        overwrite           : Whether a permutation may delete and replace an existing run in its output directory.
     """
 
-    def __init__(self, group: ExtractionGroup, logger: Logger | None = None, peak_initialiser: object | None = None, kernel_backend: tuple | None = None, entry_config=None) -> None:
+    def __init__(self, group: ExtractionGroup, logger: Logger | None = None, peak_initialiser: object | None = None, kernel_backend: tuple | None = None, entry_config=None, overwrite: bool = False) -> None:
         """Discovers the group's cube and builds its extractor and writers.
 
         Args:
@@ -147,10 +148,12 @@ class ParamExtractionPipeline:
             peak_initialiser : Override for the peak initialiser, or None for the default.
             kernel_backend   : Override for the fitting kernel backend, or None for the default.
             entry_config     : Optional resolved entry config persisted into every permutation's output directory so the sweep can be copied from the launch console.
+            overwrite        : Whether a permutation may delete and replace an existing run in its output directory; off, saving over one raises.
         """
         self.group        = group
         self.shared       = group.shared
         self.entry_config = entry_config
+        self.overwrite    = overwrite
         self.cube_path    = self.shared.discover_cube_path()
         self.z_range      = self.shared.discover_z_range()
 
@@ -213,10 +216,16 @@ class ParamExtractionPipeline:
         Returns:
             Mapping with the parameter, diagnostics and metadata paths, the output
             directory and the source cube path.
+
+        Raises:
+            FileExistsError : If the output directory already holds a run and overwriting is off.
         """
+        metadata = ExtractionMetadataManager(config, logger=self.logger)
+        ParameterRunDirectory(self.logger).prepare(config.output_directory, self.overwrite, metadata.settings())
+
         npy_path  = self.parameter_io.save_params(parameters_array, config.parameters_npy_path)
         diag_path = self.parameter_io.save_diagnostics(diagnostics, config.diagnostics_npz_path)
-        meta_path = ExtractionMetadataManager(config, logger=self.logger).save_run_metadata(npy_path, diag_path, self.cube_path, self.z_range)
+        meta_path = metadata.save_run_metadata(npy_path, diag_path, self.cube_path, self.z_range)
 
         if self.entry_config is not None:
             ResolvedEntryConfigWriter.save(self.entry_config, config.output_directory, self.logger)

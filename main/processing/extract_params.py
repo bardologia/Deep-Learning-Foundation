@@ -57,6 +57,7 @@ def main() -> None:
         "Permutations"  : permutations,
         "Base path"     : str(base_path),
         "Filter"        : config.dataset_filter or "all dataset directories",
+        "Overwrite"     : config.overwrite,
         "GPUs"          : config.gpu_device_ids,
     }, title="Configuration")
 
@@ -64,7 +65,7 @@ def main() -> None:
         for index, group in enumerate(groups):
             logger.section(f"[Group {index + 1}/{len(groups)}] {group.processed_data_path.name} :: k{group.k_max} ({len(group.configs)} permutations, one shared load + init)")
 
-            pipeline = ParamExtractionPipeline(group, peak_initialiser=peak_initialiser, kernel_backend=kernel_backend, entry_config=config)
+            pipeline = ParamExtractionPipeline(group, peak_initialiser=peak_initialiser, kernel_backend=kernel_backend, entry_config=config, overwrite=config.overwrite)
             saved    = pipeline.run()
 
             for key, outputs in saved.items():

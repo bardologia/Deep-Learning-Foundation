@@ -61,6 +61,7 @@
         "output_prefix": "leading token of each generated output subdirectory name, shared across the sweep",
         "output_suffix": "optional fixed naming tag overriding the auto-derived suffix; rejected when the sweep expands to more than one permutation",
         "z_range": "reconstruction z-axis extent as (min, max) applied to every plan; None reads it per-dataset from metadata",
+        "overwrite": "toggle allowing an existing parameter run under a permutation's directory name to be deleted and refitted; off, a sweep landing on an existing run is refused before any fitting, since the run name encodes only k_max, lambda, the sigma divisor and the free parameters",
         "fit_k_values": "list of maximum Gaussian-component counts (k_max) to sweep, one extraction plan per value",
         "fit_lambda_values": "list of component-count regularization strengths (lambda_k) to sweep, one extraction plan per value",
         "fit_modes": "fit modes to sweep, each an underscore-joined composition of free parameters from sigma, amp, mu (e.g. sigma, amp_mu, sigma_amp_mu); every non-empty composition is valid",
