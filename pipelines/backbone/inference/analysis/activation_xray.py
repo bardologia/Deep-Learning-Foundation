@@ -159,6 +159,20 @@ class ActivationXrayRun(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
+    @staticmethod
+    def _status(summary: dict) -> str:
+        """Returns the outcome status the verdict calls for: 'critical' or 'warning' when such layers were flagged, 'ok' otherwise.
+
+        Args:
+            summary : Verdict block holding the per-severity layer counts.
+        """
+        if summary["severity_counts"]["critical"] > 0:
+            return "critical"
+        if summary["severity_counts"]["warning"] > 0:
+            return "warning"
+
+        return "ok"
+
     def _analyse(self, run) -> AnalysisOutcome:
         """Records, analyses, plots and reports the activations of this run.
 
@@ -191,7 +205,7 @@ class ActivationXrayRun(AnalysisRun):
 
         report_path = self._write_report(run, reports, summary, figures)
 
-        return AnalysisOutcome(payload, f"{summary['verdict']} ({summary['flagged_layers']}/{summary['layers']} layers flagged)", report_path)
+        return AnalysisOutcome(payload, f"{summary['verdict']} ({summary['flagged_layers']}/{summary['layers']} layers flagged)", report_path, self._status(summary))
 
 
 class ActivationXrayBatch(RunBatch):
