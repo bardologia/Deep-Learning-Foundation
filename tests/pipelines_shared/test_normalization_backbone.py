@@ -224,13 +224,11 @@ def test_output_denormalization_torch_and_numpy_agree():
     np.testing.assert_allclose(out_np, out_torch.numpy(), rtol=1e-5)
 
 
-@pytest.mark.dataset
-@pytest.mark.slow
-def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameters, param_extraction_meta, tmp_path):
-    """Statistics fitted on a real 24x24 window are finite, positive in scale, and round-trip."""
-    derived     = np.ascontiguousarray(np.asarray(derived[:4, :24, :24]))
-    primary = derived[:1]
-    inputs  = np.concatenate([primary, derived], axis=0)
+def _window_dataset(derived, parameters) -> tuple[PatchDataset, InputConfig, OutputConfig]:
+    """Returns a train PatchDataset over a 24x24 window of the scene with its input and output configs."""
+    window  = np.ascontiguousarray(np.asarray(derived[:4, :24, :24]))
+    primary = window[:1]
+    inputs  = np.concatenate([primary, window], axis=0)
     params  = np.ascontiguousarray(np.asarray(parameters[:, :24, :24]))
 
     patcher = Patcher.build(spatial_size=(24, 24), patch_size=(8, 8), stride=(8, 8))
@@ -245,10 +243,19 @@ def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameter
         n_secondaries=0, n_derived=4, n_gaussians=params.shape[0] // 3,
     )
 
+    return ds, ic, oc
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameters, param_extraction_meta, tmp_path):
+    """Statistics fitted on a real 24x24 window are finite, positive in scale, and round-trip."""
+    ds, ic, oc = _window_dataset(derived, parameters)
+
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_real", level="ERROR")
     stats  = StatsComputer.compute(
         dataset=ds, logger=logger, input_config=ic, output_config=oc,
-        n_secondaries=0, n_derived=4, n_gaussians=params.shape[0] // 3, activity_threshold=float(param_extraction_meta["activity_threshold"]),
+        n_secondaries=0, n_derived=4, n_gaussians=ds.n_gaussians, activity_threshold=float(param_extraction_meta["activity_threshold"]),
     )
     logger.close()
 
@@ -267,6 +274,45 @@ def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameter
 
     assert np.all(np.isfinite(out))
     np.testing.assert_allclose(again, out, atol=1e-2)
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_compute_logs_the_effective_clamp(data_dir, derived, parameters, param_extraction_meta, tmp_path):
+    """The fitting log states the effective clamp, so a disabled clamp is visible on the training side."""
+    ds, ic, oc = _window_dataset(derived, parameters)
+
+    logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_clamp", level="ERROR")
+    StatsComputer.compute(
+        dataset=ds, logger=logger, input_config=ic, output_config=oc,
+        n_secondaries=0, n_derived=4, n_gaussians=ds.n_gaussians, activity_threshold=float(param_extraction_meta["activity_threshold"]),
+        normalization=NormalizationConfig(clamp_output=False),
+    )
+    logger.close()
+
+    text = (tmp_path / "logs" / "norm_clamp.log").read_text(encoding="utf-8")
+
+    assert "Output clamp : disabled" in text
+
+
+def test_output_stats_table_labels_the_clamp_column_clampable(tmp_path):
+    """The output table labels the clamp column clampable, since it describes the role, not the run's clamp setting."""
+    logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_table", level="ERROR")
+    pools  = {"out/amp": np.array([1.0, 2.0, 3.0]), "out/mu": np.array([1.0, 2.0, 3.0]), "out/sigma": np.array([1.0, 2.0, 3.0])}
+
+    StatsComputer._fit_output(logger=logger, role_pools=pools, output_config=OutputConfig(), n_gaussians=1)
+    logger.close()
+
+    text = (tmp_path / "logs" / "norm_table.log").read_text(encoding="utf-8")
+
+    assert "clampable" in text
+    assert "clamped" not in text.replace("clampable", "")
+
+
+def test_clamp_rows_describe_the_effective_clamp():
+    """The clamp rows say disabled for a switched-off clamp and name the bounds, leaks and amplitude ceiling otherwise."""
+    assert Stats.clamp_rows(OutputClampConfig(enabled=False))["Output clamp"] == "disabled"
+    assert Stats.clamp_rows(OutputClampConfig(floor=0.0, ceil=50.0, amp_max=20.0)) == {"Output clamp": "0.0 to 50.0", "Clamp leak": 0.1, "Param leak": 0.1, "Amp max": 20.0}
 
 
 def _fixed_bounds_output_config() -> OutputConfig:

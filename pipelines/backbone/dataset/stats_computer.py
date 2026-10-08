@@ -330,14 +330,14 @@ class StatsComputer:
             for key, strat in role_strat.items():
                 fitted = role_fit.get(key)
                 rows.append({
-                    "Channel" : key,
-                    "loc"     : "per-slot bounds" if fitted is None else f"{fitted[0]:.5f}",
-                    "scale"   : "per-slot bounds" if fitted is None else f"{fitted[1]:.5f}",
-                    "Method"  : strat.norm_method.value,
-                    "log1p"   : str(strat.apply_log1p),
-                    "clamped" : str(_role_clampable[key]),
+                    "Channel"   : key,
+                    "loc"       : "per-slot bounds" if fitted is None else f"{fitted[0]:.5f}",
+                    "scale"     : "per-slot bounds" if fitted is None else f"{fitted[1]:.5f}",
+                    "Method"    : strat.norm_method.value,
+                    "log1p"     : str(strat.apply_log1p),
+                    "clampable" : str(_role_clampable[key]),
                 })
-            logger.metrics_table(rows, ["Channel", "loc", "scale", "Method", "log1p", "clamped"])
+            logger.metrics_table(rows, ["Channel", "loc", "scale", "Method", "log1p", "clampable"])
 
             degenerate = [key for key, (_m, s) in role_fit.items() if s <= 1e-8]
             if degenerate:
@@ -451,7 +451,7 @@ class StatsComputer:
         activity_threshold : float,
         normalization      : NormalizationConfig = None,
     ) -> Stats:
-        """Fits both halves of the normalization and merges them under the output clamp.
+        """Fits both halves of the normalization, merges them under the output clamp and logs the effective clamp.
 
         Args:
             dataset            : Train-split dataset the statistics are fitted on.
@@ -487,4 +487,8 @@ class StatsComputer:
             logger             = logger,
         )
 
-        return Stats.merge(input_only, output_only, normalization.clamp())
+        stats = Stats.merge(input_only, output_only, normalization.clamp())
+
+        logger.kv_table(Stats.clamp_rows(stats.clamp), title="Output clamp (applied on denormalization, before the loss)")
+
+        return stats
