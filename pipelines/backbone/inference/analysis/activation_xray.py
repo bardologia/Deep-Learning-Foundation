@@ -115,6 +115,11 @@ class ActivationXrayRun(AnalysisRun):
         )
 
         doc.kv_table({
+            "Checkpoint"     : summary["checkpoint"],
+            "Split"          : summary["split"],
+            "Device"         : summary["device"],
+            "Batches"        : f"{summary['batches']} x {summary['batch_size']} patches",
+            "Git commit"     : summary["provenance"]["git_commit"],
             "Layers"         : summary["layers"],
             "Hooked layers"  : summary["hooked_layers"],
             "Silent layers"  : ", ".join(f"{name} ({module_type})" for name, module_type in summary["silent_layers"].items()) if summary["silent_layers"] else "none",
@@ -125,6 +130,9 @@ class ActivationXrayRun(AnalysisRun):
             "Worst layers"   : ", ".join(summary["worst_layers"]) if summary["worst_layers"] else "none",
             "Reused modules" : ", ".join(f"{name} x{calls}" for name, calls in summary["reused_modules"].items()) if summary["reused_modules"] else "none",
         })
+
+        doc.heading("Thresholds", level=2)
+        doc.kv_table(summary["thresholds"])
 
         issue_table = MarkdownTable(("Layer", "Severity", "Code", "Message"))
         for report in reports:
@@ -172,7 +180,7 @@ class ActivationXrayRun(AnalysisRun):
         detector = ActivationIssueDetector(self.config)
         reports  = detector.run(all_stats)
         reports.sort(key=lambda report: report.stats["first_seen"])
-        summary  = ActivationXraySummarizer().build(reports, self.run_dir, n_batches, recorder.reused_modules(), recorder.silent_layers())
+        summary  = ActivationXraySummarizer(self.config).build(reports, self.run_dir, n_batches, recorder.reused_modules(), recorder.silent_layers())
 
         ordered_stats = [report.stats for report in reports]
         flagged       = [report for report in reports if report.severity != "ok"]
