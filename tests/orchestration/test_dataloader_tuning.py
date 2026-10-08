@@ -298,3 +298,41 @@ def test_sampler_warns_when_every_read_fails(monkeypatch):
     assert summary["gpu_available"] is False
     assert any("NVML reads failed"  in message for message in logger.warnings)
     assert any("No NVML read succeeded" in message for message in logger.warnings)
+
+
+def test_sampler_without_an_index_samples_the_device_torch_computes_on(monkeypatch):
+    """Verifies a sampler given no NVML index finds the device by the UUID of torch's CUDA device rather than by the requested position."""
+    logger = _CollectingLogger()
+    found  = {}
+
+    monkeypatch.setattr(tuning_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(GpuUtilizationSampler, "torch_uuid", staticmethod(lambda: "GPU-abc"))
+    monkeypatch.setattr(tuning_module.pynvml, "nvmlInit",                      lambda: None)
+    monkeypatch.setattr(tuning_module.pynvml, "nvmlShutdown",                  lambda: None)
+    monkeypatch.setattr(tuning_module.pynvml, "nvmlDeviceGetHandleByUUID",     lambda uuid: found.setdefault("uuid", uuid))
+    monkeypatch.setattr(tuning_module.pynvml, "nvmlDeviceGetIndex",            lambda handle: 3)
+    monkeypatch.setattr(tuning_module.pynvml, "nvmlDeviceGetUtilizationRates", lambda handle: type("Util", (), {"gpu": 50.0})())
+    monkeypatch.setattr(tuning_module.pynvml, "nvmlDeviceGetMemoryInfo",       lambda handle: type("Mem", (), {"used": 2 * 1024 ** 3})())
+
+    sampler = GpuUtilizationSampler(logger=logger, interval_s=0.01)
+    sampler.start()
+    time.sleep(0.05)
+    summary = sampler.stop()
+
+    assert found["uuid"]            == "GPU-abc"
+    assert sampler.gpu_index        == 3
+    assert summary["gpu_available"] is True
+    assert logger.warnings          == []
+
+
+def test_sampler_without_a_cuda_device_samples_nothing_and_says_so(monkeypatch):
+    """Verifies a sampler with no index and no CUDA device does not read a physical GPU that the run does not use."""
+    logger = _CollectingLogger()
+    monkeypatch.setattr(tuning_module.torch.cuda, "is_available", lambda: False)
+
+    sampler = GpuUtilizationSampler(logger=logger)
+    sampler.start()
+    summary = sampler.stop()
+
+    assert summary["gpu_available"] is False
+    assert logger.warnings == ["[GpuUtilizationSampler] No CUDA device is visible and no NVML index was given; this sweep entry reports no GPU utilisation"]
