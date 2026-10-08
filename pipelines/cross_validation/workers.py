@@ -366,13 +366,14 @@ class FoldTrainingWorker(CrossValidationWorker):
         trainer_config, dataset_config = self._spatial_configs(split_regions)
 
         pipeline = TrainingPipeline(
-            trainer_config = trainer_config,
-            dataset_config = dataset_config,
-            backbone_name  = self.config.backbone_name,
-            model_config   = model_config,
-            seed           = self.config.seed if seed is None else seed,
-            run_name       = run_name,
-            overfit_check  = self.config.overfit_check,
+            trainer_config  = trainer_config,
+            dataset_config  = dataset_config,
+            backbone_name   = self.config.backbone_name,
+            model_config    = model_config,
+            seed            = self.config.seed if seed is None else seed,
+            run_name        = run_name,
+            overfit_check   = self.config.overfit_check,
+            prior_bias_init = self.config.prior_bias_init,
         )
 
         pipeline.run(probe_config=self.config.probe)

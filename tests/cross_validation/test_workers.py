@@ -643,21 +643,23 @@ def test_inference_worker_routes_autoencoders_to_their_pipelines(test_data_dir, 
 
 @pytest.mark.dataset
 def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path, monkeypatch):
-    """Verifies the backbone fold trainer inherits the entry curriculum, geometry origin and run name."""
+    """Verifies the backbone fold trainer inherits the entry curriculum, geometry origin, run name and prior-bias flag."""
     config                    = worker_config(test_data_dir, "backbone")
     config.paths.log_base_dir = tmp_path
+    config.prior_bias_init    = True
     worker                    = FoldTrainingWorker(config, run_tag="rt")
 
     captured = {}
 
     class _FakePipeline:
         """Backbone training pipeline stub recording its constructor arguments."""
-        def __init__(self, trainer_config, dataset_config, backbone_name, model_config, seed, run_name, overfit_check):
-            """Records the trainer and dataset configs, the run name and the overfit check."""
-            captured["trainer_config"] = trainer_config
-            captured["dataset_config"] = dataset_config
-            captured["run_name"]       = run_name
-            captured["overfit_check"]  = overfit_check
+        def __init__(self, trainer_config, dataset_config, backbone_name, model_config, seed, run_name, overfit_check, prior_bias_init):
+            """Records the trainer and dataset configs, the run name, the overfit check and the prior-bias flag."""
+            captured["trainer_config"]  = trainer_config
+            captured["dataset_config"]  = dataset_config
+            captured["run_name"]        = run_name
+            captured["overfit_check"]   = overfit_check
+            captured["prior_bias_init"] = prior_bias_init
 
         def run(self, probe_config=None):
             """Accepts an optional probe config and does nothing."""
@@ -677,6 +679,7 @@ def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path
     assert captured["run_name"] == f"{run_tag}_fold_1/seed7"
 
     assert captured["overfit_check"] is config.overfit_check
+    assert captured["prior_bias_init"] is True
     assert captured["dataset_config"].input_config is config.input
 
 

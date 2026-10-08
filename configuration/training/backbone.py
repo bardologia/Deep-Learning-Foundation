@@ -329,6 +329,7 @@ class BackboneEntryConfig:
         augmentation          : Training-time augmentation probabilities.
         probe                 : Loss-scale probe settings run before training.
         overfit_check         : Single-batch overfitting sanity gate run before training.
+        prior_bias_init       : Whether the conv output head starts with its biases at the training-label prior (each channel's mean label in the model's normalized output space, over the training pixels where its slot is active) instead of PyTorch's random bias.
         infer_after           : Whether inference runs after each seed finishes.
         infer_at_end          : Whether inference runs once after the whole sweep.
         inference             : Inference settings used by those automatic passes.
@@ -378,6 +379,8 @@ class BackboneEntryConfig:
 
     probe         : LossScaleProbeConfig = field(default_factory=LossScaleProbeConfig)
     overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
+
+    prior_bias_init : bool = False
 
     infer_after  : bool            = False
     infer_at_end : bool            = False
