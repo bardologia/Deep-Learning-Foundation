@@ -155,7 +155,9 @@ python -m pytest tests/webui -q
 
 1319 passed in under three minutes. Plain `python -m pytest -q` runs both halves, since
 `testpaths` in `pyproject.toml` points at `tests`. A green run is your proof the
-environment is correct.
+environment is correct. The markers (`dataset`, `slow`) are declared in `pyproject.toml`
+under `[tool.pytest.ini_options]` with `strict_markers`, so a mistyped marker fails
+collection instead of quietly running in the wrong lane.
 
 One caveat on a shared machine: a handful of tests allocate on the GPU, and pinned-memory
 batches need a working CUDA context. If another process has filled the card, those tests
