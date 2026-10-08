@@ -139,7 +139,7 @@ class PretrainOrchestrator:
         """
         ceiling = min(self.pretrain.max_batch, len(context.dataset))
         if ceiling < self.pretrain.max_batch:
-            self.logger.subsection(f"Ceiling lowered from {self.pretrain.max_batch} to {ceiling}: the dataset holds {len(context.dataset)} samples")
+            self.logger.warning(f"Ceiling lowered from {self.pretrain.max_batch} to {ceiling}: the dataset holds {len(context.dataset)} samples, so the batch-size finder cannot try the configured maximum")
 
         finder = BatchSizeFinder(
             trial_step = context.trial_step,
