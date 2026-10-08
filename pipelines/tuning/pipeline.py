@@ -201,13 +201,14 @@ class TuningScheduler:
 
         return workers
 
-    def worker_argv(self, model_name: str, study_name: str, n_trials: int) -> list[str]:
+    def worker_argv(self, model_name: str, study_name: str, n_trials: int, worker_index: int) -> list[str]:
         """Returns the arguments running one tuning worker against a shared study.
 
         Args:
-            model_name : Model key the worker tunes.
-            study_name : Name of the shared study the worker attaches to.
-            n_trials   : Trials this worker is responsible for.
+            model_name   : Model key the worker tunes.
+            study_name   : Name of the shared study the worker attaches to.
+            n_trials     : Trials this worker is responsible for.
+            worker_index : Index distinguishing the workers of a model, which seeds the worker's sampler and names its log directory.
 
         Returns:
             The argument list, without the interpreter and the entry script.
@@ -216,6 +217,7 @@ class TuningScheduler:
             "--worker",
             "--model",        model_name,
             "--n-trials",     str(n_trials),
+            "--worker-index", str(worker_index),
             "--study-name",   study_name,
             "--storage-url",  self.storage_url,
             "--run-tag",      self.tag,
@@ -233,7 +235,7 @@ class TuningScheduler:
         Returns:
             The GPU job invoking the entry script in worker mode.
         """
-        command = [sys.executable, str(self.entry_script), *self.worker_argv(model_name, self._study_name(model_name), n_trials)]
+        command = [sys.executable, str(self.entry_script), *self.worker_argv(model_name, self._study_name(model_name), n_trials, worker_index)]
 
         return GpuJob(
             name     = f"{model_name}_w{worker_index}",

@@ -1,7 +1,7 @@
 """Worker process running a share of one model's Optuna trials on a GPU.
 
 Builds the entry template and tuner for the configured training type, attaches
-a median pruner and a TPE sampler seeded per GPU, and optimizes the shared
+a median pruner and a TPE sampler seeded per worker, and optimizes the shared
 study opened from the run's SQLite storage.
 """
 
@@ -24,7 +24,7 @@ from tools.monitoring.logger                import Logger
 
 
 class TuningWorker:
-    """Runs one GPU's share of the trials of a single model's study.
+    """Runs one worker's share of the trials of a single model's study on a GPU.
 
     Attributes:
         tag     : Run tag naming the tuning directory.
@@ -90,13 +90,14 @@ class TuningWorker:
 
         return trainer_config, dataset_config
 
-    def _profile_ae_tuner(self, model_name: str, tune_cfg, logger: Logger):
+    def _profile_ae_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
         """Builds the tuner optimizing a profile autoencoder.
 
         Args:
-            model_name : Profile autoencoder model name.
-            tune_cfg   : Tuning settings.
-            logger     : Logger of this worker.
+            model_name   : Profile autoencoder model name.
+            tune_cfg     : Tuning settings.
+            logger       : Logger of this worker.
+            worker_index : Index of this worker, stamped on every trial it runs.
 
         Returns:
             The configured AeTuner.
@@ -109,15 +110,17 @@ class TuningWorker:
             tune_cfg           = tune_cfg,
             log_dir            = str(self.run_dir / model_name),
             logger             = logger,
+            worker_index       = worker_index,
         )
 
-    def _image_ae_tuner(self, model_name: str, tune_cfg, logger: Logger):
+    def _image_ae_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
         """Builds the tuner optimizing an image autoencoder.
 
         Args:
-            model_name : Image autoencoder model name.
-            tune_cfg   : Tuning settings.
-            logger     : Logger of this worker.
+            model_name   : Image autoencoder model name.
+            tune_cfg     : Tuning settings.
+            logger       : Logger of this worker.
+            worker_index : Index of this worker, stamped on every trial it runs.
 
         Returns:
             The configured AeTuner.
@@ -130,15 +133,17 @@ class TuningWorker:
             tune_cfg           = tune_cfg,
             log_dir            = str(self.run_dir / model_name),
             logger             = logger,
+            worker_index       = worker_index,
         )
 
-    def _jepa_tuner(self, model_name: str, tune_cfg, logger: Logger):
+    def _jepa_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
         """Builds the tuner optimizing a JEPA backbone.
 
         Args:
-            model_name : Composite ``<backbone>[-<head>]`` key.
-            tune_cfg   : Tuning settings.
-            logger     : Logger of this worker.
+            model_name   : Composite ``<backbone>[-<head>]`` key.
+            tune_cfg     : Tuning settings.
+            logger       : Logger of this worker.
+            worker_index : Index of this worker, stamped on every trial it runs.
 
         Returns:
             The configured JepaTuner.
@@ -150,15 +155,17 @@ class TuningWorker:
             tune_cfg         = tune_cfg,
             log_dir          = str(self.run_dir / model_name),
             logger           = logger,
+            worker_index     = worker_index,
         )
 
-    def _backbone_tuner(self, model_name: str, tune_cfg, logger: Logger):
+    def _backbone_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
         """Builds the tuner optimizing a supervised backbone.
 
         Args:
-            model_name : Composite ``<backbone>[-<head>]`` key.
-            tune_cfg   : Tuning settings.
-            logger     : Logger of this worker.
+            model_name   : Composite ``<backbone>[-<head>]`` key.
+            tune_cfg     : Tuning settings.
+            logger       : Logger of this worker.
+            worker_index : Index of this worker, stamped on every trial it runs.
 
         Returns:
             The configured Tuner.
@@ -175,15 +182,17 @@ class TuningWorker:
             log_dir             = str(self.run_dir / model_name),
             logger              = logger,
             emit_trial_docs     = tune_cfg.emit_trial_docs,
+            worker_index        = worker_index,
         )
 
-    def _build_tuner(self, model_name: str, tune_cfg, logger: Logger):
+    def _build_tuner(self, model_name: str, tune_cfg, logger: Logger, worker_index: int):
         """Selects and builds the tuner matching the configured training type.
 
         Args:
-            model_name : Model key to tune.
-            tune_cfg   : Tuning settings.
-            logger     : Logger of this worker.
+            model_name   : Model key to tune.
+            tune_cfg     : Tuning settings.
+            logger       : Logger of this worker.
+            worker_index : Index of this worker, stamped on every trial it runs.
 
         Returns:
             The tuner for this training type.
@@ -202,31 +211,38 @@ class TuningWorker:
         if training_type not in dispatch:
             raise ValueError(f"Unknown training_type '{training_type}', expected one of {sorted(dispatch)}")
 
-        return dispatch[training_type](model_name, tune_cfg, logger)
+        return dispatch[training_type](model_name, tune_cfg, logger, worker_index)
 
-    def run_worker(self, model_name: str, gpu_id: int, n_trials: int, study_name: str, storage_url: str) -> None:
+    def run_worker(self, model_name: str, gpu_id: int, worker_index: int, n_trials: int, study_name: str, storage_url: str) -> None:
         """Optimizes this worker's share of a model's study on one GPU.
 
+        The worker index, not the GPU ordinal, seeds the sampler and names the
+        log directory: with more workers than devices several workers share a
+        GPU, and identical seeds would make them propose the same random
+        startup points into the same log.
+
         Args:
-            model_name  : Model key to tune.
-            gpu_id      : GPU index this worker owns; also offsets the sampler seed.
-            n_trials    : Trials this worker contributes.
-            study_name  : Name of the shared study to load.
-            storage_url : SQLAlchemy URL of the shared Optuna storage.
+            model_name   : Model key to tune.
+            gpu_id       : GPU index this worker owns.
+            worker_index : Index of this worker among the model's workers.
+            n_trials     : Trials this worker contributes.
+            study_name   : Name of the shared study to load.
+            storage_url  : SQLAlchemy URL of the shared Optuna storage.
         """
         tune_cfg      = self.config.tuning
-        model_log_dir = str(self.run_dir / model_name / f"worker_gpu{gpu_id}")
-        logger        = Logger(log_dir=model_log_dir, name=f"tune_worker_gpu{gpu_id}_{model_name}")
+        model_log_dir = str(self.run_dir / model_name / f"worker{worker_index:02d}")
+        logger        = Logger(log_dir=model_log_dir, name=f"tune_worker{worker_index:02d}_{model_name}")
 
-        logger.section(f"[GPU {gpu_id}] Tuning Worker — {model_name}")
+        logger.section(f"[Worker {worker_index}] Tuning Worker — {model_name}")
         logger.kv_table({
-            "GPU"        : gpu_id,
-            "Trials"     : n_trials,
-            "Study"      : study_name,
-            "Storage"    : storage_url,
+            "Worker"  : worker_index,
+            "GPU"     : gpu_id,
+            "Trials"  : n_trials,
+            "Study"   : study_name,
+            "Storage" : storage_url,
         })
 
-        tuner = self._build_tuner(model_name, tune_cfg, logger)
+        tuner = self._build_tuner(model_name, tune_cfg, logger, worker_index)
 
         pruner = optuna.pruners.MedianPruner(
             n_startup_trials = tune_cfg.pruner_n_startup_trials,
@@ -237,11 +253,11 @@ class TuningWorker:
             n_startup_trials = tune_cfg.pruner_n_startup_trials,
             multivariate     = True,
             constant_liar    = True,
-            seed             = tune_cfg.base_seed + gpu_id,
+            seed             = tune_cfg.base_seed + worker_index,
         )
 
         study = optuna.load_study(study_name=study_name, storage=TuningStorage.open(storage_url), sampler=sampler, pruner=pruner)
         tuner.run(study, n_trials)
 
-        logger.info(f"[GPU {gpu_id}] — {model_name}  DONE")
+        logger.info(f"[Worker {worker_index}] — {model_name}  DONE")
         logger.close()
