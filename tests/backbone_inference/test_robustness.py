@@ -14,6 +14,7 @@ from pipelines.backbone.inference.probes                     import PredictionCu
 from types import SimpleNamespace
 
 from tests.backbone_inference._helpers import StageLogger, build_run_directory
+from tests.conftest                    import SilentLogger
 
 
 H, W, N_Z = 8, 8, 10
@@ -284,3 +285,21 @@ def test_robustness_pass_plans_tracks_and_times_every_stress(tmp_path, test_data
     assert outcome.payload["n_batches"] == 1
     assert logger.totals == [logger.advances]
     assert [label.split(" (")[0] for label in logger.timers] == ["Robustness: noise", "Robustness: gain", "Robustness: dropout", "Robustness: shift"]
+
+
+def test_report_labels_the_gain_row_with_the_swept_extremes(tmp_path):
+    """The headline gain row names the smallest and largest factor swept, not fixed 0.5 / 2.0."""
+    run     = RobustnessRun(tmp_path, RobustnessConfig(gain_factors=[0.8, 1.25]), SilentLogger())
+    results = {
+        "noise"           : {"all channels": [{"sigma": 0.0, "mse": 1.0, "mse_std": None}]},
+        "noise_tolerance" : {"sigma": 0.0, "censored": True},
+        "gain"            : [{"gain": 0.8, "mse": 1.5}, {"gain": 1.0, "mse": 1.0}, {"gain": 1.25, "mse": 1.7}],
+        "drop"            : None,
+        "shift"           : [],
+    }
+    run.output_dir.mkdir(parents=True)
+
+    report = run._write_report(SimpleNamespace(backbone_name="unet"), results, {}, 1).read_text(encoding="utf-8")
+
+    assert "Gain 0.8 / 1.25 MSE" in report and "1.5 / 1.7" in report
+    assert "Gain 0.5 / 2.0" not in report
