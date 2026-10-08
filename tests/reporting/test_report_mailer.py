@@ -192,6 +192,20 @@ def test_scanner_finds_experiments_at_any_depth_without_entering_runs(tmp_path):
     assert names == ["sequences/ws_a/curriculum", "sequences/ws_b/patch"]
 
 
+def test_scanner_goes_on_below_a_sweep_of_standalone_runs(tmp_path):
+    """Verifies a directory holding a standalone run beside a seeded sweep yields both the sweep of that run and the nested sweep."""
+    family = tmp_path / "backbone"
+    _write_report(_make_run(family / "smoke"), "20260101_000000")
+    _write_experiment(family, "augmentation")
+
+    scanner = ExperimentScanner(family)
+    found   = {scanner.name(experiment): experiment for experiment in scanner.scan()}
+
+    assert sorted(found) == ["augmentation", "backbone"]
+    assert found["backbone"].trials()     == [family / "smoke"]
+    assert found["augmentation"].trials() == [family / "augmentation" / "trial_a", family / "augmentation" / "trial_b"]
+
+
 def test_scanner_accepts_one_experiment_its_folds_directory_and_one_trial_as_the_root(workspace):
     """Verifies the root may be a sweep, a run's folds directory or a single trial, each resolving to one experiment."""
     sweep = ExperimentScanner(workspace / "exp_alpha").scan()
