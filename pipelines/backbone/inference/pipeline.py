@@ -276,7 +276,7 @@ class InferencePipeline:
             z_axis_np        : Z axis in metres, of shape (n_z,).
             n_gaussians      : Gaussian count K.
             cpu_workers      : Worker count for the metric computation.
-            active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active, as recorded by the label run.
+            active_amp_thr   : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
 
         Returns:
             Matched-Gaussian metrics describing the best accuracy the extractor could reach.

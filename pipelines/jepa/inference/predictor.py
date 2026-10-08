@@ -12,8 +12,7 @@ import torch
 
 from pipelines.backbone.inference.metrics   import Metrics, Result
 from pipelines.backbone.inference.predictor import Predictor
-from tools.data.gaussians                   import GaussianReconstructor
-from tools.loss.param_loss                  import ParamMatcher
+from tools.data.gaussians                   import GaussianActivity, GaussianReconstructor
 
 
 class JepaCurvePredictor(Predictor):
@@ -121,7 +120,7 @@ class JepaCurvePredictor(Predictor):
             The same array with inactive slots' mean and sigma channels masked.
         """
         for k in range(self.run.n_gaussians):
-            inactive = ~ParamMatcher.is_active(params_gt[3 * k], self.run.activity_threshold)
+            inactive = ~GaussianActivity.is_active(params_gt[3 * k], self.run.activity_threshold)
             params_gt[3 * k + 1][inactive] = np.nan
             params_gt[3 * k + 2][inactive] = np.nan
 

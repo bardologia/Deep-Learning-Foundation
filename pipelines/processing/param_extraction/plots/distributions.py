@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy             as np
 from scipy.stats         import gaussian_kde
 
+from tools.data.gaussians     import GaussianActivity
 from tools.reporting.plotting import PlotBase
 from tools.monitoring.logger  import Logger
 
@@ -142,7 +143,7 @@ class DistributionPlotter(PlotBase):
 
             for k in range(self.n_gaussians):
                 amp_flat = parameters_array[3 * k].reshape(-1)
-                active   = amp_flat >= self.amp_threshold
+                active   = GaussianActivity.is_active(amp_flat, self.amp_threshold)
                 if tag == "amp":
                     ch_idx = 3 * k
                 elif tag == "mu":
@@ -194,7 +195,7 @@ class DistributionPlotter(PlotBase):
 
         for k in range(self.n_gaussians):
             amp_flat = parameters_array[3 * k].reshape(-1)
-            active   = amp_flat >= self.amp_threshold
+            active   = GaussianActivity.is_active(amp_flat, self.amp_threshold)
             amp_pool.append(amp_flat[active])
             mu_pool .append(parameters_array[3 * k + 1].reshape(-1)[active])
             sig_pool.append(parameters_array[3 * k + 2].reshape(-1)[active])

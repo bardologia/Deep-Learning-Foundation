@@ -17,6 +17,7 @@ from pipelines.comparison.metric_table             import MetricTableRenderer
 from pipelines.comparison.spatial_stats            import SpatialDispersion
 from pipelines.processing.param_extraction.io      import ParameterRunMeta
 from pipelines.shared.comparison.comparison_report import ComparisonReportBase
+from tools.data.gaussians      import GaussianActivity
 from tools.data.io             import FileIO
 from tools.reporting.markdown  import MarkdownTable, ScalarFormatter
 from tools.reporting.reporting import ReportAssets
@@ -304,7 +305,7 @@ class ParamMetrics:
         mus        = np.asarray(parameters[1::3], dtype=np.float32)
 
         best_k = diagnostics["best_k_map"]
-        active = amplitudes > threshold
+        active = GaussianActivity.is_active(amplitudes, threshold)
         fitted = best_k > 0
 
         slot_active_rate = active.reshape(active.shape[0], -1).mean(axis=1)

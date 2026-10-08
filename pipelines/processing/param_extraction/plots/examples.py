@@ -19,7 +19,7 @@ import numpy             as np
 
 from tools.reporting.plotting import PlotBase
 from tools.data.preprocessing import ProfilePreprocessor
-from tools.data.gaussians     import GaussianMixture
+from tools.data.gaussians     import GaussianActivity, GaussianMixture
 from tools.monitoring.logger  import Logger
 
 
@@ -164,7 +164,7 @@ class ExampleFitPlotter(PlotBase):
         ax.plot(z_axis, total,   color=k_color,   lw=1.4, ls="--", label="fit", zorder=5)
 
         for k, comp in enumerate(comps):
-            if float(params[3 * k]) >= self.amp_threshold:
+            if GaussianActivity.is_active(float(params[3 * k]), self.amp_threshold):
                 ax.fill_between(z_axis, comp, alpha=0.20, color=comp_colors[k], zorder=2)
                 ax.plot(z_axis, comp, color=comp_colors[k], lw=0.9, alpha=0.85, label=f"$g_{{{k + 1}}}$")
 

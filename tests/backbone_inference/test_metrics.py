@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from pipelines.backbone.inference.metrics import Metrics, Result
-from tools.loss.param_loss                import ParamMatcher
+from tools.data.gaussians                 import GaussianActivity
 
 
 N_GAUSSIANS = 5
@@ -428,7 +428,7 @@ def test_param_population_stats_on_nan_masked_ground_truth():
     pred = gt.copy()
 
     for k in range(N_GAUSSIANS):
-        inactive = ~ParamMatcher.is_active(gt[3 * k], 1e-4)
+        inactive = ~GaussianActivity.is_active(gt[3 * k], 1e-4)
         gt[3 * k + 1][inactive] = np.nan
         gt[3 * k + 2][inactive] = np.nan
 

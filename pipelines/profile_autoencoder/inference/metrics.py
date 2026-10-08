@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from pipelines.autoencoder_common.inference.metrics import AeMetricsBase
+from tools.data.gaussians                           import GaussianActivity
 
 
 class ProfileAeMetrics(AeMetricsBase):
@@ -32,7 +33,7 @@ class ProfileAeMetrics(AeMetricsBase):
 
         self.z_axis             = np.asarray(z_axis, dtype=np.float64)
         self.activity_threshold = activity_threshold
-        self.active             = self.gt.max(axis=1) > self.activity_threshold
+        self.active             = GaussianActivity.is_active(self.gt.max(axis=1), self.activity_threshold)
 
     def _physical_errors(self) -> dict:
         """Returns MSE, MAE, RMSE, max absolute error and R2 in physical units."""

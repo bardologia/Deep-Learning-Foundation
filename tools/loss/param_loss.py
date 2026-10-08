@@ -11,6 +11,8 @@ import itertools
 
 import torch
 
+from tools.data.gaussians import GaussianActivity
+
 
 class ParamMatcher:
     """Per-pixel assignment of predicted Gaussian slots to ground-truth slots.
@@ -23,19 +25,6 @@ class ParamMatcher:
 
     HUNGARIAN = "hungarian"
     SORTED_GT = "sorted_gt"
-
-    @staticmethod
-    def is_active(amplitude, thr: float):
-        """Returns whether an amplitude reaches the active-component threshold.
-
-        Args:
-            amplitude : Physical amplitude tensor or array of any shape.
-            thr       : Physical amplitude at or above which a slot counts as active, as recorded by the label run.
-
-        Returns:
-            Boolean tensor or array of the same shape as amplitude.
-        """
-        return amplitude >= thr
 
     @staticmethod
     def _sort_gt(gt: torch.Tensor, gt_phys: torch.Tensor, active_thr: float) -> tuple[torch.Tensor, torch.Tensor]:
@@ -51,7 +40,7 @@ class ParamMatcher:
         """
         gt_phys_amp = gt_phys[:, :, 0]
         gt_mu       = gt_phys[:, :, 1]
-        is_active   = gt_phys_amp > active_thr
+        is_active   = GaussianActivity.is_active(gt_phys_amp, active_thr)
         sort_key    = torch.where(is_active, gt_mu, torch.full_like(gt_mu, float("inf")))
         gt_index    = torch.argsort(sort_key, dim=1, stable=True)
         gt_idx_b    = gt_index[:, :, None, :, :].expand_as(gt)
@@ -87,7 +76,7 @@ class ParamMatcher:
         if G > ParamMatcher.MAX_GAUSSIANS:
             raise ValueError(f"ParamMatcher.match enumerates G! permutations; G={G} exceeds MAX_GAUSSIANS={ParamMatcher.MAX_GAUSSIANS}")
 
-        active = (gt_phys[:, :, 0] > active_thr).to(pred.dtype)
+        active = GaussianActivity.is_active(gt_phys[:, :, 0], active_thr).to(pred.dtype)
 
         pred_e = pred.permute(0, 3, 4, 1, 2)[:, :, :, :, None, :]
         gt_e   = gt.permute(  0, 3, 4, 1, 2)[:, :, :, None, :, :]

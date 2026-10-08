@@ -324,7 +324,7 @@ class ModelProbe:
             One dict per slot with ``slot``, ``amp``, ``mu``, ``sigma`` and the
             ``active`` flag from the amplitude threshold.
         """
-        from tools.loss.param_loss import ParamMatcher
+        from tools.data.gaussians import GaussianActivity
 
         run   = self.loaded["run"]
         slots = []
@@ -335,7 +335,7 @@ class ModelProbe:
                 "amp"    : amp,
                 "mu"     : float(params_center[3 * k + 1]),
                 "sigma"  : float(params_center[3 * k + 2]),
-                "active" : bool(ParamMatcher.is_active(amp, run.activity_threshold)),
+                "active" : bool(GaussianActivity.is_active(amp, run.activity_threshold)),
             })
         return slots
 
@@ -389,6 +389,7 @@ class ModelProbe:
         """
         import torch
 
+        from tools.data.gaussians  import GaussianActivity
         from tools.loss.param_loss import ParamMatcher
 
         run    = self.loaded["run"]
@@ -401,11 +402,11 @@ class ModelProbe:
 
         amps  = np.asarray(gt_center[0::3], dtype=np.float64)
         mus   = np.asarray(gt_center[1::3], dtype=np.float64)
-        order = np.argsort(np.where(amps > run.activity_threshold, mus, np.inf), kind="stable")
+        order = np.argsort(np.where(GaussianActivity.is_active(amps, run.activity_threshold), mus, np.inf), kind="stable")
 
         matches = []
         for j in range(n_k):
-            if float(sorted_gt[0, j, 0, 0, 0]) <= run.activity_threshold:
+            if not GaussianActivity.is_active(float(sorted_gt[0, j, 0, 0, 0]), run.activity_threshold):
                 continue
             matches.append({
                 "gt_slot"   : int(order[j]),
@@ -558,7 +559,7 @@ class ModelProbe:
             pixel, and the ground-truth ``error`` map when available; an error
             payload when no model is loaded or the pixel is invalid.
         """
-        from tools.loss.param_loss import ParamMatcher
+        from tools.data.gaussians import GaussianActivity
 
         with self.lock:
             if self.loaded is None:
@@ -580,11 +581,11 @@ class ModelProbe:
                     ]
                     slots.append({
                         "slot"     : k,
-                        "active"   : bool(ParamMatcher.is_active(float(params[0, 3 * k, cy, cx]), run.activity_threshold)),
+                        "active"   : bool(GaussianActivity.is_active(float(params[0, 3 * k, cy, cx]), run.activity_threshold)),
                         "families" : families,
                     })
 
-                activity  = ParamMatcher.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0).astype(np.float32)
+                activity  = GaussianActivity.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0).astype(np.float32)
                 error_map = self._error_map(params, row, col, cy, cx)
 
                 return {

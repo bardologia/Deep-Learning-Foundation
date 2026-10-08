@@ -17,6 +17,7 @@ import numpy                as np
 from matplotlib.patches     import Patch
 
 from pipelines.backbone.inference.plots.base import PlotTools
+from tools.data.gaussians                    import GaussianActivity
 
 
 class SlotPlotter(PlotTools):
@@ -51,8 +52,8 @@ class SlotPlotter(PlotTools):
         pred_count = np.zeros(params_pred.shape[-2:], dtype=np.int32)
 
         for k in range(n_gaussians):
-            gt_count   += (params_gt  [3 * k] >= amp_threshold).astype(np.int32)
-            pred_count += (params_pred[3 * k] >= amp_threshold).astype(np.int32)
+            gt_count   += GaussianActivity.is_active(params_gt  [3 * k], amp_threshold).astype(np.int32)
+            pred_count += GaussianActivity.is_active(params_pred[3 * k], amp_threshold).astype(np.int32)
 
         diff = pred_count - gt_count
 

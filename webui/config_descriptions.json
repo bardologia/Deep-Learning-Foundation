@@ -143,7 +143,7 @@
         "n_default_gaussians": "Number of Gaussian components (K) predicted per pixel, derived from param_extraction_meta.json k_max and propagated to dataset_config.n_gaussians and out_channels",
         "x_min": "Lower bound of the z axis, taken from the dataset's cube_config.z_range and used to build the GaussianAxis for curve synthesis",
         "x_max": "Upper bound of the z axis, taken from the dataset's cube_config.z_range and used to build the GaussianAxis for curve synthesis",
-        "activity_threshold": "Physical amplitude above which a Gaussian slot counts as active, read from param_extraction_meta.json activity_threshold of the label run; it is chosen once at extraction or synthesis and every training, inference and analysis stage reads it from here instead of asking again",
+        "activity_threshold": "Physical amplitude above which a Gaussian slot counts as active (a strict comparison shared by every stage through GaussianActivity.is_active), read from param_extraction_meta.json activity_threshold of the label run; it is chosen once at extraction or synthesis and every training, inference and analysis stage reads it from here instead of asking again",
         "params_per_gaussian": "Number of predicted parameters per Gaussian component (amplitude, mean, sigma = 3); out_channels must be an exact multiple of it"
       }
     },

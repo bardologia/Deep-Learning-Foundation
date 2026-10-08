@@ -4,7 +4,7 @@ import numpy as np
 
 from configuration.synthesis              import SynthesisConfig
 from pipelines.processing.synthesis.scene import ProfileBuilder
-from tools.data.gaussians                 import GaussianSlotSorter
+from tools.data.gaussians                 import GaussianActivity, GaussianSlotSorter
 from tools.data.preprocessing             import ProfilePreprocessor
 
 
@@ -30,7 +30,7 @@ class FitDiagnosticsBuilder:
         observed  = ProfilePreprocessor.apply(magnitude, config.threshold_factor, config.truncation_index)
 
         peak   = observed.max(axis=0)
-        active = peak > config.activity_threshold
+        active = GaussianActivity.is_active(peak, config.activity_threshold)
         scale  = np.where(active, peak, 1.0).astype(np.float32)
 
         return (observed / scale[None, :, :]).astype(np.float32), active, scale

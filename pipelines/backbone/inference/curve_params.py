@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
-from tools.data.gaussians                                    import GaussianReconstructor
+from tools.data.gaussians                                    import GaussianActivity, GaussianReconstructor
 from tools.metrics.scoring                                   import R2
 
 
@@ -221,7 +221,7 @@ class CurveParamExtractor:
         design   = self._design_matrix(mus, sigmas).astype(np.float64)
         amps     = self._amplitudes(profiles, design)
 
-        amps     = np.where(amps >= self.activity_threshold, amps, 0.0).astype(np.float32)
+        amps     = np.where(GaussianActivity.is_active(amps, self.activity_threshold), amps, 0.0).astype(np.float32)
         rendered = np.matmul(design, amps[:, :, None].astype(np.float64))[:, :, 0].astype(np.float32)
         parts    = self._order_by_position(amps, mus, sigmas)
 

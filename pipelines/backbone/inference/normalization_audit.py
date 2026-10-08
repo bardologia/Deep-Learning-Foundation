@@ -11,7 +11,7 @@ from typing import Dict
 
 import numpy as np
 
-from tools.loss.param_loss import ParamMatcher
+from tools.data.gaussians import GaussianActivity
 
 
 class NormalizationAudit:
@@ -20,7 +20,7 @@ class NormalizationAudit:
     Attributes:
         loaded         : Loaded run supplying the dataset, normalization statistics and z axis.
         result         : Inference result carrying the predicted parameter cube.
-        active_amp_thr : Physical amplitude at or above which a predicted Gaussian slot counts as active, read from the loaded run.
+        active_amp_thr : Physical amplitude above which a predicted Gaussian slot counts as active, read from the loaded run.
     """
 
     OVERFLOW_Z    = 6.0
@@ -105,7 +105,7 @@ class NormalizationAudit:
         mus    = np.stack([params[3 * k + 1] for k in range(n_k)])
         sigmas = np.stack([params[3 * k + 2] for k in range(n_k)])
 
-        active   = ParamMatcher.is_active(amps, self.active_amp_thr)
+        active   = GaussianActivity.is_active(amps, self.active_amp_thr)
         n_active = int(active.sum())
 
         out = {"clamp_n_active": float(n_active)}

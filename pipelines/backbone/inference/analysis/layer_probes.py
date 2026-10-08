@@ -15,6 +15,7 @@ import torch
 
 from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import ModelDevice
+from tools.data.gaussians                            import GaussianActivity
 from tools.data.io                                   import FileIO
 from tools.diagnostics.activation_recorder           import ActivationRecorder
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
@@ -296,7 +297,7 @@ class LayerProbeCore:
         mus        = p[:, :, 1]
         sigmas     = p[:, :, 2]
 
-        active = amps > self.amp_thr
+        active = GaussianActivity.is_active(amps, self.amp_thr)
         counts = active.sum(axis=1).astype(np.float64)
 
         dominant_index = amps.argmax(axis=1)[:, None]
