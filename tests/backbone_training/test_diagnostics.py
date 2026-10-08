@@ -355,6 +355,67 @@ def test_slot_vitals_active_fractions_and_amp_means():
     assert scalars["slot_vitals/amp_mean/slot_1"]    == pytest.approx(0.0)
 
 
+def test_slot_vitals_reports_centre_and_width_over_all_and_declared_pixels():
+    """Centre and width means cover every pixel, and the declared means only the pixels whose amplitude passes the threshold."""
+    phys       = _phys([2.0, 0.0])
+    phys[0, 3] = torch.tensor([[1.0, 0.0], [0.0, 0.0]])
+    phys[0, 4] = torch.tensor([[12.0, 10.0], [10.0, 10.0]])
+    phys[0, 5] = torch.tensor([[-2.0, 4.0], [4.0, 6.0]])
+
+    vitals = _vitals()
+    vitals.begin(1e-3)
+    vitals.observe(phys)
+
+    scalars = vitals.scalars()
+
+    assert scalars["slot_vitals/mu_mean/slot_0"]             == pytest.approx(10.0)
+    assert scalars["slot_vitals/sigma_mean/slot_0"]          == pytest.approx(3.0)
+    assert scalars["slot_vitals/mu_mean_declared/slot_0"]    == pytest.approx(10.0)
+    assert scalars["slot_vitals/sigma_mean_declared/slot_0"] == pytest.approx(3.0)
+    assert scalars["slot_vitals/mu_mean/slot_1"]             == pytest.approx(10.5)
+    assert scalars["slot_vitals/sigma_mean/slot_1"]          == pytest.approx(3.0)
+    assert scalars["slot_vitals/mu_mean_declared/slot_1"]    == pytest.approx(12.0)
+    assert scalars["slot_vitals/sigma_mean_declared/slot_1"] == pytest.approx(-2.0)
+
+
+def test_slot_vitals_omits_declared_means_of_a_slot_that_declares_nothing():
+    """A slot with no pixel above the threshold keeps its all-pixel centre and width but reports no declared ones."""
+    vitals = _vitals()
+    vitals.begin(1e-3)
+    vitals.observe(_phys([2.0, 1e-3]))
+
+    scalars = vitals.scalars()
+
+    assert scalars["slot_vitals/sigma_mean/slot_1"] == pytest.approx(3.0)
+    assert scalars["slot_vitals/mu_mean/slot_1"]    == pytest.approx(10.0)
+    assert "slot_vitals/sigma_mean_declared/slot_1" not in scalars
+    assert "slot_vitals/mu_mean_declared/slot_1"    not in scalars
+    assert "slot_vitals/sigma_mean_declared/slot_0" in scalars
+
+
+def test_slot_vitals_width_means_weight_batches_by_their_pixels():
+    """Width means pool every pixel of the window, so a larger batch weighs more and declared means count declared pixels only."""
+    small       = _phys([2.0, 2.0], H=1, W=1)
+    small[0, 5] = 1.0
+
+    large       = _phys([2.0, 0.0], H=1, W=3)
+    large[0, 5] = 5.0
+
+    vitals = _vitals()
+    vitals.begin(1e-3)
+    vitals.observe(small)
+    vitals.observe(large)
+
+    scalars = vitals.scalars()
+
+    assert scalars["slot_vitals/sigma_mean/slot_1"]          == pytest.approx(4.0)
+    assert scalars["slot_vitals/sigma_mean_declared/slot_1"] == pytest.approx(1.0)
+
+    vitals.end()
+
+    assert vitals.scalars() == {}
+
+
 def test_slot_vitals_entropy_is_low_when_one_slot_dominates():
     """Usage entropy is one for balanced slots and zero when a single slot carries every activation."""
     balanced = _vitals()

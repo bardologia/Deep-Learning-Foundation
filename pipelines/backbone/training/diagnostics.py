@@ -95,7 +95,12 @@ class ParamSampler:
 
 
 class SlotVitals:
-    """Tracks per-slot occupancy, mean amplitude and gradient norm to expose slot collapse.
+    """Tracks per-slot occupancy, mean amplitude, mean centre and width, and gradient norm to expose slot collapse.
+
+    A slot declares a pixel when its predicted amplitude exceeds the activity
+    threshold, the same predicate as the active fraction. Centre and width means
+    are reported over all pixels and over the declared pixels only, so a slot
+    whose width drifts below its floor shows up even while it stays declared.
 
     Attributes:
         ppg        : Number of channels per Gaussian.
@@ -133,17 +138,25 @@ class SlotVitals:
         B, C, H, W = pred_params_phys.shape
         p          = pred_params_phys.reshape(B, C // self.ppg, self.ppg, H, W)
         amp        = p[:, :, 0]
+        mu         = p[:, :, 1]
+        sigma      = p[:, :, 2]
         active     = amp > self.thr
 
-        counts = active.sum(dim=(0, 2, 3)).detach().float().cpu()
-        amps   = (amp * active).sum(dim=(0, 2, 3)).detach().float().cpu()
+        batch = {
+            "active_count"       : active.sum(dim=(0, 2, 3)),
+            "amp_sum"            : (amp * active).sum(dim=(0, 2, 3)),
+            "mu_sum"             : mu.sum(dim=(0, 2, 3)),
+            "sigma_sum"          : sigma.sum(dim=(0, 2, 3)),
+            "mu_declared_sum"    : (mu * active).sum(dim=(0, 2, 3)),
+            "sigma_declared_sum" : (sigma * active).sum(dim=(0, 2, 3)),
+        }
+        batch = {name: value.detach().double().cpu() for name, value in batch.items()}
 
-        if self._active_count is None:
-            self._active_count = counts
-            self._amp_sum      = amps
+        if self._sums is None:
+            self._sums = batch
         else:
-            self._active_count += counts
-            self._amp_sum      += amps
+            for name, value in batch.items():
+                self._sums[name] += value
 
         self._n_pixels += B * H * W
 
@@ -168,20 +181,31 @@ class SlotVitals:
         """Summarises slot usage over the observation window.
 
         Returns:
-            Per-slot active fraction and mean active amplitude, plus the normalised entropy
-            of the slot-usage distribution; empty when nothing was observed.
+            Per-slot active fraction, mean active amplitude, mean centre and width
+            in metres over all pixels and over the declared pixels, plus the
+            normalised entropy of the slot-usage distribution; empty when nothing
+            was observed. A slot that declares no pixel reports an amplitude mean
+            of 0.0 and no declared centre or width, since those means are undefined.
         """
-        if self._active_count is None or self._n_pixels == 0:
+        if self._sums is None or self._n_pixels == 0:
             return {}
 
-        fractions = self._active_count / self._n_pixels
+        counts    = self._sums["active_count"]
+        fractions = counts / self._n_pixels
         out       = {f"slot_vitals/active_frac/slot_{k}": float(fractions[k]) for k in range(fractions.numel())}
 
         for k in range(fractions.numel()):
-            n_active = float(self._active_count[k])
-            out[f"slot_vitals/amp_mean/slot_{k}"] = float(self._amp_sum[k]) / n_active if n_active > 0 else 0.0
+            n_active = float(counts[k])
 
-        usage = self._active_count / self._active_count.sum().clamp_min(1.0)
+            out[f"slot_vitals/amp_mean/slot_{k}"]   = float(self._sums["amp_sum"][k]) / n_active if n_active > 0 else 0.0
+            out[f"slot_vitals/mu_mean/slot_{k}"]    = float(self._sums["mu_sum"][k]) / self._n_pixels
+            out[f"slot_vitals/sigma_mean/slot_{k}"] = float(self._sums["sigma_sum"][k]) / self._n_pixels
+
+            if n_active > 0:
+                out[f"slot_vitals/mu_mean_declared/slot_{k}"]    = float(self._sums["mu_declared_sum"][k]) / n_active
+                out[f"slot_vitals/sigma_mean_declared/slot_{k}"] = float(self._sums["sigma_declared_sum"][k]) / n_active
+
+        usage = counts / counts.sum().clamp_min(1.0)
         ent   = -(usage.clamp_min(1e-12) * usage.clamp_min(1e-12).log()).sum()
         out["slot_vitals/usage_entropy"] = float(ent / torch.log(torch.tensor(float(max(usage.numel(), 2)))))
 
@@ -208,10 +232,9 @@ class SlotVitals:
         self._reset_val()
 
     def _reset_val(self) -> None:
-        """Clears the per-slot count and amplitude accumulators."""
-        self._active_count = None
-        self._amp_sum      = None
-        self._n_pixels     = 0
+        """Clears the per-slot count, amplitude, centre and width accumulators."""
+        self._sums     = None
+        self._n_pixels = 0
 
     def _reset_grad(self) -> None:
         """Clears the per-slot gradient accumulator and its batch counter."""
