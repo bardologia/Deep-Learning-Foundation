@@ -115,6 +115,8 @@ class DualTrainScheduler(TrainScheduler):
                 model_name      = self.config.model_name,
                 backbones       = (self.config.params_backbone, self.config.existence_backbone),
                 trunk_channels  = self._trunk_channels(),
+                trunk_overrides = self._trunk_overrides(),
+                patch_size      = self.config.training.patch_size,
                 in_channels     = self._in_channels(),
                 out_channels    = self._out_channels(),
             )
@@ -123,7 +125,7 @@ class DualTrainScheduler(TrainScheduler):
             return DualContextTrialPlanner(self.config.context_trials, tuple(BACKBONE_CONFIG_REGISTRY))
 
         if mode == "reach":
-            return DualReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self._in_channels(), self._out_channels(), self.config.model_name, self._trunk_channels())
+            return DualReachTrialPlanner(self.config.reach_trials, tuple(BACKBONE_CONFIG_REGISTRY), self._in_channels(), self._out_channels(), self.config.model_name, self._trunk_channels(), self._trunk_overrides())
 
         if mode == "head":
             return DualHeadMatchingTrialPlanner(self.config.head_trials, self.config.params_backbone, tuple(BACKBONE_CONFIG_REGISTRY), ("set_pred",), tuple(matching.value for matching in ParamMatching))
@@ -144,6 +146,10 @@ class DualTrainScheduler(TrainScheduler):
         """Returns the channel index tuples routed into the params and existence trunks."""
         in_channels = self._in_channels()
         return (TrunkChannelMap.resolve(self.config.input, in_channels, self.config.params_input), TrunkChannelMap.resolve(self.config.input, in_channels, self.config.existence_input))
+
+    def _trunk_overrides(self) -> tuple:
+        """Returns the entry-level override dicts of the params and existence trunks, which are forwarded to every unit of the sweep."""
+        return (dict(self.config.params_overrides), dict(self.config.existence_overrides))
 
     def _model_key(self) -> str:
         """Returns the model key combining the dual trunk tag with the set-prediction head."""
