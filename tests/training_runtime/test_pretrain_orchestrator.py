@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 import torch
 
@@ -109,6 +110,7 @@ def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch, tm
         def run(self, batch_size):
             """Records the tuning call and returns a fixed loader choice."""
             order.append(("tune", batch_size))
+            self.records = [{"phase": "workers", "num_workers": 3, "prefetch_factor": 4, "status": "ok", "end_to_end_samples_per_s": 100.0}, {"phase": "workers", "num_workers": 6, "prefetch_factor": 4, "status": "oom"}]
             return {"num_workers": 3, "prefetch_factor": 4}
 
     monkeypatch.setattr(orchestrator_module, "LoaderTuner", _FakeTuner)
@@ -129,6 +131,11 @@ def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch, tm
     assert training.prefetch_factor == 4
     assert pretrain.find_batch_size is False
     assert pretrain.tune_loader     is False
+
+    sweep = pd.read_csv(tmp_path / PretrainOrchestrator.LOADER_SWEEP)
+
+    assert list(sweep["status"])      == ["ok", "oom"]
+    assert list(sweep["num_workers"]) == [3, 6]
 
     tune_index = next(i for i, (kind, _) in enumerate(order) if kind == "tune")
 
@@ -266,6 +273,7 @@ def test_loader_tuner_without_a_result_still_switches_itself_off(monkeypatch, tm
 
         def run(self, batch_size):
             """Reports no choice."""
+            self.records = [{"phase": "workers", "num_workers": 0, "prefetch_factor": 0, "status": "oom"}]
             return None
 
     monkeypatch.setattr(orchestrator_module, "LoaderTuner", _EmptyTuner)
@@ -282,6 +290,7 @@ def test_loader_tuner_without_a_result_still_switches_itself_off(monkeypatch, tm
 
     assert training.num_workers  == 0
     assert pretrain.tune_loader is False
+    assert list(pd.read_csv(tmp_path / PretrainOrchestrator.LOADER_SWEEP)["status"]) == ["oom"]
 
 
 def test_context_requires_a_trainer():

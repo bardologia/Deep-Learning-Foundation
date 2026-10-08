@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib     import Path
 from typing      import Callable, Optional
 
+import pandas as pd
 import torch
 
 from tools.data.io                           import FileIO
@@ -54,6 +55,7 @@ class PretrainOrchestrator:
     Attributes:
         TUNED_LEAVES : Entry-config probe flag to the flattened leaves that probe rewrites once it ran, the flag itself included.
         LR_RECORD    : File name, inside the result directory, of the LR range test's evidence record.
+        LOADER_SWEEP : File name, inside the result directory, of the loader tuner's per-configuration measurements.
         pretrain     : Pre-training configuration selecting and parameterising the probes.
         training     : Training configuration whose batch size and loader fields the probes override for this run.
         build        : Factory returning a fresh probe context per probe.
@@ -68,7 +70,8 @@ class PretrainOrchestrator:
         "pretrain.find_lr"         : ("pretrain.find_lr", "training.lr_multiplier"),
     }
 
-    LR_RECORD = "lr_range_test.json"
+    LR_RECORD    = "lr_range_test.json"
+    LOADER_SWEEP = "loader_sweep.csv"
 
     def __init__(self, pretrain_config, training_config, build_context: Callable[[], PretrainContext], logger: Logger, result_dir: Path, label: Optional[str] = None) -> None:
         """Stores the configurations, the context factory, the logger and the result directory.
@@ -190,6 +193,8 @@ class PretrainOrchestrator:
 
         self.pretrain.tune_loader = False
 
+        self._save_loader_sweep(tuner.records)
+
         if choice is None:
             self.logger.subsection(f"tune_loader switched off for the rest of this run: the configured workers={self.training.num_workers} prefetch={self.training.prefetch_factor} stay, and a relaunch or resume keeps them instead of sweeping again")
             return
@@ -198,6 +203,25 @@ class PretrainOrchestrator:
         self.training.prefetch_factor = int(choice["prefetch_factor"])
         self.logger.subsection(f"Resolved loader: workers={self.training.num_workers} prefetch={self.training.prefetch_factor} override training.num_workers/prefetch_factor for this run (the probe pins memory throughout, as the training loader does)")
         self.logger.subsection("tune_loader switched off for the rest of this run: the resolved entry config now records the tuned loader, so a relaunch or resume reuses it instead of sweeping again")
+
+    def _save_loader_sweep(self, records: list[dict]) -> Path:
+        """Writes every configuration the loader tuner measured, out-of-memory ones included, beside the preflight log.
+
+        Args:
+            records : Measurement records of the worker and prefetch sweeps, each stamped with its phase.
+
+        Returns:
+            Path of the written table.
+        """
+        path = self.result_dir / self.LOADER_SWEEP
+
+        if path.is_file():
+            self.logger.warning(f"replacing the loader sweep table of an earlier probe in this run directory: {path}")
+
+        pd.DataFrame(records).to_csv(path, index=False)
+        self.logger.subsection(f"Loader sweep table ({len(records)} configuration(s): throughput, data wait, feed ratio, status) -> {path}")
+
+        return path
 
     def _find_lr(self, context: PretrainContext) -> None:
         """Runs the LR range test and folds its multiplier into the training config.
