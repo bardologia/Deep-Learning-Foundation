@@ -229,6 +229,119 @@ class KSelectionDiagnostics:
         return maps, summary
 
 
+class ParameterMapBuilder:
+    """Derives the per-pixel maps a Gaussian parameter stack carries on its own.
+
+    Every map here needs only the parameter stack and the activity threshold,
+    so the builder serves any analysis of a parameter run, with or without the
+    fitter's diagnostics.
+
+    Attributes:
+        n_gaussians   : Number of Gaussian slots in the parameter stack.
+        amp_threshold : Amplitude above which a Gaussian slot counts as active.
+    """
+
+    def __init__(self, n_gaussians : int, amp_threshold : float) -> None:
+        """Fixes the slot count and the activity threshold the maps are derived with.
+
+        Args:
+            n_gaussians   : Number of Gaussian slots in the parameter stack.
+            amp_threshold : Amplitude above which a Gaussian slot counts as active.
+        """
+        self.n_gaussians   = n_gaussians
+        self.amp_threshold = amp_threshold
+
+    def activity_map(self, parameters_array: np.ndarray) -> np.ndarray:
+        """Counts the active Gaussian slots at each pixel.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
+
+        Returns:
+            Number of slots above the amplitude threshold, of shape (rows, cols).
+        """
+        active = np.zeros(parameters_array.shape[1:], dtype=np.int32)
+        for k in range(self.n_gaussians):
+            active += GaussianActivity.is_active(parameters_array[3 * k], self.amp_threshold).astype(np.int32)
+
+        return active
+
+    def per_gaussian_maps(self, parameters_array: np.ndarray) -> Dict[str, np.ndarray]:
+        """Splits the parameter stack into per-slot maps masked to active pixels.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
+
+        Returns:
+            Mapping with ``amp_k``, ``mu_k`` (metres) and ``sigma_k`` (metres) maps of
+            shape (rows, cols), NaN where the slot is inactive.
+        """
+        maps: Dict[str, np.ndarray] = {}
+        for k in range(self.n_gaussians):
+            amp_k  = parameters_array[3 * k    ].astype(np.float32)
+            active = GaussianActivity.is_active(amp_k, self.amp_threshold)
+            maps[f"amp_{k}"]   = np.where(active, amp_k,                                           np.nan).astype(np.float32)
+            maps[f"mu_{k}"]    = np.where(active, parameters_array[3 * k + 1].astype(np.float32),  np.nan).astype(np.float32)
+            maps[f"sigma_{k}"] = np.where(active, parameters_array[3 * k + 2].astype(np.float32),  np.nan).astype(np.float32)
+
+        return maps
+
+    def mu_separation_maps(self, parameters_array: np.ndarray) -> Dict[str, np.ndarray]:
+        """Measures the z gap between adjacent Gaussian slots.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
+
+        Returns:
+            Mapping with ``mu_sep_k_k+1`` maps of shape (rows, cols) in metres, NaN
+            where either slot is inactive; empty when fewer than two slots exist.
+        """
+        maps: Dict[str, np.ndarray] = {}
+        if self.n_gaussians < 2:
+            return maps
+
+        for k in range(self.n_gaussians - 1):
+            a_k   = parameters_array[3 * k            ]
+            a_kp1 = parameters_array[3 * (k + 1)      ]
+            m_k   = parameters_array[3 * k         + 1]
+            m_kp1 = parameters_array[3 * (k + 1)   + 1]
+            both  = GaussianActivity.is_active(a_k, self.amp_threshold) & GaussianActivity.is_active(a_kp1, self.amp_threshold)
+            maps[f"mu_sep_{k}_{k + 1}"] = np.where(both, np.abs(m_kp1.astype(np.float32) - m_k.astype(np.float32)), np.nan).astype(np.float32)
+
+        return maps
+
+    def occupancy_summary(self, activity_map: np.ndarray) -> Dict[str, float]:
+        """Summarises how many slots the pixels carry.
+
+        Args:
+            activity_map : Active-slot count of shape (rows, cols).
+
+        Returns:
+            Mapping with the pixel count, the count of pixels holding at least one
+            active slot, and the fraction of all pixels and of populated pixels
+            carrying each active-slot count.
+        """
+        act_flat    = activity_map.reshape(-1)
+        n_total     = int(activity_map.size)
+        n_populated = int((act_flat > 0).sum())
+
+        summary: Dict[str, float] = {
+            "n_pixels"    : float(n_total),
+            "n_fitted"    : float(n_populated),
+            "n_gaussians" : float(self.n_gaussians),
+        }
+
+        for k in range(self.n_gaussians + 1):
+            n_k = int((act_flat == k).sum())
+            summary[f"frac_{k}_active"] = float(n_k) / n_total if n_total > 0 else float("nan")
+
+        for k in range(1, self.n_gaussians + 1):
+            n_k = int((act_flat == k).sum())
+            summary[f"frac_{k}_fitted"] = float(n_k) / n_populated if n_populated > 0 else float("nan")
+
+        return summary
+
+
 class FittingMetricsCalculator:
     """Scores a fitted parameter stack against the cube it was fitted to.
 
@@ -241,6 +354,7 @@ class FittingMetricsCalculator:
         col_chunk          : Number of col bins processed per streaming chunk.
         contrast_estimator : Peak-to-floor contrast estimator.
         k_diagnostics      : Model-order selection diagnostics.
+        maps               : Builder of the activity, per-slot and separation maps.
     """
 
     def __init__(self, n_gaussians : int, logger : Logger, threshold_factor : float, truncation_index : int, amp_threshold : float, col_chunk : int = 128) -> None:
@@ -263,6 +377,7 @@ class FittingMetricsCalculator:
 
         self.contrast_estimator = ContrastEstimator(logger=logger, col_chunk=col_chunk)
         self.k_diagnostics      = KSelectionDiagnostics(k_max=n_gaussians, logger=logger)
+        self.maps               = ParameterMapBuilder(n_gaussians=n_gaussians, amp_threshold=amp_threshold)
 
     @staticmethod
     def _open_cube(cube_path: Path) -> np.ndarray:
@@ -321,65 +436,6 @@ class FittingMetricsCalculator:
 
         return contrast_db, r2_map
 
-    def _compute_activity_map(self, parameters_array: np.ndarray) -> np.ndarray:
-        """Counts the active Gaussian slots at each pixel.
-
-        Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
-
-        Returns:
-            Number of slots above the amplitude threshold, of shape (rows, cols).
-        """
-        active = np.zeros(parameters_array.shape[1:], dtype=np.int32)
-        for k in range(self.n_gaussians):
-            active += GaussianActivity.is_active(parameters_array[3 * k], self.amp_threshold).astype(np.int32)
-
-        return active
-
-    def _compute_per_gaussian_maps(self, parameters_array: np.ndarray) -> Dict[str, np.ndarray]:
-        """Splits the parameter stack into per-slot maps masked to active pixels.
-
-        Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
-
-        Returns:
-            Mapping with ``amp_k``, ``mu_k`` (metres) and ``sigma_k`` (metres) maps of
-            shape (rows, cols), NaN where the slot is inactive.
-        """
-        maps: Dict[str, np.ndarray] = {}
-        for k in range(self.n_gaussians):
-            amp_k  = parameters_array[3 * k    ].astype(np.float32)
-            active = GaussianActivity.is_active(amp_k, self.amp_threshold)
-            maps[f"amp_{k}"]   = np.where(active, amp_k,                                           np.nan).astype(np.float32)
-            maps[f"mu_{k}"]    = np.where(active, parameters_array[3 * k + 1].astype(np.float32),  np.nan).astype(np.float32)
-            maps[f"sigma_{k}"] = np.where(active, parameters_array[3 * k + 2].astype(np.float32),  np.nan).astype(np.float32)
-
-        return maps
-
-    def _compute_mu_separation_maps(self, parameters_array: np.ndarray) -> Dict[str, np.ndarray]:
-        """Measures the height gap between adjacent Gaussian slots.
-
-        Args:
-            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
-
-        Returns:
-            Mapping with ``mu_sep_k_k+1`` maps of shape (rows, cols) in metres, NaN
-            where either slot is inactive; empty when fewer than two slots exist.
-        """
-        maps: Dict[str, np.ndarray] = {}
-        if self.n_gaussians < 2:
-            return maps
-
-        for k in range(self.n_gaussians - 1):
-            a_k   = parameters_array[3 * k            ]
-            a_kp1 = parameters_array[3 * (k + 1)      ]
-            m_k   = parameters_array[3 * k         + 1]
-            m_kp1 = parameters_array[3 * (k + 1)   + 1]
-            both  = GaussianActivity.is_active(a_k, self.amp_threshold) & GaussianActivity.is_active(a_kp1, self.amp_threshold)
-            maps[f"mu_sep_{k}_{k + 1}"] = np.where(both, np.abs(m_kp1.astype(np.float32) - m_k.astype(np.float32)), np.nan).astype(np.float32)
-
-        return maps
-
     def _compute_global_summary(self, r2_map : np.ndarray, activity_map : np.ndarray) -> Dict[str, float]:
         """Summarises fit quality and the distribution of active-slot counts.
 
@@ -393,18 +449,13 @@ class FittingMetricsCalculator:
         """
         r2_flat  = r2_map.reshape(-1).astype(np.float64)
         r2_valid = r2_flat[np.isfinite(r2_flat)]
-        n_total  = int(r2_map.size)
-        act_flat = activity_map.reshape(-1)
-        n_fitted = int((act_flat > 0).sum())
 
         def _pct(q: float) -> float:
             """Returns the q-th percentile of the finite R-squared values, or NaN."""
             return float(np.percentile(r2_valid, q)) if r2_valid.size > 0 else float("nan")
 
         summary: Dict[str, float] = {
-            "n_pixels"    : float(n_total),
-            "n_fitted"    : float(n_fitted),
-            "n_gaussians" : float(self.n_gaussians),
+            **self.maps.occupancy_summary(activity_map),
             "r2_mean"     : float(r2_valid.mean())      if r2_valid.size > 0 else float("nan"),
             "r2_median"   : float(np.median(r2_valid))  if r2_valid.size > 0 else float("nan"),
             "r2_std"      : float(r2_valid.std())       if r2_valid.size > 0 else float("nan"),
@@ -415,14 +466,6 @@ class FittingMetricsCalculator:
             "r2_p90"      : _pct(90),
             "r2_neg_frac" : float((r2_valid < 0.0).mean()) if r2_valid.size > 0 else float("nan"),
         }
-
-        for k in range(self.n_gaussians + 1):
-            n_k = int((act_flat == k).sum())
-            summary[f"frac_{k}_active"] = float(n_k) / n_total if n_total > 0 else float("nan")
-
-        for k in range(1, self.n_gaussians + 1):
-            n_k = int((act_flat == k).sum())
-            summary[f"frac_{k}_fitted"] = float(n_k) / n_fitted if n_fitted > 0 else float("nan")
 
         return summary
 
@@ -509,13 +552,13 @@ class FittingMetricsCalculator:
         gc.collect()
 
         self.logger.subsection("Computing activity and spatial parameter maps")
-        activity_map = self._compute_activity_map(parameters_array)
+        activity_map = self.maps.activity_map(parameters_array)
 
         self.logger.subsection("Masking R² to fitted pixels: pixels with no active Gaussian were never candidates for a fit")
         r2_map = np.where(activity_map > 0, r2_map, np.nan).astype(np.float32)
 
-        gauss_maps   = self._compute_per_gaussian_maps(parameters_array)
-        sep_maps     = self._compute_mu_separation_maps(parameters_array)
+        gauss_maps   = self.maps.per_gaussian_maps(parameters_array)
+        sep_maps     = self.maps.mu_separation_maps(parameters_array)
         summary      = self._compute_global_summary(r2_map, activity_map)
 
         k_maps    : Dict[str, np.ndarray] = {}
