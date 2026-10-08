@@ -50,6 +50,41 @@ def test_ridge_probe_needs_enough_samples():
         RidgeProbe().score(np.zeros((5, 3)), np.zeros(5))
 
 
+def test_ridge_probe_leaves_constant_folds_out():
+    """Folds whose held-out target is constant have no defined R² and are counted instead of scored as zero."""
+    rng = np.random.default_rng(3)
+    X   = rng.normal(size=(40, 3))
+    y   = np.zeros(40)
+
+    probe = RidgeProbe(n_folds=4, seed=0)
+    folds = probe._folds(40)
+    y[folds[0]] = X[folds[0], 0]
+
+    score = probe.score(X, y)
+
+    assert probe.degenerate_folds(y) == 3
+    assert score["degenerate_folds"] == 3
+
+
+def test_ridge_probe_refuses_a_target_constant_in_every_fold():
+    """A constant target has no defined R² in any fold and raises instead of scoring 0.0."""
+    with pytest.raises(ValueError, match="no variance in any"):
+        RidgeProbe().score(np.random.default_rng(4).normal(size=(40, 3)), np.ones(40))
+
+
+def test_probe_core_leaves_a_constant_target_unscored_with_a_note():
+    """A target constant over the whole sample is unscored on every layer and the baseline, with the reason recorded."""
+    batches = [(images, np.concatenate([gt[:, :3], np.zeros_like(gt[:, 3:])], axis=1)) for images, gt in _batches()]
+
+    results = _core(_TwoLayerNet(), ["useful"]).collect(batches)
+
+    assert results["layers"]["useful"]["scores"]["second_presence"] is None
+    assert results["input_baseline"]["scores"]["second_presence"] is None
+    assert results["shuffled_controls"]["second_presence"] is None
+    assert results["target_notes"]["second_presence"] == "zero variance in 4/4 held-out folds; R² undefined, not scored"
+    assert results["layers"]["useful"]["scores"]["count"] is not None
+
+
 def test_ridge_probe_needs_two_folds():
     """A single-fold probe is rejected at construction."""
     with pytest.raises(ValueError):
