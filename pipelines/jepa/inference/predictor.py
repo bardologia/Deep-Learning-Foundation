@@ -187,10 +187,9 @@ class JepaCurvePredictor(Predictor):
             Result with stitched predicted and ground-truth curve cubes, the masked
             ground-truth parameter cube and the per-pixel metric maps.
         """
-        backend = "cuda" if torch.cuda.is_available() else "cpu"
         self.logger.section("[Inference: Predict]")
         self.logger.kv_table({
-            "Backend"    : f"PyTorch / {backend}",
+            "Backend"    : f"PyTorch / {self.run.model.device}",
             "Cube dir"   : self.cube_dir,
             "Window"     : self.window_kind,
             "Cube dtype" : self.cube_dtype,

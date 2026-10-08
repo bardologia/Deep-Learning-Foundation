@@ -3,8 +3,9 @@
 Covers component wiring, the adapter that decodes an embedding map into a denormalised profile
 cube, the loaders that rebuild a JepaModule from the persisted autoencoder and backbone configs
 and validate the head width, checkpoint loading with either a numpy or a tensor z axis,
-and JepaCurvePredictor stitching predicted and ground-truth curve cubes, sorting and masking the
-ground-truth parameters, and feeding the embedding evaluator from a single forward pass."""
+the reassembly table naming the frontend, profile autoencoder and backbone, and JepaCurvePredictor
+reporting the model's device, stitching predicted and ground-truth curve cubes, sorting and masking
+the ground-truth parameters, and feeding the embedding evaluator from a single forward pass."""
 
 from __future__ import annotations
 
@@ -30,6 +31,22 @@ from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalize
 from tests.conftest       import SilentLogger
 from tests.jepa.conftest  import DEPTH, EMBEDDING_DIM, HIDDEN_DIM, N_GAUSSIANS, PROFILE_LENGTH, SPATIAL, make_autoencoder
 from tools.data.gaussians import GaussianReconstructor
+
+
+class _TableLogger(SilentLogger):
+    """Silent logger keeping every kv_table mapping it is handed.
+
+    Attributes:
+        tables : Mappings passed to kv_table, in call order.
+    """
+
+    def __init__(self):
+        """Starts with no tables."""
+        self.tables = []
+
+    def kv_table(self, data, *args, **kwargs):
+        """Records the table mapping."""
+        self.tables.append(dict(data))
 
 
 def build_inference_module():
@@ -85,7 +102,8 @@ def test_jepa_param_run_loader_builds_image_frontend_module(tmp_path):
     backbone_cfg = UNetConfig(in_channels=4, out_channels=6, features=(8, 16))
     BackboneModelConfigIO.save(backbone_cfg, "unet", meta_dir)
 
-    loader = JepaParamRunLoader(tmp_path, logger=SilentLogger())
+    logger = _TableLogger()
+    loader = JepaParamRunLoader(tmp_path, logger=logger)
     module = loader._build_model("unet", in_channels=2, out_channels=6, patch_size=(8, 8))
     module.eval()
 
@@ -97,6 +115,32 @@ def test_jepa_param_run_loader_builds_image_frontend_module(tmp_path):
         out = module(torch.randn(2, 2, 8, 8))
 
     assert out.shape == (2, 6, 8, 8)
+
+    reassembled = logger.tables[-1]
+    assert reassembled["Image frontend"].startswith("conv2d_ae (embedding_dim=4")
+    assert reassembled["Profile AE"].startswith("none")
+    assert reassembled["Backbone"].startswith("unet (head ")
+
+
+def test_jepa_run_loader_logs_the_rebuilt_frontend_profile_autoencoder_and_stats(tmp_path):
+    """Rebuilding a curve run without an image frontend logs that absence, the decoding profile autoencoder and the loaded profile statistics."""
+    meta_dir = _profile_ae_meta(tmp_path, embedding_dim=EMBEDDING_DIM)
+    BackboneModelConfigIO.save(UNetConfig(in_channels=2, out_channels=EMBEDDING_DIM, features=(8, 16)), "unet", meta_dir)
+    ProfileStats(loc=0.25, scale=1.5).save(meta_dir)
+
+    logger = _TableLogger()
+    module = JepaRunLoader(tmp_path, logger=logger)._build_model("unet", in_channels=2, out_channels=EMBEDDING_DIM, patch_size=(8, 8))
+
+    assert module.image_autoencoder is None
+
+    stats = [table for table in logger.tables if "loc" in table]
+    assert stats and stats[0]["loc"] == 0.25
+
+    reassembled = logger.tables[-1]
+    assert reassembled["Image frontend"].startswith(f"none (no {ImageAutoencoderConfigIO.FILENAME} in meta")
+    assert reassembled["Profile AE"].startswith(f"mlp_ae (embedding_dim={EMBEDDING_DIM}, profile_length={PROFILE_LENGTH}")
+    assert reassembled["Backbone"].startswith("unet (head ")
+    assert f"2 -> {EMBEDDING_DIM} channels" in reassembled["Backbone"]
 
 
 def _profile_ae_meta(tmp_path, embedding_dim: int):
@@ -221,14 +265,16 @@ def build_fake_run(model_fn, n_gaussians, n_z, spatial):
     """Builds a fake inference run over a single unpadded patch.
 
     Args:
-        model_fn    : Callable mapping an image batch to a predicted curve cube of shape (batch, n_z, spatial, spatial).
+        model_fn    : Callable mapping an image batch to a predicted curve cube of shape (batch, n_z, spatial, spatial); it is given the CPU device the predictor reports.
         n_gaussians : Number of Gaussian slots in the ground-truth parameter cube.
-        n_z      : Number of z bins in the profile.
+        n_z         : Number of z bins in the profile.
         spatial     : Side length in pixels of the single square patch.
 
     Returns:
-        Namespace carrying the loader, model, dataset, grid, split region and z axis.
+        Namespace carrying the loader, model, dataset, grid, split region, z axis and the label run's activity threshold.
     """
+    model_fn.device = torch.device("cpu")
+
     grid = GridInfo(
         n_v          = 1,
         n_h          = 1,
@@ -298,6 +344,25 @@ def test_jepa_curve_predictor_produces_curve_cubes(tmp_path):
     assert np.isfinite(result.pixel_mse).all()
 
 
+def test_predict_table_reports_the_device_the_model_runs_on(tmp_path):
+    """The predict table names the wrapped model's device rather than whether CUDA exists on the host."""
+    n_gaussians = 2
+    n_z         = 6
+    spatial     = 4
+
+    def model_fn(images):
+        """Returns a random curve cube for the given image batch."""
+        return np.random.rand(images.shape[0], n_z, spatial, spatial).astype(np.float32)
+
+    run    = build_fake_run(model_fn, n_gaussians, n_z, spatial)
+    logger = _TableLogger()
+
+    JepaCurvePredictor(run, logger, window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=types.SimpleNamespace(cube_dir=tmp_path)).run_inference()
+
+    predict = next(table for table in logger.tables if "Backend" in table)
+    assert predict["Backend"] == "PyTorch / cpu"
+
+
 def test_jepa_curve_predictor_zero_error_on_identical_output(tmp_path):
     """Predicting exactly the ground-truth curves drives the per-pixel MSE to zero."""
     n_gaussians = 2
@@ -320,6 +385,8 @@ def test_jepa_curve_predictor_zero_error_on_identical_output(tmp_path):
     gt     = torch.rand(1, n_gaussians * 3, spatial, spatial)
     loader = [(torch.rand(1, 2, spatial, spatial), gt)]
     run    = {"gt": gt}
+
+    model_fn.device = torch.device("cpu")
 
     grid = GridInfo(
         n_v=1, n_h=1, pad_top=0, pad_bot=0, pad_left=0, pad_right=0,
