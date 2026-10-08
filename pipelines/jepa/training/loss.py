@@ -25,6 +25,7 @@ class Loss:
         norm_stats         : Normalizer denormalizing the ground-truth Gaussian parameters.
         ppg                : Number of parameters per Gaussian in the target parameter vector.
         profile_normalizer : Normalizer mapping rendered curves into the profile autoencoder's training scale.
+        loss_generation    : Number of stage swaps applied so far; the checkpoint tracker restarts its best-loss baseline when it changes.
     """
 
     def __init__(self, autoencoder, target_provider, embedding_cfg, z_axis, norm_stats, params_per_gaussian: int, profile_normalizer) -> None:
@@ -46,20 +47,21 @@ class Loss:
         self.norm_stats         = norm_stats
         self.ppg                = params_per_gaussian
         self.profile_normalizer = profile_normalizer
-
-    @property
-    def loss_generation(self) -> int:
-        """Schema generation of this loss, kept at 0 for the embedding criterion."""
-        return 0
+        self.loss_generation    = 0
 
     def set_curriculum(self, embedding_cfg, context: str = "curriculum swap") -> None:
-        """Replaces the embedding-loss stage configuration.
+        """Replaces the embedding-loss stage configuration and advances the loss generation.
+
+        Warmup and main-stage embedding losses live on different scales, so
+        the generation step makes the checkpoint tracker restart its baseline
+        at the swap instead of keeping a warmup epoch as the best checkpoint.
 
         Args:
             embedding_cfg : Embedding-loss configuration the criterion switches to.
             context       : Label describing why the stage changed, kept for parity with the parameter loss interface.
         """
-        self.emb_cfg = embedding_cfg
+        self.emb_cfg          = embedding_cfg
+        self.loss_generation += 1
 
     def _embedding_terms(self, z_hat, z_star) -> tuple[torch.Tensor, dict]:
         """Sums the enabled embedding-space terms between prediction and target.

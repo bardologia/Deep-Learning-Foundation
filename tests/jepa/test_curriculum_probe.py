@@ -195,3 +195,20 @@ def test_embedding_probe_rejects_unknown_flags():
             params_per_gaussian = 3,
             profile_normalizer  = ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)),
         )
+
+
+def test_embedding_loss_generation_advances_on_each_swap():
+    """Each stage swap advances the generation the checkpoint tracker compares, so the best-loss baseline restarts at the swap."""
+    autoencoder = make_autoencoder("none")
+    z_axis      = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
+    warmup      = EmbeddingLossConfig(use_embedding_mse=True, use_curve_recon=False)
+    complete    = EmbeddingLossConfig(use_embedding_mse=False, use_embedding_cosine=True, weight_embedding_cosine=1.0, use_curve_recon=False)
+    criterion   = EmbeddingLoss(autoencoder, TargetProvider("stopgrad"), warmup, z_axis, IdentityNormStats(), 3, ProfileNormalizer(ProfileStats(loc=0.0, scale=1.0)))
+
+    assert criterion.loss_generation == 0
+
+    criterion.set_curriculum(complete)
+    assert criterion.loss_generation == 1
+
+    criterion.set_curriculum(complete, context="re-applied on resume")
+    assert criterion.loss_generation == 2
