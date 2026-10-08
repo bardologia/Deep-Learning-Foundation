@@ -575,6 +575,40 @@ def test_memory_budget_warns_and_names_a_col_batch_that_fits(monkeypatch):
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_extractor_refuses_a_fit_without_active_pixels_and_warns_on_a_sparse_one(tmp_path):
+    """Verifies an all-inactive cube raises before anything is returned, and a mostly empty one warns with the unfitted batches."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.sigma.extractor   import SigmaFittingExtractor
+    from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
+
+    H      = 40
+    z_axis = np.linspace(-10.0, 30.0, H, dtype=np.float32)
+    layer  = np.exp(-((z_axis - 8.0) ** 2) / (2.0 * 3.0 ** 2)).astype(np.float32)
+
+    def extractor(logger):
+        """Returns a small CPU extractor with two cols per batch."""
+        return SigmaFittingExtractor(logger=logger, modes=["sigma"], lambda_values=[LAMBDA_K], k_max=2, threshold_factor=0.0, truncation_index=H, col_batch_size=2, adam_steps=5, gpu_pixel_batch_size=8, peak_initialiser=PeakInitialiser(n_workers=1))
+
+    empty_path = tmp_path / "empty.npy"
+    np.save(empty_path, np.zeros((H, 2, 4), dtype=np.float32))
+
+    with pytest.raises(ValueError, match="nothing was fitted"):
+        extractor(RecordingLogger()).run(empty_path, (-10.0, 30.0))
+
+    sparse          = np.zeros((H, 2, 4), dtype=np.float32)
+    sparse[:, :, 3] = layer[:, None]
+    sparse_path     = tmp_path / "sparse.npy"
+    np.save(sparse_path, sparse)
+
+    logger = RecordingLogger()
+    extractor(logger).run(sparse_path, (-10.0, 30.0))
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert any("1 of 2 col batches held no pixel" in message and "cols 0-2" in message for message in warnings)
+    assert any("Only 25.0% of the pixels cleared" in message for message in warnings)
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_kernel_backend_label_names_the_real_platform_and_the_entry_refuses_cpu(monkeypatch):
     """Verifies the backend label reports the device platform JAX fell back to, and that a GPU-requiring selection refuses it."""
     from pipelines.processing.param_extraction.sigma import selection as selection_module

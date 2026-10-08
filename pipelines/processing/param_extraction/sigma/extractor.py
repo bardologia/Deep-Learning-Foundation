@@ -174,13 +174,15 @@ class SigmaFittingExtractor:
         devices       : JAX devices the fit runs on.
         outcome       : Record of the last run's fitted pixels, truncation, backend and duration; None before run().
         bound_shares  : Per (mode, lambda_k) shares of the selected active slots whose sigma or mean ended on a clamp bound, from the last run; empty before run().
-        BATCH_COPIES      : Col-batch-sized float32 arrays held at the peak of the load and fit overlap: the current batch's raw, normalised and active-row profiles and the three arrays of the batch loading ahead.
-        RAM_WARN_FRACTION : Share of the available host RAM above which the estimated footprint warns.
+        BATCH_COPIES        : Col-batch-sized float32 arrays held at the peak of the load and fit overlap: the current batch's raw, normalised and active-row profiles and the three arrays of the batch loading ahead.
+        RAM_WARN_FRACTION   : Share of the available host RAM above which the estimated footprint warns.
+        MIN_ACTIVE_FRACTION : Share of the pixels below which an active-pixel count warns, pointing at a zero-filled crop or an activity threshold above the amplitude scale.
     """
 
     MAX_PENDING_SCORINGS = 2
     BATCH_COPIES         = 6
     RAM_WARN_FRACTION    = 0.8
+    MIN_ACTIVE_FRACTION  = 0.5
 
     def __init__(
         self,
@@ -762,6 +764,7 @@ class SigmaFittingExtractor:
         self.logger.subsection(f"Col batches : {n_batches} x {self.col_batch_size} cols")
 
         total_attempted = 0
+        empty_spans     = []
 
         with self.logger.track(transient=True) as progress:
             fit_progress = FitProgress(self.logger, progress, n_batches)
@@ -790,7 +793,9 @@ class SigmaFittingExtractor:
 
                         batch = self._init_batch(profiles_flat, profiles_norm, active, safe_scale, z_axis, batch_tag)
 
-                        if batch is not None:
+                        if batch is None:
+                            empty_spans.append(f"{r_start}-{r_end}")
+                        else:
                             inits, prof_norm_all, scale_all, active_idx, N_act = batch
                             n_total                                            = profiles_flat.shape[0]
 
@@ -823,6 +828,9 @@ class SigmaFittingExtractor:
         self.logger.subsection(f"Total pixels   : {n_col * n_row:,}")
         self.logger.subsection(f"Active pixels  : {total_attempted:,}")
 
+        if empty_spans:
+            self.logger.warning(f"{len(empty_spans)} of {n_batches} col batches held no pixel above activity_threshold {self.activity_threshold} and were not fitted: cols {', '.join(empty_spans)}")
+
         return total_attempted
 
     def run(
@@ -842,6 +850,9 @@ class SigmaFittingExtractor:
             metres interleaved per Gaussian — and a diagnostics dict holding
             `mse_per_k` and `penalised_per_k` of shape (k_max, n_row, n_col),
             the `best_k_map` of shape (n_row, n_col) and the scalar `lambda_k`.
+
+        Raises:
+            ValueError : If no pixel cleared the activity threshold, so nothing was fitted.
         """
 
         (
@@ -883,6 +894,9 @@ class SigmaFittingExtractor:
                 jax.clear_caches()
             gc.collect()
 
+        if total_attempted == 0:
+            raise ValueError(f"No pixel of {cube_path} has a preprocessed peak above activity_threshold {self.activity_threshold} (threshold_factor {self.threshold_factor}, truncation_index {self.truncation_index}), so nothing was fitted and the all-zero labels are not saved; check the crop against a zero-filled edge of the cube and the threshold against the cube's amplitude scale")
+
         self.outcome = ExtractionOutcome(
             n_z_bins           = int(H),
             total_pixels       = int(n_col * n_row),
@@ -894,7 +908,10 @@ class SigmaFittingExtractor:
         )
 
         self.logger.section("[Results]")
-        self.logger.subsection(f"Active pixels fitted : {total_attempted:,} / {n_col * n_row:,}")
+        self.logger.subsection(f"Active pixels fitted : {total_attempted:,} / {n_col * n_row:,} ({total_attempted / (n_col * n_row):.1%})")
+
+        if total_attempted / (n_col * n_row) < self.MIN_ACTIVE_FRACTION:
+            self.logger.warning(f"Only {total_attempted / (n_col * n_row):.1%} of the pixels cleared activity_threshold {self.activity_threshold}, below {self.MIN_ACTIVE_FRACTION:.0%}; the crop may reach into a zero-filled edge of the cube or the threshold may sit above the cube's amplitude scale")
         self.logger.subsection(f"Permutations fitted  : {len(outputs)} ({len(self.modes)} modes x {len(self.lambda_values)} lambdas)")
         self.logger.subsection(f"Backend              : {self.backend} on {self.outcome.devices}")
         self.logger.subsection(f"Fit elapsed          : {self.outcome.fit_seconds:.1f}s")
