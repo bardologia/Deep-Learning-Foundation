@@ -1,7 +1,8 @@
 """Tests for the metric, summary and completion bookkeeping of the shared autoencoder inference pipeline.
 
 Covers the scored checkpoint and epoch written into metrics.json and the completion payload,
-using a pipeline subclass with stubbed metrics and region hooks so no run is loaded.
+and the active-latent-dimension row and collapse warning of the logged summary, using a
+pipeline subclass with stubbed metrics and region hooks so no run is loaded.
 """
 
 from __future__ import annotations
@@ -103,6 +104,30 @@ def test_metrics_record_the_scored_checkpoint_and_one_based_epoch(tmp_path):
     assert written["checkpoint_epoch"] == 5
     assert written["split"]            == "test"
     assert written["split_region"]     == [0, 8, 0, 8]
+
+
+def test_summary_reports_a_fully_active_latent_without_warning(tmp_path):
+    """With every latent dimension active the summary states the count and no warning is raised."""
+    pipeline = _Pipeline(SimpleNamespace(checkpoint_name="best_model.pt"), _values())
+    logger   = _RecordingLogger()
+
+    pipeline._evaluate_metrics(result=None, run=_run(), meta=SimpleNamespace(metrics_path=tmp_path / "metrics.json"), logger=logger)
+
+    assert logger.tables[-1]["Active latent dims"] == "8 of 8 (1.00)"
+    assert logger.warnings == []
+
+
+def test_summary_warns_and_counts_inactive_latent_dimensions(tmp_path):
+    """A partly collapsed latent shows the active count in the summary and warns naming the inactive dimensions."""
+    values   = {"mse_mean": 0.5, "embedding_dim": 8, "embedding_active_dim_fraction": 0.25}
+    pipeline = _Pipeline(SimpleNamespace(checkpoint_name="best_model.pt"), values)
+    logger   = _RecordingLogger()
+
+    pipeline._evaluate_metrics(result=None, run=_run(), meta=SimpleNamespace(metrics_path=tmp_path / "metrics.json"), logger=logger)
+
+    assert logger.tables[-1]["Active latent dims"] == "2 of 8 (0.25)"
+    assert len(logger.warnings) == 1
+    assert "6 of the 8 latent dimensions" in logger.warnings[0]
 
 
 def test_completion_payload_names_the_scored_weights(tmp_path, monkeypatch):

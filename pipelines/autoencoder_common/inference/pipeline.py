@@ -103,6 +103,23 @@ class AeInferencePipeline:
         """Returns the run-level fields recorded next to the metrics: the scored weights, by default."""
         return self._scored_weights(run)
 
+    def _log_latent_activity(self, metrics: dict, summary: dict, logger: Logger) -> None:
+        """Adds the active latent dimensions to the summary and warns when part of the latent has collapsed.
+
+        Args:
+            metrics : Computed metrics holding embedding_dim and embedding_active_dim_fraction.
+            summary : Log-table rows, extended in place with an 'Active latent dims' row.
+            logger  : Logger receiving the collapse warning.
+        """
+        embedding_dim = int(metrics["embedding_dim"])
+        active        = int(round(metrics["embedding_active_dim_fraction"] * embedding_dim))
+        inactive      = embedding_dim - active
+
+        summary["Active latent dims"] = f"{active} of {embedding_dim} ({metrics['embedding_active_dim_fraction']:.2f})"
+
+        if inactive:
+            logger.warning(f"{inactive} of the {embedding_dim} latent dimensions carry no variation over the split (std <= 1e-4); the latent has partly collapsed and the reconstruction summary above is scored on a {active}-dimensional code.")
+
     def _evaluate_metrics(self, result, run, meta, logger: Logger):
         """Computes, writes and logs the metrics, returning them with the metrics object."""
         metrics_obj = self._metrics_object(result, run)
@@ -114,8 +131,11 @@ class AeInferencePipeline:
 
         AeMetricsBase.write_json(metrics, meta.metrics_path)
 
+        summary = self._metrics_summary(metrics)
+        self._log_latent_activity(metrics, summary, logger)
+
         logger.section(f"[{self.FAMILY} Inference: Metrics]")
-        logger.kv_table(self._metrics_summary(metrics))
+        logger.kv_table(summary)
 
         return metrics, metrics_obj
 
