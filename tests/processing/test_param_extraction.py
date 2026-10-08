@@ -349,6 +349,42 @@ def test_pipeline_run_records_the_fit_outcome_and_commit_in_the_metadata(tmp_pat
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_pipeline_run_copies_its_part_of_the_group_log_into_the_run(tmp_path, monkeypatch):
+    """Verifies each saved run receives this launch's group-log record, from its RUN banner to END, without earlier launches."""
+    from pipelines.processing.param_extraction                 import pipeline as pipeline_module
+    from pipelines.processing.param_extraction.sigma.extractor import ExtractionOutcome
+
+    class _StubExtractor:
+        """Extractor stand-in returning one fitted permutation and a fixed outcome."""
+
+        def __init__(self, **kwargs):
+            """Records a fixed outcome in place of fitting."""
+            self.outcome = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=1.5)
+
+        def run(self, cube_path, z_range):
+            """Returns zero parameters for the single permutation."""
+            return {("sigma", 1e-2): (np.zeros((9, 2, 4), dtype=np.float32), {"best_k_map": np.zeros((2, 4), dtype=np.int16)})}
+
+    _dataset_stub(tmp_path)
+    monkeypatch.setattr(pipeline_module, "ParameterExtractor", _StubExtractor)
+
+    group_log = tmp_path / "params" / "logs" / "param_extraction_k3.log"
+    group_log.parent.mkdir(parents=True)
+    group_log.write_text("record of an earlier launch\n", encoding="utf-8")
+
+    entry = ExtractParamsEntryConfig(fit_k_values=[3], fit_lambda_values=[1e-2], fit_modes=["sigma"])
+    group = ExtractionPlanResolver(entry, [tmp_path]).resolve()[0]
+    saved = pipeline_module.ParamExtractionPipeline(group).run()
+
+    copied = (saved[("sigma", 1e-2)]["output_directory"] / "logs" / "param_extraction_k3.log").read_text(encoding="utf-8")
+
+    assert "record of an earlier launch" in group_log.read_text(encoding="utf-8")
+    assert "record of an earlier launch" not in copied
+    assert ">>> RUN param_extraction_k3" in copied
+    assert ">>> END param_extraction_k3" in copied
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_pipeline_run_samples_resources_into_the_group_log(tmp_path, monkeypatch):
     """Verifies a configured resource monitor logs its startup table and peak summary into the group log around the fit."""
     import time

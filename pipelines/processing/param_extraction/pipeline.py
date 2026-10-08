@@ -141,6 +141,7 @@ class ParamExtractionPipeline:
         z_range             : The z axis limits as (minimum, maximum).
         owns_logger         : Whether the pipeline created the logger and must close it.
         group_log_path      : File of the owned group logger, recorded in every permutation's metadata; None when the logger was passed in.
+        group_log_offset    : Byte size the group log had before this launch appended to it, where this launch's record starts.
         logger              : Logger for the stage report.
         parameter_extractor : Fitter driving the group's permutations.
         parameter_io        : Writer for the parameter stacks and diagnostics.
@@ -169,12 +170,15 @@ class ParamExtractionPipeline:
         self.cube_path    = self.shared.discover_cube_path()
         self.z_range      = self.shared.discover_z_range()
 
-        log_dir = Path(self.shared.processed_data_path) / "params" / "logs"
+        log_dir  = Path(self.shared.processed_data_path) / "params" / "logs"
+        log_name = f"param_extraction_k{group.k_max}"
+        log_file = log_dir / f"{log_name}.log"
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        self.owns_logger    = logger is None
-        self.logger         = logger or Logger(log_dir = str(log_dir), name = f"param_extraction_k{group.k_max}", level = "INFO")
-        self.group_log_path = Path(self.logger.log_dir) / f"{self.logger.name}.log" if self.owns_logger else None
+        self.owns_logger      = logger is None
+        self.group_log_offset = log_file.stat().st_size if log_file.is_file() else 0
+        self.logger           = logger or Logger(log_dir = str(log_dir), name = log_name, level = "INFO")
+        self.group_log_path   = Path(self.logger.log_dir) / f"{self.logger.name}.log" if self.owns_logger else None
 
         fit_cfg = self.shared.fit_settings.fit_config
 
@@ -270,6 +274,26 @@ class ParamExtractionPipeline:
             "source_cube"      : self.cube_path,
         }
 
+    def _copy_group_log(self, saved: Dict[tuple, dict]) -> None:
+        """Copies this launch's part of the closed group log into every saved permutation's logs/ directory.
+
+        The group log is shared by every launch on the dataset at this k_max
+        and appended to, so only the bytes from this launch's RUN banner to its
+        END or ABORTED banner are copied; the run directory then carries the
+        timings, devices and warnings of its own fit wherever it is mailed.
+
+        Args:
+            saved : Mapping from (mode, lambda) to the saved-artifact paths, naming each output directory.
+        """
+        with open(self.group_log_path, "rb") as handle:
+            handle.seek(self.group_log_offset)
+            excerpt = handle.read()
+
+        for paths in saved.values():
+            target = Path(paths["output_directory"]) / "logs" / self.group_log_path.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(excerpt)
+
     def run(self) -> Dict[tuple, dict]:
         """Fits and saves every permutation in the group.
 
@@ -278,7 +302,9 @@ class ParamExtractionPipeline:
         log records threshold warnings and peaks. An exception ends the group
         log with the error, naming the dataset, the k_max and how many
         permutations were saved, and an owned logger closes with the ABORTED
-        banner and the traceback in place of END.
+        banner and the traceback in place of END. Once an owned logger is
+        closed, this launch's part of the group log is copied into every saved
+        permutation's logs/ directory.
 
         Returns:
             Mapping from (mode, lambda) to that permutation's saved-artifact paths.
@@ -314,3 +340,4 @@ class ParamExtractionPipeline:
         finally:
             if self.owns_logger:
                 self.logger.close(error)
+                self._copy_group_log(saved)
