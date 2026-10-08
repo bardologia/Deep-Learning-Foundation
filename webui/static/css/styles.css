@@ -4271,6 +4271,7 @@ table.rm-led tbody tr:hover { background: var(--surface-2); }
 .cube-pmap__cbar { height: 10px; flex: 1 1 auto; min-width: 0; border: 2px solid var(--line); }
 .cube-pmap__bound { min-width: 46px; text-align: center; }
 .cube-pmap__classes { display: flex; flex-wrap: wrap; gap: 8px 12px; flex: 1 1 auto; }
+.cube-pmap__classes[hidden] { display: none; }
 .cube-cat { display: inline-flex; align-items: center; gap: 5px; }
 .cube-cat i { width: 10px; height: 10px; border-radius: 2px; border: 2px solid var(--line); }
 .cube-rect { position: absolute; border: 1.5px dashed rgba(255, 209, 102, 0.95); background: rgba(255, 209, 102, 0.10); pointer-events: none; }

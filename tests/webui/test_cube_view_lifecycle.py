@@ -1036,3 +1036,11 @@ def test_the_cube_route_hands_its_link_state_to_the_cube_view():
     app = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
 
     assert 'if (route === "cube") this.cubeView.enter(param);' in app
+
+
+def test_a_hidden_class_legend_takes_no_room_beside_the_colour_bar():
+    """The class legend span sets display:flex, so its hidden state needs its own rule or it keeps half the legend row from a continuous layer's colour bar."""
+    css = (WEBUI_ROOT / "static" / "css" / "styles.css").read_text()
+
+    assert ".cube-pmap__classes { display: flex;" in css
+    assert ".cube-pmap__classes[hidden] { display: none; }" in css
