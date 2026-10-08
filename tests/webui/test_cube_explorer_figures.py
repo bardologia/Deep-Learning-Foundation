@@ -1,19 +1,23 @@
-"""Tests for the cube explorer's saved-figure browser.
+"""Tests for the cube explorer's saved-figure browser and stamp timeline.
 
 Covers listing the figure and animation trees of a loaded stamp, path-guarded
-serving of individual files, and the two routes that expose both.
+serving of individual files, the two routes that expose both, and the timeline
+of sibling inference stamps that cover the same region and z axis.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib      import Path
 from urllib.parse import quote
+
+import numpy as np
 
 from cube_explorer        import CubeExplorer
 from routers.cube_routers import CubeRouter
 from routers.dispatch     import HttpExchange
 
-from tests.webui.conftest import FakeHandler, load_cube, loaded_cube, make_cube_run, open_explorer
+from tests.webui.conftest import N_COLS, N_Z, FakeHandler, load_cube, loaded_cube, make_cube_run, make_preproc, make_stamp, open_explorer
 
 
 def _with_figures(base: Path) -> tuple[CubeExplorer, str, Path]:
@@ -96,3 +100,54 @@ def test_figure_routes_list_and_serve_through_the_cube_router(tmp_path):
     assert served.status == 200 and served.wfile.getvalue() == b"GIF89a_fake"
     assert served.sent["Content-Type"] == "image/gif" and served.sent["Cache-Control"] == "max-age=300"
     assert escaped.status == 404
+
+
+def _timeline_run(base: Path) -> Path:
+    """Writes a run whose inference directory holds two matching stamps, one over another region, one over other z bounds and a non-stamp folder, and returns the second matching stamp."""
+    rng     = np.random.default_rng(0)
+    preproc = make_preproc(base, rng)
+    run     = base / "group" / "run_a"
+
+    make_stamp(run, preproc, rng, name="stamp_1")
+    second = make_stamp(run, preproc, rng, name="stamp_2")
+    make_stamp(run, preproc, rng, name="stamp_other", region=[0, 4, 0, N_COLS], shape=(N_Z, 4, N_COLS))
+    make_stamp(run, preproc, rng, name="stamp_shifted", x_min=-20.0)
+    (run / "inference" / "seed_comparison").mkdir()
+
+    payload = json.loads((second / "metrics.json").read_text())
+    payload["curve_mse_gt"] = 0.125
+    (second / "metrics.json").write_text(json.dumps(payload))
+
+    return second
+
+
+def test_timeline_lists_matching_sibling_stamps(tmp_path):
+    """Sibling stamps over the same region and z bounds are listed in order with the current index and their recorded curve MSE."""
+    second = _timeline_run(tmp_path)
+
+    explorer, _ = open_explorer(tmp_path, expected=4)
+    result      = explorer.timeline(str(second))
+
+    assert result["ok"]
+    assert [stamp["stamp"] for stamp in result["stamps"]] == ["stamp_1", "stamp_2"]
+    assert result["current"] == 1
+    assert result["stamps"][0]["mse"] is None
+    assert result["stamps"][1]["mse"] == 0.125
+    assert result["stamps"][1]["id"] == str(second.resolve())
+
+    assert explorer.timeline("wrong")["ok"] is False
+
+
+def test_timeline_route_answers_through_the_cube_router(tmp_path):
+    """The /api/cubes/timeline route answers a stamp with its siblings and an unknown id with an error status."""
+    second = _timeline_run(tmp_path)
+
+    explorer, _ = open_explorer(tmp_path, expected=4)
+    router      = CubeRouter(explorer)
+
+    known   = FakeHandler("GET", f"/api/cubes/timeline?id={quote(str(second))}")
+    unknown = FakeHandler("GET", "/api/cubes/timeline?id=wrong")
+
+    assert router.handle(HttpExchange.of(known)) and router.handle(HttpExchange.of(unknown))
+    assert known.status == 200 and known.payload()["current"] == 1
+    assert unknown.status == 400

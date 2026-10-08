@@ -355,6 +355,7 @@
         <button type="button" class="cube-mode" data-view="transect">Transect</button>
         <button type="button" class="cube-mode" data-view="cloud">Point cloud</button>
         <button type="button" class="cube-mode" data-view="volume" title="Ray-marched volume rendering of the cube with an adjustable transfer function">Volume</button>
+        <button type="button" class="cube-mode" data-view="timeline" title="Replay the same cut across every inference stamp of this run that covers the same region, in stamp order">Timeline</button>
         <button type="button" class="cube-mode" data-view="figures" title="Browse the figures and animations inference already rendered for this stamp">Figures</button>
         <select id="cube-cmap" class="cube-mselect cube-modes__cmap" aria-label="Cube colormap">
           <option value="jet" selected>jet</option>
@@ -840,12 +841,11 @@
             <div class="cube-spaces" id="cube-timeline-source" role="group" aria-label="Timeline source">
               <button type="button" class="cube-space is-active" data-source="pred">pred</button>
               <button type="button" class="cube-space" data-source="gt">gt</button>
-              <button type="button" class="cube-space" data-source="reduced">capon reduced</button>
-              <button type="button" class="cube-space" data-source="full">capon full</button>
+              <button type="button" class="cube-space" data-source="full">reference</button>
             </div>
             <div class="cube-spaces" id="cube-timeline-axis" role="group" aria-label="Cut axis">
-              <button type="button" class="cube-space is-active" data-axis="range">Range cut</button>
-              <button type="button" class="cube-space" data-axis="azimuth">Azimuth cut</button>
+              <button type="button" class="cube-space is-active" data-axis="col">Col cut</button>
+              <button type="button" class="cube-space" data-axis="row">Row cut</button>
             </div>
             <div class="cube-sweep__controls">
               <button type="button" class="cube-sweep__play" id="cube-timeline-play">Play</button>
@@ -855,7 +855,7 @@
           </div>
           <div class="cube-pview__deck">
             <figure class="cube-pmap">
-              <div class="cube-pmap__media"><canvas id="cube-timeline-canvas"></canvas></div>
+              <div class="cube-pmap__media"><canvas id="cube-timeline-canvas" data-fig="timeline cut"></canvas></div>
               <figcaption class="cube-pmap__legend"><span id="cube-timeline-label"></span></figcaption>
             </figure>
           </div>

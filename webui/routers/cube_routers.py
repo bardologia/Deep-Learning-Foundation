@@ -48,6 +48,7 @@ class CubeRouter(SubRouter):
         table.add("GET", "/api/cubes/param_cbar",       self.param_cbar)
         table.add("GET", "/api/cubes/params_at",        self.params_at)
         table.add("GET", "/api/cubes/slice",            self.slice_view)
+        table.add("GET", "/api/cubes/timeline",         self.timeline)
         table.add("GET", "/api/cubes/figures",          self.figures)
         table.add("GET", "/api/cubes/figure",           self.figure)
 
@@ -251,6 +252,10 @@ class CubeRouter(SubRouter):
             cmap    = exchange.text("cmap", "jet"),
         )
         exchange.send_png(png)
+
+    def timeline(self, exchange: HttpExchange) -> None:
+        """Answers with the sibling inference stamps that cover the same region as the cube."""
+        exchange.send_result(self.cubes.timeline(exchange.text("id")))
 
     def figures(self, exchange: HttpExchange) -> None:
         """Answers with the figure files saved under the loaded stamp, grouped by folder."""

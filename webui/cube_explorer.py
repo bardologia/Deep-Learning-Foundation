@@ -1404,6 +1404,46 @@ class CubeExplorer:
         header = np.array([aux.shape[0], aux.shape[1], median, 0.0], dtype=np.float32)
         return header.tobytes() + np.ascontiguousarray(grid).tobytes()
 
+    def timeline(self, cube_id: str) -> dict:
+        """Lists the sibling inference stamps of a cube that cover the same region.
+
+        Siblings are the stamps beside this one whose prediction cubes cover the same split region and z-axis bounds, so the same cut can be replayed across them in stamp order.
+
+        Args:
+            cube_id : Stamp cube id whose siblings are scanned.
+
+        Returns:
+            Dict with ``ok``, the ``current`` stamp index and ``stamps`` rows of id, stamp name and the stamp's global curve MSE against ground truth (None when the stamp records none); ``ok`` False for an unknown id.
+        """
+        reader = self._open_source(cube_id)
+        if reader is None:
+            return {"ok": False, "error": f"unknown cube id: {cube_id}"}
+
+        metrics = reader.metrics()
+        region  = [int(v) for v in metrics["split_region"]]
+        bounds  = (float(metrics["x_axis_min"]), float(metrics["x_axis_max"]))
+
+        stamps = []
+        for child in sorted(reader.stamp_dir.parent.iterdir()):
+            if not child.is_dir() or not (child / "cubes" / "pred_curves.npy").is_file():
+                continue
+
+            payload_path = child / "metrics.json"
+            if not payload_path.is_file():
+                continue
+
+            payload = json.loads(payload_path.read_text(encoding="utf-8"))
+            if [int(v) for v in payload["split_region"]] != region:
+                continue
+            if (float(payload["x_axis_min"]), float(payload["x_axis_max"])) != bounds:
+                continue
+
+            mse = payload.get("curve_mse_gt")
+            stamps.append({"id": str(child), "stamp": child.name, "mse": None if mse is None else float(mse)})
+
+        current = next(index for index, stamp in enumerate(stamps) if stamp["id"] == str(reader.stamp_dir))
+        return {"ok": True, "current": current, "stamps": stamps}
+
     FIGURE_DIRS     = ("figures", "animations")
     FIGURE_SUFFIXES = (".png", ".gif", ".jpg", ".jpeg", ".svg")
 

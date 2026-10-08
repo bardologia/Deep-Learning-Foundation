@@ -219,13 +219,30 @@ def make_preproc(base: Path, rng: np.random.Generator | None = None, with_full: 
     return preproc
 
 
-def make_stamp(run: Path, preproc: Path, rng: np.random.Generator, sources: tuple = ("pred", "gt"), x_min: float = -10.0, shape: tuple = (N_Z, N_ROWS, N_COLS), name: str = "stamp_1") -> Path:
+def make_stamp(run: Path, preproc: Path, rng: np.random.Generator, sources: tuple = ("pred", "gt"), x_min: float = -10.0, shape: tuple = (N_Z, N_ROWS, N_COLS), name: str = "stamp_1", region: list | None = None) -> Path:
+    """Writes an inference stamp with random curve cubes and its metrics file.
+
+    Args:
+        run     : Run directory receiving ``inference/<name>`` and ``meta``; several stamps may share it.
+        preproc : Preprocessing run the dataset config points back to.
+        rng     : Generator for the random curve cubes.
+        sources : Cube prefixes to write, each as ``<source>_curves.npy``.
+        x_min   : Lowest z value of the stamp's z axis.
+        shape   : Cube shape as (z, rows, cols).
+        name    : Stamp directory name.
+        region  : Split region as [row_start, row_end, col_start, col_end]; the whole scene when None.
+
+    Returns:
+        Path of the created stamp directory.
+    """
     stamp = run / "inference" / name
     (stamp / "cubes").mkdir(parents=True)
-    (run / "meta").mkdir(parents=True)
+    (run / "meta").mkdir(parents=True, exist_ok=True)
+
+    region = [0, N_ROWS, 0, N_COLS] if region is None else region
 
     (run / "meta" / "dataset_creation_config.json").write_text(json.dumps({"preprocessing_run_directory": str(preproc)}))
-    (stamp / "metrics.json").write_text(json.dumps({"x_axis_min": x_min, "x_axis_max": 30.0, "split_region": [0, N_ROWS, 0, N_COLS], "activity_threshold": ACTIVITY_THRESHOLD}))
+    (stamp / "metrics.json").write_text(json.dumps({"x_axis_min": x_min, "x_axis_max": 30.0, "split_region": region, "activity_threshold": ACTIVITY_THRESHOLD}))
 
     for source in sources:
         np.save(stamp / "cubes" / f"{source}_curves.npy", rng.random(shape).astype(np.float32))

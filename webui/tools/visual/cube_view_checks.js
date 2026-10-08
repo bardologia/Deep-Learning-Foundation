@@ -9,7 +9,7 @@ class CubeViewChecks {
     vm.createContext(this.sandbox);
 
     const source = fs.readFileSync(path.join(staticDir, "cube_view.js"), "utf8");
-    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeTransect, CubeCloud, CubeVolume, CubeFigures, CubeView };`, this.sandbox, { filename: "cube_view.js" });
+    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeTransect, CubeCloud, CubeVolume, CubeTimeline, CubeFigures, CubeView };`, this.sandbox, { filename: "cube_view.js" });
     this.classes = this.sandbox.classes;
   }
 
@@ -190,9 +190,10 @@ class CubeViewChecks {
     cloud.leave();
     const left = { running: cloud.sweepFrame !== null, pending: frames.pending.size };
 
-    const view  = Object.create(CubeView.prototype);
-    view.sweeps = [];
-    view.cloud  = cloud;
+    const view    = Object.create(CubeView.prototype);
+    view.sweeps   = [];
+    view.cloud    = cloud;
+    view.timeline = this._timelineStub();
     cloud._startSweep();
     view.leave();
     const viewLeft = { running: cloud.sweepFrame !== null, pending: frames.pending.size };
@@ -391,6 +392,169 @@ class CubeViewChecks {
       urls[axis]  = sweep._url("pred", 3);
     });
     return urls;
+  }
+
+  _timeline() {
+    const { CubeTimeline } = this.classes;
+    const fetched          = [];
+    const drawn            = [];
+    const answers          = [];
+
+    this.sandbox.Api = { get: (url) => new Promise((resolve) => answers.push({ url, resolve })) };
+
+    const ctx = { drawImage: (bitmap) => drawn.push(bitmap.url), clearRect: () => drawn.push("cleared") };
+    const bitmaps = { pending: [], missing: new Set() };
+
+    const host = {
+      selectedId  : "stamp/b",
+      meta        : { n_rows: 8, n_cols: 6, sources: ["pred", "gt"] },
+      view        : "timeline",
+      space       : "physical",
+      cmap        : "jet",
+      focus       : null,
+      focusPoint  : () => host.focus,
+      _fmt        : (value) => String(value),
+      cacheBitmap : (url) => {
+        fetched.push(url);
+        return Promise.resolve(bitmaps.missing.has(url) ? null : { url, width: 6, height: 5 });
+      },
+    };
+
+    const buttons = (attr, values) => values.map((value) => ({ dataset: { [attr]: value }, disabled: false, classList: { toggle: () => {} }, addEventListener: () => {} }));
+    const refs    = {
+      source : this._element(),
+      axis   : this._element(),
+      play   : this._element({ textContent: "Play" }),
+      pos    : this._element({ value: "0", max: "0" }),
+      at     : this._element(),
+      canvas : this._element({ width: 0, height: 0, getContext: () => ctx }),
+      label  : this._element(),
+    };
+    refs.play.classList = { add: () => {}, remove: () => {}, toggle: () => {} };
+
+    const sourceBtns = buttons("source", ["pred", "gt", "full"]);
+    const axisBtns   = buttons("axis", ["col", "row"]);
+    refs.source.querySelectorAll = () => sourceBtns;
+    refs.axis.querySelectorAll   = () => axisBtns;
+
+    const timeline = new CubeTimeline(refs, host);
+    const stamps   = [{ id: "/runs/a/inference/stamp_1", stamp: "stamp_1", mse: null }, { id: "/runs/a/inference/stamp_2", stamp: "stamp_2", mse: 0.125 }, { id: "/runs/a/inference/stamp_3", stamp: "stamp_3", mse: 0.5 }];
+    return { timeline, host, refs, sourceBtns, fetched, drawn, answers, bitmaps, stamps };
+  }
+
+  async timeline() {
+    const { CubeTimeline } = this.classes;
+    const { timeline, host, refs, sourceBtns, fetched, drawn, answers, bitmaps, stamps } = this._timeline();
+    const query = (url) => Object.fromEntries(new URLSearchParams(url.split("?")[1]));
+
+    timeline.configure(host.meta);
+    const rendering = timeline.render();
+    answers.shift().resolve({ ok: true, current: 1, stamps });
+    await rendering;
+    const first = {
+      asked    : answers.length,
+      idx      : timeline.idx,
+      max      : refs.pos.max,
+      pos      : refs.pos.value,
+      at       : refs.at.textContent,
+      label    : refs.label.textContent,
+      urls     : fetched.splice(0).map(query),
+      drawn    : drawn.splice(0),
+      disabled : sourceBtns.map((btn) => btn.disabled),
+      canvas   : [refs.canvas.width, refs.canvas.height],
+    };
+
+    await timeline.render();
+    const cached = { asked: answers.length, urls: fetched.splice(0).length, drawn: drawn.splice(0).length };
+
+    timeline._setSource("full");
+    const refused = { source: timeline.source, urls: fetched.splice(0).length };
+
+    host.focus = { row: 2, col: 3 };
+    timeline._setAxis("row");
+    await this._settle();
+    const row = { at: refs.at.textContent, url: query(fetched.splice(0).pop()), drawn: drawn.splice(0).length };
+
+    refs.pos.value = "0";
+    timeline.playing = true;
+    refs.pos.listeners.input();
+    await this._settle();
+    const scrubbed = { idx: timeline.idx, playing: timeline.playing, label: refs.label.textContent, prefetched: fetched.splice(0).map((url) => query(url).id), drawn: drawn.splice(0).length };
+
+    timeline._setSource("gt");
+    bitmaps.missing.add(timeline._url(0));
+    await timeline._show();
+    const missing = { at: refs.at.textContent, drawn: drawn.splice(0) };
+    bitmaps.missing.clear();
+
+    const slow   = { resolve: null };
+    host.cacheBitmap = (url) => new Promise((resolve) => { if (!slow.resolve) slow.resolve = () => resolve({ url: "old", width: 6, height: 5 }); else resolve({ url: "new", width: 6, height: 5 }); });
+    const older  = timeline._show();
+    const newer  = timeline._show();
+    await newer;
+    slow.resolve();
+    await older;
+    const stale = drawn.splice(0);
+
+    host.cacheBitmap = (url) => Promise.resolve({ url, width: 6, height: 5 });
+    CubeTimeline.FRAME_MS = 0;
+    timeline.idx = 0;
+    timeline._togglePlay();
+    const started = { playing: timeline.playing, label: refs.play.textContent };
+    for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setTimeout(resolve, 1));
+    const advanced = timeline.idx > 0 || drawn.length > 1;
+    host.view = "explorer";
+    for (let i = 0; i < 4; i += 1) await new Promise((resolve) => setTimeout(resolve, 1));
+    const stopped = { playing: timeline.playing, label: refs.play.textContent };
+    host.view = "timeline";
+
+    timeline.configure({ sources: ["pred"] });
+    const late = timeline.render();
+    host.selectedId = "stamp/c";
+    answers.shift().resolve({ ok: true, current: 0, stamps });
+    await late;
+    const dropped = { stamps: timeline.stamps.length, loadedFor: timeline.loadedFor };
+
+    const failing = timeline.render();
+    answers.shift().resolve({ ok: false, error: "unknown cube id: stamp/c" });
+    await failing;
+    const failed = refs.at.textContent;
+
+    const single = timeline.render();
+    answers.shift().resolve({ ok: true, current: 0, stamps: stamps.slice(0, 1) });
+    await single;
+    timeline._togglePlay();
+    const alone = { at: refs.at.textContent, playing: timeline.playing };
+
+    return { first, cached, refused, row, scrubbed, missing, stale, started, advanced, stopped, dropped, failed, alone };
+  }
+
+  timelineViews() {
+    const calls = [];
+    const stub  = this._displayStub("timeline", { timeline: this._timelineStub(calls) });
+    stub._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4 });
+    const loaded = calls.splice(0);
+
+    stub.meta    = { sources: ["pred"] };
+    stub.viewEls = [];
+    stub._setView("explorer");
+    const left = calls.splice(0);
+
+    stub._setView("timeline");
+    const opened = calls.splice(0);
+
+    stub.cmap        = "jet";
+    stub.panels      = [];
+    stub.point       = null;
+    stub.transect    = null;
+    this.sandbox.localStorage = { setItem: () => {} };
+    stub._setCmap("viridis");
+    const recoloured = calls.splice(0);
+
+    stub.leave();
+    const tab = calls.splice(0);
+
+    return { loaded, left, opened, recoloured, tab };
   }
 
   async pixel() {
@@ -890,7 +1054,7 @@ class CubeViewChecks {
 
     const picked = record(true);
     const picker = Object.create(CubeView.prototype);
-    Object.assign(picker, { view: "explorer", meta: { sources: ["pred"] }, modeBtns: [], viewEls: [], sweeps: [], volume: picked });
+    Object.assign(picker, { view: "explorer", meta: { sources: ["pred"] }, modeBtns: [], viewEls: [], sweeps: [], volume: picked, timeline: this._timelineStub() });
     picker._setView("volume");
 
     return {
@@ -899,6 +1063,10 @@ class CubeViewChecks {
       attached : attached.calls,
       picked   : { calls: picked.calls, view: picker.view },
     };
+  }
+
+  _timelineStub(calls = []) {
+    return { calls, configure: () => calls.push("configure"), render: () => calls.push("render"), leave: () => calls.push("leave") };
   }
 
   _displayStub(view, extra) {
@@ -920,6 +1088,7 @@ class CubeViewChecks {
       topdown    : this._element(),
       mapWrap    : this._element(),
       figures    : { configure: () => {}, render: () => {} },
+      timeline   : this._timelineStub(),
       ...extra,
     });
     ["_clearBitmapCache", "_syncSpaceBtns", "_syncProfModeBtns", "_renderSourceToggles", "_applyVisibility", "_initCutBounds", "_follow", "_consumeFocus"].forEach((name) => { stub[name] = () => {}; });
@@ -949,6 +1118,7 @@ class CubeViewChecks {
       slicesAt    : this._element(),
       followed    : [],
       profiled    : [],
+      timeline    : this._timelineStub(),
     });
     view._follow        = (point) => view.followed.push([point.row, point.col]);
     view._queueProfiles = (row, col) => view.profiled.push([row, col]);
