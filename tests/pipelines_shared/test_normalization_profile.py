@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 import torch
@@ -52,6 +54,22 @@ def test_scale_floor_applied_for_zero_scale():
 
     assert norm.scale == ProfileNormalizer.SCALE_FLOOR
     assert np.isfinite(norm.inv_scale)
+
+
+@pytest.mark.parametrize("loc, scale", [(float("nan"), 1.0), (0.0, float("inf"))])
+def test_non_finite_stats_are_rejected(loc, scale):
+    """A NaN or infinite location or scale is rejected instead of normalizing to non-finite values."""
+    with pytest.raises(ValueError, match="non-finite stats"):
+        ProfileNormalizer(ProfileStats(loc=loc, scale=scale))
+
+
+@pytest.mark.parametrize("loc, scale", [(0.0, -1.0), (0.0, 0.0), (float("nan"), 1.0)])
+def test_load_rejects_corrupt_stats_file(tmp_path, loc, scale):
+    """Loading a stats file with a non-finite location or a non-positive scale raises."""
+    (tmp_path / ProfileStats.FILENAME).write_text(json.dumps({"loc": loc, "scale": scale}))
+
+    with pytest.raises(ValueError, match="Corrupt profile normalization stats"):
+        ProfileStats.load(tmp_path)
 
 
 def test_normalize_dtype_is_float32_numpy():
