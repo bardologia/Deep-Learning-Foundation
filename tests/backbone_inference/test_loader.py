@@ -20,7 +20,10 @@ from pipelines.backbone.inference.loader             import AbsentCube, RunLoade
 from pipelines.backbone.inference.model_wrapper      import ModelWrapper
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.shared.config.config_persistence      import BackboneModelConfigIO
+from tools.data.regions                              import CropRegion
 
+from tests.backbone_inference._helpers import N_Z, build_run_directory
+from tests.conftest                    import SilentLogger
 from tests.models_backbone._helpers    import SMALL_OVERRIDES, WINDOW
 
 
@@ -242,3 +245,51 @@ def test_absent_cube_refuses_every_use(tmp_path):
         np.asarray(absent)
 
 
+@pytest.mark.dataset
+def test_load_refuses_a_checkpoint_axis_that_differs_from_the_dataset_axis(tmp_path, test_data_dir, params_dir):
+    """A checkpoint trained on another z range with the same bin count is refused, so no z metric is reported in the wrong units."""
+    run_dir   = build_run_directory(tmp_path, test_data_dir, params_dir)
+    ckpt_path = run_dir / "best_model.pt"
+
+    ckpt           = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
+    ckpt["z_axis"] = np.linspace(-30.0, 70.0, N_Z).astype(np.float32)
+    torch.save(ckpt, str(ckpt_path))
+
+    with pytest.raises(ValueError, match="z axis"):
+        RunLoader(run_dir, logger=SilentLogger()).load(split="test", batch_size=None, num_workers=0, device="cpu", checkpoint_name="best_model.pt")
+
+
+class _TableLogger(SilentLogger):
+    """Logger stub recording every key-value table it is asked to print.
+
+    Attributes:
+        tables : Field-to-value mappings in emission order.
+    """
+
+    def __init__(self):
+        """Starts with no recorded table."""
+        self.tables = []
+
+    def kv_table(self, data, title=None, **kwargs):
+        """Records the table fields, discarding the title."""
+        self.tables.append(dict(data))
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_full_run_load_logs_the_effective_checkpoint_and_split_values(tmp_path, test_data_dir, params_dir):
+    """The [Model] and [Split] tables name the one-based checkpoint epoch, both z axes, the region, its source and the effective batch size before any pass runs."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+    logger  = _TableLogger()
+
+    RunLoader(run_dir, logger=logger).load(split="test", batch_size=None, num_workers=0, device="cpu", checkpoint_name="best_model.pt", region_override=CropRegion(1180, 1296, 500, 596))
+
+    model_table = next(table for table in logger.tables if "Checkpoint epoch" in table)
+    split_table = next(table for table in logger.tables if "Region source" in table)
+
+    assert model_table["Checkpoint epoch"]    == "2 (best epoch 2, best val loss 0.1)"
+    assert model_table["Z axis (checkpoint)"] == model_table["Z axis (dataset)"] == f"[-20.000, 80.000] m, {N_Z} bins"
+    assert split_table["Region"]              == (1180, 1296, 500, 596)
+    assert split_table["Region source"]       == "region override; stored core region (1200, 1296, 500, 596)"
+    assert split_table["Batch size"]          == "4 (from training)"
+    assert split_table["Loader workers"]      == 0

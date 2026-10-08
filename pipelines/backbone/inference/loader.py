@@ -2,7 +2,7 @@
 
 Reads the run summary, dataset-creation config, checkpoint and normalization statistics,
 reconstructs the backbone with the persisted head, and assembles the patch dataset,
-dataloader, stitching grid and track metadata into a single `Run` container.
+dataloader and stitching grid into a single `Run` container.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 
 from configuration.dataset                      import DatasetConfig
 from configuration.dataset.gaussian             import GaussianConfig
+from tools.data.gaussians                       import GaussianAxis
 from tools.data.regions                         import CropRegion
 from models                                     import get_backbone
 from pipelines.backbone.dataset.datasets        import PatchDataset
@@ -91,7 +92,7 @@ class Run:
         dataset_config     : Dataset-creation configuration restored from the run.
         split_name         : Name of the split being inferred ("train", "val" or "test").
         split_region       : Crop region covered by the inference, including any guard extension.
-        core_region        : Unextended split region, set only when a region override was applied.
+        core_region        : Unextended stored split region the region override contains, set only when an override was applied.
         global_crop        : Crop region of the preprocessed scene the split sits inside.
         grid               : Patch grid used to stitch per-patch outputs back into a cube.
         dataset            : Patch dataset yielding the normalised input windows.
@@ -219,10 +220,10 @@ class RunLoader(RunArtifactLoader):
         num_workers     : int,
         device          : str,
         checkpoint_name : str,
-        load_cube   : bool = True,
+        load_cube       : bool = True,
         region_override : Optional[CropRegion] = None,
     ) -> Run:
-        """Loads model, dataset, dataloader and track metadata for one split of a trained run.
+        """Loads model, dataset and dataloader for one split of a trained run.
 
         Args:
             split           : Split to infer over ("train", "val" or "test").
@@ -230,11 +231,14 @@ class RunLoader(RunArtifactLoader):
             num_workers     : Worker count for the dataloader.
             device          : Torch device string the model is moved to.
             checkpoint_name : File name of the checkpoint inside the run directory.
-            load_cube   : Whether to read the raw cube; when False `full_curves` refuses use.
-            region_override : Crop region replacing the split region, used for guard-extended inference.
+            load_cube       : Whether to read the raw cube; when False `full_curves` refuses use.
+            region_override : Crop region replacing the split region, used for guard-extended inference or for one region of a split stored as several.
 
         Returns:
             The assembled `Run` container.
+
+        Raises:
+            ValueError : If the checkpoint's z axis differs from the axis the dataset's preprocessing run defines, which would report every z metric in the wrong units.
         """
 
         self.logger.section("[Inference: Load Run]")
@@ -255,7 +259,8 @@ class RunLoader(RunArtifactLoader):
 
         self._validate_out_channels(out_channels, n_gaussians)
 
-        activity_threshold = GaussianConfig.from_dataset(dataset_config.preprocessing_run_directory, dataset_config.parameters_path).activity_threshold
+        gaussian           = GaussianConfig.from_dataset(dataset_config.preprocessing_run_directory, dataset_config.parameters_path)
+        activity_threshold = gaussian.activity_threshold
 
         ckpt_path = self.run_directory / checkpoint_name
         model     = self._build_model(backbone_name, in_channels, out_channels, dataset_config.patch.size)
@@ -268,17 +273,21 @@ class RunLoader(RunArtifactLoader):
         norm_stats = Stats.load(self.run_directory / "meta", self.logger)
         model      = self._wrap_model(model, device, norm_stats, z_axis, norm_stats.clamp.amp_max if norm_stats.clamp.enabled else None)
 
-        dataset, grid, region, global_crop, arrays = self._build_dataset(
+        dataset, grid, region, layout, arrays = self._build_dataset(
             dataset_config  = dataset_config,
             split_name      = split,
             n_gaussians     = n_gaussians,
             norm_stats      = norm_stats,
-            load_cube   = load_cube,
+            load_cube       = load_cube,
             region_override = region_override,
         )
 
-        core_region = dataset_config.split_regions.regions(split)[0] if region_override is not None else None
+        dataset_axis = GaussianAxis.build(gaussian.x_min, gaussian.x_max, layout.profile_length)
+        self._validate_x_axis(z_axis, dataset_axis, ckpt_path)
 
+        core_region = None
+        if region_override is not None:
+            core_region = next(stored for stored in dataset_config.split_regions.regions(split) if region_override.contains(stored))
 
         loader = DataLoader(
             dataset,
@@ -291,20 +300,27 @@ class RunLoader(RunArtifactLoader):
 
         self.logger.section(f"[Model]         : '{backbone_name}'")
         self.logger.kv_table({
-            "Checkpoint":   ckpt_path,
-            "Head":         self.model_head,
-            "In channels":  in_channels,
-            "Out channels": out_channels,
-            "K gaussians":  n_gaussians,
-            "Activity thr": f"{activity_threshold:g}",
+            "Checkpoint":          ckpt_path,
+            "Checkpoint epoch":    f"{ckpt_meta['epoch'] + 1} (best epoch {ckpt_meta['best_epoch'] + 1}, best val loss {ckpt_meta['best_val_loss']:.6g})",
+            "Head":                self.model_head,
+            "In channels":         in_channels,
+            "Out channels":        out_channels,
+            "K gaussians":         n_gaussians,
+            "Activity thr":        f"{activity_threshold:g}",
+            "Z axis (checkpoint)": self._axis_label(z_axis),
+            "Z axis (dataset)":    self._axis_label(dataset_axis),
         })
 
         self.logger.section(f"[Split]         : '{split}'")
         self.logger.kv_table({
-            "Patches":       grid.grid.number_of_patches,
-            "Row size":  region.row_size,
-            "Col size":    region.col_size,
-            "X-axis length": z_axis.size,
+            "Patches":        grid.grid.number_of_patches,
+            "Row size":       region.row_size,
+            "Col size":       region.col_size,
+            "Z axis length":  z_axis.size,
+            "Region":         region.as_tuple(),
+            "Region source":  "stored split region" if core_region is None else f"region override; stored core region {core_region.as_tuple()}",
+            "Batch size":     f"{dataset_config.batch_size} (from training)" if batch_size is None else dataset_config.batch_size,
+            "Loader workers": dataset_config.num_workers,
         })
 
         return Run(
@@ -320,7 +336,7 @@ class RunLoader(RunArtifactLoader):
             split_name         = split,
             split_region       = region,
             core_region        = core_region,
-            global_crop        = global_crop,
+            global_crop        = layout.global_crop,
             grid               = grid.grid,
             dataset            = dataset,
             loader             = loader,
