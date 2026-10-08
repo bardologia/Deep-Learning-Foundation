@@ -56,7 +56,7 @@ class LeaderboardView {
   }
 
   async load() {
-    this.root.innerHTML = `<div class="res-empty">Scanning inference results&hellip;</div>`;
+    this.root.innerHTML = ThinkingOrb.panel("searching", "Scanning inference results…");
 
     const base = ResultsSources.runs();
     const data = await Api.get(`/api/leaderboard?base=${encodeURIComponent(base)}`);
@@ -75,7 +75,7 @@ class LeaderboardView {
   }
 
   async loadTrials() {
-    this.root.innerHTML = `<div class="res-empty">Aggregating seeded trials&hellip;</div>`;
+    this.root.innerHTML = ThinkingOrb.panel("weaving", "Aggregating seeded trials…");
 
     const base = ResultsSources.runs();
     const data = await Api.get(`/api/leaderboard/trials?base=${encodeURIComponent(base)}`);
@@ -92,7 +92,7 @@ class LeaderboardView {
   }
 
   async loadCurveRuns() {
-    this.root.innerHTML = `<div class="res-empty">Scanning training runs&hellip;</div>`;
+    this.root.innerHTML = ThinkingOrb.panel("searching", "Scanning training runs…");
 
     const base = ResultsSources.runs();
     const data = await Api.get(`/api/curves/runs?base=${encodeURIComponent(base)}`);
@@ -511,7 +511,7 @@ class LeaderboardView {
     } else if (this.curveData) {
       html += `<div class="res-empty">None of the selected runs logs the tag "${SharedCharts.esc(this.curveTag)}".</div>`;
     } else {
-      html += `<div class="res-empty">Loading curves&hellip;</div>`;
+      html += ThinkingOrb.panel("composing", "Loading curves…");
     }
     html += `</div></div>`;
     return html;

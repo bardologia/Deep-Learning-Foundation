@@ -58,9 +58,11 @@ class App {
   }
 
   _initScenes() {
-    const radar = document.getElementById("radar");
+    const orb    = document.getElementById("backdrop-orb");
+    const radar  = document.getElementById("radar");
     const server = document.getElementById("server-anim");
 
+    if (orb) this.scenes.push(new window.BackdropOrb(orb));
     if (radar) this.scenes.push(new window.TrainingScene(radar));
 
     if (server) {
@@ -107,6 +109,7 @@ class App {
     const text = document.getElementById("status-text");
     wrap.classList.toggle("is-ok", ok);
     wrap.classList.toggle("is-down", !ok);
+    wrap.querySelector("thinking-orb").setAttribute("state", ok ? "listening" : "connecting");
     text.textContent = ok ? "backend live" : "offline";
   }
 

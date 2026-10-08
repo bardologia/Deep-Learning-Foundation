@@ -359,7 +359,7 @@ class LaunchView extends ConfigForm {
   _renderSkeleton() {
     document.getElementById("launch-kicker").textContent = "";
     document.getElementById("launch-variants").innerHTML = "";
-    document.getElementById("launch-title").textContent = "Loading...";
+    document.getElementById("launch-title").innerHTML = ThinkingOrb.busy("searching", "Loading…");
     document.getElementById("launch-purpose").textContent = "";
     document.getElementById("launch-facts").innerHTML = "";
     document.getElementById("launch-rail").innerHTML = "";
@@ -368,6 +368,7 @@ class LaunchView extends ConfigForm {
     host.innerHTML = "";
     const wall = document.createElement("div");
     wall.className = "launch-skeleton";
+    wall.innerHTML = ThinkingOrb.panel("breathing", "reading the script configuration…");
     for (let i = 0; i < 4; i++) {
       const block = document.createElement("div");
       block.className = "launch-skeleton__panel";

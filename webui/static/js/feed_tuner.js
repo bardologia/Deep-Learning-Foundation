@@ -372,7 +372,7 @@ class FeedTuner {
 
   async _loadDatasets() {
     const note = this.inputs.datasetNote;
-    note.textContent = "loading…";
+    note.innerHTML = ThinkingOrb.busy("searching", "loading…");
 
     const config = await this._config();
     const leaves = (config && config.leaves) || [];
@@ -405,7 +405,7 @@ class FeedTuner {
       return;
     }
 
-    note.textContent = "loading…";
+    note.innerHTML = ThinkingOrb.busy("searching", "loading…");
     const res = await Api.get(`/api/fs/params?dataset=${encodeURIComponent(dataset)}`);
     const items = res && res.ok ? res.files || [] : [];
     note.textContent = res && res.ok ? (items.length ? `${items.length} under ${res.params_root}` : "no extracted params yet") : (res && res.error) || "could not list params";
@@ -602,7 +602,7 @@ class FeedTuner {
     ]
       .map(([key, value]) => `<span class="ft-chip"><b>${key}</b>${value}</span>`)
       .join("");
-    this.dialsAt.textContent = "waiting for the first measurement…";
+    this.dialsAt.innerHTML = ThinkingOrb.busy("listening", "waiting for the first measurement…");
     this._appendLog(`target ready — ${meta.item_source}`);
     this._drawDials(null);
   }

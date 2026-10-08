@@ -39,7 +39,7 @@ class AblationView extends ConfigForm {
   }
 
   async _load() {
-    this.host.innerHTML = `<p class="ablation__note">Loading training configuration…</p>`;
+    this.host.innerHTML = ThinkingOrb.panel("breathing", "Loading training configuration…");
 
     const detail = await Api.get(`/api/scripts/${this.key}`);
     if (!detail || detail.error) {

@@ -142,7 +142,7 @@ class GpuPicker {
 
     const note     = document.createElement("p");
     note.className = "picker__note";
-    note.textContent = "detecting GPUs...";
+    note.innerHTML = ThinkingOrb.busy("searching", "detecting GPUs…");
     this.note      = note;
     this.el.appendChild(note);
 

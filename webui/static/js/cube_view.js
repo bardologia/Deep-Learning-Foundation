@@ -1360,8 +1360,7 @@ class CubeView {
 
   async refresh() {
     this.hint.hidden = false;
-    this.hint.textContent = "Loading saved cubes…";
-    this.hint.classList.add("is-loading");
+    this.hint.innerHTML = ThinkingOrb.busy("searching", "Loading saved cubes…");
 
     let data;
     try {
@@ -1907,7 +1906,7 @@ class CubeView {
     this.holdHintOn = true;
 
     const { row, col } = this.point;
-    this.coords.textContent = `saving slice figures at row = ${row} · col = ${col}…`;
+    this.coords.innerHTML = ThinkingOrb.busy("composing", `saving slice figures at row = ${row} · col = ${col}…`);
 
     await this._saveSlices(row, col);
 

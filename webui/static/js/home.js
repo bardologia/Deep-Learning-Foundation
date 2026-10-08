@@ -204,7 +204,7 @@ class UsersTable {
     if (n) n.textContent = `${users.length} user${users.length === 1 ? "" : "s"}`;
 
     if (!users.length) {
-      body.innerHTML = `<div class="sboard__empty">measuring user activity&hellip;</div>`;
+      body.innerHTML = `<div class="sboard__empty">${ThinkingOrb.busy("listening", "measuring user activity…")}</div>`;
       return;
     }
 
@@ -294,7 +294,7 @@ class JobsList {
       : "";
     const energyLabel = Format.energy(job.energy_wh);
     const energy = energyLabel ? `<span class="sboard__jenergy">${energyLabel}</span>` : "";
-    return `<li class="sboard__job ${cls}${follow ? " sboard__job--follow" : ""}">${mark}<span class="sboard__jdot" aria-hidden="true"></span><span class="sboard__jname">${name}</span>${prog}${energy}<span class="sboard__jstate">${SharedCharts.esc(job.status)}</span></li>`;
+    return `<li class="sboard__job ${cls}${follow ? " sboard__job--follow" : ""}">${mark}${job.status === "running" ? ThinkingOrb.html("working", 20, "running") : `<span class="sboard__jdot" aria-hidden="true"></span>`}<span class="sboard__jname">${name}</span>${prog}${energy}<span class="sboard__jstate">${SharedCharts.esc(job.status)}</span></li>`;
   }
 
   render(jobs) {
@@ -1169,7 +1169,7 @@ class StatusBoard {
 
       `<section class="sboard sboard--impact" aria-label="Neighbour impact">` +
       `<header class="sboard__cap"><span>neighbour impact</span><i class="impact__light" id="sb-impact-light" aria-hidden="true"></i><span class="sboard__n" id="sb-impact-verdict">--</span></header>` +
-      `<p class="impact__lede" id="sb-impact-lede">measuring whether your jobs stall other users&hellip;</p>` +
+      `<p class="impact__lede" id="sb-impact-lede">${ThinkingOrb.busy("listening", "measuring whether your jobs stall other users…")}</p>` +
       `<div class="impact__grid">` +
       `<div class="impact__cell"><canvas class="gmeter gmeter--impact" id="sb-impact-mem-meter"></canvas><span class="impact__share" id="sb-impact-mem-share">your share --</span><div class="bar bar--share"><i class="bar__fill bar__fill--share" id="sb-impact-mem-share-bar"></i></div></div>` +
       `<div class="impact__cell"><canvas class="gmeter gmeter--impact" id="sb-impact-io-meter"></canvas><span class="impact__share" id="sb-impact-io-share">your share --</span><div class="bar bar--share"><i class="bar__fill bar__fill--share" id="sb-impact-io-share-bar"></i></div></div>` +
@@ -1563,12 +1563,12 @@ class StatusBoard {
 
       const userPath = document.getElementById("sb-disk-user-path");
       if (userPath && disk.user_path) userPath.title = disk.user_path;
-      this._txt("sb-disk-user", disk.user_used != null ? `<b>${ByteFormat.tb(disk.user_used)}</b>` : "scanning&hellip;");
+      this._txt("sb-disk-user", disk.user_used != null ? `<b>${ByteFormat.tb(disk.user_used)}</b>` : ThinkingOrb.busy("searching", "scanning…"));
       this._bar("sb-disk-user-bar", disk.user_used ? (100 * disk.user_used) / disk.total : 0);
 
       const repoPath = document.getElementById("sb-disk-repo-path");
       if (repoPath && disk.repo_path) repoPath.title = disk.repo_path;
-      this._txt("sb-disk-repo", disk.repo_used != null ? `<b>${ByteFormat.tb(disk.repo_used)}</b>` : "scanning&hellip;");
+      this._txt("sb-disk-repo", disk.repo_used != null ? `<b>${ByteFormat.tb(disk.repo_used)}</b>` : ThinkingOrb.busy("searching", "scanning…"));
       this._bar("sb-disk-repo-bar", disk.repo_used ? (100 * disk.repo_used) / disk.total : 0);
     }
 

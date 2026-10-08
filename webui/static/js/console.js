@@ -51,7 +51,7 @@ class TileLogPanel {
   }
 
   async load() {
-    this.note.textContent = "reading…";
+    this.note.innerHTML = ThinkingOrb.busy("listening", "reading…");
 
     const suffix = this.tile.selectedUnit != null ? `?unit=${this.tile.selectedUnit}` : "";
     const probe = await Api.probe(`/api/jobs/${this.tile.job.job_id}/log${suffix}`);
@@ -1031,6 +1031,7 @@ class ConsoleTile {
 
 class RunConsole {
   static LIST_POLL_MS = 5000;
+  static ORB_STATES   = { running: "working", queued: "breathing", scheduled: "breathing" };
 
   constructor(refs) {
     this.listEl = refs.list;
@@ -1204,7 +1205,7 @@ class RunConsole {
         : "";
       item.innerHTML =
         `<div class="job-item__top"><span class="job-item__name">${SharedCharts.esc(job.script)}</span>` +
-        `<span class="badge badge--${SharedCharts.esc(job.status)}">${SharedCharts.esc(job.status)}</span></div>` +
+        `<span class="job-item__live">${RunConsole.ORB_STATES[job.status] ? ThinkingOrb.html(RunConsole.ORB_STATES[job.status], 20, job.status) : ""}<span class="badge badge--${SharedCharts.esc(job.status)}">${SharedCharts.esc(job.status)}</span></span></div>` +
         (job.description ? `<div class="job-item__desc" title="${SharedCharts.esc(job.description)}">${SharedCharts.esc(job.description)}</div>` : "") +
         progLine +
         `<div class="job-item__meta">${SharedCharts.esc(job.started.replace("T", " "))}${job.pid ? ` · pid ${SharedCharts.esc(String(job.pid))}` : ""}${Format.energy(job.energy_wh) ? ` · ${Format.energy(job.energy_wh)}` : ""}</div>`;

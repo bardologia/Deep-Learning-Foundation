@@ -18,6 +18,7 @@
 
 <div class="grain" aria-hidden="true"></div>
 <div class="vignette" aria-hidden="true"></div>
+<canvas class="bg-orb" id="backdrop-orb" aria-hidden="true"></canvas>
 <canvas class="bg-scene" id="radar" aria-hidden="true"></canvas>
 
 <div class="nav-edge" id="nav-edge" aria-hidden="true"></div>
@@ -27,6 +28,7 @@
       <rect x="3" y="3" width="38" height="38" rx="9" fill="none" stroke="currentColor" stroke-width="2" />
       <path d="M13 30 V17 l9 8 9 -8 v13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
     </svg>
+    <thinking-orb class="nav__orb" state="connecting" size="20" cycle="3.5" aria-hidden="true"></thinking-orb>
   </a>
   <nav class="nav__links" aria-label="Sections">
     <div class="nav__group" data-group="reference">
@@ -77,6 +79,7 @@
     </div>
   </nav>
   <div class="nav__status" id="nav-status" title="Backend connection">
+    <thinking-orb state="connecting" size="20"></thinking-orb>
     <span class="dot"></span>
     <span id="status-text">connecting</span>
   </div>
@@ -96,11 +99,11 @@
           <div class="status__id">
             <p class="hero__kicker">server observatory &middot; ML template console</p>
             <h1 class="status__host" id="status-host">&hellip;</h1>
-            <p class="status__sum" id="status-sum">connecting to backend&hellip;</p>
+            <p class="status__sum" id="status-sum"><span class="orb-busy"><thinking-orb state="connecting" size="20"></thinking-orb><span>connecting to backend&hellip;</span></span></p>
           </div>
           <canvas id="server-anim" class="status__server" role="img" aria-label="Animated server rack"></canvas>
         </header>
-        <div class="status__board" id="status-board"></div>
+        <div class="status__board" id="status-board"><div class="orb-panel"><thinking-orb state="working" size="64"></thinking-orb><span class="orb-panel__text">reading the machine&hellip;</span></div></div>
       </div>
     </div>
   </section>
@@ -120,10 +123,10 @@
     </div>
     <div class="model-view is-hidden" data-view="reference">
       <div class="eq-tabs" id="eq-tabs"></div>
-      <div class="eq-grid" id="eq-grid"></div>
+      <div class="eq-grid" id="eq-grid"><div class="orb-panel"><thinking-orb state="composing" size="64"></thinking-orb><span class="orb-panel__text">loading the equations&hellip;</span></div></div>
     </div>
     <div class="model-view" data-view="walkthrough">
-      <div class="flowx" id="flowx"></div>
+      <div class="flowx" id="flowx"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">loading the walkthrough&hellip;</span></div></div>
     </div>
   </section>
 
@@ -136,7 +139,7 @@
         Each pipeline maps to an entry point you can launch.
       </p>
     </div>
-    <div class="flow" id="flow"></div>
+    <div class="flow" id="flow"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">loading the pipelines&hellip;</span></div></div>
   </section>
 
   <!-- ARCHITECTURES -->
@@ -155,7 +158,7 @@
       </div>
     </div>
     <div class="master master--stack">
-      <aside class="master__list" id="model-list" aria-label="Model list"></aside>
+      <aside class="master__list" id="model-list" aria-label="Model list"><div class="orb-panel"><thinking-orb state="shaping" size="64"></thinking-orb><span class="orb-panel__text">loading the model zoo&hellip;</span></div></aside>
       <div class="master__detail" id="model-detail"></div>
     </div>
   </section>
@@ -170,7 +173,7 @@
       </p>
     </div>
     <div class="filter-row" id="script-filters"></div>
-    <div class="script-sections" id="script-grid"></div>
+    <div class="script-sections" id="script-grid"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">listing scripts&hellip;</span></div></div>
   </section>
 
   <!-- SAVED RUNS -->
@@ -183,7 +186,7 @@
         or delete it.
       </p>
     </div>
-    <div class="saved-grid" id="saved-grid"></div>
+    <div class="saved-grid" id="saved-grid"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">loading saved runs&hellip;</span></div></div>
   </section>
 
   <!-- CONFIG TEMPLATES -->
@@ -196,7 +199,7 @@
         already filled, or import it from the rail of any launch page.
       </p>
     </div>
-    <div class="saved-grid" id="templates-grid"></div>
+    <div class="saved-grid" id="templates-grid"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">loading templates&hellip;</span></div></div>
   </section>
 
   <!-- SEQUENCES -->
@@ -209,7 +212,7 @@
         block can be edited against the previous results before it launches.
       </p>
     </div>
-    <div id="sequences-root"></div>
+    <div id="sequences-root"><div class="orb-panel"><thinking-orb state="weaving" size="64"></thinking-orb><span class="orb-panel__text">loading sequences&hellip;</span></div></div>
   </section>
 
   <!-- ABLATION -->
@@ -267,7 +270,7 @@
       </div>
     </div>
     <div class="master master--config">
-      <aside class="master__list master__list--config" id="config-list" aria-label="Configuration modules"></aside>
+      <aside class="master__list master__list--config" id="config-list" aria-label="Configuration modules"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">reading the configuration modules&hellip;</span></div></aside>
       <div class="master__detail master__detail--config" id="config-detail"></div>
     </div>
   </section>
@@ -277,7 +280,7 @@
     <div class="console">
       <aside class="console__jobs">
         <div class="console__jobs-head">Jobs</div>
-        <ul class="job-list" id="job-list"></ul>
+        <ul class="job-list" id="job-list"><li class="orb-panel"><thinking-orb state="working" size="64"></thinking-orb><span class="orb-panel__text">listing jobs&hellip;</span></li></ul>
       </aside>
       <div class="console__tiles" id="console-tiles">
         <div class="console__hint" id="console-hint">Launch a script to see live output.</div>
@@ -319,8 +322,9 @@
 
     <div class="cube-pick">
       <div class="run-strip" id="cube-strip" aria-label="Saved cubes"></div>
-      <p class="cube-hint" id="cube-hint">Loading directories&hellip;</p>
+      <p class="cube-hint" id="cube-hint"><span class="orb-busy"><thinking-orb state="searching" size="20"></thinking-orb><span>Loading directories&hellip;</span></span></p>
       <div class="cube-progress" id="cube-progress" hidden>
+        <thinking-orb class="cube-progress__orb" state="searching" size="64"></thinking-orb>
         <div class="cube-progress__track"><i class="cube-progress__fill" id="cube-progress-fill"></i></div>
         <p class="cube-progress__label" id="cube-progress-label">loading&hellip;</p>
       </div>
@@ -894,7 +898,7 @@
 
     <div class="cube-pick">
       <div class="run-strip" id="sc-strip" aria-label="Saved cubes"></div>
-      <p class="cube-hint" id="sc-hint">Loading directories&hellip;</p>
+      <p class="cube-hint" id="sc-hint"><span class="orb-busy"><thinking-orb state="searching" size="20"></thinking-orb><span>Loading directories&hellip;</span></span></p>
     </div>
 
     <div class="sc-stage" id="sc-stage" hidden>
@@ -1063,6 +1067,7 @@
       <div class="cube-grouplist" id="fl-strip" aria-label="Datasets"></div>
       <p class="cube-hint" id="fl-hint">Point the scanner at a directory of preprocessing datasets.</p>
       <div class="cube-progress" id="fl-progress" hidden>
+        <thinking-orb class="cube-progress__orb" state="breathing" size="64"></thinking-orb>
         <div class="cube-progress__track"><i class="cube-progress__fill" id="fl-progress-fill"></i></div>
         <p class="cube-progress__label" id="fl-progress-label">loading&hellip;</p>
       </div>
@@ -1127,6 +1132,7 @@
             <span class="fl-runmsg" id="fl-run-msg"></span>
           </div>
           <div class="cube-progress" id="fl-fit-progress" hidden>
+            <thinking-orb class="cube-progress__orb" state="solving" size="64"></thinking-orb>
             <div class="cube-progress__track"><i class="cube-progress__fill" id="fl-fit-progress-fill"></i></div>
             <p class="cube-progress__label" id="fl-fit-progress-label">fitting&hellip;</p>
           </div>
@@ -1257,7 +1263,7 @@
             <figure class="ft-dial"><div class="ft-dial__media"><canvas id="ft-dial-eff"></canvas></div><figcaption>GPU efficiency</figcaption></figure>
             <figure class="ft-dial"><div class="ft-dial__media"><canvas id="ft-dial-wait"></canvas></div><figcaption>Data wait</figcaption></figure>
           </div>
-          <span class="ft-dials__at" id="ft-dials-at">waiting for the first measurement&hellip;</span>
+          <span class="ft-dials__at" id="ft-dials-at"><span class="orb-busy"><thinking-orb state="listening" size="20"></thinking-orb><span>waiting for the first measurement&hellip;</span></span></span>
         </div>
 
         <div class="ft-reco" id="ft-reco" hidden></div>
@@ -1320,6 +1326,7 @@
     <div class="tb-stage">
       <iframe class="tb-frame" id="tb-frame" title="TensorBoard" src="about:blank"></iframe>
       <div class="tb-empty" id="tb-empty">
+        <thinking-orb id="tb-empty-orb" state="shaping" size="64" aria-hidden="true"></thinking-orb>
         <p class="tb-empty__title" id="tb-empty-title">No TensorBoard running</p>
         <p class="tb-empty__hint" id="tb-empty-hint">
           Launch a training job and an instance starts automatically over its log directory,
@@ -1339,7 +1346,7 @@
         pick a stage, and watch the flow.
       </p>
     </div>
-    <div class="repomap" id="repomap"></div>
+    <div class="repomap" id="repomap"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">mapping the repository&hellip;</span></div></div>
   </section>
 
 </main>
@@ -1396,6 +1403,7 @@
 <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 <script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/thinking-orbs-engine.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 
@@ -1403,6 +1411,7 @@
 <script src="/static/js/results_sources.js"></script>
 <script src="/static/js/shared_charts.js"></script>
 <script src="/static/js/canvas_base.js"></script>
+<script src="/static/js/thinking_orb.js"></script>
 <script src="/static/js/figure_export.js"></script>
 <script src="/static/js/figure_saver.js"></script>
 <script src="/static/js/mathjax.js"></script>

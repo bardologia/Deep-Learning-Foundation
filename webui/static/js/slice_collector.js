@@ -100,7 +100,7 @@ class SliceCollectorView {
 
   async _refresh() {
     this.refs.hint.hidden = false;
-    this.refs.hint.textContent = "Loading saved cubes…";
+    this.refs.hint.innerHTML = ThinkingOrb.busy("searching", "Loading saved cubes…");
 
     const data = await Api.get(`/api/cubes?base=${encodeURIComponent(ResultsSources.runs())}`);
     this.cubes = (data && data.cubes) || [];
@@ -883,7 +883,7 @@ class SliceCollectorView {
 
     this.exporting = true;
     this._syncExport();
-    this.refs.msg.textContent = mode === "mail" ? "rendering and mailing…" : "rendering figures…";
+    this.refs.msg.innerHTML = ThinkingOrb.busy("composing", mode === "mail" ? "rendering and mailing…" : "rendering figures…");
 
     const res = await Api.post(mode === "mail" ? "/api/slices/mail" : "/api/slices/collect", body);
 

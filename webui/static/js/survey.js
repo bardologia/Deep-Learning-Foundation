@@ -42,8 +42,9 @@ class SurveyView {
     this.root.innerHTML = `
       <div class="cube-pick">
         <div class="run-strip" id="survey-strip" aria-label="Trained backbone and dual runs"></div>
-        <p class="cube-hint" id="survey-hint">Scanning the runs directory for loadable backbone and dual runs&hellip;</p>
+        <p class="cube-hint" id="survey-hint">${ThinkingOrb.busy("searching", "Scanning the runs directory for loadable backbone and dual runs…")}</p>
         <div class="cube-progress sv-progress" id="survey-progress" hidden>
+          <thinking-orb class="cube-progress__orb" state="weaving" size="64"></thinking-orb>
           <div class="cube-progress__track"><i class="cube-progress__fill" id="survey-progress-fill"></i></div>
           <p class="cube-progress__label" id="survey-progress-label">starting&hellip;</p>
           <button type="button" class="btn btn--mini" id="survey-cancel">Cancel</button>
