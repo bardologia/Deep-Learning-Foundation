@@ -2,7 +2,8 @@
 
 Covers the parameter metadata and per-field colour ranges, intensity metadata,
 the binary point blobs for curve peaks and parameter scatterers with amplitude
-thresholds and subsampling caps, parameter and error map rendering with slot
+thresholds, subsampling caps and the seed disagreement of each point's pixel,
+parameter and error map rendering with slot
 clipping, per-pixel slot lookups, the aux grid served for the
 three-dimensional view, NaN tolerance throughout, and the refusal of stamps
 whose metrics predate the recorded activity threshold.
@@ -76,13 +77,14 @@ def test_curve_points_threshold_and_values(tmp_path):
 
     raw    = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=0.9, max_points=100), dtype=np.float32)
     header = raw[:4]
-    rows   = raw[4:].reshape(-1, 4)
+    rows   = raw[4:].reshape(-1, 5)
 
     z_values = np.arange(N_Z, dtype=np.float64)
 
-    assert header[0] == 2 and header[1] == 2
-    assert rows[0].tolist() == [3.0, 4.0, float(z_values[2]), 2.0]
-    assert rows[1].tolist() == [5.0, 1.0, float(z_values[4]), 1.0]
+    assert header[0] == 2 and header[1] == 2 and header[2] == 5
+    assert rows[0, :4].tolist() == [3.0, 4.0, float(z_values[2]), 2.0]
+    assert rows[1, :4].tolist() == [5.0, 1.0, float(z_values[4]), 1.0]
+    assert np.isnan(rows[:, 4]).all()
 
 
 def test_curve_points_subsample_cap(tmp_path):
@@ -91,11 +93,11 @@ def test_curve_points_subsample_cap(tmp_path):
 
     raw    = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=-1.0, max_points=50), dtype=np.float32)
     header = raw[:4]
-    rows   = raw[4:].reshape(-1, 4)
+    rows   = raw[4:].reshape(-1, 5)
 
     assert header[0] == 50
     assert header[1] == N_Z * N_ROWS * N_COLS
-    assert rows.shape == (50, 4)
+    assert rows.shape == (50, 5)
 
 
 def test_curve_points_subsample_follows_the_z_major_voxel_order(tmp_path):
@@ -103,7 +105,7 @@ def test_curve_points_subsample_follows_the_z_major_voxel_order(tmp_path):
     explorer, cube_id = _loaded_explorer(tmp_path, with_full=True)
 
     raw  = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=-1.0, max_points=7), dtype=np.float32)
-    rows = raw[4:].reshape(-1, 4)
+    rows = raw[4:].reshape(-1, 5)[:, :4]
 
     entry       = explorer._entry(cube_id, "full")
     cube        = np.asarray(entry["cube"])
@@ -119,6 +121,24 @@ def test_curve_points_absent_source_is_none(tmp_path):
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     assert explorer.points_bin(cube_id, "full", amp_min=0.0, max_points=100) is None
+
+
+def test_points_carry_the_seed_disagreement_of_their_pixel(tmp_path):
+    """Checks every point row ends with the seed_std_profile value of its pixel when the stamp stores that map."""
+    stamp = make_cube_run(tmp_path, with_params=PARAM_SOURCES, with_full=True)
+    std   = np.arange(N_ROWS * N_COLS, dtype=np.float32).reshape(N_ROWS, N_COLS) / 10.0
+    np.save(stamp / "cubes" / "seed_std_profile.npy", std)
+
+    explorer, cube_ids = open_explorer(tmp_path, expected=1)
+    load_cube(explorer, cube_ids[0])
+
+    for source in ("pred", "full"):
+        raw    = np.frombuffer(explorer.points_bin(cube_ids[0], source, amp_min=0.5, max_points=100), dtype=np.float32)
+        header = raw[:4]
+        rows   = raw[4:].reshape(-1, 5)
+
+        assert header[2] == 5 and rows.shape[0] == int(header[0]) > 0
+        assert np.array_equal(rows[:, 4], std[rows[:, 0].astype(int), rows[:, 1].astype(int)])
 
 
 def test_param_map_png_for_all_fields(tmp_path):
@@ -207,7 +227,7 @@ def test_points_bin_thresholds_and_subsamples(tmp_path):
     raw  = np.frombuffer(blob, dtype=np.float32)
 
     n_sent, total = int(raw[0]), int(raw[1])
-    rows          = raw[4:].reshape(n_sent, 4)
+    rows          = raw[4:].reshape(n_sent, 5)
 
     stamp = Path(cube_id)
     pred  = np.load(stamp / "cubes" / "params_pred.npy")

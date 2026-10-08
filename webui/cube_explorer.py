@@ -1215,16 +1215,36 @@ class CubeExplorer:
             max_points : Cap on emitted points, evenly subsampled; zero keeps all.
 
         Returns:
-            A four-float32 header followed by rows of (row, column, z, amplitude), or None when the source is not cloud-renderable.
+            A four-float32 header (emitted count, total count, columns per row, 0) followed by rows of (row, column, z, amplitude, seed disagreement), the last NaN when the stamp stores no seed_std_profile map; None when the source is not cloud-renderable.
         """
+        resolved = self._point_rows(cube_id, source, amp_min, max_points)
+        if resolved is None:
+            return None
+
+        rows, total = resolved
+        return self._points_blob(self._augment_uncertainty(cube_id, rows), total)
+
+    def _point_rows(self, cube_id: str, source: str, amp_min: float, max_points: int) -> tuple[np.ndarray, int] | None:
+        """Returns the (rows, total) point cloud of a parameter or curve source, or None when it is not cloud-renderable."""
         if source in self.PARAM_SOURCES:
-            return self._param_points(cube_id, source, amp_min, max_points)
+            return self._param_rows(cube_id, source, amp_min, max_points)
         if source in self.CLOUD_CURVE_SOURCES:
             entry = self._entry(cube_id, source)
-            return None if entry is None else self._curve_points(entry, amp_min, max_points)
+            return None if entry is None else self._curve_rows(entry, amp_min, max_points)
         return None
 
-    def _param_points(self, cube_id: str, source: str, amp_min: float, max_points: int) -> bytes | None:
+    def _param_rows(self, cube_id: str, source: str, amp_min: float, max_points: int) -> tuple[np.ndarray, int] | None:
+        """Extracts one point per Gaussian slot of a parameter source above the amplitude floor.
+
+        Args:
+            cube_id    : Id of the loaded cube.
+            source     : Parameter source, "pred" or "gt".
+            amp_min    : Minimum slot amplitude for a point to be kept.
+            max_points : Cap on emitted points, applied by even subsampling.
+
+        Returns:
+            Tuple of a float32 array of shape (points, 4) holding row index, column index, mu and amplitude, and the unsubsampled count; None when the source is not loaded.
+        """
         resolved = self._param_state(cube_id)
         if resolved is None:
             return None
@@ -1239,7 +1259,7 @@ class CubeExplorer:
         mask = np.isfinite(amps) & (amps >= amp_min) & np.isfinite(mus)
 
         k_idx, row_idx, col_idx = np.nonzero(mask)
-        total                 = int(k_idx.size)
+        total                   = int(k_idx.size)
 
         if total > max_points > 0:
             keep    = np.linspace(0, total - 1, max_points).astype(int)
@@ -1254,10 +1274,20 @@ class CubeExplorer:
             amps[k_idx, row_idx, col_idx].astype(np.float32),
         ], axis=1)
 
-        return self._points_blob(rows, total)
+        return rows, total
 
     @classmethod
-    def _curve_points(cls, entry: dict, amp_min: float, max_points: int) -> bytes:
+    def _curve_rows(cls, entry: dict, amp_min: float, max_points: int) -> tuple[np.ndarray, int]:
+        """Extracts one point per voxel of a curve cube above the intensity floor.
+
+        Args:
+            entry      : Loaded cube entry whose cube has shape (z, rows, cols).
+            amp_min    : Minimum voxel intensity for a point to be kept.
+            max_points : Cap on emitted points, applied by even subsampling across the z-major voxel order.
+
+        Returns:
+            Tuple of a float32 array of shape (points, 4) holding row index, column index, z value and intensity, and the unsubsampled count.
+        """
         cube   = entry["cube"]
         z_axis = np.asarray(entry["z_axis"], dtype=np.float32)
         n_cols = cube.shape[2]
@@ -1287,11 +1317,31 @@ class CubeExplorer:
             ], axis=1))
 
         rows = np.concatenate(chunks, axis=0) if chunks else np.zeros((0, 4), dtype=np.float32)
-        return cls._points_blob(rows, total)
+        return rows, total
+
+    def _augment_uncertainty(self, cube_id: str, rows: np.ndarray) -> np.ndarray:
+        """Appends the per-pixel seed disagreement to point rows.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            rows    : Float32 point rows of shape (points, 4) whose first two columns are row and column indices.
+
+        Returns:
+            Float32 rows of shape (points, 5) whose last column holds seed_std_profile at each point's pixel, NaN when the stamp stores no such map.
+        """
+        with self.lock:
+            std = self.loaded["metric_maps"].get("seed_std_profile") if self.loaded is not None and self.loaded["id"] == cube_id else None
+
+        column = np.full((rows.shape[0], 1), np.nan, dtype=np.float32)
+        if std is not None and rows.shape[0]:
+            column[:, 0] = std[rows[:, 0].astype(np.int64), rows[:, 1].astype(np.int64)]
+
+        return np.concatenate([rows, column], axis=1)
 
     @staticmethod
     def _points_blob(rows: np.ndarray, total: int) -> bytes:
-        header = np.array([rows.shape[0], total, 0.0, 0.0], dtype=np.float32)
+        """Serialises point rows behind a four-float32 (count, total, columns, 0) header."""
+        header = np.array([rows.shape[0], total, rows.shape[1], 0.0], dtype=np.float32)
         return header.tobytes() + np.ascontiguousarray(rows).tobytes()
 
     VOLUME_MAX_DIM = 192
