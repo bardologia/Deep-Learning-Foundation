@@ -435,6 +435,8 @@ class SequencesView extends ConfigForm {
     this.runBtn    = null;
     this.resumeBtn = null;
     this.board     = null;
+
+    this.busyAction = false;
   }
 
   static async quickAdd(script, title) {
@@ -562,15 +564,23 @@ class SequencesView extends ConfigForm {
   }
 
   async _start(resumeDir = "", bypass = []) {
-    if (!(await this._persist())) return;
-    const res = await Api.post(`/api/sequences/${this.current.sequence_id}/start`, resumeDir ? { resume_dir: resumeDir, bypass } : {});
-    if (!res.ok) {
-      Toast.show(res.error || "Start failed", "error");
-      return;
+    if (this.busyAction) return;
+    this.busyAction = true;
+    try {
+      if (!(await this._persist())) return;
+      const res = await Api.post(`/api/sequences/${this.current.sequence_id}/start`, resumeDir ? { resume_dir: resumeDir, bypass } : {});
+      if (!res.ok) {
+        Toast.show(res.error || "Start failed", "error");
+        return;
+      }
+      this.live = res.state;
+      Toast.show(resumeDir ? "Sequence resumed in the previous workspace" : "Sequence started", "ok");
+      if (this.board) this.board.paintStates(this.live);
+      this._paintStatus();
+      this._pollStudies();
+    } finally {
+      this.busyAction = false;
     }
-    this.live = res.state;
-    Toast.show(resumeDir ? "Sequence resumed in the previous workspace" : "Sequence started", "ok");
-    this._render();
   }
 
   async _resume() {
@@ -602,17 +612,25 @@ class SequencesView extends ConfigForm {
   }
 
   async _stop() {
-    const res = await Api.post(`/api/sequences/${this.current.sequence_id}/stop`, {});
-    if (!res.ok) {
-      Toast.show(res.error || "Stop failed", "error");
-      return;
+    if (this.busyAction) return;
+    this.busyAction = true;
+    try {
+      const res = await Api.post(`/api/sequences/${this.current.sequence_id}/stop`, {});
+      if (!res.ok) {
+        Toast.show(res.error || "Stop failed", "error");
+        return;
+      }
+      this.live = res.state;
+      Toast.show("Sequence stopped", "warn");
+      if (this.board) this.board.paintStates(this.live);
+      this._paintStatus();
+    } finally {
+      this.busyAction = false;
     }
-    this.live = res.state;
-    Toast.show("Sequence stopped", "warn");
-    this._render();
   }
 
   async _release(blockId) {
+    if (this.busyAction) return;
     const pending = this._upstreamUndecided(blockId);
     if (pending.length && !window.confirm(`These earlier blocks have no verdict recorded yet:\n\n${pending.map((item) => item.label).join("\n")}\n\nReleasing now runs this block on the pre-verdict values. Continue?`)) {
       this.selected = pending[0].block_id;
@@ -620,14 +638,20 @@ class SequencesView extends ConfigForm {
       return;
     }
 
-    const res = await Api.post(`/api/sequences/${this.current.sequence_id}/release`, { block_id: blockId });
-    if (!res.ok) {
-      Toast.show(res.error || "Release failed", "error");
-      return;
+    this.busyAction = true;
+    try {
+      const res = await Api.post(`/api/sequences/${this.current.sequence_id}/release`, { block_id: blockId });
+      if (!res.ok) {
+        Toast.show(res.error || "Release failed", "error");
+        return;
+      }
+      this.live = res.state;
+      Toast.show("Checkpoint released", "ok");
+      if (this.board) this.board.paintStates(this.live);
+      this._paintStatus();
+    } finally {
+      this.busyAction = false;
     }
-    this.live = res.state;
-    Toast.show("Checkpoint released", "ok");
-    this._render();
   }
 
   async _refreshBoard() {
