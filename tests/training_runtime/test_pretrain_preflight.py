@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
+
 import pipelines.shared.training.pretrain_preflight as preflight_module
 import pipelines.shared.training.training_runner    as runner_module
 
@@ -123,6 +125,28 @@ def test_preflight_writes_inside_the_run_directory(tmp_path, monkeypatch):
     assert _FakeOrchestrator.captured["label"] == "image_ae"
     assert (run_directory / "pretrain").is_dir()
     assert (run_directory / "pretrain" / "logs").is_dir()
+
+
+def test_resumed_run_refuses_to_probe_and_records_the_refusal(tmp_path, monkeypatch):
+    """Verifies a run continuing from its trainer state refuses every enabled probe, naming them, and that pretrain.log ends in an ABORTED banner."""
+    monkeypatch.setattr(preflight_module, "PretrainOrchestrator", _FakeOrchestrator)
+
+    run_directory = tmp_path / "run_image_ae_x"
+    training      = _TrainingStub(batch_size=32, resume=True)
+
+    with pytest.raises(RuntimeError, match=r"pretraining probes \(find_batch_size, find_lr\) cannot run on a run resuming from last.pt.*training.batch_size=32"):
+        PretrainPreflight(
+            pretrain_config = _pretrain(find_batch_size=True, find_lr=True),
+            training_config = training,
+            build_trainer   = lambda logger: None,
+            run_directory   = run_directory,
+            label           = "image_ae",
+        ).run()
+
+    written = (run_directory / "pretrain" / "logs" / "pretrain.log").read_text(encoding="utf-8")
+
+    assert ">>> ABORTED pretrain" in written
+    assert "[Aborted] RuntimeError: pretraining probes" in written
 
 
 def test_disabled_preflight_creates_nothing(tmp_path, monkeypatch):

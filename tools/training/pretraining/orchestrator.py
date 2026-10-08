@@ -115,6 +115,11 @@ class PretrainOrchestrator:
     def _find_batch_size(self, context: PretrainContext) -> None:
         """Resolves the batch size within the VRAM budget and writes it into the training config.
 
+        ``find_batch_size`` is switched off once the value is folded in, so the
+        persisted entry config carries the measurement rather than an
+        instruction to measure again, under whatever else occupies the GPU, on
+        a relaunch or a resume.
+
         Args:
             context : Probe context supplying the dataset, device and trial step.
 
@@ -141,14 +146,18 @@ class PretrainOrchestrator:
         if result["status"] != "PASS":
             raise RuntimeError(f"max batch-size finder failed: {result['error']}")
 
-        self.training.batch_size = int(result["batch_size"])
+        self.training.batch_size      = int(result["batch_size"])
+        self.pretrain.find_batch_size = False
+
         self.logger.subsection(f"Resolved batch size: {self.training.batch_size} overrides training.batch_size for this run (peak {result['peak_gb']:.2f} GB, scale_lr_with_batch={self.training.scale_lr_with_batch})")
+        self.logger.subsection("find_batch_size switched off for the rest of this run: the resolved entry config now records the probed batch size, so a relaunch or resume reuses it instead of probing again")
 
     def _tune_loader(self, context: PretrainContext) -> None:
         """Resolves worker count and prefetch factor and writes them into the training config.
 
         The training config is left untouched when the sweep finds no successful
-        configuration.
+        configuration. ``tune_loader`` is switched off either way once the sweep
+        ran, so the persisted entry config describes the loader the run uses.
 
         Args:
             context : Probe context supplying the dataset, model and feed callables.
@@ -171,12 +180,16 @@ class PretrainOrchestrator:
 
         choice = tuner.run(self.training.batch_size)
 
+        self.pretrain.tune_loader = False
+
         if choice is None:
+            self.logger.subsection(f"tune_loader switched off for the rest of this run: the configured workers={self.training.num_workers} prefetch={self.training.prefetch_factor} stay, and a relaunch or resume keeps them instead of sweeping again")
             return
 
         self.training.num_workers     = int(choice["num_workers"])
         self.training.prefetch_factor = int(choice["prefetch_factor"])
         self.logger.subsection(f"Resolved loader: workers={self.training.num_workers} prefetch={self.training.prefetch_factor} override training.num_workers/prefetch_factor for this run (the probe pins memory throughout, as the training loader does)")
+        self.logger.subsection("tune_loader switched off for the rest of this run: the resolved entry config now records the tuned loader, so a relaunch or resume reuses it instead of sweeping again")
 
     def _find_lr(self, context: PretrainContext) -> None:
         """Runs the LR range test and folds its multiplier into the training config.
@@ -184,9 +197,10 @@ class PretrainOrchestrator:
         The training config is left untouched when the test refuses to answer.
         The result composes multiplicatively with any multiplier already
         configured, since the probe trainer's learning rates were built from it,
-        and ``find_lr`` is switched off once a multiplier has been folded in, so
+        and ``find_lr`` is switched off once the test ran, answer or refusal, so
         the persisted entry config carries the measurement rather than an
-        instruction to measure again and square it on the next relaunch.
+        instruction to measure again and square it on the next relaunch, or to
+        fold a multiplier into a resumed run mid-way.
 
         Args:
             context : Probe context supplying the trainer, dataset and device.
@@ -210,13 +224,15 @@ class PretrainOrchestrator:
 
         result = test.run(self.training.batch_size)
 
+        self.pretrain.find_lr = False
+
         if result is None:
+            self.logger.subsection(f"find_lr switched off for the rest of this run: the test refused to answer, the configured training.lr_multiplier={self.training.lr_multiplier:.4g} stays, and a relaunch or resume keeps it instead of probing again")
             return
 
         divergence = f"x{result['divergence_multiplier']:.4g}" if result["divergence_multiplier"] is not None else "not reached"
 
         self.training.lr_multiplier = float(self.training.lr_multiplier) * float(result["multiplier"])
-        self.pretrain.find_lr       = False
 
         self.logger.subsection(f"Resolved learning rate: multiplier x{result['multiplier']:.4g} (loss minimum at x{result['min_loss_multiplier']:.4g}, divergence at {divergence}, safety /{self.pretrain.lr_safety_factor:g}) sets training.lr_multiplier={self.training.lr_multiplier:.4g} for this run, applied on top of the batch-size rule")
         self.logger.subsection("find_lr switched off for the rest of this run: the resolved entry config now records the measured multiplier, so a relaunch reuses it instead of probing again and compounding a second one.")

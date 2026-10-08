@@ -14,6 +14,7 @@ from typing  import Callable, Optional
 import torch
 
 from tools.monitoring.logger    import Logger
+from tools.training.checkpoint  import TrainerState
 from tools.training.pretraining import PretrainContext, PretrainOrchestrator, TrainStepMemoryProbe, TrainerFeed
 
 
@@ -44,9 +45,28 @@ class PretrainPreflight:
         self.run_directory = Path(run_directory)
         self.label         = label
 
+    def _enabled_probes(self) -> list[str]:
+        """Returns the names of the probes switched on, in the order they run."""
+        flags = {"find_batch_size": self.pretrain.find_batch_size, "tune_loader": self.pretrain.tune_loader, "find_lr": self.pretrain.find_lr}
+
+        return [name for name, enabled in flags.items() if enabled]
+
     def _enabled(self) -> bool:
         """Returns whether any of the batch-size, loader or LR probes is on."""
-        return bool(self.pretrain.find_batch_size or self.pretrain.tune_loader or self.pretrain.find_lr)
+        return bool(self._enabled_probes())
+
+    def _refuse_on_resume(self) -> None:
+        """Refuses to probe a run that continues from its trainer state.
+
+        Raises:
+            RuntimeError : If the trainer resumes while a probe is on, since the probe would rewrite the recorded batch size, loader settings or learning-rate multiplier under the restored optimizer, scheduler and warmup state.
+        """
+        if not self.training.resume:
+            return
+
+        probes = ", ".join(self._enabled_probes())
+
+        raise RuntimeError(f"pretraining probes ({probes}) cannot run on a run resuming from {TrainerState.FILENAME}: they would rewrite the recorded training.batch_size={self.training.batch_size}, num_workers/prefetch_factor or lr_multiplier under the restored optimizer, scheduler and warmup state. A run that probed records its probes switched off; pass --pretrain.<probe> false for each probe typed or recorded before that, or start a fresh run")
 
     def _build_context(self, logger: Logger, device: torch.device, context_gb: float) -> PretrainContext:
         """Builds the probe context around a freshly constructed trainer.
@@ -88,7 +108,12 @@ class PretrainPreflight:
         """Runs the preflight probes, writing results under ``<run>/pretrain``.
 
         Returns immediately when none of the batch-size search, loader tuning
-        and LR range test is enabled.
+        and LR range test is enabled. The preflight log appends across
+        launches and closes with an ABORTED banner naming the error when a
+        probe fails or the run turns out to be a resume.
+
+        Raises:
+            RuntimeError : If the trainer resumes while a probe is on, or a probe fails; propagated with its message recorded in the preflight log.
         """
         if not self._enabled():
             return
@@ -96,21 +121,20 @@ class PretrainPreflight:
         result_dir = self.run_directory / "pretrain"
         result_dir.mkdir(parents=True, exist_ok=True)
 
-        logger     = Logger(log_dir=str(result_dir / "logs"), name="pretrain", level="INFO")
-        device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        context_gb = TrainStepMemoryProbe.measure_context(device)
+        with Logger(log_dir=str(result_dir / "logs"), name="pretrain", level="INFO") as logger:
+            self._refuse_on_resume()
 
-        logger.subsection(f"CUDA context before the probe builds anything: {context_gb:.2f} GB")
+            device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            context_gb = TrainStepMemoryProbe.measure_context(device)
 
-        orchestrator = PretrainOrchestrator(
-            pretrain_config = self.pretrain,
-            training_config = self.training,
-            build_context   = lambda: self._build_context(logger, device, context_gb),
-            logger          = logger,
-            label           = self.label,
-        )
+            logger.subsection(f"CUDA context before the probe builds anything: {context_gb:.2f} GB")
 
-        try:
+            orchestrator = PretrainOrchestrator(
+                pretrain_config = self.pretrain,
+                training_config = self.training,
+                build_context   = lambda: self._build_context(logger, device, context_gb),
+                logger          = logger,
+                label           = self.label,
+            )
+
             orchestrator.run()
-        finally:
-            logger.close()

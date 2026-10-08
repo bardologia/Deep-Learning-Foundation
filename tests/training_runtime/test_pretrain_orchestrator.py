@@ -104,8 +104,10 @@ def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch):
 
     monkeypatch.setattr(orchestrator_module, "LoaderTuner", _FakeTuner)
 
+    pretrain = _pretrain(find_batch_size=True, tune_loader=True)
+
     PretrainOrchestrator(
-        pretrain_config = _pretrain(find_batch_size=True, tune_loader=True),
+        pretrain_config = pretrain,
         training_config = training,
         build_context   = lambda: _context(order, training),
         logger          = _Logger(),
@@ -115,6 +117,8 @@ def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch):
     assert training.batch_size      == 4
     assert training.num_workers     == 3
     assert training.prefetch_factor == 4
+    assert pretrain.find_batch_size is False
+    assert pretrain.tune_loader     is False
 
     tune_index = next(i for i, (kind, _) in enumerate(order) if kind == "tune")
 
@@ -209,14 +213,47 @@ def test_lr_probe_keeps_the_multiplier_when_nothing_is_found(monkeypatch):
 
     monkeypatch.setattr(orchestrator_module, "LrRangeTest", _EmptyRangeTest)
 
+    pretrain = _pretrain(find_lr=True)
+
     PretrainOrchestrator(
-        pretrain_config = _pretrain(find_lr=True),
+        pretrain_config = pretrain,
         training_config = training,
         build_context   = lambda: _context(order, training, trainer=object()),
         logger          = _Logger(),
     ).run()
 
     assert training.lr_multiplier == 1.0
+    assert pretrain.find_lr is False
+
+
+def test_loader_tuner_without_a_result_still_switches_itself_off(monkeypatch):
+    """Verifies a sweep that found no configuration leaves the loader settings alone but records that it ran."""
+    order    = []
+    training = _training()
+
+    class _EmptyTuner:
+        """Loader tuner stub that never finds a configuration."""
+        def __init__(self, **kwargs):
+            """Accepts and discards the tuner keyword arguments."""
+            pass
+
+        def run(self, batch_size):
+            """Reports no choice."""
+            return None
+
+    monkeypatch.setattr(orchestrator_module, "LoaderTuner", _EmptyTuner)
+
+    pretrain = _pretrain(tune_loader=True)
+
+    PretrainOrchestrator(
+        pretrain_config = pretrain,
+        training_config = training,
+        build_context   = lambda: _context(order, training),
+        logger          = _Logger(),
+    ).run()
+
+    assert training.num_workers  == 0
+    assert pretrain.tune_loader is False
 
 
 def test_context_requires_a_trainer():
