@@ -26,27 +26,28 @@ class CubeRouter(SubRouter):
 
     def declare(self, table: RouteTable) -> None:
         """Registers the /api/cubes routes."""
-        table.add("GET", "/api/cubes",              self.listing)
-        table.add("GET", "/api/cubes/status",       self.status)
-        table.add("GET", "/api/cubes/primary",      self.primary)
-        table.add("GET", "/api/cubes/profiles",     self.profiles)
-        table.add("GET", "/api/cubes/ssim",         self.ssim)
-        table.add("GET", "/api/cubes/plane",        self.plane)
-        table.add("GET", "/api/cubes/cbar",         self.cbar)
-        table.add("GET", "/api/cubes/metric_map",   self.metric_map)
-        table.add("GET", "/api/cubes/metric_at",    self.metric_at)
-        table.add("GET", "/api/cubes/metric_hist",  self.metric_hist)
-        table.add("GET", "/api/cubes/selective",    self.selective)
-        table.add("GET", "/api/cubes/region",       self.region)
-        table.add("GET", "/api/cubes/points",       self.points)
-        table.add("GET", "/api/cubes/aux_grid",     self.aux_grid)
-        table.add("GET", "/api/cubes/transect",     self.transect)
-        table.add("GET", "/api/cubes/param_map",    self.param_map)
-        table.add("GET", "/api/cubes/param_cbar",   self.param_cbar)
-        table.add("GET", "/api/cubes/params_at",    self.params_at)
-        table.add("GET", "/api/cubes/slice",        self.slice_view)
-        table.add("GET", "/api/cubes/figures",      self.figures)
-        table.add("GET", "/api/cubes/figure",       self.figure)
+        table.add("GET", "/api/cubes",                  self.listing)
+        table.add("GET", "/api/cubes/status",           self.status)
+        table.add("GET", "/api/cubes/primary",          self.primary)
+        table.add("GET", "/api/cubes/profiles",         self.profiles)
+        table.add("GET", "/api/cubes/ssim",             self.ssim)
+        table.add("GET", "/api/cubes/plane",            self.plane)
+        table.add("GET", "/api/cubes/cbar",             self.cbar)
+        table.add("GET", "/api/cubes/metric_map",       self.metric_map)
+        table.add("GET", "/api/cubes/metric_at",        self.metric_at)
+        table.add("GET", "/api/cubes/metric_hist",      self.metric_hist)
+        table.add("GET", "/api/cubes/selective",        self.selective)
+        table.add("GET", "/api/cubes/region",           self.region)
+        table.add("GET", "/api/cubes/points",           self.points)
+        table.add("GET", "/api/cubes/aux_grid",         self.aux_grid)
+        table.add("GET", "/api/cubes/transect",         self.transect)
+        table.add("GET", "/api/cubes/transect_metrics", self.transect_metrics)
+        table.add("GET", "/api/cubes/param_map",        self.param_map)
+        table.add("GET", "/api/cubes/param_cbar",       self.param_cbar)
+        table.add("GET", "/api/cubes/params_at",        self.params_at)
+        table.add("GET", "/api/cubes/slice",            self.slice_view)
+        table.add("GET", "/api/cubes/figures",          self.figures)
+        table.add("GET", "/api/cubes/figure",           self.figure)
 
         table.add("POST", "/api/cubes/load",           self.load)
         table.add("POST", "/api/cubes/attach",         self.attach)
@@ -162,18 +163,42 @@ class CubeRouter(SubRouter):
         exchange.send_bytes(self.cubes.aux_grid_bin(cube_id=exchange.text("id")))
 
     def transect(self, exchange: HttpExchange) -> None:
-        """Answers with the PNG z cut along a straight transect."""
+        """Answers with the PNG z cut along the polyline in `pts`."""
         png = self.cubes.transect_png(
             cube_id = exchange.text("id"),
             source  = exchange.text("source", "pred"),
-            row0    = exchange.integer("row0"),
-            col0    = exchange.integer("col0"),
-            row1    = exchange.integer("row1"),
-            col1    = exchange.integer("col1"),
+            points  = self._parse_points(exchange.text("pts")),
             space   = exchange.text("space", "physical"),
             cmap    = exchange.text("cmap", "jet"),
         )
         exchange.send_png(png)
+
+    def transect_metrics(self, exchange: HttpExchange) -> None:
+        """Answers with every metric map sampled along the polyline in `pts`."""
+        result = self.cubes.transect_metrics(
+            cube_id = exchange.text("id"),
+            points  = self._parse_points(exchange.text("pts")),
+        )
+        exchange.send_result(result)
+
+    @staticmethod
+    def _parse_points(text: str) -> list:
+        """Parses a ``pts`` query value of the form ``row,col;row,col;...`` into vertex pairs.
+
+        Args:
+            text : Semicolon-separated vertices, each two comma-separated integers; empty for no vertex.
+
+        Returns:
+            The (row, column) integer pairs in order.
+
+        Raises:
+            ValueError : When a vertex is not two comma-separated integers.
+        """
+        points = []
+        for token in text.split(";") if text else []:
+            row, col = token.split(",")
+            points.append((int(row), int(col)))
+        return points
 
     def param_map(self, exchange: HttpExchange) -> None:
         """Answers with the PNG map of one Gaussian parameter field, the slot count or an error map."""
@@ -242,14 +267,11 @@ class CubeRouter(SubRouter):
         exchange.send_result(self.cubes.detach_second(exchange.body.get("id", "")))
 
     def save_transect(self, exchange: HttpExchange) -> None:
-        """Saves the transect cut of every source as figures under the run."""
+        """Saves the transect cut along the body's `pts` polyline of every source as figures under the run."""
         body   = exchange.body
         result = self.cubes.save_transect(
             cube_id = body.get("id", ""),
-            row0    = int(body.get("row0", 0)),
-            col0    = int(body.get("col0", 0)),
-            row1    = int(body.get("row1", 0)),
-            col1    = int(body.get("col1", 0)),
+            points  = [(int(row), int(col)) for row, col in body.get("pts", [])],
             space   = body.get("space", "physical"),
             cmap    = body.get("cmap", "jet"),
         )

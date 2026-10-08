@@ -5,9 +5,11 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from urllib.parse import urlencode
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from cube_explorer        import CubeExplorer
 from routers.cube_routers import CubeRouter
@@ -111,23 +113,52 @@ def test_ssim_covers_predb(tmp_path):
 
 
 def test_transect_png_samples_line(tmp_path):
+    """Checks straight and bent transects render in both colour spaces and degenerate lines, unknown sources or cubes return None."""
     explorer, cube_a, _ = _loaded(tmp_path)
 
-    png = explorer.transect_png(cube_a, "pred", row0=0, col0=0, row1=N_ROWS - 1, col1=N_COLS - 1)
+    png = explorer.transect_png(cube_a, "pred", [(0, 0), (N_ROWS - 1, N_COLS - 1)])
     assert png and png[:4] == b"\x89PNG"
 
-    normalized = explorer.transect_png(cube_a, "pred", row0=2, col0=1, row1=2, col1=4, space="normalized")
+    normalized = explorer.transect_png(cube_a, "pred", [(2, 1), (2, 4)], space="normalized")
     assert normalized and normalized[:4] == b"\x89PNG"
 
-    assert explorer.transect_png(cube_a, "banana", 0, 0, 1, 1) is None
-    assert explorer.transect_png("wrong", "pred", 0, 0, 1, 1) is None
+    bent = explorer.transect_png(cube_a, "pred", [(0, 0), (N_ROWS - 1, 0), (N_ROWS - 1, N_COLS - 1)])
+    assert bent and bent[:4] == b"\x89PNG"
+
+    assert explorer.transect_png(cube_a, "pred", [(1, 1)]) is None
+    assert explorer.transect_png(cube_a, "pred", [(1, 1), (1, 1)]) is None
+    assert explorer.transect_png(cube_a, "pred", [(N_ROWS + 5, 1), (N_ROWS - 1, 1)]) is None
+    assert explorer.transect_png(cube_a, "banana", [(0, 0), (1, 1)]) is None
+    assert explorer.transect_png("wrong", "pred", [(0, 0), (1, 1)]) is None
+
+
+def test_bent_transect_shares_its_vertices_between_segments(tmp_path):
+    """Checks a bent polyline samples every pixel of each segment once, the shared corner included, so its PNG is as wide as the path."""
+    explorer, cube_a, _ = _loaded(tmp_path)
+
+    row_idx, col_idx = explorer._path_indices([(0, 0), (0, 3), (2, 3)])
+    assert row_idx.tolist() == [0, 0, 0, 0, 1, 2]
+    assert col_idx.tolist() == [0, 1, 2, 3, 3, 3]
+
+    png = plt.imread(io.BytesIO(explorer.transect_png(cube_a, "pred", [(0, 0), (0, 3), (2, 3)])))
+    assert png.shape[:2] == (N_Z, 6)
+
+
+def test_clip_points_folds_repeats_after_clipping():
+    """Checks vertices are clipped into the footprint before consecutive repeats are dropped, and fewer than two distinct ones give None."""
+    assert CubeExplorer._clip_points([(-3, 2), (0, 2), (9, 9), (7, 5)], 8, 6) == [(0, 2), (7, 5)]
+    assert CubeExplorer._clip_points([(1, 1), (2, 2), (1, 1)], 8, 6) == [(1, 1), (2, 2), (1, 1)]
+    assert CubeExplorer._clip_points([(1, 1), (1, 1)], 8, 6) is None
+    assert CubeExplorer._clip_points([], 8, 6) is None
 
 
 def test_transect_cut_geometry(tmp_path):
+    """Checks a diagonal cut spans the longer axis, keeps the ascending z axis and the source's colour limits."""
     explorer, cube_a, _ = _loaded(tmp_path)
 
-    entry = explorer._entry(cube_a, "pred")
-    data, z_values, vmin, vmax = explorer._transect_cut(entry, 0, 0, N_ROWS - 1, N_COLS - 1, "physical")
+    entry            = explorer._entry(cube_a, "pred")
+    row_idx, col_idx = explorer._path_indices([(0, 0), (N_ROWS - 1, N_COLS - 1)])
+    data, z_values, vmin, vmax = explorer._transect_cut(entry, row_idx, col_idx, "physical")
 
     assert data.shape == (N_Z, max(N_ROWS, N_COLS))
     assert z_values[0] == -10.0 and z_values[-1] == 30.0
@@ -138,9 +169,10 @@ def test_transect_cut_geometry(tmp_path):
 
 
 def test_save_transect_writes_figures(tmp_path):
+    """Checks saving a transect writes one non-empty figure per source under a coordinate-named directory."""
     explorer, cube_a, _ = _loaded(tmp_path)
 
-    result = explorer.save_transect(cube_a, row0=0, col0=0, row1=4, col1=5)
+    result = explorer.save_transect(cube_a, [(0, 0), (4, 5)])
     assert result["ok"], result
 
     out_dir = Path(result["dir"])
@@ -151,11 +183,25 @@ def test_save_transect_writes_figures(tmp_path):
     assert all((out_dir / name).stat().st_size > 0 for name in expected)
 
 
-def test_save_transect_rejects_bad_space_and_unloaded(tmp_path):
+def test_save_transect_names_a_bent_line_by_its_interior_vertices(tmp_path):
+    """Checks a polyline's figure folder carries a _via suffix counting its interior vertices."""
     explorer, cube_a, _ = _loaded(tmp_path)
 
-    assert not explorer.save_transect(cube_a, 0, 0, 1, 1, space="banana")["ok"]
-    assert not explorer.save_transect(str(tmp_path / "nowhere"), 0, 0, 1, 1)["ok"]
+    result = explorer.save_transect(cube_a, [(0, 0), (4, 0), (4, 5)])
+
+    assert result["ok"], result
+    assert result["rel"] == "figures/cube_transects/row0000_col0000_to_row0004_col0005_via1"
+
+
+def test_save_transect_rejects_bad_space_degenerate_lines_and_unloaded(tmp_path):
+    """Checks an unknown colour space, a line without two distinct points and an unloaded cube are all refused."""
+    explorer, cube_a, _ = _loaded(tmp_path)
+
+    assert not explorer.save_transect(cube_a, [(0, 0), (1, 1)], space="banana")["ok"]
+    assert not explorer.save_transect(cube_a, [(1, 1)])["ok"]
+    assert not explorer.save_transect(cube_a, [(1, 1), (1, 1)])["ok"]
+    assert not explorer.save_transect(str(tmp_path / "nowhere"), [(0, 0), (1, 1)])["ok"]
+    assert not (Path(cube_a) / "figures" / "cube_transects").exists()
 
 
 def test_save_slices_includes_comparison_sources(tmp_path):
@@ -182,7 +228,7 @@ def test_cmap_selection_and_diverging_override(tmp_path):
 
     assert explorer.slice_png(cube_a, "pred", "col", row=0, col=0, cmap="viridis")[:4] == b"\x89PNG"
     assert explorer.plane_png(cube_a, "pred", frac=0.5, cmap="gray")[:4] == b"\x89PNG"
-    assert explorer.transect_png(cube_a, "pred", 0, 0, 2, 2, cmap="inferno")[:4] == b"\x89PNG"
+    assert explorer.transect_png(cube_a, "pred", [(0, 0), (2, 2)], cmap="inferno")[:4] == b"\x89PNG"
 
 
 def _delta_runs(base: Path) -> tuple[CubeExplorer, Path, Path]:
@@ -316,3 +362,86 @@ def test_attach_route_answers_a_broken_comparison_with_an_error_status(tmp_path)
 
     assert CubeRouter(explorer).handle(exchange)
     assert handler.status == 400 and "metrics.json missing" in handler.payload()["error"]
+
+
+def test_transect_metrics_samples_polyline(tmp_path):
+    """Checks metric maps sample along the polyline with NaN turned into None and a degenerate line refused."""
+    preproc = make_preproc(tmp_path)
+    stamp   = _make_run(tmp_path, preproc, "run_a", seed=1)
+
+    mse       = np.arange(N_ROWS * N_COLS, dtype=np.float32).reshape(N_ROWS, N_COLS)
+    mse[0, 0] = np.nan
+    np.save(stamp / "cubes" / "pixel_mse.npy", mse)
+
+    explorer, _ = open_explorer(tmp_path, expected=1)
+    load_cube(explorer, str(stamp))
+
+    result = explorer.transect_metrics(str(stamp), [(0, 0), (0, 3), (2, 3)])
+    assert result["ok"]
+    assert result["n_samples"] == 6
+    assert result["row"] == [0, 0, 0, 0, 1, 2]
+    assert result["col"] == [0, 1, 2, 3, 3, 3]
+
+    row = next(row for row in result["rows"] if row["key"] == "pixel_mse")
+    assert row["label"] == "MSE"
+    assert row["values"][0] is None
+    assert row["values"][1] == float(mse[0, 1])
+
+    assert explorer.transect_metrics(str(stamp), [(0, 0)])["ok"] is False
+    assert explorer.transect_metrics(str(stamp), [(2, 2), (2, 2)])["ok"] is False
+    assert explorer.transect_metrics(str(tmp_path / "nowhere"), [(0, 0), (1, 1)])["ok"] is False
+
+
+def test_transect_metrics_carry_the_delta_layers_of_an_attached_run(tmp_path):
+    """Checks an attached comparison's delta layers are sampled along the line under their delta label."""
+    explorer, stamp_a, stamp_b = _delta_runs(tmp_path)
+    explorer.attach_second(str(stamp_a), str(stamp_b))
+
+    rows  = {row["key"]: row for row in explorer.transect_metrics(str(stamp_a), [(1, 0), (1, 2)])["rows"]}
+    delta = np.load(stamp_a / "cubes" / "pixel_mse.npy") - np.load(stamp_b / "cubes" / "pixel_mse.npy")
+
+    assert rows["delta_pixel_mse"]["label"] == "Δ MSE"
+    assert np.allclose(rows["delta_pixel_mse"]["values"], delta[1, 0:3])
+
+
+def _route(explorer: CubeExplorer, method: str, target: str, body: dict | None = None) -> FakeHandler:
+    """Runs one request through the cube router and returns the handler holding the answer."""
+    handler  = FakeHandler(method, target, json.dumps(body).encode("utf-8") if body is not None else b"")
+    exchange = HttpExchange.of(handler)
+    exchange.read_body()
+
+    assert CubeRouter(explorer).handle(exchange)
+    return handler
+
+
+def test_transect_routes_take_the_polyline_in_pts(tmp_path):
+    """Checks the transect, metric strip and save routes read the polyline from pts and refuse a degenerate one."""
+    stamp = _make_run(tmp_path, make_preproc(tmp_path), "run_a", seed=1)
+    np.save(stamp / "cubes" / "pixel_mse.npy", np.ones((N_ROWS, N_COLS), dtype=np.float32))
+
+    explorer, _ = open_explorer(tmp_path, expected=1)
+    cube_a      = str(stamp)
+    load_cube(explorer, cube_a)
+
+    bent  = urlencode({"id": cube_a, "source": "pred", "pts": "0,0;0,3;2,3"})
+    png   = _route(explorer, "GET", f"/api/cubes/transect?{bent}")
+    strip = _route(explorer, "GET", f"/api/cubes/transect_metrics?{bent}")
+
+    assert png.status == 200 and png.wfile.getvalue()[:4] == b"\x89PNG"
+    assert strip.status == 200 and strip.payload()["n_samples"] == 6
+
+    assert _route(explorer, "GET", f"/api/cubes/transect?{urlencode({'id': cube_a, 'source': 'pred', 'pts': '1,1'})}").status == 404
+    assert _route(explorer, "GET", f"/api/cubes/transect_metrics?{urlencode({'id': cube_a, 'pts': '1,1;1,1'})}").status == 400
+
+    saved = _route(explorer, "POST", "/api/cubes/save_transect", {"id": cube_a, "pts": [[0, 0], [4, 0], [4, 5]]})
+    assert saved.status == 200 and saved.payload()["rel"].endswith("_via1")
+
+
+def test_transect_points_parser_refuses_malformed_vertices():
+    """Checks the pts parser reads ordered pairs, treats an empty value as no vertex and raises on a malformed vertex."""
+    assert CubeRouter._parse_points("0,1;2,3") == [(0, 1), (2, 3)]
+    assert CubeRouter._parse_points("") == []
+
+    for malformed in ("0,1;2", "0,1;a,3", "0,1,2", "0,1;"):
+        with pytest.raises(ValueError):
+            CubeRouter._parse_points(malformed)
