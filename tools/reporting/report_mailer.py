@@ -977,6 +977,10 @@ class MailTarget:
         self.entry_config = entry_config
         self.logger       = logger
 
+    def settings(self) -> dict:
+        """Returns the target's own settings for the run's configuration table: its root, its filter and what shapes its bundles."""
+        raise NotImplementedError
+
     def select(self) -> List[Path]:
         """Returns the source directories chosen by this target's filter."""
         raise NotImplementedError
@@ -1001,6 +1005,15 @@ class ExperimentMailTarget(MailTarget):
         super().__init__(entry_config, logger)
         self.selector = ExperimentSelector(entry_config.experiments_dir, entry_config.comparison_dirname, logger)
 
+    def settings(self) -> dict:
+        """Returns the experiments root, the filter, the regeneration switch and the image mode."""
+        return {
+            "Experiments dir"    : str(self.entry_config.experiments_dir),
+            "Filter"             : ", ".join(self.entry_config.experiment_filter) or "all",
+            "Regenerate reports" : self.entry_config.regenerate_reports,
+            "Embed images"       : self.entry_config.embed_images,
+        }
+
     def select(self) -> List[Path]:
         """Returns the root of every experiment chosen by the configured filter."""
         return [experiment.root for experiment in self.selector.select_experiments(self.entry_config.experiment_filter)]
@@ -1023,6 +1036,15 @@ class RunContentMailTarget(MailTarget):
     NOUN         = "run"
     BUNDLE_LABEL = "Content bundle of run"
 
+    def settings(self) -> dict:
+        """Returns the runs root, the filter, the per-file cap and the excluded paths."""
+        return {
+            "Runs dir"       : str(self.entry_config.runs_dir),
+            "Filter"         : ", ".join(self.entry_config.run_filter) or "all",
+            "Max file MB"    : self.entry_config.run_max_file_mb,
+            "Excluded paths" : ", ".join(self.entry_config.run_excluded_paths) or "none",
+        }
+
     def select(self) -> List[Path]:
         """Returns the run directories chosen by the configured filter."""
         return RunContentSelector(self.entry_config.runs_dir, self.logger).resolve(self.entry_config.run_filter)
@@ -1043,6 +1065,13 @@ class DatasetMailTarget(MailTarget):
     NOUN         = "dataset"
     BUNDLE_LABEL = "Artifact bundle of dataset"
 
+    def settings(self) -> dict:
+        """Returns the dataset root and the filter."""
+        return {
+            "Datasets dir" : str(self.entry_config.datasets_dir),
+            "Filter"       : ", ".join(self.entry_config.dataset_filter) or "all",
+        }
+
     def select(self) -> List[Path]:
         """Returns the dataset directories chosen by the configured filter."""
         return DatasetSelector(self.entry_config.datasets_dir, self.logger).resolve(self.entry_config.dataset_filter)
@@ -1062,6 +1091,13 @@ class ParamRunMailTarget(MailTarget):
 
     NOUN         = "parameter run"
     BUNDLE_LABEL = "Artifact bundle of parameter run"
+
+    def settings(self) -> dict:
+        """Returns the parameter-run root and the filter."""
+        return {
+            "Params dir" : str(self.entry_config.params_dir),
+            "Filter"     : ", ".join(self.entry_config.param_run_filter) or "all",
+        }
 
     def select(self) -> List[Path]:
         """Returns the parameter-run directories chosen by the configured filter."""
@@ -1177,26 +1213,67 @@ class ReportMailBatch:
             "subjects"      : subjects,
         }
 
+    def _log_settings(self) -> None:
+        """Logs the effective settings of the run: the target with its root and filter, the staging, the SMTP endpoint, the addresses and the dry-run flag."""
+        self.logger.kv_table({
+            "Target"            : self.entry_config.target,
+            **self.target.settings(),
+            "Staging dir"       : str(self.entry_config.staging_dir),
+            "Max attachment MB" : self.entry_config.max_attachment_mb,
+            "SMTP"              : f"{self.entry_config.smtp_host}:{self.entry_config.smtp_port}",
+            "Sender"            : self.entry_config.sender,
+            "Recipient"         : self.entry_config.recipient,
+            "Dry run"           : self.entry_config.dry_run,
+        }, title="Configuration")
+
+    def _write_record(self, results: list[dict], started_at: str) -> Path:
+        """Writes the run's mailing record, one summary per source, next to the staged files.
+
+        Args:
+            results    : One mailing summary per source, in selection order.
+            started_at : Timestamp the run started at.
+
+        Returns:
+            Path of the written ``mail_<target>_<tag>.json`` file in the staging directory.
+        """
+        payload = {
+            "target"      : self.entry_config.target,
+            "recipient"   : self.entry_config.recipient,
+            "dry_run"     : self.entry_config.dry_run,
+            "started_at"  : started_at,
+            "finished_at" : RunTag.timestamp(),
+            "sources"     : results,
+        }
+
+        return FileIO.save_json(payload, Path(self.entry_config.staging_dir) / f"mail_{self.entry_config.target}_{RunTag.now()}.json", indent=2)
+
     def run(self) -> list[dict]:
-        """Selects the sources of the configured target and gathers and mails each one.
+        """Selects the sources of the configured target, gathers and mails each one and records what was sent.
 
         Returns:
             One mailing summary per source, in selection order.
         """
+        started_at = RunTag.timestamp()
+
         if self.entry_config.dry_run:
             self.logger.section(f"Staging {self.target.NOUN} results for {self.entry_config.recipient} (dry run, nothing is sent)")
         else:
             self.logger.section(f"Mailing {self.target.NOUN} results to {self.entry_config.recipient}")
 
+        self._log_settings()
+
         source_dirs = self.target.select()
         results     = [self._mail_source(source_dir) for source_dir in source_dirs]
 
+        record     = self._write_record(results, started_at)
         n_files    = sum(result["n_attachments"] for result in results)
         n_messages = sum(result["n_messages"] for result in results)
 
+        self.logger.info(f"Mailing record written to {record}")
+
         if self.entry_config.dry_run:
-            self.logger.ok(f"Dry run: staged {n_files} file(s) for {n_messages} message(s) across {len(results)} {self.target.NOUN}(s); nothing was sent")
+            self.logger.ok(f"Dry run: staged {n_files} file(s) for {n_messages} message(s) across {len(results)} {self.target.NOUN}(s) under {self.entry_config.staging_dir}; nothing was sent")
         else:
-            self.logger.ok(f"Mailed {n_files} file(s) in {n_messages} message(s) across {len(results)} {self.target.NOUN}(s)")
+            self.logger.ok(f"Mailed {n_files} file(s) in {n_messages} message(s) across {len(results)} {self.target.NOUN}(s), staged under {self.entry_config.staging_dir}")
 
         return results

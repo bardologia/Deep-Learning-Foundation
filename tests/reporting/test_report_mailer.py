@@ -633,9 +633,53 @@ def test_batch_dry_run_says_nothing_was_sent(entry_config, monkeypatch, fake_smt
     ReportMailBatch(entry_config, logger).run()
 
     assert ("section", "Staging experiment results for victor@example.com (dry run, nothing is sent)") in logger.messages
-    assert logger.messages[-1] == ("ok", "Dry run: staged 7 file(s) for 1 message(s) across 1 experiment(s); nothing was sent")
+    assert logger.messages[-1] == ("ok", f"Dry run: staged 7 file(s) for 1 message(s) across 1 experiment(s) under {entry_config.staging_dir}; nothing was sent")
     assert not any(message.startswith("Mailed") for _level, message in logger.messages)
     assert fake_smtp.instances == []
+
+
+class TableRecordingLogger(RecordingLogger):
+    """Recording logger that also keeps every key-value table it is asked to log.
+
+    Attributes:
+        tables : One (title, rows) pair per logged key-value table.
+    """
+
+    def __init__(self):
+        """Initialises empty message and table logs."""
+        super().__init__()
+        self.tables = []
+
+    def kv_table(self, data, title=None, key_header="Field", value_header="Value"):
+        """Records the title and a copy of the rows of a key-value table."""
+        self.tables.append((title, dict(data)))
+
+
+def test_batch_logs_its_settings_and_writes_a_mailing_record(entry_config, monkeypatch, fake_smtp):
+    """Verifies the batch logs its effective settings and writes a JSON record of every source it sent beside the staged files."""
+    monkeypatch.setenv(entry_config.password_env, "app-password")
+    entry_config.experiment_filter = ["exp_beta"]
+    logger                         = TableRecordingLogger()
+
+    ReportMailBatch(entry_config, logger).run()
+
+    title, settings = logger.tables[0]
+    assert title == "Configuration"
+    assert settings["Target"] == "experiments"
+    assert settings["Filter"] == "exp_beta"
+    assert settings["Staging dir"] == str(entry_config.staging_dir)
+    assert settings["SMTP"] == "smtp.gmail.com:465"
+    assert settings["Dry run"] is False
+
+    records = sorted(entry_config.staging_dir.glob("mail_experiments_*.json"))
+    record  = json.loads(records[0].read_text(encoding="utf-8"))
+    assert len(records) == 1
+    assert record["dry_run"] is False
+    assert [source["label"] for source in record["sources"]] == ["plan_20260901/exp_beta"]
+    assert record["sources"][0]["subjects"] == [f"{entry_config.subject_prefix}: plan_20260901/exp_beta"]
+    assert all(Path(path).is_file() for path in record["sources"][0]["staged_paths"])
+    assert ("info", f"Mailing record written to {records[0]}") in logger.messages
+    assert logger.messages[-1][1].endswith(f"staged under {entry_config.staging_dir}")
 
 
 def test_batch_respects_the_experiment_filter(entry_config, monkeypatch, fake_smtp):
