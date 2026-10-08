@@ -549,6 +549,7 @@ def test_run_closes_the_run_metadata_when_dataset_preparation_fails(tmp_path, mo
 
     pipeline                = TrainingPipeline.__new__(TrainingPipeline)
     pipeline.backbone_name  = "resunet"
+    pipeline.patch_squaring = None
     pipeline.entry          = types.SimpleNamespace(run_name="jepa_test", seed=0, backbone_head="conv", paths=types.SimpleNamespace(dataset_path=str(tmp_path), parameters_path=None, fingerprint_dataset=False))
     pipeline.trainer_config = types.SimpleNamespace(io=types.SimpleNamespace(logdir=str(tmp_path)))
 

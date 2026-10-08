@@ -222,6 +222,7 @@ class TrainingPipeline:
         image_ae_model_name      : Registry name of the image autoencoder, or None.
         trainer_config           : Assembled JepaTrainerConfig for this run.
         dataset_config           : Dataset configuration, with patch geometry squared where the backbone family requires it.
+        patch_squaring           : Warning the run logs because squaring changed the configured patch geometry, or None.
         backbone_name            : Registry name of the backbone.
         profile_ae_state         : Cached profile autoencoder state dict, loaded on first use.
         image_ae_state           : Cached image autoencoder state dict, loaded on first use.
@@ -304,6 +305,7 @@ class TrainingPipeline:
         self.coupled_autoencoders = {}
 
         patch                    = self.dataset_config.patch
+        self.patch_squaring      = ModelBuilder.squaring_note([self.backbone_name], patch.size, patch.stride)
         patch.size, patch.stride = ModelBuilder.square_patch([self.backbone_name], patch.size, patch.stride)
 
     @staticmethod
@@ -783,6 +785,9 @@ class TrainingPipeline:
         """
         with TrainingRunMetadata(self.trainer_config, self.backbone_name, Path(self.trainer_config.io.logdir), self.entry.run_name) as run_meta:
             logger = run_meta.logger
+
+            if self.patch_squaring is not None:
+                logger.warning(self.patch_squaring)
 
             logger.section("[JEPA Training Pipeline Execution]")
             logger.kv_table({
