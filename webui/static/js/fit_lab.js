@@ -33,9 +33,9 @@ class FitLabChart {
 
     ctx.clearRect(0, 0, w, h);
 
-    ctx.strokeStyle = "rgba(20, 26, 22, 0.12)";
-    ctx.fillStyle   = "rgba(20, 26, 22, 0.55)";
-    ctx.font        = "10px sans-serif";
+    ctx.strokeStyle = "rgba(220, 235, 245, 0.17)";
+    ctx.fillStyle   = "rgba(220, 235, 245, 0.86)";
+    ctx.font        = "600 10px sans-serif";
     ctx.lineWidth   = 1;
     ctx.textAlign   = "center";
     const step = (h1 - h0) / 5;
@@ -68,7 +68,7 @@ class FitLabChart {
       ctx.setLineDash([]);
     };
 
-    ctx.fillStyle = "rgba(20, 26, 22, 0.10)";
+    ctx.fillStyle = "rgba(220, 235, 245, 0.14)";
     ctx.beginPath();
     ctx.moveTo(x(height[0]), y(0));
     pixel.target.forEach((v, i) => ctx.lineTo(x(height[i]), y(v)));
@@ -76,8 +76,8 @@ class FitLabChart {
     ctx.closePath();
     ctx.fill();
 
-    line(pixel.raw, "rgba(20, 26, 22, 0.30)", 1);
-    line(pixel.target, "rgba(20, 26, 22, 0.75)", 1.4);
+    line(pixel.raw, "rgba(220, 235, 245, 0.3)", 1);
+    line(pixel.target, "rgba(220, 235, 245, 0.75)", 1.4);
 
     series.forEach((s) => {
       if (showComponents) {
@@ -107,8 +107,8 @@ class FitLabChart {
     const y = (v) => padT + plotH - ((Math.log10(Math.max(v, 1e-12)) - lLo) / (lHi - lLo || 1)) * plotH;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.font      = "10px sans-serif";
-    ctx.fillStyle = "rgba(20, 26, 22, 0.55)";
+    ctx.font      = "600 10px sans-serif";
+    ctx.fillStyle = "rgba(220, 235, 245, 0.86)";
     ctx.textAlign = "center";
     for (let k = 1; k <= kMax; k += 1) ctx.fillText(`K${k}`, x(k), h - 4);
     ctx.textAlign = "right";
@@ -146,7 +146,7 @@ class FitLabChart {
 class FitLabView {
   static MAX_PIXELS   = 24;
   static COMPONENTS   = ["sigma", "amp", "mu"];
-  static PALETTE      = ["#1d4fd8", "#b91c1c", "#0f766e", "#7c3aed", "#b45309", "#0e7490", "#be185d", "#4d7c0f"];
+  static PALETTE      = ["#6f9bff", "#f87171", "#2dd4bf", "#a78bfa", "#f59e0b", "#22d3ee", "#f472b6", "#a3e635"];
 
   constructor(refs) {
     this.refs   = refs;

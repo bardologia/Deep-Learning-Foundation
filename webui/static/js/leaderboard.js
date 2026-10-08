@@ -457,7 +457,7 @@ class LeaderboardView {
     });
   }
 
-  static CURVE_COLORS = ["#1d4fd8", "#0f766e", "#b45309", "#7c3aed", "#db2777", "#0891b2", "#4d7c0f", "#b91c1c"];
+  static CURVE_COLORS = ["#6f9bff", "#2dd4bf", "#f59e0b", "#a78bfa", "#f472b6", "#22d3ee", "#a3e635", "#f87171"];
 
   _curveColor(runId) {
     const slot = [...this.curveSelected].indexOf(runId);

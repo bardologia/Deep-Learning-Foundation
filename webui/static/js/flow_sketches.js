@@ -22,7 +22,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-mid" x1="24" y1="96" x2="180" y2="96"/>
       <text x="26" y="92" style="fill:#f5b971;font-size:7px">floor</text>
       <line class="skl-dash c-faint" x1="180" y1="22" x2="180" y2="122"/>
-      <text x="184" y="32" style="fill:#7e8aa0;font-size:7px">H_tr</text>
+      <text x="184" y="32" style="fill:#c3cbd8;font-size:7px">H_tr</text>
       <path class="skl-draw c-meas" d="M24 118 L52 70 L64 104 L98 44 L114 100 L150 78 L168 106 L186 90 L204 86" style="fill:none;opacity:.28"/>
       <path class="skl-draw c-cal" d="M24 120 L52 70 L64 104 L82 120 L98 44 L114 100 L132 120 L150 78 L168 120 L180 120" style="fill:none"/>`; },
     anim: null,
@@ -38,7 +38,7 @@ window.FLOW_SKETCHES = {
       <circle cx="66" cy="44" r="4" class="skl-pop f-cal"/>
       <path class="skl-draw c-faint" d="M150 118 L162 112 L176 88 L190 113 L202 118" style="fill:none;opacity:.5"/>
       <circle cx="176" cy="88" r="4" class="skl-pop f-faint"/>
-      <text x="176" y="78" text-anchor="middle" style="fill:#4a5a6b;font-size:8px">skip</text>`; },
+      <text x="176" y="78" text-anchor="middle" style="fill:#aab6c3;font-size:8px">skip</text>`; },
     anim: null,
   },
 
@@ -144,8 +144,8 @@ window.FLOW_SKETCHES = {
       <rect x="140" y="62" width="20" height="24" class="skl-pop f-fin"/>
       <rect x="188" y="80" width="20" height="38" class="skl-pop f-mid"/>
       <rect x="188" y="44" width="20" height="36" class="skl-pop f-fin"/>
-      <text x="54" y="130" style="fill:#4a5a6b;font-size:7px">1</text>
-      <text x="146" y="130" style="fill:#4a5a6b;font-size:7px">3</text>`; },
+      <text x="54" y="130" style="fill:#aab6c3;font-size:7px">1</text>
+      <text x="146" y="130" style="fill:#aab6c3;font-size:7px">3</text>`; },
     anim: null,
   },
 
@@ -158,7 +158,7 @@ window.FLOW_SKETCHES = {
       <rect x="140" y="76" width="22" height="40" class="skl-pop f-mid"/>
       <rect x="188" y="62" width="22" height="54" class="skl-pop f-mid"/>
       <path class="skl-draw c-cal" d="M103 36 L103 62 M97 56 L103 62 L109 56" style="fill:none"/>
-      <text x="103" y="30" text-anchor="middle" style="fill:#4fd6c4;font-size:9px;font-weight:600">K*=2</text>`; },
+      <text x="103" y="30" text-anchor="middle" style="fill:#4fd6c4;font-size:9px;font-weight:700">K*=2</text>`; },
     anim: pulse,
   },
 
@@ -167,7 +167,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="24" y1="118" x2="214" y2="118"/>
       <line class="skl-dash c-faint" x1="24" y1="56" x2="214" y2="56"/>
-      <text x="28" y="52" style="fill:#7e8aa0;font-size:7px">1.0 (norm)</text>
+      <text x="28" y="52" style="fill:#c3cbd8;font-size:7px">1.0 (norm)</text>
       <path class="skl-draw c-faint" d="M40 116 q40 -56 80 0 q34 -40 70 0" style="fill:none;opacity:.5"/>
       <path class="skl-draw c-fin" d="M40 116 q40 -84 80 0 q34 -60 70 0" style="fill:none"/>
       <text x="150" y="40" style="fill:#c4a3ff;font-size:8px">x s</text>`; },
@@ -180,7 +180,7 @@ window.FLOW_SKETCHES = {
       <rect x="40" y="40" width="26" height="20" class="skl-pop f-cal"/>
       <rect x="40" y="66" width="26" height="20" class="skl-pop f-cal"/>
       <rect x="40" y="92" width="26" height="20" class="skl-pop f-faint"/>
-      <text x="86" y="80" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="86" y="80" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect x="118" y="58" width="16" height="28" class="skl-pop f-fin"/>
       <rect x="136" y="58" width="16" height="28" class="skl-pop f-fin"/>
       <rect x="154" y="58" width="16" height="28" class="skl-pop f-fin"/>
@@ -214,7 +214,7 @@ window.FLOW_SKETCHES = {
       <rect x="34" y="36" width="52" height="12" rx="2" class="skl-pop f-fin"/>
       <line class="skl-axis" x1="132" y1="120" x2="214" y2="120"/>
       <line class="skl-dash c-faint" x1="132" y1="96" x2="214" y2="96"/>
-      <text x="214" y="92" text-anchor="end" style="fill:#7e8aa0;font-size:7px">floor (Q1)</text>
+      <text x="214" y="92" text-anchor="end" style="fill:#c3cbd8;font-size:7px">floor (Q1)</text>
       <path class="skl-draw c-cal" d="M134 120 C152 50, 180 50, 198 120" style="fill:rgba(79,214,196,0.10)"/>
       <line class="skl-dash c-cal" x1="166" y1="96" x2="166" y2="62" style="stroke-width:1.4"/>
       <text x="171" y="82" style="fill:#4fd6c4;font-size:7px">C_dB</text>`; },
@@ -237,10 +237,10 @@ window.FLOW_SKETCHES = {
     tip: "Subtracting the crop origin row0 turns absolute row bounds into zero-based slices.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="50" x2="214" y2="50"/>
-      <text x="30" y="40" style="fill:#7e8aa0;font-size:7px">absolute</text>
+      <text x="30" y="40" style="fill:#c3cbd8;font-size:7px">absolute</text>
       <rect x="92" y="42" width="78" height="16" class="skl-pop f-mid"/>
       <line class="skl-axis" x1="30" y1="104" x2="214" y2="104"/>
-      <text x="30" y="124" style="fill:#7e8aa0;font-size:7px">local (0-based)</text>
+      <text x="30" y="124" style="fill:#c3cbd8;font-size:7px">local (0-based)</text>
       <rect x="30" y="96" width="78" height="16" class="skl-pop f-cal"/>
       <path class="skl-draw c-cal" d="M131 60 L60 94 M66 90 L60 94 L66 98" style="fill:none"/>
       <text x="138" y="80" style="fill:#4fd6c4;font-size:8px">- row0</text>`; },
@@ -271,7 +271,7 @@ window.FLOW_SKETCHES = {
       <rect x="38" y="74" width="44" height="18" class="skl-pop f-mid"/>
       <rect x="38" y="96" width="44" height="18" class="skl-pop f-cal"/>
       <rect x="38" y="118" width="44" height="18" class="skl-pop f-cal"/>
-      <text x="100" y="86" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="100" y="86" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect x="134" y="30" width="72" height="106" rx="3" class="skl-draw c-fin" style="fill:rgba(196,163,255,0.08)"/>
       <text x="170" y="92" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">X buffer</text>`; },
     anim: null,
@@ -304,7 +304,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <rect x="28" y="32" width="74" height="74" class="skl-draw c-faint" style="fill:none"/>
       <rect x="58" y="62" width="44" height="44" class="skl-pop f-meas" style="opacity:.75"/>
-      <text x="110" y="78" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="110" y="78" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect x="138" y="42" width="64" height="64" class="skl-pop f-cal" style="opacity:.3"/>
       <rect x="148" y="52" width="44" height="44" class="skl-pop f-mid"/>
       <text x="170" y="124" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">pad(copy)</text>`; },
@@ -320,8 +320,8 @@ window.FLOW_SKETCHES = {
       <line class="skl-draw c-meas" x1="64" y1="70" x2="90" y2="52"/>
       <circle cx="90" cy="52" r="3.2" class="skl-pop f-meas"/>
       <path class="skl-dash c-mid" d="M82 70 A18 18 0 0 0 77 56" style="fill:none"/>
-      <text x="64" y="118" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">complex p</text>
-      <text x="120" y="74" style="fill:#7e8aa0;font-size:13px">&#8594;</text>
+      <text x="64" y="118" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">complex p</text>
+      <text x="120" y="74" style="fill:#c3cbd8;font-size:13px">&#8594;</text>
       <rect x="146" y="42" width="44" height="15" rx="2" class="skl-pop f-cal"/>
       <text x="196" y="53" style="fill:#4fd6c4;font-size:7px">|p|</text>
       <rect x="146" y="64" width="30" height="15" rx="2" class="skl-pop f-mid"/>
@@ -337,7 +337,7 @@ window.FLOW_SKETCHES = {
       <rect x="80" y="44" width="22" height="40" class="skl-pop f-mid"/>
       <rect x="106" y="44" width="22" height="40" class="skl-pop f-cal"/>
       <rect x="132" y="44" width="22" height="40" class="skl-pop f-faint"/>
-      <text x="91" y="100" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">r0 | rS | rI | D</text>
+      <text x="91" y="100" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">r0 | rS | rI | D</text>
       <rect x="40" y="110" width="130" height="22" rx="2" class="skl-draw c-cal" style="fill:rgba(79,214,196,0.12)"/>
       <text x="105" y="125" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">x : C_in</text>`; },
     anim: null,
@@ -349,7 +349,7 @@ window.FLOW_SKETCHES = {
       const cls = ["f-meas", "f-mid", "f-cal"], roles = ["a", "mu", "s"];
       let row = "", out = "";
       for (let i = 0; i < 9; i++) { const x = 30 + i * 20, r = i % 3; row += `<rect class="skl-pop ${cls[r]}" x="${x}" y="40" width="16" height="22"/><text x="${x + 8}" y="55" text-anchor="middle" style="fill:#0b1014;font-size:7px">${roles[r]}</text>`; out += `<rect class="sk-live skl-pop f-cal" x="${x}" y="92" width="16" height="22"/>`; }
-      svg.innerHTML = `<text x="120" y="30" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">interleaved theta</text>${row}<text x="120" y="80" text-anchor="middle" style="fill:#7e8aa0;font-size:12px">&#8595;</text>${out}`;
+      svg.innerHTML = `<text x="120" y="30" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">interleaved theta</text>${row}<text x="120" y="80" text-anchor="middle" style="fill:#c3cbd8;font-size:12px">&#8595;</text>${out}`;
     },
     anim: pulse,
   },
@@ -394,7 +394,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="104" x2="214" y2="104"/>
       <line class="skl-dash c-faint" x1="120" y1="34" x2="120" y2="110"/>
-      <text x="120" y="122" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">0</text>
+      <text x="120" y="122" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">0</text>
       <path class="skl-draw c-faint" d="M156 104 C166 60 198 60 208 104" style="fill:none;opacity:.5"/>
       <path class="skl-draw c-cal" d="M92 104 C106 48 134 48 148 104" style="fill:none"/>
       <path class="skl-draw c-mid" d="M168 104 L150 104 M156 100 L150 104 L156 108" style="fill:none"/>`; },
@@ -454,8 +454,8 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-faint" x1="182" y1="20" x2="182" y2="120"/>
       <path class="skl-dash c-faint" d="M30 124 L214 18" style="opacity:.3"/>
       <path class="skl-draw c-cal" d="M30 108 L62 96 L182 34 L214 32" style="fill:none"/>
-      <text x="48" y="132" style="fill:#7e8aa0;font-size:7px">min</text>
-      <text x="170" y="132" style="fill:#7e8aa0;font-size:7px">max</text>`; },
+      <text x="48" y="132" style="fill:#c3cbd8;font-size:7px">min</text>
+      <text x="170" y="132" style="fill:#c3cbd8;font-size:7px">max</text>`; },
     anim: null,
   },
 
@@ -464,12 +464,12 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <rect x="26" y="50" width="44" height="50" rx="3" class="skl-pop f-cal"/>
       <text x="48" y="79" text-anchor="middle" style="fill:#0b1014;font-size:9px">12.4</text>
-      <text x="48" y="116" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">phys</text>
+      <text x="48" y="116" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">phys</text>
       <path class="skl-draw c-mid" d="M76 75 L162 75 M154 69 L162 75 L154 81" style="fill:none"/>
       <text x="119" y="68" text-anchor="middle" style="fill:#f5b971;font-size:7px">(log1p-l)/s</text>
       <rect x="170" y="50" width="44" height="50" rx="3" class="skl-pop f-meas"/>
       <text x="192" y="79" text-anchor="middle" style="fill:#0b1014;font-size:9px">0.74</text>
-      <text x="192" y="116" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">norm</text>`; },
+      <text x="192" y="116" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">norm</text>`; },
     anim: null,
   },
 
@@ -518,7 +518,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-draw c-cal" x1="102" y1="96" x2="164" y2="42"/>
       <line class="skl-draw c-meas" x1="102" y1="96" x2="148" y2="56"/>
       <path class="skl-dash c-faint" d="M132 70 A 34 34 0 0 1 138 78" style="fill:none"/>
-      <text x="140" y="66" style="fill:#7e8aa0;font-size:7px">cos</text>`; },
+      <text x="140" y="66" style="fill:#c3cbd8;font-size:7px">cos</text>`; },
     anim: null,
   },
 
@@ -531,7 +531,7 @@ window.FLOW_SKETCHES = {
       <circle cx="112" cy="50" r="3.5" class="skl-pop f-mid"/>
       <text x="116" y="48" style="fill:#f5b971;font-size:7px">z-bar</text>
       <line class="skl-dash c-faint" x1="84" y1="100" x2="140" y2="100"/>
-      <text x="92" y="114" style="fill:#7e8aa0;font-size:7px">sigma_z</text>`; },
+      <text x="92" y="114" style="fill:#c3cbd8;font-size:7px">sigma_z</text>`; },
     anim: null,
   },
 
@@ -541,8 +541,8 @@ window.FLOW_SKETCHES = {
       <rect x="34" y="42" width="22" height="20" rx="2" class="skl-pop f-cal"/>
       <rect x="34" y="66" width="22" height="20" rx="2" class="skl-pop f-cal"/>
       <rect x="34" y="90" width="22" height="20" rx="2" class="skl-dash c-faint" style="fill:none"/>
-      <text x="45" y="124" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">mask</text>
-      <text x="86" y="78" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="45" y="124" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">mask</text>
+      <text x="86" y="78" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect x="150" y="40" width="62" height="62" class="skl-axis" style="fill:none;opacity:.3"/>
       <path class="skl-draw c-cal" d="M158 92 L170 60 L182 80 L194 52 L206 72" style="fill:none"/>
       <text x="170" y="116" style="fill:#4fd6c4;font-size:7px">TV</text>`; },
@@ -569,7 +569,7 @@ window.FLOW_SKETCHES = {
     tip: "If the gradient norm exceeds tau, all gradients scale by tau/norm, landing exactly on the limit.",
     build(svg) { svg.innerHTML = `
       <circle cx="76" cy="80" r="44" class="skl-dash c-faint" style="fill:none;opacity:.5"/>
-      <text x="40" y="36" style="fill:#7e8aa0;font-size:7px">tau</text>
+      <text x="40" y="36" style="fill:#c3cbd8;font-size:7px">tau</text>
       <line class="skl-dash c-faint" x1="76" y1="80" x2="124" y2="34" style="opacity:.5"/>
       <line class="skl-draw c-cal" x1="76" y1="80" x2="107" y2="50"/>
       <circle cx="76" cy="80" r="3" class="skl-pop f-faint"/>
@@ -618,7 +618,7 @@ window.FLOW_SKETCHES = {
       let top = "", rows = "";
       for (let i = 0; i < 9; i++) { const x = 30 + i * 20, r = i % 3; top += `<rect class="skl-pop ${cls[r]}" x="${x}" y="28" width="16" height="20"/>`; }
       for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) rows += `<rect class="skl-pop ${cls[r]}" x="${60 + c * 20}" y="${86 + r * 14}" width="16" height="12"/>`;
-      svg.innerHTML = `<text x="120" y="22" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">interleaved theta</text>${top}<text x="120" y="72" text-anchor="middle" style="fill:#7e8aa0;font-size:12px">&#8595;</text>${rows}<text x="150" y="96" style="fill:#6ea8ff;font-size:7px">a</text><text x="150" y="110" style="fill:#f5b971;font-size:7px">mu</text><text x="150" y="124" style="fill:#4fd6c4;font-size:7px">sigma</text>`;
+      svg.innerHTML = `<text x="120" y="22" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">interleaved theta</text>${top}<text x="120" y="72" text-anchor="middle" style="fill:#c3cbd8;font-size:12px">&#8595;</text>${rows}<text x="150" y="96" style="fill:#6ea8ff;font-size:7px">a</text><text x="150" y="110" style="fill:#f5b971;font-size:7px">mu</text><text x="150" y="124" style="fill:#4fd6c4;font-size:7px">sigma</text>`;
     },
     anim: null,
   },
@@ -630,7 +630,7 @@ window.FLOW_SKETCHES = {
       let cells = "", kept = "";
       for (let i = 0; i < 10; i++) { const x = 24 + i * 20, a = act[i]; cells += `<rect class="skl-pop ${a ? "f-cal" : "f-faint"}" x="${x}" y="34" width="16" height="16" style="opacity:${a ? 1 : 0.45}"/>`; }
       [0, 2, 5].forEach((i) => { kept += `<rect class="sk-live" x="${24 + i * 20}" y="34" width="16" height="16" style="fill:none;stroke:#4fd6c4;stroke-width:2.4"/>`; });
-      svg.innerHTML = `${cells}${kept}<text x="120" y="76" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">a_max &gt; tau_a</text><text x="120" y="106" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">kept + 5% empty, shuffled</text>`;
+      svg.innerHTML = `${cells}${kept}<text x="120" y="76" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">a_max &gt; tau_a</text><text x="120" y="106" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">kept + 5% empty, shuffled</text>`;
     },
     anim: pulse,
   },
@@ -664,7 +664,7 @@ window.FLOW_SKETCHES = {
       const hs = [10, 20, 34, 50, 58, 44, 28, 16, 8];
       let b = "";
       hs.forEach((h, i) => { const x = 52 + i * 15; b += `<rect class="skl-pop f-cal" x="${x}" y="${112 - h}" width="12" height="${h}" style="opacity:.8"/>`; });
-      svg.innerHTML = `<line class="skl-axis" x1="40" y1="112" x2="204" y2="112"/>${b}<line class="skl-dash c-cal" x1="118" y1="36" x2="118" y2="112"/><text x="118" y="30" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">loc</text><text x="200" y="46" text-anchor="end" style="fill:#7e8aa0;font-size:7px">log1p(c)</text>`;
+      svg.innerHTML = `<line class="skl-axis" x1="40" y1="112" x2="204" y2="112"/>${b}<line class="skl-dash c-cal" x1="118" y1="36" x2="118" y2="112"/><text x="118" y="30" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">loc</text><text x="200" y="46" text-anchor="end" style="fill:#c3cbd8;font-size:7px">log1p(c)</text>`;
     },
     anim: null,
   },
@@ -674,7 +674,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="104" x2="214" y2="104"/>
       <line class="skl-dash c-faint" x1="120" y1="34" x2="120" y2="110"/>
-      <text x="120" y="122" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">0</text>
+      <text x="120" y="122" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">0</text>
       <path class="skl-draw c-cal" d="M92 104 C106 48 134 48 148 104" style="fill:none"/>
       <line class="sk-live skl-pop" x1="108" y1="60" x2="108" y2="70" style="stroke:#c4a3ff;stroke-width:3"/>
       <line class="sk-live skl-pop" x1="120" y1="52" x2="120" y2="60" style="stroke:#c4a3ff;stroke-width:3"/>
@@ -733,10 +733,10 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <rect x="30" y="44" width="80" height="60" rx="4" class="skl-draw c-cal" style="fill:rgba(79,214,196,0.10)"/>
       <text x="70" y="70" text-anchor="middle" style="fill:#4fd6c4;font-size:9px">encoder</text>
-      <text x="70" y="88" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">eta 3e-4, wd 1e-4</text>
+      <text x="70" y="88" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">eta 3e-4, wd 1e-4</text>
       <rect x="130" y="44" width="80" height="60" rx="4" class="skl-draw c-mid" style="fill:rgba(245,185,113,0.10)"/>
       <text x="170" y="70" text-anchor="middle" style="fill:#f5b971;font-size:9px">decoder</text>
-      <text x="170" y="88" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">eta 3e-4, wd 1e-4</text>`; },
+      <text x="170" y="88" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">eta 3e-4, wd 1e-4</text>`; },
     anim: null,
   },
 
@@ -841,7 +841,7 @@ window.FLOW_SKETCHES = {
     tip: "The global gradient is rescaled onto the circle of radius tau = 1 so its norm never exceeds the threshold; floor eps = 1e-6.",
     build(svg) { svg.innerHTML = `
       <circle cx="120" cy="78" r="40" class="skl-axis" style="fill:none;opacity:.55"/>
-      <text x="120" y="30" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">tau = 1</text>
+      <text x="120" y="30" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">tau = 1</text>
       <line class="skl-dash c-faint" x1="120" y1="78" x2="184" y2="42"/>
       <circle cx="184" cy="42" r="3" class="skl-pop f-faint"/>
       <line class="sk-live skl-draw c-mid" x1="120" y1="78" x2="151" y2="60"/>
@@ -893,7 +893,7 @@ window.FLOW_SKETCHES = {
       <rect x="26" y="72" width="34" height="26" rx="3" class="skl-pop f-faint"/>
       <text x="43" y="59" text-anchor="middle" style="fill:#0b1014;font-size:7px">Enc</text>
       <text x="43" y="89" text-anchor="middle" style="fill:#0b1014;font-size:7px">Dec</text>
-      <text x="43" y="114" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">AE frozen</text>
+      <text x="43" y="114" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">AE frozen</text>
       <path class="skl-dash c-faint" d="M62 70 C88 70 92 70 112 70" style="fill:none"/>
       <rect x="116" y="48" width="46" height="46" rx="4" class="skl-draw c-cal" style="fill:rgba(79,214,196,0.12)"/>
       <text x="139" y="74" text-anchor="middle" style="fill:#4fd6c4;font-size:9px">f&#952;</text>
@@ -927,7 +927,7 @@ window.FLOW_SKETCHES = {
       <text x="32" y="67" text-anchor="middle" style="fill:#0b1014;font-size:7px">a</text>
       <text x="32" y="87" text-anchor="middle" style="fill:#0b1014;font-size:7px">&#956;</text>
       <text x="32" y="107" text-anchor="middle" style="fill:#0b1014;font-size:7px">&#963;</text>
-      <text x="54" y="88" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="54" y="88" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <line class="skl-axis" x1="80" y1="118" x2="214" y2="118"/>
       <path class="skl-draw c-cal" d="M80 114 L120 110 L146 58 L172 110 L214 116" style="fill:none"/>
       <path class="skl-dash c-mid" d="M80 116 L120 112 L146 80 L172 112 L214 116" style="fill:none;opacity:.7"/>
@@ -940,11 +940,11 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="24" y1="104" x2="78" y2="104"/>
       <path class="skl-draw c-faint" d="M24 100 L40 100 L51 62 L62 100 L78 102" style="fill:none"/>
-      <text x="50" y="120" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">&#947;n</text>
+      <text x="50" y="120" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">&#947;n</text>
       <rect x="92" y="54" width="40" height="44" rx="4" class="skl-draw c-mid" style="fill:rgba(245,185,113,0.10)"/>
       <text x="112" y="80" text-anchor="middle" style="fill:#f5b971;font-size:8px">E&#966;</text>
       <line class="skl-dash c-faint" x1="150" y1="40" x2="150" y2="112"/>
-      <text x="150" y="34" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">sg</text>
+      <text x="150" y="34" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">sg</text>
       <rect x="168" y="56" width="14" height="40" rx="2" class="skl-pop f-cal"/>
       <text x="175" y="110" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">z*</text>`; },
     anim: null,
@@ -961,7 +961,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-draw c-mid" x1="120" y1="80" x2="90" y2="42"/>
       <circle cx="90" cy="42" r="3.2" class="skl-pop f-mid"/>
       <text x="60" y="42" style="fill:#f5b971;font-size:8px">z*_n</text>
-      <text x="120" y="140" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">EN(z) : layernorm</text>`; },
+      <text x="120" y="140" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">EN(z) : layernorm</text>`; },
     anim: null,
   },
 
@@ -984,7 +984,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-axis" x1="28" y1="116" x2="214" y2="116"/>
       <line class="skl-axis" x1="28" y1="40" x2="28" y2="116"/>
       <path class="skl-draw c-faint" d="M28 112 L74 108 L120 52 L166 108 L214 114" style="fill:none;opacity:.6"/>
-      <text x="150" y="48" style="fill:#7e8aa0;font-size:7px">&#947;n</text>
+      <text x="150" y="48" style="fill:#c3cbd8;font-size:7px">&#947;n</text>
       <path class="skl-draw c-cal" d="M28 114 L74 110 L120 66 L166 106 L214 114" style="fill:none"/>
       <text x="58" y="72" style="fill:#4fd6c4;font-size:7px">D&#966;(z_n)</text>`; },
     anim: null,
@@ -996,7 +996,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-axis" x1="30" y1="118" x2="150" y2="118"/>
       <rect x="46" y="66" width="22" height="52" class="skl-pop f-cal"/>
       <text x="57" y="132" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">emb</text>
-      <text x="80" y="98" text-anchor="middle" style="fill:#7e8aa0;font-size:12px">+</text>
+      <text x="80" y="98" text-anchor="middle" style="fill:#c3cbd8;font-size:12px">+</text>
       <rect x="98" y="88" width="22" height="30" class="skl-pop f-cal"/>
       <text x="109" y="132" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">rec</text>
       <path class="skl-draw c-mid" d="M156 84 L182 84 M175 79 L182 84 L175 89" style="fill:none"/>
@@ -1013,7 +1013,7 @@ window.FLOW_SKETCHES = {
       <circle cx="74" cy="92" r="2.5" class="skl-pop f-mid" style="opacity:.5"/>
       <circle cx="100" cy="114" r="2.5" class="skl-pop f-mid" style="opacity:.6"/>
       <circle class="sk-live skl-pop f-fin" cx="120" cy="124" r="5"/>
-      <text x="120" y="146" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">bb + AE ft</text>`; },
+      <text x="120" y="146" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">bb + AE ft</text>`; },
     anim: pulse,
   },
 
@@ -1026,7 +1026,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-cal" d="M30 52 L62 74 L94 62 L120 92 L150 80 L182 98 L210 90" style="fill:none"/>
       <circle class="sk-live skl-pop f-fin" cx="120" cy="92" r="5"/>
       <text x="120" y="110" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">best</text>
-      <text x="200" y="60" text-anchor="end" style="fill:#7e8aa0;font-size:7px">val loss</text>`; },
+      <text x="200" y="60" text-anchor="end" style="fill:#c3cbd8;font-size:7px">val loss</text>`; },
     anim: pulse,
   },
 
@@ -1035,7 +1035,7 @@ window.FLOW_SKETCHES = {
     build(svg) {
       const rows = [["emb MSE", "f-cal", 66], ["cosine", "f-fin", 100], ["dec MSE", "f-cal", 48], ["chain MSE", "f-cal", 80]];
       let s = "";
-      rows.forEach((r, i) => { const y = 38 + i * 24; s += `<text x="30" y="${y + 9}" style="fill:#7e8aa0;font-size:7px">${r[0]}</text><rect class="skl-pop ${r[1]}" x="104" y="${y}" width="${r[2]}" height="12" rx="2"/>`; });
+      rows.forEach((r, i) => { const y = 38 + i * 24; s += `<text x="30" y="${y + 9}" style="fill:#c3cbd8;font-size:7px">${r[0]}</text><rect class="skl-pop ${r[1]}" x="104" y="${y}" width="${r[2]}" height="12" rx="2"/>`; });
       svg.innerHTML = s;
     },
     anim: null,
@@ -1061,7 +1061,7 @@ window.FLOW_SKETCHES = {
     build(svg) {
       let g = "";
       for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) g += `<rect x="${44 + c * 34}" y="${40 + r * 28}" width="30" height="24" rx="2" style="fill:#1b242f;stroke:#303d4c"/>`;
-      svg.innerHTML = `${g}<rect class="sk-live" x="44" y="40" width="30" height="24" rx="2" style="fill:rgba(110,168,255,0.25);stroke:#6ea8ff;stroke-width:2"/><text x="120" y="138" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">sliding window</text>`;
+      svg.innerHTML = `${g}<rect class="sk-live" x="44" y="40" width="30" height="24" rx="2" style="fill:rgba(110,168,255,0.25);stroke:#6ea8ff;stroke-width:2"/><text x="120" y="138" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">sliding window</text>`;
     },
     anim: pulse,
   },
@@ -1072,7 +1072,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-axis" x1="40" y1="110" x2="210" y2="110"/>
       <line class="skl-axis" x1="40" y1="110" x2="40" y2="28"/>
       <line class="skl-dash c-faint" x1="40" y1="44" x2="210" y2="44"/>
-      <text x="34" y="48" text-anchor="end" style="fill:#7e8aa0;font-size:7px">a_max</text>
+      <text x="34" y="48" text-anchor="end" style="fill:#c3cbd8;font-size:7px">a_max</text>
       <path class="skl-dash c-mid" d="M30 124 L210 18" style="opacity:.3"/>
       <path class="skl-draw c-cal" d="M40 110 L100 110 L155 44 L210 44" style="fill:none"/>`; },
     anim: null,
@@ -1141,10 +1141,10 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <rect x="38" y="52" width="44" height="44" class="skl-pop f-cal" style="opacity:.7"/>
       <text x="60" y="78" text-anchor="middle" style="fill:#0b1014;font-size:11px">A</text>
-      <text x="98" y="80" text-anchor="middle" style="fill:#9fb0c0;font-size:16px">&#247;</text>
+      <text x="98" y="80" text-anchor="middle" style="fill:#d5dee7;font-size:16px">&#247;</text>
       <rect x="114" y="52" width="44" height="44" class="skl-pop f-mid" style="opacity:.7"/>
       <text x="136" y="80" text-anchor="middle" style="fill:#0b1014;font-size:11px">W</text>
-      <text x="174" y="80" text-anchor="middle" style="fill:#9fb0c0;font-size:16px">=</text>
+      <text x="174" y="80" text-anchor="middle" style="fill:#d5dee7;font-size:16px">=</text>
       <rect x="190" y="56" width="34" height="34" class="skl-draw c-fin" style="fill:rgba(196,163,255,0.15)"/>
       <text x="207" y="106" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">cube</text>`; },
     anim: null,
@@ -1157,7 +1157,7 @@ window.FLOW_SKETCHES = {
       <rect x="40" y="40" width="46" height="46" class="skl-pop f-mid" style="opacity:.4"/>
       <rect x="68" y="68" width="46" height="46" class="skl-pop f-cal" style="opacity:.45"/>
       <circle class="sk-live skl-pop f-cal" cx="91" cy="77" r="5"/>
-      <text x="77" y="130" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">centrality wins</text>
+      <text x="77" y="130" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">centrality wins</text>
       <path class="skl-draw c-fin" d="M120 77 L152 77 M144 71 L152 77 L144 83" style="fill:none"/>
       <rect x="160" y="52" width="50" height="50" rx="3" class="skl-draw c-fin" style="fill:rgba(196,163,255,0.15)"/>
       <text x="185" y="118" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">params</text>`; },
@@ -1184,11 +1184,11 @@ window.FLOW_SKETCHES = {
     tip: "Cube-wide scalars at physical scale: MSE, RMSE, R-squared, and a PSNR over the GT range C_max - C_min.",
     build(svg) { svg.innerHTML = `
       <rect x="40" y="40" width="160" height="70" rx="5" class="skl-axis" style="fill:#1b242f"/>
-      <text x="58" y="64" style="fill:#9fb0c0;font-size:11px">R2</text>
-      <text x="184" y="64" text-anchor="end" style="fill:#c4a3ff;font-size:13px;font-weight:600">0.94</text>
+      <text x="58" y="64" style="fill:#d5dee7;font-size:11px">R2</text>
+      <text x="184" y="64" text-anchor="end" style="fill:#c4a3ff;font-size:13px;font-weight:700">0.94</text>
       <line x1="56" y1="74" x2="184" y2="74" class="skl-axis"/>
-      <text x="58" y="96" style="fill:#9fb0c0;font-size:11px">PSNR</text>
-      <text x="184" y="96" text-anchor="end" style="fill:#4fd6c4;font-size:13px;font-weight:600">28.4 dB</text>`; },
+      <text x="58" y="96" style="fill:#d5dee7;font-size:11px">PSNR</text>
+      <text x="184" y="96" text-anchor="end" style="fill:#4fd6c4;font-size:13px;font-weight:700">28.4 dB</text>`; },
     anim: null,
   },
 
@@ -1214,7 +1214,7 @@ window.FLOW_SKETCHES = {
       <rect x="132" y="60" width="14" height="40" class="skl-pop f-fin"/>
       <rect x="154" y="90" width="14" height="10" class="skl-pop f-faint"/>
       <rect x="176" y="84" width="14" height="16" class="skl-pop f-faint"/>
-      <text x="150" y="50" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">best perm</text>`; },
+      <text x="150" y="50" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">best perm</text>`; },
     anim: null,
   },
 
@@ -1223,12 +1223,12 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <rect x="28" y="54" width="42" height="44" rx="3" class="skl-pop f-meas"/>
       <text x="49" y="80" text-anchor="middle" style="fill:#0b1014;font-size:9px">&#952;*</text>
-      <text x="86" y="82" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="86" y="82" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <path class="skl-draw c-faint" d="M108 40 L150 62 L150 90 L108 112 Z" style="fill:none"/>
       <path class="skl-draw c-faint" d="M192 40 L150 62 L150 90 L192 112 Z" style="fill:none"/>
       <circle cx="150" cy="76" r="4" class="skl-pop f-cal"/>
       <path class="skl-draw c-cal" d="M110 30 L120 40 L138 20" style="fill:none;stroke-width:2"/>
-      <text x="150" y="130" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">profile_ae</text>`; },
+      <text x="150" y="130" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">profile_ae</text>`; },
     anim: null,
   },
 
@@ -1265,7 +1265,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="104" x2="214" y2="104"/>
       <line class="skl-dash c-faint" x1="120" y1="30" x2="120" y2="112"/>
-      <text x="120" y="124" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">0</text>
+      <text x="120" y="124" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">0</text>
       <path class="skl-draw c-faint" d="M150 104 C164 56 198 56 210 104" style="fill:none;opacity:.5"/>
       <path class="skl-draw c-cal" d="M84 104 C100 44 132 44 148 104" style="fill:none"/>
       <text x="118" y="26" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">(log1p(c) - l)/s</text>`; },
@@ -1281,7 +1281,7 @@ window.FLOW_SKETCHES = {
         <line class="skl-axis" x1="24" y1="104" x2="98" y2="104"/>
         <path class="skl-draw c-mid" d="M24 100 Q44 50 60 80 Q76 96 98 62" style="fill:none"/>
         <text x="58" y="122" text-anchor="middle" style="fill:#f5b971;font-size:7px">c_n : L</text>
-        <text x="112" y="80" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+        <text x="112" y="80" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
         ${s}
         <text x="158" y="140" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">L x 1 x 1</text>`;
     },
@@ -1336,7 +1336,7 @@ window.FLOW_SKETCHES = {
       }
       svg.innerHTML = m + `
         <text x="66" y="128" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">Z : N x d</text>
-        <text x="140" y="80" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+        <text x="140" y="80" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
         <rect x="168" y="46" width="44" height="56" rx="3" class="skl-draw c-fin" style="fill:rgba(196,163,255,0.10)"/>
         <text x="190" y="78" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">.npy</text>`;
     },
@@ -1410,7 +1410,7 @@ window.FLOW_SKETCHES = {
       <circle cx="170" cy="104" r="2.4" class="skl-pop f-cal"/>
       <circle cx="184" cy="98" r="2.4" class="skl-pop f-cal"/>
       <circle cx="198" cy="92" r="2.4" class="skl-pop f-cal"/>
-      <text x="176" y="120" text-anchor="middle" style="fill:#7e8aa0;font-size:6px">figures</text>`; },
+      <text x="176" y="120" text-anchor="middle" style="fill:#c3cbd8;font-size:6px">figures</text>`; },
     anim: null,
   },
 
@@ -1422,7 +1422,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-dash c-meas" d="M58 75 L74 75 M68 71 L74 75 L68 79" style="fill:none"/>
       <path class="skl-draw c-faint" d="M80 46 L120 62 L120 90 L80 106 Z" style="fill:none"/>
       <path class="skl-draw c-faint" d="M128 62 L168 46 L168 106 L128 90 Z" style="fill:none"/>
-      <text x="124" y="126" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">Enc | Dec</text>
+      <text x="124" y="126" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">Enc | Dec</text>
       <text x="196" y="79" text-anchor="middle" style="fill:#6ea8ff;font-size:10px">&#952;*</text>`; },
     anim: null,
   },
@@ -1435,11 +1435,11 @@ window.FLOW_SKETCHES = {
       <rect x="30" y="42" width="14" height="60" class="skl-pop f-meas"/>
       <rect x="48" y="58" width="14" height="44" class="skl-pop f-meas"/>
       <rect x="66" y="50" width="14" height="52" class="skl-pop f-meas"/>
-      <text x="58" y="116" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">mu_c , s_c</text>
-      <text x="168" y="34" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">output stats</text>
+      <text x="58" y="116" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">mu_c , s_c</text>
+      <text x="168" y="34" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">output stats</text>
       <rect x="140" y="52" width="54" height="46" rx="3" class="skl-pop f-faint" style="opacity:.35"/>
       <line class="skl-dash c-faint" x1="140" y1="52" x2="194" y2="98"/>
-      <text x="167" y="118" text-anchor="middle" style="fill:#7e8aa0;font-size:9px">&#8709;</text>`; },
+      <text x="167" y="118" text-anchor="middle" style="fill:#c3cbd8;font-size:9px">&#8709;</text>`; },
     anim: null,
   },
 
@@ -1459,7 +1459,7 @@ window.FLOW_SKETCHES = {
       <rect x="26" y="52" width="34" height="46" class="skl-pop f-meas"/>
       <text x="43" y="112" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">x-hat</text>
       <path class="skl-draw c-faint" d="M74 50 L128 66 L128 88 L74 104 Z" style="fill:none"/>
-      <text x="100" y="120" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">Enc</text>
+      <text x="100" y="120" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">Enc</text>
       <rect class="sk-live skl-pop f-mid" x="150" y="60" width="16" height="16"/>
       <rect class="sk-live skl-pop f-mid" x="168" y="60" width="16" height="16"/>
       <rect class="sk-live skl-pop f-mid" x="150" y="78" width="16" height="16"/>
@@ -1477,7 +1477,7 @@ window.FLOW_SKETCHES = {
       <rect class="skl-pop f-mid" x="48" y="78" width="16" height="16"/>
       <text x="47" y="110" text-anchor="middle" style="fill:#f5b971;font-size:8px">z</text>
       <path class="skl-draw c-faint" d="M82 66 L136 50 L136 104 L82 88 Z" style="fill:none"/>
-      <text x="110" y="120" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">Dec</text>
+      <text x="110" y="120" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">Dec</text>
       <rect x="158" y="50" width="46" height="54" class="skl-pop f-mid" style="opacity:.85"/>
       <text x="181" y="118" text-anchor="middle" style="fill:#f5b971;font-size:7px">x-hat_n</text>`; },
     anim: null,
@@ -1500,10 +1500,10 @@ window.FLOW_SKETCHES = {
     build(svg) {
       const m = grid(3, (r, c) => `<rect class="sk-live skl-pop f-mid" x="${40 + c * 22}" y="${44 + r * 22}" width="20" height="20" style="opacity:.7"/>`);
       svg.innerHTML = `${m}
-        <text x="118" y="80" text-anchor="middle" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+        <text x="118" y="80" text-anchor="middle" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
         <rect x="150" y="44" width="18" height="62" class="skl-pop f-cal"/>
         <text x="159" y="120" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">z-bar</text>
-        <text x="72" y="122" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">mean over h,w</text>`;
+        <text x="72" y="122" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">mean over h,w</text>`;
     },
     anim: pulse,
   },
@@ -1532,7 +1532,7 @@ window.FLOW_SKETCHES = {
       <circle cx="128" cy="68" r="3" class="skl-pop f-cal"/>
       <circle cx="150" cy="56" r="3" class="skl-pop f-cal"/>
       <circle cx="176" cy="46" r="3" class="skl-pop f-cal"/>
-      <text x="198" y="30" text-anchor="end" style="fill:#7e8aa0;font-size:7px">y = x</text>
+      <text x="198" y="30" text-anchor="end" style="fill:#c3cbd8;font-size:7px">y = x</text>
       <text x="58" y="42" style="fill:#4fd6c4;font-size:9px">R2, PSNR</text>
       <text x="52" y="128" style="fill:#6ea8ff;font-size:7px">GT</text>`; },
     anim: null,
@@ -1605,7 +1605,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <path class="skl-draw c-meas" d="M34 46 L74 58 L74 92 L34 104 Z" style="fill:none"/>
       <text x="54" y="122" text-anchor="middle" style="fill:#6ea8ff;font-size:8px">unet</text>
-      <text x="96" y="78" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="96" y="78" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect class="sk-live skl-pop f-cal" x="118" y="64" width="94" height="20" rx="2"/>
       <text x="165" y="58" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">N* (budget)</text>
       <text x="165" y="78" text-anchor="middle" style="fill:#0b1014;font-size:8px">params</text>`; },
@@ -1618,8 +1618,8 @@ window.FLOW_SKETCHES = {
       <line class="skl-axis" x1="30" y1="100" x2="214" y2="100"/>
       <line class="skl-axis" x1="40" y1="95" x2="40" y2="105"/>
       <line class="skl-axis" x1="196" y1="95" x2="196" y2="105"/>
-      <text x="40" y="118" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">l</text>
-      <text x="196" y="118" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">h</text>
+      <text x="40" y="118" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">l</text>
+      <text x="196" y="118" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">h</text>
       <line class="skl-dash c-cal" x1="132" y1="42" x2="132" y2="104"/>
       <text x="132" y="36" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">N*</text>
       <circle class="sk-live skl-pop f-mid" cx="120" cy="100" r="4.5"/>
@@ -1639,7 +1639,7 @@ window.FLOW_SKETCHES = {
       <rect class="sk-live skl-pop f-cal" x="116" y="98" width="18" height="22"/>
       <rect class="skl-pop f-cal" x="146" y="76" width="18" height="44"/>
       <rect class="skl-pop f-faint" x="176" y="54" width="18" height="66" style="opacity:.5"/>
-      <text x="185" y="50" text-anchor="middle" style="fill:#7e8aa0;font-size:6px">locked</text>
+      <text x="185" y="50" text-anchor="middle" style="fill:#c3cbd8;font-size:6px">locked</text>
       <text x="204" y="134" text-anchor="end" style="fill:#4fd6c4;font-size:7px">round&#183;8</text>`; },
     anim: pulse,
   },
@@ -1652,7 +1652,7 @@ window.FLOW_SKETCHES = {
       <text x="156" y="40" text-anchor="end" style="fill:#4fd6c4;font-size:7px">budget 40 GB</text>
       <rect class="sk-live skl-pop f-meas" x="92" y="114" width="56" height="16"/>
       <text x="120" y="126" text-anchor="middle" style="fill:#0b1014;font-size:7px">C_ctx</text>
-      <text x="120" y="24" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">device VRAM</text>`; },
+      <text x="120" y="24" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">device VRAM</text>`; },
     anim: pulse,
   },
 
@@ -1667,7 +1667,7 @@ window.FLOW_SKETCHES = {
       <rect class="skl-pop f-mid" x="102" y="76" width="20" height="46"/>
       <rect class="sk-live skl-pop f-mid" x="132" y="52" width="20" height="70"/>
       <rect class="skl-pop f-faint" x="162" y="30" width="20" height="92" style="opacity:.5"/>
-      <text x="120" y="138" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">b = 1, 2, 4, 8, 16</text>`; },
+      <text x="120" y="138" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">b = 1, 2, 4, 8, 16</text>`; },
     anim: pulse,
   },
 
@@ -1693,7 +1693,7 @@ window.FLOW_SKETCHES = {
       let g = "";
       for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) { const x = 74 + c * 42, y = 40 + r * 22; g += `<rect class="skl-pop f-cal" x="${x}" y="${y}" width="34" height="16" rx="2" style="opacity:${0.55 + 0.1 * c}"/>`; }
       svg.innerHTML = `
-        <text x="132" y="30" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">models x components x seeds</text>
+        <text x="132" y="30" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">models x components x seeds</text>
         ${g}
         <rect x="72" y="38" width="122" height="20" class="sk-live" style="fill:none;stroke:#4fd6c4;stroke-width:2"/>
         <text x="52" y="52" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">m1</text>`;
@@ -1711,7 +1711,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-cal" d="M40 40 C82 92 120 96 150 90 C176 86 194 88 206 90" style="fill:none"/>
       <circle class="sk-live skl-pop f-cal" cx="150" cy="90" r="4.5"/>
       <text x="150" y="82" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">best</text>
-      <text x="120" y="136" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">val loss / epoch</text>`; },
+      <text x="120" y="136" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">val loss / epoch</text>`; },
     anim: pulse,
   },
 
@@ -1719,9 +1719,9 @@ window.FLOW_SKETCHES = {
     tip: "Sliding-window inference on the held-out test split yields the scalar metric vector q for the unit.",
     build(svg) { svg.innerHTML = `
       <rect x="30" y="48" width="96" height="56" rx="2" class="skl-pop f-faint" style="opacity:.35"/>
-      <text x="78" y="118" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">test split</text>
+      <text x="78" y="118" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">test split</text>
       <rect class="sk-live" x="42" y="58" width="30" height="36" style="fill:none;stroke:#4fd6c4;stroke-width:2.2"/>
-      <text x="136" y="80" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="136" y="80" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect class="skl-pop f-cal" x="160" y="86" width="12" height="18"/>
       <rect class="skl-pop f-cal" x="176" y="70" width="12" height="34"/>
       <rect class="skl-pop f-cal" x="192" y="58" width="12" height="46"/>
@@ -1751,10 +1751,10 @@ window.FLOW_SKETCHES = {
       <rect class="skl-pop f-cal" x="40" y="60" width="118" height="18" rx="2" style="opacity:.85"/>
       <rect class="skl-pop f-cal" x="40" y="86" width="90" height="18" rx="2" style="opacity:.7"/>
       <rect class="skl-pop f-cal" x="40" y="112" width="62" height="18" rx="2" style="opacity:.55"/>
-      <text x="32" y="47" text-anchor="end" style="fill:#7e8aa0;font-size:7px">1</text>
-      <text x="32" y="73" text-anchor="end" style="fill:#7e8aa0;font-size:7px">2</text>
-      <text x="32" y="99" text-anchor="end" style="fill:#7e8aa0;font-size:7px">3</text>
-      <text x="32" y="125" text-anchor="end" style="fill:#7e8aa0;font-size:7px">4</text>
+      <text x="32" y="47" text-anchor="end" style="fill:#c3cbd8;font-size:7px">1</text>
+      <text x="32" y="73" text-anchor="end" style="fill:#c3cbd8;font-size:7px">2</text>
+      <text x="32" y="99" text-anchor="end" style="fill:#c3cbd8;font-size:7px">3</text>
+      <text x="32" y="125" text-anchor="end" style="fill:#c3cbd8;font-size:7px">4</text>
       <text x="200" y="47" style="fill:#c4a3ff;font-size:8px">Score</text>`; },
     anim: pulse,
   },
@@ -1764,7 +1764,7 @@ window.FLOW_SKETCHES = {
     build(svg) {
       let b = "";
       for (let i = 0; i < 6; i++) b += `<rect x="${26 + i * 31}" y="52" width="29" height="46" class="skl-pop f-mid" style="opacity:${0.4 + 0.12 * (i % 2)}"/>`;
-      svg.innerHTML = `<text x="120" y="40" text-anchor="middle" style="fill:#6ea8ff;font-size:8px">row window [row0, row1)</text>${b}<line class="skl-axis" x1="26" y1="108" x2="212" y2="108"/><text x="26" y="122" style="fill:#7e8aa0;font-size:7px">row0 = 1000</text><text x="212" y="122" text-anchor="end" style="fill:#7e8aa0;font-size:7px">row1 = 16000</text>`;
+      svg.innerHTML = `<text x="120" y="40" text-anchor="middle" style="fill:#6ea8ff;font-size:8px">row window [row0, row1)</text>${b}<line class="skl-axis" x1="26" y1="108" x2="212" y2="108"/><text x="26" y="122" style="fill:#c3cbd8;font-size:7px">row0 = 1000</text><text x="212" y="122" text-anchor="end" style="fill:#c3cbd8;font-size:7px">row1 = 16000</text>`;
     },
     anim: null,
   },
@@ -1814,7 +1814,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-mid sk-live" d="M34 40 C82 92 142 105 206 109" style="fill:none"/>
       <circle class="sk-live skl-pop f-cal" cx="150" cy="104" r="3.4"/>
       <text x="150" y="96" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">L*_k</text>
-      <text x="120" y="132" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">epoch</text>`; },
+      <text x="120" y="132" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">epoch</text>`; },
     anim: pulse,
   },
 
@@ -1825,7 +1825,7 @@ window.FLOW_SKETCHES = {
       <text x="55" y="59" text-anchor="middle" style="fill:#0b1014;font-size:8px">val</text>
       <rect x="26" y="86" width="58" height="26" class="skl-pop f-fin" style="opacity:.8"/>
       <text x="55" y="103" text-anchor="middle" style="fill:#0b1014;font-size:8px">test</text>
-      <text x="100" y="82" style="fill:#7e8aa0;font-size:13px">&#8594;</text>
+      <text x="100" y="82" style="fill:#c3cbd8;font-size:13px">&#8594;</text>
       <rect x="130" y="38" width="84" height="78" rx="3" class="skl-draw c-cal" style="fill:rgba(79,214,196,0.08)"/>
       <text x="172" y="58" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">MAE</text>
       <text x="172" y="74" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">RMSE</text>
@@ -1840,8 +1840,8 @@ window.FLOW_SKETCHES = {
       <circle class="skl-pop f-cal" cx="52" cy="50" r="3.4"/>
       <circle class="skl-pop f-cal" cx="52" cy="74" r="3.4"/>
       <circle class="skl-pop f-cal" cx="52" cy="98" r="3.4"/>
-      <text x="52" y="122" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">seeds</text>
-      <text x="102" y="80" style="fill:#7e8aa0;font-size:13px">&#8594;</text>
+      <text x="52" y="122" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">seeds</text>
+      <text x="102" y="80" style="fill:#c3cbd8;font-size:13px">&#8594;</text>
       <line class="skl-dash c-mid" x1="168" y1="50" x2="168" y2="98"/>
       <line class="skl-dash c-mid" x1="160" y1="50" x2="176" y2="50"/>
       <line class="skl-dash c-mid" x1="160" y1="98" x2="176" y2="98"/>
@@ -1856,7 +1856,7 @@ window.FLOW_SKETCHES = {
       const ys = [64, 82, 70, 88, 72, 66, 84, 78];
       let d = "";
       ys.forEach((y, i) => { d += `<circle class="skl-pop f-cal" cx="${44 + i * 22}" cy="${y}" r="3"/>`; });
-      svg.innerHTML = `<line class="skl-axis" x1="30" y1="116" x2="214" y2="116"/><rect class="sk-live skl-pop f-fin" x="34" y="62" width="176" height="28" style="opacity:.16"/><line class="skl-dash c-fin" x1="34" y1="76" x2="210" y2="76"/><text x="34" y="54" style="fill:#c4a3ff;font-size:7px">mean +/- std</text><text x="120" y="132" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">folds</text>${d}`;
+      svg.innerHTML = `<line class="skl-axis" x1="30" y1="116" x2="214" y2="116"/><rect class="sk-live skl-pop f-fin" x="34" y="62" width="176" height="28" style="opacity:.16"/><line class="skl-dash c-fin" x1="34" y1="76" x2="210" y2="76"/><text x="34" y="54" style="fill:#c4a3ff;font-size:7px">mean +/- std</text><text x="120" y="132" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">folds</text>${d}`;
     },
     anim: pulse,
   },
@@ -1880,14 +1880,14 @@ window.FLOW_SKETCHES = {
     tip: "Encoder, bottleneck, decoder and head LRs draw log-uniform over 1e-5 to 1e-2; dropout draws linearly over 0 to 0.5.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="118" x2="210" y2="118"/>
-      <text x="30" y="132" style="fill:#7e8aa0;font-size:7px">1e-5</text>
-      <text x="190" y="132" text-anchor="end" style="fill:#7e8aa0;font-size:7px">1e-2</text>
+      <text x="30" y="132" style="fill:#c3cbd8;font-size:7px">1e-5</text>
+      <text x="190" y="132" text-anchor="end" style="fill:#c3cbd8;font-size:7px">1e-2</text>
       <circle class="sk-live skl-pop f-mid" cx="58" cy="118" r="4"/>
       <circle class="sk-live skl-pop f-mid" cx="112" cy="118" r="4"/>
       <circle class="sk-live skl-pop f-mid" cx="150" cy="118" r="4"/>
       <circle class="sk-live skl-pop f-mid" cx="192" cy="118" r="4"/>
       <line class="skl-axis" x1="30" y1="44" x2="210" y2="44"/>
-      <text x="30" y="38" style="fill:#7e8aa0;font-size:7px">p_drop</text>
+      <text x="30" y="38" style="fill:#c3cbd8;font-size:7px">p_drop</text>
       <circle class="sk-live skl-pop f-cal" cx="96" cy="44" r="4"/>`; },
     anim: pulse,
   },
@@ -1914,10 +1914,10 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <rect x="34" y="42" width="46" height="66" rx="4" class="skl-pop f-mid" style="opacity:.85"/>
       <text x="57" y="34" text-anchor="middle" style="fill:#f5b971;font-size:8px">lr (9)</text>
-      <text x="100" y="80" text-anchor="middle" style="fill:#7e8aa0;font-size:14px">+</text>
+      <text x="100" y="80" text-anchor="middle" style="fill:#c3cbd8;font-size:14px">+</text>
       <rect x="118" y="42" width="46" height="66" rx="4" class="skl-pop f-cal" style="opacity:.85"/>
       <text x="141" y="34" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">arch (5)</text>
-      <text x="178" y="80" text-anchor="middle" style="fill:#7e8aa0;font-size:14px">=</text>
+      <text x="178" y="80" text-anchor="middle" style="fill:#c3cbd8;font-size:14px">=</text>
       <rect x="190" y="48" width="28" height="54" rx="4" class="skl-pop f-meas"/>
       <text x="204" y="116" text-anchor="middle" style="fill:#6ea8ff;font-size:8px">d=14</text>`; },
     anim: null,
@@ -1928,7 +1928,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="118" x2="210" y2="118"/>
       <line class="skl-dash c-faint" x1="120" y1="26" x2="120" y2="122"/>
-      <text x="110" y="22" style="fill:#7e8aa0;font-size:7px">y_g</text>
+      <text x="110" y="22" style="fill:#c3cbd8;font-size:7px">y_g</text>
       <path class="skl-draw c-cal" d="M34 118 C70 118 86 40 110 40 C116 40 118 118 120 118 Z" style="fill:rgba(79,214,196,.18)"/>
       <path class="skl-draw c-mid" d="M120 118 C122 118 132 70 158 70 C190 70 196 118 206 118 Z" style="fill:rgba(245,185,113,.16)"/>
       <text x="64" y="60" style="fill:#4fd6c4;font-size:7px">l</text>
@@ -1963,7 +1963,7 @@ window.FLOW_SKETCHES = {
       <circle cx="46" cy="116" r="6" class="skl-pop f-mid"/>
       <circle cx="102" cy="116" r="6" class="skl-pop f-mid"/>
       <circle cx="158" cy="116" r="6" class="skl-pop f-mid"/>
-      <text x="120" y="138" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">phantom max f</text>`; },
+      <text x="120" y="138" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">phantom max f</text>`; },
     anim: null,
   },
 
@@ -1971,13 +1971,13 @@ window.FLOW_SKETCHES = {
     tip: "The base config is deep-copied per trial, overridden with E = 30, patience = 8, seed = 42 + trial.number.",
     build(svg) { svg.innerHTML = `
       <rect x="30" y="50" width="56" height="50" rx="5" class="skl-pop f-faint"/>
-      <text x="58" y="116" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">base cfg</text>
+      <text x="58" y="116" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">base cfg</text>
       <path class="skl-draw c-faint" d="M90 75 L128 75 M120 70 L128 75 L120 80" style="fill:none"/>
       <rect x="134" y="46" width="60" height="58" rx="5" class="skl-pop f-mid"/>
       <line class="skl-draw c-cal" x1="142" y1="60" x2="186" y2="60"/>
       <line class="skl-draw c-cal" x1="142" y1="72" x2="186" y2="72"/>
       <line class="skl-draw c-cal" x1="142" y1="84" x2="186" y2="84"/>
-      <text x="164" y="118" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">E=30 pat=8</text>`; },
+      <text x="164" y="118" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">E=30 pat=8</text>`; },
     anim: null,
   },
 
@@ -2000,7 +2000,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-cal" x1="30" y1="72" x2="210" y2="72"/>
       <text x="34" y="66" style="fill:#4fd6c4;font-size:7px">median m</text>
       <line class="skl-dash c-faint" x1="92" y1="24" x2="92" y2="120"/>
-      <text x="68" y="20" style="fill:#7e8aa0;font-size:7px">t>=8</text>
+      <text x="68" y="20" style="fill:#c3cbd8;font-size:7px">t>=8</text>
       <path class="skl-draw c-mid" d="M30 40 C50 56 70 64 92 66 C104 67 110 66 116 64" style="fill:none"/>
       <line class="skl-draw c-mid" x1="118" y1="58" x2="130" y2="70" style="stroke-width:2"/>
       <line class="skl-draw c-mid" x1="130" y1="58" x2="118" y2="70" style="stroke-width:2"/>`; },
@@ -2014,7 +2014,7 @@ window.FLOW_SKETCHES = {
       <rect x="46" y="26" width="14" height="18" rx="2" class="skl-pop f-faint"/>
       <rect x="64" y="26" width="14" height="18" rx="2" class="skl-pop f-mid"/>
       <rect x="82" y="26" width="14" height="18" rx="2" class="skl-pop f-mid"/>
-      <text x="120" y="40" style="fill:#7e8aa0;font-size:7px">n_rem of 100</text>
+      <text x="120" y="40" style="fill:#c3cbd8;font-size:7px">n_rem of 100</text>
       <line class="skl-axis" x1="30" y1="118" x2="210" y2="118"/>
       <circle cx="52" cy="86" r="3" class="skl-pop f-cal" style="opacity:.5"/>
       <circle cx="86" cy="70" r="3" class="skl-pop f-cal" style="opacity:.5"/>
@@ -2032,9 +2032,9 @@ window.FLOW_SKETCHES = {
       <rect x="30" y="64" width="20" height="16" class="sk-live skl-pop f-meas"/>
       <rect x="30" y="84" width="20" height="16" class="skl-pop f-meas"/>
       <text x="40" y="118" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">dataset</text>
-      <text x="64" y="78" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="64" y="78" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <path class="skl-draw c-faint" d="M92 52 L140 66 L140 96 L92 110 Z" style="fill:none"/>
-      <text x="116" y="126" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">f_theta step</text>
+      <text x="116" y="126" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">f_theta step</text>
       <path class="skl-dash c-mid" d="M140 70 C180 58 180 104 140 92" style="fill:none"/>
       <text x="184" y="66" style="fill:#f5b971;font-size:7px">back</text>
       <circle cx="152" cy="120" r="4" class="skl-pop f-cal"/>
@@ -2063,10 +2063,10 @@ window.FLOW_SKETCHES = {
       <rect x="28" y="58" width="18" height="30" class="sk-live skl-pop f-meas"/>
       <rect x="50" y="58" width="18" height="30" class="sk-live skl-pop f-meas" style="opacity:.75"/>
       <rect x="72" y="58" width="18" height="30" class="sk-live skl-pop f-meas" style="opacity:.5"/>
-      <text x="108" y="78" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="108" y="78" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect x="134" y="52" width="74" height="42" rx="3" class="skl-draw c-cal" style="fill:rgba(79,214,196,0.1)"/>
       <text x="171" y="77" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">R_load</text>
-      <text x="118" y="116" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">GPU idle (loader only)</text>`; },
+      <text x="118" y="116" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">GPU idle (loader only)</text>`; },
     anim: pulse,
   },
 
@@ -2077,7 +2077,7 @@ window.FLOW_SKETCHES = {
       <text x="45" y="106" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">one x0</text>
       <path class="sk-live skl-dash c-mid" d="M58 66 C88 40 88 108 58 84" style="fill:none"/>
       <path class="skl-draw c-faint" d="M98 56 L138 68 L138 92 L98 104 Z" style="fill:none"/>
-      <text x="118" y="120" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">f_theta step</text>
+      <text x="118" y="120" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">f_theta step</text>
       <line class="skl-axis" x1="158" y1="104" x2="158" y2="34"/>
       <rect x="168" y="40" width="20" height="64" class="skl-pop f-cal"/>
       <text x="188" y="120" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">R_gpu</text>`; },
@@ -2087,13 +2087,13 @@ window.FLOW_SKETCHES = {
   feed_e2e: {
     tip: "Each batch's fetch-wait t_d and compute t_c are timed apart; their split is the data-wait fraction w_d.",
     build(svg) { svg.innerHTML = `
-      <text x="30" y="42" style="fill:#7e8aa0;font-size:7px">one step time</text>
+      <text x="30" y="42" style="fill:#c3cbd8;font-size:7px">one step time</text>
       <rect x="40" y="56" width="46" height="30" class="sk-live skl-pop f-mid"/>
       <text x="63" y="102" text-anchor="middle" style="fill:#f5b971;font-size:7px">t_d wait</text>
       <rect x="86" y="56" width="118" height="30" class="skl-pop f-cal"/>
       <text x="145" y="102" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">t_c compute</text>
       <line class="skl-axis" x1="40" y1="90" x2="204" y2="90"/>
-      <text x="122" y="128" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">w_d = t_d / (t_d + t_c)</text>`; },
+      <text x="122" y="128" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">w_d = t_d / (t_d + t_c)</text>`; },
     anim: pulse,
   },
 
@@ -2102,7 +2102,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="30" y1="120" x2="214" y2="120"/>
       <line class="skl-dash c-faint" x1="30" y1="52" x2="214" y2="52"/>
-      <text x="210" y="48" text-anchor="end" style="fill:#7e8aa0;font-size:7px">1.0</text>
+      <text x="210" y="48" text-anchor="end" style="fill:#c3cbd8;font-size:7px">1.0</text>
       <rect x="70" y="72" width="34" height="48" class="skl-pop f-cal"/>
       <text x="87" y="134" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">phi</text>
       <rect x="134" y="80" width="34" height="40" class="skl-pop f-cal" style="opacity:.7"/>
@@ -2122,8 +2122,8 @@ window.FLOW_SKETCHES = {
         <line class="skl-dash c-mid" x1="34" y1="92" x2="214" y2="92"/>
         <text x="210" y="88" text-anchor="end" style="fill:#f5b971;font-size:7px">tau = 0.05</text>
         ${d}
-        <text x="124" y="134" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">workers</text>
-        <text x="24" y="40" style="fill:#7e8aa0;font-size:7px">w_d</text>`;
+        <text x="124" y="134" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">workers</text>
+        <text x="24" y="40" style="fill:#c3cbd8;font-size:7px">w_d</text>`;
     },
     anim: pulse,
   },
@@ -2151,8 +2151,8 @@ window.FLOW_SKETCHES = {
       }
       svg.innerHTML = `${g}
         <text x="128" y="30" text-anchor="middle" style="fill:#f5b971;font-size:7px">prefetch {2,4,8,16}</text>
-        <text x="46" y="60" text-anchor="middle" transform="rotate(-90 46 60)" style="fill:#7e8aa0;font-size:6px">pin 1</text>
-        <text x="46" y="90" text-anchor="middle" transform="rotate(-90 46 90)" style="fill:#7e8aa0;font-size:6px">pin 0</text>
+        <text x="46" y="60" text-anchor="middle" transform="rotate(-90 46 60)" style="fill:#c3cbd8;font-size:6px">pin 1</text>
+        <text x="46" y="90" text-anchor="middle" transform="rotate(-90 46 90)" style="fill:#c3cbd8;font-size:6px">pin 0</text>
         <text x="128" y="112" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">best (p*, pin*)</text>`;
     },
     anim: pulse,
@@ -2176,7 +2176,7 @@ window.FLOW_SKETCHES = {
     build(svg) { svg.innerHTML = `
       <rect x="28" y="40" width="54" height="70" rx="3" class="skl-pop f-fin" style="opacity:.85"/>
       <text x="55" y="80" text-anchor="middle" style="fill:#0b1014;font-size:8px">.json</text>
-      <text x="94" y="80" style="fill:#7e8aa0;font-size:12px">&#8594;</text>
+      <text x="94" y="80" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
       <rect x="120" y="40" width="42" height="30" rx="2" class="skl-pop f-cal" style="opacity:.5"/>
       <rect x="168" y="40" width="42" height="30" rx="2" class="skl-pop f-cal" style="opacity:.5"/>
       <rect x="120" y="78" width="42" height="30" rx="2" class="skl-pop f-cal" style="opacity:.5"/>

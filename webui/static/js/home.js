@@ -408,7 +408,7 @@ class GpuActivityTimeline {
 
   _axis(ctx, w, top, bottom) {
     const g = this.geom;
-    ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+    ctx.font = "600 9px ui-monospace, SFMono-Regular, monospace";
     ctx.textBaseline = "top";
 
     const ticks = g.window > 86400 ? this._dayTicks() : this._hourTicks();
@@ -421,7 +421,7 @@ class GpuActivityTimeline {
       ctx.stroke();
 
       if (!label) return;
-      ctx.fillStyle = "rgba(220, 235, 245, 0.38)";
+      ctx.fillStyle = "rgba(220, 235, 245, 0.81)";
       ctx.textAlign = x > w - 20 ? "right" : "center";
       ctx.fillText(label, Math.min(x, w - 1), bottom + 5);
     });
@@ -459,8 +459,8 @@ class GpuActivityTimeline {
     this.rows = [];
 
     if (!gpus.length) {
-      ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
-      ctx.font = "11px ui-monospace, SFMono-Regular, monospace";
+      ctx.fillStyle = "rgba(220, 235, 245, 0.8)";
+      ctx.font = "600 11px ui-monospace, SFMono-Regular, monospace";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText("no GPU activity recorded yet", 2, h / 2);
@@ -478,8 +478,8 @@ class GpuActivityTimeline {
       ctx.fillStyle = "rgba(220, 235, 245, 0.06)";
       ctx.fillRect(plotX, y, this.geom.plotW, rowH);
 
-      ctx.fillStyle = "rgba(220, 235, 245, 0.55)";
-      ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
+      ctx.fillStyle = "rgba(220, 235, 245, 0.86)";
+      ctx.font = "600 10px ui-monospace, SFMono-Regular, monospace";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText(`gpu ${gpu.index}`, 0, y + rowH / 2);
@@ -639,8 +639,8 @@ class GpuHeatmapCalendar {
 
     const gpus = state.gpus || [];
     if (!gpus.length) {
-      ctx.fillStyle = "rgba(220, 235, 245, 0.35)";
-      ctx.font = "11px ui-monospace, SFMono-Regular, monospace";
+      ctx.fillStyle = "rgba(220, 235, 245, 0.8)";
+      ctx.font = "600 11px ui-monospace, SFMono-Regular, monospace";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText("no GPU activity recorded yet", 2, h / 2);
@@ -657,8 +657,8 @@ class GpuHeatmapCalendar {
     gpus.forEach((gpu, row) => {
       const y0 = row * (rowH + GpuHeatmapCalendar.ROW_GAP);
 
-      ctx.fillStyle = "rgba(220, 235, 245, 0.55)";
-      ctx.font = "10px ui-monospace, SFMono-Regular, monospace";
+      ctx.fillStyle = "rgba(220, 235, 245, 0.86)";
+      ctx.font = "600 10px ui-monospace, SFMono-Regular, monospace";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText(`gpu ${gpu.index}`, 0, y0 + rowH / 2);
@@ -689,14 +689,14 @@ class GpuHeatmapCalendar {
     });
 
     const bottom = gpus.length * (rowH + GpuHeatmapCalendar.ROW_GAP) - GpuHeatmapCalendar.ROW_GAP;
-    ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+    ctx.font = "600 9px ui-monospace, SFMono-Regular, monospace";
     ctx.textBaseline = "top";
     const every = Math.max(1, Math.ceil((days.length * 40) / plotW));
     days.forEach((t, index) => {
       if (index % every !== 0) return;
       const date = new Date(t * 1000);
       const x = plotX + index * cellW;
-      ctx.fillStyle = "rgba(220, 235, 245, 0.38)";
+      ctx.fillStyle = "rgba(220, 235, 245, 0.81)";
       ctx.textAlign = x > w - 24 ? "right" : "left";
       ctx.fillText(`${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}`, Math.min(x, w - 1), bottom + 5);
     });

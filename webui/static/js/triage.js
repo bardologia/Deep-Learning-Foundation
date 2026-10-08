@@ -156,8 +156,8 @@ class TriageView {
     if (!canvas) return;
 
     SharedCharts.lineChart(canvas, data.z_axis, [
-      { values: data.gt,   color: "#111827", width: 1.2, label: "GT" },
-      { values: data.pred, color: "#0f766e", width: 1.7, label: "pred" },
+      { values: data.gt,   color: "#eef2f5", width: 1.2, label: "GT" },
+      { values: data.pred, color: "#2dd4bf", width: 1.7, label: "pred" },
     ]);
   }
 

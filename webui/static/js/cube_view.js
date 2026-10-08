@@ -2323,7 +2323,7 @@ class CubeView {
     const xAt = (value) => padL + (value / vMax) * innerW * 0.96;
     const yAt = (height) => padT + (1 - (height - hMin) / span) * innerH;
 
-    ctx.strokeStyle = "rgba(20, 25, 30, 0.07)";
+    ctx.strokeStyle = "rgba(220, 235, 245, 0.1)";
     ctx.lineWidth = 1;
     for (let i = 1; i <= 3; i++) {
       const x = padL + (innerW * i) / 4;
@@ -2359,8 +2359,8 @@ class CubeView {
     ctx.fillStyle = this.colors[panel.source] || "#555";
     ctx.fill();
 
-    ctx.fillStyle = "rgba(20, 25, 30, 0.55)";
-    ctx.font = "9.5px 'JetBrains Mono', monospace";
+    ctx.fillStyle = "rgba(220, 235, 245, 0.86)";
+    ctx.font = "600 9.5px 'JetBrains Mono', monospace";
     ctx.textAlign = "left";
     ctx.fillText(this._fmt(hMax), padL + 2, padT - 5);
     ctx.fillText(this._fmt(hMin), padL + 2, h - padB - 3);

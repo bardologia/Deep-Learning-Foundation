@@ -156,11 +156,11 @@ class AutopsyView {
       `<th class="lb-th">metric</th><th class="lb-th">A</th><th class="lb-th">B</th><th class="lb-th">Δ rel</th><th class="lb-th">winner</th></tr></thead><tbody>`;
 
     data.metrics.slice(0, 25).forEach((row) => {
-      const tone = row.winner === "A" ? "#0f766e" : row.winner === "B" ? "#b91c1c" : "inherit";
+      const tone = row.winner === "A" ? "#2dd4bf" : row.winner === "B" ? "#f87171" : "inherit";
       html += `<tr><td class="lb-key">${SharedCharts.esc(row.key)}</td>` +
         `<td>${this._fmt(row.a)}</td><td>${this._fmt(row.b)}</td>` +
         `<td>${(row.rel * 100).toFixed(1)}%</td>` +
-        `<td style="color:${tone};font-weight:600">${row.winner}</td></tr>`;
+        `<td style="color:${tone};font-weight:700">${row.winner}</td></tr>`;
     });
     html += `</tbody></table></div></div>`;
 
@@ -198,9 +198,9 @@ class AutopsyView {
     if (!canvas) return;
 
     SharedCharts.lineChart(canvas, data.z_axis, [
-      { values: data.gt, color: "#111827", width: 1.2, label: "GT" },
-      { values: data.a,  color: "#0f766e", width: 1.7, label: "A" },
-      { values: data.b,  color: "#b91c1c", width: 1.7, label: "B" },
+      { values: data.gt, color: "#eef2f5", width: 1.2, label: "GT" },
+      { values: data.a,  color: "#2dd4bf", width: 1.7, label: "A" },
+      { values: data.b,  color: "#f87171", width: 1.7, label: "B" },
     ]);
   }
 
