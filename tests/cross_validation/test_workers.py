@@ -99,7 +99,7 @@ def build_run_dir(tmp_path: Path, fold_names: list[str], inference_folds: dict[s
     for name in fold_names:
         (run_dir / "folds" / name).mkdir(parents=True)
 
-    training_results = [{"name": name, "status": "DONE", "duration_s": 10.0} for name in fold_names]
+    training_results = [{"name": name, "status": "DONE", "duration_s": 10.0, "log_file": str(run_dir / "folds" / name / "worker.log")} for name in fold_names]
     FileIO.save_json(training_results, run_dir / "pipeline" / "training_results.json")
 
     for name, split_metrics in inference_folds.items():
@@ -837,3 +837,21 @@ def test_training_worker_refuses_a_finished_unit_when_resume_is_off(test_data_di
 
     assert trained == []
     assert CompletionMarker.is_complete(unit)
+
+
+def test_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tmp_path):
+    """A unit a resume matched to a renamed directory keeps its stored status and duration, since its result follows its worker log."""
+    run_dir = build_run_dir(tmp_path, ["fold_0/seed1", "fold_1/seed1"], {})
+
+    results = FileIO.load_json(run_dir / "pipeline" / "training_results.json")
+    results[0]["name"] = "unet_fold_0/seed1"
+    FileIO.save_json(results, run_dir / "pipeline" / "training_results.json")
+
+    logger    = RecordingLogger()
+    collector = FoldCollector(run_dir=run_dir, splits=[], training_type="backbone", logger=logger)
+
+    base, _ = collector.collect_by_split()
+
+    assert base[0].training_result                       == {"status": "DONE", "duration_s": 10.0}
+    assert collector.seed_dispersion["fold_0"]["status"] == "DONE"
+    assert ("info", "1 unit result(s) matched to the renamed run directory holding their worker log: ['unet_fold_0/seed1 -> fold_0/seed1']") in logger.messages
