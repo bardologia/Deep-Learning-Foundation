@@ -299,6 +299,22 @@ class TrialComparisonReport(ComparisonReportBase):
 
         return [*table.render(), ""]
 
+    def _figure_subdirs(self) -> list[tuple[str, str]]:
+        """Returns the (sub-directory, title) pairs to render: the known ones in order, then every other sub-directory some trial's figures hold.
+
+        A sub-directory absent from FIGURE_SUBDIRS is titled by its own name
+        and logged, so a figure family the inference started writing after
+        this table was drawn up still reaches a gallery page.
+        """
+        known   = {subdir for subdir, _title in self.FIGURE_SUBDIRS}
+        present = {path.name for r in self.records if r.figures_dir is not None for path in r.figures_dir.iterdir() if path.is_dir()}
+        extra   = sorted(present - known)
+
+        if extra:
+            self.logger.info(f"Figure sub-directories outside FIGURE_SUBDIRS, rendered after the known ones under their own name: {', '.join(extra)}")
+
+        return list(self.FIGURE_SUBDIRS) + [(subdir, subdir.replace("_", " ").capitalize()) for subdir in extra]
+
     def _write_figure_section(self, subdir: str, title: str) -> Path | None:
         """Writes one figure gallery pairing the same figure across trials.
 
@@ -335,6 +351,24 @@ class TrialComparisonReport(ComparisonReportBase):
         out  = self.out_dir / f"figures_{slug}.md"
         out.write_text("\n".join(lines), encoding="utf-8")
         return out
+
+    def _write_figure_galleries(self) -> list[Path]:
+        """Writes one gallery per figure sub-directory held by any trial, warning when no trial holds figures at all.
+
+        Returns:
+            Paths of the written gallery pages, in rendering order.
+        """
+        written = []
+        for subdir, title in self._figure_subdirs():
+            path = self._write_figure_section(subdir, title)
+            if path:
+                self.logger.info(f"Figures [{subdir}] : {path.name}")
+                written.append(path)
+
+        if not written:
+            self.logger.warning("No trial with a completed inference holds figures in any sub-directory; no figure gallery written")
+
+        return written
 
     def _write_gifs(self) -> Path | None:
         """Writes the animation gallery to `gif_comparison.md`.
@@ -410,16 +444,14 @@ class TrialComparisonReport(ComparisonReportBase):
         self.logger.info(f"Overview, metrics and summary written for split '{self.inference_split}'")
 
         if self.compare_images:
-            for subdir, title in self.FIGURE_SUBDIRS:
-                path = self._write_figure_section(subdir, title)
-                if path:
-                    self.logger.info(f"Figures [{subdir}] : {path.name}")
-                    written.append(path)
+            written += self._write_figure_galleries()
 
         if self.compare_gifs:
             path = self._write_gifs()
             if path:
                 self.logger.info(f"Animations : {path.name}")
                 written.append(path)
+            else:
+                self.logger.warning("No trial with a completed inference holds animations; no animation gallery written")
 
         return written
