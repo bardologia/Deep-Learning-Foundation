@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from pipelines.autoencoder_common.inference.pipeline import AeInferencePipeline
-from tools.data.io                                   import FileIO
-from tools.runtime.completion                        import CompletionMarker
-from tests.conftest                                  import SilentLogger
+from pipelines.autoencoder_common.inference.pipeline  import AeInferencePipeline
+from pipelines.profile_autoencoder.inference.pipeline import ProfileAeInferencePipeline
+from tools.data.io                                    import FileIO
+from tools.runtime.completion                         import CompletionMarker
+from tests.conftest                                   import SilentLogger
 
 
 class _RecordingLogger(SilentLogger):
@@ -128,6 +129,16 @@ def test_summary_warns_and_counts_inactive_latent_dimensions(tmp_path):
     assert logger.tables[-1]["Active latent dims"] == "2 of 8 (0.25)"
     assert len(logger.warnings) == 1
     assert "6 of the 8 latent dimensions" in logger.warnings[0]
+
+
+def test_profile_summary_names_the_active_subset_behind_the_shape_metrics():
+    """The profile summary states how many curves the Pearson, relative L2 and peak metrics were computed over."""
+    metrics = {"mse_mean": 0.5, "r2": 0.9, "n_active_curves": 1200, "n_curves": 5000, "pearson_mean": 0.8, "relative_l2_mean": 0.3, "peak_location_mae": 0.1}
+
+    summary = ProfileAeInferencePipeline(SimpleNamespace())._metrics_summary(metrics)
+
+    assert summary["Active curves"].startswith("1,200 of 5,000")
+    assert list(summary).index("Active curves") < list(summary).index("Pearson")
 
 
 def test_completion_payload_names_the_scored_weights(tmp_path, monkeypatch):
