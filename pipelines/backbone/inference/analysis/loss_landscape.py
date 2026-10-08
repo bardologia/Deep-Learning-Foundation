@@ -7,6 +7,7 @@ curvature and flatness radius alongside 1-D cuts and a 2-D contour.
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -99,16 +100,17 @@ class LandscapeEvaluator:
         """Puts the trained weights back in place."""
         self._apply(0.0, 0.0, {name: torch.zeros_like(t) for name, t in self.origin.items()}, {name: torch.zeros_like(t) for name, t in self.origin.items()})
 
-    def grid(self, alphas: np.ndarray, betas: np.ndarray, dir1: dict, dir2: dict) -> np.ndarray:
+    def grid(self, alphas: np.ndarray, betas: np.ndarray, dir1: dict, dir2: dict, on_point) -> np.ndarray:
         """Evaluates the loss on the Cartesian product of the two step grids.
 
         The trained weights are restored even when the evaluation raises.
 
         Args:
-            alphas : Steps along the first direction, shape (n_alpha,).
-            betas  : Steps along the second direction, shape (n_beta,).
-            dir1   : Perturbation tensors of the first direction.
-            dir2   : Perturbation tensors of the second direction.
+            alphas   : Steps along the first direction, shape (n_alpha,).
+            betas    : Steps along the second direction, shape (n_beta,).
+            dir1     : Perturbation tensors of the first direction.
+            dir2     : Perturbation tensors of the second direction.
+            on_point : Zero-argument callable invoked after every evaluated point, driving the progress bar.
 
         Returns:
             Loss array of shape (n_alpha, n_beta).
@@ -120,6 +122,7 @@ class LandscapeEvaluator:
                 for j, beta in enumerate(betas):
                     self._apply(float(alpha), float(beta), dir1, dir2)
                     losses[i, j] = self.loss_fn()
+                    on_point()
         finally:
             self.restore()
 
@@ -421,8 +424,23 @@ class LossLandscapeRun(AnalysisRun):
         evaluator  = LandscapeEvaluator(module, loss_fn)
 
         alphas_1d = np.linspace(-self.config.span, self.config.span, self.config.n_points_1d)
-        cuts      = [evaluator.grid(alphas_1d, np.zeros(1), direction, directions[0])[:, 0] for direction in directions]
-        center    = float(loss_fn())
+        alphas_2d = np.linspace(-self.config.span, self.config.span, self.config.n_points_2d)
+        n_cut     = len(directions) * alphas_1d.size
+        n_plane   = alphas_2d.size ** 2
+
+        self.logger.info(f"{self.run_dir.name}: {n_cut + n_plane} loss evaluations planned ({len(directions)} cuts x {alphas_1d.size} points + {alphas_2d.size}x{alphas_2d.size} grid)")
+
+        with self.logger.track() as progress:
+            task     = progress.add_task("[section]Loss landscape[/section]", total=n_cut + n_plane)
+            on_point = functools.partial(progress.advance, task)
+
+            with self.logger.timer(f"Loss landscape: 1-D cuts ({n_cut} points)"):
+                cuts = [evaluator.grid(alphas_1d, np.zeros(1), direction, directions[0], on_point)[:, 0] for direction in directions]
+
+            with self.logger.timer(f"Loss landscape: 2-D grid ({n_plane} points)"):
+                grid = evaluator.grid(alphas_2d, alphas_2d, directions[0], directions[1], on_point)
+
+        center = float(loss_fn())
 
         diagnostics = [
             {
@@ -433,9 +451,6 @@ class LossLandscapeRun(AnalysisRun):
             }
             for cut in cuts
         ]
-
-        alphas_2d = np.linspace(-self.config.span, self.config.span, self.config.n_points_2d)
-        grid      = evaluator.grid(alphas_2d, alphas_2d, directions[0], directions[1])
 
         sharpness = np.array([entry["sharpness"] for entry in diagnostics])
         radii     = np.array([entry["flatness_radius"]["radius"] for entry in diagnostics])
