@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import gc
 from pathlib import Path
+from time    import perf_counter
 from typing  import Dict, Optional, Tuple
 
 import numpy as np
@@ -476,7 +477,10 @@ class FittingMetricsCalculator:
         contrast_estimator : Peak-to-floor contrast estimator.
         k_diagnostics      : Model-order selection diagnostics.
         maps               : Builder of the activity, per-slot and separation maps.
+        LOG_EVERY_SECONDS  : Minimum seconds between two progress lines of the streaming loop in the log.
     """
+
+    LOG_EVERY_SECONDS = 120.0
 
     def __init__(self, n_gaussians : int, logger : Logger, threshold_factor : float, truncation_index : int, amp_threshold : float, col_chunk : int = 128) -> None:
         """Configures the metrics calculator to mirror the fitter's preprocessing.
@@ -529,27 +533,41 @@ class FittingMetricsCalculator:
             Tuple of the peak-to-floor contrast in dB and the per-pixel R-squared of the
             mixture against the preprocessed profile, both of shape (rows, cols).
         """
-        H, n_row, n_col    = cube.shape
-        contrast_db = np.full ((n_row, n_col), np.nan, dtype=np.float32)
-        r2_map      = np.empty((n_row, n_col),         dtype=np.float32)
+        H, n_row, n_col = cube.shape
+        contrast_db     = np.full ((n_row, n_col), np.nan, dtype=np.float32)
+        r2_map          = np.empty((n_row, n_col),         dtype=np.float32)
+        n_chunks        = -(-n_col // self.col_chunk)
+        started         = perf_counter()
+        last_line       = started
 
-        for r_start in range(0, n_col, self.col_chunk):
-            r_end = min(r_start + self.col_chunk, n_col)
-            amp   = np.abs(cube[:, :, r_start:r_end]).astype(np.float32, copy=False)
+        with self.logger.track(transient=True) as progress:
+            task = progress.add_task("  [section]Streaming col chunks for contrast and R²[/section]", total=n_chunks)
 
-            contrast_db[:, r_start:r_end] = self.contrast_estimator.chunk_contrast(amp)
+            for index, r_start in enumerate(range(0, n_col, self.col_chunk), start=1):
+                r_end = min(r_start + self.col_chunk, n_col)
+                amp   = np.abs(cube[:, :, r_start:r_end]).astype(np.float32, copy=False)
 
-            reference = ProfilePreprocessor.apply(amp, self.threshold_factor, self.truncation_index)
-            pred      = np.empty(reference.shape, dtype=np.float32)
-            params    = parameters_array[:, :, r_start:r_end]
+                contrast_db[:, r_start:r_end] = self.contrast_estimator.chunk_contrast(amp)
 
-            for j in range(H):
-                pred[j] = self._reconstruct_slice(params, float(z_axis[j]))
+                reference = ProfilePreprocessor.apply(amp, self.threshold_factor, self.truncation_index)
+                pred      = np.empty(reference.shape, dtype=np.float32)
+                params    = parameters_array[:, :, r_start:r_end]
 
-            r2_map[:, r_start:r_end] = R2.pixel_map(pred, reference, axis=0)
+                for j in range(H):
+                    pred[j] = self._reconstruct_slice(params, float(z_axis[j]))
 
-            del amp, reference, pred
+                r2_map[:, r_start:r_end] = R2.pixel_map(pred, reference, axis=0)
 
+                del amp, reference, pred
+
+                progress.advance(task)
+
+                now = perf_counter()
+                if now - last_line >= self.LOG_EVERY_SECONDS:
+                    last_line = now
+                    self.logger.subsection(f"Col chunk {index}/{n_chunks} (cols up to {r_end} of {n_col}), {now - started:.0f}s elapsed")
+
+        self.logger.subsection(f"Streamed {n_chunks} col chunks in {perf_counter() - started:.1f}s")
         return contrast_db, r2_map
 
     def _compute_global_summary(self, r2_map : np.ndarray, activity_map : np.ndarray) -> Dict[str, float]:
@@ -661,7 +679,7 @@ class FittingMetricsCalculator:
 
         self.logger.subsection("Computing per-pixel peak-to-floor contrast map (peak over lowest-quartile profile amplitude, uncalibrated proxy)")
         self.logger.subsection(f"Applying fitter preprocessing for R² (threshold_factor={self.threshold_factor}, truncation_index={self.truncation_index}: {truncation})")
-        self.logger.subsection(f"Computing per-pixel R² map against thresholded/truncated profile (memory-mapped, range chunks of {self.col_chunk} bins, float32)")
+        self.logger.subsection(f"Computing per-pixel R² map against thresholded/truncated profile (memory-mapped, col chunks of {self.col_chunk} cols, float32)")
         snr_db_map, r2_map = self._contrast_and_r2_maps(cube, parameters_array, z_axis)
 
         del cube

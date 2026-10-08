@@ -1125,6 +1125,31 @@ def test_fit_bound_census_counts_active_slots_on_the_clamp_bounds():
     assert sum(1 for level, message in logger.messages if level == "warning") == 3
 
 
+def test_metrics_streaming_loop_reports_its_col_chunks(tmp_path):
+    """Verifies the contrast and R2 streaming loop logs a progress line per chunk once the interval has passed, and a closing count."""
+    from tests.conftest import RecordingLogger
+
+    n_z, n_rows, n_cols = 32, 2, 4
+
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, np.ones((n_z, n_rows, n_cols), dtype=np.complex64))
+
+    params          = np.zeros((3 * K_MAX, n_rows, n_cols), dtype=np.float32)
+    params[0, 0, 0] = 1.0
+    params[2, 0, 0] = 6.0
+
+    logger     = RecordingLogger()
+    calculator = FittingMetricsCalculator(n_gaussians=K_MAX, logger=logger, threshold_factor=THRESHOLD_FACTOR, truncation_index=TRUNCATION_INDEX, amp_threshold=ACTIVITY_THRESH, col_chunk=1)
+
+    calculator.LOG_EVERY_SECONDS = 0.0
+    calculator.run(params, {"z_range": list(Z_RANGE)}, cube_path)
+
+    lines = [message for level, message in logger.messages if level == "subsection"]
+
+    assert any(line.startswith("Col chunk 4/4 (cols up to 4 of 4)") for line in lines)
+    assert any(line.startswith("Streamed 4 col chunks in") for line in lines)
+
+
 def test_metrics_report_names_the_effective_truncation(tmp_path):
     """Verifies the metrics report says whether the recorded truncation index truncated any bin of this cube."""
     from tests.conftest import RecordingLogger
