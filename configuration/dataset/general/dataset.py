@@ -283,7 +283,7 @@ class DatasetConfig:
         preprocessing_run_directory : Directory holding the preprocessed scene.
         split_regions               : Row and column regions defining train, val and test.
         parameters_path             : Directory holding the extracted Gaussian parameters.
-        secondary_labels            : Track labels of the secondary channels to load.
+        secondary_labels            : Labels of the secondary channels to load.
         patch                       : Patch geometry.
         input_config                : Input channel selection.
         output_config               : Target layout and normalisation.

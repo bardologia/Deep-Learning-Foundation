@@ -154,7 +154,7 @@ class DualEntryConfig:
         presence_trials       : Slot-presence toggle sets swept.
         pair_trials           : Base-plus-auxiliary loss pair sweep settings.
         log_energy_trials     : Log-energy term sweep settings.
-        secondary_trials      : Secondary track selection sweep settings.
+        secondary_trials      : Secondary channel selection sweep settings.
         patch_trials          : Rectangular patch-shape grid sweep settings.
         input_trials          : Input channel selections swept.
         context_trials        : Context ladder rungs swept.

@@ -30,7 +30,7 @@ class TrainingPathsConfig:
     Attributes:
         dataset_path        : Directory holding the preprocessed channel stack and metadata.
         parameters_path     : Parameter array pairing Gaussian labels with that dataset.
-        secondary_labels    : Track labels of the secondary channels fed to the model.
+        secondary_labels    : Labels of the secondary channels fed to the model.
         fingerprint_dataset : Whether the run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance.
     """
 

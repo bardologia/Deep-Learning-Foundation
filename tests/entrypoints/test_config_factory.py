@@ -1,6 +1,6 @@
 """Tests that ConfigFactory derives dataset, inference and trainer configs from a benchmark config.
 
-Covers the secondary-track label list, the input representation choices, the crop and row
+Covers the secondary-channel label list, the input representation choices, the crop and row
 split regions read from the dataset JSON, loader settings propagation, and the trainer config
 fields (logdir, epochs, warmup, abort flag, snapshot cadence, learning-rate batch scaling).
 """
@@ -35,7 +35,7 @@ def bare_factory():
 
 
 def test_secondary_labels_returns_tuple(bare_factory):
-    """Secondary track labels come back as a tuple of strings."""
+    """Secondary channel labels come back as a tuple of strings."""
     labels = bare_factory._secondary_labels()
 
     assert isinstance(labels, tuple)

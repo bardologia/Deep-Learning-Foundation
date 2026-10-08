@@ -206,7 +206,7 @@ def test_dataset_config_requires_run_dir_and_split():
 
 
 def test_dataset_config_secondary_labels_default():
-    """Verifies the default secondary track labels are the four FL01 passes."""
+    """Verifies the default secondary channel labels are CH01 to CH04."""
     cfg = DatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions())
     assert cfg.secondary_labels == ("CH01", "CH02", "CH03", "CH04")
 
