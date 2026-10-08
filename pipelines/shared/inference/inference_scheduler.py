@@ -1,8 +1,9 @@
 """GPU-parallel scheduling of inference over every run of one model family.
 
 Walks whatever path it is given, keeps the runs of the requested family, leaves
-alone the ones already scored on the configured split, and dispatches one
-worker subprocess per remaining run through the shared GPU queue.
+alone the ones already scored on the configured split with the requested
+checkpoint, and dispatches one worker subprocess per remaining run through the
+shared GPU queue.
 """
 
 from __future__ import annotations
@@ -72,33 +73,49 @@ class InferenceScheduler:
     """Fans inference over a runs tree out across the configured GPU pool.
 
     Attributes:
-        config       : Entry-point configuration with runs_dir, run filter, GPU list, polling interval and the skip switch.
-        entry_script : Entry script re-invoked in worker mode, once per run.
-        run_type     : Model family that runs must classify as to be scheduled.
-        split        : Dataset split the family block scores, deciding which runs already hold their inference.
-        runs_dir     : Path being walked: a run, a sweep, an experiment or a whole runs tree.
-        work_dir     : Timestamped directory holding worker logs and the resolved config.
-        pool_file    : File describing the live GPU pool.
-        skipped      : Runs left alone because they already hold a completed inference on the split, filled by `run`.
+        config          : Entry-point configuration with runs_dir, run filter, GPU list, polling interval and the skip switch.
+        entry_script    : Entry script re-invoked in worker mode, once per run.
+        run_type        : Model family that runs must classify as to be scheduled.
+        block           : Family inference block of the entry configuration, carrying the split and the checkpoint the workers score.
+        split           : Dataset split the family block scores, deciding which runs already hold their inference.
+        checkpoint_name : Checkpoint file the family block scores; a run whose stamps record only other checkpoints is scored again.
+        runs_dir        : Path being walked: a run, a sweep, an experiment or a whole runs tree.
+        work_dir        : Timestamped directory holding worker logs and the resolved config.
+        pool_file       : File describing the live GPU pool.
+        skipped         : Runs left alone because they already hold a completed inference on the split, filled by `run`.
     """
 
-    def __init__(self, config, entry_script: Path, run_type: str, split: str) -> None:
+    def __init__(self, config, entry_script: Path, run_type: str, block) -> None:
         """Resolves the working directory and GPU pool file for this scheduling session.
 
         Args:
             config       : Entry-point configuration for the inference family.
             entry_script : Entry script the workers re-invoke.
             run_type     : Model family to select from the runs tree.
-            split        : Dataset split the workers score.
+            block        : Family inference block of the configuration, naming the split and checkpoint the workers score.
         """
-        self.config       = config
-        self.entry_script = entry_script
-        self.run_type     = run_type
-        self.split        = split
-        self.runs_dir     = Path(config.runs_dir).expanduser()
-        self.work_dir     = Path("logs") / "inference" / run_type / RunTag.now()
-        self.pool_file    = GpuPoolFile.resolve(config.gpus_file, self.work_dir)
-        self.skipped      = []
+        self.config          = config
+        self.entry_script    = entry_script
+        self.run_type        = run_type
+        self.block           = block
+        self.split           = block.split
+        self.checkpoint_name = block.checkpoint_name
+        self.runs_dir        = Path(config.runs_dir).expanduser()
+        self.work_dir        = Path("logs") / "inference" / run_type / RunTag.now()
+        self.pool_file       = GpuPoolFile.resolve(config.gpus_file, self.work_dir)
+        self.skipped         = []
+
+    def _check_block(self) -> None:
+        """Refuses a family block whose output_subdir or run_directory is set, since the per-run fan-out overwrites both.
+
+        Raises:
+            ValueError : If output_subdir is set, or run_directory differs from the "." placeholder the scheduler replaces with every run it finds.
+        """
+        if self.block.output_subdir:
+            raise ValueError(f"The inference block sets output_subdir='{self.block.output_subdir}', but the scheduler names every stamp itself (a timestamp under <run>/inference/, one per run found under runs_dir), so that name would be ignored; leave output_subdir unset.")
+
+        if Path(self.block.run_directory) != Path("."):
+            raise ValueError(f"The inference block sets run_directory='{self.block.run_directory}', but the scheduler replaces it with every run found under runs_dir, so that path would be ignored; leave run_directory at '.' and point runs_dir at the run (or the tree) to score.")
 
     def _root(self) -> Path:
         """Returns the runs directory.
@@ -129,25 +146,96 @@ class InferenceScheduler:
         """Returns the job name of a run: its path relative to the root, its own name when it is the root."""
         return RunSelection(self.runs_dir, []).relative(run_dir)
 
-    def _has_inference(self, run_dir: Path) -> bool:
-        """Returns whether the run already holds a completed inference on the configured split."""
-        return CompletedInference.latest(InferenceLayout.base(run_dir, self.run_type), self.split) is not None
+    def _classified(self, candidates: list[Path], logger: Logger) -> list[Path]:
+        """Returns the candidates of the requested family, listing every other candidate with its family or the reason it cannot be classified.
+
+        A candidate without a recognised model config (an interrupted run, a
+        preprocessing or analysis directory holding meta/) is warned about with the
+        classifier's message, so it is not mistaken for a run of another family.
+
+        Args:
+            candidates : Run directories selected by the filter.
+            logger     : Logger receiving the rejection table and the unclassifiable-run warnings.
+        """
+        matched  = []
+        rejected = []
+
+        for directory in candidates:
+            try:
+                family = RunClassifier.classify(directory)
+            except ValueError as error:
+                logger.warning(f"{self._name(directory)} is left out: {error}")
+                rejected.append({"Run": self._name(directory), "Family": "unclassifiable", "Reason": "no recognised model config under meta/"})
+                continue
+
+            if family == self.run_type:
+                matched.append(directory)
+            else:
+                rejected.append({"Run": self._name(directory), "Family": family, "Reason": f"not of type '{self.run_type}'"})
+
+        if rejected:
+            logger.metrics_table(rejected, columns=["Run", "Family", "Reason"], title=f"Skipping {len(rejected)} run(s) not of type '{self.run_type}'")
+
+        return matched
+
+    def _inference_state(self, run_dir: Path, logger: Logger) -> tuple[str, bool]:
+        """Returns how far a run is scored on the configured split and whether it counts as scored.
+
+        A run counts as scored when one of its completed stamps on the split records
+        the requested checkpoint. Stamps that record only other checkpoints are warned
+        about and the run is scored again; stamps whose marker records no checkpoint
+        (autoencoder stamps, older backbone stamps) still count as scored
+        and say so in the table. A split scored region by region whose launch stamped
+        only some of its regions reads as partial, is warned about with the missing
+        region indices and is scored again.
+
+        Args:
+            run_dir : Run directory whose inference stamps are inspected.
+            logger  : Logger receiving the other-checkpoint and partial-group warnings.
+
+        Returns:
+            Tuple of the state shown in the run table ("done", "done (checkpoint not recorded)", "done (other checkpoint: X)", "partial (k/N regions)" or "missing") and whether the run already holds a completed inference with the requested checkpoint.
+        """
+        base   = InferenceLayout.base(run_dir, self.run_type)
+        stamps = CompletedInference.stamps(base, self.split)
+
+        if stamps:
+            recorded = [CompletedInference.checkpoint_name(stamp) for stamp in stamps]
+
+            if self.checkpoint_name in recorded:
+                return "done", True
+
+            if None in recorded:
+                return "done (checkpoint not recorded)", True
+
+            others = ", ".join(sorted(set(recorded)))
+            logger.warning(f"{self._name(run_dir)}: its stamps on split '{self.split}' were scored with {others}, not the requested {self.checkpoint_name}; the run is scored again")
+
+            return f"done (other checkpoint: {others})", False
+
+        incomplete = CompletedInference.incomplete_groups(base, self.split)
+        if not incomplete:
+            return "missing", False
+
+        group          = sorted(incomplete)[-1]
+        present, count = incomplete[group]
+        missing        = [index for index in range(count) if index not in present]
+
+        logger.warning(f"{self._name(run_dir)}: the region group {group} on split '{self.split}' stamped regions {present} of {count}; regions {missing} were never scored, so the run is scored again")
+
+        return f"partial ({len(present)}/{count} regions)", False
 
     def _run_dirs(self, logger: Logger) -> list[Path]:
         """Returns the candidate runs of the requested family that still need scoring.
 
         Args:
-            logger : Logger receiving the run table and the rejection counts.
+            logger : Logger receiving the rejection table, the run table and the warnings.
 
         Raises:
             FileNotFoundError : No candidate classifies as the requested family.
         """
         candidates = self._candidate_dirs()
-        matched    = [directory for directory in candidates if RunClassifier.is_type(directory, self.run_type)]
-
-        rejected = len(candidates) - len(matched)
-        if rejected:
-            logger.subsection(f"Skipping {rejected} run(s) not of type '{self.run_type}'")
+        matched    = self._classified(candidates, logger)
 
         if not matched:
             raise FileNotFoundError(f"No run of type '{self.run_type}' found under {self.runs_dir}: {len(candidates)} candidate director(ies) were walked and all were rejected. Check runs_dir and the entry point family.")
@@ -155,14 +243,15 @@ class InferenceScheduler:
         column = f"Inference ({self.split})"
         rows   = []
         for directory in matched:
-            done = self._has_inference(directory)
-            rows.append({"Run": self._name(directory), column: "done" if done else "missing", "Action": "skip" if done and self.config.skip_completed else "score"})
+            state, done = self._inference_state(directory, logger)
+            skip        = done and self.config.skip_completed
+
+            rows.append({"Run": self._name(directory), column: state, "Action": "skip" if skip else "score"})
+
+            if skip:
+                self.skipped.append(directory)
+
         logger.metrics_table(rows, columns=["Run", column, "Action"], title=f"{len(matched)} {self.run_type} run(s) under {self.runs_dir}")
-
-        if not self.config.skip_completed:
-            return matched
-
-        self.skipped = [directory for directory in matched if self._has_inference(directory)]
 
         return [directory for directory in matched if directory not in self.skipped]
 
@@ -204,12 +293,17 @@ class InferenceScheduler:
             logger.error(f"{len(failed)} of {len(results)} runs failed; see the per-run logs under {self.work_dir}")
 
     def run(self) -> list[GpuJobResult]:
-        """Selects the runs, dispatches the worker jobs and reports the outcome.
+        """Checks the family block, selects the runs, dispatches the worker jobs and reports the outcome.
 
         Returns:
             One result per scored run, carrying its GPU, status, duration and
             log file; empty when every selected run already held its inference.
+
+        Raises:
+            ValueError : If the family block sets output_subdir or a run_directory, which the per-run fan-out would silently overwrite.
         """
+        self._check_block()
+
         with Logger(log_dir=str(self.work_dir), name="inference") as logger:
             logger.section("Inference")
 
@@ -218,8 +312,9 @@ class InferenceScheduler:
             logger.kv_table({
                 "Run type"       : self.run_type,
                 "Split"          : self.split,
+                "Checkpoint"     : self.checkpoint_name,
                 "Runs to score"  : len(run_dirs),
-                "Runs skipped"   : f"{len(self.skipped)} (already scored on '{self.split}')",
+                "Runs skipped"   : f"{len(self.skipped)} (already scored on '{self.split}' with {self.checkpoint_name} or an unrecorded checkpoint)",
                 "GPUs"           : self.config.gpus,
                 "GPU pool file"  : str(self.pool_file),
                 "Runs dir"       : str(self.runs_dir),

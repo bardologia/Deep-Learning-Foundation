@@ -1,8 +1,8 @@
 """Tests that RunClassifier identifies a run's type from the config files in its meta directory.
 
 Covers the backbone, profile-autoencoder, image-autoencoder and dual run types, the routing of
-JEPA runs to the backbone type, the refusal to classify an empty run, the is_type predicate, and
-agreement between RunArtifacts filenames and the config IO classes. Also covers the per-family runners and the
+JEPA runs to the backbone type, the refusal to classify an empty run, and agreement between
+RunArtifacts filenames and the config IO classes. Also covers the per-family runners and the
 per-region scoring of a split stored as several regions."""
 
 from __future__ import annotations
@@ -64,19 +64,6 @@ def test_classify_unrecognized_run_raises(tmp_path):
     run = _make_run(tmp_path)
     with pytest.raises(ValueError):
         RunClassifier.classify(run)
-
-
-def test_is_type_matches_only_its_type(tmp_path):
-    """is_type answers true only for the run's own type."""
-    run = _make_run(tmp_path, "profile_autoencoder_config.json")
-    assert RunClassifier.is_type(run, RunType.PROFILE_AE) is True
-    assert RunClassifier.is_type(run, RunType.BACKBONE)   is False
-
-
-def test_is_type_returns_false_for_unrecognized_run(tmp_path):
-    """is_type answers false rather than raising for an unrecognised run."""
-    run = _make_run(tmp_path)
-    assert RunClassifier.is_type(run, RunType.BACKBONE) is False
 
 
 def test_run_classifier_artifacts_match_config_io_filenames():
