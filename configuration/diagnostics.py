@@ -438,6 +438,7 @@ class ReportMailEntryConfig:
         sender                 : Address the messages are sent from, also the SMTP login user.
         smtp_host              : SMTP server the messages are submitted to.
         smtp_port              : SMTP SSL port of the server.
+        smtp_timeout_s         : Seconds a blocking SMTP connect, login or upload may stall before the submission fails.
         password_env           : Environment variable holding the SMTP password, never stored in the config.
         subject_prefix         : Prefix of every message subject, followed by the source label.
         dry_run                : Whether messages are only staged and logged instead of sent.
@@ -484,13 +485,14 @@ class ReportMailEntryConfig:
 
     max_attachment_mb : float = 15.0
 
-    recipient      : str  = "victorvicentin42@gmail.com"
-    sender         : str  = "victorvicentin42@gmail.com"
-    smtp_host      : str  = "smtp.gmail.com"
-    smtp_port      : int  = 465
-    password_env   : str  = "REPORT_MAIL_PASSWORD"
-    subject_prefix : str  = "ML-Template results"
-    dry_run        : bool = False
+    recipient      : str   = "victorvicentin42@gmail.com"
+    sender         : str   = "victorvicentin42@gmail.com"
+    smtp_host      : str   = "smtp.gmail.com"
+    smtp_port      : int   = 465
+    smtp_timeout_s : float = 300.0
+    password_env   : str   = "REPORT_MAIL_PASSWORD"
+    subject_prefix : str   = "ML-Template results"
+    dry_run        : bool  = False
 
     def to_config(self, label: str) -> ExperimentReportMailConfig:
         """Returns the gathering configuration of one experiment.

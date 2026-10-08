@@ -1650,7 +1650,7 @@ class LaunchLayout:
                 {"key": "mail", "title": "Mail", "panels": [
                     {"kind": "fields", "groups": [
                         {"title": "Staging", "fields": ["staging_dir", {"path": "max_attachment_mb", "widget": NUM_MAIL_MB}]},
-                        {"title": "Mail", "fields": ["recipient", "sender", "smtp_host", "smtp_port", "password_env", "subject_prefix", "dry_run"]},
+                        {"title": "Mail", "fields": ["recipient", "sender", "smtp_host", "smtp_port", "smtp_timeout_s", "password_env", "subject_prefix", "dry_run"]},
                     ]},
                 ]},
             ],
