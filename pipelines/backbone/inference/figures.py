@@ -18,6 +18,7 @@ from pipelines.backbone.inference.failure_modes      import FailureModes
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.backbone.inference.metrics            import Metrics, Result
 from pipelines.backbone.inference.plots              import Plotter
+from pipelines.backbone.inference.plots.param        import ParamFigureSkip
 from tools.data.preprocessing                        import ProfileNormalizer
 from tools.monitoring.logger                         import Logger
 
@@ -31,6 +32,7 @@ class FigureComposer:
         logger         : Logger used to announce each figure family as it is written.
         cfg            : Inference configuration selecting colormaps, slice counts and GIF settings.
         full_norm_cube : Cached unit-area normalisation of the raw cube, built on first use.
+        skipped        : Figure family mapped to why it came out empty or incomplete in the last composition.
     """
 
     def __init__(
@@ -54,6 +56,7 @@ class FigureComposer:
         self.logger         = logger
         self.cfg            = cfg
         self.full_norm_cube = None
+        self.skipped        = {}
 
     def _compose_input_channels(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
         """Writes amplitude and derived-channel-phase maps of the complex input stack.
@@ -168,6 +171,7 @@ class FigureComposer:
                 out_path  = meta.figures_dir / "stratified" / f"{name}.png",
                 discrete  = payload["discrete"],
             ) for name, payload in sorted(result.stratified.items())]
+            logger.subsection(f"Stratified error curves : {len(figure_paths['stratified_errors'])} covariates in {meta.figures_dir / 'stratified'}")
 
         if result.failure_mode_map is not None:
             figure_paths["failure_mode_map"] = [self.plotter.stratified.plot_failure_mode_map(
@@ -177,18 +181,24 @@ class FigureComposer:
                 row_offset = result.row_offset,
                 col_offset = result.col_offset,
             )]
+            logger.subsection(f"Failure-mode map : {figure_paths['failure_mode_map'][0]}")
 
         if result.miss_by_sep:
             figure_paths["miss_by_separation"] = [self.plotter.stratified.plot_miss_by_separation(
                 result.miss_by_sep,
                 out_path = meta.figures_dir / "pixel_maps" / "miss_by_separation.png",
             )]
+            logger.subsection(f"Miss by separation : {len(result.miss_by_sep)} separation bins in {figure_paths['miss_by_separation'][0]}")
+        elif result.miss_by_sep is not None:
+            self.skipped["miss_by_separation"] = f"no GT-separation bin of at least {FailureModes.MIN_BIN_COUNT} pixels with two active GT components"
+            logger.warning(f"Miss-by-separation figure skipped: {self.skipped['miss_by_separation']}")
 
         if result.presence_rows:
             figure_paths["presence_reliability"] = [self.plotter.stratified.plot_presence_reliability(
                 result.presence_rows,
                 out_path = meta.figures_dir / "pixel_maps" / "presence_reliability.png",
             )]
+            logger.subsection(f"Presence reliability : {len(result.presence_rows)} amplitude bins in {figure_paths['presence_reliability'][0]}")
 
         for key, fname, data, title, label, extra in pixel_map_specs:
             figure_paths[key] = [slice_plotter.plot_pixel_metric_map(
@@ -201,7 +211,7 @@ class FigureComposer:
                 **extra,
             )]
 
-        logger.subsection(f"Pixel maps : mse, r2, peak written to {meta.figures_dir / 'pixel_maps'}")
+        logger.subsection(f"Pixel maps : {', '.join(spec[1] for spec in pixel_map_specs)} written to {meta.figures_dir / 'pixel_maps'}")
 
         histogram_arrays = {
             "pixel_mse"    : result.pixel_mse,
@@ -213,6 +223,8 @@ class FigureComposer:
             histogram_arrays,
             meta.figures_dir / "histograms",
         )
+
+        logger.subsection(f"Metric histograms : {len(figure_paths['metric_histograms'])} figures in {meta.figures_dir / 'histograms'}")
 
     def _compose_embedding_maps(self, result: Result, figure_paths: Dict[str, List[Path]]) -> None:
         """Writes the JEPA embedding-error, cosine, decoder-floor and full-chain maps plus their histograms.
@@ -320,7 +332,40 @@ class FigureComposer:
             amp_threshold = run.activity_threshold,
         )
 
-        logger.subsection(f"Param plots : distributions, scatter, error maps, error histograms, active-count map written to {meta.figures_dir}")
+        self._log_param_skips(param_plotter.drain_skips())
+
+        expected = 3 * run.n_gaussians
+        counts   = {
+            "distributions"    : len(figure_paths["param_distributions"]),
+            "scatter"          : len(figure_paths["param_scatter"]),
+            "error maps"       : len(figure_paths["param_error_maps"]),
+            "error histograms" : len(figure_paths["param_error_hists"]),
+        }
+        written = ", ".join(f"{family} {count}/{expected}" for family, count in counts.items())
+
+        logger.subsection(f"Param plots : {written}, active-count maps {len(figure_paths['active_count_map'])} written to {meta.figures_dir}")
+
+    def _log_param_skips(self, skips: List[ParamFigureSkip]) -> None:
+        """Warns which parameter figures were not drawn, grouped by family, slot and reason, and counts them per family for the closing summary.
+
+        Args:
+            skips : Skip records drained from the parameter plotter.
+        """
+
+        if not skips:
+            return
+
+        grouped: Dict[tuple, List[str]] = {}
+        per_family: Dict[str, int]      = {}
+        for skip in skips:
+            grouped.setdefault((skip.family, skip.slot, skip.reason), []).append(skip.parameter)
+            per_family[skip.family] = per_family.get(skip.family, 0) + 1
+
+        for family, count in per_family.items():
+            self.skipped[f"param_{family}"] = f"{count} (slot, parameter) pairs with nothing to draw"
+
+        described = "; ".join(f"{family} g{slot}/{'+'.join(parameters)}: {reason}" for (family, slot, reason), parameters in grouped.items())
+        self.logger.warning(f"Param figures skipped for {len(skips)} (family, slot, parameter) triples: {described}")
 
     def _compose_slot_organization(self, result: Result, run, figure_paths: Dict[str, List[Path]]) -> None:
         """Writes the raw-slot usage bars, per-slot parameter distributions, μ-rank matrix and GT-assignment matrix.
@@ -454,50 +499,57 @@ class FigureComposer:
         slice_row_idx = indices["slice_row_idx"]
         slice_z_idx   = indices["slice_z_idx"]
 
-        figure_paths[f"slices_col{group_suffix}"]   = []
+        figure_paths[f"slices_col{group_suffix}"] = []
         figure_paths[f"slices_row{group_suffix}"] = []
-        figure_paths[f"slices_z{group_suffix}"]    = []
+        figure_paths[f"slices_z{group_suffix}"]   = []
 
-        for axis, indices_arr, stem_fn, group in (
-            ("col", slice_col_idx, lambda i: f"{stem_prefix}col_{int(i) + result.col_offset}",     f"slices_col{group_suffix}"),
-            ("row", slice_row_idx,    lambda i: f"{stem_prefix}row_{int(i) + result.row_offset}", f"slices_row{group_suffix}"),
-        ):
-            for i in indices_arr:
-                figure_paths[group] += slice_plotter.plot_cube_slice(
+        n_slices = len(slice_col_idx) + len(slice_row_idx) + len(slice_z_idx)
+
+        with self.logger.track() as progress:
+            task = progress.add_task(f"Slice figures ({out_dir.name})", total=n_slices)
+
+            for axis, indices_arr, stem_fn, group in (
+                ("col", slice_col_idx, lambda i: f"{stem_prefix}col_{int(i) + result.col_offset}", f"slices_col{group_suffix}"),
+                ("row", slice_row_idx, lambda i: f"{stem_prefix}row_{int(i) + result.row_offset}", f"slices_row{group_suffix}"),
+            ):
+                for i in indices_arr:
+                    figure_paths[group] += slice_plotter.plot_cube_slice(
+                        pred_cube  = pred_cube,
+                        gt_cube    = gt_cube,
+                        axis       = axis,
+                        index      = int(i),
+                        z_axis     = z_axis_np,
+                        out_dir    = out_dir,
+                        stem       = stem_fn(i),
+                        row_offset = result.row_offset,
+                        col_offset = result.col_offset,
+                        ssim_value = global_metrics[f"ssim_{ssim_prefix}_{axis}_{int(i)}"],
+                        ref_title  = ref_title,
+                        pred_title = pred_title,
+                        err_title  = err_title,
+                        full_cube  = full_cube,
+                        full_title = full_title,
+                    )
+                    progress.advance(task)
+
+            for i in slice_z_idx:
+                figure_paths[f"slices_z{group_suffix}"] += slice_plotter.plot_z_intensity_slice(
                     pred_cube  = pred_cube,
                     gt_cube    = gt_cube,
-                    axis       = axis,
-                    index      = int(i),
+                    z_idx      = int(i),
                     z_axis     = z_axis_np,
                     out_dir    = out_dir,
-                    stem       = stem_fn(i),
+                    stem       = f"{stem_prefix}z_idx_{int(i)}",
                     row_offset = result.row_offset,
                     col_offset = result.col_offset,
-                    ssim_value = global_metrics[f"ssim_{ssim_prefix}_{axis}_{int(i)}"],
+                    ssim_value = global_metrics[f"ssim_{ssim_prefix}_z_{int(i)}"],
                     ref_title  = ref_title,
                     pred_title = pred_title,
                     err_title  = err_title,
                     full_cube  = full_cube,
                     full_title = full_title,
                 )
-
-        for i in slice_z_idx:
-            figure_paths[f"slices_z{group_suffix}"] += slice_plotter.plot_z_intensity_slice(
-                pred_cube  = pred_cube,
-                gt_cube    = gt_cube,
-                z_idx      = int(i),
-                z_axis     = z_axis_np,
-                out_dir    = out_dir,
-                stem       = f"{stem_prefix}z_idx_{int(i)}",
-                row_offset = result.row_offset,
-                col_offset = result.col_offset,
-                ssim_value = global_metrics[f"ssim_{ssim_prefix}_z_{int(i)}"],
-                ref_title  = ref_title,
-                pred_title = pred_title,
-                err_title  = err_title,
-                full_cube  = full_cube,
-                full_title = full_title,
-            )
+                progress.advance(task)
 
     def _compose_ssim(self, result: Result, global_metrics: dict, z_axis_np: np.ndarray, indices: dict, figure_paths: Dict[str, List[Path]]) -> None:
         """Writes the per-slice SSIM curves for both cube variants and the per-z metric curves.
@@ -605,6 +657,25 @@ class FigureComposer:
 
         return self.full_norm_cube
 
+    def _summarize(self, figure_paths: Dict[str, List[Path]]) -> None:
+        """Closes the composition with the figure count of every family and the reason each empty or incomplete family lost figures.
+
+        Args:
+            figure_paths : Mapping of figure family to written paths.
+        """
+
+        families = sorted(set(figure_paths) | set(self.skipped))
+        rows     = [{"Family": family, "Figures": len(figure_paths.get(family, [])), "Skipped": self.skipped.get(family, "")} for family in families]
+        total    = sum(len(paths) for paths in figure_paths.values())
+
+        self.logger.metrics_table(rows, columns=["Family", "Figures", "Skipped"], title="Figures written")
+
+        message = f"{total} figures in {len(figure_paths)} families under {self.meta.figures_dir}"
+        if self.skipped:
+            message = f"{message}; empty or incomplete: {', '.join(sorted(self.skipped))}"
+
+        self.logger.ok(message)
+
     def compose(
         self,
         result         : Result,
@@ -629,6 +700,7 @@ class FigureComposer:
         """
 
         figure_paths: Dict[str, List[Path]] = {}
+        self.skipped                        = {}
 
         self._compose_input_channels(result, run, figure_paths)
         self._compose_profiles(result, run, z_axis_np, param_space, figure_paths)
@@ -645,6 +717,8 @@ class FigureComposer:
 
         self._compose_slices(result, run, global_metrics, z_axis_np, indices, figure_paths)
         self._compose_ssim(result, global_metrics, z_axis_np, indices, figure_paths)
+
+        self._summarize(figure_paths)
 
         return figure_paths
 
