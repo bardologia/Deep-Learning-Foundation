@@ -5,10 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from configuration.diagnostics                       import CkaConfig
+from configuration.diagnostics                                import CkaConfig
 from pipelines.backbone.inference.analysis.representation_cka import CkaComparison, CkaComputation
 
-from tests.conftest import SilentLogger
+from tests.backbone_inference._helpers import StageLogger, build_run_directory
+from tests.conftest                    import SilentLogger
 
 
 def _features(n: int = 200, d: int = 8, seed: int = 0) -> np.ndarray:
@@ -123,3 +124,28 @@ def test_alignment_is_validated_from_sample_grids(tmp_path):
 
     with pytest.raises(ValueError):
         comparison._validate_alignment([grid, strided])
+
+
+def _aligned_runs(tmp_path, test_data_dir, params_dir) -> CkaConfig:
+    """Builds two identical real runs under one runs root and returns a small CKA configuration over both."""
+    runs = tmp_path / "runs"
+    for name in ("a", "b"):
+        build_run_directory(runs / name, test_data_dir, params_dir)
+
+    return CkaConfig(runs_dir=runs, run_filter=["a/run_unet_e2e", "b/run_unet_e2e"], output_dir=tmp_path / "cka", batch_size=2, max_batches=1, max_layers=4, samples_per_batch=64)
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_comparison_announces_and_tracks_its_matrices(tmp_path, test_data_dir, params_dir):
+    """The matrix stage announces the pair count, drives one progress task over every matrix and times each stage."""
+    logger = StageLogger()
+
+    CkaComparison(_aligned_runs(tmp_path, test_data_dir, params_dir), logger).run()
+
+    infos = [message for level, message in logger.messages if level == "info"]
+
+    assert "2 runs -> 2 self matrices and 1 pair matrices" in infos
+    assert any("probed layers usable, 64 sampled pixels" in message for message in infos)
+    assert logger.totals == [3] and logger.advances == 3
+    assert logger.timers == ["CKA features [1/2] a/run_unet_e2e", "CKA features [2/2] b/run_unet_e2e", "CKA matrices (3)"]
