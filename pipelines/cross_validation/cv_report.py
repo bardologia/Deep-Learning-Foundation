@@ -137,6 +137,19 @@ class CrossValidationReport:
             return None
         return std
 
+    def _fold_label(self, fold_name: str, split: str | None) -> str:
+        """Returns a fold's column header, carrying the seeds used over the seeds held when the fold was seed-swept.
+
+        Args:
+            fold_name : Name of the fold.
+            split     : Split whose seed coverage is shown, or None for a training-only column.
+        """
+        entry = self.seed_dispersion.get(fold_name)
+        if not self.has_seed_sweep or entry is None or split is None:
+            return f"`{fold_name}`"
+
+        return f"`{fold_name}` ({entry['n_used'][split]}/{entry['n_seeds']} seeds)"
+
     def _aggregate_table(self, keys: list[str], records: list[TrialRecord], split: str | None = None) -> list[str]:
         """Renders a metric-by-fold table with the across-fold mean and std.
 
@@ -149,7 +162,7 @@ class CrossValidationReport:
             Markdown lines of the table followed by a blank line.
         """
         n_total     = len(records)
-        fold_labels = [f"`{record.name}`" for record in records]
+        fold_labels = [self._fold_label(record.name, split) for record in records]
         table       = MarkdownTable(["Metric", "Mean", "Std", "N (folds used)", *fold_labels])
 
         for key in keys:
@@ -220,11 +233,15 @@ class CrossValidationReport:
     def _training_aggregate(self) -> list[str]:
         """Returns the per-fold training table and its across-fold summary.
 
-        Reports best epoch, best validation loss, epochs run, and wall-clock
-        duration in minutes for every fold.
+        Reports the training status, best epoch, best validation loss, epochs
+        run, and wall-clock duration in minutes for every fold, plus the seed
+        count when the folds were seed-swept.
         """
-        lines = ["## Training Across Folds\n"]
-        table = MarkdownTable(["Fold", "Best epoch", "Best val loss", "Epochs run", "Duration"])
+        lines   = ["## Training Across Folds\n"]
+        headers = ["Fold", "Status", "Best epoch", "Best val loss", "Epochs run", "Duration"]
+        if self.has_seed_sweep:
+            headers.insert(1, "Seeds")
+        table = MarkdownTable(headers)
 
         collected = {key: [] for _, _, key, _ in self.SUMMARY_QUANTITIES}
 
@@ -236,11 +253,16 @@ class CrossValidationReport:
 
             duration_s = record.training_result.get("duration_s")
             duration   = f"{duration_s / 60:.1f} min" if duration_s is not None else "—"
+            status     = record.training_result.get("status", "—")
             epoch_cell = ScalarFormatter.format_scalar(record.checkpoint.get("best_epoch"))
             loss_cell  = ScalarFormatter.with_std(ScalarFormatter.format_scalar(record.checkpoint.get("best_val_loss")), self._seed_std(record.name, None, "best_val_loss"))
             run_cell   = ScalarFormatter.format_scalar(record.checkpoint.get("n_train_epochs"))
 
-            table.add_row(f"`{record.name}`", epoch_cell, loss_cell, run_cell, duration)
+            cells = [f"`{record.name}`", status, epoch_cell, loss_cell, run_cell, duration]
+            if self.has_seed_sweep:
+                cells.insert(1, str(self.seed_dispersion.get(record.name, {}).get("n_seeds", 1)))
+
+            table.add_row(*cells)
 
         lines += [*table.render(), ""]
 
@@ -311,8 +333,13 @@ class CrossValidationReport:
             if self.has_seed_sweep:
                 payload["best_val_loss"]["per_fold_seed_std"] = {record.name: self._seed_std(record.name, None, "best_val_loss") for record in self.base_records}
 
+        if self.seed_dispersion:
+            payload["fold_status"] = {fold: entry["status"] for fold, entry in self.seed_dispersion.items()}
+
         if self.has_seed_sweep:
-            payload["seeds_per_fold"] = {fold: entry["n_seeds"] for fold, entry in self.seed_dispersion.items()}
+            payload["seeds_per_fold"]      = {fold: entry["n_seeds"] for fold, entry in self.seed_dispersion.items()}
+            payload["seeds_used_per_fold"] = {fold: entry["n_used"] for fold, entry in self.seed_dispersion.items()}
+            payload["missing_seeds"]       = {fold: entry["missing_seeds"] for fold, entry in self.seed_dispersion.items()}
 
         out = self.out_dir / "cv_summary.json"
         return FileIO.save_json(payload, out, indent=2)

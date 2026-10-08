@@ -97,8 +97,8 @@ class FoldCollector(TrialCollector):
             "report_path"   : report_path if report_path.exists() else None,
         }
 
-    def _fold_split_record(self, fold_name: str, runs: list[TrialRecord], split: str) -> tuple[TrialRecord, dict]:
-        """Aggregates a fold's seed runs into one record for a split.
+    def _fold_split_record(self, fold_name: str, runs: list[TrialRecord], split: str) -> tuple[TrialRecord, dict, dict]:
+        """Aggregates a fold's seed runs into one record for a split, naming the seeds that contributed nothing.
 
         Args:
             fold_name : Name of the fold.
@@ -106,20 +106,37 @@ class FoldCollector(TrialCollector):
             split     : Dataset split to aggregate.
 
         Returns:
-            A tuple (record, stds) where the record carries seed-mean metrics
-            and the figures of a representative seed, and stds maps each metric
-            to its across-seed standard deviation.
+            A tuple (record, stds, coverage) where the record carries seed-mean
+            metrics and the figures of a representative seed, stds maps each
+            metric to its across-seed standard deviation, and coverage holds
+            ``n_used``, the seeds whose metrics entered the means, and
+            ``missing_seeds``, the labels of the seeds without metrics.
         """
-        views = [self._split_view(run, split) for run in runs]
-        keys  = sorted({key for view in views for key in view.metrics})
+        views   = [self._split_view(run, split) for run in runs]
+        keys    = sorted({key for view in views for key in view.metrics})
+        scored  = [view for view in views if view.metrics]
+        missing = [self._seed_label(view.name) for view in views if not view.metrics]
 
-        means, stds   = SeedAggregation.aggregate([view.metrics for view in views], keys)
+        means, stds    = SeedAggregation.aggregate([view.metrics for view in views], keys)
         representative = next((view for view in views if view.inference_dir is not None), views[0])
 
-        return replace(representative, name=fold_name, metrics=means), stds
+        if missing:
+            self.logger.warning(f"{fold_name} {split}: metrics averaged over {len(scored)}/{len(views)} seeds; missing {missing} (no completed inference with metrics)")
+
+        dropped = [key for key in keys if key not in means]
+        if dropped:
+            self.logger.warning(f"{fold_name} {split}: {dropped} non-finite in every seed, dropped from the fold mean")
+
+        shortfall = {key: labels for key, labels in SeedAggregation.shortfall([view.metrics for view in scored], keys, [self._seed_label(view.name) for view in scored]).items() if key not in dropped}
+        if shortfall:
+            self.logger.warning(f"{fold_name} {split}: {len(shortfall)} metric(s) non-finite in some seed and averaged over fewer, e.g. {dict(list(shortfall.items())[:3])}")
+
+        coverage = {"n_used": len(scored), "missing_seeds": missing}
+
+        return replace(representative, name=fold_name, metrics=means), stds, coverage
 
     def _fold_base_record(self, fold_name: str, runs: list[TrialRecord]) -> tuple[TrialRecord, float | None]:
-        """Aggregates a fold's seed runs into one training-only record.
+        """Aggregates a fold's seed runs into one training-only record, naming the seeds that did not finish.
 
         Args:
             fold_name : Name of the fold.
@@ -135,7 +152,15 @@ class FoldCollector(TrialCollector):
 
         durations = [run.training_result.get("duration_s") for run in runs]
         durations = [value for value in durations if isinstance(value, (int, float))]
-        status    = "DONE" if all(run.training_result.get("status") == "DONE" for run in runs) else "PARTIAL"
+        not_done  = [self._seed_label(run.name) for run in runs if run.training_result.get("status") != "DONE"]
+        status    = "DONE" if not not_done else "PARTIAL"
+
+        if not_done:
+            self.logger.warning(f"{fold_name}: training status PARTIAL; seeds not DONE: {not_done}; their checkpoints, where present, still enter the fold's best-val-loss and best-epoch means")
+
+        no_checkpoint = [self._seed_label(run.name) for run in runs if not run.checkpoint]
+        if no_checkpoint:
+            self.logger.warning(f"{fold_name}: seeds without a checkpoint: {no_checkpoint}; the checkpoint means cover {len(runs) - len(no_checkpoint)}/{len(runs)} seeds")
 
         record                 = replace(runs[0], name=fold_name, metrics={}, inference_dir=None, figures=[], animations=[], report_path=None)
         record.checkpoint      = checkpoint
@@ -143,13 +168,20 @@ class FoldCollector(TrialCollector):
 
         return record, checkpoint_std.get("best_val_loss")
 
+    @staticmethod
+    def _seed_label(run_name: str) -> str:
+        """Returns the seed directory of a run name, or the name itself for an unseeded run."""
+        return run_name.rsplit("/", 1)[-1]
+
     def collect_by_split(self) -> tuple[list[TrialRecord], dict[str, list[TrialRecord]]]:
         """Collects every fold and splits its records by dataset split.
 
         Returns:
             A tuple (base_records, records_by_split) holding one training-only
             record per fold and, for each split, one metric-carrying record per
-            fold. `seed_dispersion` is filled in as a side effect.
+            fold. `seed_dispersion` is filled in as a side effect, carrying per
+            fold the seed count, the training status, the seeds used per split
+            and the seeds missing from each split.
         """
         groups = self._group_by_fold(self.collect())
 
@@ -161,17 +193,28 @@ class FoldCollector(TrialCollector):
             base_record, best_val_loss_std = self._fold_base_record(fold_name, runs)
             base_records.append(base_record)
 
-            split_stds = {}
+            split_stds    = {}
+            n_used        = {}
+            missing_seeds = {}
             for split in self.splits:
-                record, stds = self._fold_split_record(fold_name, runs, split)
+                record, stds, coverage = self._fold_split_record(fold_name, runs, split)
                 records_by_split[split].append(record)
-                split_stds[split] = stds
+                split_stds[split]    = stds
+                n_used[split]        = coverage["n_used"]
+                missing_seeds[split] = coverage["missing_seeds"]
 
             self.seed_dispersion[fold_name] = {
                 "n_seeds"           : len(runs),
+                "status"            : base_record.training_result["status"],
                 "best_val_loss_std" : best_val_loss_std,
                 "splits"            : split_stds,
+                "n_used"            : n_used,
+                "missing_seeds"     : missing_seeds,
             }
+
+        short = [fold for fold, entry in self.seed_dispersion.items() if entry["status"] != "DONE" or any(count < entry["n_seeds"] for count in entry["n_used"].values())]
+        if short:
+            self.logger.warning(f"{len(short)} of {len(self.seed_dispersion)} folds hold a seed that did not finish or average fewer seeds than they hold: {short}")
 
         return base_records, records_by_split
 

@@ -26,7 +26,7 @@ from configuration.synthesis            import SynthesisConfig
 from configuration.training.general.run import DEFAULT_PARAMS_RUN
 
 
-from tests.conftest import make_file_logger
+from tests.conftest import RecordingLogger, make_file_logger
 
 
 def worker_config(test_data_dir: Path, training_type: str = "backbone") -> CrossValidationConfig:
@@ -693,6 +693,87 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 
     assert base[0].training_result["status"] == "DONE"
     assert base[1].training_result["status"] == "PARTIAL"
+
+
+def test_collector_warns_when_a_seed_has_no_metrics_and_records_the_coverage(tmp_path):
+    """A seed without a scored split is named in a warning, and the fold's dispersion records how many seeds the mean used."""
+    names     = ["fold_0/seed1", "fold_0/seed2", "fold_1/seed1", "fold_1/seed2"]
+    inference = {
+        "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0}},
+        "fold_1/seed1": {"test": {"curve_rmse_gt": 1.0}},
+        "fold_1/seed2": {"test": {"curve_rmse_gt": 3.0}},
+    }
+
+    run_dir   = build_run_dir(tmp_path, names, inference)
+    logger    = RecordingLogger()
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+
+    _, by_split = collector.collect_by_split()
+
+    assert by_split["test"][0].metrics["curve_rmse_gt"] == 2.0
+    assert ("warning", "fold_0 test: metrics averaged over 1/2 seeds; missing ['seed2'] (no completed inference with metrics)") in logger.messages
+    assert collector.seed_dispersion["fold_0"]["n_used"]        == {"test": 1}
+    assert collector.seed_dispersion["fold_0"]["missing_seeds"] == {"test": ["seed2"]}
+    assert collector.seed_dispersion["fold_1"]["n_used"]        == {"test": 2}
+    assert collector.seed_dispersion["fold_1"]["missing_seeds"] == {"test": []}
+    assert any(level == "warning" and message.startswith("1 of 2 folds hold a seed that did not finish or average fewer seeds") for level, message in logger.messages)
+
+
+def test_collector_marks_a_fold_partial_and_names_the_seed_that_did_not_finish(tmp_path):
+    """A seed whose training did not end DONE turns its fold PARTIAL in the dispersion and is named in a warning."""
+    names   = ["fold_0/seed1", "fold_0/seed2"]
+    run_dir = build_run_dir(tmp_path, names, {})
+
+    results = FileIO.load_json(run_dir / "pipeline" / "training_results.json")
+    results[1]["status"] = "FAILED"
+    FileIO.save_json(results, run_dir / "pipeline" / "training_results.json")
+
+    logger    = RecordingLogger()
+    collector = FoldCollector(run_dir=run_dir, splits=[], training_type="backbone", logger=logger)
+
+    base, _ = collector.collect_by_split()
+
+    assert base[0].training_result["status"]           == "PARTIAL"
+    assert collector.seed_dispersion["fold_0"]["status"] == "PARTIAL"
+    assert any(level == "warning" and message.startswith("fold_0: training status PARTIAL; seeds not DONE: ['seed2']") for level, message in logger.messages)
+
+
+def test_collector_names_a_metric_that_is_non_finite_in_every_seed(tmp_path):
+    """A metric no seed of a fold reports as a finite value is dropped from the fold mean with a warning naming it."""
+    names     = ["fold_0/seed1", "fold_0/seed2"]
+    inference = {
+        "fold_0/seed1": {"test": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan")}},
+        "fold_0/seed2": {"test": {"curve_rmse_gt": 4.0, "overall_r2_gt": float("nan")}},
+    }
+
+    run_dir   = build_run_dir(tmp_path, names, inference)
+    logger    = RecordingLogger()
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+
+    _, by_split = collector.collect_by_split()
+
+    assert "overall_r2_gt" not in by_split["test"][0].metrics
+    assert ("warning", "fold_0 test: ['overall_r2_gt'] non-finite in every seed, dropped from the fold mean") in logger.messages
+
+
+def test_collector_stays_quiet_when_every_seed_contributed(tmp_path):
+    """Folds whose seeds all finished, scored and left a checkpoint produce no coverage warning."""
+    import torch
+
+    names     = ["fold_0/seed1", "fold_0/seed2"]
+    inference = {name: {"test": {"curve_rmse_gt": 2.0}} for name in names}
+
+    run_dir = build_run_dir(tmp_path, names, inference)
+    for name in names:
+        torch.save({"best_val_loss": 0.1, "best_epoch": 2, "epoch": 3}, run_dir / "folds" / name / "best_model.pt")
+
+    logger    = RecordingLogger()
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+
+    collector.collect_by_split()
+
+    assert [message for level, message in logger.messages if level == "warning"] == []
+    assert collector.seed_dispersion["fold_0"]["status"] == "DONE"
 
 
 @pytest.mark.dataset

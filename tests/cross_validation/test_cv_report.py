@@ -271,13 +271,23 @@ def test_aggregate_table_skips_non_numeric_metrics(tmp_path):
     assert "`label_str`"     not in body
 
 
-def _seed_dispersion(best_val_loss_std: float, metric_std: float) -> dict:
-    """Returns a per-fold seed dispersion payload with the given loss and metric deviations."""
+def _seed_dispersion(best_val_loss_std: float, metric_std: float, n_used: int = 2, missing: tuple = ()) -> dict:
+    """Returns a per-fold seed dispersion payload with the given loss and metric deviations and seed coverage.
+
+    Args:
+        best_val_loss_std : Within-fold standard deviation of the best validation loss.
+        metric_std        : Within-fold standard deviation of the curve RMSE on the test split.
+        n_used            : Seeds whose test metrics entered every fold's mean.
+        missing           : Seed labels without test metrics in every fold.
+    """
     return {
         FoldNaming.name(index): {
             "n_seeds"           : 2,
+            "status"            : "DONE",
             "best_val_loss_std" : best_val_loss_std,
             "splits"            : {"test": {"curve_rmse_gt": metric_std}},
+            "n_used"            : {"test": n_used},
+            "missing_seeds"     : {"test": list(missing)},
         }
         for index in range(N_FOLDS)
     }
@@ -339,3 +349,47 @@ def test_partial_fold_metrics_counted_in_n_used(tmp_path):
 
     assert rmse["n_used"]  == N_FOLDS - 1
     assert rmse["n_total"] == N_FOLDS
+
+
+def test_seed_coverage_reaches_the_fold_headers_and_the_summary_json(tmp_path):
+    """A fold that averaged fewer seeds than it holds shows the count in its column header and the JSON lists the used and missing seeds per fold."""
+    metrics    = split_metrics()
+    dispersion = _seed_dispersion(best_val_loss_std=0.05, metric_std=0.5, n_used=1, missing=("seed1",))
+    report     = CrossValidationReport(
+        base_records     = make_records(metrics),
+        records_by_split = {"test": make_records(metrics)},
+        planner          = make_planner(),
+        out_dir          = tmp_path / "reports",
+        model_name       = "resunet",
+        embed_images     = False,
+        logger           = make_file_logger(tmp_path, "cv_report_test"),
+        seed_dispersion  = dispersion,
+    )
+
+    report.write_all()
+
+    text    = (report.out_dir / "cv_aggregate_report.md").read_text()
+    payload = json.loads((report.out_dir / "cv_summary.json").read_text())
+
+    assert "`fold_0` (1/2 seeds)" in text
+    assert payload["seeds_used_per_fold"][FoldNaming.name(0)] == {"test": 1}
+    assert payload["missing_seeds"][FoldNaming.name(0)]       == {"test": ["seed1"]}
+    assert payload["fold_status"][FoldNaming.name(0)]         == "DONE"
+
+
+def test_training_table_carries_the_fold_status_and_seed_count(tmp_path):
+    """The training table shows each fold's training status, and its seed count under a sweep."""
+    metrics = split_metrics()
+    base    = make_records(metrics)
+    base[2].training_result = {"duration_s": 180.0, "status": "PARTIAL"}
+
+    swept  = CrossValidationReport(base_records=base, records_by_split={"test": make_records(metrics)}, planner=make_planner(), out_dir=tmp_path / "reports", model_name="resunet", embed_images=False, logger=make_file_logger(tmp_path, "cv_report_test"), seed_dispersion=_seed_dispersion(0.05, 0.5))
+    plain  = make_report(tmp_path, base_records=base)
+
+    swept_lines = "\n".join(swept._training_aggregate())
+    plain_lines = "\n".join(plain._training_aggregate())
+
+    assert "| Fold" in swept_lines and "| Seeds" in swept_lines and "| Status" in swept_lines
+    assert "PARTIAL" in swept_lines
+    assert "| Status" in plain_lines
+    assert "| Seeds" not in plain_lines
