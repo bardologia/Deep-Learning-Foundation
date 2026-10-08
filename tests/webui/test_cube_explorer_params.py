@@ -98,6 +98,22 @@ def test_curve_points_subsample_cap(tmp_path):
     assert rows.shape == (50, 4)
 
 
+def test_curve_points_subsample_follows_the_z_major_voxel_order(tmp_path):
+    """Checks capped curve points are the evenly spaced picks over all kept voxels in z, row, column order."""
+    explorer, cube_id = _loaded_explorer(tmp_path, with_full=True)
+
+    raw  = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=-1.0, max_points=7), dtype=np.float32)
+    rows = raw[4:].reshape(-1, 4)
+
+    entry       = explorer._entry(cube_id, "full")
+    cube        = np.asarray(entry["cube"])
+    z, row, col = np.nonzero(np.isfinite(cube) & (cube >= -1.0))
+    picks       = np.linspace(0, z.size - 1, 7).astype(np.int64)
+    expected    = np.stack([row[picks], col[picks], np.asarray(entry["z_axis"])[z[picks]], cube[z[picks], row[picks], col[picks]]], axis=1).astype(np.float32)
+
+    assert np.array_equal(rows, expected)
+
+
 def test_curve_points_absent_source_is_none(tmp_path):
     """Checks requesting points from an unloaded curve source yields no blob."""
     explorer, cube_id = _loaded_explorer(tmp_path)

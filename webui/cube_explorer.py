@@ -1202,7 +1202,8 @@ class CubeExplorer:
         z_axis = np.asarray(entry["z_axis"], dtype=np.float32)
         n_cols = cube.shape[2]
 
-        counts = np.array([int((np.isfinite(plane) & (plane >= amp_min)).sum()) for plane in cube], dtype=np.int64)
+        masks  = [np.isfinite(plane) & (plane >= amp_min) for plane in cube]
+        counts = np.array([int(mask.sum()) for mask in masks], dtype=np.int64)
         total  = int(counts.sum())
         starts = np.concatenate([[0], np.cumsum(counts)])
 
@@ -1215,7 +1216,7 @@ class CubeExplorer:
             if lo == hi:
                 continue
 
-            hits = np.flatnonzero(np.isfinite(plane) & (plane >= amp_min))[picks[lo:hi] - starts[k]]
+            hits = np.flatnonzero(masks[k])[picks[lo:hi] - starts[k]]
             vals = plane.ravel()[hits]
 
             chunks.append(np.stack([
