@@ -904,7 +904,8 @@ class BaseTrainer:
             loader_generator = getattr(train_loader, "generator", None)
             start_epoch      = self._maybe_resume(loader_generator)
             last_epoch       = max(start_epoch - 1, 0)
-            stop             = False
+            stop             = self.early_stopping.triggered
+            end_epoch        = start_epoch if stop else self.epochs
 
             self._before_training(train_loader)
             self.vram_reservation.fill()
@@ -913,7 +914,7 @@ class BaseTrainer:
                 with self.logger.track(transient=False) as _prog_epochs:
                     _task_epochs = _prog_epochs.add_task("[section]Training[/section]", total=self.epochs, completed=start_epoch)
 
-                    for epoch in range(start_epoch, self.epochs):
+                    for epoch in range(start_epoch, end_epoch):
                         epoch_num  = epoch + 1
                         last_epoch = epoch
 
