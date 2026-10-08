@@ -234,6 +234,25 @@ class ExtractionConfig:
 
         return cube_path
 
+    def recorded_z_range(self) -> Optional[Tuple[float, float]]:
+        """Returns the cube z range the dataset's config_state.json records, or None when it records none.
+
+        Returns:
+            The recorded (minimum, maximum) z in metres, or None when the file is absent or its z range is not a pair.
+        """
+        state_path = self.metadata_directory / "config_state.json"
+        if not state_path.is_file():
+            return None
+
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+
+        zr = state["cube_config"]["z_range"]
+        if isinstance(zr, (list, tuple)) and len(zr) == 2:
+            return (float(zr[0]), float(zr[1]))
+
+        return None
+
     def discover_z_range(self) -> Tuple[float, float]:
         """Returns the z axis extent of the cube.
 
@@ -249,17 +268,11 @@ class ExtractionConfig:
         if self.z_range is not None:
             return tuple(self.z_range)
 
-        meta_dir   = self.metadata_directory
-        state_path = meta_dir / "config_state.json"
-        if state_path.is_file():
-            with open(state_path, "r", encoding="utf-8") as f:
-                state = json.load(f)
+        recorded = self.recorded_z_range()
+        if recorded is None:
+            raise FileNotFoundError(f"No z_range override given and no config_state.json with a cube z_range under {self.metadata_directory}")
 
-            hr = state["cube_config"]["z_range"]
-            if isinstance(hr, (list, tuple)) and len(hr) == 2:
-                return (float(hr[0]), float(hr[1]))
-
-        raise FileNotFoundError(f"No z_range override given and no config_state.json with a cube z_range under {meta_dir}")
+        return recorded
 
 
 @dataclass

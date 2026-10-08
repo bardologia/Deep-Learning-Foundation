@@ -144,6 +144,7 @@ class ParamExtractionPipeline:
         shared              : Extraction configuration shared by every permutation in the group.
         cube_path           : Cube discovered for the group's dataset.
         z_range             : The z axis limits as (minimum, maximum).
+        z_range_source      : Where the z range came from, and whether an override agrees with the dataset's own record.
         owns_logger         : Whether the pipeline created the logger and must close it.
         group_log_path      : File of the owned group logger, recorded in every permutation's metadata; None when the logger was passed in.
         group_log_offset    : Byte size the group log had before this launch appended to it, where this launch's record starts.
@@ -207,17 +208,43 @@ class ParamExtractionPipeline:
             peak_initialiser     = peak_initialiser,
             kernel_backend       = kernel_backend,
         )
-        self.parameter_io = ParameterIO(logger=self.logger)
+        self.parameter_io   = ParameterIO(logger=self.logger)
+        self.z_range_source = self._z_range_source()
 
         self.logger.section("[Param Extraction Pipeline Initialized]")
         self.logger.kv_table({
             "Source Cube"   : str(self.cube_path),
-            "Z Range"       : str(self.z_range),
+            "Z Range"       : f"{self.z_range} from {self.z_range_source}",
             "K Max"         : group.k_max,
             "Fit Modes"     : str(group.modes),
             "Lambda Values" : str(group.lambda_values),
             "Permutations"  : len(group.configs),
         })
+
+    def _z_range_source(self) -> str:
+        """Names where the z range came from and warns when an override disagrees with the dataset's record.
+
+        An override applies to every dataset of the sweep, so a dataset whose
+        meta/config_state.json records another cube z range gets centroids
+        and widths in the wrong metres unless the override is a deliberate
+        correction; the warning names both ranges.
+
+        Returns:
+            ``meta/config_state.json``, or the override with how it compares to the dataset's record.
+        """
+        recorded = self.shared.recorded_z_range()
+
+        if self.shared.z_range is None:
+            return "meta/config_state.json"
+
+        if recorded is None:
+            return "z_range override; the dataset records none"
+
+        if recorded != tuple(float(value) for value in self.shared.z_range):
+            self.logger.warning(f"z_range override {self.z_range} differs from the cube z range {recorded} recorded in {self.shared.metadata_directory / 'config_state.json'}; the labels of {self.group.processed_data_path.name} are fitted on the override's axis, so their centroids and widths are in the wrong metres unless the override corrects a wrong record")
+            return f"z_range override, differing from the {recorded} in meta/config_state.json"
+
+        return "z_range override, matching meta/config_state.json"
 
     def _resource_monitor(self):
         """Returns the resource monitor sampling this group, or a no-op context when none is configured."""
@@ -240,11 +267,12 @@ class ParamExtractionPipeline:
         """Returns the fit outcome of the group joined with the pipeline's own facts about the run.
 
         Returns:
-            The extractor outcome keys plus ``extraction_log``, the group log file or None.
+            The extractor outcome keys plus ``extraction_log``, the group log file or None, and ``z_range_source``.
         """
         return {
             **self.parameter_extractor.outcome.to_metadata(),
             "extraction_log" : None if self.group_log_path is None else str(self.group_log_path),
+            "z_range_source" : self.z_range_source,
         }
 
     def _stage_save(self, config: ExtractionConfig, parameters_array: np.ndarray, diagnostics: dict, record: dict) -> dict[str, Path]:

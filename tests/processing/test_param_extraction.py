@@ -276,6 +276,35 @@ def test_stage_save_replaces_an_existing_run_only_when_overwriting(tmp_path, mon
     assert any("adam_steps 3000 -> 500" in message for message in warnings)
 
 
+def test_pipeline_names_the_z_range_source_and_warns_on_a_disagreeing_override(tmp_path, monkeypatch):
+    """Verifies the pipeline records where its z range came from and warns when an override differs from the dataset's record."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction import pipeline as pipeline_module
+
+    _dataset_stub(tmp_path)
+    monkeypatch.setattr(pipeline_module, "ParameterExtractor", lambda **kwargs: None)
+
+    def built(z_range):
+        """Returns the pipeline built with the given override and the warnings it logged."""
+        entry  = ExtractParamsEntryConfig(fit_k_values=[3], fit_lambda_values=[1e-2], fit_modes=["sigma"], z_range=z_range)
+        group  = ExtractionPlanResolver(entry, [tmp_path]).resolve()[0]
+        logger = RecordingLogger()
+        return pipeline_module.ParamExtractionPipeline(group, logger=logger), [message for level, message in logger.messages if level == "warning"]
+
+    recorded, warnings = built(None)
+    assert recorded.z_range_source == "meta/config_state.json"
+    assert warnings == []
+
+    matching, warnings = built((-20.0, 80.0))
+    assert matching.z_range_source == "z_range override, matching meta/config_state.json"
+    assert warnings == []
+
+    differing, warnings = built((-10.0, 70.0))
+    assert differing.z_range == (-10.0, 70.0)
+    assert differing.z_range_source.startswith("z_range override, differing")
+    assert any("differs from the cube z range (-20.0, 80.0)" in message for message in warnings)
+
+
 def test_pipeline_run_records_an_abort_in_the_group_log(tmp_path, monkeypatch):
     """Verifies a failing extraction ends the group log with the error, the saved count and an ABORTED banner."""
     from pipelines.processing.param_extraction import pipeline as pipeline_module
@@ -348,6 +377,7 @@ def test_pipeline_run_records_the_fit_outcome_and_commit_in_the_metadata(tmp_pat
     assert meta["extraction_log"]     == str(tmp_path / "params" / "logs" / "param_extraction_k3.log")
     assert meta["adam_steps"]         == entry.adam_steps
     assert meta["sigma_at_lower_frac"] == pytest.approx(0.25)
+    assert meta["z_range_source"]      == "meta/config_state.json"
     assert meta["mu_at_bound_frac"]    == 0.0
 
 
