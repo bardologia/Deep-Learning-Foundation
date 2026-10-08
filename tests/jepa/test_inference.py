@@ -28,7 +28,7 @@ from pipelines.jepa.inference.predictor                  import JepaCurvePredict
 from pipelines.jepa.training.trainer                     import JepaModule
 from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStats
 
-from tests.conftest       import SilentLogger
+from tests.conftest       import RecordingLogger, SilentLogger
 from tests.jepa.conftest  import DEPTH, EMBEDDING_DIM, HIDDEN_DIM, N_GAUSSIANS, PROFILE_LENGTH, SPATIAL, make_autoencoder
 from tools.data.gaussians import GaussianReconstructor
 
@@ -361,6 +361,28 @@ def test_predict_table_reports_the_device_the_model_runs_on(tmp_path):
 
     predict = next(table for table in logger.tables if "Backend" in table)
     assert predict["Backend"] == "PyTorch / cpu"
+
+
+def test_jepa_curve_predictor_warns_when_a_gt_pixel_has_a_constant_profile(tmp_path):
+    """A pixel whose ground-truth slots are all inactive has an undefined R2, which is counted and warned about instead of averaged."""
+    n_gaussians = 2
+    n_z         = 6
+    spatial     = 4
+
+    def model_fn(images):
+        """Returns a random curve cube for the given image batch."""
+        return np.random.rand(images.shape[0], n_z, spatial, spatial).astype(np.float32)
+
+    run    = build_fake_run(model_fn, n_gaussians, n_z, spatial)
+    logger = RecordingLogger()
+
+    run.loader[0][1][:, 0::3, 0, 0] = 0.0
+
+    result = JepaCurvePredictor(run, logger, window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=types.SimpleNamespace(cube_dir=tmp_path)).run_inference()
+
+    assert np.isnan(result.pixel_r2[0, 0])
+    assert np.isfinite(np.delete(result.pixel_r2.reshape(-1), 0)).all()
+    assert any(level == "warning" and "1 of 16 pixels have a constant GT profile" in message for level, message in logger.messages)
 
 
 def test_jepa_curve_predictor_zero_error_on_identical_output(tmp_path):
