@@ -21,14 +21,16 @@ class ProfileDataset(Dataset):
     """Serves normalised z profiles rebuilt from Gaussian parameters.
 
     Attributes:
-        x_axis      : Z axis of shape (H,), in metres.
-        n_gaussians : Number of Gaussians per pixel.
-        split_name  : Split this dataset covers ("train", "val" or "test").
-        amps        : Amplitudes of shape (n_pixels, n_gaussians).
-        mus         : Means of shape (n_pixels, n_gaussians), in metres.
-        sigs        : Standard deviations of shape (n_pixels, n_gaussians), in metres.
-        n_active    : Count of pixels carrying an amplitude above the threshold.
-        index       : Flat pixel indices kept by the dataset, shuffled.
+        z_axis        : Z axis of shape (H,), in metres.
+        n_gaussians   : Number of Gaussians per pixel.
+        split_name    : Split this dataset covers ("train", "val" or "test").
+        amps          : Amplitudes of shape (n_pixels, n_gaussians).
+        mus           : Means of shape (n_pixels, n_gaussians), in metres.
+        sigs          : Standard deviations of shape (n_pixels, n_gaussians), in metres.
+        n_active      : Count of pixels carrying an amplitude above the threshold.
+        n_kept_active : Count of active pixels kept after subsampling.
+        n_kept_empty  : Count of inactive pixels kept.
+        index         : Flat pixel indices kept by the dataset, shuffled.
     """
 
     def __init__(
@@ -98,13 +100,19 @@ class ProfileDataset(Dataset):
 
         Args:
             activity_threshold : Amplitude above which a pixel counts as active, as recorded by the parameter run.
-            pixel_subsample    : Fraction of active pixels kept, when below 1.
-            keep_empty_frac    : Fraction of inactive pixels kept.
+            pixel_subsample    : Fraction of active pixels kept, in (0, 1].
+            keep_empty_frac    : Fraction of inactive pixels kept, in [0, 1].
             seed               : Seed for the subsampling and shuffling generator.
 
         Raises:
-            ValueError : If the split holds no pixel above the activity threshold.
+            ValueError : If a fraction lies outside its range, or if the split holds no pixel above the activity threshold.
         """
+        if not 0.0 < pixel_subsample <= 1.0:
+            raise ValueError(f"pixel_subsample must lie in (0, 1]; got {pixel_subsample!r}. It is the fraction of active pixels kept, so 0 would keep none and a value above 1 has no meaning; use 1.0 to keep every active pixel.")
+
+        if not 0.0 <= keep_empty_frac <= 1.0:
+            raise ValueError(f"keep_empty_frac must lie in [0, 1]; got {keep_empty_frac!r}. It is the fraction of inactive pixels kept; use 0.0 to keep none and 1.0 to keep them all.")
+
         active = GaussianActivity.is_active(self.amps, activity_threshold).any(axis=1)
         rng    = np.random.default_rng(seed)
 
@@ -114,7 +122,7 @@ class ProfileDataset(Dataset):
         if len(active_idx) == 0:
             raise ValueError(f"Split '{self.split_name}' holds no pixel with an amplitude above the activity threshold {activity_threshold:g} recorded by the parameter run; pick a split region that carries components or regenerate the labels at a lower threshold.")
 
-        if 0.0 < pixel_subsample < 1.0:
+        if pixel_subsample < 1.0:
             keep       = max(1, int(round(len(active_idx) * pixel_subsample)))
             active_idx = rng.choice(active_idx, size=keep, replace=False)
 
@@ -124,17 +132,21 @@ class ProfileDataset(Dataset):
         else:
             empty_idx = np.empty(0, dtype=np.int64)
 
-        self.n_active = int(active.sum())
-        self.index    = np.concatenate([active_idx, empty_idx]).astype(np.int64)
+        self.n_active      = int(active.sum())
+        self.n_kept_active = int(len(active_idx))
+        self.n_kept_empty  = int(len(empty_idx))
+        self.index         = np.concatenate([active_idx, empty_idx]).astype(np.int64)
         rng.shuffle(self.index)
 
     def _log(self, logger: Logger) -> None:
-        """Writes the pixel counts and profile geometry to the log."""
+        """Writes the pixel counts, the kept active and empty shares, and the profile geometry to the log."""
         logger.section(f"[ProfileDataset: {self.split_name}]")
         logger.kv_table({
             "Total pixels"   : int(self.amps.shape[0]),
             "Active pixels"  : self.n_active,
             "Kept pixels"    : int(self.index.shape[0]),
+            "Kept active"    : f"{self.n_kept_active:,} of {self.n_active:,} active",
+            "Kept empty"     : f"{self.n_kept_empty:,} of {int(self.amps.shape[0]) - self.n_active:,} empty",
             "Profile length" : int(self.z_axis.shape[0]),
             "Gaussians"      : self.n_gaussians,
         })

@@ -362,3 +362,48 @@ def test_profiledataset_without_active_pixels_names_the_split_and_threshold(tmp_
 
     with pytest.raises(ValueError, match="activity threshold"):
         _profile_dataset(empty, tmp_path, pixel_subsample=pixel_subsample)
+
+
+def _sparse_cube(n_active: int = 4) -> np.ndarray:
+    """Returns a 5-Gaussian parameter cube over 8 x 8 pixels whose first n_active pixels carry one component."""
+    cube = np.zeros((15, 8, 8), dtype=np.float32)
+    flat = cube.reshape(15, -1)
+
+    flat[0, :n_active] = 1.0
+    flat[1, :n_active] = 0.5
+    flat[2, :n_active] = 0.1
+
+    return cube
+
+
+@pytest.mark.parametrize("pixel_subsample", [0.0, -0.5, 1.5])
+def test_profiledataset_rejects_pixel_subsample_outside_its_range(tmp_path, pixel_subsample):
+    """A pixel_subsample outside (0, 1] raises instead of silently keeping every active pixel."""
+    with pytest.raises(ValueError, match="pixel_subsample must lie in"):
+        _profile_dataset(_sparse_cube(), tmp_path, pixel_subsample=pixel_subsample)
+
+
+@pytest.mark.parametrize("keep_empty_frac", [-0.1, 1.5])
+def test_profiledataset_rejects_keep_empty_frac_outside_its_range(tmp_path, keep_empty_frac):
+    """A keep_empty_frac outside [0, 1] raises."""
+    with pytest.raises(ValueError, match="keep_empty_frac must lie in"):
+        _profile_dataset(_sparse_cube(), tmp_path, keep_empty_frac=keep_empty_frac)
+
+
+def test_profiledataset_counts_the_kept_active_and_empty_pixels(tmp_path):
+    """The dataset exposes how many active and empty pixels it kept, and their sum is its length."""
+    ds = _profile_dataset(_sparse_cube(n_active=4), tmp_path, pixel_subsample=0.5, keep_empty_frac=0.5)
+
+    assert ds.n_active      == 4
+    assert ds.n_kept_active == 2
+    assert ds.n_kept_empty  == 30
+    assert len(ds)          == 32
+
+
+def test_profiledataset_keeps_every_active_pixel_at_full_subsample_and_no_empty_at_zero(tmp_path):
+    """The range bounds 1.0 and 0.0 keep all active pixels and no empty pixel."""
+    ds = _profile_dataset(_sparse_cube(n_active=4), tmp_path, pixel_subsample=1.0, keep_empty_frac=0.0)
+
+    assert ds.n_kept_active == 4
+    assert ds.n_kept_empty  == 0
+    assert len(ds)          == 4
