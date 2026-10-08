@@ -17,6 +17,7 @@ from pipelines.benchmark.workers import (
 from configuration.benchmark import BenchmarkConfig
 from tools.data.io           import FileIO
 from configuration.synthesis import SynthesisConfig
+from tools.runtime.git_state import GitState
 
 
 SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
@@ -324,6 +325,7 @@ def test_max_batch_worker_hands_the_probe_its_model_and_work_dir(config, monkeyp
     result_path = worker.run_dir / "max_batch" / "unet" / "max_batch_result.json"
     assert result_path.exists()
     assert FileIO.load_json(result_path)["batch_size"] == 64
+    assert FileIO.load_json(result_path)["provenance"]["git_commit"] == GitState.commit()
 
 
 def test_max_batch_worker_raises_on_probe_fail(config, monkeypatch):
