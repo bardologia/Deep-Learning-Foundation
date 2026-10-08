@@ -80,8 +80,11 @@ node literal_split.js /tmp/fields.json
 `sequence_actions.js` loads the editor itself against a stub DOM and a stub router that
 answers on the next tick. It clicks start, stop and release three times while the first
 request is in flight, then once more after it has landed, and prints the posts each burst
-sent with any error the clicks raised. `tests/webui/test_sequence_actions.py` drives it to
-assert that overlapping clicks post an action once and that the guard lifts afterwards.
+sent with any error the clicks raised. It then opens a block drawer once against a failing
+router and three times against a healthy one, and prints how often the script config and
+the model list were fetched. `tests/webui/test_sequence_actions.py` drives it to assert
+that overlapping clicks post an action once, that the guard lifts afterwards, and that the
+drawer keeps a successful reply for the page session but retries a failed one.
 
 ```
 node sequence_actions.js

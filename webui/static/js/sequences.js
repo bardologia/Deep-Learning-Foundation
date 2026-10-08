@@ -436,7 +436,9 @@ class SequencesView extends ConfigForm {
     this.resumeBtn = null;
     this.board     = null;
 
-    this.busyAction = false;
+    this.busyAction  = false;
+    this.configCache = new Map();
+    this.modelCache  = new Map();
   }
 
   static async quickAdd(script, title) {
@@ -1227,7 +1229,7 @@ class SequencesView extends ConfigForm {
     const editorKey = `${block.block_id}:${block.script}`;
     this.editorKey  = editorKey;
 
-    const cfg = await Api.get(`/api/scripts/${block.script}/config`);
+    const cfg = await this._blockConfig(block.script);
     if (this.editorKey !== editorKey) return;
     if (!cfg || !cfg.ok) {
       configHost.innerHTML = `<p class="cfg-note">${SharedCharts.esc((cfg && cfg.error) || "Could not resolve configuration.")}</p>`;
@@ -1236,7 +1238,7 @@ class SequencesView extends ConfigForm {
 
     const endpoint = this._modelEndpoint(block, cfg);
     if (this.modelEndpoint !== endpoint) {
-      const models       = await Api.get(endpoint);
+      const models       = await this._blockModels(endpoint);
       this.modelEndpoint = endpoint;
       this.modelFamilies = (models && models.families) || [];
       this.modelHeads    = (models && models.heads) || [];
@@ -1287,6 +1289,24 @@ class SequencesView extends ConfigForm {
       reverted.forEach(({ path, decider }) => parts.push(`${path} reverted: decided by '${decider}'`));
       Toast.show(parts.join(" · "), reverted.length ? "warn" : "ok");
     });
+  }
+
+  async _blockConfig(script) {
+    if (!this.configCache.has(script)) {
+      const cfg = await Api.get(`/api/scripts/${script}/config`);
+      if (!cfg.ok) return cfg;
+      this.configCache.set(script, cfg);
+    }
+    return this.configCache.get(script);
+  }
+
+  async _blockModels(endpoint) {
+    if (!this.modelCache.has(endpoint)) {
+      const models = await Api.get(endpoint);
+      if (models.error) return models;
+      this.modelCache.set(endpoint, models);
+    }
+    return this.modelCache.get(endpoint);
   }
 
   _steerDecisions(block) {
