@@ -35,6 +35,26 @@ class PairedPermutationTest:
         self.n_permutations = int(n_permutations)
         self.rng            = np.random.default_rng(seed)
 
+    def smallest_p(self, n_pairs: int) -> float:
+        """Returns the smallest two-sided p-value the test can report for a sample size.
+
+        The all-plus and all-minus sign assignments always reproduce the observed
+        statistic, so the exact enumeration never reports less than 2 / 2^n, and
+        the add-one rule of the sampled regime never reports less than
+        1 / (n_permutations + 1). With the standard five seeds the floor is
+        0.0625, above the usual 0.05 threshold.
+
+        Args:
+            n_pairs : Number of paired observations.
+
+        Returns:
+            Smallest attainable p-value.
+        """
+        if n_pairs <= self.EXACT_MAX_PAIRS:
+            return 2.0 / 2 ** n_pairs
+
+        return 1.0 / (self.n_permutations + 1)
+
     def test(self, a: list[float], b: list[float]) -> dict:
         """Tests whether the mean paired difference between two samples differs from zero.
 
@@ -44,8 +64,9 @@ class PairedPermutationTest:
 
         Returns:
             Mapping with the observed "mean_diff", the two-sided "p_value", the
-            number of "n_pairs" and "cohen_d", the paired effect size
-            mean_diff / std(diffs), None when the differences have zero spread.
+            number of "n_pairs", "cohen_d", the paired effect size
+            mean_diff / std(diffs), None when the differences have zero spread,
+            and "p_min", the smallest p-value attainable with that many pairs.
 
         Raises:
             ValueError : If the samples are not one-dimensional and of equal length, or if fewer than two pairs are given.
@@ -72,7 +93,7 @@ class PairedPermutationTest:
             perms = (signs * diffs).mean(axis=1)
             p     = float(((np.abs(perms) >= abs(observed) - 1e-15).sum() + 1) / (self.n_permutations + 1))
 
-        return {"mean_diff": float(observed), "p_value": p, "n_pairs": int(a.size), "cohen_d": cohen_d}
+        return {"mean_diff": float(observed), "p_value": p, "n_pairs": int(a.size), "cohen_d": cohen_d, "p_min": self.smallest_p(int(a.size))}
 
 
 class HolmBonferroni:
@@ -125,8 +146,9 @@ class SignificanceVsLeader:
 
         Returns:
             Mapping keyed by trial name with "p_value", "p_adjusted",
-            "n_pairs", "mean_diff" and "cohen_d"; all but "n_pairs" are None
-            when fewer than two shared seeds carry a value.
+            "n_pairs", "mean_diff", "cohen_d" and "p_min", the smallest p-value
+            the test can reach with that many shared seeds; every entry but
+            "n_pairs" is None when fewer than two shared seeds carry a value.
 
         Raises:
             KeyError : If the leader is absent from the per-seed values.
@@ -146,13 +168,13 @@ class SignificanceVsLeader:
             paired = [(values[seed], leader_values[seed]) for seed in common if values[seed] is not None and leader_values[seed] is not None]
 
             if len(paired) < 2:
-                results[name] = {"p_value": None, "p_adjusted": None, "n_pairs": len(paired), "mean_diff": None, "cohen_d": None}
+                results[name] = {"p_value": None, "p_adjusted": None, "n_pairs": len(paired), "mean_diff": None, "cohen_d": None, "p_min": None}
                 continue
 
             a, b          = zip(*paired)
             outcome       = self.test.test(list(a), list(b))
             raw[name]     = outcome["p_value"]
-            results[name] = {"p_value": outcome["p_value"], "p_adjusted": None, "n_pairs": outcome["n_pairs"], "mean_diff": outcome["mean_diff"], "cohen_d": outcome["cohen_d"]}
+            results[name] = {"p_value": outcome["p_value"], "p_adjusted": None, "n_pairs": outcome["n_pairs"], "mean_diff": outcome["mean_diff"], "cohen_d": outcome["cohen_d"], "p_min": outcome["p_min"]}
 
         for name, p_adj in HolmBonferroni.adjust(raw).items():
             results[name]["p_adjusted"] = p_adj

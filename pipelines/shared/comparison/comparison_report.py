@@ -23,10 +23,13 @@ class ComparisonReportBase:
     """Ranking and significance machinery shared by comparison reports.
 
     Attributes:
-        HEADLINE_METRICS : Ordered (metric key, column label) pairs forming the flat leaderboard.
-        HEADLINE_GROUPS  : Named groups of headline metric keys, averaged within a group so correlated metrics do not outvote independent axes.
-        seed_dispersion  : Per-trial seed statistics keyed by trial name, holding "n_seeds", "n_used" (per-key count of seeds whose finite value entered the mean), "best_val_loss_std", "metrics" (per-key standard deviations) and "seed_metrics" (per-seed metric dicts).
+        SIGNIFICANCE_ALPHA : Holm-adjusted p-value below which a row is starred as different from the leader.
+        HEADLINE_METRICS   : Ordered (metric key, column label) pairs forming the flat leaderboard.
+        HEADLINE_GROUPS    : Named groups of headline metric keys, averaged within a group so correlated metrics do not outvote independent axes.
+        seed_dispersion    : Per-trial seed statistics keyed by trial name, holding "n_seeds", "n_used" (per-key count of seeds whose finite value entered the mean), "best_val_loss_std", "metrics" (per-key standard deviations) and "seed_metrics" (per-seed metric dicts).
     """
+
+    SIGNIFICANCE_ALPHA = 0.05
 
     HEADLINE_METRICS = [
         ("curve_rmse_gt",                "RMSE"),
@@ -48,6 +51,8 @@ class ComparisonReportBase:
     ]
 
     seed_dispersion: dict = {}
+
+    _floors_warned: frozenset = frozenset()
 
     def _metric_seed_std(self, name: str, key: str) -> float | None:
         """Returns the across-seed standard deviation of one metric for one trial."""
@@ -105,14 +110,25 @@ class ComparisonReportBase:
 
         return SignificanceVsLeader().compute(per_seed, leader)
 
-    @staticmethod
-    def _significance_cell(entry: dict | None) -> str:
-        """Returns the adjusted p-value cell, starred when below 0.05."""
-        if entry is None or entry.get("p_adjusted") is None:
-            return "n/a"
+    @classmethod
+    def _significance_cell(cls, entry: dict | None) -> str:
+        """Returns the adjusted p-value cell, starred below SIGNIFICANCE_ALPHA.
+
+        Args:
+            entry : Significance entry of the row, or None for a trial without seed runs.
+
+        Returns:
+            The formatted p-value; "n/a" with the reason when no test was possible, naming how many seeds the row shares with the leader that carry a value for the metric.
+        """
+        if entry is None:
+            return "n/a (no seed runs)"
+
+        if entry["p_adjusted"] is None:
+            n_pairs = entry["n_pairs"]
+            return f"n/a ({n_pairs} shared seed{'s' if n_pairs != 1 else ''})"
 
         p    = entry["p_adjusted"]
-        mark = "*" if p < 0.05 else ""
+        mark = "*" if p < cls.SIGNIFICANCE_ALPHA else ""
         return f"{p:.3g}{mark}"
 
     @staticmethod
@@ -122,6 +138,35 @@ class ComparisonReportBase:
             return "n/a"
 
         return f"{entry['cohen_d']:.2f}"
+
+    def _significance_floor_note(self, significance: dict[str, dict]) -> list[str]:
+        """Returns the note for rows whose shared-seed count cannot reach the star, warning once per report.
+
+        The exact permutation test cannot report less than 2 / 2^n, so with the
+        standard five seeds no row can be starred at 0.05 whatever the effect
+        size; a reader has to be told that an unstarred table reflects n, not
+        an absence of difference.
+
+        Args:
+            significance : Per-trial significance entries as returned by SignificanceVsLeader.compute.
+
+        Returns:
+            Markdown lines naming, per shared-seed count, the smallest attainable p-value; empty when every tested row could reach SIGNIFICANCE_ALPHA.
+        """
+        floors = sorted({(entry["n_pairs"], entry["p_min"]) for entry in significance.values() if entry["p_min"] is not None and entry["p_min"] >= self.SIGNIFICANCE_ALPHA})
+
+        if not floors:
+            return []
+
+        clauses = [f"with n={n_pairs} paired seeds the smallest attainable two-sided p is {p_min:.4g}" for n_pairs, p_min in floors]
+        note    = f"{'; '.join(clauses)}; no such row can reach * at {self.SIGNIFICANCE_ALPHA:g}, so a missing star reflects the seed count, not an absence of difference."
+
+        unseen = frozenset(floors) - self._floors_warned
+        if unseen:
+            self._floors_warned = self._floors_warned | unseen
+            self.logger.warning(f"Significance vs leader: {note}")
+
+        return [f"> {note}\n"]
 
     def _rank_section(self, entity: str, title: str, intro: str, metrics: list[tuple[str, str]], scored: list[TrialRecord]) -> list[str]:
         """Renders a flat ranking table with per-metric ranks and significance.
@@ -182,7 +227,8 @@ class ComparisonReportBase:
         lines.append("")
 
         if significance is not None:
-            lines.append(f"> p vs #1: two-sided paired permutation test on per-seed {metrics[0][1]} against the composite leader, Holm-adjusted across rows; * marks p < 0.05.\n")
+            lines.append(f"> p vs #1: two-sided paired permutation test on per-seed {metrics[0][1]} against the composite leader, Holm-adjusted across rows; * marks p < {self.SIGNIFICANCE_ALPHA:g}.\n")
+            lines += self._significance_floor_note(significance)
 
         return lines
 
