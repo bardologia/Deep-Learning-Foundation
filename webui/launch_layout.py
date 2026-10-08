@@ -719,6 +719,7 @@ class LaunchLayout:
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
+                    {"kind": "fields", "groups": [{"title": "Initialization", "fields": ["prior_bias_init"]}]},
                     {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
                     {"kind": "fields", "title": "Pre-run tuning", "template": "pretrain", "at": "pretrain"},
                     {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
@@ -1053,6 +1054,7 @@ class LaunchLayout:
                 ]},
                 {"key": "training", "title": "Training", "panels": [
                     {"kind": "fields", "title": "Training", "template": "training_queue", "at": "training"},
+                    {"kind": "fields", "groups": [{"title": "Initialization", "fields": [{"gateOn": {"field": "training_type", "in": ["backbone"]}, "fields": ["prior_bias_init"]}]}]},
                     {"kind": "fields", "title": "Loss-scale probe", "template": "loss_probe", "at": "probe"},
                     {"kind": "fields", "title": "Overfit check", "template": "overfit_check", "at": "overfit_check"},
                 ]},

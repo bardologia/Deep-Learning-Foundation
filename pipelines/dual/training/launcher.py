@@ -45,6 +45,11 @@ class DualSingleTrainRunner(SingleTrainRunner):
         return "set_pred"
 
     @property
+    def prior_bias_init(self) -> bool:
+        """Always False: the set-prediction head has no single output convolution whose bias could carry the label prior."""
+        return False
+
+    @property
     def trunk_tag(self) -> str:
         """Run-name fragment combining the params and existence trunk backbones."""
         return RunNaming.dual_model_tag(self.config.params_backbone, self.config.existence_backbone)

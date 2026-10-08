@@ -1,13 +1,16 @@
 """Tests for the backbone and dual training pipelines.
 
-Covers the end-to-end run on real preprocessing data (checkpoint, metadata and config
-patch-squaring rule applied for backbones that only accept square inputs.
+Covers the end-to-end run on the synthetic scene (checkpoint, metadata and config
+artifacts, the overfit-check gate and its abort path, the training-label prior
+written into the conv head bias, the abort record of a dataset-stage failure) and
+the patch-squaring rule applied for backbones that only accept square inputs.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from configuration.architectures          import DualResUNetConfig
@@ -16,6 +19,9 @@ from configuration.dataset.gaussian    import GaussianConfig
 from configuration.training.backbone      import BackboneTrainerConfig
 from pipelines.backbone.training.pipeline import TrainingPipeline
 from pipelines.dual.training.pipeline     import DualTrainingPipeline
+from pipelines.shared.model.model_builder import ModelBuilder
+from tools.data.gaussians                 import GaussianActivity, GaussianSlotSorter
+from tools.data.io                        import FileIO
 from tools.data.regions                   import CropRegion
 
 
@@ -194,6 +200,61 @@ def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, par
     assert (run_directory / "docs" / "trainer_config.json").is_file()
     assert (run_directory / "meta" / "run_summary.json").is_file()
     assert not (run_directory / "best_model.pt").exists()
+
+
+def _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init: bool) -> TrainingPipeline:
+    """Returns a one-epoch unet conv-head pipeline over the small three-region scene.
+
+    Args:
+        test_data_dir   : Root of the synthetic dataset.
+        params_dir      : Parameter run of the synthetic dataset.
+        tmp_path        : Directory receiving the run.
+        prior_bias_init : Whether the conv head starts at the training-label prior.
+    """
+    return TrainingPipeline(
+        trainer_config  = _trainer_config(test_data_dir, params_dir, tmp_path),
+        dataset_config  = _dataset_config(test_data_dir, params_dir),
+        backbone_name   = "unet",
+        model_config    = ModelBuilder.config_from_registry("unet", {"features": [8, 16]}, head="conv"),
+        seed            = 0,
+        run_name        = f"pipeline_prior_bias_{prior_bias_init}",
+        prior_bias_init = prior_bias_init,
+    )
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_training_pipeline_starts_the_conv_head_at_the_training_label_prior(test_data_dir, params_dir, tmp_path):
+    """Verifies prior_bias_init records the training window's pixel count and, per sorted slot, the pixels where that slot is active."""
+    pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=True)
+    pipeline.run(probe_config=None)
+
+    record      = FileIO.load_json(pipeline.run_metadata.run_directory / "meta" / "head_prior_bias.json")
+    threshold   = pipeline.trainer_config.gaussian.activity_threshold
+    n_gaussians = pipeline.trainer_config.gaussian.n_default_gaussians
+
+    labels     = np.load(params_dir / "parameters.npy", mmap_mode="r")
+    rows, cols = pipeline.dataset_config.split_regions.train.local_slices(pipeline.dataset_pipeline.layout.global_crop)
+    ordered    = GaussianSlotSorter.by_mean(np.asarray(labels[:3 * n_gaussians, rows, cols], dtype=np.float32), n_gaussians, threshold)
+    active     = [int(GaussianActivity.is_active(ordered[3 * slot], threshold).sum()) for slot in range(n_gaussians)]
+
+    assert record["activity_threshold"] == threshold
+    assert record["training_pixels"]    == 24 * 24
+    assert record["active_pixels"]      == active
+    assert len(record["prior_bias"])    == 3 * n_gaussians
+    assert np.isfinite(record["prior_bias"]).all()
+    assert not np.allclose(record["prior_bias"], record["default_bias"])
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_training_pipeline_keeps_the_default_head_bias_when_the_prior_is_off(test_data_dir, params_dir, tmp_path):
+    """Verifies the default run writes no head prior record."""
+    pipeline = _prior_bias_pipeline(test_data_dir, params_dir, tmp_path, prior_bias_init=False)
+    pipeline.run(probe_config=None)
+
+    assert (pipeline.run_metadata.run_directory / "meta" / "run_summary.json").is_file()
+    assert not (pipeline.run_metadata.run_directory / "meta" / "head_prior_bias.json").exists()
 
 
 def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path, monkeypatch):

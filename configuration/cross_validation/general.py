@@ -60,6 +60,7 @@ class CrossValidationConfig:
         augmentation      : Training-time augmentation settings.
         probe             : Loss-scale probe settings.
         overfit_check     : Pre-training overfit sanity gate settings.
+        prior_bias_init   : Whether a backbone fold's conv output head starts with its biases at the prior of that fold's training labels (each channel's mean label in the model's normalized output space, over the training pixels where its slot is active) instead of PyTorch's random bias.
         dual              : Extra settings used when cross-validating dual-trunk models.
         jepa              : JEPA coupling settings.
         autoencoder       : Extra settings used when cross-validating profile autoencoders.
@@ -94,6 +95,8 @@ class CrossValidationConfig:
     augmentation  : AugmentationConfig   = field(default_factory=AugmentationConfig)
     probe         : LossScaleProbeConfig = field(default_factory=LossScaleProbeConfig)
     overfit_check : OverfitCheckConfig   = field(default_factory=OverfitCheckConfig)
+
+    prior_bias_init : bool = False
 
     dual              : DualCvConfig       = field(default_factory=DualCvConfig)
     jepa              : JepaCouplingConfig = field(default_factory=JepaCouplingConfig)

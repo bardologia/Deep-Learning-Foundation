@@ -62,6 +62,11 @@ class SingleTrainRunner(BaseSingleTrainRunner):
         return self.config.backbone_head
 
     @property
+    def prior_bias_init(self) -> bool:
+        """Whether the conv head biases start at the training-label prior."""
+        return self.config.prior_bias_init
+
+    @property
     def label(self) -> str:
         """The run-name label encoding backbone, head, curriculum, slot count and augmentation."""
         n_gaussians = self.factory.gaussian_config().n_default_gaussians
@@ -92,13 +97,14 @@ class SingleTrainRunner(BaseSingleTrainRunner):
         dataset_config.input_config = self.config.input
 
         return self.pipeline_class(
-            trainer_config = trainer_config,
-            dataset_config = dataset_config,
-            backbone_name  = self.model_name,
-            model_config   = self._model_config(),
-            seed           = self.config.seed,
-            run_name       = self.config.run_name,
-            overfit_check  = self.config.overfit_check,
+            trainer_config  = trainer_config,
+            dataset_config  = dataset_config,
+            backbone_name   = self.model_name,
+            model_config    = self._model_config(),
+            seed            = self.config.seed,
+            run_name        = self.config.run_name,
+            overfit_check   = self.config.overfit_check,
+            prior_bias_init = self.prior_bias_init,
         )
 
     def _build_pretrain_trainer(self, logger):
