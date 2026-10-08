@@ -304,6 +304,7 @@ class FeedTuner {
     this.reco = document.getElementById("ft-reco");
     this.tableBody = document.getElementById("ft-table-body");
     this.log = document.getElementById("ft-log");
+    this.feedFigure = document.getElementById("ft-feed-figure");
 
     this.throughputChart = new FtChart(document.getElementById("ft-chart-throughput"), document.getElementById("ft-legend-throughput"));
     this.utilChart = new FtChart(document.getElementById("ft-chart-util"), document.getElementById("ft-legend-util"));
@@ -507,6 +508,7 @@ class FeedTuner {
     this.dials.hidden = true;
     this.progressFill.style.width = "0%";
     this.progressLabel.textContent = "";
+    this._showFeed(null);
     this._draw();
   }
 
@@ -611,7 +613,10 @@ class FeedTuner {
     this.results.push(record);
     this._appendRow(record);
     this._tickProgress(record);
-    if (record.status === "ok") this._updateDials(record);
+    if (record.status === "ok") {
+      this._updateDials(record);
+      this._showFeed(record);
+    }
     this._draw();
   }
 
@@ -636,6 +641,10 @@ class FeedTuner {
     this.gauges.wait.draw(record ? record.data_wait_fraction * 100 : null);
   }
 
+  _showFeed(record) {
+    this.feedFigure.state = record ? { workers: record.num_workers, prefetch: record.prefetch_factor, wait: record.data_wait_fraction, util: record.gpu_util_mean, feed: record.feed_ratio } : null;
+  }
+
   _onRecommendation(payload) {
     const rec = payload.recommendation || {};
     const final = payload.final || {};
@@ -650,6 +659,9 @@ class FeedTuner {
       this._drawDials(best);
       this.dialsAt.textContent = `recommended · batch ${best.batch_size} · ${best.num_workers} workers`;
     }
+
+    const adopted = this.results.find((row) => row.status === "ok" && row.phase === "refine" && row.batch_size === final.batch_size && row.num_workers === final.num_workers && row.prefetch_factor === final.prefetch_factor && row.pin_memory === final.pin_memory) || best;
+    if (adopted) this._showFeed(adopted);
 
     const verdict = final.cpu_bound
       ? "CPU-bound — the input pipeline is the ceiling. Beyond these settings, lower the per-item cost."

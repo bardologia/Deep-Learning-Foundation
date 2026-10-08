@@ -110,16 +110,17 @@
 
   <!-- MODEL -->
   <section class="page page--pad" data-page="model">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">The mathematics, end to end</h2>
       <p class="page__lead">
         Every equation from every pipeline stage, parameter extraction to hyperparameter
         search, exactly as implemented in the codebase.
       </p>
       <div class="model-mode" id="model-mode">
-        <button class="model-mode__btn" data-mode="reference">Reference grid</button>
-        <button class="model-mode__btn is-active" data-mode="walkthrough">Animated walkthrough</button>
+        <button class="model-mode__btn" data-mode="reference" data-figure="slots">Reference grid</button>
+        <button class="model-mode__btn is-active" data-mode="walkthrough" data-figure="surface">Animated walkthrough</button>
       </div>
+      <hairline-figure name="surface" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="model-view is-hidden" data-view="reference">
       <div class="eq-tabs" id="eq-tabs"></div>
@@ -132,30 +133,32 @@
 
   <!-- PIPELINES -->
   <section class="page page--pad" data-page="pipelines">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Pipelines</h2>
       <p class="page__lead">
         Six orchestrated stages take raw radar acquisitions to a trained, evaluated model.
         Each pipeline maps to an entry point you can launch.
       </p>
+      <hairline-figure name="slow" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="flow" id="flow"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">loading the pipelines&hellip;</span></div></div>
   </section>
 
   <!-- ARCHITECTURES -->
   <section class="page page--pad" data-page="architectures">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Architectures</h2>
       <p class="page__lead">
         Four model zoos: the supervised backbones, the profile autoencoders, the image
         autoencoder, and the JEPA variants that couple them. Pick a zoo, then a model to see its design.
       </p>
       <div class="model-zoo" id="model-zoo">
-        <button class="model-zoo__btn is-active" data-zoo="backbone" data-endpoint="/api/backbones">Backbone</button>
-        <button class="model-zoo__btn" data-zoo="autoencoder" data-endpoint="/api/profile-autoencoders">Profile AE</button>
-        <button class="model-zoo__btn" data-zoo="image_autoencoder" data-endpoint="/api/image-autoencoders">Image AE</button>
-        <button class="model-zoo__btn" data-zoo="jepa" data-endpoint="/api/jepa-variants">JEPA</button>
+        <button class="model-zoo__btn is-active" data-zoo="backbone" data-figure="backbone" data-endpoint="/api/backbones">Backbone</button>
+        <button class="model-zoo__btn" data-zoo="autoencoder" data-figure="profileae" data-endpoint="/api/profile-autoencoders">Profile AE</button>
+        <button class="model-zoo__btn" data-zoo="image_autoencoder" data-figure="imageae" data-endpoint="/api/image-autoencoders">Image AE</button>
+        <button class="model-zoo__btn" data-zoo="jepa" data-figure="embed" data-endpoint="/api/jepa-variants">JEPA</button>
       </div>
+      <hairline-figure name="backbone" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="master master--stack">
       <aside class="master__list" id="model-list" aria-label="Model list"><div class="orb-panel"><thinking-orb state="shaping" size="64"></thinking-orb><span class="orb-panel__text">loading the model zoo&hellip;</span></div></aside>
@@ -165,12 +168,13 @@
 
   <!-- SCRIPTS -->
   <section class="page page--pad" data-page="scripts">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Entry points</h2>
       <p class="page__lead">
         Orchestrated entry scripts. Inspect the source, review the entry configuration
         defaults, override any field, and launch with live output.
       </p>
+      <hairline-figure name="cabinet" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="filter-row" id="script-filters"></div>
     <div class="script-sections" id="script-grid"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">listing scripts&hellip;</span></div></div>
@@ -178,52 +182,56 @@
 
   <!-- SAVED RUNS -->
   <section class="page page--pad" data-page="saved">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Saved runs</h2>
       <p class="page__lead">
         Experiment configurations stored from launch pages. Each card carries the exact
         overrides captured at save time: launch it now, queue it after the current job,
         or delete it.
       </p>
+      <hairline-figure name="drawer" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="saved-grid" id="saved-grid"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">loading saved runs&hellip;</span></div></div>
   </section>
 
   <!-- CONFIG TEMPLATES -->
   <section class="page page--pad" data-page="templates">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Config templates</h2>
       <p class="page__lead">
         Named sets of config overrides captured from a launch page or a sequence block, for the
         settings you reach for on every run. Open one to land on its entry point with the form
         already filled, or import it from the rail of any launch page.
       </p>
+      <hairline-figure name="riffle" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="saved-grid" id="templates-grid"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">loading templates&hellip;</span></div></div>
   </section>
 
   <!-- SEQUENCES -->
   <section class="page page--pad" data-page="sequences">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Experiment sequences</h2>
       <p class="page__lead">
         Chains of launch blocks over one shared dataset. Link blocks into a graph, run
         independent branches in parallel, and hold the line at checkpoints so the next
         block can be edited against the previous results before it launches.
       </p>
+      <hairline-figure name="elevator" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div id="sequences-root"><div class="orb-panel"><thinking-orb state="weaving" size="64"></thinking-orb><span class="orb-panel__text">loading sequences&hellip;</span></div></div>
   </section>
 
   <!-- ABLATION -->
   <section class="page page--pad" data-page="ablation">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Ablation study</h2>
       <p class="page__lead">
         Configure a full ablation of the backbone or dual model: pick the entry, the features
         to ablate and their order, then launch a cumulative loop that trains the full model
         and degrades one feature at a time down to the baseline.
       </p>
+      <hairline-figure name="ablation" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div id="ablation-root"></div>
   </section>
@@ -238,6 +246,7 @@
         <p class="launch__purpose" id="launch-purpose"></p>
       </div>
       <dl class="launch__facts" id="launch-facts"></dl>
+      <hairline-figure name="surface" class="launch__figure" aria-hidden="true"></hairline-figure>
       <div class="launch__variants" id="launch-variants" role="tablist" aria-label="What to train"></div>
     </header>
     <div class="launch__body">
@@ -268,6 +277,7 @@
         <kbd class="config-search__kbd" aria-hidden="true">/</kbd>
         <p class="config-meta" id="config-meta" role="status"></p>
       </div>
+      <hairline-figure name="sampler" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="master master--config">
       <aside class="master__list master__list--config" id="config-list" aria-label="Configuration modules"><div class="orb-panel"><thinking-orb state="searching" size="64"></thinking-orb><span class="orb-panel__text">reading the configuration modules&hellip;</span></div></aside>
@@ -281,16 +291,17 @@
       <aside class="console__jobs">
         <div class="console__jobs-head">Jobs</div>
         <ul class="job-list" id="job-list"><li class="orb-panel"><thinking-orb state="working" size="64"></thinking-orb><span class="orb-panel__text">listing jobs&hellip;</span></li></ul>
+        <hairline-figure name="terminal" class="console__figure" aria-hidden="true"></hairline-figure>
       </aside>
       <div class="console__tiles" id="console-tiles">
-        <div class="console__hint" id="console-hint">Launch a script to see live output.</div>
+        <div class="console__hint" id="console-hint"><hairline-figure name="surface" class="console__hint-figure" aria-hidden="true"></hairline-figure><span>Launch a script to see live output.</span></div>
       </div>
     </div>
   </section>
 
   <!-- RESULTS -->
   <section class="page page--pad" data-page="results">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Results</h2>
       <p class="page__lead">
         Point the sidebar at your datasets and runs folders once, then pick any stage output
@@ -298,6 +309,7 @@
         and browse every plot, config and markdown report inside it. Click any figure to
         inspect it at full size, or pin figures into the compare grid.
       </p>
+      <hairline-figure name="tray" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <form class="res-pathbar" id="results-path-form">
       <input type="text" class="res-pathbar__input" id="results-path-input" placeholder="/absolute/path/to/run/directory" spellcheck="false" autocomplete="off" />
@@ -311,13 +323,14 @@
 
   <!-- CUBE -->
   <section class="page page--pad" data-page="cube">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Cube explorer</h2>
       <p class="page__lead">
         Load a saved inference cube, then hover the primary channel image to cut every cube
         live along its rows and columns. Click to lock a point and read vertical profiles out
         of the slices.
       </p>
+      <hairline-figure name="voxels" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
 
     <div class="cube-pick">
@@ -886,7 +899,7 @@
 
   <!-- SLICE COLLECTOR -->
   <section class="page page--pad" data-page="slices">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Slice collector</h2>
       <p class="page__lead">
         Pick any number of saved inference cubes, then hover the primary map to preview the
@@ -894,6 +907,7 @@
         or add single slices with their + button. The basket renders the paper-style figures
         into one comparison folder, and can mail that folder as a zip.
       </p>
+      <hairline-figure name="slices" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
 
     <div class="cube-pick">
@@ -991,20 +1005,21 @@
 
   <!-- A/B AUTOPSY -->
   <section class="page page--pad" data-page="autopsy">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">A/B autopsy</h2>
       <p class="page__lead">
         A guided comparison of two saved inferences over the same region: the largest
         relative metric gaps with the winner per row, and the locations where the runs
         disagree most, each with both predicted profiles against the ground truth.
       </p>
+      <hairline-figure name="balance" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div id="autopsy-root"></div>
   </section>
 
   <!-- ERROR TRIAGE -->
   <section class="page page--pad" data-page="triage">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Error triage</h2>
       <p class="page__lead">
         The worst regions of a saved inference, ranked by error and tagged with their dominant
@@ -1012,13 +1027,14 @@
         then record a verdict: label problem, model problem, or interesting. Annotations persist
         under <code>logs/triage/</code> and build the qualitative case library.
       </p>
+      <hairline-figure name="sieve" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div id="triage-root"></div>
   </section>
 
   <!-- NORMALIZATION ANALYSIS -->
   <section class="page page--pad" data-page="microscope">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Model microscope</h2>
       <p class="page__lead">
         Load a trained backbone or dual checkpoint, pick a pixel on the scene, and inspect the model
@@ -1027,13 +1043,14 @@
         where in the window those gradients concentrate, feature maps along a clickable view
         of the architecture, and live what-if perturbations of the input.
       </p>
+      <hairline-figure name="loupe" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div id="probe-root"></div>
   </section>
 
   <!-- MODEL SURVEY -->
   <section class="page page--pad" data-page="survey">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Model survey</h2>
       <p class="page__lead">
         The microscope's diagnostics, run over every pixel of the test region instead of one.
@@ -1042,13 +1059,14 @@
         occlusion evidence distance, and layer vitals, all averaged over the whole region
         with a progress bar while it works.
       </p>
+      <hairline-figure name="tiles" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div id="survey-root"></div>
   </section>
 
   <!-- FIT LAB -->
   <section class="page page--pad" data-page="fitlab">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Param extraction lab</h2>
       <p class="page__lead">
         Load a preprocessing dataset, pick pixels on the cube, and run the Gaussian
@@ -1056,6 +1074,7 @@
         compare K, &lambda;, free parameters and preprocessing constants before committing
         to a full extraction run.
       </p>
+      <hairline-figure name="transect" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
 
     <div class="cube-pick">
@@ -1155,20 +1174,21 @@
 
   <!-- LEADERBOARD -->
   <section class="page page--pad" data-page="leaderboard">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Leaderboard</h2>
       <p class="page__lead">
         Every saved inference result in the runs directory as one sortable table &mdash; run-name
         axes parsed into filters, headline metrics side by side. Select two rows to read a full
         metric-by-metric comparison plus the resolved-config differences between the runs.
       </p>
+      <hairline-figure name="podium" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="lb" id="leaderboard-root"></div>
   </section>
 
   <!-- FEED TUNER -->
   <section class="page page--pad page--feedtuner" data-page="feedtuner">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Feed Tuner</h2>
       <p class="page__lead">
         Sweep DataLoader settings against the real data path and find the configuration that keeps
@@ -1176,6 +1196,7 @@
         GPU compute ceiling, and end-to-end with the data-wait fraction &mdash; so starvation is
         quantified, not guessed.
       </p>
+      <hairline-figure name="gpus" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="ft">
       <aside class="ft__deck">
@@ -1294,6 +1315,10 @@
           </table>
         </div>
 
+        <div class="ft-feed">
+          <hairline-figure name="feed" id="ft-feed-figure" class="ft-feed__figure" aria-hidden="true"></hairline-figure>
+        </div>
+
         <pre class="ft-log" id="ft-log" aria-label="Run log"></pre>
       </div>
     </div>
@@ -1314,6 +1339,7 @@
         <button class="btn btn--mini" id="tb-open" disabled>Open in tab</button>
         <button class="btn btn--mini btn--danger" id="tb-stop" disabled>Stop</button>
       </div>
+      <hairline-figure name="landscape" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="tb-picker" id="tb-picker" hidden>
       <div class="tb-picker__head">
@@ -1338,13 +1364,14 @@
   </section>
 
   <section class="page page--pad page--repomap" data-page="repomap">
-    <div class="page__head">
+    <div class="page__head page__head--figure">
       <h2 class="page__title">Repo map</h2>
       <p class="page__lead">
         Every pipeline as a wiring schematic &mdash; the classes that do the work, the data they
         hand to each other, and the artifacts that cross the boundary. Open a subsystem folder,
         pick a stage, and watch the flow.
       </p>
+      <hairline-figure name="repo" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <div class="repomap" id="repomap"><div class="orb-panel"><thinking-orb state="connecting" size="64"></thinking-orb><span class="orb-panel__text">mapping the repository&hellip;</span></div></div>
   </section>
@@ -1421,7 +1448,6 @@
 <script src="/static/js/mathjax.js"></script>
 <script src="/static/js/training_anim.js"></script>
 <script src="/static/js/gauges.js"></script>
-<script src="/static/js/server_anim.js"></script>
 <script src="/static/js/home.js"></script>
 <script src="/static/js/process_anim.js"></script>
 <script src="/static/js/diagram.js"></script>

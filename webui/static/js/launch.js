@@ -184,6 +184,33 @@ class LaunchView extends ConfigForm {
 
   static TAGGED_SWEEP_ENTRIES = ["benchmark", "cross_validate"];
 
+  static FIGURES = [
+    [/^train_jepa$/, "jepa"],
+    [/^train_profile_autoencoder$/, "profileae"],
+    [/^train_image_autoencoder$/, "imageae"],
+    [/^train(_|$)/, "surface"],
+    [/^(infer(_|$)|export_onnx$)/, "shelf"],
+    [/^generate_dataset$/, "slots"],
+    [/^extract_params$/, "threshold"],
+    [/^benchmark$/, "podium"],
+    [/^cross_validate$/, "folds"],
+    [/^tune$/, "dial"],
+    [/^tune_dataloader$/, "sampler"],
+    [/^profile_training$/, "feed"],
+    [/^analyze_param_extraction$/, "transect"],
+    [/^map_loss_landscape$/, "landscape"],
+    [/^compare(_|$)/, "balance"],
+    [/^(collect_reports|mail_experiment_reports|export_paper_figures|export_tensorboard_plots|export_result_tables)$/, "tray"],
+    [/^animate_training$/, "film"],
+    [/^measure_receptive_field$/, "field"],
+    [/^(xray_weights|xray_activations|attribute_inputs|capture_attention|probe_layers|stress_inputs|analyze)$/, "loupe"],
+  ];
+
+  static figureFor(key) {
+    const match = LaunchView.FIGURES.find(([pattern]) => pattern.test(key));
+    return match ? match[1] : "surface";
+  }
+
   constructor(runConsole, project) {
     super();
     this.runConsole = runConsole;
@@ -207,6 +234,20 @@ class LaunchView extends ConfigForm {
     this.runMode = null;
     this._wireTabs();
     this._wireKeys();
+  }
+
+  get key() {
+    return this._key;
+  }
+
+  set key(value) {
+    this._key = value;
+    this._syncFigure();
+  }
+
+  _syncFigure() {
+    if (!this._key) return;
+    document.querySelector(".launch__figure").setAttribute("name", LaunchView.figureFor(this._key));
   }
 
   _resetState() {
