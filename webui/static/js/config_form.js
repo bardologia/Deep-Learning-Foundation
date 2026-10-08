@@ -46,6 +46,7 @@ class ConfigForm {
     search.className = "cfg-search";
     search.type = "search";
     search.placeholder = `Filter ${cfg.leaves.length} fields...`;
+    search.setAttribute("aria-label", "Filter configuration parameters");
     search.spellcheck = false;
     search.addEventListener("input", () => {
       this.query = search.value.trim().toLowerCase();

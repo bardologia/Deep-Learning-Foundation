@@ -299,6 +299,7 @@ class TileUnitPicker {
     this.filter.className = "console-tile__unitfilter";
     this.filter.type = "text";
     this.filter.placeholder = "filter sub-runs…";
+    this.filter.setAttribute("aria-label", "Filter sub-runs");
     this.filter.spellcheck = false;
     this.filter.autocomplete = "off";
     this.filter.hidden = true;

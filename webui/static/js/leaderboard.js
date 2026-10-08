@@ -302,7 +302,7 @@ class LeaderboardView {
     let html = `<div class="lb-bar-top">`;
     html += this._modeToggleHtml();
     html += `<span class="lb-count">${count} inference result${total === 1 ? "" : "s"}</span>`;
-    html += `<input type="search" class="res-filter" id="lb-filter" placeholder="Filter by run name" value="${SharedCharts.esc(this.filter)}" spellcheck="false" />`;
+    html += `<input type="search" class="res-filter" id="lb-filter" placeholder="Filter by run name" aria-label="Filter leaderboard runs" value="${SharedCharts.esc(this.filter)}" spellcheck="false" />`;
 
     LeaderboardView.AXIS_COLS.forEach((col) => {
       if (col.key === "loss") return;
@@ -495,7 +495,7 @@ class LeaderboardView {
 
     html += `<div class="lb-curves">`;
     html += `<aside class="lb-curves__list">`;
-    html += `<input type="search" class="res-filter" id="lb-curve-filter" placeholder="Filter runs" value="${SharedCharts.esc(this.curveFilter)}" spellcheck="false" />`;
+    html += `<input type="search" class="res-filter" id="lb-curve-filter" placeholder="Filter runs" aria-label="Filter loss curves" value="${SharedCharts.esc(this.curveFilter)}" spellcheck="false" />`;
 
     if (!runs.length) {
       html += `<div class="res-empty res-empty--tight">${this.curveRuns.length ? "No run matches the filter." : "No training runs with tensorboard logs found."}</div>`;
@@ -717,7 +717,7 @@ class LeaderboardView {
 
     html += `<section class="lb-diff__section"><h4 class="res-section__cap">Metrics <span>${kept.length} of ${all.length}</span></h4>`;
     html += `<div class="lb-diff__controls">`;
-    html += `<input type="search" class="res-filter" id="lb-diff-filter" placeholder="Filter metrics by name" value="${SharedCharts.esc(this.diffFilter)}" spellcheck="false" />`;
+    html += `<input type="search" class="res-filter" id="lb-diff-filter" placeholder="Filter metrics by name" aria-label="Filter compared metrics" value="${SharedCharts.esc(this.diffFilter)}" spellcheck="false" />`;
     html += `<label class="lb-check"><input type="checkbox" id="lb-diff-changed"${this.diffChanged ? " checked" : ""} /> differing only</label>`;
     html += `<label class="lb-check"><input type="checkbox" id="lb-diff-series"${this.diffSeries ? " checked" : ""} /> per-index series</label>`;
     html += `</div>`;
