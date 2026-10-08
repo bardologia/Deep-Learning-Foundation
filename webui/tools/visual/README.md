@@ -62,17 +62,29 @@ preview honest about the directories a sweep will create.
 node trial_names.js /tmp/train_jepa.json
 ```
 
-## Literal parsing harness
+## Sequence editor harnesses
 
-`literal_split.js` runs `python_literal.js` under plain node with no DOM and no server. It
-takes a JSON array of strings, splits each one the way the sequence block editor splits a
-decision's candidates field, and prints the candidate lists that come back.
-`tests/webui/test_sequence_decision_options.py` drives it over the values the Python
-renderer produces, which is the contract that keeps `[32, 32], [64, 32]` two candidates
-instead of four.
+Two tools that run the sequence block editor's own modules under plain node, with no
+browser and no server.
+
+`literal_split.js` loads `python_literal.js`, takes a JSON array of strings, splits each
+one the way the editor splits a decision's candidates field, and prints the candidate
+lists that come back. `tests/webui/test_sequence_decision_options.py` drives it over the
+values the Python renderer produces, which is the contract that keeps `[32, 32], [64, 32]`
+two candidates instead of four.
 
 ```
 node literal_split.js /tmp/fields.json
+```
+
+`sequence_actions.js` loads the editor itself against a stub DOM and a stub router that
+answers on the next tick. It clicks start, stop and release three times while the first
+request is in flight, then once more after it has landed, and prints the posts each burst
+sent with any error the clicks raised. `tests/webui/test_sequence_actions.py` drives it to
+assert that overlapping clicks post an action once and that the guard lifts afterwards.
+
+```
+node sequence_actions.js
 ```
 
 ## Flow sketch harness
