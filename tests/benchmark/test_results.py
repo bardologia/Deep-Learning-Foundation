@@ -265,7 +265,7 @@ def test_metric_table_annotates_seed_dispersion(tmp_path, logger_stub):
         reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
-        seed_dispersion = {"unet": {"n_seeds": 2, "best_val_loss_std": 0.01, "metrics": {"overall_r2_gt": 0.05}}},
+        seed_dispersion = {"unet": {"n_seeds": 2, "n_used": {"overall_r2_gt": 2}, "best_val_loss_std": 0.01, "metrics": {"overall_r2_gt": 0.05}}},
     )
 
     assert report.has_seed_sweep is True
@@ -284,7 +284,7 @@ def test_summary_json_includes_seed_dispersion(tmp_path, logger_stub):
         reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
-        seed_dispersion = {"unet": {"n_seeds": 2, "best_val_loss_std": None, "metrics": {}}},
+        seed_dispersion = {"unet": {"n_seeds": 2, "n_used": {}, "best_val_loss_std": None, "metrics": {}}},
     )
 
     report.write_all()
@@ -416,13 +416,30 @@ def test_training_table_shows_seed_counts_under_a_sweep(tmp_path, logger_stub):
         reference_model = "unet",
         embed_images    = False,
         logger          = logger_stub,
-        seed_dispersion = {"unet": {"n_seeds": 3, "best_val_loss_std": 0.01, "metrics": {}}},
+        seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"curve_rmse_gt": 3}, "best_val_loss_std": 0.01, "metrics": {}}},
     )
 
     lines = "\n".join(report._training_table())
 
     assert "Seeds" in lines
     assert "| 3" in lines.replace("  ", " ")
+
+
+def test_training_table_shows_used_over_total_when_a_seed_dropped_out(tmp_path, logger_stub):
+    """Verifies the Seeds cell reads used/total when the least-covered metric mean rests on fewer seeds than the model holds."""
+    records = _records_with_metrics(tmp_path)
+    report  = ComparisonReport(
+        records         = records,
+        out_dir         = tmp_path,
+        reference_model = "unet",
+        embed_images    = False,
+        logger          = logger_stub,
+        seed_dispersion = {"unet": {"n_seeds": 3, "n_used": {"curve_rmse_gt": 3, "overall_r2_gt": 2}, "best_val_loss_std": 0.01, "metrics": {}}},
+    )
+
+    lines = "\n".join(report._training_table())
+
+    assert "| 2/3" in lines.replace("  ", " ")
 
 
 def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_path, logger_stub):
