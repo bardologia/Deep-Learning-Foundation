@@ -7,7 +7,6 @@ shows how the held-out loss follows the receptive field along each axis.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib     import Path
 
@@ -18,6 +17,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from pipelines.backbone.training.experiments import PatchSizeTrialPlanner
+from pipelines.shared.training.seed_sweep    import SeedSet
+from pipelines.shared.training.sweep_resume  import SweepResumeRoot
 from tools.data.io                           import FileIO
 from tools.metrics.scoring                   import FiniteScalar, SeedAggregation
 from tools.monitoring.logger                 import Logger
@@ -40,7 +41,7 @@ class PatchTrialRecord:
         best_val_loss     : Seed-mean best validation loss.
         best_epoch        : Seed-mean epoch index of the best validation loss.
         n_seeds           : Number of seed runs that contributed a finite test loss.
-        n_seed_runs       : Number of seed runs found for this trial.
+        n_seed_runs       : Number of seed runs planned for this trial.
         test_loss_std     : Across-seed standard deviation of the test loss, or None.
         best_val_loss_std : Across-seed standard deviation of the best validation loss.
         seed_runs         : Per-seed record dicts backing the aggregate.
@@ -69,25 +70,58 @@ class PatchTrialRecord:
 class PatchTrialCollector:
     """Gathers per-trial training outcomes from a patch sweep's runs root.
 
+    The planned seeds drive the collection: every planned seed run is looked up,
+    whether or not its directory exists, so a seed that never started, never
+    finished or diverged is named and counted instead of silently thinning the
+    trial mean.
+
     Attributes:
         runs_root : Directory holding one run directory per trial, seed runs nested.
         planner   : Planner enumerating the swept patch shapes and their overrides.
-        logger    : Logger warning about trials without test metrics.
+        logger    : Logger warning about seed runs excluded from a trial mean.
+        seeds     : Seeds every trial was planned at.
     """
 
-    SEED_DIR_PATTERN = re.compile(r"seed\d+")
-
-    def __init__(self, runs_root: Path, planner: PatchSizeTrialPlanner, logger: Logger) -> None:
+    def __init__(self, runs_root: Path, planner: PatchSizeTrialPlanner, logger: Logger, seeds: list[int]) -> None:
         """Initializes the collector against a patch sweep's runs root.
 
         Args:
             runs_root : Directory the trial run directories live under.
             planner   : Planner enumerating the swept patch shapes.
             logger    : Logger for collection warnings.
+            seeds     : Seeds every trial was planned at; several seeds nest one seed<N> run per seed under the trial, one seed trains in the trial directory itself.
         """
         self.runs_root = Path(runs_root)
         self.planner   = planner
         self.logger    = logger
+        self.seeds     = list(seeds)
+
+    def _unit_names(self, name: str) -> list[str]:
+        """Returns the run names of the units planned for a trial, one per seed or the trial name alone."""
+        if len(self.seeds) == 1:
+            return [name]
+
+        return [SeedSet.run_name(name, seed) for seed in self.seeds]
+
+    def _unit_directory(self, unit_name: str) -> Path | None:
+        """Resolves the run directory of a planned unit under the runs root.
+
+        Args:
+            unit_name : Planned unit run name, nested for a seed run.
+
+        Returns:
+            The directory, matched with or without the entry's label prefix, or
+            None when the unit never created one.
+
+        Raises:
+            ValueError : If several directories match the unit, which leaves the trial ambiguous.
+        """
+        hits = SweepResumeRoot.matches(self.runs_root, unit_name)
+
+        if len(hits) > 1:
+            raise ValueError(f"unit '{unit_name}' matches {len(hits)} run directories under {self.runs_root}: {[str(hit) for hit in hits]}; remove or move the extra ones before writing the report")
+
+        return hits[0] if hits else None
 
     def _test_loss(self, run_dir: Path) -> float | None:
         """Reads the average test loss of one run, or None when it has no test metrics.
@@ -96,7 +130,7 @@ class PatchTrialCollector:
             run_dir : Run directory of a single seed run.
 
         Returns:
-            The test average loss, or None.
+            The test average loss, NaN included, or None.
         """
         path = run_dir / "meta" / "test_metrics.json"
         if not path.exists():
@@ -104,86 +138,78 @@ class PatchTrialCollector:
 
         return float(FileIO.load_json(path)["avg_loss"])
 
-    def _checkpoint_fields(self, run_dir: Path) -> tuple[float | None, int | None]:
-        """Reads the best validation loss and epoch from a run's completion marker.
+    def _checkpoint_fields(self, run_dir: Path) -> tuple[float, int]:
+        """Reads the best validation loss and epoch from a completed run's marker.
 
         Args:
-            run_dir : Run directory of a single seed run.
+            run_dir : Run directory of a single seed run carrying a completion marker.
 
         Returns:
-            Tuple of the best validation loss and best epoch, both None when the run
-            carries no completion marker.
+            Tuple of the best validation loss and best epoch.
         """
-        if not CompletionMarker.is_complete(run_dir):
-            return None, None
-
         payload = CompletionMarker.payload(run_dir)
 
         return float(payload["best_val_loss"]), int(payload["best_epoch"])
 
-    def _seed_runs(self, trial_dir: Path) -> list[tuple[str | None, Path]]:
-        """Lists the per-seed run directories of a trial.
+    def _collect_seed_run(self, unit_name: str, run_dir: Path | None) -> dict:
+        """Builds the record of one planned seed run from its metrics and completion marker.
 
         Args:
-            trial_dir : Trial directory under the runs root.
-
-        Returns:
-            List of (seed directory name, run directory) pairs; a single (None,
-            trial_dir) entry when the trial was trained without a seed fan-out.
-        """
-        if trial_dir.is_dir():
-            seed_dirs = sorted(d for d in trial_dir.iterdir() if d.is_dir() and self.SEED_DIR_PATTERN.fullmatch(d.name))
-            if seed_dirs:
-                return [(seed_dir.name, seed_dir) for seed_dir in seed_dirs]
-
-        return [(None, trial_dir)]
-
-    def _collect_seed_run(self, name: str, seed_name: str | None, run_dir: Path) -> dict:
-        """Builds the record of one seed run from its metrics and completion marker.
-
-        Args:
-            name      : Base run name of the trial.
-            seed_name : Seed directory name, or None for a single-seed trial.
-            run_dir   : Directory of this seed run.
+            unit_name : Run name of the unit.
+            run_dir   : Directory of this seed run, or None when it was never created.
 
         Returns:
             Dict with the run name, status, test loss, best validation loss
-            and best epoch.
+            and best epoch; a run without a completion marker is MISSING.
         """
-        test_loss                 = self._test_loss(run_dir)
-        best_val_loss, best_epoch = self._checkpoint_fields(run_dir)
+        complete                  = run_dir is not None and CompletionMarker.is_complete(run_dir)
+        test_loss                 = self._test_loss(run_dir) if run_dir is not None else None
+        best_val_loss, best_epoch = self._checkpoint_fields(run_dir) if complete else (None, None)
 
         return {
-            "name"          : name if seed_name is None else f"{name}/{seed_name}",
-            "status"        : "DONE" if CompletionMarker.is_complete(run_dir) else "MISSING",
+            "name"          : unit_name,
+            "status"        : "DONE" if complete else "MISSING",
             "test_loss"     : test_loss,
             "best_val_loss" : best_val_loss,
             "best_epoch"    : best_epoch,
         }
 
     @staticmethod
-    def _status(runs: list[dict]) -> str:
-        """Reduces the per-seed statuses to one trial status.
+    def _exclusion(run: dict) -> str | None:
+        """Returns why a seed run contributes no test loss to its trial mean, or None when it does.
+
+        Args:
+            run : Per-seed record dict.
+        """
+        if run["status"] != "DONE":
+            return "no completion marker (run directory missing or run unfinished)"
+        if run["test_loss"] is None:
+            return "no test metrics"
+        if FiniteScalar.coerce(run["test_loss"]) is None:
+            return f"test loss {run['test_loss']} is not finite"
+
+        return None
+
+    @classmethod
+    def _status(cls, runs: list[dict]) -> str:
+        """Reduces the per-seed records to one trial status.
 
         Args:
             runs : Per-seed record dicts.
 
         Returns:
-            "DONE" when every seed finished, "PARTIAL" when some did, and
-            "MISSING" otherwise.
+            "DONE" when every planned seed finished and contributed a finite test
+            loss, "PARTIAL" when at least one finished but not all contributed,
+            and "MISSING" when none finished.
         """
-        statuses = [run["status"] for run in runs]
+        scored   = [run for run in runs if cls._exclusion(run) is None]
+        finished = [run for run in runs if run["status"] == "DONE"]
 
-        if all(status == "DONE" for status in statuses):
+        if len(scored) == len(runs):
             return "DONE"
-        if any(status == "DONE" for status in statuses):
+        if finished:
             return "PARTIAL"
         return "MISSING"
-
-    @staticmethod
-    def _contributing(runs: list[dict], key: str) -> int:
-        """Counts the seed runs whose value under the given key is a finite scalar."""
-        return sum(1 for run in runs if FiniteScalar.coerce(run.get(key)) is not None)
 
     def _aggregate(self, name: str, overrides: dict, runs: list[dict]) -> PatchTrialRecord:
         """Averages the per-seed metrics of one trial into a PatchTrialRecord.
@@ -208,7 +234,7 @@ class PatchTrialCollector:
             test_loss         = means.get("test_loss"),
             best_val_loss     = means.get("best_val_loss"),
             best_epoch        = means.get("best_epoch"),
-            n_seeds           = self._contributing(runs, "test_loss"),
+            n_seeds           = sum(1 for run in runs if self._exclusion(run) is None),
             n_seed_runs       = len(runs),
             test_loss_std     = stds.get("test_loss"),
             best_val_loss_std = stds.get("best_val_loss"),
@@ -219,17 +245,23 @@ class PatchTrialCollector:
         """Builds one aggregated record per planned patch trial.
 
         Returns:
-            One PatchTrialRecord per trial, in planner order; trials without test
-            metrics are kept but warned about and excluded from the ranking.
+            One PatchTrialRecord per trial, in planner order. Every planned seed
+            run excluded from its trial mean is warned about by name and reason;
+            a trial left without a finite test loss is kept but excluded from the
+            ranking.
         """
         records = []
         for name, overrides in self.planner.plan():
-            trial_dir = self.runs_root / name
-            runs      = [self._collect_seed_run(name, seed_name, run_dir) for seed_name, run_dir in self._seed_runs(trial_dir)]
-            record    = self._aggregate(name, overrides, runs)
+            runs   = [self._collect_seed_run(unit_name, self._unit_directory(unit_name)) for unit_name in self._unit_names(name)]
+            record = self._aggregate(name, overrides, runs)
+
+            for run in runs:
+                reason = self._exclusion(run)
+                if reason is not None:
+                    self.logger.warning(f"{run['name']}: {reason}, excluded from the trial mean")
 
             if record.test_loss is None:
-                self.logger.warning(f"{name}: no test metrics, excluded from the ranking")
+                self.logger.warning(f"{name}: none of its {record.n_seed_runs} planned seed run(s) contributed a finite test loss, excluded from the ranking")
 
             records.append(record)
 
@@ -375,7 +407,8 @@ class PatchTrialsReport:
         model_label : Model identity printed in the report banner.
         runs_root   : Directory holding the trial run directories.
         out_dir     : Directory receiving the report artifacts.
-        logger      : Logger for report warnings.
+        logger      : Logger for report warnings and the ranking summary.
+        seeds       : Seeds every trial was planned at.
         plots       : Figure writer bound to out_dir.
     """
 
@@ -388,7 +421,7 @@ class PatchTrialsReport:
             model_label : Model identity printed in the report banner.
             runs_root   : Directory holding the trial run directories.
             out_dir     : Directory receiving the report artifacts.
-            logger      : Logger for report warnings.
+            logger      : Logger for report warnings and the ranking summary.
         """
         self.config      = config
         self.planner     = planner
@@ -396,6 +429,7 @@ class PatchTrialsReport:
         self.runs_root   = Path(runs_root)
         self.out_dir     = Path(out_dir)
         self.logger      = logger
+        self.seeds       = SeedSet.resolve(config.seeds, config.seed)
         self.plots       = PatchTrialPlots(self.out_dir)
 
     def _sorted_records(self, records: list[PatchTrialRecord]) -> list[PatchTrialRecord]:
@@ -551,7 +585,7 @@ class PatchTrialsReport:
             "Patch step"     : self.planner.patch_step(),
             "Row sizes"  : row_sizes,
             "Range sizes"    : col_sizes,
-            "Seeds"          : self.config.seeds or [self.config.seed],
+            "Seeds"          : self.seeds,
             "Ranking metric" : "seed-mean test avg_loss at the restored best-validation checkpoint",
         })
 
@@ -565,17 +599,34 @@ class PatchTrialsReport:
 
         return path
 
+    def _log_ranking(self, records: list[PatchTrialRecord]) -> None:
+        """Logs how many trials ranked and the winning patch with its seed-mean test loss.
+
+        Args:
+            records : Records of the sweep.
+        """
+        ranked = [record for record in records if record.complete]
+        best   = self._best(records)
+
+        if best is None:
+            self.logger.warning(f"No patch shape ranked: none of the {len(records)} trials has a finite seed-mean test loss")
+            return
+
+        self.logger.subsection(f"Ranked {len(ranked)}/{len(records)} patch shapes; best {self._patch_label(best.patch_size)} with test loss {self._with_std(best.test_loss, best.test_loss_std)} over {best.n_seeds}/{best.n_seed_runs} seeds")
+
     def write_all(self) -> list[Path]:
-        """Collects the trial records and writes every report artifact.
+        """Collects the trial records, writes every report artifact and logs the ranking.
 
         Returns:
             Paths of the JSON summary, the loss figure and the markdown report.
         """
-        collector = PatchTrialCollector(runs_root=self.runs_root, planner=self.planner, logger=self.logger)
+        collector = PatchTrialCollector(runs_root=self.runs_root, planner=self.planner, logger=self.logger, seeds=self.seeds)
         records   = self._sorted_records(collector.collect())
 
         json_path   = self._write_json(records)
         figure_path = self._write_figure(records)
         md_path     = self._write_markdown(records, figure_path)
+
+        self._log_ranking(records)
 
         return [json_path, figure_path, md_path]
