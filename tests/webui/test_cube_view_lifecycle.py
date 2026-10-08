@@ -11,7 +11,9 @@ order. Class metric layers must swap the colour bar for a named legend and read 
 names, and the layer histogram must draw one coloured bar per class, shade the colour range,
 mark the keep threshold, and never draw a distribution fetched for another layer or cube.
 The cut, profile and transect downloads must hand the visible panels and the profiles to the
-shared exporter under names carrying the run, stamp and pixel.
+shared exporter under names carrying the run, stamp and pixel. The Figures view must list a
+stamp's saved figures once per cube, drop a listing that lands after the cube changed, and
+list the new cube's figures when one loads while the view is open.
 """
 
 from __future__ import annotations
@@ -248,3 +250,43 @@ def test_download_buttons_are_on_the_page_and_wired_to_the_cube_view():
 
     for ref, element in (("jumpDownload", "cube-jump-download"), ("jumpCsv", "cube-jump-csv"), ("download", "cube-transect-download"), ("download", "cube-metric-download")):
         assert re.search(rf'{ref}\s*: document\.getElementById\("{element}"\)', app), element
+
+
+@NEEDS_JS
+def test_figures_view_lists_each_folder_with_linked_thumbnails():
+    """Each folder becomes a group, the first one open, with thumbnails linking to the path-guarded figure route."""
+    observed = _check("figures")
+    listed   = observed["listed"]
+
+    assert observed["loading"] == "<orb>Loading figures…</orb>"
+    assert observed["calls"][0] == "/api/cubes/figures?id=stamp%2Fa"
+    assert "3 saved figures in 2 folders" in listed
+    assert listed.count("<details") == 2 and listed.count(" open>") == 1
+    assert 'href="/api/cubes/figure?id=stamp%2Fa&rel=figures%2Fpixel_maps%2Fmse.png"' in listed
+    assert '<summary>figures/pixel_maps <em>2</em></summary>' in listed
+
+
+@NEEDS_JS
+def test_figures_view_lists_once_per_cube_and_drops_a_listing_for_a_replaced_cube():
+    """Rendering again for the same cube reuses the listing, and an answer for a cube that was replaced meanwhile is dropped."""
+    observed = _check("figures")
+
+    assert observed["cached"] == 1
+    assert observed["dropped"] == {"loadedFor": None, "html": "<orb>Loading figures…</orb>"}
+
+
+@NEEDS_JS
+def test_figures_view_reports_an_empty_stamp_and_a_failed_listing():
+    """A stamp without figure trees and a refused listing each show a hint instead of an empty panel."""
+    observed = _check("figures")
+
+    assert observed["none"] == '<p class="cube-hint">This stamp holds no saved figures.</p>'
+    assert observed["error"] == '<p class="cube-hint">cube not loaded</p>'
+
+
+@NEEDS_JS
+def test_loading_a_cube_while_the_figures_view_is_open_lists_its_figures():
+    """A cube that finishes loading while the Figures view is shown lists its figures instead of staying on the loading panel."""
+    reloaded = _check("figures")["reloaded"]
+
+    assert reloaded == {"figures": ["configure", "render"], "explorer": ["configure"]}

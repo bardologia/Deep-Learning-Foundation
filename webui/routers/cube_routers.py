@@ -44,6 +44,8 @@ class CubeRouter(SubRouter):
         table.add("GET", "/api/cubes/param_cbar",   self.param_cbar)
         table.add("GET", "/api/cubes/params_at",    self.params_at)
         table.add("GET", "/api/cubes/slice",        self.slice_view)
+        table.add("GET", "/api/cubes/figures",      self.figures)
+        table.add("GET", "/api/cubes/figure",       self.figure)
 
         table.add("POST", "/api/cubes/load",           self.load)
         table.add("POST", "/api/cubes/attach",         self.attach)
@@ -201,6 +203,19 @@ class CubeRouter(SubRouter):
             cmap    = exchange.text("cmap", "jet"),
         )
         exchange.send_png(png)
+
+    def figures(self, exchange: HttpExchange) -> None:
+        """Answers with the figure files saved under the loaded stamp, grouped by folder."""
+        exchange.send_result(self.cubes.list_figures(exchange.text("id")))
+
+    def figure(self, exchange: HttpExchange) -> None:
+        """Serves one saved figure of the loaded stamp, or 404 outside its figure trees."""
+        target = self.cubes.figure_file(exchange.text("id"), exchange.text("rel"))
+        if target is None:
+            exchange.not_found()
+            return
+
+        exchange.send_file(target, "max-age=300")
 
     def load(self, exchange: HttpExchange) -> None:
         """Starts loading the cube named in the request body, or serves it from memory."""

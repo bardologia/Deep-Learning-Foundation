@@ -9,7 +9,7 @@ class CubeViewChecks {
     vm.createContext(this.sandbox);
 
     const source = fs.readFileSync(path.join(staticDir, "cube_view.js"), "utf8");
-    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeTransect, CubeCloud, CubeView };`, this.sandbox, { filename: "cube_view.js" });
+    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeTransect, CubeCloud, CubeFigures, CubeView };`, this.sandbox, { filename: "cube_view.js" });
     this.classes = this.sandbox.classes;
   }
 
@@ -403,6 +403,77 @@ class CubeViewChecks {
     const overlay = { saved: exported.saved.map((entry) => ({ via: entry.via, name: entry.name, source: entry.source })), toasts: exported.toasts.map((toast) => toast.kind) };
 
     return { refused, cuts, csv, line, overlay, tag: view.fileTag() };
+  }
+
+  _reloaded(view) {
+    const { CubeView } = this.classes;
+    const shown        = [];
+
+    this.sandbox.getComputedStyle = () => ({ getPropertyValue: () => "#a3c0ff" });
+
+    const stub = Object.create(CubeView.prototype);
+    Object.assign(stub, {
+      view       : view,
+      selectedId : "stamp/b",
+      visible    : new Set(),
+      sweeps     : [],
+      modeBtns   : [],
+      progress   : this._element(),
+      coords     : this._element(),
+      hint       : this._element(),
+      stage      : this._element(),
+      topdown    : this._element(),
+      mapWrap    : this._element(),
+      figures    : { configure: () => shown.push("configure"), render: () => shown.push("render") },
+    });
+    ["_clearBitmapCache", "_syncSpaceBtns", "_syncProfModeBtns", "_renderSourceToggles", "_applyVisibility", "_initCutBounds", "_follow", "_consumeFocus"].forEach((name) => { stub[name] = () => {}; });
+    stub._slowestStage = () => "read";
+    stub._sweepFor     = () => null;
+
+    stub._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4 });
+    return shown;
+  }
+
+  async figures() {
+    const { CubeFigures } = this.classes;
+    const calls   = [];
+    const answers = [];
+
+    this.sandbox.SharedCharts = { esc: (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;") };
+    this.sandbox.ThinkingOrb  = { panel: (state, text) => `<orb>${text}</orb>` };
+    this.sandbox.Api          = { get: (url) => { calls.push(url); return new Promise((resolve) => answers.push(resolve)); } };
+
+    const host    = { selectedId: "stamp/a" };
+    const figures = new CubeFigures({ root: this._element({ innerHTML: "" }) }, host);
+
+    const answer = async (payload) => {
+      const pending = figures.render();
+      answers.shift()(payload);
+      await pending;
+      return figures.root.innerHTML;
+    };
+
+    figures.configure();
+    const loading = figures.root.innerHTML;
+    const listed  = await answer({ ok: true, groups: [{ dir: "animations", files: ["walk z.gif"] }, { dir: "figures/pixel_maps", files: ["mse.png", "r2.png"] }] });
+
+    await figures.render();
+    const cached = calls.length;
+
+    figures.configure();
+    const late = figures.render();
+    host.selectedId = "stamp/b";
+    answers.shift()({ ok: true, groups: [] });
+    await late;
+    const dropped = { loadedFor: figures.loadedFor, html: figures.root.innerHTML };
+
+    figures.configure();
+    const none = await answer({ ok: true, groups: [] });
+
+    figures.configure();
+    const error = await answer({ ok: false, error: "cube not loaded" });
+
+    return { loading, listed, cached, dropped, none, error, calls, reloaded: { figures: this._reloaded("figures"), explorer: this._reloaded("explorer") } };
   }
 
   async run(name) {

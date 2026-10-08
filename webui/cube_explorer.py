@@ -2,8 +2,10 @@
 
 Opens the cubes written by inference (prediction, ground truth and the full
 reference cube of the dataset run) and renders slices, planes, parameter maps,
-metric overlays and point clouds as PNG or packed binary payloads. Cubes are
-indexed by z bin, row pixel and column pixel. A load reads every file whole
+metric overlays, metric histograms and point clouds as PNG, JSON or packed
+binary payloads, and lists and serves the figures and animations inference
+saved next to a stamp's cubes. Cubes are indexed by z bin, row pixel and column
+pixel. A load reads every file whole
 through a shared pool of concurrent chunk reads, books its progress by bytes,
 times every stage and keeps the last few loaded cubes in memory. The slice
 collector renders the same cuts across many runs into a basket that is saved as
@@ -1270,6 +1272,68 @@ class CubeExplorer:
 
         header = np.array([aux.shape[0], aux.shape[1], median, 0.0], dtype=np.float32)
         return header.tobytes() + np.ascontiguousarray(grid).tobytes()
+
+    FIGURE_DIRS     = ("figures", "animations")
+    FIGURE_SUFFIXES = (".png", ".gif", ".jpg", ".jpeg", ".svg")
+
+    def list_figures(self, cube_id: str) -> dict:
+        """Lists the figure and animation files saved next to a stamp's cubes.
+
+        Args:
+            cube_id : Id of the loaded cube.
+
+        Returns:
+            Dict with ``ok`` and ``groups``, one entry per directory holding figures with its ``dir`` relative to the stamp and its sorted ``files``, or ``ok`` False when the cube is not loaded.
+        """
+        with self.lock:
+            if self.loaded is None or self.loaded["id"] != cube_id:
+                return {"ok": False, "error": "cube not loaded"}
+
+        reader = self._open_source(cube_id)
+        if reader is None:
+            return {"ok": False, "error": f"unknown cube id: {cube_id}"}
+
+        groups = {}
+        for root_name in self.FIGURE_DIRS:
+            root = reader.stamp_dir / root_name
+            if not root.is_dir():
+                continue
+
+            for path in sorted(root.rglob("*")):
+                if not path.is_file() or path.suffix.lower() not in self.FIGURE_SUFFIXES:
+                    continue
+                rel = path.relative_to(reader.stamp_dir)
+                groups.setdefault(str(rel.parent), []).append(rel.name)
+
+        return {"ok": True, "groups": [{"dir": name, "files": files} for name, files in sorted(groups.items())]}
+
+    def figure_file(self, cube_id: str, rel: str) -> Path | None:
+        """Resolves one figure file of the loaded stamp for serving.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            rel     : Path of the figure relative to the stamp directory.
+
+        Returns:
+            The absolute resolved file path, or None when the cube is not loaded, the path resolves outside the stamp's figure trees or the suffix is not an allowed figure type.
+        """
+        with self.lock:
+            if self.loaded is None or self.loaded["id"] != cube_id:
+                return None
+
+        reader = self._open_source(cube_id)
+        if reader is None:
+            return None
+
+        target = (reader.stamp_dir / rel).resolve()
+        roots  = [(reader.stamp_dir / name).resolve() for name in self.FIGURE_DIRS]
+
+        if not any(target.is_relative_to(root) for root in roots):
+            return None
+        if target.suffix.lower() not in self.FIGURE_SUFFIXES or not target.is_file():
+            return None
+
+        return target
 
     def metric_overlay_png(self, cube_id: str, key: str, vmin: float, vmax: float, keep_min: float, keep_max: float, alpha: float) -> bytes | None:
         """Blends one metric map over the primary amplitude map as a PNG.
