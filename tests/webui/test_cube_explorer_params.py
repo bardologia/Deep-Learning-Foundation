@@ -1,3 +1,13 @@
+"""Tests for the Gaussian parameter layers of the cube explorer.
+
+Covers the parameter metadata and per-field colour ranges, intensity metadata,
+the binary point blobs for curve peaks and parameter scatterers with amplitude
+thresholds and subsampling caps, parameter and error map rendering with slot
+clipping, per-pixel slot lookups, the aux grid served for the
+three-dimensional view, NaN tolerance throughout, and the refusal of stamps
+whose metrics predate the recorded activity threshold.
+"""
+
 from __future__ import annotations
 
 import json
@@ -14,10 +24,21 @@ PARAM_SOURCES = ("pred", "gt")
 
 
 def _loaded_explorer(base: Path, with_params: tuple = PARAM_SOURCES, with_full: bool = False) -> tuple[CubeExplorer, str]:
+    """Returns an explorer with a parameter-carrying cube loaded, plus its cube id.
+
+    Args:
+        base        : Parent directory for the generated run.
+        with_params : Parameter sources written next to the cube.
+        with_full   : Whether the dataset also holds the full cube, served as the full curve source.
+
+    Returns:
+        The explorer and the id of its loaded cube.
+    """
     return loaded_cube(base, with_params=with_params, with_full=with_full)
 
 
 def test_meta_reports_param_block(tmp_path):
+    """Checks the parameter metadata reports sources, slot count, the active-amplitude threshold and per-field ranges."""
     explorer, _ = _loaded_explorer(tmp_path)
 
     meta = explorer.load_status()["cube"]["params"]
@@ -33,12 +54,14 @@ def test_meta_reports_param_block(tmp_path):
 
 
 def test_meta_without_params_is_none(tmp_path):
+    """Checks a run without parameter blocks exposes no parameter metadata."""
     explorer, _ = _loaded_explorer(tmp_path, with_params=())
 
     assert explorer.load_status()["cube"]["params"] is None
 
 
 def test_meta_intensity_ranges_per_source(tmp_path):
+    """Checks every curve source reports finite intensity bounds."""
     explorer, _ = _loaded_explorer(tmp_path, with_full=True)
 
     intensity = explorer.load_status()["cube"]["intensity"]
@@ -48,6 +71,7 @@ def test_meta_intensity_ranges_per_source(tmp_path):
 
 
 def test_curve_points_threshold_and_values(tmp_path):
+    """Checks thresholded curve points carry the expected row, column, z value and amplitude."""
     explorer, cube_id = _loaded_explorer(tmp_path, with_full=True)
 
     raw    = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=0.9, max_points=100), dtype=np.float32)
@@ -62,6 +86,7 @@ def test_curve_points_threshold_and_values(tmp_path):
 
 
 def test_curve_points_subsample_cap(tmp_path):
+    """Checks the point cap limits the returned rows while the header still reports the full count."""
     explorer, cube_id = _loaded_explorer(tmp_path, with_full=True)
 
     raw    = np.frombuffer(explorer.points_bin(cube_id, "full", amp_min=-1.0, max_points=50), dtype=np.float32)
@@ -74,12 +99,14 @@ def test_curve_points_subsample_cap(tmp_path):
 
 
 def test_curve_points_absent_source_is_none(tmp_path):
+    """Checks requesting points from an unloaded curve source yields no blob."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     assert explorer.points_bin(cube_id, "full", amp_min=0.0, max_points=100) is None
 
 
 def test_param_map_png_for_all_fields(tmp_path):
+    """Checks every parameter field renders for the predicted, ground-truth and error sources."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     for source in ("pred", "gt", "error"):
@@ -89,6 +116,7 @@ def test_param_map_png_for_all_fields(tmp_path):
 
 
 def test_param_map_rejects_unknown_source_and_field(tmp_path):
+    """Checks unknown sources, unknown fields and unloaded cubes yield no map."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     assert explorer.param_map_png(cube_id, "banana", "amp", 0) is None
@@ -97,6 +125,7 @@ def test_param_map_rejects_unknown_source_and_field(tmp_path):
 
 
 def test_param_map_error_requires_both_sources(tmp_path):
+    """Checks the error and ground-truth maps are unavailable when only predictions were saved."""
     explorer, cube_id = _loaded_explorer(tmp_path, with_params=("pred",))
 
     assert explorer.param_map_png(cube_id, "pred", "amp", 0) is not None
@@ -105,6 +134,7 @@ def test_param_map_error_requires_both_sources(tmp_path):
 
 
 def test_param_cbar_png(tmp_path):
+    """Checks parameter colour bars render for known sources and are refused for unknown ones."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     assert explorer.param_cbar_png(cube_id, "pred", "amp")[:4] == b"\x89PNG"
@@ -113,6 +143,7 @@ def test_param_cbar_png(tmp_path):
 
 
 def test_params_at_returns_slot_values(tmp_path):
+    """Checks a pixel lookup returns each slot's amplitude, mean and width with the correct active flag."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     stamp  = Path(cube_id)
@@ -134,6 +165,7 @@ def test_params_at_returns_slot_values(tmp_path):
 
 
 def test_params_at_clips_indices_and_requires_params(tmp_path):
+    """Checks out-of-range indices clamp to the scene and a cube without parameters fails the lookup."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     clipped = explorer.params_at(cube_id, row=999, col=-4)
@@ -144,6 +176,7 @@ def test_params_at_clips_indices_and_requires_params(tmp_path):
 
 
 def test_param_map_slot_clipped(tmp_path):
+    """Checks slot indices beyond either end of the range clamp instead of failing."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     assert explorer.param_map_png(cube_id, "pred", "amp", slot=99) is not None
@@ -151,6 +184,7 @@ def test_param_map_slot_clipped(tmp_path):
 
 
 def test_points_bin_thresholds_and_subsamples(tmp_path):
+    """Checks the parameter point blob honours the amplitude threshold and the cap, and rejects unknown sources and cubes."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     blob = explorer.points_bin(cube_id, "pred", amp_min=1e-3, max_points=100000)
@@ -178,6 +212,7 @@ def test_points_bin_thresholds_and_subsamples(tmp_path):
 
 
 def test_dem_grid_absent_without_artifact(tmp_path):
+    """Checks a run without an aux artifact reports no aux layer and serves no grid."""
     explorer, cube_id = _loaded_explorer(tmp_path)
 
     assert explorer.load_status()["cube"]["aux"] is False
@@ -185,6 +220,7 @@ def test_dem_grid_absent_without_artifact(tmp_path):
 
 
 def test_dem_grid_with_artifact(tmp_path):
+    """Checks the aux grid is served relative to the scene median, preserving NaN gaps."""
     make_cube_run(tmp_path, with_params=PARAM_SOURCES)
 
     preproc = tmp_path / "preproc"
@@ -214,6 +250,7 @@ def test_dem_grid_with_artifact(tmp_path):
 
 
 def test_params_with_nan_survive_load_and_lookup(tmp_path):
+    """Checks NaN parameter entries leave the ranges finite, surface in lookups and still render."""
     stamp = make_cube_run(tmp_path, with_params=PARAM_SOURCES)
     pred  = np.load(stamp / "cubes" / "params_pred.npy")
     pred[1, 0, 0] = np.nan
@@ -236,6 +273,7 @@ def test_params_with_nan_survive_load_and_lookup(tmp_path):
 
 
 def test_params_without_a_recorded_threshold_fail_the_load(tmp_path):
+    """Checks a parameter-carrying stamp whose metrics predate the recorded threshold is refused with a request to re-run inference."""
     stamp   = make_cube_run(tmp_path, with_params=PARAM_SOURCES)
     payload = json.loads((stamp / "metrics.json").read_text(encoding="utf-8"))
     del payload["activity_threshold"]
