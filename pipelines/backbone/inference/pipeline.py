@@ -354,7 +354,7 @@ class InferencePipeline:
         Metrics.write_json(global_metrics, meta.metrics_path)
         return global_metrics
 
-    def _evaluate_embeddings(self, cfg: InferenceConfig, meta: InferenceMetadata, evaluator, result, global_metrics: dict) -> None:
+    def _evaluate_embeddings(self, cfg: InferenceConfig, meta: InferenceMetadata, evaluator, result, global_metrics: dict, logger: Logger) -> None:
         """Runs the embedding evaluator, merging its scalars into the metrics and its maps into the result.
 
         Args:
@@ -363,10 +363,13 @@ class InferencePipeline:
             evaluator      : Embedding evaluator, or None to skip.
             result         : Inference result, updated in place with the embedding maps.
             global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            logger         : Logger for the section heading and result line.
         """
 
         if evaluator is None:
             return
+
+        logger.section("[Inference: Embedding Evaluation]")
 
         metrics, maps = evaluator.run(pixel_mse=result.pixel_mse)
 
@@ -381,6 +384,8 @@ class InferencePipeline:
             np.save(meta.cube_dir / "decode_mse.npy",       maps.decode_mse)
             np.save(meta.cube_dir / "chain_mse.npy",        maps.chain_mse)
 
+        logger.subsection(f"Embeddings evaluated : {len(metrics)} metrics merged into global metrics")
+
     def _evaluate_label_quality(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, logger: Logger) -> None:
         """Scores how well the Gaussian labels reproduce the raw cube and splits the error by label quality.
 
@@ -391,8 +396,10 @@ class InferencePipeline:
             result         : Inference result, updated in place with the label R² map.
             z_axis_np      : Z axis in metres, of shape (n_z,).
             global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the result line.
+            logger         : Logger for the section heading and result line.
         """
+
+        logger.section("[Inference: Label Quality]")
 
         r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger).label_quality(run.full_curves)
 
@@ -669,7 +676,7 @@ class InferencePipeline:
         global_metrics = self._evaluate_metrics(cfg, result, z_axis_np, run, meta, indices, logger)
         logger.subsection(f"Global metrics written : {meta.metrics_path}")
 
-        self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics)
+        self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics, logger)
         self._evaluate_label_quality(cfg, meta, run, result, z_axis_np, global_metrics, logger)
         self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)
         self._stratify_errors(cfg, meta, run, result, global_metrics, logger)
