@@ -1266,7 +1266,7 @@ class EquationLibrary:
     def _tuning(self) -> dict:
         return {
             "group" : "Tuning",
-            "blurb" : "Optuna hyperparameter search wrapped around the training pipeline: a single joint study with constant-liar TPE sampling and median pruning, fanned out across one worker per GPU and topped up in chunks until the trial target is reached.",
+            "blurb" : "Optuna hyperparameter search wrapped around the training pipeline: a single joint study with constant-liar TPE sampling and median pruning, fanned out across trial workers and topped up in chunks until the trial target, a plateau of the best value or the time budget ends it.",
             "items" : [
                 {
                     "title" : "Search objective",
@@ -1283,12 +1283,13 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Joint search with chunked resume",
-                    "tex"   : r"\theta^* = \operatorname*{arg\,min}_{\theta \in \Theta_{\mathrm{lr}} \times \Theta_{\mathrm{arch}}} f(\theta), \qquad n_{\mathrm{run}} = \max\!\left(0,\ N - \left|\mathcal{T}_{\mathrm{done}}\right|\right)",
-                    "note"  : "Learning, regularisation and architecture parameters are sampled jointly in a single study; the SQLite-backed study is topped up across runs until the trial target is reached, and the best configuration so far is rewritten after every completed trial.",
+                    "tex"   : r"\theta^* = \operatorname*{arg\,min}_{\theta \in \Theta_{\mathrm{lr}} \times \Theta_{\mathrm{arch}} \times \Theta_{\mathrm{batch}}} f(\theta), \qquad n_{\mathrm{run}} = \max\!\left(0,\ N - \left|\mathcal{T}_{\mathrm{done}}\right|\right)",
+                    "note"  : "The parameter groups the tuning settings switch on (search_lr, search_arch, search_batch) are sampled jointly in a single study, and a sampled batch size rescales the optimizer by the training batch rule; JEPA studies search the architecture alone. The SQLite-backed study is topped up across runs until the trial target is reached, which a plateau of the best value (plateau_patience) or the time budget (time_budget_h) may cut short, and the best configuration so far is rewritten after every completed trial.",
                     "vars"  : [
                         {"sym": r"\theta^*",                    "desc": "best joint hyperparameter vector found so far"},
-                        {"sym": r"\Theta_{\mathrm{lr}}",        "desc": "per-group rates and decays (log-uniform), dropout"},
-                        {"sym": r"\Theta_{\mathrm{arch}}",      "desc": "widths, bottleneck, activation, normalisation, upsampling"},
+                        {"sym": r"\Theta_{\mathrm{lr}}",        "desc": "per-group rates and decays (log-uniform), dropout, when search_lr is on"},
+                        {"sym": r"\Theta_{\mathrm{arch}}",      "desc": "widths, bottleneck, activation, normalisation, upsampling, when search_arch is on"},
+                        {"sym": r"\Theta_{\mathrm{batch}}",     "desc": "batch sizes from batch_sizes, when search_batch is on"},
                         {"sym": r"N",                           "desc": "trial target for the study, n_trials"},
                         {"sym": r"\mathcal{T}_{\mathrm{done}}", "desc": "completed and pruned trials already in storage"},
                         {"sym": r"n_{\mathrm{run}}",            "desc": "trials launched by the current chunk"},
@@ -1297,18 +1298,18 @@ class EquationLibrary:
                 {
                     "title" : "Constant-liar worker fan-out",
                     "tex"   : r"n_i = \left\lfloor n_{\mathrm{run}} / W \right\rfloor + \mathbb{1}\!\left[\,i < (n_{\mathrm{run}} \bmod W)\,\right], \qquad i = 0,\dots,W-1",
-                    "note"  : "The chunk's remaining trials are spread as evenly as possible over one worker process per GPU; every worker opens the same SQLite-backed study and draws from a TPE sampler seeded by base_seed + gpu_id, so constant-liar bookkeeping keeps the parallel in-flight trials from colliding. Workers assigned zero trials are skipped, and any trial left RUNNING by an interrupted chunk is marked failed before new workers launch.",
+                    "note"  : "The chunk's remaining trials are spread as evenly as possible over the trial workers; every worker opens the same SQLite-backed study and draws from a TPE sampler seeded by base_seed + its worker index, so constant-liar bookkeeping keeps the parallel in-flight trials from colliding. Workers assigned zero trials are skipped, any trial whose heartbeat stopped is marked failed and named before new workers launch, and a worker attaching to a study already at its target or plateau runs no trial.",
                     "vars"  : [
-                        {"sym": r"n_i",              "desc": "trials assigned to worker (GPU) i"},
+                        {"sym": r"n_i",              "desc": "trials assigned to worker i"},
                         {"sym": r"n_{\mathrm{run}}", "desc": "remaining trials in the current chunk"},
-                        {"sym": r"W",                "desc": "number of GPU workers, len(gpus)"},
-                        {"sym": r"i",                "desc": "worker / GPU index"},
+                        {"sym": r"W",                "desc": "number of trial workers, n_workers or one per device in gpus"},
+                        {"sym": r"i",                "desc": "worker index"},
                     ],
                 },
                 {
                     "title" : "Median pruning rule",
                     "tex"   : r"\text{prune at epoch } t \iff \mathcal{L}^{(t)}_{\mathrm{val}} > \operatorname{median}\!\left\{\mathcal{L}^{(t)}_{\mathrm{val}}\ \text{of completed trials}\right\}",
-                    "note"  : "Each epoch the trial reports its validation loss and is pruned once it exceeds the running median of previously completed trials at the same epoch; pruning stays inactive until n_startup trials have completed and until the trial is at least n_warmup epochs in. A pruned trial still counts toward the target alongside completed ones, whereas a trial that raises a non-prune exception is marked FAIL, propagates out of the worker, and is excluded from the target so the study keeps launching to replace it.",
+                    "note"  : "Each epoch the trial reports its validation loss and is pruned once it exceeds the running median of previously completed trials at the same epoch; pruning stays inactive until n_startup trials have completed and until the trial is at least n_warmup epochs in. A pruned trial still counts toward the target alongside completed ones, whereas a trial whose training diverges or runs out of device memory is marked FAIL with its error, the worker goes on to its next trial, and the failed trial is excluded from the target so a top-up replaces it.",
                     "vars"  : [
                         {"sym": r"\mathcal{L}^{(t)}_{\mathrm{val}}", "desc": "trial's validation loss reported at epoch t"},
                         {"sym": r"t",                                "desc": "epoch index within the trial"},
