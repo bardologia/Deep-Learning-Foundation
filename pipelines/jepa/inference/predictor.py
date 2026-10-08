@@ -36,9 +36,9 @@ class JepaCurvePredictor(Predictor):
 
     def _create_curve_stitchers(self):
         """Returns the predicted-curve, ground-truth-curve and ground-truth-parameter stitchers."""
-        n_elev    = self.run.x_axis_length
-        pred_st   = self._create_stitcher(n_elev, "pred_curves")
-        gt_st     = self._create_stitcher(n_elev, "gt_curves")
+        n_z       = self.run.x_axis_length
+        pred_st   = self._create_stitcher(n_z, "pred_curves")
+        gt_st     = self._create_stitcher(n_z, "gt_curves")
         gt_par_st = self._create_param_stitcher(self.run.n_gaussians * 3, "params_gt")
 
         return pred_st, gt_st, gt_par_st

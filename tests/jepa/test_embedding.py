@@ -104,7 +104,7 @@ def _build_case(z_offset: float = 0.0, flip: bool = False):
 
     Returns:
         Tuple of the run namespace, the ground-truth curves of shape
-        (batch, n_elev, height, width), and the fake profile autoencoder.
+        (batch, n_z, height, width), and the fake profile autoencoder.
     """
     torch.manual_seed(0)
 
