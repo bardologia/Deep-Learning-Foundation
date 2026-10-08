@@ -39,6 +39,11 @@ class BestKSelector:
     def score(self, gpu_results : Dict[int, tuple], batch_tag : str = "") -> np.ndarray:
         """Stacks the per-K fit errors into one array.
 
+        Scoring runs on the extractor's background thread while the main
+        thread opens the next mode's fitting section, so it announces itself
+        with a subsection: a section would restart the logger's shared section
+        clock and misattribute the '(+duration)' of both threads' sections.
+
         Args:
             gpu_results : Mapping from K to a fit tuple whose fourth element is the per-pixel MSE of shape (N_act,).
             batch_tag   : Label used in the log section header.
@@ -48,7 +53,7 @@ class BestKSelector:
         """
         tag = f"{batch_tag} | " if batch_tag else ""
 
-        self.logger.section(f"[{tag}Phase 3 — Best-K Selection]")
+        self.logger.subsection(f"{tag}Phase 3 — best-K selection")
 
         mse_all = np.stack([gpu_results[K][3] for K in range(1, self.k_max + 1)], axis=1).astype(np.float64)
 

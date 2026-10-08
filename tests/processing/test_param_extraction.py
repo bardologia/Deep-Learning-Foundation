@@ -666,6 +666,22 @@ def test_kernel_backend_label_names_the_real_platform_and_the_entry_refuses_cpu(
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_background_scoring_opens_no_logger_section():
+    """Verifies best-K scoring, which runs on the scoring thread, announces itself with a subsection so it never resets the shared section clock."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.sigma.selection import BestKSelector
+
+    logger      = RecordingLogger()
+    gpu_results = {K: (None, None, None, np.full(3, float(K), dtype=np.float32)) for K in (1, 2)}
+
+    mse_all = BestKSelector(k_max=2, logger=logger).score(gpu_results, batch_tag="Batch 1/1 | mode sigma")
+
+    assert mse_all.shape == (3, 2)
+    assert [level for level, message in logger.messages] == ["subsection"]
+    assert logger.messages[0][1] == "Batch 1/1 | mode sigma | Phase 3 — best-K selection"
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_scoring_throttle_reraises_a_failed_future():
     """Verifies the scoring throttle re-raises the exception of a failed background future."""
     from concurrent.futures import ThreadPoolExecutor
