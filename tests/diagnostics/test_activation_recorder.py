@@ -419,3 +419,22 @@ def test_summary_records_the_capture_settings_thresholds_and_provenance():
     assert summary["thresholds"]["dead_zero_frac_warn"] == 0.8
     assert set(summary["thresholds"]) == set(ActivationXraySummarizer.THRESHOLDS)
     assert summary["provenance"]["git_commit"]
+
+
+def test_hooked_layer_count_counts_a_reused_module_once():
+    """The summary's hooked-layer count names modules, so a module recorded at two call sites counts once."""
+    model    = _SharedActNet()
+    recorder = ActivationRecorder(model)
+    recorder.attach_stats()
+
+    with torch.no_grad():
+        model(torch.randn(2, 2, 6, 6))
+
+    recorder.detach()
+    reports = ActivationIssueDetector(ActivationXrayConfig()).run(recorder.stats())
+    summary = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules=recorder.reused_modules(), silent_layers=recorder.silent_layers())
+
+    assert summary["layers"]        == 4
+    assert summary["hooked_layers"] == 3
+    assert ActivationRecorder.module_of("act#1") == "act"
+    assert ActivationRecorder.module_of("conv_a") == "conv_a"
