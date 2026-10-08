@@ -7,7 +7,7 @@ channel collapse) and a run-level verdict.
 
 from __future__ import annotations
 
-from tools.diagnostics.activation_recorder  import LayerActivationStats
+from tools.diagnostics.activation_recorder  import ActivationRecorder, LayerActivationStats
 from tools.diagnostics.weight_xray_analysis import SEVERITY_RANK, Issue
 from tools.runtime.git_state                import RunProvenance
 
@@ -192,7 +192,7 @@ class ActivationXraySummarizer:
             "batch_size"      : self.config.batch_size,
             "max_batches"     : self.config.max_batches,
             "layers"          : len(reports),
-            "hooked_layers"   : len(reports) + len(silent_layers),
+            "hooked_layers"   : len({ActivationRecorder.module_of(report.name) for report in reports}) + len(silent_layers),
             "batches"         : n_batches,
             "flagged_layers"  : len(flagged),
             "issues"          : len(issues),
