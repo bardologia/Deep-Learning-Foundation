@@ -93,6 +93,7 @@ class BenchmarkPipeline(StagedPipeline):
 
     def _validate_sweep(self) -> None:
         """Validates this pipeline's own configuration before any stage runs."""
+        self._begin_stage("validation")
         self.validate_sweep(self.config)
 
     def _run_max_batch(self) -> dict:
@@ -104,6 +105,8 @@ class BenchmarkPipeline(StagedPipeline):
         Raises:
             SystemExit : If the probe failed for every model, leaving nothing to train.
         """
+        self._begin_stage("max_batch")
+
         stage   = MaxBatchStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
         records = stage.run()
 
@@ -119,6 +122,8 @@ class BenchmarkPipeline(StagedPipeline):
 
     def _run_size_match(self) -> dict:
         """Matches every model's capacity to the reference and returns the per-model records."""
+        self._begin_stage("size_match")
+
         stage   = SizeMatchStage(config=self.config, run_tag=self.run_tag, models=self.models, logger=self.logger)
         records = stage.run()
 
@@ -133,12 +138,16 @@ class BenchmarkPipeline(StagedPipeline):
         is launched. The stage itself warns about the run directories no unit
         claims while it reconciles.
         """
+        self._begin_stage("prepare")
+
         stage = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
 
         stage.status_report().log(self.logger, "Unit status")
 
     def _run_training(self) -> list[dict]:
         """Trains every benchmark unit on the GPU pool and returns the job results."""
+        self._begin_stage("training")
+
         stage   = TrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
         results = stage.run()
 
@@ -148,6 +157,8 @@ class BenchmarkPipeline(StagedPipeline):
 
     def _run_inference(self) -> list[dict]:
         """Runs inference over every trained unit and returns the job results."""
+        self._begin_stage("inference")
+
         stage   = InferenceStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, models=self.models, logger=self.logger)
         results = stage.run()
 
@@ -157,17 +168,20 @@ class BenchmarkPipeline(StagedPipeline):
 
     def _run_comparison(self) -> Path:
         """Writes the cross-model comparison reports and returns their output directory."""
+        self._begin_stage("comparison")
+
         stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, reference_model=self.config.size_match.reference_model, embed_images=self.config.comparison.embed_images, inference_split=self.config.inference.split)
         out_dir = stage.run()
 
         self._mark_stage("comparison", "completed")
         return out_dir
 
-    def run(self) -> None:
+    def _execute(self) -> None:
         """Runs the configured stage, or the whole prepare-train-infer-compare sequence.
 
         Raises:
             SystemExit : If the sweep configuration is invalid or batch probing failed for every model.
+            PartialRun : If a full run ends with failed units, after the comparison reports are written.
         """
         self.logger.section("Benchmark pipeline")
         self.logger.kv_table({
@@ -181,40 +195,27 @@ class BenchmarkPipeline(StagedPipeline):
         }, title="Configuration")
 
         self._log_launch()
+        self._validate_sweep()
 
-        try:
-            self._validate_sweep()
-
-            if self.config.stage == "compare":
-                comparison_dir = self._run_comparison()
-                self._mark_stage("pipeline", "completed")
-                self.logger.info(f"Comparison stage done: {comparison_dir}")
-                return
-
-            if self.config.runs_size_match():
-                self._run_size_match()
-
-            self._run_max_batch()
-
-            if self.config.stage == "prepare":
-                self._log_unit_status()
-                self._mark_stage("prepare", "completed")
-                self.logger.info(f"Prepare stage done: size match, max batch and unit status written to {self.pipeline_dir}")
-                return
-
-            training_results  = self._run_training()
-            inference_results = self._run_inference() if self.config.runs_inference() else []
-            comparison_dir    = self._run_comparison()
-
+        if self.config.stage == "compare":
+            comparison_dir = self._run_comparison()
             self._mark_stage("pipeline", "completed")
+            self.logger.info(f"Comparison stage done: {comparison_dir}")
+            return
 
-            self.logger.section("Pipeline summary")
-            self.logger.kv_table({
-                "Models"        : len(self.models),
-                "Trained"       : sum(1 for r in training_results if r["status"] == "DONE"),
-                "Inferred"      : sum(1 for r in inference_results if r["status"] == "DONE"),
-                "Comparison"    : str(comparison_dir),
-                "Pipeline logs" : str(self.pipeline_dir),
-            }, title="Done")
-        finally:
-            self.logger.close()
+        if self.config.runs_size_match():
+            self._run_size_match()
+
+        self._run_max_batch()
+
+        if self.config.stage == "prepare":
+            self._log_unit_status()
+            self._mark_stage("prepare", "completed")
+            self.logger.info(f"Prepare stage done: size match, max batch and unit status written to {self.pipeline_dir}")
+            return
+
+        training_results  = self._run_training()
+        inference_results = self._run_inference() if self.config.runs_inference() else []
+        comparison_dir    = self._run_comparison()
+
+        self._finish(training_results, inference_results, {"Models": len(self.models), "Comparison": str(comparison_dir)})
