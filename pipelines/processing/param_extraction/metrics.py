@@ -578,11 +578,14 @@ class FittingMetricsCalculator:
             activity_map : Active-slot count of shape (rows, cols).
 
         Returns:
-            Mapping with pixel counts, R-squared moments and percentiles, and the
-            fraction of pixels carrying each active-slot count.
+            Mapping with pixel counts, the count of fitted pixels whose R-squared is
+            undefined because their reference profile is constant, R-squared moments
+            and percentiles over the finite values, and the fraction of pixels
+            carrying each active-slot count.
         """
         r2_flat  = r2_map.reshape(-1).astype(np.float64)
         r2_valid = r2_flat[np.isfinite(r2_flat)]
+        fitted   = activity_map.reshape(-1) > 0
 
         def _pct(q: float) -> float:
             """Returns the q-th percentile of the finite R-squared values, or NaN."""
@@ -590,15 +593,16 @@ class FittingMetricsCalculator:
 
         summary: Dict[str, float] = {
             **self.maps.occupancy_summary(activity_map),
-            "r2_mean"     : float(r2_valid.mean())      if r2_valid.size > 0 else float("nan"),
-            "r2_median"   : float(np.median(r2_valid))  if r2_valid.size > 0 else float("nan"),
-            "r2_std"      : float(r2_valid.std())       if r2_valid.size > 0 else float("nan"),
-            "r2_p10"      : _pct(10),
-            "r2_p25"      : _pct(25),
-            "r2_p50"      : _pct(50),
-            "r2_p75"      : _pct(75),
-            "r2_p90"      : _pct(90),
-            "r2_neg_frac" : float((r2_valid < 0.0).mean()) if r2_valid.size > 0 else float("nan"),
+            "r2_undefined_count" : float(R2.undefined_count(r2_flat[fitted])),
+            "r2_mean"            : float(r2_valid.mean())      if r2_valid.size > 0 else float("nan"),
+            "r2_median"          : float(np.median(r2_valid))  if r2_valid.size > 0 else float("nan"),
+            "r2_std"             : float(r2_valid.std())       if r2_valid.size > 0 else float("nan"),
+            "r2_p10"             : _pct(10),
+            "r2_p25"             : _pct(25),
+            "r2_p50"             : _pct(50),
+            "r2_p75"             : _pct(75),
+            "r2_p90"             : _pct(90),
+            "r2_neg_frac"        : float((r2_valid < 0.0).mean()) if r2_valid.size > 0 else float("nan"),
         }
 
         return summary
@@ -713,7 +717,7 @@ class FittingMetricsCalculator:
         self.logger.subsection("Computing peak-to-floor contrast statistics and contrast-to-fit-quality relation")
         snr_summary = self._compute_snr_summary(snr_db_map, r2_map, best_k_map)
 
-        self.logger.subsection(f"R² — mean={summary['r2_mean']:.4f} median={summary['r2_median']:.4f} neg_frac={summary['r2_neg_frac']:.4f}")
+        self.logger.subsection(f"R² — mean={summary['r2_mean']:.4f} median={summary['r2_median']:.4f} neg_frac={summary['r2_neg_frac']:.4f} over the fitted pixels with a non-constant reference; {summary['r2_undefined_count']:.0f} fitted pixels have a constant reference profile and no R²")
         self.logger.subsection(f"Peak-to-floor contrast — median={snr_summary['contrast_db_median']:.2f} dB, Spearman(contrast, R²)={snr_summary['contrast_r2_spearman']:.3f}")
 
         if k_summary:
