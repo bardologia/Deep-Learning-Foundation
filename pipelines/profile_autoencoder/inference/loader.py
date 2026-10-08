@@ -128,6 +128,35 @@ class ProfileAeRunLoader(RunArtifactLoader):
 
         return model.to(device), ae_name
 
+    @staticmethod
+    def _describe(ckpt_path: Path, embedding_dim: int, z_len: int, dataset: ProfileDataset, config: ProfileAeInferenceConfig, batch_size: int, activity_threshold: float) -> dict:
+        """Returns the model table rows: checkpoint, geometry, scored curve set and the settings that selected it.
+
+        Args:
+            ckpt_path          : Checkpoint the weights were restored from.
+            embedding_dim      : Latent dimensionality.
+            z_len              : Profile length in z bins.
+            dataset            : Rebuilt split dataset, exposing the kept active and empty pixel counts.
+            config             : Inference configuration with the sampling settings and the optional batch-size override.
+            batch_size         : Effective batch size of the loader.
+            activity_threshold : Amplitude above which a pixel counts as active, as recorded by the training run.
+
+        Returns:
+            Ordered mapping of row label to value.
+        """
+        return {
+            "Checkpoint"         : ckpt_path,
+            "Embedding dim"      : embedding_dim,
+            "Profile length"     : z_len,
+            "Split"              : config.split,
+            "Curves"             : f"{len(dataset):,} ({dataset.n_kept_active:,} active + {dataset.n_kept_empty:,} empty)",
+            "Activity threshold" : f"{activity_threshold:g} (from the training run's {ProfileDatasetConfigIO.FILENAME})",
+            "Pixel subsample"    : f"{config.pixel_subsample:g} of the active pixels",
+            "Keep empty frac"    : f"{config.keep_empty_frac:g} of the empty pixels",
+            "Selection seed"     : config.seed,
+            "Batch size"         : f"{batch_size} ({'inference override' if config.batch_size is not None else 'training batch size'})",
+        }
+
     def load(self, *, config: ProfileAeInferenceConfig, device: str) -> ProfileAeRun:
         """Loads dataset, model and checkpoint and assembles the run bundle.
 
@@ -177,13 +206,7 @@ class ProfileAeRunLoader(RunArtifactLoader):
         regions = dataset_config.split_regions.regions(config.split)
 
         self.logger.section(f"[Profile AE Model]  : '{ae_name}'")
-        self.logger.kv_table({
-            "Checkpoint"     : ckpt_path,
-            "Embedding dim"  : embedding_dim,
-            "Profile length" : z_len,
-            "Curves"         : len(dataset),
-            "Split"          : config.split,
-        })
+        self.logger.kv_table(self._describe(ckpt_path, embedding_dim, z_len, dataset, config, batch_size, dataset_config.activity_threshold))
 
         return ProfileAeRun(
             model                       = model,

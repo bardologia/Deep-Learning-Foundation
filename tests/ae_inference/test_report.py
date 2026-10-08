@@ -31,8 +31,8 @@ def _metrics():
 
 
 def _config(checkpoint_name="best_model.pt"):
-    """Returns an inference-config stub naming the scored checkpoint."""
-    return SimpleNamespace(checkpoint_name=checkpoint_name)
+    """Returns an inference-config stub naming the scored checkpoint and the profile curve sampling."""
+    return SimpleNamespace(checkpoint_name=checkpoint_name, pixel_subsample=0.5, keep_empty_frac=0.05, seed=7)
 
 
 def _image_run():
@@ -58,6 +58,7 @@ def _profile_run():
         split_name                  = "test",
         split_regions               = [_region()],
         checkpoint_meta             = {"epoch": 9, "best_epoch": 3, "best_val_loss": 0.2},
+        activity_threshold          = 1e-3,
         preprocessing_run_directory = "/runs/pp",
     )
 
@@ -92,6 +93,16 @@ def test_summaries_name_the_scored_checkpoint_and_one_based_epochs(tmp_path):
     assert profile["checkpoint"]       == "final_model.pt"
     assert profile["checkpoint_epoch"] == 10
     assert profile["best_epoch"]       == 4
+
+
+def test_profile_summary_records_the_threshold_and_curve_sampling(tmp_path):
+    """The profile summary names the activity threshold and the sampling settings that selected the scored curves."""
+    summary = ProfileAeReport(tmp_path, _profile_run(), config=_config(), metrics=_metrics(), figures={}, report_path=tmp_path / "profile.md")._summary()
+
+    assert summary["activity_threshold"] == 1e-3
+    assert summary["pixel_subsample"]    == 0.5
+    assert summary["keep_empty_frac"]    == 0.05
+    assert summary["selection_seed"]     == 7
 
 
 def test_profile_report_assembles_with_title_and_metrics(tmp_path):
