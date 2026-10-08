@@ -18,9 +18,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from configuration.benchmark       import BenchmarkConfig
 from configuration.diagnostics     import ReportMailEntryConfig
 from tools.reporting.report_mailer import BenchmarkExperiment, CrossValidationExperiment, Experiment, ExperimentReportBundle, ExperimentScanner, ExperimentSelector, ReportMailBatch, ReportMailer
 from tools.runtime.completion      import CompletionMarker
+from tools.runtime.config_cli      import ConfigCli
 
 from tests.conftest                     import RecordingLogger
 from tests.cross_validation.test_stages import build_finished_run
@@ -29,7 +31,7 @@ from tests.cross_validation.test_stages import build_finished_run
 PNG_BYTES = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 
 
-def _write_report(run_dir: Path, tag: str, metrics: dict | None = None) -> Path:
+def _write_report(run_dir: Path, tag: str, metrics: dict | None = None, split: str = "test") -> Path:
     """Writes a completed inference stamp with a report.md, one PNG figure, metrics and the prediction cubes under the run.
 
     The cubes are what the seed comparison's deep-ensemble evaluation reads
@@ -39,6 +41,7 @@ def _write_report(run_dir: Path, tag: str, metrics: dict | None = None) -> Path:
         run_dir : Run directory that receives the inference/<tag> subtree.
         tag     : Inference stamp directory name.
         metrics : Scalar metrics written into the stamp, a fixed pair when omitted.
+        split   : Split the completion marker records.
 
     Returns:
         Path of the written report.md.
@@ -50,11 +53,11 @@ def _write_report(run_dir: Path, tag: str, metrics: dict | None = None) -> Path:
     cubes_dir.mkdir()
 
     (figures_dir / "map.png").write_bytes(PNG_BYTES)
-    (output_dir / "report.md").write_text("# Report\n\n![map](figures/map.png)\n", encoding="utf-8")
+    (output_dir / "report.md").write_text(f"# Report ({split})\n\n![map](figures/map.png)\n", encoding="utf-8")
     (output_dir / "metrics.json").write_text(json.dumps(metrics or {"curve_rmse_gt": 0.5, "overall_r2_gt": 0.8}), encoding="utf-8")
     np.save(cubes_dir / "pred_curves.npy", np.full((2, 2, 4), 0.5, dtype=np.float32))
     np.save(cubes_dir / "gt_curves.npy", np.linspace(0.0, 1.0, 16, dtype=np.float32).reshape(2, 2, 4))
-    CompletionMarker.stamp(output_dir, {"stage": "inference", "split": "test"})
+    CompletionMarker.stamp(output_dir, {"stage": "inference", "split": split})
 
     return output_dir / "report.md"
 
@@ -129,7 +132,7 @@ def _write_benchmark_run(root: Path, run_tag: str) -> Path:
 
     pipeline = run_dir / "pipeline"
     pipeline.mkdir()
-    (pipeline / "resolved_config.json").write_text(json.dumps({"training_type": "backbone"}), encoding="utf-8")
+    ConfigCli.save_resolved(BenchmarkConfig(), pipeline / "resolved_config.json")
     (pipeline / "state.json").write_text(json.dumps({"stages": {}}), encoding="utf-8")
 
     return run_dir
@@ -311,8 +314,44 @@ def test_bundle_requires_an_inference_report_on_a_single_run_trial(entry_config,
     for path in sorted((experiment_dir / "trial_b" / "inference").rglob("*"), reverse=True):
         path.unlink() if path.is_file() else path.rmdir()
 
-    with pytest.raises(FileNotFoundError, match="run inference on this trial"):
+    with pytest.raises(FileNotFoundError, match="run inference on the 'test' split of this trial"):
         _bundle(entry_config, Experiment(experiment_dir, experiment_dir)).stage()
+
+
+def test_bundle_mails_the_report_of_the_comparison_split_and_names_its_source(entry_config, workspace):
+    """Verifies a single-run trial inferred on test and later on val mails its test report and logs the stamp it came from."""
+    experiment_dir = workspace / "exp_alpha"
+    _write_report(experiment_dir / "trial_b", "20260109_000000", split="val")
+
+    logger = RecordingLogger()
+    staged = ExperimentReportBundle(Experiment(experiment_dir, experiment_dir), entry_config.to_config("ws/exp_alpha"), logger).stage()
+
+    source = experiment_dir / "trial_b" / "inference" / "20260102_000000" / "report.md"
+    assert staged[1].read_text(encoding="utf-8").startswith("# Report (test)")
+    assert ("ok", f"Staged trial_b.md from {source}") in logger.messages
+
+
+def test_bundle_refuses_a_single_run_trial_inferred_only_on_another_split(entry_config, workspace):
+    """Verifies a single-run trial whose only report scored val raises, naming the split it has."""
+    experiment_dir = workspace / "exp_alpha"
+    stamp          = experiment_dir / "trial_b" / "inference" / "20260102_000000"
+    CompletionMarker.stamp(stamp, {"stage": "inference", "split": "val"})
+
+    with pytest.raises(FileNotFoundError, match=r"reports exist for split\(s\) val"):
+        _bundle(entry_config, Experiment(experiment_dir, experiment_dir)).stage()
+
+
+def test_bundle_finds_a_report_under_a_family_sub_directory(entry_config, workspace):
+    """Verifies a single-run trial whose stamps nest under a family sub-directory mails that report."""
+    experiment_dir = workspace / "exp_alpha"
+    family_run     = experiment_dir / "trial_b"
+    nested         = family_run / "inference" / "profile_ae"
+    nested.mkdir()
+    (family_run / "inference" / "20260102_000000").rename(nested / "20260102_000000")
+
+    staged = _bundle(entry_config, Experiment(experiment_dir, experiment_dir)).stage()
+
+    assert staged[1].name == "trial_b.md"
 
 
 def test_bundle_of_a_single_trial_skips_the_comparison(entry_config, workspace):
@@ -383,6 +422,19 @@ def test_benchmark_bundle_stages_units_its_own_comparison_and_pipeline_files(ent
         "resolved_config.json",
         "state.json",
     ]
+
+
+def test_benchmark_bundle_regenerates_its_comparison_on_the_recorded_split(entry_config, workspace):
+    """Verifies regenerating a benchmark run's comparison runs its comparison stage on the split its configuration recorded."""
+    entry_config.regenerate_reports = True
+    experiment = BenchmarkExperiment(workspace / "bench")
+
+    staged = _bundle(entry_config, experiment).stage()
+
+    stamps = sorted(child for child in (workspace / "bench" / "comparison").iterdir() if child.is_dir())
+    assert experiment.inference_split() == BenchmarkConfig().inference.split
+    assert len(stamps) == 2
+    assert [path.name for path in staged][2:4] == ["comparison_benchmark_overview.md", "comparison_metrics_comparison.md"]
 
 
 def test_mailer_raises_without_the_password_variable(entry_config, monkeypatch, tmp_path):
