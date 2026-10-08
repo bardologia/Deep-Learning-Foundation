@@ -290,7 +290,7 @@ def test_run_propagates_an_early_rank_zero_failure(tmp_path, monkeypatch):
 
 
 def test_run_terminates_the_group_when_a_secondary_rank_fails(tmp_path, monkeypatch):
-    """A secondary rank exiting non-zero mid-run tears the still-training ranks down."""
+    """A secondary rank exiting non-zero mid-run tears the still-training ranks down, and the fan-out log ends in an ABORTED banner naming the failure."""
     fanout = _stub_fanout(tmp_path, "rank_fail", monkeypatch)
 
     started = time.monotonic()
@@ -299,6 +299,22 @@ def test_run_terminates_the_group_when_a_secondary_rank_fails(tmp_path, monkeypa
 
     assert time.monotonic() - started < 60.0
     assert not (fanout.run_dir / "rank0.done").is_file()
+
+    written = (fanout.log_dir / "ddp_fanout.log").read_text(encoding="utf-8")
+
+    assert ">>> ABORTED ddp_fanout" in written
+    assert "[Aborted] SystemExit: DDP rank 1 failed" in written
+
+
+def test_rank_logs_append_to_an_earlier_launch(tmp_path, monkeypatch):
+    """A relaunched fan-out keeps the earlier launch's rank log above the new output instead of truncating it."""
+    fanout = _stub_fanout(tmp_path, "train", monkeypatch)
+    fanout.log_dir.mkdir(parents=True)
+    (fanout.log_dir / "rank1.log").write_text("earlier launch\n", encoding="utf-8")
+
+    fanout.run()
+
+    assert (fanout.log_dir / "rank1.log").read_text(encoding="utf-8").startswith("earlier launch\n")
 
 
 def test_run_publishes_a_progress_unit_per_secondary_rank(tmp_path, monkeypatch):

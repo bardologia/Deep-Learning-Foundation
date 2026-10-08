@@ -6,8 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from pipelines.shared.training.sweep_resume import SweepResumePlan, SweepResumeRoot
+from pipelines.shared.training.sweep_resume import SweepResults, SweepResumePlan, SweepResumeRoot
+from tools.data.io                          import FileIO
 from tools.runtime.completion               import CompletionMarker
+
+from tests.conftest import RecordingLogger
 
 
 def _run_dir(root: Path, name: str, complete: bool = False) -> Path:
@@ -100,6 +103,52 @@ def test_plan_reports_which_completed_runs_lack_inference(tmp_path):
     assert plan.columns() == ["Run", "Status", "Inference"]
     assert rows == {"a": "test done", "b": "test missing", "c": "-"}
     assert plan.summary()["Complete"] == "2 (reused), 1 of them without 'test' inference"
+
+
+def test_fresh_launch_into_a_root_holding_runs_is_warned_with_the_resume_policy(tmp_path):
+    """A plan built for a fresh launch warns about the earlier runs it found and states what the resume flags do with them."""
+    _run_dir(tmp_path, "a", complete=True)
+    _run_dir(tmp_path, "b")
+
+    logger = RecordingLogger()
+    SweepResumePlan(tmp_path, ["a", "b", "c"]).build().warn_existing_root(logger, unit_resume=True, trainer_resume=False)
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert len(warnings) == 1
+    assert "already holds runs of 2 planned unit(s)" in warnings[0]
+    assert "1 completed unit(s) are reused without training" in warnings[0]
+    assert "1 unfinished unit(s) are deleted and restart from scratch (training.resume=False)" in warnings[0]
+    assert ("metrics_table", None) in logger.messages
+
+
+def test_fresh_launch_into_an_empty_root_stays_quiet(tmp_path):
+    """Without any earlier run of a planned unit the fresh-launch warning says nothing."""
+    logger = RecordingLogger()
+    SweepResumePlan(tmp_path, ["a"]).build().warn_existing_root(logger, unit_resume=True, trainer_resume=True)
+
+    assert logger.messages == []
+
+
+def test_results_merge_keeps_earlier_entries_and_replaces_rerun_units(tmp_path):
+    """A results file from an earlier launch keeps its untouched entries in order, takes the rerun units' new records and appends new units, with a warning."""
+    path = tmp_path / "train_scheduler_results.json"
+    FileIO.save_json([{"name": "a", "status": "DONE"}, {"name": "b", "status": "FAILED"}], path)
+
+    logger = RecordingLogger()
+    merged = SweepResults.merge([{"name": "b", "status": "DONE"}, {"name": "c", "status": "DONE"}], path, logger)
+
+    assert merged == [{"name": "a", "status": "DONE"}, {"name": "b", "status": "DONE"}, {"name": "c", "status": "DONE"}]
+    assert logger.messages == [("warning", "train_scheduler_results.json already holds 2 entry(ies) from an earlier launch: 1 kept, 1 replaced by this launch's results, 1 added")]
+
+
+def test_results_merge_without_an_earlier_file_returns_the_results(tmp_path):
+    """A first launch writes its results as they are and warns about nothing."""
+    logger = RecordingLogger()
+    merged = SweepResults.merge([{"name": "a", "status": "DONE"}], tmp_path / "absent.json", logger)
+
+    assert merged == [{"name": "a", "status": "DONE"}]
+    assert logger.messages == []
 
 
 def test_plan_without_a_split_has_no_inference_column(tmp_path):

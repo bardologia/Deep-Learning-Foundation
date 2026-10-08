@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pipelines.shared.inference.metadata import CompletedInference
+from tools.data.io                       import FileIO
 from tools.runtime.completion            import CompletionMarker
 from tools.training.checkpoint           import TrainerState
 
@@ -239,3 +240,40 @@ class SweepResumePlan:
         self._classify_planned()
         self._collect_unplanned()
         return self
+
+
+class SweepResults:
+    """The results JSON of a sweep, carried across the launches that resume it."""
+
+    @staticmethod
+    def merge(results: list[dict], path: Path, logger) -> list[dict]:
+        """Returns the earlier launches' entries with this launch's results replacing those of the same unit.
+
+        Earlier entries keep their order and are followed by the units this
+        launch ran for the first time, so the file always describes the whole
+        sweep rather than the units of the last launch alone.
+
+        Args:
+            results : Result records of this launch, each carrying the unit under 'name'.
+            path    : Results file an earlier launch may have written.
+            logger  : Logger warned about the entries kept and replaced.
+
+        Returns:
+            The merged records, or the results unchanged when no earlier file exists.
+        """
+        path = Path(path)
+        if not path.is_file():
+            return list(results)
+
+        earlier  = FileIO.load_json(path)
+        by_name  = {record["name"]: record for record in results}
+        replaced = [record["name"] for record in earlier if record["name"] in by_name]
+
+        merged = []
+        for record in earlier:
+            merged.append(by_name.pop(record["name"]) if record["name"] in by_name else record)
+        merged.extend(by_name.values())
+
+        logger.warning(f"{path.name} already holds {len(earlier)} entry(ies) from an earlier launch: {len(earlier) - len(replaced)} kept, {len(replaced)} replaced by this launch's results, {len(merged) - len(earlier)} added")
+
+        return merged
