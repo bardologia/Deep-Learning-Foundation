@@ -422,7 +422,8 @@ class LayerProbeCore:
 
         Returns:
             Dictionary with "layers", mapping each surviving layer to its channel count,
-            effective dimensionality and per-target scores, the same block for the
+            the channel count actually sampled (at most MAX_FEATURES), the effective
+            dimensionality of the sampled channels and per-target scores, the same block for the
             "input_baseline", the "shuffled_controls" naming the best layer and its
             permuted-target score per target, the "dropped_layers" mapping each
             dropped layer to the reason it could not be probed, and the "target_notes"
@@ -432,6 +433,7 @@ class LayerProbeCore:
             ValueError : If no probed layer produced a usable feature map.
         """
         store: dict[str, list]  = {layer: [] for layer in self.layers}
+        widths: dict[str, int]  = {}
         dropped: dict[str, str] = {}
         input_chunks            = []
         target_chunks           = {target: [] for target, _label in self.TARGETS}
@@ -466,6 +468,7 @@ class LayerProbeCore:
                     store.pop(layer)
                     continue
 
+                widths[layer] = int(tensor.shape[1])
                 store[layer].append(self.sampler.features_at(tensor, b, i, j, B, H, W))
 
         recorder.detach()
@@ -480,16 +483,18 @@ class LayerProbeCore:
         for layer, chunks in store.items():
             X             = np.concatenate(chunks, axis=0)
             layers[layer] = {
-                "n_channels"    : int(X.shape[1]),
-                "effective_dim" : FeatureGeometry.participation_ratio(X),
-                "scores"        : self._score_targets(X, targets, unscored),
+                "n_channels"         : widths[layer],
+                "n_channels_sampled" : int(X.shape[1]),
+                "effective_dim"      : FeatureGeometry.participation_ratio(X),
+                "scores"             : self._score_targets(X, targets, unscored),
             }
 
         X_input  = np.concatenate(input_chunks, axis=0)
         baseline = {
-            "n_channels"    : int(X_input.shape[1]),
-            "effective_dim" : FeatureGeometry.participation_ratio(X_input),
-            "scores"        : self._score_targets(X_input, targets, unscored),
+            "n_channels"         : int(batches[0][0].shape[1]),
+            "n_channels_sampled" : int(X_input.shape[1]),
+            "effective_dim"      : FeatureGeometry.participation_ratio(X_input),
+            "scores"             : self._score_targets(X_input, targets, unscored),
         }
 
         controls = {}
@@ -672,10 +677,12 @@ class LayerProbeRun(AnalysisRun):
         entries = results["layers"]
 
         doc.heading("Decodability", level=2)
+        doc.paragraph(f"Layers wider than {FeatureSampler.MAX_FEATURES} channels are probed on {FeatureSampler.MAX_FEATURES} evenly spaced channels; their Channels cell reads 'sampled of width', and their effective dimensionality is that of the sample.")
         table = MarkdownTable(("#", "Layer", "Channels", "Eff. dims") + tuple(label for _target, label in LayerProbeCore.TARGETS))
         for index, layer in enumerate(layers):
-            entry = entries[layer]
-            row   = [str(index), f"`{layer}`", str(entry["n_channels"]), f"{entry['effective_dim']:.1f}"]
+            entry    = entries[layer]
+            channels = f"{entry['n_channels_sampled']} of {entry['n_channels']}" if entry["n_channels_sampled"] < entry["n_channels"] else str(entry["n_channels"])
+            row      = [str(index), f"`{layer}`", channels, f"{entry['effective_dim']:.1f}"]
             for target, _label in LayerProbeCore.TARGETS:
                 score = entry["scores"][target]
                 row.append(f"{score['mean']:.3f} ± {score['std']:.3f}" if score is not None else "n/a")
@@ -743,6 +750,10 @@ class LayerProbeRun(AnalysisRun):
             self.logger.warning(f"{self.run_dir.name}: {len(results['dropped_layers'])}/{probed} probed layers dropped: " + "; ".join(f"{layer} ({reason})" for layer, reason in results["dropped_layers"].items()))
         for target, note in results["target_notes"].items():
             self.logger.warning(f"{self.run_dir.name}: probe target {target}: {note}")
+
+        subsampled = [f"{layer} ({entry['n_channels']})" for layer, entry in results["layers"].items() if entry["n_channels_sampled"] < entry["n_channels"]]
+        if subsampled:
+            self.logger.info(f"{self.run_dir.name}: {len(subsampled)} layer(s) wider than {FeatureSampler.MAX_FEATURES} channels probed on {FeatureSampler.MAX_FEATURES} evenly spaced channels: {', '.join(subsampled)}")
 
         plots   = LayerProbePlots()
         figures = {}
