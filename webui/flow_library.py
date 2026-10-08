@@ -540,8 +540,8 @@ class FlowLibrary:
                 "note": "The default hungarian matching first orders GT slots by mu among active components (amplitudes at or below the label run's activity threshold pushed to the end), then permutes each pixel's predicted slots onto the GT slots by the optimal assignment, found by enumerating all K! permutations of the active-weighted L1 cost; the loss is therefore invariant to the predicted slot order. Under the opt-in sorted_gt mode the GT sort still happens but predictions keep their slot order, so each slot learns a fixed height rank. Inactive slots mask their mu and sigma to zero so empty slots contribute amplitude only. Param-L1 (the default supervised term) is active-normalised in normalised space; TV is an optional roughness penalty.",
                 "inputs": ["thrn", "gtp"], "outputs": ["lj"],
                 "lines": [
-                    [{"tex": r"\pi^{\star} = \operatorname*{arg\,min}_{\pi \in S_K}\ \textstyle\sum_k \mathbb{1}[a^{\mathrm{GT}}_k > 10^{-4}]\,\big|\tilde{\theta}_{\pi(k)} - \theta^{\mathrm{GT}}_{k}\big|_1"}],
-                    [{"id": "lj", "tex": r"\ell_{\mathrm{p\text{-}L1}}", "role": "calculated"}, {"tex": "="}, {"tex": r"\dfrac{\sum w_p\,m\,|\,\tilde{\theta}_{\mathrm{n}} - \theta^{\mathrm{GT}}\,|}{\sum w_p\,m},\quad m = \mathbb{1}[a^{\mathrm{GT}} > 10^{-4}]\ (\mu,\sigma)"}],
+                    [{"tex": r"\pi^{\star} = \operatorname*{arg\,min}_{\pi \in S_K}\ \textstyle\sum_k \mathbb{1}[a^{\mathrm{GT}}_k > \tau_a]\,\big|\tilde{\theta}_{\pi(k)} - \theta^{\mathrm{GT}}_{k}\big|_1"}],
+                    [{"id": "lj", "tex": r"\ell_{\mathrm{p\text{-}L1}}", "role": "calculated"}, {"tex": "="}, {"tex": r"\dfrac{\sum w_p\,m\,|\,\tilde{\theta}_{\mathrm{n}} - \theta^{\mathrm{GT}}\,|}{\sum w_p\,m},\quad m = \mathbb{1}[a^{\mathrm{GT}} > \tau_a]\ (\mu,\sigma)"}],
                     [{"tex": r"\ell_{\mathrm{TV}} = \overline{|\tilde\theta_{h}-\tilde\theta_{h-1}|} + \overline{|\tilde\theta_{w}-\tilde\theta_{w-1}|}"}],
                 ],
             },
