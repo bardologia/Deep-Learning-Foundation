@@ -26,9 +26,12 @@ class GaussianCurve:
             Reconstructed curves of shape (batch, n_bins, rows, cols).
 
         Raises:
-            ValueError : If the channel count is not a multiple of ppg.
+            ValueError : If ppg is not three, or the channel count is not a multiple of ppg.
         """
         B, C, H, W = params.shape
+
+        if ppg != 3:
+            raise ValueError(f"Gaussian curve reconstruction requires ppg=3 (amplitude, mean, sigma), got ppg={ppg}")
 
         if C % ppg != 0:
             raise ValueError(f"Gaussian param channels ({C}) must be divisible by {ppg}")
