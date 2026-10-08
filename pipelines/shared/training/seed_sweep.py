@@ -15,6 +15,7 @@ from copy    import deepcopy
 from pathlib import Path
 from typing  import Callable
 
+from pipelines.shared.inference.metadata    import CompletedInference
 from pipelines.shared.training.sweep_resume import SweepResumePlan
 from tools.orchestration      import ExperimentStage, GpuJob
 from tools.monitoring.logger  import Logger
@@ -126,6 +127,7 @@ class SeedFanoutScheduler:
         entry_script      : Entry script each seed job re-invokes.
         base_name         : Sweep base run name.
         infer_at_end      : Whether inference is batched after all training finishes.
+        inference_split   : Dataset split every seed must carry inference for, batched or inside its own job; None when the sweep infers nothing.
         run_dir           : Sweep root directory holding the per-seed run directories.
         resuming          : Whether the sweep continues an existing root, in which case every seed job is handed its own directory.
         log_dir           : Directory holding the per-seed logs, the result JSONs and the sweep recording.
@@ -136,7 +138,7 @@ class SeedFanoutScheduler:
 
     SCHEDULER_FIELDS = ("gpus", "gpus_file", "poll_interval_s", "gpu", "seed", "seeds", "run_name", "infer_at_end", "resume_from")
 
-    def __init__(self, config, cli_overrides: dict, entry_script: Path, base_name: str, run_dir: Path, infer_at_end: bool = False) -> None:
+    def __init__(self, config, cli_overrides: dict, entry_script: Path, base_name: str, run_dir: Path, infer_at_end: bool = False, infer_after: bool = False) -> None:
         """Prepares the sweep directories, forwarded overrides and GPU stage.
 
         Args:
@@ -146,11 +148,13 @@ class SeedFanoutScheduler:
             base_name     : Sweep base run name.
             run_dir       : Sweep root directory.
             infer_at_end  : Whether to batch inference after training finishes.
+            infer_after   : Whether each seed job runs its own inference after training, which a resumed seed may still lack.
         """
         self.config             = config
         self.entry_script       = Path(entry_script)
         self.base_name          = base_name
         self.infer_at_end       = infer_at_end
+        self.inference_split    = config.inference.split if (infer_at_end or infer_after) else None
         self.run_dir            = Path(run_dir)
         self.resuming           = bool(config.resume_from)
         self.log_dir            = self.run_dir / "batch_train_logs"
@@ -190,7 +194,7 @@ class SeedFanoutScheduler:
         raise SystemExit(f"resume_from '{target}' is neither a seed run directory nor a sweep base directory holding seed runs; paste the base directory whose children are seed<N> runs, or one of those seed directories")
 
     @classmethod
-    def for_runner(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None, infer_at_end: bool = False) -> "SeedFanoutScheduler":
+    def for_runner(cls, config, cli_overrides: dict, entry_script: Path, runner_factory: Callable[[object], object], base_label: str | None = None, infer_at_end: bool = False, infer_after: bool = False) -> "SeedFanoutScheduler":
         """Builds the scheduler for an entry, resuming or naming a fresh sweep.
 
         A resumed sweep keeps the pasted root as it is, whatever it is called:
@@ -204,6 +208,7 @@ class SeedFanoutScheduler:
             runner_factory : Callable turning a config into a single-run runner, used to compose run names.
             base_label     : Optional label prefixed to the timestamped base name.
             infer_at_end   : Whether to batch inference after training finishes.
+            infer_after    : Whether each seed job runs its own inference after training.
 
         Returns:
             The configured scheduler.
@@ -219,7 +224,7 @@ class SeedFanoutScheduler:
             probe.run_name = base
             run_dir        = Path(config.logdir) / runner_factory(probe)._resolve_run_name()
 
-        return cls(config, cli_overrides, entry_script, base_name=base, run_dir=run_dir, infer_at_end=infer_at_end)
+        return cls(config, cli_overrides, entry_script, base_name=base, run_dir=run_dir, infer_at_end=infer_at_end, infer_after=infer_after)
 
     def _unit_overrides(self, run_name: str, seed: int) -> dict:
         """Returns the overrides pinning one seed job's identity and directory.
@@ -280,33 +285,46 @@ class SeedFanoutScheduler:
             log_path = self.log_dir / f"seed{seed}_infer.log",
         )
 
+    def _inference_pending(self, seed: int) -> bool:
+        """Returns whether a seed's run directory lacks a completed inference stamp for the sweep's split."""
+        return not CompletedInference.stamps(self.run_dir / f"seed{seed}" / "inference", self.inference_split)
+
     def _run_inference_pass(self, units: list[tuple[int, str]], training_results: list[dict]) -> list[dict]:
-        """Runs inference for every seed whose training finished.
+        """Runs inference for every planned seed whose training finished and whose inference output is still missing.
+
+        Covers the seeds this launch trained with per-seed inference held
+        back, and the seeds an earlier launch completed whose inference never
+        ran or never finished.
 
         Args:
-            units            : (seed, run name) pairs that were launched for training.
-            training_results : Per-job training result records.
+            units            : (seed, run name) pairs of every planned seed, reused ones included.
+            training_results : Per-job training result records of this launch.
 
         Returns:
             The inference result records, empty when no seed is eligible.
         """
-        trained = {result["name"] for result in training_results if result["status"] == "DONE"}
-        todo    = [(seed, run_name) for seed, run_name in units if run_name in trained]
+        failed = {result["name"] for result in training_results if result["status"] != "DONE"}
+        todo   = [(seed, run_name) for seed, run_name in units if run_name not in failed and self._inference_pending(seed)]
 
         self.logger.section("Batched inference")
         self.logger.kv_table({
-            "Eligible" : len(todo),
-            "Skipped"  : len(units) - len(todo),
-            "GPUs"     : self.config.gpus,
-            "Log dir"  : str(self.log_dir),
+            "Split"             : self.inference_split,
+            "Planned"           : len(units),
+            "Eligible"          : len(todo),
+            "Inference present" : len(units) - len(todo) - len(failed),
+            "Training failed"   : len(failed),
+            "GPUs"              : self.config.gpus,
+            "Log dir"           : str(self.log_dir),
         }, title="Configuration")
 
         for _, run_name in units:
-            if run_name not in trained:
+            if run_name in failed:
                 self.logger.warning(f"{run_name}: training failed, inference skipped")
 
         if not todo:
             return []
+
+        self.logger.info(f"{len(todo)} seed(s) lack '{self.inference_split}' inference -> queued: {', '.join(run_name for _, run_name in todo)}")
 
         jobs    = [self._inference_job(run_name, seed) for seed, run_name in todo]
         names   = [run_name for _, run_name in todo]
@@ -328,7 +346,7 @@ class SeedFanoutScheduler:
         if not self.resuming:
             return units, None
 
-        plan = SweepResumePlan(self.run_dir, [f"seed{seed}" for seed, _ in units]).build()
+        plan = SweepResumePlan(self.run_dir, [f"seed{seed}" for seed, _ in units], split=self.inference_split).build()
         done = set(plan.completed)
 
         return [(seed, run_name) for seed, run_name in units if f"seed{seed}" not in done], plan
@@ -339,8 +357,28 @@ class SeedFanoutScheduler:
 
         return SweepRecording.write(self.run_dir, self.config)
 
+    def _train_seeds(self, units: list[tuple[int, str]]) -> list[dict]:
+        """Trains the outstanding seeds over the GPU pool and writes their results.
+
+        Args:
+            units : (seed, run name) pairs still to train.
+
+        Returns:
+            Per-seed training job results, empty when a resume left nothing to train.
+        """
+        if not units:
+            self.logger.ok("every requested seed is already complete; no training job launched")
+            return []
+
+        jobs    = [self._job(run_name, seed) for seed, run_name in units]
+        names   = [run_name for _, run_name in units]
+        results = self.stage._order_results(self.stage._run_queue(jobs), names)
+
+        self.stage._write_results(results, self.results_path)
+        return results
+
     def run(self) -> None:
-        """Launches every outstanding seed, then optionally the inference pass.
+        """Launches every outstanding seed, then the inference pass over every seed still lacking it.
 
         Writes the training and inference result JSONs, logs the per-seed
         summary tables and reports failures.
@@ -349,42 +387,36 @@ class SeedFanoutScheduler:
             SystemExit : If any training or inference job did not finish DONE.
         """
         seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
-        units, plan = self._resume_units([(seed, SeedSet.run_name(self.base_name, seed)) for seed in seeds])
+        planned     = [(seed, SeedSet.run_name(self.base_name, seed)) for seed in seeds]
+        units, plan = self._resume_units(planned)
         recording   = self._record()
 
         self.logger.section("Seed fan-out")
         self.logger.kv_table({
-            "Base run"      : self.base_name,
-            "Run dir"       : str(self.run_dir),
-            "Seeds"         : seeds,
-            "GPUs"          : self.config.gpus,
-            "GPU pool file" : str(self.stage.pool_file),
-            "Infer at end"  : self.infer_at_end,
-            "Resume from"   : self.config.resume_from or "—",
-            "Recording"     : str(recording),
+            "Base run"        : self.base_name,
+            "Run dir"         : str(self.run_dir),
+            "Seeds"           : seeds,
+            "GPUs"            : self.config.gpus,
+            "GPU pool file"   : str(self.stage.pool_file),
+            "Infer at end"    : self.infer_at_end,
+            "Inference split" : self.inference_split or "none (the sweep infers nothing)",
+            "Resume from"     : self.config.resume_from or "—",
+            "Recording"       : str(recording),
             "Forwarded overrides (scheduler options excluded)" : self.forward_overrides or "—",
-            "Log dir"       : str(self.log_dir),
+            "Log dir"         : str(self.log_dir),
         }, title="Configuration")
 
         if plan:
             plan.log(self.logger)
 
-        if not units:
-            self.logger.ok("every requested seed is already complete; nothing to launch")
-            self.logger.close()
-            return
-
-        jobs    = [self._job(run_name, seed) for seed, run_name in units]
-        names   = [run_name for _, run_name in units]
-        results = self.stage._order_results(self.stage._run_queue(jobs), names)
-
-        self.stage._write_results(results, self.results_path)
-
-        infer_results = self._run_inference_pass(units, results) if self.infer_at_end else []
+        results       = self._train_seeds(units)
+        infer_results = self._run_inference_pass(planned, results) if self.inference_split is not None else []
 
         self.logger.section("Summary")
-        rows = [{"Seed": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in results]
-        self.logger.metrics_table(rows, columns=["Seed", "Status", "Duration"])
+
+        if results:
+            rows = [{"Seed": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in results]
+            self.logger.metrics_table(rows, columns=["Seed", "Status", "Duration"])
 
         if infer_results:
             self.logger.subsection("Batched inference")

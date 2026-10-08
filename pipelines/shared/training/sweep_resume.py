@@ -1,15 +1,20 @@
 """Reconciliation of a resumed sweep against the run directories on disk.
 
 Resolves the pasted resume path to the sweep root and classifies every planned
-unit as complete, unfinished or missing, so the launcher can reuse finished
-runs, resume unfinished ones and train the rest from scratch.
+unit as complete, unfinished with or without a trainer state, or missing, so
+the launcher can reuse finished runs, resume the ones that saved state, restart
+the others and train the rest from scratch. The same plan reports which
+completed units still lack their inference output, and warns a fresh launch
+that lands in a root already holding runs of its units.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from tools.runtime.completion import CompletionMarker
+from pipelines.shared.inference.metadata import CompletedInference
+from tools.runtime.completion            import CompletionMarker
+from tools.training.checkpoint           import TrainerState
 
 
 class SweepResumeRoot:
@@ -97,32 +102,53 @@ class SweepResumePlan:
         EXCLUDED_DIRS : Directory names under the root that are never runs.
         root          : Sweep root directory.
         unit_names    : Names of the units planned by the current launch.
+        split         : Dataset split whose inference output is reported per completed unit, or None when the sweep infers nothing.
         completed     : Units with a completion marker, reused as they are.
-        unfinished    : Units with a run directory but no completion marker.
+        resumable     : Unfinished units whose run directory holds a trainer state, continued from it.
+        restarting    : Unfinished units without a trainer state, deleted and trained from scratch.
         missing       : Units with no run directory at all.
+        inferred      : Completed units carrying a completed inference stamp for the split.
         unplanned     : Directories under the root that no planned unit claims.
     """
 
     EXCLUDED_DIRS = ("batch_train_logs",)
 
-    def __init__(self, root: Path, unit_names: list[str]) -> None:
-        """Stores the sweep root and planned units with empty classifications."""
+    def __init__(self, root: Path, unit_names: list[str], split: str | None = None) -> None:
+        """Stores the sweep root, the planned units and the scored split with empty classifications."""
         self.root       = Path(root)
         self.unit_names = list(unit_names)
+        self.split      = split
         self.completed  = []
-        self.unfinished = []
+        self.resumable  = []
+        self.restarting = []
         self.missing    = []
+        self.inferred   = []
         self.unplanned  = []
 
+    @property
+    def unfinished(self) -> list[str]:
+        """Units with a run directory but no completion marker, in plan order."""
+        pending = set(self.resumable) | set(self.restarting)
+
+        return [name for name in self.unit_names if name in pending]
+
+    def _has_inference(self, hits: list[Path]) -> bool:
+        """Returns whether any run directory of a unit carries a completed inference stamp for the split."""
+        return any(CompletedInference.stamps(hit / "inference", self.split) for hit in hits)
+
     def _classify_planned(self) -> None:
-        """Sorts each planned unit into completed, unfinished or missing."""
+        """Sorts each planned unit into completed, resumable, restarting or missing, noting which completed units carry inference."""
         for name in self.unit_names:
             hits = SweepResumeRoot.matches(self.root, name)
 
             if any(CompletionMarker.is_complete(hit) for hit in hits):
                 self.completed.append(name)
+                if self.split is not None and self._has_inference(hits):
+                    self.inferred.append(name)
+            elif any(TrainerState.path(hit).is_file() for hit in hits):
+                self.resumable.append(name)
             elif hits:
-                self.unfinished.append(name)
+                self.restarting.append(name)
             else:
                 self.missing.append(name)
 
@@ -139,31 +165,74 @@ class SweepResumePlan:
 
     def summary(self) -> dict:
         """Returns the reconciliation counts as a table-ready mapping."""
+        complete = f"{len(self.completed)} (reused)"
+        if self.split is not None:
+            complete += f", {len(self.completed) - len(self.inferred)} of them without '{self.split}' inference"
+
         return {
             "Sweep root" : str(self.root),
-            "Complete"   : f"{len(self.completed)} (reused)",
-            "Unfinished" : f"{len(self.unfinished)} (resume from checkpoint)",
+            "Complete"   : complete,
+            "Unfinished" : f"{len(self.resumable)} with a trainer state (resume from {TrainerState.FILENAME}), {len(self.restarting)} without (restart from scratch)",
             "Missing"    : f"{len(self.missing)} (train from scratch)",
             "Unplanned"  : f"{len(self.unplanned)} (left untouched)",
         }
 
+    def columns(self) -> list[str]:
+        """Returns the columns of the per-unit table, the inference column only when a split is scored."""
+        return ["Run", "Status", "Inference"] if self.split is not None else ["Run", "Status"]
+
     def rows(self) -> list[dict]:
-        """Returns one row per planned unit with its resume status, in plan order."""
+        """Returns one row per planned unit with what its directory holds, in plan order."""
         status = {}
         status.update({name: "complete (reused)" for name in self.completed})
-        status.update({name: "unfinished (resumes from checkpoint)" for name in self.unfinished})
+        status.update({name: f"unfinished, trainer state saved (resumes from {TrainerState.FILENAME})" for name in self.resumable})
+        status.update({name: "unfinished, no trainer state (restarts from scratch)" for name in self.restarting})
         status.update({name: "missing (trains from scratch)" for name in self.missing})
 
-        return [{"Run": name, "Status": status[name]} for name in self.unit_names]
+        rows = []
+        for name in self.unit_names:
+            row = {"Run": name, "Status": status[name]}
+
+            if self.split is not None:
+                row["Inference"] = f"{self.split} {'done' if name in self.inferred else 'missing'}" if name in self.completed else "-"
+
+            rows.append(row)
+
+        return rows
+
+    def _log_units(self, logger) -> None:
+        """Logs the per-unit table and warns about every unplanned run under the root."""
+        logger.metrics_table(self.rows(), columns=self.columns())
+
+        for name in self.unplanned:
+            logger.warning(f"{name}: present under the sweep root but not in the current plan; left untouched")
 
     def log(self, logger) -> None:
         """Logs the reconciliation summary, the per-unit table and any unplanned runs."""
         logger.subsection("Sweep resume")
         logger.kv_table(self.summary(), title="Reconciliation")
-        logger.metrics_table(self.rows(), columns=["Run", "Status"])
+        self._log_units(logger)
 
-        for name in self.unplanned:
-            logger.warning(f"{name}: present under the sweep root but not in the current plan; left untouched")
+    def warn_existing_root(self, logger, unit_resume: bool, trainer_resume: bool) -> None:
+        """Warns a fresh launch that the root already holds runs of its planned units, stating what the resume flags do with them.
+
+        Nothing is logged when no planned unit has a directory yet, which is
+        the ordinary fresh launch.
+
+        Args:
+            logger         : Logger of the sweep.
+            unit_resume    : Whether completed units are reused; otherwise every unit is retrained into its existing directory.
+            trainer_resume : Whether unfinished units continue from their trainer state; otherwise they are deleted and restart.
+        """
+        found = len(self.completed) + len(self.unfinished)
+        if found == 0:
+            return
+
+        completed  = f"{len(self.completed)} completed unit(s) are reused without training" if unit_resume else f"{len(self.completed)} completed unit(s) are retrained into their existing directories (resume=False)"
+        unfinished = f"{len(self.unfinished)} unfinished unit(s) continue from {TrainerState.FILENAME} where it exists (training.resume=True)" if trainer_resume else f"{len(self.unfinished)} unfinished unit(s) are deleted and restart from scratch (training.resume=False)"
+
+        logger.warning(f"{self.root} already holds runs of {found} planned unit(s) from an earlier launch although resume_from was not given: {completed}; {unfinished}. Pass resume_from={self.root} to resume the sweep explicitly, or another logdir or run_name for a fresh one")
+        self._log_units(logger)
 
     def build(self) -> "SweepResumePlan":
         """Classifies the planned and unplanned runs and returns the plan itself."""

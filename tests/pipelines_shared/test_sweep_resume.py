@@ -64,6 +64,54 @@ def test_plan_classifies_complete_unfinished_and_missing(tmp_path):
     assert plan.missing    == ["c"]
 
 
+def test_plan_tells_unfinished_runs_with_a_trainer_state_from_those_without(tmp_path):
+    """An unfinished run holding last.pt resumes from it; one without restarts, and the table and summary say which is which."""
+    _run_dir(tmp_path, "a")
+    _run_dir(tmp_path, "b")
+    (tmp_path / "a" / "last.pt").write_bytes(b"\0")
+
+    plan = SweepResumePlan(tmp_path, ["a", "b"]).build()
+
+    assert plan.resumable  == ["a"]
+    assert plan.restarting == ["b"]
+    assert plan.unfinished == ["a", "b"]
+    assert plan.summary()["Unfinished"] == "1 with a trainer state (resume from last.pt), 1 without (restart from scratch)"
+
+    status = {row["Run"]: row["Status"] for row in plan.rows()}
+
+    assert status["a"] == "unfinished, trainer state saved (resumes from last.pt)"
+    assert status["b"] == "unfinished, no trainer state (restarts from scratch)"
+
+
+def test_plan_reports_which_completed_runs_lack_inference(tmp_path):
+    """With a scored split the plan lists per completed run whether a completed inference stamp for that split exists."""
+    _run_dir(tmp_path, "a", complete=True)
+    _run_dir(tmp_path, "b", complete=True)
+    _run_dir(tmp_path, "c")
+
+    stamp = tmp_path / "a" / "inference" / "20260101_000000"
+    stamp.mkdir(parents=True)
+    CompletionMarker.stamp(stamp, {"split": "test"})
+
+    plan = SweepResumePlan(tmp_path, ["a", "b", "c"], split="test").build()
+    rows = {row["Run"]: row["Inference"] for row in plan.rows()}
+
+    assert plan.inferred == ["a"]
+    assert plan.columns() == ["Run", "Status", "Inference"]
+    assert rows == {"a": "test done", "b": "test missing", "c": "-"}
+    assert plan.summary()["Complete"] == "2 (reused), 1 of them without 'test' inference"
+
+
+def test_plan_without_a_split_has_no_inference_column(tmp_path):
+    """A sweep that infers nothing reports no inference column at all."""
+    _run_dir(tmp_path, "a", complete=True)
+
+    plan = SweepResumePlan(tmp_path, ["a"]).build()
+
+    assert plan.columns() == ["Run", "Status"]
+    assert "Inference" not in plan.rows()[0]
+
+
 def test_plan_tracks_missing_seeds_inside_a_base_run(tmp_path):
     """A missing seed inside an existing base run is listed as missing."""
     _run_dir(tmp_path, "base/seed0", complete=True)

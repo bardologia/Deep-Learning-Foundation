@@ -51,6 +51,11 @@ class JepaTrialScheduler(TrialSweepScheduler):
         """Whether inference runs as a separate stage after all training units."""
         return self.config.infer_at_end
 
+    @property
+    def unit_inference(self) -> bool:
+        """Whether every training unit runs its own inference after training."""
+        return self.config.infer_after
+
     def _inference_rows(self) -> dict:
         """Returns the per-unit and batched inference flags for the configuration table."""
         return {

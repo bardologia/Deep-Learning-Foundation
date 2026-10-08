@@ -68,7 +68,7 @@ class TrialSweepScheduler:
         if config.resume_from:
             names            = [run_name for run_name, _ in self.units()]
             self.runs_root   = SweepResumeRoot.resolve(config.resume_from, names)
-            self.resume_plan = SweepResumePlan(self.runs_root, names).build()
+            self.resume_plan = SweepResumePlan(self.runs_root, names, split=self.inference_split).build()
             config.resume    = True
 
         self.log_dir            = self.runs_root / "batch_train_logs"
@@ -99,6 +99,16 @@ class TrialSweepScheduler:
     def staged_inference(self) -> bool:
         """Whether inference runs as a separate stage after all training units."""
         return False
+
+    @property
+    def unit_inference(self) -> bool:
+        """Whether every training unit runs its own inference after training; entries with an infer_after switch override it."""
+        return False
+
+    @property
+    def inference_split(self) -> str | None:
+        """Dataset split every unit must carry inference for, batched or inside its own job; None when the sweep infers nothing."""
+        return self.config.inference.split if self.staged_inference or self.unit_inference else None
 
     def setup_argv(self) -> list[str] | None:
         """Returns the preparation-stage argv, None because this sweep needs none."""
@@ -283,12 +293,14 @@ class TrialSweepScheduler:
         if not self.runs_root.is_dir():
             return True
 
-        split = self.config.inference.split
-
-        return not any(CompletedInference.stamps(directory / "inference", split) for directory in SweepResumeRoot.matches(self.runs_root, run_name))
+        return not any(CompletedInference.stamps(directory / "inference", self.inference_split) for directory in SweepResumeRoot.matches(self.runs_root, run_name))
 
     def _run_inference_pass(self, units: list[tuple[str, dict]], training_results: list[dict]) -> list[dict]:
         """Runs the batched inference stage over every planned unit still missing its inference output.
+
+        Covers the units this launch trained with per-unit inference held
+        back, and the units an earlier launch completed whose inference never
+        ran or never finished, whichever way the entry infers.
 
         Args:
             units            : The `(run_name, overrides)` pairs of every planned unit, reused ones included.
@@ -303,6 +315,7 @@ class TrialSweepScheduler:
 
         self.logger.section("Batched inference")
         self.logger.kv_table({
+            "Split"             : self.inference_split,
             "Planned"           : len(units),
             "Eligible"          : len(todo),
             "Inference present" : len(units) - len(todo) - len(failed),
@@ -318,6 +331,8 @@ class TrialSweepScheduler:
         if not todo:
             return []
 
+        self.logger.info(f"{len(todo)} unit(s) lack '{self.inference_split}' inference -> queued: {', '.join(run_name for run_name, _ in todo)}")
+
         jobs    = [self._inference_job(run_name, overrides) for run_name, overrides in todo]
         names   = [run_name for run_name, _ in todo]
         results = self.stage._order_results(self.stage._run_queue(jobs), names)
@@ -329,6 +344,21 @@ class TrialSweepScheduler:
         """Returns the inference-related configuration rows, empty for entries without an inference pass."""
         return {}
 
+    def _resume_rows(self) -> dict:
+        """Returns the configuration rows stating what the resume flags do with existing unit directories.
+
+        A resumed sweep hands every unit its directory and lets the unit decide
+        from its trainer state, so the sweep-level trainer flag does not apply
+        there and the row points at the reconciliation table instead.
+        """
+        unit    = "completed run dirs are reused" if self.config.resume else "completed run dirs are retrained in place"
+        trainer = "per unit: continues from last.pt where it exists, restarts from scratch otherwise (see Sweep resume)" if self.resume_plan else f"{self.config.training.resume} ({'unfinished run dirs continue from last.pt' if self.config.training.resume else 'unfinished run dirs are deleted and restart'})"
+
+        return {
+            "Unit resume"    : f"{self.config.resume} ({unit})",
+            "Trainer resume" : trainer,
+        }
+
     def _write_mode_report(self) -> None:
         """Writes the mode-specific sweep report, a no-op unless an entry defines one."""
 
@@ -339,7 +369,7 @@ class TrialSweepScheduler:
         return SweepRecording.write(self.runs_root, self.config)
 
     def run(self) -> None:
-        """Runs the whole sweep: plan units, train the pending ones, infer over those still missing it, then write the mode report.
+        """Runs the whole sweep: plan units, train the pending ones, infer over every unit still missing it, then write the mode report.
 
         Raises:
             SystemExit : If any training or inference job did not finish DONE.
@@ -363,8 +393,8 @@ class TrialSweepScheduler:
             "GPUs"                 : self.config.gpus,
             "GPU pool file"        : str(self.stage.pool_file),
             **self._inference_rows(),
-            "Unit resume"          : f"{self.config.resume} (reuse completed run dirs, delete unfinished ones)",
-            "Trainer resume"       : self.config.training.resume,
+            "Inference split"      : self.inference_split or "none (the sweep infers nothing)",
+            **self._resume_rows(),
             "Resume from"          : self.config.resume_from or "—",
             "Recording"            : str(recording),
             "Forwarded overrides (scheduler options excluded; per-trial settings win)" : self.forward_overrides or "—",
@@ -375,7 +405,7 @@ class TrialSweepScheduler:
             self.resume_plan.log(self.logger)
 
         results       = self._train_units(units)
-        infer_results = self._run_inference_pass(planned, results) if self.staged_inference else []
+        infer_results = self._run_inference_pass(planned, results) if self.inference_split is not None else []
 
         self._write_mode_report()
 
