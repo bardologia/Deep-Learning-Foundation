@@ -751,8 +751,9 @@ class ExperimentReportBundle(ReportBundle):
             split     : Split the trial comparison reads.
         """
         outside = []
-        for seed, stamp_name in self._aggregate_record(report)["seed_inference"].items():
-            stamp = trial_dir / seed / self.config.inference_dirname / stamp_name
+        for seed, record in self._aggregate_record(report)["seed_inference"].items():
+            stamp_name = record["stamp"]
+            stamp      = trial_dir / seed / self.config.inference_dirname / stamp_name
 
             if not CompletionMarker.is_complete(stamp):
                 outside.append(f"{seed} ({stamp_name}, unfinished)")

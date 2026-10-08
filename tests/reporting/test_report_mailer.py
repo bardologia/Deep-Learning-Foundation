@@ -83,7 +83,7 @@ def _write_aggregate(trial_dir: Path, tag: str, inference: dict) -> Path:
     (output_dir / "metrics.json").write_text(json.dumps({
         "n_seeds"        : len(inference),
         "seed_runs"      : {seed: str(trial_dir / seed) for seed in inference},
-        "seed_inference" : dict(inference),
+        "seed_inference" : {seed: {"stamp": stamp, "split": "test", "completed_at": "2026-01-01T00:00:00"} for seed, stamp in inference.items()},
         "mean"           : {"curve_rmse_gt": 0.5},
         "std"            : {"curve_rmse_gt": 0.1},
     }), encoding="utf-8")
@@ -432,7 +432,7 @@ def test_bundle_warns_when_a_seed_aggregate_averages_another_split(entry_config,
     experiment_dir = workspace / "exp_alpha"
     _write_report(experiment_dir / "trial_a" / "seed1", "20260108_000000", split="val")
     record = experiment_dir / "trial_a" / "inference" / "seed_comparison" / "metrics.json"
-    record.write_text(json.dumps({**json.loads(record.read_text(encoding="utf-8")), "seed_inference": {"seed0": "20260101_000000", "seed1": "20260108_000000"}}), encoding="utf-8")
+    record.write_text(json.dumps({**json.loads(record.read_text(encoding="utf-8")), "seed_inference": {"seed0": {"stamp": "20260101_000000", "split": "test", "completed_at": "2026-01-01T00:00:00"}, "seed1": {"stamp": "20260108_000000", "split": "val", "completed_at": "2026-01-08T00:00:00"}}}), encoding="utf-8")
 
     warnings = _warnings(_stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir)))
 
