@@ -32,7 +32,7 @@ class ProfileAeReport(InferenceReportBase):
     ]
 
     def _summary(self) -> dict:
-        """Returns the run header fields: model, geometry, split and checkpoint."""
+        """Returns the run header fields: model, geometry, split, scored checkpoint and data source."""
         return {
             "model_name"        : self.run.ae_name,
             "embedding_dim"     : self.run.embedding_dim,
@@ -41,7 +41,9 @@ class ProfileAeReport(InferenceReportBase):
             "x_axis_max"        : float(self.run.z_axis.max()),
             "split"             : self.run.split_name,
             "split_regions"     : ", ".join(str(region.as_tuple()) for region in self.run.split_regions),
-            "best_epoch"        : self.run.checkpoint_meta["best_epoch"],
+            "checkpoint"        : self.config.checkpoint_name,
+            "checkpoint_epoch"  : int(self.run.checkpoint_meta["epoch"]) + 1,
+            "best_epoch"        : int(self.run.checkpoint_meta["best_epoch"]) + 1,
             "best_val_loss"     : self.run.checkpoint_meta["best_val_loss"],
             "preprocessing_dir" : str(self.run.preprocessing_run_directory),
         }
