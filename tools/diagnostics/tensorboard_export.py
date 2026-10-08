@@ -381,8 +381,6 @@ class TensorboardExport:
             Mapping with the run and plots directories, the number of scalar
             series read, the number of plots written, and their paths.
         """
-        self.logger.section(f"Tensorboard plot export: {Path(self.config.run_directory).name}")
-
         series = self._read()
         groups = self._group(series)
         paths  = self._render(groups)
@@ -502,8 +500,23 @@ class TensorboardExportBatch:
         selector = TensorboardRunSelector(self.entry_config.runs_dir, self.entry_config.tensorboard_dirname, self.logger)
         return selector.resolve(self.entry_config.run_filter)
 
-    def _export_run(self, run_dir: Path) -> dict:
-        """Exports one run's curve figures and returns its export result."""
+    def _run_label(self, run_dir: Path) -> str:
+        """Returns the run's path below the runs root, which tells nested seed runs apart."""
+        return str(Path(run_dir).relative_to(Path(self.entry_config.runs_dir)))
+
+    def _export_run(self, run_dir: Path, position: int, total: int) -> dict:
+        """Exports one run's curve figures under a numbered section and returns its export result.
+
+        Args:
+            run_dir  : Run directory holding the tensorboard event files.
+            position : One-based position of the run in the batch.
+            total    : Number of runs in the batch.
+
+        Returns:
+            The TensorboardExport result mapping of the run.
+        """
+        self.logger.section(f"Tensorboard plot export [{position}/{total}] {self._run_label(run_dir)}")
+
         config = self.entry_config.to_config(run_dir)
         result = TensorboardExport(config, self.logger).run()
 
@@ -514,13 +527,44 @@ class TensorboardExportBatch:
         """Exports one overlay figure set per multi-seed trial found among the runs."""
         return [SeedOverlayExport(trial_dir, seed_dirs, self.entry_config, self.logger).run() for trial_dir, seed_dirs in SeedRunGrouper.trials(run_dirs).items()]
 
+    def _summarize(self, run_dirs: list[Path], results: list[dict], overlays: list[dict]) -> None:
+        """Closes the batch with one row per run, one per multi-seed trial and the totals, so completeness need not be counted by hand.
+
+        Args:
+            run_dirs : Run directories in batch order.
+            results  : TensorboardExport result mappings in the same order.
+            overlays : SeedOverlayExport result mappings, one per multi-seed trial.
+        """
+        rows = []
+        for run_dir, result in zip(run_dirs, results):
+            rows.append({
+                "Run"    : self._run_label(run_dir),
+                "Series" : result["n_series"],
+                "Plots"  : result["n_plots"],
+                "Output" : result["plots_directory"],
+            })
+
+        self.logger.metrics_table(rows, columns=["Run", "Series", "Plots", "Output"], title="Tensorboard export summary")
+
+        if overlays:
+            overlay_rows = [{"Trial": self._run_label(Path(overlay["trial_directory"])), "Seeds": overlay["n_seeds"], "Plots": overlay["n_plots"], "Output": overlay["plots_directory"]} for overlay in overlays]
+            self.logger.metrics_table(overlay_rows, columns=["Trial", "Seeds", "Plots", "Output"], title="Seed overlay summary")
+
+        n_plots         = sum(result["n_plots"] for result in results)
+        n_overlay_plots = sum(overlay["n_plots"] for overlay in overlays)
+
+        self.logger.ok(f"Exported {len(results)} run(s) ({n_plots} plots); {len(overlays)} multi-seed trial(s) ({n_overlay_plots} overlay plots)")
+
     def run(self) -> list[dict]:
-        """Exports every selected run and the seed overlays of its multi-seed trials.
+        """Exports every selected run and the seed overlays of its multi-seed trials, then closes with the batch summary.
 
         Returns:
             Per-run export results followed by the per-trial overlay results.
         """
         run_dirs = self._select_runs()
-        results  = [self._export_run(run_dir) for run_dir in run_dirs]
+        results  = [self._export_run(run_dir, position, len(run_dirs)) for position, run_dir in enumerate(run_dirs, start=1)]
+        overlays = self._export_seed_overlays(run_dirs)
 
-        return results + self._export_seed_overlays(run_dirs)
+        self._summarize(run_dirs, results, overlays)
+
+        return results + overlays
