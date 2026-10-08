@@ -214,7 +214,7 @@ def test_wrap_model_returns_model_wrapper_with_curve_output():
     assert out.dtype == np.float32
 
 
-def test_load_checkpoint_round_trip_numpy_x_axis(tmp_path):
+def test_load_checkpoint_round_trip_numpy_z_axis(tmp_path):
     """A checkpoint holding a numpy z axis restores the axis as float32 along with the epoch metadata."""
     module = build_inference_module()
     z_axis = np.linspace(-4.0, 4.0, PROFILE_LENGTH).astype(np.float32)
@@ -239,7 +239,7 @@ def test_load_checkpoint_round_trip_numpy_x_axis(tmp_path):
     assert meta["best_val_loss"] == pytest.approx(0.123)
 
 
-def test_load_checkpoint_accepts_tensor_x_axis(tmp_path):
+def test_load_checkpoint_accepts_tensor_z_axis(tmp_path):
     """A checkpoint holding a torch z axis restores it as an equal float32 array."""
     module = build_inference_module()
     z_axis = torch.linspace(-4.0, 4.0, PROFILE_LENGTH)
@@ -428,14 +428,14 @@ def test_jepa_curve_predictor_zero_error_on_identical_output(tmp_path):
 def test_jepa_curve_predictor_stitches_mu_sorted_gt_parameters(tmp_path):
     """The stitched ground-truth parameters are mu-sorted and no predicted parameters are produced."""
     n_gaussians = 2
-    n_elev      = 6
+    n_z         = 6
     spatial     = 4
 
     def model_fn(images):
         """Returns a random curve cube for the given image batch."""
-        return np.random.rand(images.shape[0], n_elev, spatial, spatial).astype(np.float32)
+        return np.random.rand(images.shape[0], n_z, spatial, spatial).astype(np.float32)
 
-    run  = build_fake_run(model_fn, n_gaussians, n_elev, spatial)
+    run  = build_fake_run(model_fn, n_gaussians, n_z, spatial)
     meta = types.SimpleNamespace(cube_dir=tmp_path)
 
     predictor = JepaCurvePredictor(run, SilentLogger(), window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=meta)
@@ -454,14 +454,14 @@ def test_jepa_curve_predictor_stitches_mu_sorted_gt_parameters(tmp_path):
 def test_jepa_curve_predictor_masks_inactive_gt_slots(tmp_path):
     """A zero-amplitude ground-truth slot has its mu and sigma channels written as NaN."""
     n_gaussians = 2
-    n_elev      = 6
+    n_z         = 6
     spatial     = 4
 
     def model_fn(images):
         """Returns an all-zero curve cube for the given image batch."""
-        return np.zeros((images.shape[0], n_elev, spatial, spatial), dtype=np.float32)
+        return np.zeros((images.shape[0], n_z, spatial, spatial), dtype=np.float32)
 
-    run = build_fake_run(model_fn, n_gaussians, n_elev, spatial)
+    run = build_fake_run(model_fn, n_gaussians, n_z, spatial)
     run.loader[0][1][:, 3] = 0.0
 
     predictor = JepaCurvePredictor(run, SilentLogger(), window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=types.SimpleNamespace(cube_dir=tmp_path))
@@ -475,16 +475,16 @@ def test_jepa_curve_predictor_masks_inactive_gt_slots(tmp_path):
 def test_jepa_curve_predictor_masks_at_the_run_threshold(tmp_path):
     """A slot whose amplitude sits below the run's activity threshold is masked, while a lower threshold keeps it."""
     n_gaussians = 2
-    n_elev      = 6
+    n_z         = 6
     spatial     = 4
 
     def model_fn(images):
         """Returns an all-zero curve cube for the given image batch."""
-        return np.zeros((images.shape[0], n_elev, spatial, spatial), dtype=np.float32)
+        return np.zeros((images.shape[0], n_z, spatial, spatial), dtype=np.float32)
 
     def faint_run():
         """Returns a run whose second GT slot is faint (5e-4) and sorted after the strong first slot."""
-        run = build_fake_run(model_fn, n_gaussians, n_elev, spatial)
+        run = build_fake_run(model_fn, n_gaussians, n_z, spatial)
         run.loader[0][1][:, 0] = 1.0
         run.loader[0][1][:, 1] = 0.1
         run.loader[0][1][:, 3] = 5e-4
@@ -506,14 +506,14 @@ def test_jepa_curve_predictor_masks_at_the_run_threshold(tmp_path):
 def test_jepa_curve_predictor_stitches_each_batch_before_the_next_forward(tmp_path):
     """Each batch is stitched into both cubes before the next forward pass runs."""
     n_gaussians = 2
-    n_elev      = 6
+    n_z         = 6
     spatial     = 4
     events      = []
 
     def model_fn(images):
         """Records a forward event and returns a random curve cube."""
         events.append("forward")
-        return np.random.rand(images.shape[0], n_elev, spatial, spatial).astype(np.float32)
+        return np.random.rand(images.shape[0], n_z, spatial, spatial).astype(np.float32)
 
     class RecordingPredictor(JepaCurvePredictor):
         """Curve predictor whose stitchers log every patch they receive into the shared event list."""
@@ -530,7 +530,7 @@ def test_jepa_curve_predictor_stitches_each_batch_before_the_next_forward(tmp_pa
             stitcher.add_patch = record
             return stitcher
 
-    run      = build_fake_run(model_fn, n_gaussians, n_elev, spatial)
+    run      = build_fake_run(model_fn, n_gaussians, n_z, spatial)
     run.grid = GridInfo(
         n_v          = 1,
         n_h          = 2,
@@ -550,14 +550,14 @@ def test_jepa_curve_predictor_stitches_each_batch_before_the_next_forward(tmp_pa
     predictor = RecordingPredictor(run, SilentLogger(), window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=types.SimpleNamespace(cube_dir=tmp_path))
     result    = predictor.run_inference()
 
-    assert result.pred_curves.shape == (n_elev, spatial, 2 * spatial)
+    assert result.pred_curves.shape == (n_z, spatial, 2 * spatial)
     assert events == ["forward", "add:pred_curves", "add:gt_curves", "forward", "add:pred_curves", "add:gt_curves"]
 
 
 def test_jepa_curve_predictor_feeds_the_embedding_evaluator_in_the_same_pass(tmp_path):
     """The embedding evaluator is fed from the single forward pass, without a second loader iteration."""
     n_gaussians = 2
-    n_elev      = 6
+    n_z         = 6
     spatial     = 4
 
     class SpyEvaluator:
@@ -603,7 +603,7 @@ def test_jepa_curve_predictor_feeds_the_embedding_evaluator_in_the_same_pass(tmp
         def forward_with_embedding(self, images):
             """Returns random curves, a random embedding map and the same curves as the decoded output."""
             self.forwards += 1
-            curves        = torch.rand(images.shape[0], n_elev, spatial, spatial)
+            curves        = torch.rand(images.shape[0], n_z, spatial, spatial)
             embedding     = torch.rand(images.shape[0], 4, spatial, spatial)
 
             return curves, embedding, curves
@@ -625,7 +625,7 @@ def test_jepa_curve_predictor_feeds_the_embedding_evaluator_in_the_same_pass(tmp
             raise AssertionError("the embedding path must reuse the single forward, not call the wrapper again")
 
     module     = SingleForwardModule()
-    run        = build_fake_run(FakeWrapper(module), n_gaussians, n_elev, spatial)
+    run        = build_fake_run(FakeWrapper(module), n_gaussians, n_z, spatial)
     run.loader = CountingLoader([(torch.rand(1, 2, spatial, spatial), torch.rand(1, n_gaussians * 3, spatial, spatial))])
     spy        = SpyEvaluator()
 
@@ -642,4 +642,4 @@ def test_jepa_curve_predictor_feeds_the_embedding_evaluator_in_the_same_pass(tmp
 
     assert run.loader.iterations == 1
     assert module.forwards       == 1
-    assert spy.batches           == [(1, 1, (1, n_elev, spatial, spatial))]
+    assert spy.batches           == [(1, 1, (1, n_z, spatial, spatial))]
