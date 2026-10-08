@@ -137,18 +137,19 @@ class ActivationIssueDetector:
 class ActivationXraySummarizer:
     """Condenses per-layer activation reports into a run-level summary."""
 
-    def build(self, reports: list[ActivationLayerReport], run_dir, n_batches: int) -> dict:
+    def build(self, reports: list[ActivationLayerReport], run_dir, n_batches: int, reused_modules: dict) -> dict:
         """Builds the run-level summary of an activation x-ray.
 
         Args:
-            reports   : Populated per-layer reports.
-            run_dir   : Run directory the capture belongs to.
-            n_batches : Number of batches pushed through the model.
+            reports        : Populated per-layer reports.
+            run_dir        : Run directory the capture belongs to.
+            n_batches      : Number of batches pushed through the model.
+            reused_modules : Leaf modules that fired more than once per forward, mapped to their call count, each recorded as one report per call site.
 
         Returns:
             Mapping with the run directory, layer and batch counts, flagged
             layer and issue totals, severity and issue-code histograms, the
-            five worst layer names, and a textual verdict.
+            five worst layer names, the reused modules, and a textual verdict.
         """
         issues  = [issue for report in reports for issue in report.issues]
         flagged = [report for report in reports if report.severity != "ok"]
@@ -172,6 +173,7 @@ class ActivationXraySummarizer:
             "severity_counts" : severity_counts,
             "issue_codes"     : dict(sorted(code_counts.items(), key=lambda item: item[1], reverse=True)),
             "worst_layers"    : [report.name for report in worst[:5]],
+            "reused_modules"  : dict(reused_modules),
             "verdict"         : self._verdict(severity_counts),
         }
 

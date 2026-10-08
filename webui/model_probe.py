@@ -1126,7 +1126,7 @@ class ModelProbe:
 
         Args:
             model : Module the statistics were recorded on.
-            stats : Activation statistics keyed by module name.
+            stats : Activation statistics keyed by module name and call site, as ActivationRecorder.stats returns them.
 
         Returns:
             Dict with ``entries`` ordered by first execution, each carrying the
@@ -1135,6 +1135,8 @@ class ModelProbe:
             absolute activation and flags, plus a ``summary`` with the layer
             count, total parameters and number of flagged layers.
         """
+        from tools.diagnostics.activation_recorder import ActivationRecorder
+
         modules = dict(model.named_modules())
         entries = []
         for name, stat in sorted(stats.items(), key=lambda kv: kv[1]["first_seen"]):
@@ -1142,7 +1144,7 @@ class ModelProbe:
                 "name"      : name,
                 "type"      : stat["module_type"],
                 "shape"     : stat["shape"],
-                "params"    : int(sum(p.numel() for p in modules[name].parameters())),
+                "params"    : int(sum(p.numel() for p in modules[ActivationRecorder.module_of(name)].parameters())),
                 "zero_frac" : stat["zero_frac"],
                 "dead"      : stat["dead_channels"],
                 "channels"  : stat["n_channels"],

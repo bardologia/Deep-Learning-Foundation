@@ -582,3 +582,37 @@ def test_model_label_names_the_dual_trunks():
 
     assert probe._model_label(run, False) == "dual_resunet"
     assert probe._model_label(run, True)  == "dual_resunet (unet_skip + resunet)"
+
+
+class _SharedPoolModel(torch.nn.Module):
+    """Two convolutions sharing one max-pool module, so the pool is recorded at two call sites."""
+    def __init__(self) -> None:
+        """Builds the two convolutions and the shared pool."""
+        super().__init__()
+        self.conv_a = torch.nn.Conv2d(2, 4, kernel_size=1)
+        self.conv_b = torch.nn.Conv2d(4, 4, kernel_size=1)
+        self.pool   = torch.nn.MaxPool2d(2)
+
+    def forward(self, x):
+        """Returns the twice-pooled output for an input of shape (batch, 2, H, W)."""
+        return self.pool(self.conv_b(self.pool(self.conv_a(x))))
+
+
+def test_vitals_payload_resolves_a_reused_module_call_site():
+    """A reused module's later call site gets a vitals row with the module's parameter count instead of a KeyError."""
+    from tools.diagnostics.activation_recorder import ActivationRecorder
+
+    model    = _SharedPoolModel()
+    recorder = ActivationRecorder(model)
+    recorder.attach_stats()
+
+    with torch.no_grad():
+        model(torch.randn(1, 2, 8, 8))
+
+    recorder.detach()
+    payload = ModelProbe._vitals_payload(model, recorder.stats())
+    rows    = {entry["name"]: entry for entry in payload["entries"]}
+
+    assert {"pool", "pool#1"} <= set(rows)
+    assert rows["pool#1"]["params"] == 0
+    assert rows["conv_b"]["params"] == 20

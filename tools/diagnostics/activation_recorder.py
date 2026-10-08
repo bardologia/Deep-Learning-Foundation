@@ -216,9 +216,12 @@ class ActivationRecorder:
     """Attaches forward hooks to a model to record activation statistics or tensors.
 
     Attributes:
-        model   : Model whose leaf modules are instrumented.
-        include : Optional whitelist of leaf module names to record; None records every leaf module.
+        model          : Model whose leaf modules are instrumented.
+        include        : Optional whitelist of leaf module names to record; None records every leaf module.
+        SITE_SEPARATOR : Separator between a module path and the call-site index in the statistics key of a reused module's later calls.
     """
+
+    SITE_SEPARATOR = "#"
 
     def __init__(self, model: torch.nn.Module, include: list[str] | None = None) -> None:
         """Initialises the recorder with no hooks attached.
@@ -230,10 +233,12 @@ class ActivationRecorder:
         self.model   = model
         self.include = list(include) if include is not None else None
 
-        self._handles    = []
-        self._stats      = {}
-        self._store      = {}
-        self._call_index = 0
+        self._handles       = []
+        self._stats         = {}
+        self._store         = {}
+        self._call_index    = 0
+        self._forward_calls = {}
+        self._call_sites    = {}
 
     def leaf_names(self) -> list[str]:
         """Returns the names of the leaf modules that will be recorded.
@@ -267,13 +272,39 @@ class ActivationRecorder:
             return output[0]
         return None
 
-    def _stats_hook(self, name: str):
-        """Returns a forward hook that folds the module output into its accumulator."""
+    def _reset_forward_hook(self):
+        """Returns a forward pre-hook on the root module that starts a new per-forward call count for every leaf."""
+        def hook(module, args):
+            self._forward_calls = {}
+        return hook
+
+    def _stats_hook(self, name: str, module_type: str):
+        """Returns a forward hook that folds the module output into the accumulator of its call site.
+
+        A leaf module that fires several times in one forward pass, such as a
+        pooling layer shared by every encoder level, gets one accumulator per
+        call site, keyed "<name>#<k>" for its k-th call, so outputs of
+        different shapes or depths are never merged into one row.
+
+        Args:
+            name        : Dotted module path of the hooked leaf.
+            module_type : Class name of the hooked module.
+        """
         def hook(module, args, output):
             tensor = self._first_tensor(output)
-            if tensor is not None:
-                self._call_index += 1
-                self._stats[name].update(tensor, order=self._call_index)
+            if tensor is None:
+                return
+
+            site                      = self._forward_calls.get(name, 0)
+            self._forward_calls[name] = site + 1
+            self._call_sites[name]    = max(self._call_sites.get(name, 0), site + 1)
+
+            key = name if site == 0 else f"{name}{self.SITE_SEPARATOR}{site}"
+            if key not in self._stats:
+                self._stats[key] = LayerActivationStats(key, module_type)
+
+            self._call_index += 1
+            self._stats[key].update(tensor, order=self._call_index)
         return hook
 
     def _store_hook(self, name: str):
@@ -285,12 +316,14 @@ class ActivationRecorder:
         return hook
 
     def attach_stats(self) -> None:
-        """Registers statistics hooks on every leaf module selected for recording."""
+        """Registers statistics hooks on every leaf module selected for recording, plus the per-forward reset on the root."""
         modules = dict(self.model.named_modules())
+        self._handles.append(self.model.register_forward_pre_hook(self._reset_forward_hook()))
 
         for name in self.leaf_names():
-            self._stats[name] = LayerActivationStats(name, type(modules[name]).__name__)
-            self._handles.append(modules[name].register_forward_hook(self._stats_hook(name)))
+            module_type       = type(modules[name]).__name__
+            self._stats[name] = LayerActivationStats(name, module_type)
+            self._handles.append(modules[name].register_forward_hook(self._stats_hook(name, module_type)))
 
     def attach_store(self, names: list[str]) -> None:
         """Registers hooks that retain the output tensors of the named modules.
@@ -316,8 +349,17 @@ class ActivationRecorder:
         self._handles = []
 
     def stats(self) -> dict[str, dict]:
-        """Returns the finalised statistics of every layer that fired, keyed by module name."""
+        """Returns the finalised statistics of every layer that fired, keyed by module name and call site."""
         return {name: layer_stats.finalize() for name, layer_stats in self._stats.items() if layer_stats.n_elements > 0}
+
+    @classmethod
+    def module_of(cls, key: str) -> str:
+        """Returns the dotted module path behind a statistics key, dropping the call-site suffix a reused module's later calls carry."""
+        return key.split(cls.SITE_SEPARATOR, 1)[0]
+
+    def reused_modules(self) -> dict[str, int]:
+        """Returns the leaf modules that fired more than once in a forward pass, with the most calls seen in one pass."""
+        return {name: calls for name, calls in self._call_sites.items() if calls > 1}
 
     def stored(self) -> dict[str, torch.Tensor]:
         """Returns the retained CPU output tensors, keyed by module name."""

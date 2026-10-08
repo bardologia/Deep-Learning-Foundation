@@ -27,14 +27,14 @@ class ActivationXrayRun(AnalysisRun):
     SUMMARY_FILENAME = "activation_xray.json"
     REPORT_FILENAME  = "activation_xray.md"
 
-    def _record(self, run) -> dict[str, dict]:
+    def _record(self, run) -> ActivationRecorder:
         """Collects per-layer activation statistics over the configured number of batches.
 
         Args:
             run : Loaded run bundling the model, the dataloader and the dataset.
 
         Returns:
-            Per-layer statistics keyed by module name, as returned by the recorder.
+            The detached recorder, holding the statistics of every call site and which modules fired more than once per forward.
         """
         recorder = ActivationRecorder(run.model.module)
         recorder.attach_stats()
@@ -46,7 +46,14 @@ class ActivationXrayRun(AnalysisRun):
                 run.model(batch[0])
 
         recorder.detach()
-        return recorder.stats()
+        return recorder
+
+    def _log_reuse(self, recorder: ActivationRecorder) -> None:
+        """Warns which leaf modules fired more than once per forward, since their rows are split per call site."""
+        reused = recorder.reused_modules()
+        if reused:
+            named = ", ".join(f"{name} x{calls}" for name, calls in reused.items())
+            self.logger.warning(f"{len(reused)} leaf modules fire more than once per forward and are recorded per call site (name#k): {named}")
 
     def _render_figures(self, ordered_stats: list[dict], flagged: list) -> dict[str, Path]:
         """Renders the depth profiles and the histograms of the most severely flagged layers.
@@ -107,6 +114,7 @@ class ActivationXrayRun(AnalysisRun):
             "Critical"       : summary["severity_counts"]["critical"],
             "Warnings"       : summary["severity_counts"]["warning"],
             "Worst layers"   : ", ".join(summary["worst_layers"]) if summary["worst_layers"] else "none",
+            "Reused modules" : ", ".join(f"{name} x{calls}" for name, calls in summary["reused_modules"].items()) if summary["reused_modules"] else "none",
         })
 
         issue_table = MarkdownTable(("Layer", "Severity", "Code", "Message"))
@@ -146,12 +154,14 @@ class ActivationXrayRun(AnalysisRun):
         PlotBase.use_style(self.config.figure_style)
 
         run       = self._load_run()
-        all_stats = self._record(run)
+        recorder  = self._record(run)
+        all_stats = recorder.stats()
+        self._log_reuse(recorder)
 
         detector = ActivationIssueDetector(self.config)
         reports  = detector.run(all_stats)
         reports.sort(key=lambda report: report.stats["first_seen"])
-        summary  = ActivationXraySummarizer().build(reports, self.run_dir, min(self.config.max_batches, len(run.loader)))
+        summary  = ActivationXraySummarizer().build(reports, self.run_dir, min(self.config.max_batches, len(run.loader)), recorder.reused_modules())
 
         ordered_stats = [report.stats for report in reports]
         flagged       = [report for report in reports if report.severity != "ok"]
