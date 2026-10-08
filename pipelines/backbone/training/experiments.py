@@ -13,9 +13,10 @@ from math       import comb
 
 import numpy as np
 
-from models                                 import get_backbone
-from pipelines.backbone.training.loss_terms import LOSS_TERMS
-from pipelines.shared.model.model_builder   import ModelBuilder
+from models                                   import get_backbone
+from pipelines.backbone.training.loss_terms   import LOSS_TERMS
+from pipelines.shared.dataset.dataset_spatial import Layout
+from pipelines.shared.model.model_builder     import ModelBuilder
 
 
 class TrialPlanner:
@@ -767,23 +768,25 @@ class InputTrialPlanner:
         self._validate()
 
     @classmethod
-    def from_labels(cls, input_trials: dict, labels) -> "InputTrialPlanner":
-        """Builds a planner whose channel candidates come from the dataset's secondary labels.
+    def from_dataset(cls, input_trials: dict, dataset_path) -> "InputTrialPlanner":
+        """Builds a planner whose channel candidates are every secondary channel the dataset records.
 
         Args:
             input_trials : Mapping of trial label to input specification.
-            labels       : Secondary channel labels of the dataset.
+            dataset_path : Root of the dataset whose data/dataset.json lists the channel labels.
 
         Returns:
-            A planner with every secondary channel of the dataset as candidate.
+            A planner with every secondary channel of the dataset as candidate, so the 'all' scope reaches past the configured selection.
 
         Raises:
-            ValueError : If no label is given.
+            FileNotFoundError : If the dataset has no data/dataset.json.
+            ValueError        : If the dataset records no channel labels or no secondary channel.
         """
+        labels = Layout.secondary_channel_labels(dataset_path)
         if not labels:
-            raise ValueError("Input trials need at least one secondary label to enumerate channel scopes")
+            raise ValueError(f"Input trials need at least one secondary channel to enumerate channel scopes, but the dataset at {dataset_path} records only its reference channel")
 
-        return cls(input_trials, list(labels))
+        return cls(input_trials, labels)
 
     def _validate(self) -> None:
         """Checks that every trial names a valid track scope and only known input keys.
@@ -1296,23 +1299,25 @@ class SecondaryTrialPlanner:
         self._validate()
 
     @classmethod
-    def from_labels(cls, trials, labels) -> "SecondaryTrialPlanner":
-        """Builds a planner whose candidates come from the dataset's secondary labels.
+    def from_dataset(cls, trials, dataset_path) -> "SecondaryTrialPlanner":
+        """Builds a planner whose candidates are every secondary channel the dataset records.
 
         Args:
-            trials : Configuration object naming the strategy and its parameters.
-            labels : Secondary channel labels of the dataset.
+            trials       : Configuration object naming the strategy and its parameters.
+            dataset_path : Root of the dataset whose data/dataset.json lists the channel labels.
 
         Returns:
-            A planner over every secondary channel of the dataset.
+            A planner over every secondary channel of the dataset, independent of the configured selection.
 
         Raises:
-            ValueError : If no label is given.
+            FileNotFoundError : If the dataset has no data/dataset.json.
+            ValueError        : If the dataset records no channel labels or no secondary channel.
         """
+        labels = Layout.secondary_channel_labels(dataset_path)
         if not labels:
-            raise ValueError("Secondary trials need at least one secondary label to sample from")
+            raise ValueError(f"Secondary trials need at least one secondary channel to sample from, but the dataset at {dataset_path} records only its reference channel")
 
-        return cls(trials, list(labels))
+        return cls(trials, labels)
 
     def _validate(self) -> None:
         """Checks the strategy name and the parameters it requires.

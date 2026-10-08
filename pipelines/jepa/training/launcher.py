@@ -88,7 +88,7 @@ class JepaTrialScheduler(TrialSweepScheduler):
         if mode == "context":
             return ContextTrialPlanner(self.config.context_trials, tuple(BACKBONE_CONFIG_REGISTRY))
         if mode == "input":
-            return InputTrialPlanner.from_labels(self.config.input_trials, self.config.paths.secondary_labels)
+            return InputTrialPlanner.from_dataset(self.config.input_trials, self.config.paths.dataset_path)
         if mode == "augmentation":
             return AugmentationTrialPlanner(self.config.augmentation_trials)
         if mode == "ema":

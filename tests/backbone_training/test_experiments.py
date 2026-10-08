@@ -8,6 +8,9 @@ definitions, and the round trip of the emitted override paths through `ConfigCli
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from configuration.training                  import BackboneEntryConfig, CurriculumInheritance, default_curriculum
@@ -32,10 +35,19 @@ from pipelines.backbone.training.experiments import (
     SlotPresenceTrialPlanner,
     WarmupTrialPlanner,
 )
+from pipelines.backbone.training.launcher    import TrainScheduler
 from tools.runtime.config_cli                import ConfigCli
 
 
 CANDIDATES = ["CH01", "CH02", "CH03", "CH04", "CH05", "CH06"]
+
+
+def _dataset(root: Path, channel_labels) -> Path:
+    """Writes a dataset root whose data/dataset.json records the given channel labels, reference first, and returns it."""
+    (root / "data").mkdir(parents=True)
+    (root / "data" / "dataset.json").write_text(json.dumps({"channel_labels": channel_labels}))
+
+    return root
 
 
 def test_curriculum_planner_crosses_warmup_and_complete():
@@ -1372,30 +1384,67 @@ def test_ablation_catalog_covers_normalization_and_clamp():
     assert clamp["degrade"]["normalization.clamp_output"] is False
 
 
-def test_input_from_labels_uses_full_stack():
-    """Verifies the input planner built from dataset labels pins every secondary label."""
-    planner = InputTrialPlanner.from_labels(TrialCatalog.input_trials(), ["S1", "S2", "S3", "S4"])
+def test_input_from_dataset_uses_full_stack(tmp_path):
+    """Verifies the input planner built from a dataset pins every secondary label the dataset records."""
+    planner = InputTrialPlanner.from_dataset(TrialCatalog.input_trials(), _dataset(tmp_path, ["CH00", "S1", "S2", "S3", "S4"]))
 
     plans = dict(planner.plan())
 
     assert len(plans) == 12
+    assert planner.candidates == ["S1", "S2", "S3", "S4"]
 
     overrides = plans["in-amp-allsec-noderived-noaux"]
     assert overrides["input.use_derived"] is False
-    assert len(overrides["paths.secondary_labels"]) == len(planner.candidates) >= 1
+    assert overrides["paths.secondary_labels"] == ("S1", "S2", "S3", "S4")
 
     assert "paths.secondary_labels" not in plans["in-amp-redsec-derived-aux"]
 
 
-def test_secondary_from_labels_loads_candidates():
-    """Verifies the secondary planner built from dataset labels emits label selections."""
+def test_secondary_from_dataset_loads_candidates(tmp_path):
+    """Verifies the secondary planner built from a dataset samples from every secondary label the dataset records."""
     trials  = SecondaryTrialsConfig(strategy="consecutive", n_secondaries=2, block_step=1)
-    planner = SecondaryTrialPlanner.from_labels(trials, ["S1", "S2", "S3", "S4"])
+    planner = SecondaryTrialPlanner.from_dataset(trials, _dataset(tmp_path, ["CH00", "S1", "S2", "S3", "S4"]))
 
     plans = planner.plan()
 
+    assert planner.candidates == ["S1", "S2", "S3", "S4"]
     assert len(plans) >= 1
     assert all("paths.secondary_labels" in overrides for _, overrides in plans)
+
+
+@pytest.mark.parametrize("planner_class, trials", (
+    (InputTrialPlanner,     TrialCatalog.input_trials()),
+    (SecondaryTrialPlanner, SecondaryTrialsConfig(strategy="consecutive", n_secondaries=1, block_step=1)),
+))
+def test_planners_from_dataset_refuse_a_dataset_without_secondaries(tmp_path, planner_class, trials):
+    """Verifies both planners refuse a missing layout, a layout without channel labels and a reference-only stack."""
+    with pytest.raises(FileNotFoundError, match="dataset.json does not exist"):
+        planner_class.from_dataset(trials, tmp_path / "missing")
+
+    with pytest.raises(ValueError, match="records no channel labels"):
+        planner_class.from_dataset(trials, _dataset(tmp_path / "unlabelled", None))
+
+    with pytest.raises(ValueError, match="only its reference channel"):
+        planner_class.from_dataset(trials, _dataset(tmp_path / "reference", ["CH00"]))
+
+
+@pytest.mark.parametrize("mode", ("input", "secondary"))
+def test_scheduler_planners_take_candidates_from_the_dataset_not_the_configured_selection(tmp_path, mode):
+    """Verifies the input and secondary sweeps enumerate every dataset secondary when the configured selection is narrower, so tracks=all differs from tracks=reduced."""
+    config                        = BackboneEntryConfig()
+    config.logdir                 = tmp_path / "runs"
+    config.trials_mode            = mode
+    config.paths.dataset_path     = _dataset(tmp_path / "dataset", ["CH00", *CANDIDATES])
+    config.paths.secondary_labels = ("CH02",)
+
+    planner = TrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_backbone.py")).planner()
+
+    assert planner.candidates == CANDIDATES
+
+    if mode == "input":
+        plans = dict(planner.plan())
+        assert plans["in-amp-allsec-noderived-noaux"]["paths.secondary_labels"] == tuple(CANDIDATES)
+        assert "paths.secondary_labels" not in plans["in-amp-redsec-noderived-noaux"]
 
 
 def test_ablation_catalog_paths_are_entry_config_leaves():

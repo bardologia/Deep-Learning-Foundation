@@ -9,6 +9,7 @@ a trial scheduler.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -416,13 +417,18 @@ def test_dual_scheduler_houses_ratio_runs_in_ratio_dir_and_plans_the_split_grid(
 
 
 def test_dual_scheduler_inherits_the_exhaustive_secondary_sweep(tmp_path):
-    """Secondary mode enumerates every two-channel selection from the dataset's secondary labels."""
+    """Secondary mode enumerates every two-channel selection from the secondary labels the dataset records, not the configured selection."""
+    data = tmp_path / "dataset" / "data"
+    data.mkdir(parents=True)
+    (data / "dataset.json").write_text(json.dumps({"channel_labels": ["CH00", "CH01", "CH02", "CH03"]}))
+
     config                                = DualEntryConfig()
     config.logdir                         = tmp_path / "runs"
     config.trials_mode                    = "secondary"
     config.secondary_trials.strategy      = "exhaustive"
     config.secondary_trials.n_secondaries = 2
-    config.paths.secondary_labels         = ("CH01", "CH02", "CH03")
+    config.paths.dataset_path             = tmp_path / "dataset"
+    config.paths.secondary_labels         = ("CH01",)
 
     scheduler = dual_launcher.DualTrainScheduler(config=config, cli_overrides={}, entry_script=Path("/entry/train_dual.py"))
     plans     = scheduler.planner().plan()

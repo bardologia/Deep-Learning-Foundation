@@ -18,11 +18,13 @@ class Layout:
         run_directory   : Root of the preprocessing run.
         data_directory  : Sub-directory holding the generated arrays.
         parameters_path : Path of the ground-truth Gaussian parameter array.
-        global_crop     : Row/range crop the run was generated over.
-        cube_tag    : Tag identifying the volumetric focusing settings.
+        global_crop     : Row/col crop the run was generated over.
+        cube_tag        : Tag identifying the volumetric focusing settings.
         artifacts       : Mapping of artifact key to filename inside data/.
-        pass_labels     : Track labels of the channel stack, or None when unavailable.
+        channel_labels  : Channel labels of the stack, reference first, or None when unavailable.
     """
+
+    LAYOUT_RELPATH = Path("data") / "dataset.json"
 
     def __init__(self, run_directory: Path, logger: Logger, parameters_path: Path) -> None:
         """Loads the dataset layout and logs its crop extent and artifact tags.
@@ -37,7 +39,7 @@ class Layout:
         self.data_directory  = self.run_directory / "data"
         self.parameters_path = Path(parameters_path)
 
-        layout_path = self.data_directory / "dataset.json"
+        layout_path = self.run_directory / self.LAYOUT_RELPATH
         payload     = FileIO.load_json(layout_path)
 
         self.global_crop    : CropRegion  = CropRegion(*payload["global_crop"])
@@ -107,3 +109,30 @@ class Layout:
             raise ValueError(f"secondary_labels contains duplicates: {requested}")
 
         return [secondaries.index(label) for label in requested]
+
+    @classmethod
+    def secondary_channel_labels(cls, run_directory) -> list:
+        """Returns every secondary channel label a dataset records in data/dataset.json, in stack order.
+
+        Reads only the layout file, so trial planners can enumerate the
+        dataset's channels without loading the dataset or logging a layout.
+
+        Args:
+            run_directory : Root of the dataset run.
+
+        Returns:
+            The channel labels after the reference channel; empty for a single-channel stack.
+
+        Raises:
+            FileNotFoundError : If the dataset has no data/dataset.json.
+            ValueError        : If dataset.json records no channel labels.
+        """
+        layout_path = Path(run_directory) / cls.LAYOUT_RELPATH
+        if not layout_path.is_file():
+            raise FileNotFoundError(f"{layout_path} does not exist; the dataset's channel labels are read from it, so point paths.dataset_path at a generated dataset")
+
+        channel_labels = FileIO.load_json(layout_path)["channel_labels"]
+        if not channel_labels:
+            raise ValueError(f"{layout_path} records no channel labels; generate the dataset again so its secondary channels can be enumerated")
+
+        return list(channel_labels[1:])

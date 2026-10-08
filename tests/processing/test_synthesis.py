@@ -71,6 +71,7 @@ def test_generated_layout_lists_every_artifact(tmp_path, logger_stub):
     assert layout["channel_labels"] == config.channel_labels
     assert set(layout["artifacts"]) == set(DatasetWriter.ARTIFACTS)
     assert all((config.data_directory / name).is_file() for name in layout["artifacts"].values())
+    assert Layout.secondary_channel_labels(config.output_directory) == config.channel_labels[1:]
 
 
 def test_generated_state_carries_crop_and_z_range(tmp_path, logger_stub):
