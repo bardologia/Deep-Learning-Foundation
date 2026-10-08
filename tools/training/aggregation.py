@@ -144,9 +144,11 @@ class ScalarsPage:
         return self
 
     def slots(self) -> "ScalarsPage":
-        """Adds the per slot vitals, one line per slot: active fraction, mean active amplitude and gradient norm."""
+        """Adds the per slot vitals, one line per slot: active fraction, mean active amplitude, mean centre and width over all and declared pixels, and gradient norm."""
         self.add("Slots", "Active fraction per slot", ["slot_vitals/active_frac/"])
         self.add("Slots", "Mean active amplitude per slot", ["slot_vitals/amp_mean/"])
+        self.add("Slots", "Mean width per slot, all and declared pixels (m)", ["slot_vitals/sigma_mean/", "slot_vitals/sigma_mean_declared/"])
+        self.add("Slots", "Mean centre per slot, all and declared pixels (m)", ["slot_vitals/mu_mean/", "slot_vitals/mu_mean_declared/"])
         self.add("Slots", "Gradient norm per slot", ["slot_vitals/grad_norm/"])
         return self
 

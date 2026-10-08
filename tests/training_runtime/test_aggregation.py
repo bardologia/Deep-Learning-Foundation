@@ -147,3 +147,20 @@ def test_the_scalars_page_patterns_match_the_tags_the_trainers_write_from_the_st
     assert re.match(groups, "optim/lr/encoder") and re.match(groups, "optim/lr/output_head")
     assert re.match(total, "loss/train") and not re.match(total, "loss/train_extra")
     assert re.match(slots, "slot_vitals/grad_norm/slot_0/train") and not re.match(slots, "slot_vitals/amp_mean/slot_0/val")
+
+
+def _drawn(patterns: list, tag: str) -> bool:
+    """Returns whether any pattern of a chart matches the tag from its start."""
+    return any(re.match(pattern, tag) for pattern in patterns)
+
+
+def test_the_scalars_page_draws_slot_widths_and_centres_over_all_and_declared_pixels_on_one_chart_each():
+    """The width chart takes both width families and no centre tag, and the centre chart the reverse."""
+    slots   = ScalarsPage().slots().layout()["Slots"]
+    widths  = slots["Mean width per slot, all and declared pixels (m)"][1]
+    centres = slots["Mean centre per slot, all and declared pixels (m)"][1]
+
+    assert _drawn(widths, "slot_vitals/sigma_mean/slot_1/val") and _drawn(widths, "slot_vitals/sigma_mean_declared/slot_1/val")
+    assert not _drawn(widths, "slot_vitals/mu_mean/slot_1/val") and not _drawn(widths, "slot_vitals/mu_mean_declared/slot_1/val")
+    assert _drawn(centres, "slot_vitals/mu_mean/slot_0/val") and _drawn(centres, "slot_vitals/mu_mean_declared/slot_0/val")
+    assert not _drawn(centres, "slot_vitals/sigma_mean/slot_0/val")
