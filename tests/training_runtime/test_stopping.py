@@ -1,7 +1,7 @@
 """Tests for early stopping on validation loss.
 
 Covers best-loss tracking, the patience counter, the minimum improvement
-delta, reset and state dict round trips.
+delta, non-finite rounds, reset and state dict round trips.
 """
 
 from __future__ import annotations
@@ -135,3 +135,31 @@ def test_early_stopping_state_roundtrip(logger, tracker):
     assert other.counter    == 1
     assert other.best_epoch == 0
     assert other.triggered is False
+
+
+def test_non_finite_first_round_is_never_the_best_loss(recording_logger, tracker):
+    """Verifies a NaN round warns, counts as no improvement and leaves the first finite round to set the best loss."""
+    es = EarlyStopping(_es_config(patience=3), recording_logger, tracker)
+
+    assert es(float("nan"), 0) is False
+    assert es.best_loss  is None
+    assert es.counter    == 1
+    assert any(level == "warning" and "epoch 1 is nan" in message for level, message in recording_logger.messages)
+
+    es(2.0, 1)
+
+    assert es.best_loss  == 2.0
+    assert es.best_epoch == 1
+    assert es.counter    == 0
+
+
+def test_non_finite_rounds_exhaust_patience(logger, tracker):
+    """Verifies consecutive non-finite rounds advance the counter until early stopping fires."""
+    es = EarlyStopping(_es_config(patience=2), logger, tracker)
+
+    es(1.0, 0)
+
+    assert es(float("inf"), 1) is False
+    assert es(float("nan"), 2) is True
+    assert es.best_loss  == 1.0
+    assert es.best_epoch == 0

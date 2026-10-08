@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import math
+
 
 class EarlyStopping:
     """Stops training after a number of validation rounds without a min_delta improvement.
 
     Patience counts validation rounds rather than epochs, so a run validating
-    every N epochs waits patience*N epochs before stopping.
+    every N epochs waits patience*N epochs before stopping. A non-finite round
+    is warned about and counts as a round without improvement, never as the
+    best loss, since every later comparison against a NaN baseline would fail.
 
     Attributes:
         config     : Training configuration exposing an early_stopping block.
@@ -58,7 +62,12 @@ class EarlyStopping:
         Returns:
             True when patience is exhausted and training should stop.
         """
-        if self.best_loss is None or val_loss < self.best_loss - self.min_delta:
+        finite = math.isfinite(val_loss)
+
+        if not finite:
+            self.logger.warning(f"Early stopping: validation loss at epoch {epoch + 1} is {val_loss}; the round counts as no improvement and is never adopted as the best loss")
+
+        if finite and (self.best_loss is None or val_loss < self.best_loss - self.min_delta):
             self.best_loss  = float(val_loss)
             self.best_epoch = int(epoch)
             self.counter    = 0
