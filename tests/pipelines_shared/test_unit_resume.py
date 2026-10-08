@@ -376,6 +376,19 @@ def test_runner_trains_when_unit_is_fresh(tmp_path):
     assert (tmp_path / "unit" / "docs" / "resolved_entry_config.json").is_file()
 
 
+def test_runner_reports_the_saved_entry_config_in_the_run_logs(tmp_path):
+    """The resolved entry config and provenance paths are written into a log file inside the run directory, not only to the console."""
+    _StubPipeline.launched = []
+
+    _StubRunner(_entry_config(tmp_path)).run()
+
+    written = (tmp_path / "unit" / "logs" / "train_runner.log").read_text(encoding="utf-8")
+
+    assert "Resolved entry config saved" in written
+    assert "Provenance saved"            in written
+    assert ">>> END train_runner"        in written
+
+
 def test_runner_skips_completed_unit(tmp_path):
     """A completed unit is skipped and the pipeline never runs."""
     _StubPipeline.launched = []

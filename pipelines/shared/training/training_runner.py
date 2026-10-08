@@ -170,9 +170,9 @@ class EntryConfigTrainRunner(SingleTrainRunner):
         return None
 
     def _persist_entry_config(self) -> None:
-        """Writes the entry config the preflight has finished tuning into the run's docs."""
-        logger = Logger(log_dir="", name="train_runner")
-        ResolvedEntryConfigWriter.save(self.config, self.run_directory, logger)
+        """Writes the entry config the preflight has finished tuning into the run's docs, reporting the paths in the run's logs directory."""
+        with Logger(log_dir=str(self.run_directory / "logs"), name="train_runner") as logger:
+            ResolvedEntryConfigWriter.save(self.config, self.run_directory, logger)
 
     def run(self):
         """Resolves the run directory, preflights, persists the entry config and trains.
