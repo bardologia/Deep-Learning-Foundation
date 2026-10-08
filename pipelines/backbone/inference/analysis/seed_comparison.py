@@ -73,16 +73,19 @@ class SeedInferenceResolver:
 
         Raises:
             FileNotFoundError : If the stamp carries no completion marker or no metrics file.
-            ValueError        : If the stamp was scored on another split than the configured one.
+            ValueError        : If the stamp was scored on another split than the configured one, or belongs to a region group that is missing regions.
         """
         candidate = inference_root / self.inference_subdir
 
         if not CompletionMarker.is_complete(candidate):
             raise FileNotFoundError(f"{candidate} carries no {CompletionMarker.FILENAME}; the requested inference_subdir is unfinished, or predates completion markers and needs scripts/backfill_completion_markers.py")
 
-        if candidate not in CompletedInference.stamps(inference_root, self.split):
-            recorded = CompletionMarker.payload(candidate)["split"]
+        recorded = CompletionMarker.payload(candidate)["split"]
+        if recorded != self.split:
             raise ValueError(f"{candidate} was scored on split '{recorded}', not on the configured split '{self.split}'; point inference_subdir at a '{self.split}' stamp or change split")
+
+        if candidate not in CompletedInference.stamps(inference_root, self.split):
+            raise ValueError(f"{candidate} is one region of a region group that is missing regions, so it scores only part of the '{self.split}' split; finish the group's other regions or point inference_subdir at a whole-split stamp")
 
         self._require_metrics(candidate)
         return candidate
