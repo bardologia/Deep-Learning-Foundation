@@ -1,3 +1,10 @@
+"""Generates a synthetic Gaussian-mixture dataset with the layout the training and inference pipelines read.
+
+The pipeline samples smooth parameter fields, evaluates the profiles, cube and
+channels they imply, scores the mixture against the observed cube as a
+parameter run would, and writes the dataset.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,7 +23,23 @@ from tools.monitoring.logger                    import Logger
 
 
 class SyntheticDatasetPipeline:
+    """Runs the four generation stages and writes the dataset.
+
+    Attributes:
+        config : Synthesis configuration describing the scene and the output directory.
+        logger : Logger for the stage report.
+        z_axis : Z axis the profiles are sampled on, in metres.
+        noise  : White-noise sampler shared by the cube and the channels.
+        writer : Writer of the dataset files.
+    """
+
     def __init__(self, config: SynthesisConfig, logger: Logger) -> None:
+        """Validates the configuration and builds the axis, the noise sampler and the writer.
+
+        Args:
+            config : Synthesis configuration describing the scene and the output directory.
+            logger : Logger for the stage report.
+        """
         config.validate()
 
         self.config = config
@@ -39,6 +62,11 @@ class SyntheticDatasetPipeline:
         }, title="Synthesis")
 
     def _stage_parameters(self) -> tuple:
+        """Samples the smooth amplitude, mean and sigma fields and logs the component occupancy.
+
+        Returns:
+            Tuple of amplitudes, means in metres and sigmas in metres, each of shape (k_max, rows, cols).
+        """
         self.logger.section("[Stage 1] Sampling smooth mixture parameter fields")
 
         amps, mus, sigmas = ParameterFieldBuilder(self.config).build()
@@ -51,11 +79,21 @@ class SyntheticDatasetPipeline:
         return amps, mus, sigmas
 
     def _stage_scene(self, amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
+        """Evaluates the profiles and derives the cube, the channels and the auxiliary field from them.
+
+        Args:
+            amps   : Amplitudes of shape (k_max, rows, cols).
+            mus    : Means of shape (k_max, rows, cols), in metres.
+            sigmas : Sigmas of shape (k_max, rows, cols), in metres.
+
+        Returns:
+            Tuple of the cube, the primary, secondary and derived channels, and the auxiliary field.
+        """
         self.logger.section("[Stage 2] Evaluating profiles and observations")
 
-        profiles = ProfileBuilder(self.z_axis).evaluate(amps, mus, sigmas)
-        cube     = CubeBuilder(self.config, self.noise).build(profiles)
-        primary, secondaries, derived  = ChannelBuilder(self.config, self.z_axis, self.noise).build(profiles)
+        profiles                      = ProfileBuilder(self.z_axis).evaluate(amps, mus, sigmas)
+        cube                          = CubeBuilder(self.config, self.noise).build(profiles)
+        primary, secondaries, derived = ChannelBuilder(self.config, self.z_axis, self.noise).build(profiles)
         z                             = AuxFieldBuilder(self.config).build()
 
         del profiles
@@ -63,6 +101,17 @@ class SyntheticDatasetPipeline:
         return cube, primary, secondaries, derived, z
 
     def _stage_parameter_run(self, cube: np.ndarray, amps: np.ndarray, mus: np.ndarray, sigmas: np.ndarray) -> tuple:
+        """Scores the mixture against the observed cube as a fitted parameter run would.
+
+        Args:
+            cube   : Complex cube of shape (n_z, rows, cols).
+            amps   : Amplitudes of shape (k_max, rows, cols).
+            mus    : Means of shape (k_max, rows, cols), in metres.
+            sigmas : Sigmas of shape (k_max, rows, cols), in metres.
+
+        Returns:
+            Tuple of the parameter stack of shape (3 * k_max, rows, cols) and its fit diagnostics.
+        """
         self.logger.section("[Stage 3] Scoring the mixture against the observed cube")
 
         parameters, diagnostics = FitDiagnosticsBuilder(self.config, self.z_axis).build(cube, amps, mus, sigmas)
@@ -75,6 +124,16 @@ class SyntheticDatasetPipeline:
         return parameters, diagnostics
 
     def _stage_write(self, arrays: dict, parameters: np.ndarray, diagnostics: dict) -> dict:
+        """Writes the arrays, the layout, the configuration state and the parameter run.
+
+        Args:
+            arrays      : Mapping holding one array per ``DatasetWriter.ARTIFACTS`` key.
+            parameters  : Parameter stack of shape (3 * k_max, rows, cols).
+            diagnostics : Fit diagnostics arrays of the parameter run.
+
+        Returns:
+            Mapping from output name to the written path.
+        """
         self.logger.section("[Stage 4] Writing the dataset")
 
         FileIO.ensure_dirs(self.config.data_directory, self.config.metadata_directory)
@@ -87,6 +146,11 @@ class SyntheticDatasetPipeline:
         return {"dataset_json": layout_path, "config_state": state_path, **outputs}
 
     def run(self) -> dict:
+        """Runs every stage and writes the dataset.
+
+        Returns:
+            Mapping from output name to the written path.
+        """
         amps, mus, sigmas = self._stage_parameters()
 
         cube, primary, secondaries, derived, z = self._stage_scene(amps, mus, sigmas)
@@ -110,11 +174,29 @@ class SyntheticDatasetPipeline:
 
 
 class SyntheticDatasetSession:
+    """One generation of a synthetic dataset with its own log.
+
+    Attributes:
+        config  : Synthesis configuration describing the scene and the output directory.
+        log_dir : Directory the session log is written into.
+    """
+
     def __init__(self, config: SynthesisConfig, log_dir: Path) -> None:
+        """Binds the session to a synthesis configuration and a log directory.
+
+        Args:
+            config  : Synthesis configuration describing the scene and the output directory.
+            log_dir : Directory the session log is written into.
+        """
         self.config  = config
         self.log_dir = Path(log_dir)
 
     def execute(self) -> dict:
+        """Opens the session log and runs the pipeline.
+
+        Returns:
+            The output mapping returned by ``SyntheticDatasetPipeline.run``.
+        """
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         logger  = Logger(log_dir=str(self.log_dir), name="generate_dataset", level="INFO")
