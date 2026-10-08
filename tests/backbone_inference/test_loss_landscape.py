@@ -15,7 +15,7 @@ from configuration.diagnostics                            import LossLandscapeCo
 from pipelines.backbone.inference.analysis.loss_landscape import CutDiagnostics, FilterNormalizedDirection, LandscapeEvaluator, LossLandscapePlots, LossLandscapeRun
 
 from tests.backbone_inference._helpers import StageLogger, build_run_directory
-from tests.conftest                    import SilentLogger
+from tests.conftest                    import RecordingLogger, SilentLogger
 
 
 class _TinyConv(torch.nn.Module):
@@ -197,3 +197,50 @@ def test_landscape_pass_announces_tracks_and_times_its_stages(tmp_path, test_dat
     assert any(message.endswith("31 loss evaluations planned (2 cuts x 11 points + 3x3 grid)") for level, message in logger.messages if level == "info")
     assert logger.totals == [31] and logger.advances == 31
     assert logger.timers == ["Loss landscape: 1-D cuts (22 points)", "Loss landscape: 2-D grid (9 points)"]
+
+
+def test_cut_descriptors_refuse_a_non_finite_cut():
+    """A NaN in a cut raises instead of reading as a censored radius or a minimum at the NaN step."""
+    alphas = np.linspace(-0.5, 0.5, 11)
+    cut    = 1.0 + alphas ** 2
+    cut[8] = np.nan
+
+    for descriptor in (CutDiagnostics.sharpness, CutDiagnostics.curvature, CutDiagnostics.flatness_radius, CutDiagnostics.min_offset):
+        with pytest.raises(ValueError, match="non-finite value"):
+            descriptor(alphas, cut)
+
+
+def test_diagnose_flags_a_diverged_cut_and_warns(tmp_path):
+    """A cut holding NaN is marked invalid with its steps and named in one warning, while the finite cut is described."""
+    logger   = RecordingLogger()
+    alphas   = np.linspace(-0.5, 0.5, 11)
+    finite   = 1.0 + alphas ** 2
+    diverged = finite.copy()
+
+    diverged[-1] = np.inf
+
+    diagnostics = LossLandscapeRun(tmp_path, LossLandscapeConfig(), logger)._diagnose(alphas, [finite, diverged])
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert diagnostics[0]["valid"] and diagnostics[0]["min_offset"] == 0.0
+    assert diagnostics[1] == {"valid": False, "nonfinite_alphas": [0.5]}
+    assert len(warnings) == 1 and "direction 1: 1/11 cut losses are non-finite at alpha +0.500" in warnings[0]
+
+
+def test_diagnose_refuses_when_every_cut_diverged(tmp_path):
+    """With no finite cut left there is nothing to summarize and the pass raises."""
+    cut = np.full(11, np.nan)
+
+    with pytest.raises(ValueError, match="Every one of the 1 loss cuts"):
+        LossLandscapeRun(tmp_path, LossLandscapeConfig(), RecordingLogger())._diagnose(np.linspace(-0.5, 0.5, 11), [cut])
+
+
+def test_non_finite_grid_contour_names_the_divergence(tmp_path):
+    """A NaN inside the 2-D grid is reported as divergence, not as a flat landscape."""
+    alphas       = np.linspace(-0.5, 0.5, 5)
+    losses       = 0.1 + np.abs(alphas)[:, None] + np.abs(alphas)[None, :]
+    losses[0, 0] = np.nan
+
+    with pytest.raises(ValueError, match="1 of 25 landscape grid losses are non-finite"):
+        LossLandscapePlots().contour_2d(alphas, alphas, losses, tmp_path / "contour.png")
