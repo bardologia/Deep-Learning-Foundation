@@ -39,7 +39,7 @@ def _params(*slots: tuple) -> np.ndarray:
     return cube
 
 
-def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.ndarray, params_gt: np.ndarray | None = None, stamp: str = "stamp", activity_threshold: float = 1e-4) -> Path:
+def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.ndarray, params_gt: np.ndarray | None = None, stamp: str = "stamp", activity_threshold: float | None = 1e-4, region_start: tuple[int, int] = (0, 0)) -> Path:
     """Writes a seed run directory with prediction cubes, metrics and a report.
 
     Args:
@@ -49,7 +49,8 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
         params_pred        : Predicted parameter cube of shape (3 * n_slots, N_ROWS, N_COLS).
         params_gt          : Ground-truth parameter cube, defaulting to params_pred.
         stamp              : Name of the inference output subdirectory.
-        activity_threshold : Activity threshold recorded in the metrics file.
+        activity_threshold : Activity threshold recorded in the metrics file, or None to leave it out as inference wrote it before the field existed.
+        region_start       : Row and column start of the split region recorded in the metrics file.
 
     Returns:
         Path of the created run directory.
@@ -65,7 +66,12 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
     np.save(cubes_dir / "params_gt.npy",   (params_gt if params_gt is not None else params_pred).astype(np.float32))
     np.save(cubes_dir / "pixel_mse.npy",   pred_curves.mean(axis=0).astype(np.float32) + 0.1)
 
-    (out_dir / "metrics.json").write_text(json.dumps({"curve_mse_gt": 1.0, "split_region": [0, N_ROWS, 0, N_COLS], "activity_threshold": activity_threshold}), encoding="utf-8")
+    row_start, col_start = region_start
+    metrics              = {"curve_mse_gt": 1.0, "split_region": [row_start, row_start + N_ROWS, col_start, col_start + N_COLS]}
+    if activity_threshold is not None:
+        metrics["activity_threshold"] = activity_threshold
+
+    (out_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
     (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
     CompletionMarker.stamp(out_dir, {"stage": "inference", "split": "test"})
 
@@ -242,6 +248,19 @@ def test_missing_cubes_raise(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         _maps(group, runs).run()
+
+
+def test_seeds_inferred_on_different_regions_are_refused(tmp_path):
+    """Seeds whose inferences cover different regions of the same shape are refused before any map is written."""
+    group  = tmp_path / "group"
+    curves = np.zeros((N_Z, N_ROWS, N_COLS))
+    params = _params((1.0, 5.0, 2.0))
+    runs   = [_seed_run(group, "seed0", curves, params), _seed_run(group, "seed1", curves, params, region_start=(100, 0))]
+
+    with pytest.raises(ValueError, match="different regions"):
+        _maps(group, runs).run()
+
+    assert not (runs[0] / "inference" / "stamp" / "cubes" / "seed_std_profile.npy").exists()
 
 
 def test_shape_mismatch_raises(tmp_path):
