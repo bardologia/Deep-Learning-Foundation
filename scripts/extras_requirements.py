@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import sys
+import argparse
 import tomllib
 from pathlib import Path
 
@@ -77,5 +77,15 @@ class ExtrasRequirementsWriter:
         return self.write(self.flatten(extras))
 
 
+def main() -> None:
+    """Parses the command line and writes the flattened requirements file."""
+    parser = argparse.ArgumentParser(description="Flatten the optional-dependency groups of a pyproject into one requirements file, one deduplicated requirement per line in sorted order.")
+    parser.add_argument("pyproject_path", type=Path, help="pyproject.toml whose optional dependencies are read.")
+    parser.add_argument("output_path", type=Path, help="Requirements file to write; its parent is created.")
+    args = parser.parse_args()
+
+    ExtrasRequirementsWriter(args.pyproject_path, args.output_path).build()
+
+
 if __name__ == "__main__":
-    ExtrasRequirementsWriter(Path(sys.argv[1]), Path(sys.argv[2])).build()
+    main()
