@@ -18,8 +18,10 @@ import pytest
 
 from pathlib import Path
 
+from configuration.dataset.gaussian import GaussianConfig
 from configuration.param_extraction import ExtractParamsEntryConfig
 from configuration.synthesis        import SynthesisConfig
+from pipelines.processing.param_extraction.io      import ExtractionMetadataManager
 from pipelines.processing.param_extraction.metrics import (
     FittingMetricsCalculator,
     KSelectionDiagnostics,
@@ -142,6 +144,23 @@ def test_plan_resolver_passes_fit_constants_and_adam_settings():
     assert plan.adam_lr               == 0.05
     assert plan.col_batch_size      == 100
     assert plan.gpu_pixel_batch_size  == 4096
+
+
+def test_run_metadata_records_the_activity_threshold_later_stages_read(tmp_path, logger):
+    """Verifies the extraction metadata records the fit's activity threshold, which GaussianConfig reads back as the label run's threshold."""
+    entry = ExtractParamsEntryConfig(fit_k_values=[2], fit_lambda_values=[1e-2], fit_modes=["sigma"], fit_activity_threshold=2.5e-3)
+    plan  = ExtractionPlanResolver(entry, [tmp_path]).resolve()[0].shared
+
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta" / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": list(Z_RANGE)}}))
+    plan.output_directory.mkdir(parents=True)
+
+    ExtractionMetadataManager(plan, logger).save_run_metadata(plan.output_directory / "parameters.npy", plan.output_directory / "fit_diagnostics.npz", tmp_path / "cube.npy", Z_RANGE)
+
+    gaussian = GaussianConfig.from_dataset(tmp_path, plan.output_directory / "parameters.npy")
+
+    assert gaussian.activity_threshold  == 2.5e-3
+    assert gaussian.n_default_gaussians == 2
 
 
 def test_plan_resolver_rejects_unknown_mode():
