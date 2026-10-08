@@ -253,15 +253,13 @@ def test_shape_mismatch_raises(tmp_path):
         _maps(group, [run_a, run_b]).run()
 
 
-def test_comparison_writes_maps_figures_and_report_section(tmp_path, monkeypatch):
+def test_comparison_writes_maps_figures_and_report_section(tmp_path):
     """Enabling disagreement writes per-seed map cubes, aggregate figures and the report section with risk-coverage scalars."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
     _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))
 
-    reports = SeedComparison(_config(group, compute_disagreement=True)).run()
+    reports = SeedComparison(_config(group, compute_disagreement=True), SilentLogger()).run()
 
     text    = reports[0].read_text(encoding="utf-8")
     payload = json.loads((group / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
@@ -282,15 +280,13 @@ def test_comparison_writes_maps_figures_and_report_section(tmp_path, monkeypatch
         assert (group / "inference" / "agg" / "figures" / "seed_disagreement" / f"{name}.png").is_file()
 
 
-def test_comparison_skips_disagreement_when_disabled(tmp_path, monkeypatch):
+def test_comparison_skips_disagreement_when_disabled(tmp_path):
     """Disabling disagreement leaves the report, payload and cube directories untouched."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", np.zeros((N_Z, N_ROWS, N_COLS)), _params((1.0, 5.0, 2.0)))
     _seed_run(group, "seed1", np.ones((N_Z, N_ROWS, N_COLS)),  _params((2.0, 6.0, 3.0)))
 
-    reports = SeedComparison(_config(group, compute_disagreement=False)).run()
+    reports = SeedComparison(_config(group, compute_disagreement=False), SilentLogger()).run()
 
     text    = reports[0].read_text(encoding="utf-8")
     payload = json.loads((group / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))

@@ -12,7 +12,7 @@ import pytest
 
 from pipelines.backbone.inference.analysis.seed_comparison import SeedActivityThreshold, SeedComparison, SeedComparisonReport, SeedEnsembleEvaluation, SeedInferenceResolver
 
-from tests.conftest import SilentLogger
+from tests.conftest import RecordingLogger, SilentLogger
 
 
 def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp", activity_threshold: float | None = 1e-3) -> Path:
@@ -211,36 +211,30 @@ def test_activity_threshold_is_the_value_every_seed_recorded(tmp_path):
     assert threshold == 1e-4
 
 
-def test_seeds_scored_at_different_thresholds_are_refused_on_the_default_path(tmp_path, monkeypatch):
+def test_seeds_scored_at_different_thresholds_are_refused_on_the_default_path(tmp_path):
     """Seeds whose metrics record different activity thresholds are refused before any metric is averaged."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", {"curve_mse_gt": 1.0}, activity_threshold=1e-4)
     _seed_run(group, "seed1", {"curve_mse_gt": 3.0}, activity_threshold=1e-3)
 
     with pytest.raises(ValueError, match="different activity thresholds"):
-        SeedComparison(_config(group, [], output_subdir="agg")).run()
+        SeedComparison(_config(group, [], output_subdir="agg"), SilentLogger()).run()
 
     assert not (group / "inference" / "agg" / "metrics.json").exists()
 
 
-def test_metrics_without_a_recorded_threshold_are_refused(tmp_path, monkeypatch):
+def test_metrics_without_a_recorded_threshold_are_refused(tmp_path):
     """Metrics written before the threshold was recorded are refused with a request to re-run inference."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", {"curve_mse_gt": 1.0}, activity_threshold=None)
     _seed_run(group, "seed1", {"curve_mse_gt": 3.0}, activity_threshold=None)
 
     with pytest.raises(KeyError, match="re-run inference for seed seed0"):
-        SeedComparison(_config(group, [], output_subdir="agg")).run()
+        SeedComparison(_config(group, [], output_subdir="agg"), SilentLogger()).run()
 
 
-def test_comparison_compares_each_selected_group_in_isolation(tmp_path, monkeypatch):
+def test_comparison_compares_each_selected_group_in_isolation(tmp_path):
     """Each selected group is aggregated into its own report and metrics payload."""
-    monkeypatch.chdir(tmp_path)
-
     group_a = tmp_path / "runs" / "group_a"
     _seed_run(group_a, "seed0", {"curve_mse_gt": 1.0})
     _seed_run(group_a, "seed1", {"curve_mse_gt": 3.0})
@@ -249,7 +243,7 @@ def test_comparison_compares_each_selected_group_in_isolation(tmp_path, monkeypa
     _seed_run(group_b, "seed0", {"curve_mse_gt": 10.0})
     _seed_run(group_b, "seed1", {"curve_mse_gt": 30.0})
 
-    reports = SeedComparison(_config(tmp_path / "runs", ["group_a", "group_b"], output_subdir="agg")).run()
+    reports = SeedComparison(_config(tmp_path / "runs", ["group_a", "group_b"], output_subdir="agg"), SilentLogger()).run()
 
     payload_a = json.loads((group_a / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
     payload_b = json.loads((group_b / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
@@ -259,37 +253,31 @@ def test_comparison_compares_each_selected_group_in_isolation(tmp_path, monkeypa
     assert payload_b["mean"]["curve_mse_gt"] == pytest.approx(20.0)
 
 
-def test_comparison_raises_on_unknown_group_tag(tmp_path, monkeypatch):
+def test_comparison_raises_on_unknown_group_tag(tmp_path):
     """A group tag with no matching directory is rejected."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
 
     with pytest.raises(FileNotFoundError):
-        SeedComparison(_config(tmp_path / "runs", ["group", "missing"])).run()
+        SeedComparison(_config(tmp_path / "runs", ["group", "missing"]), SilentLogger()).run()
 
 
-def test_comparison_raises_when_a_group_holds_fewer_than_two_runs(tmp_path, monkeypatch):
+def test_comparison_raises_when_a_group_holds_fewer_than_two_runs(tmp_path):
     """A group holding a single run is rejected."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
 
     with pytest.raises(ValueError):
-        SeedComparison(_config(tmp_path / "runs", ["group"])).run()
+        SeedComparison(_config(tmp_path / "runs", ["group"]), SilentLogger()).run()
 
 
-def test_comparison_treats_runs_dir_as_the_group_when_no_tags_are_given(tmp_path, monkeypatch):
+def test_comparison_treats_runs_dir_as_the_group_when_no_tags_are_given(tmp_path):
     """With no group tags the runs directory itself is the group."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
     _seed_run(group, "seed1", {"curve_mse_gt": 3.0})
 
-    reports = SeedComparison(_config(group, [], output_subdir="agg")).run()
+    reports = SeedComparison(_config(group, [], output_subdir="agg"), SilentLogger()).run()
 
     payload = json.loads((group / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
 
@@ -297,28 +285,24 @@ def test_comparison_treats_runs_dir_as_the_group_when_no_tags_are_given(tmp_path
     assert payload["mean"]["curve_mse_gt"] == pytest.approx(2.0)
 
 
-def test_comparison_output_falls_back_to_the_inference_stamp(tmp_path, monkeypatch):
+def test_comparison_output_falls_back_to_the_inference_stamp(tmp_path):
     """Without an output subdirectory the inference stamp names the aggregate directory."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
     _seed_run(group, "seed1", {"curve_mse_gt": 3.0})
 
-    SeedComparison(_config(group, [], inference_subdir="stamp")).run()
+    SeedComparison(_config(group, [], inference_subdir="stamp"), SilentLogger()).run()
 
     assert (group / "inference" / "stamp" / "metrics.json").is_file()
 
 
-def test_comparison_output_gets_a_fresh_stamp_when_nothing_is_set(tmp_path, monkeypatch):
+def test_comparison_output_gets_a_fresh_stamp_when_nothing_is_set(tmp_path):
     """With neither subdirectory set the aggregate lands in a freshly stamped directory."""
-    monkeypatch.chdir(tmp_path)
-
     group = tmp_path / "runs" / "group"
     _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
     _seed_run(group, "seed1", {"curve_mse_gt": 3.0})
 
-    reports = SeedComparison(_config(group, [])).run()
+    reports = SeedComparison(_config(group, []), SilentLogger()).run()
 
     assert reports[0].parent.parent == group / "inference"
     assert reports[0].parent.name not in ("stamp", "")
@@ -383,3 +367,16 @@ def test_report_renders_the_ensemble_section(tmp_path):
 
     assert "Seed ensemble" in text
     assert payload["ensemble"]["curve_mse_gt"] == pytest.approx(0.5)
+
+
+def test_comparison_logs_through_the_given_logger(tmp_path):
+    """Every message of the comparison goes to the caller's logger instead of a private log file."""
+    group = tmp_path / "runs" / "group"
+    _seed_run(group, "seed0", {"curve_mse_gt": 1.0})
+    _seed_run(group, "seed1", {"curve_mse_gt": 3.0})
+
+    logger = RecordingLogger()
+    SeedComparison(_config(group, [], output_subdir="agg"), logger).run()
+
+    assert ("section", "Seed comparison") in logger.messages
+    assert any(level == "subsection" and message.startswith("Group: ") for level, message in logger.messages)
