@@ -40,11 +40,6 @@ class FoldManifestPlan:
     KIND          = "cross_validation"
     STAGE_DIRNAME = "folds"
 
-    @classmethod
-    def claims(cls, run_dir: Path) -> bool:
-        """Returns whether a run directory is a cross-validation run, which its folds directory shows."""
-        return (Path(run_dir) / cls.STAGE_DIRNAME).is_dir()
-
     def __init__(self, run_dir: Path) -> None:
         """Loads the configuration the cross-validation run recorded.
 
@@ -55,6 +50,11 @@ class FoldManifestPlan:
 
         self.run_dir = Path(run_dir)
         self.config  = ConfigCli.load_resolved(CrossValidationConfig(), StagedRunLocator.config_path(self.run_dir))
+
+    @classmethod
+    def claims(cls, run_dir: Path) -> bool:
+        """Returns whether a run directory is a cross-validation run, which its folds directory shows."""
+        return (Path(run_dir) / cls.STAGE_DIRNAME).is_dir()
 
     def units(self) -> list[tuple[str, dict]]:
         """Returns each planned unit's run name and the payload its manifest is written from.
@@ -102,11 +102,6 @@ class BenchmarkManifestPlan:
     KIND          = "benchmark"
     STAGE_DIRNAME = "training"
 
-    @classmethod
-    def claims(cls, run_dir: Path) -> bool:
-        """Returns whether a run directory is a benchmark run, which its training directory shows."""
-        return (Path(run_dir) / cls.STAGE_DIRNAME).is_dir()
-
     def __init__(self, run_dir: Path) -> None:
         """Loads the configuration the benchmark run recorded.
 
@@ -117,6 +112,11 @@ class BenchmarkManifestPlan:
 
         self.run_dir = Path(run_dir)
         self.config  = ConfigCli.load_resolved(BenchmarkConfig(), StagedRunLocator.config_path(self.run_dir))
+
+    @classmethod
+    def claims(cls, run_dir: Path) -> bool:
+        """Returns whether a run directory is a benchmark run, which its training directory shows."""
+        return (Path(run_dir) / cls.STAGE_DIRNAME).is_dir()
 
     def units(self) -> list[tuple[str, dict]]:
         """Returns each planned unit's run name and the payload its manifest is written from.
