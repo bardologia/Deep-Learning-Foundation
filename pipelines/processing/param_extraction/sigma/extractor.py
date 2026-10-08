@@ -265,17 +265,18 @@ class SigmaFittingExtractor:
     """Fits Gaussian mixtures to every active pixel of a cube on GPU.
 
     Attributes:
-        modes         : Fit modes (see `FitMode`) deciding which of amplitude, mean and sigma are free parameters.
-        lambda_values : Model-order penalties applied per extra Gaussian when selecting the best K.
-        k_max         : Largest mixture order fitted.
-        mode_masks    : Per-mode gradient masks as (amplitude, mean, sigma) scalars.
-        backend       : Kernel backend label naming the device platform and count the fit runs on.
-        devices       : JAX devices the fit runs on.
-        outcome       : Record of the last run's fitted pixels, truncation, backend and duration; None before run().
-        bound_shares  : Per (mode, lambda_k) shares of the selected active slots whose sigma or mean ended on a clamp bound, from the last run; empty before run().
-        BATCH_COPIES        : Col-batch-sized float32 arrays held at the peak of the load and fit overlap: the current batch's raw, normalised and active-row profiles and the three arrays of the batch loading ahead.
-        RAM_WARN_FRACTION   : Share of the available host RAM above which the estimated footprint warns.
-        MIN_ACTIVE_FRACTION : Share of the pixels below which an active-pixel count warns, pointing at a zero-filled crop or an activity threshold above the amplitude scale.
+        modes                : Fit modes (see `FitMode`) deciding which of amplitude, mean and sigma are free parameters.
+        lambda_values        : Model-order penalties applied per extra Gaussian when selecting the best K.
+        k_max                : Largest mixture order fitted.
+        mode_masks           : Per-mode gradient masks as (amplitude, mean, sigma) scalars.
+        backend              : Kernel backend label naming the device platform and count the fit runs on.
+        devices              : JAX devices the fit runs on.
+        outcome              : Record of the last run's fitted pixels, truncation, backend and duration; None before run().
+        bound_shares         : Per (mode, lambda_k) shares of the selected active slots whose sigma or mean ended on a clamp bound, from the last run; empty before run().
+        MAX_PENDING_SCORINGS : Scoring jobs allowed to run or wait before the fitting loop blocks on the backlog.
+        BATCH_COPIES         : Col-batch-sized float32 arrays held at the peak of the load and fit overlap: the current batch's raw, normalised and active-row profiles and the three arrays of the batch loading ahead.
+        RAM_WARN_FRACTION    : Share of the available host RAM above which the estimated footprint warns.
+        MIN_ACTIVE_FRACTION  : Share of the pixels below which an active-pixel count warns, pointing at a zero-filled crop or an activity threshold above the amplitude scale.
     """
 
     MAX_PENDING_SCORINGS = 2
