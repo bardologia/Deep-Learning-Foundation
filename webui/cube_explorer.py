@@ -752,7 +752,8 @@ class CubeExplorer:
         Returns:
             Dict with ``ok`` and the updated ``cube`` metadata carrying the
             ``predb`` and ``diff`` sources and the delta metric layers, or
-            ``ok`` False with the reason.
+            ``ok`` False with the reason, including a comparison stamp whose
+            ``metrics.json`` is missing or whose cube files cannot be parsed.
         """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
@@ -765,17 +766,21 @@ class CubeExplorer:
         if other_id == cube_id:
             return {"ok": False, "error": "pick a different inference result to compare against"}
 
-        raw = other.curves("pred")
-        if raw.shape != pred["cube"].shape:
-            return {"ok": False, "error": f"comparison cube shape {tuple(raw.shape)} does not match {tuple(pred['cube'].shape)}"}
+        try:
+            raw = other.curves("pred")
+            if raw.shape != pred["cube"].shape:
+                return {"ok": False, "error": f"comparison cube shape {tuple(raw.shape)} does not match {tuple(pred['cube'].shape)}"}
 
-        other_axis = self._curve_axis(other, raw.shape[0])
-        if not np.allclose(other_axis, pred["z_axis"]):
-            return {"ok": False, "error": "comparison cube covers a different z axis"}
+            other_axis = self._curve_axis(other, raw.shape[0])
+            if not np.allclose(other_axis, pred["z_axis"]):
+                return {"ok": False, "error": "comparison cube covers a different z axis"}
 
-        predb      = self._ingest(raw, pred["z_axis"])
-        other_maps = other.metric_maps(int(raw.shape[1]), int(raw.shape[2]))
-        diff       = self._diff_entry(pred, predb)
+            predb      = self._ingest(raw, pred["z_axis"])
+            other_maps = other.metric_maps(int(raw.shape[1]), int(raw.shape[2]))
+        except (ValueError, FileNotFoundError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+        diff = self._diff_entry(pred, predb)
 
         run_dir   = other.run_dir
         other_dir = other.stamp_dir
