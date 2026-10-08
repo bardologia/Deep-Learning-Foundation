@@ -158,6 +158,11 @@ def test_tuning_config_stop_rules_default_off():
     assert cfg.time_budget_h     == 0.0
 
 
+def test_tuning_config_discards_trial_checkpoints_by_default():
+    """Verifies a finished trial's checkpoint files are deleted unless kept on request."""
+    assert TuningConfig().keep_trial_checkpoints is False
+
+
 def test_training_queue_lr_scale_follows_the_batch_rule():
     """The scale is the batch over the reference batch times the multiplier when scaling is on, the multiplier alone when off."""
     cfg = TrainingQueueConfig(batch_size=256, lr_reference_batch_size=256, lr_multiplier=2.0)

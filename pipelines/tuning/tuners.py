@@ -6,7 +6,8 @@ BestConfigWriter persists the best trial after every trial, StudyProgress logs
 one line per finished trial, tallies the worker's own trials and keeps a
 snapshot of the study beside it, the stop rules end a study at its trial
 target, on a plateau of its best value or at a time budget and name the rule
-that ended a worker's run, and one tuner class per training family builds a
+that ended a worker's run, TrialCheckpoints discards the weights a finished
+trial leaves behind, and one tuner class per training family builds a
 shortened training run as the trial objective.
 """
 
@@ -673,6 +674,58 @@ class StudyProgress:
         }
 
 
+class TrialCheckpoints:
+    """Discards the checkpoint files a finished trial left in its run directory.
+
+    A trial's objective is read from the trainer's return value and its
+    parameters live in the study, so the weights it saved are never loaded
+    again; a study of hundreds of trials would otherwise pile up hundreds of
+    gigabytes of them on the run tree, and a sequence workspace pull would copy
+    every one back. Each trial trains under its own directory, and the tuners
+    discard in a ``finally`` clause, so a pruned or failed trial is cleaned as
+    well as a completed one.
+
+    Attributes:
+        PATTERN : Glob matching the checkpoint files of a run at any depth.
+        keep    : Whether the files are left in place.
+        logger  : Logger of the tuning worker.
+    """
+
+    PATTERN = "**/*.pt"
+
+    def __init__(self, keep: bool, logger) -> None:
+        """Stores the keep switch and the logger."""
+        self.keep   = keep
+        self.logger = logger
+
+    @staticmethod
+    def trial_dir(log_dir, trial_number: int) -> Path:
+        """Returns the directory one trial's run is written under a model's tuning directory."""
+        return Path(log_dir) / "trials" / f"trial_{trial_number:04d}"
+
+    def discard(self, trial_dir, trial_number: int) -> int:
+        """Deletes every checkpoint file under a finished trial's directory unless they are kept.
+
+        Args:
+            trial_dir    : Directory holding the finished trial's run.
+            trial_number : Number of the trial, named in the log line.
+
+        Returns:
+            Bytes freed; zero when the files are kept.
+        """
+        if self.keep:
+            return 0
+
+        freed = 0
+        for path in sorted(Path(trial_dir).glob(self.PATTERN)):
+            freed += path.stat().st_size
+            path.unlink()
+
+        self.logger.info(f"Trial {trial_number}: discarded {freed / 1e6:.0f} MB of checkpoints under {trial_dir}")
+
+        return freed
+
+
 class Tuner:
     """Optuna objective running a shortened backbone training per trial.
 
@@ -691,6 +744,7 @@ class Tuner:
         sampler             : Sampler drawing the trial parameters.
         space               : Search space over the switched-on groups of the backbone's tunable parameters and the batch size.
         best_writer         : Callback persisting the best trial after each trial.
+        checkpoints         : Discard of the checkpoint files a finished trial leaves behind.
     """
 
     def __init__(
@@ -733,6 +787,7 @@ class Tuner:
         self.sampler     = ParamSampler()
         self.space       = SearchSpace.of(model_config_cls, tune_cfg)
         self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
+        self.checkpoints = TrialCheckpoints(tune_cfg.keep_trial_checkpoints, logger)
 
     def _apply_params(self, trial: optuna.Trial, model_config) -> dict:
         """Samples the search space, writes the model values onto the model config and returns everything sampled."""
@@ -770,11 +825,12 @@ class Tuner:
 
         trainer_cfg = copy.deepcopy(self.base_trainer_config)
         dataset_cfg = copy.deepcopy(self.base_dataset_config)
+        trial_dir   = self.checkpoints.trial_dir(self.log_dir, trial.number)
 
         trainer_cfg.training.epochs         = self.tune_cfg.n_epochs
         trainer_cfg.scheduler.epochs        = self.tune_cfg.n_epochs
         trainer_cfg.early_stopping.patience = self.tune_cfg.early_stop_patience
-        trainer_cfg.io.logdir               = str(Path(self.log_dir) / "trials" / f"trial_{trial.number:04d}")
+        trainer_cfg.io.logdir               = str(trial_dir)
 
         if SearchSpace.BATCH in sampled:
             self._apply_batch(trainer_cfg, dataset_cfg, sampled[SearchSpace.BATCH])
@@ -797,6 +853,8 @@ class Tuner:
         except StudyStopRules.TRIAL_FAILURES as error:
             StudyStopRules.fail(trial, error, self.logger)
             raise
+        finally:
+            self.checkpoints.discard(trial_dir, trial.number)
 
         return best_val_loss
 
@@ -846,6 +904,7 @@ class AeTuner:
         sampler            : Sampler drawing the trial parameters.
         space              : Search space over the switched-on groups of the autoencoder's tunable parameters and the batch size.
         best_writer        : Callback persisting the best trial after each trial.
+        checkpoints        : Discard of the checkpoint files a finished trial leaves behind.
     """
 
     def __init__(
@@ -880,6 +939,7 @@ class AeTuner:
         self.sampler     = ParamSampler()
         self.space       = SearchSpace.of(config_cls, tune_cfg)
         self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
+        self.checkpoints = TrialCheckpoints(tune_cfg.keep_trial_checkpoints, logger)
 
     def _objective(self, trial: optuna.Trial) -> float:
         """Trains one sampled autoencoder configuration and returns its best loss.
@@ -890,14 +950,15 @@ class AeTuner:
         Returns:
             The best reconstruction validation loss of the shortened run.
         """
-        sampled = self.sampler.sample(trial, self.space)
+        sampled   = self.sampler.sample(trial, self.space)
+        trial_dir = self.checkpoints.trial_dir(self.log_dir, trial.number)
 
         entry                 = copy.deepcopy(self.entry_template)
         entry.ae_model_name   = self.model_name
         entry.model_overrides = SearchSpace.model_params(sampled)
         entry.run_name        = f"trial_{trial.number:04d}"
         entry.seed            = self.tune_cfg.base_seed + trial.number
-        entry.logdir          = Path(self.log_dir) / "trials"
+        entry.logdir          = trial_dir
 
         entry.training.epochs              = self.tune_cfg.n_epochs
         entry.training.scheduler_epochs    = self.tune_cfg.n_epochs
@@ -911,6 +972,8 @@ class AeTuner:
         except StudyStopRules.TRIAL_FAILURES as error:
             StudyStopRules.fail(trial, error, self.logger)
             raise
+        finally:
+            self.checkpoints.discard(trial_dir, trial.number)
 
         return best_val_loss
 
@@ -963,6 +1026,7 @@ class JepaTuner:
         sampler          : Sampler drawing the trial parameters.
         space            : Search space over the architecture parameters.
         best_writer      : Callback persisting the best trial after each trial.
+        checkpoints      : Discard of the checkpoint files a finished trial leaves behind.
         run_tag          : Shared JEPA run tag the trial run names are composed from.
     """
 
@@ -997,6 +1061,7 @@ class JepaTuner:
         self.sampler     = ParamSampler()
         self.space       = SearchSpace.arch_only(model_config_cls)
         self.best_writer = BestConfigWriter(model_name, self.space, Path(log_dir) / "best_config.json")
+        self.checkpoints = TrialCheckpoints(tune_cfg.keep_trial_checkpoints, logger)
 
         n_gaussians  = ConfigFactory(entry_template).gaussian_config().n_default_gaussians
         self.run_tag = RunNaming.jepa_tag(self.backbone_name, self.head, JepaNamingSpec.resolve(entry_template), n_gaussians, entry_template.augmentation)
@@ -1012,7 +1077,8 @@ class JepaTuner:
         """
         from pipelines.tuning.trial import TrialJepaPipeline
 
-        sampled = self.sampler.sample(trial, self.space)
+        sampled   = self.sampler.sample(trial, self.space)
+        trial_dir = self.checkpoints.trial_dir(self.log_dir, trial.number)
 
         entry                 = copy.deepcopy(self.entry_template)
         entry.backbone_name   = self.backbone_name
@@ -1020,7 +1086,7 @@ class JepaTuner:
         entry.model_overrides = sampled
         entry.run_name        = RunNaming.compose(self.run_tag, f"trial_{trial.number:04d}")
         entry.seed            = self.tune_cfg.base_seed + trial.number
-        entry.logdir          = Path(self.log_dir) / "trials"
+        entry.logdir          = trial_dir
 
         entry.training.epochs              = self.tune_cfg.n_epochs
         entry.training.scheduler_epochs    = self.tune_cfg.n_epochs
@@ -1032,6 +1098,8 @@ class JepaTuner:
         except StudyStopRules.TRIAL_FAILURES as error:
             StudyStopRules.fail(trial, error, self.logger)
             raise
+        finally:
+            self.checkpoints.discard(trial_dir, trial.number)
 
         return best_val_loss
 

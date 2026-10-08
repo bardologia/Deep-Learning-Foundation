@@ -2145,7 +2145,8 @@
         "plateau_min_delta": "Smallest improvement of the best value, relative to its value at the last counted improvement, that resets the plateau count; 0 counts any improvement, which lets seed noise keep a converged study alive. Changeable on resume",
         "time_budget_h": "Hours after which a worker starts no further trial; the trial in flight still finishes, so a launch with a hard time limit must allow the budget plus one trial. 0 sets no budget. Changeable on resume",
         "emit_trial_docs": "whether to write per-trial training-documentation artifacts to the run directory, backbone tuning only (no effect on autoencoder/JEPA trials)",
-        "emit_study_plots": "whether to render Optuna study-level visualization plots after each model's sweep completes"
+        "emit_study_plots": "whether to render Optuna study-level visualization plots after each model's sweep completes",
+        "keep_trial_checkpoints": "Whether the checkpoint files (best_model.pt, last.pt, final_model.pt, epoch snapshots) of a finished trial stay in its run directory. Off by default: nothing loads them again, the trial's parameters live in the study, and a study of hundreds of trials would otherwise hold hundreds of gigabytes of weights that a sequence workspace pull copies back"
       }
     },
     "tuning/general::TuningEntryConfig": {

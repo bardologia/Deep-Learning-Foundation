@@ -239,7 +239,7 @@ def test_ae_tuner_objective_materializes_entry(fake_logger, tune_cfg, tmp_path):
     assert entry.ae_model_name == "mlp_ae"
     assert entry.run_name      == "trial_0000"
     assert entry.seed          == tune_cfg.base_seed + 0
-    assert entry.logdir        == Path(tmp_path) / "trials"
+    assert entry.logdir        == Path(tmp_path) / "trials" / "trial_0000"
 
     assert entry.training.epochs              == tune_cfg.n_epochs
     assert entry.training.scheduler_epochs    == tune_cfg.n_epochs

@@ -82,6 +82,7 @@ class TuneCfg:
         self.time_budget_h           = 0.0
         self.emit_trial_docs         = False
         self.emit_study_plots        = False
+        self.keep_trial_checkpoints  = False
 
 
 @pytest.fixture

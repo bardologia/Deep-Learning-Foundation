@@ -1105,7 +1105,7 @@ class LaunchLayout:
                         {"title": "Search groups", "fields": ["tuning.search_lr", "tuning.search_arch", "tuning.search_batch", {"path": "tuning.batch_sizes", "widget": MULTI_INT}]},
                         {"title": "Stop rules", "fields": [{"path": "tuning.plateau_patience", "widget": NUM_PLATEAU}, {"path": "tuning.plateau_min_delta", "widget": NUM_DELTA}, {"path": "tuning.time_budget_h", "widget": NUM_HOURS}]},
                         {"title": "Pruner", "fields": ["tuning.pruner_n_startup_trials", "tuning.pruner_n_warmup_steps"]},
-                        {"title": "Outputs", "fields": ["tuning.emit_trial_docs", "tuning.emit_study_plots"]},
+                        {"title": "Outputs", "fields": ["tuning.emit_trial_docs", "tuning.emit_study_plots", "tuning.keep_trial_checkpoints"]},
                     ]},
                 ]},
                 {"key": "data", "title": "Data", "panels": [
