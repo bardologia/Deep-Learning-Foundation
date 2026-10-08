@@ -2,16 +2,20 @@
 
 ParamSampler turns a declarative search space into Optuna suggestions and back,
 SearchSpace picks the part of a model's declared space a study samples,
-BestConfigWriter persists the best trial after every trial, the stop rules end
-a study at its trial target, on a plateau of its best value or at a time
-budget, and one tuner class per training family builds a shortened training run
-as the trial objective.
+BestConfigWriter persists the best trial after every trial, StudyProgress logs
+one line per finished trial, tallies the worker's own trials and keeps a
+snapshot of the study beside it, the stop rules end a study at its trial
+target, on a plateau of its best value or at a time budget and name the rule
+that ended a worker's run, and one tuner class per training family builds a
+shortened training run as the trial objective.
 """
 
 from __future__ import annotations
 
 import copy
-from pathlib import Path
+import time
+from datetime import datetime
+from pathlib  import Path
 
 import optuna
 from optuna.trial import TrialState
@@ -342,18 +346,38 @@ class StudyPlateauStop:
 
 
 class StudyStopRules:
-    """Derives the stop rules every tuner runs ``study.optimize`` under.
+    """Derives the stop rules every tuner runs ``study.optimize`` under, and names the rule that ended it.
 
     The trial target always stops a worker; the plateau rule joins it when the
     tuning settings set a patience, and the time budget becomes the timeout of
-    the optimisation, after which a worker starts no further trial.
+    the optimisation, after which a worker starts no further trial. Optuna
+    leaves its loop for one of four reasons, checked in this order before
+    every trial: a callback asked the study to stop (the trial target or the
+    plateau rule), the worker ran its share of trials, or the time budget
+    passed. Nothing in Optuna says which one it was, so the rules remember when
+    they fire and ``reason`` works the rest out from the trials run and the
+    time taken.
 
     Attributes:
-        tune_cfg : Tuning settings holding the trial target, the plateau rule and the time budget.
-        logger   : Logger of the tuning worker.
-        target   : Trial-target stop of this worker.
-        plateau  : Plateau stop of this worker, or None when no patience is set.
+        TRIAL_FAILURES : Exceptions a trial may raise that end the trial as failed instead of ending the worker: a diverging loss, which the trainer aborts with a FloatingPointError, and a configuration too large for the device, which CUDA raises as a RuntimeError.
+        TARGET         : Reason code of a run ended by the trial target.
+        PLATEAU        : Reason code of a run ended by the plateau rule.
+        TIME_BUDGET    : Reason code of a run ended by the time budget.
+        WORKER_SHARE   : Reason code of a run that used up the worker's share of trials.
+        STUDY_ENDS     : Reason codes that end the study as configured; a used-up share leaves it short of its target.
+        tune_cfg       : Tuning settings holding the trial target, the plateau rule and the time budget.
+        logger         : Logger of the tuning worker.
+        target         : Trial-target stop of this worker.
+        plateau        : Plateau stop of this worker, or None when no patience is set.
     """
+
+    TRIAL_FAILURES = (RuntimeError, FloatingPointError)
+
+    TARGET       = "target"
+    PLATEAU      = "plateau"
+    TIME_BUDGET  = "time_budget"
+    WORKER_SHARE = "worker_share"
+    STUDY_ENDS   = (TARGET, PLATEAU, TIME_BUDGET)
 
     def __init__(self, tune_cfg, logger) -> None:
         """Builds the rule callbacks from the tuning settings.
@@ -366,6 +390,20 @@ class StudyStopRules:
         self.logger   = logger
         self.target   = StudyTargetStop(tune_cfg.n_trials, logger)
         self.plateau  = StudyPlateauStop(tune_cfg.plateau_patience, tune_cfg.plateau_min_delta, logger) if tune_cfg.plateau_patience else None
+
+    @staticmethod
+    def fail(trial: optuna.Trial, error: BaseException, logger) -> None:
+        """Records why a trial failed: on the worker log, and as its ``fail_reason`` attribute, which the trial's progress line prints.
+
+        Args:
+            trial  : Trial whose objective raised one of TRIAL_FAILURES.
+            error  : The exception, recorded as its type and message.
+            logger : Logger of the tuning worker.
+        """
+        reason = f"{type(error).__name__}: {error}"
+
+        trial.set_user_attr(StudyProgress.FAIL_REASON, reason)
+        logger.error(f"Trial {trial.number} failed and is recorded as such: {reason}")
 
     def callbacks(self) -> list:
         """Returns the trial-target stop and, when a patience is set, the plateau stop."""
@@ -382,6 +420,253 @@ class StudyStopRules:
             "Plateau patience"  : self.tune_cfg.plateau_patience or "off",
             "Plateau min delta" : self.tune_cfg.plateau_min_delta,
             "Time budget"       : f"{self.tune_cfg.time_budget_h} h" if self.tune_cfg.time_budget_h else "none",
+        }
+
+    def already_met(self, study: optuna.Study) -> str | None:
+        """Returns the rule a study satisfies before this worker runs a trial, TARGET or PLATEAU, else None.
+
+        Optuna runs the stop callbacks only after a trial has finished, so a
+        worker attaching to a study that already reached its target or plateau
+        would train one more full trial before noticing.
+
+        Args:
+            study : Shared study as it stands on attach.
+        """
+        if self.target.reached(study):
+            return self.TARGET
+        if self.plateau is not None and self.plateau.stalled(study) >= self.plateau.patience:
+            return self.PLATEAU
+
+        return None
+
+    def reason(self, n_trials: int, trials_run: int, elapsed_s: float) -> str:
+        """Returns which rule ended ``study.optimize``, logging the two Optuna ends silently.
+
+        Args:
+            n_trials   : Trials this worker was handed.
+            trials_run : Trials this worker ran, whatever their state.
+            elapsed_s  : Seconds the optimisation took.
+
+        Returns:
+            One of TARGET, PLATEAU, WORKER_SHARE or TIME_BUDGET, in the order Optuna checks them.
+
+        Raises:
+            RuntimeError : If optimize returned although no rule fired, the share is not used up and the budget has not passed.
+        """
+        if self.target.fired:
+            return self.TARGET
+        if self.plateau is not None and self.plateau.fired:
+            return self.PLATEAU
+
+        if trials_run >= n_trials:
+            self.logger.info(f"Study stop: this worker's share of {n_trials} trial(s) is used up")
+            return self.WORKER_SHARE
+
+        timeout = self.timeout_s()
+        if timeout is not None and elapsed_s >= timeout:
+            self.logger.info(f"Study stop: time budget of {self.tune_cfg.time_budget_h} h used up after {trials_run} trial(s); no further trial started")
+            return self.TIME_BUDGET
+
+        raise RuntimeError(f"study.optimize returned after {trials_run} of {n_trials} trial(s) and {elapsed_s / 3600.0:.2f} h although no stop rule fired, the share is not used up and no time budget passed")
+
+    def optimize(self, study: optuna.Study, objective, n_trials: int, progress: "StudyProgress", callbacks: list) -> str:
+        """Runs the study under the rules, records the reason the run ended and returns it.
+
+        Args:
+            study     : Shared study to optimize.
+            objective : Trial objective of the tuner.
+            n_trials  : Trials this worker contributes.
+            progress  : Progress callback of this worker, which tallies its trials and keeps the study snapshot.
+            callbacks : Further Optuna callbacks run before the progress and stop rules, such as the best-config writer.
+
+        Returns:
+            The reason code the run ended with; a study already at its target or plateau on attach ends with that reason and no trial run.
+        """
+        met = self.already_met(study)
+        if met is not None:
+            self.logger.warning(f"Study already met its {met} rule before this worker ran a trial ({StudyProgress.phrase(StudyProgress.counts(study), self.tune_cfg.n_trials)}); this worker runs none")
+            progress.finish(study, met)
+            return met
+
+        started = time.monotonic()
+        study.optimize(objective, n_trials=n_trials, timeout=self.timeout_s(), gc_after_trial=True, catch=self.TRIAL_FAILURES, callbacks=[*callbacks, progress, *self.callbacks()])
+
+        reason = self.reason(n_trials, progress.trials_run, time.monotonic() - started)
+        progress.finish(study, reason)
+
+        return reason
+
+
+class StudyProgress:
+    """Optuna callback logging one line per finished trial and writing a snapshot of the study.
+
+    The line names the trial's state, value and parameters and the study's
+    counts, best value, stall count against the plateau patience and finishing
+    rate, so a worker log reads as a progress record of the whole study. The
+    snapshot, ``study_progress.json`` beside the best configuration, holds the
+    same numbers for the console or a shell to read while the study runs.
+    Every worker attached to the study writes both from the shared study, so
+    the snapshot reads the same whichever worker wrote it last.
+
+    Attributes:
+        FILENAME    : Name of the snapshot file inside the model's tuning directory.
+        FINISHED    : Trial states counted as finished evaluations.
+        FAIL_REASON : User attribute naming the error a failed trial raised.
+        path        : Snapshot path.
+        space       : Search space the stored parameters are decoded against.
+        rules       : Stop rules, whose trial target and plateau patience the snapshot reports against.
+        logger      : Logger of the tuning worker.
+        sampler     : Sampler providing the decoding of stored parameters.
+        started     : Moment this worker's launch began, from which the finishing rate and the time to the target are measured.
+        trials_run  : Trials this worker ran, whatever their state.
+        worker      : This worker's own trial counts keyed complete, pruned and fail.
+        worker_best : (trial number, value) of this worker's best completed trial, or None.
+        stop_reason : Reason code the worker's run ended with, None while it runs.
+    """
+
+    FILENAME    = "study_progress.json"
+    FINISHED    = (TrialState.COMPLETE, TrialState.PRUNED, TrialState.FAIL)
+    FAIL_REASON = "fail_reason"
+
+    def __init__(self, log_dir, space: dict, rules: StudyStopRules, logger) -> None:
+        """Stores the snapshot path, the search space, the stop rules and the logger, and starts this worker's tally."""
+        self.path    = Path(log_dir) / self.FILENAME
+        self.space   = space
+        self.rules   = rules
+        self.logger  = logger
+        self.sampler = ParamSampler()
+
+        self.started     = datetime.now()
+        self.trials_run  = 0
+        self.worker      = {"complete": 0, "pruned": 0, "fail": 0}
+        self.worker_best = None
+        self.stop_reason = None
+
+    @staticmethod
+    def counts(study: optuna.Study) -> dict:
+        """Returns the study's trial counts keyed complete, pruned, fail and running."""
+        trials = study.get_trials(deepcopy=False)
+        return {state.name.lower(): sum(1 for trial in trials if trial.state == state) for state in (TrialState.COMPLETE, TrialState.PRUNED, TrialState.FAIL, TrialState.RUNNING)}
+
+    @staticmethod
+    def phrase(counts: dict, target: int) -> str:
+        """Returns the counts as one phrase of the form 'c complete, p pruned, f failed, r running of target n'."""
+        return f"{counts['complete']} complete, {counts['pruned']} pruned, {counts['fail']} failed, {counts['running']} running of target {target}"
+
+    def snapshot(self, study: optuna.Study) -> dict:
+        """Returns the study's progress: state counts, best trial, stall count, rate and time to the target.
+
+        The rate counts the study's trials, every worker's, that finished
+        since this worker's launch began, over the time since then, so the
+        idle gap before a resume does not dilute it; the study's age since its
+        first trial is reported apart.
+
+        Args:
+            study : Shared study the numbers are read from.
+        """
+        trials   = study.get_trials(deepcopy=False)
+        counts   = self.counts(study)
+        finished = sum(1 for trial in trials if trial.state in self.FINISHED)
+        recent   = sum(1 for trial in trials if trial.state in self.FINISHED and trial.datetime_complete is not None and trial.datetime_complete >= self.started)
+        first    = min((trial.datetime_start for trial in trials if trial.datetime_start is not None), default=None)
+        now      = datetime.now()
+        elapsed  = (now - self.started).total_seconds() / 3600.0
+        age      = (now - first).total_seconds() / 3600.0 if first is not None else 0.0
+        rate     = recent / elapsed if elapsed > 0 else 0.0
+        target   = self.rules.tune_cfg.n_trials
+        left     = max(0, target - counts["complete"] - counts["pruned"])
+        plateau  = self.rules.plateau
+
+        best = None
+        for trial in trials:
+            if trial.state == TrialState.COMPLETE and (best is None or trial.value < best.value):
+                best = trial
+
+        return {
+            "updated_at"       : now.isoformat(timespec="seconds"),
+            "trials"           : counts,
+            "finished"         : finished,
+            "target"           : target,
+            "best"             : None if best is None else {"trial": best.number, "value": best.value, "params": self.sampler.decode(dict(best.params), self.space)},
+            "stalled"          : None if plateau is None else plateau.stalled(study),
+            "plateau_patience" : None if plateau is None else plateau.patience,
+            "elapsed_h"        : round(elapsed, 3),
+            "study_age_h"      : round(age, 3),
+            "trials_per_hour"  : round(rate, 2),
+            "eta_target_h"     : None if rate <= 0 else round(left / rate, 2),
+            "time_budget_h"    : self.rules.tune_cfg.time_budget_h or None,
+            "stop_reason"      : self.stop_reason,
+        }
+
+    def _end_note(self, trial) -> str:
+        """Returns why a failed trial ended, else an empty string.
+
+        A failed trial without a recorded reason raised nothing: Optuna
+        rejected the value its objective returned, such as a NaN.
+        """
+        if trial.state != TrialState.FAIL:
+            return ""
+
+        if self.FAIL_REASON in trial.user_attrs:
+            return f" because {trial.user_attrs[self.FAIL_REASON]}"
+
+        return " because Optuna rejected the objective value"
+
+    def _describe(self, trial, snapshot: dict) -> str:
+        """Returns the one-line progress record of a finished trial."""
+        params = self.sampler.decode(dict(trial.params), self.space)
+        shown  = ", ".join(f"{name}={value:.4g}" if isinstance(value, float) else f"{name}={value}" for name, value in params.items())
+        value  = f" value={trial.value:.5g}" if trial.value is not None else ""
+        ended  = self._end_note(trial)
+        counts = snapshot["trials"]
+        best   = snapshot["best"]
+        stall  = "off" if snapshot["stalled"] is None else f"{snapshot['stalled']}/{snapshot['plateau_patience']}"
+        eta    = "n/a" if snapshot["eta_target_h"] is None else f"{snapshot['eta_target_h']:.1f} h"
+        lead   = "none" if best is None else f"{best['value']:.5g} @ trial {best['trial']}"
+
+        return f"Trial {trial.number} {trial.state.name}{value}{ended} ({shown}) | study: {counts['complete']} complete, {counts['pruned']} pruned, {counts['fail']} failed, {counts['running']} running of {snapshot['target']} | best {lead} | stalled {stall} | {snapshot['trials_per_hour']:.1f} trials/h over the {snapshot['elapsed_h']:.1f} h of this launch, study age {snapshot['study_age_h']:.1f} h, ETA to target {eta}"
+
+    def _tally(self, trial) -> None:
+        """Counts a trial this worker just ran under its state and keeps the worker's best completed value."""
+        self.trials_run += 1
+        self.worker[trial.state.name.lower()] += 1
+
+        if trial.state == TrialState.COMPLETE and (self.worker_best is None or trial.value < self.worker_best[1]):
+            self.worker_best = (trial.number, trial.value)
+
+    def __call__(self, study: optuna.Study, trial) -> None:
+        """Tallies the finished trial, logs its record and rewrites the snapshot, as an Optuna callback."""
+        self._tally(trial)
+
+        snapshot = self.snapshot(study)
+        FileIO.save_json(snapshot, self.path, indent=2, atomic=True)
+        self.logger.info(self._describe(trial, snapshot))
+
+    def finish(self, study: optuna.Study, reason: str) -> None:
+        """Records the reason the worker's run ended in the snapshot and logs the worker's tally against the study.
+
+        Args:
+            study  : Shared study the final snapshot is read from.
+            reason : Reason code from the stop rules.
+        """
+        self.stop_reason = reason
+
+        snapshot = self.snapshot(study)
+        FileIO.save_json(snapshot, self.path, indent=2, atomic=True)
+
+        counts = snapshot["trials"]
+        self.logger.info(f"Worker finished under the {reason} stop after {self.trials_run} trial(s): {self.worker['complete']} complete, {self.worker['pruned']} pruned, {self.worker['fail']} failed | study: {counts['complete']} complete, {counts['pruned']} pruned, {counts['fail']} failed, {counts['running']} running of {snapshot['target']}")
+
+    def summary(self) -> dict:
+        """Returns this worker's tally: trials run by state, its best trial and the reason its run ended."""
+        return {
+            "trials_run"  : self.trials_run,
+            "complete"    : self.worker["complete"],
+            "pruned"      : self.worker["pruned"],
+            "failed"      : self.worker["fail"],
+            "best_trial"  : None if self.worker_best is None else self.worker_best[0],
+            "best_value"  : None if self.worker_best is None else self.worker_best[1],
+            "stop_reason" : self.stop_reason,
         }
 
 
@@ -504,16 +789,23 @@ class Tuner:
             emit_docs      = self.emit_trial_docs,
         )
 
-        _, _, best_val_loss = pipeline.run()
+        try:
+            _, _, best_val_loss = pipeline.run()
+        except StudyStopRules.TRIAL_FAILURES as error:
+            StudyStopRules.fail(trial, error, self.logger)
+            raise
 
         return best_val_loss
 
-    def run(self, study: optuna.Study, n_trials: int) -> None:
-        """Runs the requested number of backbone trials against the study.
+    def run(self, study: optuna.Study, n_trials: int) -> dict:
+        """Runs the requested number of backbone trials against the study and returns this worker's tally.
 
         Args:
             study    : Shared Optuna study to optimize.
             n_trials : Trials this worker contributes.
+
+        Returns:
+            The worker's trials run by state, its best trial and the reason its run ended.
         """
         self.logger.section(f"[Tuner — {self.model_name}]")
 
@@ -528,7 +820,10 @@ class Tuner:
             **rules.describe(),
         }, title="Tuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, timeout=rules.timeout_s(), gc_after_trial=True, callbacks=[self.best_writer, *rules.callbacks()])
+        progress = StudyProgress(self.log_dir, self.space, rules, self.logger)
+        rules.optimize(study, self._objective, n_trials, progress, [self.best_writer])
+
+        return progress.summary()
 
 
 class AeTuner:
@@ -607,17 +902,24 @@ class AeTuner:
         if SearchSpace.BATCH in sampled:
             entry.training.batch_size = sampled[SearchSpace.BATCH]
 
-        pipeline                 = self.trial_pipeline_cls(entry, trial=trial)
-        (_, _, best_val_loss), _ = pipeline.run()
+        pipeline = self.trial_pipeline_cls(entry, trial=trial)
+        try:
+            (_, _, best_val_loss), _ = pipeline.run()
+        except StudyStopRules.TRIAL_FAILURES as error:
+            StudyStopRules.fail(trial, error, self.logger)
+            raise
 
         return best_val_loss
 
-    def run(self, study: optuna.Study, n_trials: int) -> None:
-        """Runs the requested number of autoencoder trials against the study.
+    def run(self, study: optuna.Study, n_trials: int) -> dict:
+        """Runs the requested number of autoencoder trials against the study and returns this worker's tally.
 
         Args:
             study    : Shared Optuna study to optimize.
             n_trials : Trials this worker contributes.
+
+        Returns:
+            The worker's trials run by state, its best trial and the reason its run ended.
         """
         self.logger.section(f"[AeTuner — {self.model_name}]")
 
@@ -632,7 +934,10 @@ class AeTuner:
             **rules.describe(),
         }, title="AeTuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, timeout=rules.timeout_s(), gc_after_trial=True, callbacks=[self.best_writer, *rules.callbacks()])
+        progress = StudyProgress(self.log_dir, self.space, rules, self.logger)
+        rules.optimize(study, self._objective, n_trials, progress, [self.best_writer])
+
+        return progress.summary()
 
 
 class JepaTuner:
@@ -718,17 +1023,24 @@ class JepaTuner:
         entry.training.scheduler_epochs    = self.tune_cfg.n_epochs
         entry.training.early_stop_patience = self.tune_cfg.early_stop_patience
 
-        pipeline                 = TrialJepaPipeline(entry, trial=trial)
-        (_, _, best_val_loss), _ = pipeline.run()
+        pipeline = TrialJepaPipeline(entry, trial=trial)
+        try:
+            (_, _, best_val_loss), _ = pipeline.run()
+        except StudyStopRules.TRIAL_FAILURES as error:
+            StudyStopRules.fail(trial, error, self.logger)
+            raise
 
         return best_val_loss
 
-    def run(self, study: optuna.Study, n_trials: int) -> None:
-        """Runs the requested number of JEPA trials against the study.
+    def run(self, study: optuna.Study, n_trials: int) -> dict:
+        """Runs the requested number of JEPA trials against the study and returns this worker's tally.
 
         Args:
             study    : Shared Optuna study to optimize.
             n_trials : Trials this worker contributes.
+
+        Returns:
+            The worker's trials run by state, its best trial and the reason its run ended.
         """
         self.logger.section(f"[JepaTuner — {self.model_name}]")
 
@@ -743,4 +1055,7 @@ class JepaTuner:
             **rules.describe(),
         }, title="JepaTuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, timeout=rules.timeout_s(), gc_after_trial=True, callbacks=[self.best_writer, *rules.callbacks()])
+        progress = StudyProgress(self.log_dir, self.space, rules, self.logger)
+        rules.optimize(study, self._objective, n_trials, progress, [self.best_writer])
+
+        return progress.summary()
