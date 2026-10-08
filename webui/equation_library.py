@@ -930,12 +930,13 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Weight EMA",
-                    "tex"   : r"\theta^{\mathrm{ema}}_t = \rho\,\theta^{\mathrm{ema}}_{t-1} + (1 - \rho)\,\theta_t",
-                    "note"  : "Optional exponential moving average of every parameter, updated after each optimiser step; the averaged weights are swapped in for validation, reconstruction figures, and test evaluation (via the checkpoint, since the best checkpoint is itself saved under the EMA-applied validation context), then the live weights are restored. Off by default (use_ema).",
+                    "tex"   : r"\theta^{\mathrm{ema}}_t = \rho_t\,\theta^{\mathrm{ema}}_{t-1} + (1 - \rho_t)\,\theta_t, \qquad \rho_t = \min\!\left(\rho, \frac{1 + t}{10 + t}\right)",
+                    "note"  : "Optional exponential moving average of every parameter, updated after each optimiser step; the averaged weights are swapped in for validation, reconstruction figures, and test evaluation (via the checkpoint, since the best checkpoint is itself saved under the EMA-applied validation context), then the live weights are restored. With decay warmup on (ema_warmup, default) the effective decay follows the classic ramp so early updates track the model closely before settling at the target decay; with it off the target decay applies from the first update. Off by default (use_ema).",
                     "vars"  : [
                         {"sym": r"\theta^{\mathrm{ema}}_t", "desc": "shadow (averaged) weight after step t"},
                         {"sym": r"\theta_t",                "desc": "live parameter after the optimiser step"},
-                        {"sym": r"\rho",                    "desc": "ema_decay = 0.999"},
+                        {"sym": r"\rho",                    "desc": "ema_decay = 0.999 (target decay)"},
+                        {"sym": r"\rho_t",                  "desc": "effective decay at update t under the ema_warmup ramp; equal to ema_decay when ema_warmup is off"},
                     ],
                 },
                 {

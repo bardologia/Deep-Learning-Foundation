@@ -19,6 +19,7 @@ import subprocess
 import pytest
 
 from configuration.training.general.optimization import WarmupConfig
+from configuration.training.general.runtime      import TrainingLoopConfig
 
 from equation_library        import EquationLibrary
 from flow_library            import FlowLibrary
@@ -201,6 +202,16 @@ def test_lr_warmup_content_follows_the_warmup_fraction_field(flows, equations):
     assert "warmup_fraction" in names and "warmup_steps" not in names
     assert sorted(name for name, text in sources.items() if re.search(r"(?<!n_)warmup_steps|\bS = 200\b|\bWS = 200\b|tfrac\{t\}\{200\}", text)) == []
     assert sorted(name for name, text in sources.items() if stated not in text) == []
+
+
+def test_weight_ema_equation_shows_the_decay_warmup(equations):
+    """The Weight EMA entry carries the min(decay, (1 + t) / (10 + t)) ramp the trainer applies by default through ema_warmup."""
+    item = next(item for group in equations for item in group["items"] if item["title"] == "Weight EMA")
+
+    assert TrainingLoopConfig().ema_warmup is True
+    assert r"\min\!\left(\rho, \frac{1 + t}{10 + t}\right)" in item["tex"]
+    assert r"\rho_t" in {var["sym"] for var in item["vars"]}
+    assert "ema_warmup" in item["note"]
 
 
 
