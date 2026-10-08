@@ -15,7 +15,7 @@ import pytest
 
 from configuration.diagnostics                             import ActivationXrayConfig
 from pipelines.backbone.inference.analysis.activation_xray import ActivationXrayRun
-from pipelines.backbone.inference.analysis.run_batch       import AnalysisOutcome, AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch       import AnalysisConfigTable, AnalysisOutcome, AnalysisRun, RunBatch
 from tools.data.io                                         import FileIO
 from tools.runtime.completion                              import CompletionMarker
 
@@ -173,7 +173,7 @@ def test_batch_counts_runs_times_each_and_closes_with_a_summary(tmp_path):
 
     logger   = StageLogger()
     config   = ActivationXrayConfig(runs_dir=runs, run_filter=["first", "second"], output_subdir="stub")
-    outcomes = _StubBatch(config, logger).run()
+    outcomes = _StubBatch(config, logger, {}).run()
 
     subsections = [message for level, message in logger.messages if level == "subsection"]
     oks         = [message for level, message in logger.messages if level == "ok"]
@@ -181,5 +181,37 @@ def test_batch_counts_runs_times_each_and_closes_with_a_summary(tmp_path):
     assert [outcome.replaced for outcome in outcomes] == [False, True]
     assert subsections == [f"Run 1/2: {runs / 'first'}", f"Run 2/2: {runs / 'second'}"]
     assert logger.timers == ["Stub analysis [1/2] first", "Stub analysis [2/2] second"]
+    assert logger.tables[0] == "Configuration"
     assert ("metrics_table", "Stub analysis: summary") in logger.messages
     assert oks[-1].startswith("2/2 run(s) analysed in ") and oks[-1].endswith(", 0 flagged, 1 replaced an earlier result")
+
+
+class _TableLogger(RecordingLogger):
+    """Recording logger that keeps the rows of every key-value table.
+
+    Attributes:
+        tables : Pairs of a table title and its rows.
+    """
+
+    def __init__(self) -> None:
+        """Starts with no recorded tables."""
+        super().__init__()
+        self.tables = []
+
+    def kv_table(self, data, title=None, **kwargs):
+        """Records the title and a copy of the rows."""
+        self.tables.append((title, dict(data)))
+
+
+def test_config_table_tags_the_values_the_machine_profile_rewrote():
+    """Every config leaf is listed, and the defaults the machine profile rewrote carry the profile tag."""
+    logger = _TableLogger()
+    config = ActivationXrayConfig(runs_dir=Path("/data/runs"))
+
+    AnalysisConfigTable.log(logger, config, {"runs_dir": "/data/runs"})
+
+    title, rows = logger.tables[0]
+
+    assert title == "Configuration"
+    assert rows["runs_dir"] == "/data/runs (machine profile)"
+    assert rows["max_batches"] == 8 and rows["device"] == "cpu"

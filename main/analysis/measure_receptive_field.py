@@ -21,12 +21,11 @@ def main() -> None:
     from tools.runtime.config_cli                              import ConfigCli
     from tools.monitoring.logger                               import Logger
 
-    config = ConfigCli(ReceptiveFieldConfig(), description="Measure the effective receptive field of trained backbone runs on real data: probe pixels across the split region, gradient of the centre output w.r.t. the input window, ERF sigma per axis, cumulative gradient-mass ladder, heatmap and report written into each run directory").apply()
+    cli    = ConfigCli(ReceptiveFieldConfig(), description="Measure the effective receptive field of trained backbone runs on real data: probe pixels across the split region, gradient of the centre output w.r.t. the input window, ERF sigma per axis, cumulative gradient-mass ladder, heatmap and report written into each run directory")
+    config = cli.apply()
 
-    logger = Logger(log_dir="logs", name="measure_receptive_field")
-    ReceptiveFieldBatch(config, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="measure_receptive_field") as logger:
+        ReceptiveFieldBatch(config, logger, cli.profile_overrides).run()
 
 
 if __name__ == "__main__":

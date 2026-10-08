@@ -21,12 +21,11 @@ def main() -> None:
     from tools.runtime.config_cli                         import ConfigCli
     from tools.monitoring.logger                          import Logger
 
-    config = ConfigCli(RobustnessConfig(), description="Stress trained backbone runs with controlled input degradation: curve-MSE-vs-severity under gaussian noise (all channels, amplitude-only, derived-only), global gain error, whole-channel dropout (secondary + derived channels zeroed, averaged over random subsets) and row shift-equivariance error, with the noise-tolerance sigma at which the loss doubles; curves, JSON and a markdown report land inside each run directory").apply()
+    cli    = ConfigCli(RobustnessConfig(), description="Stress trained backbone runs with controlled input degradation: curve-MSE-vs-severity under gaussian noise (all channels, amplitude-only, derived-only), global gain error, whole-channel dropout (secondary + derived channels zeroed, averaged over random subsets) and row shift-equivariance error, with the noise-tolerance sigma at which the loss doubles; curves, JSON and a markdown report land inside each run directory")
+    config = cli.apply()
 
-    logger = Logger(log_dir="logs", name="stress_inputs")
-    RobustnessBatch(config, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="stress_inputs") as logger:
+        RobustnessBatch(config, logger, cli.profile_overrides).run()
 
 
 if __name__ == "__main__":

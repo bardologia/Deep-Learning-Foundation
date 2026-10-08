@@ -21,12 +21,11 @@ def main() -> None:
     from tools.runtime.config_cli                            import ConfigCli
     from tools.monitoring.logger                             import Logger
 
-    config = ConfigCli(PaperFigurePackConfig(), description="Pack inference figures from selected runs into the publication figures directory under stable names (<run>__<figure-path>.png) with a JSON manifest of every source; render the figures in paper style first by running inference with figure_style=paper").apply()
+    cli    = ConfigCli(PaperFigurePackConfig(), description="Pack inference figures from selected runs into the publication figures directory under stable names (<run>__<figure-path>.png) with a JSON manifest of every source; render the figures in paper style first by running inference with figure_style=paper")
+    config = cli.apply()
 
-    logger = Logger(log_dir="logs", name="export_paper_figures")
-    PaperFigurePack(config, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="export_paper_figures") as logger:
+        PaperFigurePack(config, logger, cli.profile_overrides).run()
 
 
 if __name__ == "__main__":

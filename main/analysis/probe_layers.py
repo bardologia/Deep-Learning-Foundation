@@ -21,12 +21,11 @@ def main() -> None:
     from tools.runtime.config_cli                           import ConfigCli
     from tools.monitoring.logger                            import Logger
 
-    config = ConfigCli(LayerProbeConfig(), description="Probe trained backbone runs layer by layer: ridge readouts on sampled real pixels predict the GT active Gaussian count and dominant component position along z from each layer's features, and the held-out R² by depth shows where each quantity becomes linearly decodable; figures, JSON and a markdown report land inside each run directory").apply()
+    cli    = ConfigCli(LayerProbeConfig(), description="Probe trained backbone runs layer by layer: ridge readouts on sampled real pixels predict the GT active Gaussian count and dominant component position along z from each layer's features, and the held-out R² by depth shows where each quantity becomes linearly decodable; figures, JSON and a markdown report land inside each run directory")
+    config = cli.apply()
 
-    logger = Logger(log_dir="logs", name="probe_layers")
-    LayerProbeBatch(config, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="probe_layers") as logger:
+        LayerProbeBatch(config, logger, cli.profile_overrides).run()
 
 
 if __name__ == "__main__":

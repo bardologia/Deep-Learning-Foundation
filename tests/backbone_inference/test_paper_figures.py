@@ -82,7 +82,7 @@ def test_pack_copies_stable_names_and_writes_a_manifest(tmp_path, monkeypatch):
     _run_with_figures(tmp_path / "runs", "run_b")
     out = tmp_path / "figures"
 
-    payload = PaperFigurePack(_config(tmp_path / "runs", out, ["run_a", "run_b"]), SilentLogger()).run()
+    payload = PaperFigurePack(_config(tmp_path / "runs", out, ["run_a", "run_b"]), SilentLogger(), {}).run()
 
     assert (out / "run_a__pixel_maps__mse.png").read_bytes() == b"png-mse"
     assert (out / "run_b__profiles__best_01.png").is_file()
@@ -104,7 +104,7 @@ def test_pack_takes_the_vector_figures_of_the_paper_style(tmp_path):
 
     config.patterns = ["pixel_maps/*", "profiles/*"]
 
-    payload = PaperFigurePack(config, SilentLogger()).run()
+    payload = PaperFigurePack(config, SilentLogger(), {}).run()
 
     assert (out / "run_a__profiles__best_02.pdf").read_bytes() == b"pdf-prof"
     assert len(payload["figures"]) == 4
@@ -117,7 +117,7 @@ def test_pack_raises_when_one_pattern_matches_nothing(tmp_path):
     config.patterns = ["pixel_maps/*", "stratified/*"]
 
     with pytest.raises(FileNotFoundError):
-        PaperFigurePack(config, SilentLogger()).run()
+        PaperFigurePack(config, SilentLogger(), {}).run()
 
 
 def test_pack_without_matches_raises(tmp_path):
@@ -127,7 +127,7 @@ def test_pack_without_matches_raises(tmp_path):
     config.patterns = ["does_not_exist/*.png"]
 
     with pytest.raises(FileNotFoundError):
-        PaperFigurePack(config, SilentLogger()).run()
+        PaperFigurePack(config, SilentLogger(), {}).run()
 
 
 def test_pack_uses_latest_completed_inference_stamp(tmp_path):
@@ -151,7 +151,7 @@ def test_pack_uses_latest_completed_inference_stamp(tmp_path):
     config.patterns = ["pixel_maps/*.png"]
 
     logger = RecordingLogger()
-    PaperFigurePack(config, logger).run()
+    PaperFigurePack(config, logger, {}).run()
 
     assert (out / "run_a__pixel_maps__mse.png").read_bytes() == b"png-late"
     assert any(level == "warning" and "20260701_000000" in message for level, message in logger.messages)

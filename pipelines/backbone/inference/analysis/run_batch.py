@@ -44,6 +44,31 @@ class AnalysisOutcome:
     replaced    : bool = False
 
 
+class AnalysisConfigTable:
+    """Logs an analysis configuration with the defaults the machine profile rewrote marked.
+
+    Attributes:
+        PROFILE_TAG : Suffix appended to every value the machine profile rewrote.
+    """
+
+    PROFILE_TAG = "(machine profile)"
+
+    @classmethod
+    def log(cls, logger, config, profile_overrides: dict) -> None:
+        """Logs every leaf of the configuration as one key-value table.
+
+        Args:
+            logger            : Logger receiving the table.
+            config            : Analysis configuration dataclass.
+            profile_overrides : Leaf path to value of every default the machine profile rewrote.
+        """
+        rows = {}
+        for path, value in ConfigCli.to_mapping(config).items():
+            rows[path] = f"{value} {cls.PROFILE_TAG}" if path in profile_overrides else value
+
+        logger.kv_table(rows, title="Configuration")
+
+
 class AnalysisRun:
     """Base class for an analysis applied to a single backbone training run.
 
@@ -221,23 +246,26 @@ class RunBatch:
     """Base class applying one ``AnalysisRun`` subclass to every selected run.
 
     Attributes:
-        config : Analysis configuration carrying the runs directory and run filter.
-        logger : Logger used for the section header and per-run subsections.
+        config            : Analysis configuration carrying the runs directory and run filter.
+        logger            : Logger used for the section header and per-run subsections.
+        profile_overrides : Leaf path to value of every default the machine profile rewrote.
     """
 
     SELECTOR_ACTION : str
     SECTION_TITLE   : str
     RUN_CLASS       : type[AnalysisRun]
 
-    def __init__(self, config, logger) -> None:
+    def __init__(self, config, logger, profile_overrides: dict) -> None:
         """Stores the analysis configuration and logger for the batch.
 
         Args:
-            config : Analysis configuration; must expose ``runs_dir``, ``run_filter`` and ``checkpoint_name``.
-            logger : Logger for section and per-run reporting.
+            config            : Analysis configuration; must expose ``runs_dir``, ``run_filter`` and ``checkpoint_name``.
+            logger            : Logger for section and per-run reporting.
+            profile_overrides : Leaf path to value of every default the machine profile rewrote, tagged in the configuration table.
         """
-        self.config = config
-        self.logger = logger
+        self.config            = config
+        self.logger            = logger
+        self.profile_overrides = profile_overrides
 
     def _select_runs(self) -> list[Path]:
         """Returns the run directories matching the configured run filter."""
@@ -299,6 +327,7 @@ class RunBatch:
             One outcome per run, in selection order.
         """
         self.logger.section(self.SECTION_TITLE)
+        AnalysisConfigTable.log(self.logger, self.config, self.profile_overrides)
 
         run_dirs  = self._select_runs()
         outcomes  = []
