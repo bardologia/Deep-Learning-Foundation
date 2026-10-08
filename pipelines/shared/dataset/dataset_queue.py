@@ -28,6 +28,7 @@ class DatasetQueueResolver:
         Raises:
             TypeError          : `dataset_filter` is not a list or tuple of names.
             NotADirectoryError : The base path is missing, or a selected entry has no data/ sub-directory.
+            FileNotFoundError  : The base path holds no dataset directory, so the queue would run as an empty no-op.
         """
         if not isinstance(self.dataset_filter, (list, tuple)):
             raise TypeError(f"dataset_filter must be a list of dataset names, got {type(self.dataset_filter).__name__}: {self.dataset_filter!r}")
@@ -40,6 +41,9 @@ class DatasetQueueResolver:
             if not self.dataset_filter
             else [self.base_path / str(name) for name in self.dataset_filter]
         )
+
+        if not dataset_dirs:
+            raise FileNotFoundError(f"dataset_base_path {self.base_path} holds no dataset directory, so the queue is empty; check that the dataset root exists and that the machine profile points at it")
 
         invalid = [d for d in dataset_dirs if not (d / "data").is_dir()]
         if invalid:
