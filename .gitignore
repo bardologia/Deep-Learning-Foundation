@@ -10,6 +10,7 @@ __pycache__/
 
 node_modules/
 package-lock.json
+!webui/tools/visual/package-lock.json
 .pytest_cache/
 .claude/
 *.egg-info/
