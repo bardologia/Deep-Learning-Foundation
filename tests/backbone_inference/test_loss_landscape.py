@@ -14,7 +14,8 @@ import torch
 from configuration.diagnostics                            import LossLandscapeConfig
 from pipelines.backbone.inference.analysis.loss_landscape import CutDiagnostics, FilterNormalizedDirection, LandscapeEvaluator, LossLandscapePlots, LossLandscapeRun
 
-from tests.conftest import SilentLogger
+from tests.backbone_inference._helpers import StageLogger, build_run_directory
+from tests.conftest                    import SilentLogger
 
 
 class _TinyConv(torch.nn.Module):
@@ -73,7 +74,7 @@ def test_evaluator_restores_weights_and_center_is_minimum_for_quadratic():
 
     evaluator = LandscapeEvaluator(model, loss_fn)
     alphas    = np.linspace(-0.5, 0.5, 11)
-    cut       = evaluator.grid(alphas, np.zeros(1), direction, zero)[:, 0]
+    cut       = evaluator.grid(alphas, np.zeros(1), direction, zero, lambda: None)[:, 0]
 
     assert torch.allclose(model.weight.detach(), original, atol=1e-7)
     assert cut[5] == pytest.approx(0.0, abs=1e-10)
@@ -170,3 +171,29 @@ def test_single_direction_is_refused_before_the_run_loads(tmp_path):
     """One direction leaves no plane for the 2-D grid, so the analysis refuses it at construction."""
     with pytest.raises(ValueError, match="at least 2 directions"):
         LossLandscapeRun(tmp_path, LossLandscapeConfig(n_directions=1), SilentLogger())
+
+
+def test_grid_reports_every_evaluated_point():
+    """The progress callback fires once per evaluated grid point."""
+    model     = torch.nn.Linear(2, 1)
+    direction = {name: torch.ones_like(param) for name, param in model.named_parameters()}
+    points    = []
+
+    LandscapeEvaluator(model, lambda: 1.0).grid(np.linspace(-0.1, 0.1, 3), np.linspace(-0.1, 0.1, 2), direction, direction, lambda: points.append(1))
+
+    assert len(points) == 6
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_landscape_pass_announces_tracks_and_times_its_stages(tmp_path, test_data_dir, params_dir):
+    """A landscape pass on a real run announces its evaluation count, advances one bar per point and times the cuts and the grid."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+    config  = LossLandscapeConfig(batch_size=2, max_batches=1, n_directions=2, n_points_1d=11, n_points_2d=3)
+    logger  = StageLogger()
+
+    LossLandscapeRun(run_dir, config, logger).run()
+
+    assert any(message.endswith("31 loss evaluations planned (2 cuts x 11 points + 3x3 grid)") for level, message in logger.messages if level == "info")
+    assert logger.totals == [31] and logger.advances == 31
+    assert logger.timers == ["Loss landscape: 1-D cuts (22 points)", "Loss landscape: 2-D grid (9 points)"]
