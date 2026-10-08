@@ -279,6 +279,34 @@ class CubeViewChecks {
     return { ranges, absent, present, byStd, byZ, fetched };
   }
 
+  async cloudRace() {
+    Object.assign(this.sandbox.window, { innerHeight: 600, devicePixelRatio: 1, addEventListener: () => {} });
+
+    const { cloud, host } = this._cloud();
+    const answers = [];
+    const blob    = (total) => ({ ok: true, arrayBuffer: async () => new Float32Array([1, total, 5, 0, 0, 0, total, 1, 0]).buffer });
+
+    this.sandbox.fetch = () => new Promise((resolve) => answers.push(resolve));
+    cloud._draw        = () => {};
+    cloud.available    = true;
+
+    const earlier = cloud._fetch();
+    const later   = cloud._fetch();
+    answers[1](blob(2));
+    await later;
+    answers[0](blob(1));
+    await earlier;
+    const raced = { total: cloud.total, mu: cloud.points[2] };
+
+    const stale = cloud._fetch();
+    cloud.configure(host.meta);
+    answers[2](blob(3));
+    await stale;
+    const reconfigured = { points: cloud.points, total: cloud.total };
+
+    return { raced, reconfigured };
+  }
+
   cutColors() {
     const { CubeView } = this.classes;
     const strokes = [];

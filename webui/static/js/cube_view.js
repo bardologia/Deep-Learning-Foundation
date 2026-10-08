@@ -1521,6 +1521,7 @@ class CubeCloud {
     this.debounceTimer = null;
     this.sweepFrame    = null;
     this.sweepT0       = null;
+    this.token         = 0;
 
     this.yaw = 0.7;
     this.pitch = 0.9;
@@ -1551,6 +1552,7 @@ class CubeCloud {
     const sources = this._sources(meta);
     this.available = sources.length > 0;
     if (!sources.includes(this.source)) this.source = sources[0] || "pred";
+    this.token         += 1;
     this.points         = null;
     this.muBounds       = null;
     this.stdRange       = null;
@@ -1732,8 +1734,11 @@ class CubeCloud {
     const url = `/api/cubes/points?id=${encodeURIComponent(this.host.selectedId)}&source=${this.source}` +
       `&amp_min=${this._ampMin()}&max=${this.maxEl.value}`;
 
+    this.token += 1;
+    const token = this.token;
+
     const data = await this._fetchBinary(url);
-    if (!data) return;
+    if (!data || token !== this.token) return;
 
     this.points   = data.rows;
     this.width    = data.header[2];

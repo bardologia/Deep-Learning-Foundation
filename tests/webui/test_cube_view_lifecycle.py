@@ -5,8 +5,9 @@ This module runs ``cube_view.js`` under node with no DOM through
 ImageBitmaps, whose pixel memory is only returned when they are closed, so evicted,
 cleared, released and replaced bitmaps must close while a bitmap a sweep still shows is
 kept. The point cloud's section-cut plane must bound itself by the cloud's true extent,
-hide the points beyond it, and stop its sweep loop when the view or the tab is left. Each
-cut panel marks its position in the colour of its own cut axis. The
+hide the points beyond it, and stop its sweep loop when the view or the tab is left, and the
+cloud must drop a points blob that lands after a newer request or another cube. Each cut
+panel marks its position in the colour of its own cut axis. The
 parameter map's pixel readout must keep the pixel picked last when answers arrive out of
 order. Class metric layers must swap the colour bar for a named legend and read out class
 names, and the layer histogram must draw one coloured bar per class, shade the colour range,
@@ -742,6 +743,15 @@ def test_uncertainty_colour_paints_points_by_their_seed_std_and_greys_missing_on
 def test_cloud_reads_its_row_width_from_the_blob_header():
     """A fetched blob is strided by the column count its header declares, and the seed std range comes from the fifth column."""
     assert _check("uncertainty")["fetched"] == {"width": 5, "total": 7, "muBounds": [3, 8], "stdRange": [5, 10]}
+
+
+@NEEDS_JS
+def test_cloud_drops_a_blob_answered_for_an_earlier_request_or_cube():
+    """A points blob that lands after a newer request, or after another cube configured the cloud, is not drawn."""
+    observed = _check("cloudRace")
+
+    assert observed["raced"] == {"total": 2, "mu": 2}
+    assert observed["reconfigured"] == {"points": None, "total": 2}
 
 
 @NEEDS_JS
