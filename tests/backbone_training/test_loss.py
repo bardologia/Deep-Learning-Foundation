@@ -172,6 +172,18 @@ def test_physical_errors_logged_without_active_param_term():
     assert torch.isfinite(pred.grad).all().item()
 
 
+def test_physical_errors_build_no_autograd_graph():
+    """Verifies the parameter errors are computed without gradients, so they hold no graph of the full-resolution matched tensors beside the loss."""
+    loss = build_loss(n_gaussians=2)
+    pred = param_tensor(2, 2, 6, 6, seed=0).requires_grad_(True)
+
+    out = loss(pred, param_tensor(2, 2, 6, 6, seed=1))
+
+    assert out["total_loss"].requires_grad
+    assert not any(value.requires_grad for value in out["physical"].values())
+    assert all(value.grad_fn is None for value in out["physical"].values())
+
+
 def test_forward_output_dict_keys_for_active_term():
     """Verifies an active parameter term populates both the component and the per-parameter monitor entries."""
     loss = build_loss(n_gaussians=2)
