@@ -214,6 +214,33 @@ class CubeViewChecks {
     return { bounds, specs, unbounded, cutDraw, openDraw, started, positions, left, viewLeft, offView, reconfigured, axisOff };
   }
 
+  async pixel() {
+    const { CubeParams } = this.classes;
+    const pending = new Map();
+
+    this.sandbox.Api = {
+      get: (url) => new Promise((resolve) => pending.set(new URLSearchParams(url.split("?")[1]).get("row"), resolve)),
+    };
+
+    const params        = Object.create(CubeParams.prototype);
+    params.host         = { selectedId: "cube" };
+    params.pixelSeq     = 0;
+    params.coordsEl     = this._element();
+    params.openBtn      = this._element({ hidden: true });
+    params.rendered     = [];
+    params._renderTable = (data) => params.rendered.push(data.row);
+
+    const first  = params._fetchPixel(1, 1);
+    const second = params._fetchPixel(2, 2);
+
+    pending.get("2")({ ok: true, row: 2, col: 2, threshold: 0.1 });
+    await second;
+    pending.get("1")({ ok: true, row: 1, col: 1, threshold: 0.1 });
+    await first;
+
+    return { coords: params.coordsEl.textContent, rendered: params.rendered, open: !params.openBtn.hidden };
+  }
+
   async run(name) {
     const result = await this[name]();
     process.stdout.write(JSON.stringify(result));

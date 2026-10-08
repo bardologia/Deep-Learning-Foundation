@@ -5,7 +5,9 @@ This module runs ``cube_view.js`` under node with no DOM through
 ImageBitmaps, whose pixel memory is only returned when they are closed, so evicted,
 cleared, released and replaced bitmaps must close while a bitmap a sweep still shows is
 kept. The point cloud's section-cut plane must bound itself by the cloud's true extent,
-hide the points beyond it, and stop its sweep loop when the view or the tab is left.
+hide the points beyond it, and stop its sweep loop when the view or the tab is left. The
+parameter map's pixel readout must keep the pixel picked last when answers arrive out of
+order.
 """
 
 from __future__ import annotations
@@ -132,3 +134,11 @@ def test_cut_controls_are_on_the_page_and_wired_to_the_cloud():
 
     for ref, element in (("cutAxis", "cube-cloud-cut-axis"), ("cutPos", "cube-cloud-cut-pos"), ("cutSweep", "cube-cloud-cut-sweep")):
         assert re.search(rf'{ref}\s*: document\.getElementById\("{element}"\)', app), ref
+
+
+@NEEDS_JS
+def test_params_pixel_readout_ignores_a_late_answer_for_an_earlier_click():
+    """When the first pixel's answer lands after the second's, the readout keeps the pixel picked last."""
+    observed = _check("pixel")
+
+    assert observed == {"coords": "row = 2 · col = 2 · threshold 0.1", "rendered": [2], "open": True}

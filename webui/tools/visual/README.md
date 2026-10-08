@@ -126,14 +126,17 @@ and releases the slice bitmaps and replaces a cut panel's image, recording which
 were closed. The `cut` scenario builds a point cloud over a stub canvas and animation
 frame queue, then reads the section-cut thresholds, the readout with and without a cut,
 the sweep positions over one period, and whether the sweep loop is still running after
-each way of leaving it. `tests/webui/test_cube_view_lifecycle.py` drives both, which is
-the contract that keeps evicted and replaced slices from holding image memory while never
-closing a bitmap a sweep still draws, and keeps the cut sweep from running on after the
-cloud is out of sight.
+each way of leaving it. The `pixel` scenario clicks two parameter-map pixels and answers
+the second request before the first, then reads the readout. `tests/webui/test_cube_view_lifecycle.py`
+drives all three, which is the contract that keeps evicted and replaced slices from
+holding image memory while never closing a bitmap a sweep still draws, keeps the cut sweep
+from running on after the cloud is out of sight, and keeps a late answer from overwriting
+the pixel picked last.
 
 ```
 node cube_view_checks.js bitmaps
 node cube_view_checks.js cut
+node cube_view_checks.js pixel
 ```
 
 ## Repo-map diagram harness

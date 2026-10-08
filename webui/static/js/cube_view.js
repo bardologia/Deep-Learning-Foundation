@@ -246,6 +246,7 @@ class CubeParams {
     this.field = "amp";
     this.slot = 0;
     this.token = 0;
+    this.pixelSeq = 0;
     this.picked = null;
 
     this.fieldEl.querySelectorAll(".cube-space").forEach((btn) => {
@@ -391,8 +392,9 @@ class CubeParams {
   }
 
   async _fetchPixel(row, col) {
+    const seq  = ++this.pixelSeq;
     const data = await Api.get(`/api/cubes/params_at?id=${encodeURIComponent(this.host.selectedId)}&row=${row}&col=${col}`);
-    if (!data || !data.ok) return;
+    if (seq !== this.pixelSeq || !data || !data.ok) return;
 
     this.coordsEl.textContent = `row = ${data.row} · col = ${data.col} · threshold ${data.threshold}`;
     this.openBtn.hidden       = false;
