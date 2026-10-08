@@ -258,72 +258,124 @@ class MaxBatchStage(ExperimentStage):
         """Returns the JSON path of one model's probe result."""
         return self.stage_dir / model_name / "max_batch_result.json"
 
-    def _has_result(self, model_name: str) -> bool:
-        """Returns whether a cached passing result exists that was measured under the current settings.
+    def _cache_verdict(self, model_name: str) -> str | None:
+        """Returns why a model's previous probe result cannot be reused, or None when it can.
 
         Args:
             model_name : Model key to check.
 
         Returns:
-            True only when resuming, the result file exists, its status is PASS
-            and its recorded probe settings match the current ones.
+            None when resuming and the result file holds a PASS measured under
+            the current probe settings; otherwise the reason it is re-probed:
+            no previous result, resume off, a status other than PASS, a result
+            predating the current settings schema, or a changed setting.
         """
         path = self._result_path(model_name)
 
-        if not self.config.resume or not path.exists():
-            return False
+        if not path.exists():
+            return "no previous result"
+        if not self.config.resume:
+            return "resume is off"
 
         record = FileIO.load_json(path)
 
         if record["status"] != "PASS":
-            return False
+            return f"previous status was {record['status']}"
 
         settings = self.config.max_batch_settings()
         stored   = record["settings"]
 
         if set(stored) != set(settings):
-            self.logger.warning(f"{model_name}: cached result predates the current probe settings schema, re-probing")
-            return False
+            return "the result predates the current probe settings schema"
 
         changed = {key: (stored[key], value) for key, value in settings.items() if stored[key] != value}
-
         if changed:
-            self.logger.warning(f"{model_name}: cached batch size was measured under {changed} (stored, current), re-probing")
-            return False
+            return f"measured under {changed} (stored, current)"
 
-        return True
+        return None
+
+    def _has_result(self, model_name: str) -> bool:
+        """Returns whether a cached passing result measured under the current settings exists for a model."""
+        return self._cache_verdict(model_name) is None
+
+    def _discard_result(self, model_name: str, reason: str) -> None:
+        """Deletes a model's previous probe result before it is re-probed, saying why, so a worker that dies before writing leaves no stale file behind.
+
+        Args:
+            model_name : Model key about to be re-probed.
+            reason     : Verdict explaining why the previous result is not reused.
+        """
+        path = self._result_path(model_name)
+        if not path.exists():
+            return
+
+        self.logger.warning(f"{model_name}: previous probe result discarded ({reason}), re-probing")
+        path.unlink()
+
+    def _worker_log(self, model_name: str) -> Path:
+        """Returns the log file of one model's probe worker."""
+        return self.stage_dir / model_name / "worker.log"
 
     def _job(self, model_name: str) -> GpuJob:
         """Returns the GPU job probing the maximum batch size of one model."""
         return GpuJob(
             name     = model_name,
             command  = [sys.executable, str(self.entry_script), "--worker", "maxbatch", "--model", model_name, "--run-tag", self.run_tag, "--run-dir", str(self.run_dir)],
-            log_path = self.stage_dir / model_name / "worker.log",
+            log_path = self._worker_log(model_name),
         )
 
-    def _load_result(self, model_name: str) -> dict:
-        """Loads one model's probe record, synthesising a FAIL record when the file is missing."""
+    def _fail_record(self, model_name: str, error: str) -> dict:
+        """Returns a FAIL probe record for a model whose probe left no usable result.
+
+        Args:
+            model_name : Model key the record stands for.
+            error      : Text explaining the failure.
+        """
+        return {
+            "model"                    : model_name,
+            "status"                   : "FAIL",
+            "batch_size"               : None,
+            "peak_gb"                  : None,
+            "budget_gb"                : self.config.max_batch.vram_budget_gb,
+            "ceiling"                  : self.config.max_batch.max_batch,
+            "context_gb"               : None,
+            "trials"                   : [],
+            "lr_multiplier"            : None,
+            "lr_min_loss_multiplier"   : None,
+            "lr_divergence_multiplier" : None,
+            "lr_rungs_run"             : None,
+            "error"                    : error,
+            "settings"                 : self.config.max_batch_settings(),
+        }
+
+    def _load_result(self, model_name: str, job: dict | None) -> dict:
+        """Loads one model's probe record, or synthesises a FAIL record when the probe left none.
+
+        Args:
+            model_name : Model key whose result is read.
+            job        : GPU queue result of the probe worker this launch ran for the model, or None when the cached result was reused.
+
+        Returns:
+            The record on disk, turned into FAIL when it was measured under
+            other probe settings than the current ones, or a FAIL record naming
+            the worker exit and its log when the worker died before writing one.
+        """
         path = self._result_path(model_name)
 
         if not path.exists():
-            return {
-                "model"                  : model_name,
-                "status"                 : "FAIL",
-                "batch_size"             : None,
-                "peak_gb"                : None,
-                "budget_gb"              : self.config.max_batch.vram_budget_gb,
-                "ceiling"                : self.config.max_batch.max_batch,
-                "context_gb"             : None,
-                "trials"                   : [],
-                "lr_multiplier"            : None,
-                "lr_min_loss_multiplier"   : None,
-                "lr_divergence_multiplier" : None,
-                "lr_rungs_run"             : None,
-                "error"                  : f"missing result file: {path}",
-                "settings"               : self.config.max_batch_settings(),
-            }
+            if job is None:
+                return self._fail_record(model_name, f"missing result file: {path}")
 
-        return FileIO.load_json(path)
+            return self._fail_record(model_name, f"worker exited {job['returncode']} before writing a result, see {job['log_file']}")
+
+        record   = FileIO.load_json(path)
+        settings = self.config.max_batch_settings()
+
+        if record["settings"] != settings:
+            self.logger.error(f"{model_name}: probe result at {path} was measured under {record['settings']}, the current settings are {settings}; the model counts as not probed")
+            return {**record, "status": "FAIL", "error": f"stale probe result measured under {record['settings']}; current settings {settings}"}
+
+        return record
 
     def _write_report(self, records: dict) -> None:
         """Writes the markdown table of batch size, peak memory and status per model.
@@ -358,7 +410,11 @@ class MaxBatchStage(ExperimentStage):
         self.logger.info(f"Report written to: {self.report_path}")
 
     def _log_summary(self, records: dict) -> None:
-        """Logs how many models were measured and the batch size and peak of each.
+        """Logs how many models were measured, the batch size and peak of each, and why each failure failed.
+
+        A model whose LR range test found no usable response is warned about,
+        since it trains at the configured learning rate, and every failed
+        model is listed with the last line of its error and its worker log.
 
         Args:
             records : Probe record per model key.
@@ -378,8 +434,12 @@ class MaxBatchStage(ExperimentStage):
             lr_note    = f"  lr x{multiplier:.4g}" if multiplier is not None else ""
             self.logger.info(f"{model_name:<18} batch {records[model_name]['batch_size']:>4}  peak {records[model_name]['peak_gb']:.2f} GB{lr_note}")
 
+            if self.config.find_lr.enabled and multiplier is None:
+                self.logger.warning(f"{model_name}: LR range test found no usable response; training keeps lr_multiplier={self.config.training.lr_multiplier}")
+
         for model_name in failed:
-            self.logger.error(f"FAILED  {model_name}")
+            reason = records[model_name]["error"].strip().splitlines()[-1]
+            self.logger.error(f"FAILED  {model_name}: {reason}  (see {self._worker_log(model_name)})")
 
     def run(self) -> dict:
         """Probes every model that has no reusable cached result and reports the outcome.
@@ -400,21 +460,21 @@ class MaxBatchStage(ExperimentStage):
         if self.config.training.batch_size > self.config.max_batch.max_batch:
             self.logger.warning(f"training.batch_size={self.config.training.batch_size} exceeds the probe ceiling max_batch.max_batch={self.config.max_batch.max_batch}; the probed batch replaces the configured one, so training would be capped at the ceiling — raise max_batch.max_batch to probe up to the intended batch")
 
-        cached  = [m for m in self.models if self._has_result(m)]
-        pending = [m for m in self.models if m not in cached]
+        verdicts = {m: self._cache_verdict(m) for m in self.models}
+        cached   = [m for m in self.models if verdicts[m] is None]
+        pending  = [m for m in self.models if verdicts[m] is not None]
 
         for model_name in cached:
             self.logger.info(f"{model_name}: cached result reused")
 
-        if self.config.resume:
-            for model_name in pending:
-                if self._result_path(model_name).exists():
-                    self.logger.warning(f"{model_name}: previous result was not PASS, re-probing")
+        for model_name in pending:
+            self._discard_result(model_name, verdicts[model_name])
 
+        jobs = {}
         if pending:
-            self._run_queue([self._job(m) for m in pending])
+            jobs = {result["name"]: result for result in self._run_queue([self._job(m) for m in pending])}
 
-        records = {m: self._load_result(m) for m in self.models}
+        records = {m: self._load_result(m, jobs[m] if m in jobs else None) for m in self.models}
 
         self._write_results(records, self.records_path)
         self._write_report(records)

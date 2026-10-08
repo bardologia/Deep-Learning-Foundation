@@ -61,7 +61,7 @@ def test_maxbatch_job_command_uses_maxbatch_worker(config, logger_stub):
 def test_maxbatch_missing_result_carries_budget_and_ceiling(config, logger_stub):
     """Verifies a missing probe result is reported as FAIL carrying the VRAM budget and batch ceiling."""
     stage  = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
-    record = stage._load_result("unet")
+    record = stage._load_result("unet", None)
 
     assert record["status"]    == "FAIL"
     assert record["budget_gb"] == config.max_batch.vram_budget_gb
@@ -142,7 +142,7 @@ def test_maxbatch_run_collects_records_keyed_by_model(config, logger_stub, monke
         """Writes a passing probe result for every queued job and reports no queue records."""
         for job in jobs:
             path = stage._result_path(job.name)
-            FileIO.save_json({"model": job.name, "status": "PASS", "batch_size": 64, "peak_gb": 10.0, "lr_multiplier": None}, path)
+            FileIO.save_json({"model": job.name, "status": "PASS", "batch_size": 64, "peak_gb": 10.0, "lr_multiplier": None, "settings": config.max_batch_settings()}, path)
         return []
 
     monkeypatch.setattr(stage, "_run_queue", fake_queue)
@@ -152,6 +152,137 @@ def test_maxbatch_run_collects_records_keyed_by_model(config, logger_stub, monke
     assert set(records) == set(models)
     assert records["unet"]["batch_size"] == 64
     assert stage.records_path.exists()
+
+
+def _probe_record(config, status: str = "PASS", **fields) -> dict:
+    """Returns a probe result record under the config's current settings, with the given fields overriding the defaults."""
+    record = {"model": "unet", "status": status, "batch_size": 64, "peak_gb": 10.0, "lr_multiplier": None, "error": None, "settings": config.max_batch_settings()}
+    record.update(fields)
+    return record
+
+
+def _queue_result(name: str, status: str, returncode: int, log_file: str) -> dict:
+    """Returns the dictionary the GPU queue reports for one finished probe worker."""
+    return {"name": name, "gpu": 0, "status": status, "returncode": returncode, "duration_s": 1.0, "log_file": log_file}
+
+
+def test_maxbatch_discards_a_stale_result_before_reprobing_and_warns_once(config, recording_logger, monkeypatch):
+    """A passing result measured under other settings is deleted before the worker runs, and the log explains the re-probe in exactly one line."""
+    config.resume = True
+    stage  = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+    stored = dict(config.max_batch_settings(), budget_gb=config.max_batch_settings()["budget_gb"] + 4.0)
+
+    FileIO.save_json(_probe_record(config, settings=stored), stage._result_path("unet"))
+
+    seen = {}
+
+    def fake_queue(jobs):
+        """Records whether the stale file was gone when the worker started and writes a fresh result."""
+        seen["stale_present"] = stage._result_path("unet").exists()
+        FileIO.save_json(_probe_record(config, batch_size=32), stage._result_path("unet"))
+        return [_queue_result("unet", "DONE", 0, "/logs/unet.log")]
+
+    monkeypatch.setattr(stage, "_run_queue", fake_queue)
+
+    records  = stage.run()
+    warnings = [message for level, message in recording_logger.messages if level == "warning" and message.startswith("unet:")]
+
+    assert seen["stale_present"] is False
+    assert records["unet"]["batch_size"] == 32
+    assert len(warnings) == 1
+    assert "measured under" in warnings[0]
+    assert "not PASS" not in warnings[0]
+
+
+def test_maxbatch_dead_worker_yields_a_fail_record_naming_its_exit_and_log(config, recording_logger, monkeypatch):
+    """A worker that exits without writing a result leaves a FAIL record carrying its exit code and log path instead of whatever file was on disk."""
+    config.resume = True
+    stage = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    FileIO.save_json(_probe_record(config, settings=dict(config.max_batch_settings(), seed=99)), stage._result_path("unet"))
+
+    monkeypatch.setattr(stage, "_run_queue", lambda jobs: [_queue_result("unet", "FAILED", 137, "/logs/unet/worker.log")])
+
+    records = stage.run()
+
+    assert records["unet"]["status"] == "FAIL"
+    assert "worker exited 137" in records["unet"]["error"]
+    assert "/logs/unet/worker.log" in records["unet"]["error"]
+    assert FileIO.load_json(stage.records_path)["unet"]["status"] == "FAIL"
+
+
+def test_maxbatch_load_result_rejects_a_result_measured_under_other_settings(config, recording_logger):
+    """A result file whose settings differ from the current ones is turned into FAIL with an error line, never used as PASS."""
+    stage = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    FileIO.save_json(_probe_record(config, settings=dict(config.max_batch_settings(), seed=99)), stage._result_path("unet"))
+
+    record = stage._load_result("unet", None)
+
+    assert record["status"] == "FAIL"
+    assert "stale probe result" in record["error"]
+    assert any(level == "error" and "measured under" in message for level, message in recording_logger.messages)
+
+
+def test_maxbatch_resume_off_discards_every_previous_result(config, recording_logger, monkeypatch):
+    """With resume off a previous result is deleted before probing and the log says so, so a dead worker cannot resurrect it."""
+    stage = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    FileIO.save_json(_probe_record(config), stage._result_path("unet"))
+
+    monkeypatch.setattr(stage, "_run_queue", lambda jobs: [_queue_result("unet", "FAILED", 1, "/logs/unet/worker.log")])
+
+    records = stage.run()
+
+    assert records["unet"]["status"] == "FAIL"
+    assert ("warning", "unet: previous probe result discarded (resume is off), re-probing") in recording_logger.messages
+
+
+def test_maxbatch_fresh_model_logs_no_discard_line(config, recording_logger, monkeypatch):
+    """A model without any previous result is probed without a discard warning."""
+    stage = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    def fake_queue(jobs):
+        """Writes a passing result for the queued model."""
+        FileIO.save_json(_probe_record(config), stage._result_path("unet"))
+        return [_queue_result("unet", "DONE", 0, "/logs/unet.log")]
+
+    monkeypatch.setattr(stage, "_run_queue", fake_queue)
+
+    stage.run()
+
+    assert not any(level == "warning" and "discarded" in message for level, message in recording_logger.messages)
+
+
+def test_maxbatch_summary_warns_when_the_lr_range_test_selected_nothing(config, recording_logger):
+    """With the LR range test on, a passing model without a selected multiplier is warned about, since it trains at the configured learning rate; one with a multiplier is not."""
+    config.find_lr.enabled = True
+    stage                  = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet", "resunet"], logger=recording_logger)
+
+    stage._log_summary({"unet": _probe_record(config), "resunet": _probe_record(config, model="resunet", lr_multiplier=0.5)})
+
+    warnings = [message for level, message in recording_logger.messages if level == "warning"]
+
+    assert warnings == [f"unet: LR range test found no usable response; training keeps lr_multiplier={config.training.lr_multiplier}"]
+
+
+def test_maxbatch_summary_stays_quiet_about_the_lr_when_the_test_is_off(config, recording_logger):
+    """With the LR range test off, a passing model without a multiplier is the expected case and draws no warning."""
+    config.find_lr.enabled = False
+    stage                  = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    stage._log_summary({"unet": _probe_record(config)})
+
+    assert [message for level, message in recording_logger.messages if level == "warning"] == []
+
+
+def test_maxbatch_summary_names_the_failure_reason_and_the_worker_log(config, recording_logger):
+    """A failed model is listed with the last line of its error and the path of its probe worker log."""
+    stage = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    stage._log_summary({"unet": _probe_record(config, status="FAIL", batch_size=None, peak_gb=None, error="Traceback (most recent call last):\n  ...\nRuntimeError: dataset split is empty\n")})
+
+    assert ("error", f"FAILED  unet: RuntimeError: dataset split is empty  (see {stage.stage_dir / 'unet' / 'worker.log'})") in recording_logger.messages
 
 
 def test_sizematch_reference_record_is_zero_deviation(config, logger_stub):
