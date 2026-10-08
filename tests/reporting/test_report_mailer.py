@@ -12,6 +12,7 @@ experiment.
 from __future__ import annotations
 
 import base64
+import os
 import json
 from pathlib import Path
 
@@ -62,6 +63,32 @@ def _write_report(run_dir: Path, tag: str, metrics: dict | None = None, split: s
     return output_dir / "report.md"
 
 
+def _write_aggregate(trial_dir: Path, tag: str, inference: dict) -> Path:
+    """Writes a seed-aggregate stamp as the seed comparison does: a report and a metrics file naming the averaged seeds.
+
+    Args:
+        trial_dir : Seeded trial directory receiving the inference/<tag> stamp.
+        tag       : Aggregate stamp directory name.
+        inference : Inference stamp name read for each averaged seed, by seed label.
+
+    Returns:
+        Path of the written report.md.
+    """
+    output_dir = trial_dir / "inference" / tag
+    output_dir.mkdir(parents=True)
+
+    (output_dir / "report.md").write_text("# Seed aggregate\n\ncurve_rmse_gt 0.5\n", encoding="utf-8")
+    (output_dir / "metrics.json").write_text(json.dumps({
+        "n_seeds"        : len(inference),
+        "seed_runs"      : {seed: str(trial_dir / seed) for seed in inference},
+        "seed_inference" : dict(inference),
+        "mean"           : {"curve_rmse_gt": 0.5},
+        "std"            : {"curve_rmse_gt": 0.1},
+    }), encoding="utf-8")
+
+    return output_dir / "report.md"
+
+
 def _make_run(run_dir: Path) -> Path:
     """Marks a directory as a training run by giving it a meta directory."""
     (run_dir / "meta").mkdir(parents=True, exist_ok=True)
@@ -86,7 +113,7 @@ def _write_experiment(root: Path, name: str, aggregate: bool = True, comparison:
     for seed, metrics in (("seed0", {"curve_rmse_gt": 0.4, "activity_threshold": 1e-3}), ("seed1", {"curve_rmse_gt": 0.6, "activity_threshold": 1e-3})):
         _write_report(_make_run(seeded / seed), "20260101_000000", metrics)
     if aggregate:
-        _write_report(seeded, "seed_comparison")
+        _write_aggregate(seeded, "seed_comparison", {"seed0": "20260101_000000", "seed1": "20260101_000000"})
 
     resolved = seeded / "seed0" / "docs"
     resolved.mkdir(parents=True)
@@ -99,6 +126,7 @@ def _write_experiment(root: Path, name: str, aggregate: bool = True, comparison:
         stamp.mkdir(parents=True)
         (stamp / "overview.md").write_text("# Overview\n", encoding="utf-8")
         (stamp / "metrics_comparison.md").write_text("# Metrics\n", encoding="utf-8")
+        (stamp / "comparison_summary.json").write_text(json.dumps({"inference_split": "test", "trials": [{"name": "trial_a"}, {"name": "trial_b"}]}), encoding="utf-8")
 
     logs = experiment_dir / "batch_train_logs"
     logs.mkdir()
@@ -129,6 +157,7 @@ def _write_benchmark_run(root: Path, run_tag: str) -> Path:
     stamp.mkdir(parents=True)
     (stamp / "benchmark_overview.md").write_text("# Benchmark\n", encoding="utf-8")
     (stamp / "metrics_comparison.md").write_text("# Metrics\n", encoding="utf-8")
+    (stamp / "comparison_summary.json").write_text(json.dumps([{"name": "resunet-conv"}, {"name": "unet-conv"}]), encoding="utf-8")
 
     pipeline = run_dir / "pipeline"
     pipeline.mkdir()
@@ -306,6 +335,111 @@ def test_bundle_regenerates_what_exists_when_asked(entry_config, workspace):
 
     assert len(list((experiment_dir / "trial_a" / "inference").glob("*/report.md"))) == 2
     assert len([child for child in (experiment_dir / "_comparison").iterdir() if child.is_dir()]) == 2
+
+
+def _stage_recorded(entry_config, experiment) -> RecordingLogger:
+    """Stages one experiment's bundle and returns the logger that recorded it."""
+    logger = RecordingLogger()
+    ExperimentReportBundle(experiment, entry_config.to_config(experiment.label), logger).stage()
+    return logger
+
+
+def _warnings(logger: RecordingLogger) -> list[str]:
+    """Returns the warning lines a recording logger holds."""
+    return [message for level, message in logger.messages if level == "warning"]
+
+
+def _age(path: Path, seconds: float) -> None:
+    """Moves the modification time of a file into the past by the given number of seconds."""
+    mtime = path.stat().st_mtime - seconds
+    os.utime(path, (mtime, mtime))
+
+
+def test_bundle_names_reused_reports_and_finds_them_current(entry_config, workspace):
+    """Verifies a reused comparison and seed aggregate covering every trial and seed are named in the log without a warning."""
+    experiment_dir = workspace / "exp_alpha"
+    logger         = _stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir))
+
+    assert ("info", f"Reusing trial comparison {experiment_dir / '_comparison' / '20260103_000000'}") in logger.messages
+    assert ("info", f"Reusing seed aggregate of trial_a {experiment_dir / 'trial_a' / 'inference' / 'seed_comparison'}") in logger.messages
+    assert _warnings(logger) == []
+
+
+def test_bundle_warns_when_a_reused_comparison_predates_an_inference(entry_config, workspace):
+    """Verifies a trial inferred after the reused comparison was written is named in a staleness warning."""
+    experiment_dir = workspace / "exp_alpha"
+    stamp          = experiment_dir / "_comparison" / "20260103_000000"
+    for path in stamp.iterdir():
+        _age(path, 3600)
+
+    warnings = _warnings(_stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir)))
+
+    assert any("Reused trial comparison 20260103_000000 predates 3 completed inference(s)" in warning and "regenerate_reports=True" in warning for warning in warnings)
+
+
+def test_bundle_warns_when_a_reused_comparison_misses_a_trial_or_scored_another_split(entry_config, workspace):
+    """Verifies a reused comparison written over one trial on the val split warns about the missing trial and the split."""
+    experiment_dir = workspace / "exp_alpha"
+    summary        = experiment_dir / "_comparison" / "20260103_000000" / "comparison_summary.json"
+    summary.write_text(json.dumps({"inference_split": "val", "trials": [{"name": "trial_a"}]}), encoding="utf-8")
+
+    warnings = _warnings(_stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir)))
+
+    assert any("does not cover trial_b" in warning for warning in warnings)
+    assert any("scored split 'val' while the trial reports are taken from 'test'" in warning for warning in warnings)
+
+
+def test_bundle_warns_when_a_reused_comparison_carries_no_summary(entry_config, workspace):
+    """Verifies a comparison stamp written before summaries existed is reused with a warning that its coverage cannot be checked."""
+    experiment_dir = workspace / "exp_alpha"
+    (experiment_dir / "_comparison" / "20260103_000000" / "comparison_summary.json").unlink()
+
+    warnings = _warnings(_stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir)))
+
+    assert any("holds no comparison_summary.json" in warning for warning in warnings)
+
+
+def test_bundle_warns_when_a_reused_seed_aggregate_misses_a_seed(entry_config, workspace):
+    """Verifies a seed run added after the reused aggregate was written is named in a warning."""
+    experiment_dir = workspace / "exp_alpha"
+    seed2          = _make_run(experiment_dir / "trial_a" / "seed2")
+    _write_report(seed2, "20260101_000000")
+    for path in (experiment_dir / "trial_a" / "inference" / "seed_comparison").iterdir():
+        _age(path, -3600)
+    for path in (experiment_dir / "_comparison" / "20260103_000000").iterdir():
+        _age(path, -3600)
+
+    warnings = _warnings(_stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir)))
+
+    assert warnings == ["Reused seed aggregate of trial_a seed_comparison does not cover trial_a/seed2; set regenerate_reports=True to rewrite it"]
+
+
+def test_bundle_warns_when_a_seed_aggregate_averages_another_split(entry_config, workspace):
+    """Verifies a seed aggregate built on one seed's val inference is mailed with a warning naming that seed and split."""
+    experiment_dir = workspace / "exp_alpha"
+    _write_report(experiment_dir / "trial_a" / "seed1", "20260108_000000", split="val")
+    record = experiment_dir / "trial_a" / "inference" / "seed_comparison" / "metrics.json"
+    record.write_text(json.dumps({**json.loads(record.read_text(encoding="utf-8")), "seed_inference": {"seed0": "20260101_000000", "seed1": "20260108_000000"}}), encoding="utf-8")
+
+    warnings = _warnings(_stage_recorded(entry_config, Experiment(experiment_dir, experiment_dir)))
+
+    assert any("averages inference outside the 'test' split the comparison reads: seed1 (20260108_000000, split val)" in warning for warning in warnings)
+
+
+def test_cross_validation_bundle_warns_when_a_reused_cross_fold_report_predates_a_fold_inference(entry_config, workspace):
+    """Verifies a reused cross-fold report older than a fold's completed inference is named and warned about."""
+    experiment = CrossValidationExperiment(workspace / "cv1")
+    _bundle(entry_config, experiment).stage()
+
+    stamp = sorted((workspace / "cv1" / "reports").iterdir())[-1]
+    for path in stamp.iterdir():
+        if path.is_file():
+            _age(path, 3600)
+
+    logger = _stage_recorded(entry_config, experiment)
+
+    assert ("info", f"Reusing cross-fold report {stamp}") in logger.messages
+    assert any(warning.startswith(f"Reused cross-fold report {stamp.name} predates 3 completed inference(s)") for warning in _warnings(logger))
 
 
 def test_bundle_requires_an_inference_report_on_a_single_run_trial(entry_config, workspace):
