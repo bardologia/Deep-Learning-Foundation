@@ -78,8 +78,9 @@ class MicroscopeView {
     this.root.innerHTML = `
       <div class="cube-pick">
         <div class="run-strip" id="probe-strip" aria-label="Trained backbone and dual runs"></div>
-        <p class="cube-hint" id="probe-hint">Scanning the runs directory for loadable backbone and dual runs&hellip;</p>
+        <p class="cube-hint" id="probe-hint">${ThinkingOrb.busy("searching", "Scanning the runs directory for loadable backbone and dual runs…")}</p>
         <div class="cube-progress" id="probe-progress" hidden>
+          <thinking-orb class="cube-progress__orb" state="connecting" size="64"></thinking-orb>
           <div class="cube-progress__track"><i class="cube-progress__fill" id="probe-progress-fill"></i></div>
           <p class="cube-progress__label" id="probe-progress-label">loading&hellip;</p>
         </div>
@@ -817,7 +818,7 @@ class MicroscopeView {
   async _loadAttribution() {
     const token = ++this.attribToken;
 
-    this.refs.bars.innerHTML       = `<p class="cube-hint is-loading">computing gradients&hellip;</p>`;
+    this.refs.bars.innerHTML       = ThinkingOrb.panel("solving", "computing gradients…");
     this.refs.barsLegend.innerHTML = "";
     this.refs.gridChips.innerHTML  = "";
     this.refs.grid.innerHTML       = "";
@@ -891,7 +892,7 @@ class MicroscopeView {
   async _loadAblation() {
     const token = ++this.ablToken;
 
-    this.refs.ablation.innerHTML = `<p class="cube-hint is-loading">re-running the model without each channel&hellip;</p>`;
+    this.refs.ablation.innerHTML = ThinkingOrb.panel("solving", "re-running the model without each channel…");
 
     const out = await Api.post("/api/probe/ablation", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.ablToken) return;
@@ -912,7 +913,7 @@ class MicroscopeView {
     const token = ++this.occlToken;
 
     this.refs.occlFacts.innerHTML = "";
-    this.refs.occlusion.innerHTML = `<p class="cube-hint is-loading">sliding an occluder across the window&hellip;</p>`;
+    this.refs.occlusion.innerHTML = ThinkingOrb.panel("searching", "sliding an occluder across the window…");
 
     const out = await Api.post("/api/probe/occlusion", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.occlToken) return;
@@ -944,7 +945,7 @@ class MicroscopeView {
 
     this.refs.fieldSlots.innerHTML = "";
     this.refs.fieldOver.innerHTML  = "";
-    this.refs.fieldMaps.innerHTML  = `<p class="cube-hint is-loading">computing parameter fields&hellip;</p>`;
+    this.refs.fieldMaps.innerHTML  = ThinkingOrb.panel("shaping", "computing parameter fields…");
 
     const out = await Api.post("/api/probe/fields", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.fieldsToken) return;
@@ -1013,7 +1014,7 @@ class MicroscopeView {
     const token = ++this.flipToken;
 
     this.flipsData = null;
-    this.refs.flipsFacts.innerHTML = `<span class="cube-hint is-loading">re-running the model on flipped windows&hellip;</span>`;
+    this.refs.flipsFacts.innerHTML = ThinkingOrb.busy("solving", "re-running the model on flipped windows…");
 
     const out = await Api.post("/api/probe/flips", { row: this.pixel.row, col: this.pixel.col });
     if (token !== this.flipToken) return;
@@ -1064,7 +1065,7 @@ class MicroscopeView {
   async _loadVitals() {
     const token = ++this.vitalsToken;
 
-    this.refs.vitalsSum.innerHTML = `<span class="cube-hint is-loading">recording activation statistics&hellip;</span>`;
+    this.refs.vitalsSum.innerHTML = ThinkingOrb.busy("listening", "recording activation statistics…");
     this.refs.vitals.innerHTML    = "";
 
     const out = await Api.post("/api/probe/vitals", { row: this.pixel.row, col: this.pixel.col });
@@ -1214,7 +1215,7 @@ class MicroscopeView {
 
     const token = ++this.sweepToken;
     this.refs.sweep.hidden = true;
-    this.refs.sweepFacts.innerHTML = `<span class="cube-hint is-loading">sweeping perturbation strengths&hellip;</span>`;
+    this.refs.sweepFacts.innerHTML = ThinkingOrb.busy("weaving", "sweeping perturbation strengths…");
 
     const body = { row: this.pixel.row, col: this.pixel.col, kind: this.wi.kind };
     if (this.wi.kind === "scale_channel") body.channel = this.wi.channel;

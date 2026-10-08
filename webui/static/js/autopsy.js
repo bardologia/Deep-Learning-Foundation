@@ -135,7 +135,7 @@ class AutopsyView {
     const token = ++this.cmpToken;
 
     this._syncSlots();
-    this.refs.hint.textContent = "comparing…";
+    this.refs.hint.innerHTML = ThinkingOrb.busy("solving", "comparing…");
     const data = await Api.get(`/api/autopsy/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
 
     if (token !== this.cmpToken) return;
