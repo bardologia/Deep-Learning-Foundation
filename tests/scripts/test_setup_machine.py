@@ -17,13 +17,15 @@ from scripts.setup_machine          import MachineSetup, Prompter, Validators
 from tools.runtime.machine_profile  import MachineProfile
 
 FACTS = {
-    "hostname"   : "box",
-    "cpu_count"  : 8,
-    "ram_gb"     : 31.2,
-    "driver"     : "580.1",
-    "gpus"       : [{"index": 0, "name": "A", "memory_gb": 24.0}, {"index": 1, "name": "B", "memory_gb": 12.0}],
-    "torch_index": "cu130",
-    "conda_root" : "/opt/conda",
+    "hostname"     : "box",
+    "cpu_count"    : 8,
+    "ram_gb"       : 31.2,
+    "driver"       : "580.1",
+    "driver_error" : "",
+    "gpus"         : [{"index": 0, "name": "A", "memory_gb": 24.0}, {"index": 1, "name": "B", "memory_gb": 12.0}],
+    "torch_index"  : "cu130",
+    "torch_note"   : "",
+    "conda_root"   : "/opt/conda",
 }
 
 
@@ -252,6 +254,43 @@ def test_an_invalid_preset_stops_the_run_before_anything_is_written(tmp_path, lo
         _setup(tmp_path, logger_stub, {"console_port": "12"}).run()
 
     assert not (tmp_path / "cfg" / "machine.json").exists()
+
+
+def test_a_failing_nvidia_smi_is_reported_by_the_host_step(tmp_path, logger_stub, monkeypatch):
+    """The host step shows nvidia-smi's failure in the table and warns with it instead of reporting a CPU machine."""
+    setup    = _setup(tmp_path, logger_stub)
+    broken   = {**FACTS, "driver": "", "driver_error": "nvidia-smi exited 9: could not communicate with the NVIDIA driver", "gpus": [], "torch_index": "cpu", "torch_note": "nvidia-smi exited 9: could not communicate with the NVIDIA driver"}
+    tables   = []
+    warnings = []
+
+    setup.probe.facts_value = broken
+    monkeypatch.setattr(setup.logger, "kv_table", lambda data, *args, **kwargs: tables.append(dict(data)))
+    monkeypatch.setattr(setup.logger, "warning", warnings.append)
+
+    setup.probe_host()
+
+    assert tables[0]["driver"] == "nvidia-smi failed"
+    assert tables[0]["torch"]  == "cpu (nvidia-smi exited 9: could not communicate with the NVIDIA driver)"
+    assert len(warnings) == 1
+    assert warnings[0].startswith("nvidia-smi exited 9")
+    assert "linux-modules-nvidia" in warnings[0]
+
+
+def test_a_cpu_machine_gets_the_plain_no_gpu_warning(tmp_path, logger_stub, monkeypatch):
+    """Without nvidia-smi the host step keeps the old no-GPU warning and explains the CPU wheel."""
+    setup    = _setup(tmp_path, logger_stub)
+    tables   = []
+    warnings = []
+
+    setup.probe.facts_value = {**FACTS, "driver": "", "gpus": [], "torch_index": "cpu", "torch_note": "no NVIDIA driver: nvidia-smi is not installed"}
+    monkeypatch.setattr(setup.logger, "kv_table", lambda data, *args, **kwargs: tables.append(dict(data)))
+    monkeypatch.setattr(setup.logger, "warning", warnings.append)
+
+    setup.probe_host()
+
+    assert tables[0]["driver"] == "no NVIDIA driver"
+    assert tables[0]["torch"]  == "cpu (no NVIDIA driver: nvidia-smi is not installed)"
+    assert warnings == ["no GPU detected: the console and the tests work, training and inference need an NVIDIA GPU"]
 
 
 def test_the_wizard_refuses_a_disabled_profile_location(logger_stub):

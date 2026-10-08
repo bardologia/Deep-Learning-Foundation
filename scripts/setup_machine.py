@@ -311,20 +311,24 @@ class MachineSetup:
 
         self.facts = self.probe.facts()
         gpus       = self.facts["gpus"]
+        failure    = self.facts["driver_error"]
+        note       = self.facts["torch_note"]
         table      = {
             "host"    : self.facts["hostname"],
             "CPUs"    : str(self.facts["cpu_count"]),
             "RAM"     : f"{self.facts['ram_gb']} GB",
             "GPUs"    : ", ".join(f"{gpu['index']}: {gpu['name']} ({gpu['memory_gb']} GB)" for gpu in gpus) or "none detected",
-            "driver"  : self.facts["driver"] or "no NVIDIA driver",
-            "torch"   : self.facts["torch_index"],
+            "driver"  : self.facts["driver"] or ("nvidia-smi failed" if failure else "no NVIDIA driver"),
+            "torch"   : self.facts["torch_index"] + (f" ({note})" if note else ""),
             "conda"   : self.facts["conda_root"] or "not found",
             "profile" : str(self.profile.path),
         }
 
         self.logger.kv_table(table, title="Detected")
 
-        if not gpus:
+        if failure:
+            self.logger.warning(f"{failure}: the GPU list and the torch wheel choice are unreliable until the driver answers; after a kernel update install the matching linux-modules-nvidia package, then rerun")
+        elif not gpus:
             self.logger.warning("no GPU detected: the console and the tests work, training and inference need an NVIDIA GPU")
 
     def choose_environment(self) -> None:
