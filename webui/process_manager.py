@@ -61,9 +61,9 @@ class JobStream:
         Args:
             logger : Console logger for truncation warnings.
         """
-        self.logger      = logger
-        self.buffer      = deque(maxlen=4000)
-        self.subscribers = []
+        self.logger        = logger
+        self.buffer        = deque(maxlen=4000)
+        self.subscribers   = []
         self.dropped       = 0
         self.lock          = threading.Lock()
         self.event_counter = 0

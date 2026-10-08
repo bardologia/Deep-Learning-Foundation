@@ -204,7 +204,7 @@ class Logger:
         self.start_time = datetime.now()
         self.config     = config
 
-        self._section_started: Optional[datetime] = None
+        self._section_started : Optional[datetime] = None
         self._adopted         : list[str]          = []
 
         if self.log_dir:
