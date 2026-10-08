@@ -120,6 +120,42 @@ class DataLoaderTuningPipeline:
             cpu_threads    = self.config.cpu_threads,
         ), device
 
+    def _log_feed_target(self, target, device) -> int:
+        """Logs what the sweep measures: the model, its size and sample, the device and the settings in force once the benchmark is built.
+
+        A sweep on the CPU is warned about, since its recommendation says
+        nothing about feeding a GPU.
+
+        Args:
+            target : Feed target holding the model and the dataset description.
+            device : Device the benchmark runs on.
+
+        Returns:
+            The model's parameter count.
+        """
+        parameters = int(sum(parameter.numel() for parameter in target.model.parameters()))
+        model      = target.model_name if self.config.model_name else f"{target.model_name} (default)"
+        gpu        = "none (CPU)" if self.gpu["name"] is None else f"{self.gpu['name']}, requested index {self.gpu['index']}, NVML {self.gpu['nvml_index']}"
+
+        self.logger.kv_table({
+            "Model"          : model,
+            "Parameters"     : f"{parameters:,}",
+            "Sample"         : target.sample_text,
+            "Item source"    : target.item_source,
+            "Device"         : str(device),
+            "GPU"            : gpu,
+            "Torch threads"  : torch.get_num_threads(),
+            "Warm-up/timed"  : f"{self.config.warmup_batches}/{self.config.timed_batches} batches",
+            "Wait target"    : f"{self.config.data_wait_target:.0%}",
+            "Refine"         : self.config.refine,
+            "Output dir"     : str(self.output_dir),
+        }, title="Feed target")
+
+        if device.type != "cuda":
+            self.logger.warning("No CUDA device is visible: the sweep runs on the CPU, and its recommendation says nothing about feeding a GPU")
+
+        return parameters
+
     def _worker_counts(self) -> list[int]:
         """Returns the worker counts to sweep, capped at the available CPU cores.
 
@@ -277,15 +313,14 @@ class DataLoaderTuningPipeline:
         with self.logger:
             target            = self._build_target()
             benchmark, device = self._build_benchmark(target)
-
-            parameter_count = sum(parameter.numel() for parameter in target.model.parameters())
-            main_specs      = self._main_specs()
+            parameter_count   = self._log_feed_target(target, device)
+            main_specs        = self._main_specs()
 
             self.events.emit("meta", {
                 "mode"        : self.config.mode,
                 "device"      : str(device),
                 "model_name"  : target.model_name,
-                "parameters"  : int(parameter_count),
+                "parameters"  : parameter_count,
                 "sample"      : target.sample_text,
                 "item_source" : target.item_source,
                 "config_hint" : target.config_hint,
