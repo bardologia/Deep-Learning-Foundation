@@ -525,6 +525,15 @@ class FeedTargetFactory:
         return cls.ADAPTERS[mode]
 
     @classmethod
+    def model_name(cls, config) -> str:
+        """Returns the model a sweep of the configured mode benchmarks: the configured one, else the mode's default.
+
+        Raises:
+            ValueError : If the mode is unknown.
+        """
+        return config.model_name or cls.adapter(config.mode).DEFAULT_MODEL
+
+    @classmethod
     def build(cls, config, work_dir: Path, logger) -> FeedTarget:
         """Builds the feed target for the configured tuning mode.
 
