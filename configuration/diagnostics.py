@@ -978,6 +978,7 @@ class PaperFigurePackConfig:
     Attributes:
         runs_dir         : Root directory holding the run folders.
         run_filter       : Run names to restrict the export to; empty means all.
+        split            : Data split the packed inference stamp of every run must have been scored on.
         inference_subdir : Subdirectory of a run holding inference results.
         metrics_filename : File holding the per-run metrics.
         report_filename  : Report file name inside an inference directory.
@@ -989,6 +990,7 @@ class PaperFigurePackConfig:
     runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
+    split            : str = "test"
     inference_subdir : str = ""
     metrics_filename : str = "metrics.json"
     report_filename  : str = "report.md"
@@ -1006,7 +1008,8 @@ class ResultTableEntryConfig:
     Attributes:
         runs_dir         : Root directory holding the run folders.
         run_filter       : Substrings selecting the runs to export; empty means all.
-        inference_subdir : Explicit inference stamp to read; empty picks each run's latest.
+        split            : Data split the inference stamp of every run must have been scored on.
+        inference_subdir : Explicit inference stamp to read; empty picks each run's newest completed stamp of the split.
         metrics_filename : File holding the per-run metrics inside an inference stamp.
         metrics          : Metric keys forming the LaTeX and markdown columns; empty exports every scalar key.
         sort_by          : Metric key ordering the rows; empty keeps discovery order.
@@ -1018,6 +1021,7 @@ class ResultTableEntryConfig:
     runs_dir   : Path      = Path("runs/backbone")
     run_filter : List[str] = field(default_factory=list)
 
+    split            : str = "test"
     inference_subdir : str = ""
     metrics_filename : str = "metrics.json"
 

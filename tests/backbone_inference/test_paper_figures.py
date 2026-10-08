@@ -14,12 +14,36 @@ import pytest
 
 from configuration.diagnostics                           import PaperFigurePackConfig
 from pipelines.backbone.inference.analysis.paper_figures import PaperFigurePack
+from tools.runtime.completion                            import CompletionMarker
 
-from tests.conftest import SilentLogger
+from tests.conftest import RecordingLogger, SilentLogger
+
+
+def _stamp(run: Path, stamp: str, split: str | None = "test") -> Path:
+    """Writes an inference stamp with a metrics file and a report under a run, completed unless split is None.
+
+    Args:
+        run   : Run directory receiving the inference/<stamp> subtree.
+        stamp : Timestamp of the inference output directory.
+        split : Split recorded in the completion marker, or None to leave the stamp unfinished.
+
+    Returns:
+        Path of the stamp's figures directory.
+    """
+    figures = run / "inference" / stamp / "figures"
+    figures.mkdir(parents=True)
+
+    (run / "inference" / stamp / "metrics.json").write_text("{}", encoding="utf-8")
+    (run / "inference" / stamp / "report.md").write_text("# r", encoding="utf-8")
+
+    if split is not None:
+        CompletionMarker.stamp(run / "inference" / stamp, {"stage": "inference", "split": split})
+
+    return figures
 
 
 def _run_with_figures(base: Path, name: str, stamp: str = "20260101_000000") -> Path:
-    """Creates a run directory holding one inference stamp with pixel-map and profile figures.
+    """Creates a run directory holding one completed inference stamp with pixel-map and profile figures.
 
     Args:
         base  : Runs directory the run is created under.
@@ -30,12 +54,10 @@ def _run_with_figures(base: Path, name: str, stamp: str = "20260101_000000") -> 
         Path of the created run directory.
     """
     run     = base / name
-    figures = run / "inference" / stamp / "figures"
+    figures = _stamp(run, stamp)
 
-    (figures / "pixel_maps").mkdir(parents=True)
-    (figures / "profiles").mkdir(parents=True)
-    (run / "inference" / stamp / "metrics.json").write_text("{}", encoding="utf-8")
-    (run / "inference" / stamp / "report.md").write_text("# r", encoding="utf-8")
+    (figures / "pixel_maps").mkdir()
+    (figures / "profiles").mkdir()
 
     (figures / "pixel_maps" / "mse.png").write_bytes(b"png-mse")
     (figures / "pixel_maps" / "r2.png").write_bytes(b"png-r2")
@@ -68,6 +90,8 @@ def test_pack_copies_stable_names_and_writes_a_manifest(tmp_path, monkeypatch):
 
     manifest = json.loads((out / "figure_manifest.json").read_text(encoding="utf-8"))
     assert {entry["run"] for entry in manifest["figures"]} == {"run_a", "run_b"}
+    assert {entry["split"] for entry in manifest["figures"]} == {"test"}
+    assert all(entry["inference"].endswith("20260101_000000") and entry["completed_at"] for entry in manifest["figures"])
 
 
 def test_pack_takes_the_vector_figures_of_the_paper_style(tmp_path):
@@ -106,20 +130,29 @@ def test_pack_without_matches_raises(tmp_path):
         PaperFigurePack(config, SilentLogger()).run()
 
 
-def test_pack_uses_latest_inference_stamp(tmp_path):
-    """Figures are taken from the most recent inference stamp of the run."""
+def test_pack_uses_latest_completed_inference_stamp(tmp_path):
+    """Figures are taken from the most recent stamp completed on the split, skipping newer unfinished and other-split stamps."""
     run = _run_with_figures(tmp_path / "runs", "run_a", stamp="20260101_000000")
 
-    late = run / "inference" / "20260601_000000"
-    (late / "figures" / "pixel_maps").mkdir(parents=True)
-    (late / "metrics.json").write_text("{}", encoding="utf-8")
-    (late / "report.md").write_text("# r", encoding="utf-8")
-    (late / "figures" / "pixel_maps" / "mse.png").write_bytes(b"png-late")
+    late = _stamp(run, "20260601_000000")
+    (late / "pixel_maps").mkdir()
+    (late / "pixel_maps" / "mse.png").write_bytes(b"png-late")
+
+    crashed = _stamp(run, "20260701_000000", split=None)
+    (crashed / "pixel_maps").mkdir()
+    (crashed / "pixel_maps" / "mse.png").write_bytes(b"png-crashed")
+
+    val = _stamp(run, "20260801_000000", split="val")
+    (val / "pixel_maps").mkdir()
+    (val / "pixel_maps" / "mse.png").write_bytes(b"png-val")
 
     out     = tmp_path / "figures"
     config  = _config(tmp_path / "runs", out, ["run_a"])
     config.patterns = ["pixel_maps/*.png"]
 
-    PaperFigurePack(config, SilentLogger()).run()
+    logger = RecordingLogger()
+    PaperFigurePack(config, logger).run()
 
     assert (out / "run_a__pixel_maps__mse.png").read_bytes() == b"png-late"
+    assert any(level == "warning" and "20260701_000000" in message for level, message in logger.messages)
+    assert any(level == "info" and "20260601_000000" in message and "split 'test'" in message for level, message in logger.messages)

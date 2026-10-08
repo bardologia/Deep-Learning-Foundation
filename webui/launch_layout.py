@@ -1204,7 +1204,7 @@ class LaunchLayout:
                             "runs_dir",
                             {"path": "group_tags", "widget": {"kind": "dataset", "mode": "run_groups", "multi": True, "baseFrom": "runs_dir"}},
                         ]},
-                        {"title": "Report", "fields": ["inference_subdir", "output_subdir", "metrics_filename", "report_filename"]},
+                        {"title": "Report", "fields": ["split", "inference_subdir", "output_subdir", "metrics_filename", "report_filename"]},
                         {"title": "Disagreement maps", "fields": ["compute_disagreement", "cubes_subdir"]},
                         {"title": "Seed ensemble", "fields": ["compute_ensemble"]},
                     ]},
@@ -1488,6 +1488,7 @@ class LaunchLayout:
                         {"title": "Runs", "fields": [
                             "runs_dir",
                             {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir"}},
+                            "split",
                             "inference_subdir",
                         ]},
                         {"title": "Pack", "fields": [
@@ -1550,6 +1551,7 @@ class LaunchLayout:
                         {"title": "Runs", "fields": [
                             "runs_dir",
                             {"path": "run_filter", "widget": {"kind": "dataset", "mode": "runs", "multi": True, "baseFrom": "runs_dir"}},
+                            "split",
                             "inference_subdir",
                             "metrics_filename",
                         ]},

@@ -12,6 +12,7 @@ import pytest
 
 from pipelines.backbone.inference.analysis.seed_comparison   import SeedComparison
 from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps
+from tools.runtime.completion                                import CompletionMarker
 
 from tests.conftest import SilentLogger
 
@@ -66,6 +67,7 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
 
     (out_dir / "metrics.json").write_text(json.dumps({"curve_mse_gt": 1.0, "split_region": [0, N_ROWS, 0, N_COLS], "activity_threshold": activity_threshold}), encoding="utf-8")
     (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
+    CompletionMarker.stamp(out_dir, {"stage": "inference", "split": "test"})
 
     return run_dir
 
@@ -89,6 +91,7 @@ def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
     return SimpleNamespace(
         runs_dir             = str(runs_dir),
         group_tags           = [],
+        split                = "test",
         inference_subdir     = "stamp",
         output_subdir        = "agg",
         metrics_filename     = "metrics.json",

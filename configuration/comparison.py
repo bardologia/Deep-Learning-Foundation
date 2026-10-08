@@ -46,6 +46,7 @@ class SeedComparisonConfig:
     Attributes:
         runs_dir             : Root directory holding the seed run folders.
         group_tags           : Run group names whose seeds are aggregated.
+        split                : Data split every aggregated inference stamp must have been scored on.
         inference_subdir     : Subdirectory of a run holding its inference results.
         output_subdir        : Subdirectory receiving the aggregated report.
         metrics_filename     : File holding the per-run metrics.
@@ -58,6 +59,7 @@ class SeedComparisonConfig:
     runs_dir   : Path      = Path("runs")
     group_tags : List[str] = field(default_factory=list)
 
+    split            : str = "test"
     inference_subdir : str = ""
     output_subdir    : str = ""
 
