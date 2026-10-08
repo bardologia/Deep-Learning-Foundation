@@ -3,8 +3,9 @@
 Checks that every JavaScript module on disk is loaded by index.html exactly once and in
 dependency order, that shared helpers (MathJax bootstrap, HTML escaper, results roots,
 network layer) are each defined in a single module, that launch widget modules hold
-the expected number of classes, that every input tag declares a valid HTML type, and
-that every cube view panel has the mode button that opens it.
+the expected number of classes, that every input tag declares a valid HTML type,
+that every cube view panel has the mode button that opens it, and that the cube page
+names its axes row, col and z throughout.
 """
 
 from __future__ import annotations
@@ -116,6 +117,22 @@ def test_every_cube_view_panel_has_a_mode_button():
     assert panels
     assert sorted(panels) == sorted(buttons)
 
+
+def test_cube_page_names_its_axes_row_col_and_z():
+    """The top-down map labels, cut subtitles, sweep hints and bin groups of the cube page each name the row, col or z axis they act on."""
+    html = INDEX.read_text()
+    page = html[html.index('<section class="page page--pad" data-page="cube">'):html.index('<section class="page page--pad" data-page="slices">')]
+
+    labels = re.findall(r'<span class="cube-axis cube-axis--[xy]">(\w+) &rarr;</span>', page)
+    cuts   = re.findall(r'<section class="cube-cutgroup" data-axis="(\w+)">\s*<h3 class="cube-cutgroup__title">\s*\w+ cut <span class="cube-cutgroup__sub">[^<]* at the marked (\w+)</span>', page)
+    hints  = re.findall(r'<span class="cube-z__at" id="cube-(\w+)-at">Play the sweep, or scroll a panel to move through (\w+)\.</span>', page)
+    bins   = re.findall(r'aria-label="Set a (\w+) bin">\s*<span class="cube-jump__cell">\s*<label for="cube-(\w+)-input">', page)
+
+    assert sorted(labels) == ["col", "row"]
+    assert sorted(cuts) == [("col", "row"), ("row", "col")]
+    assert sorted(hints) == [("col", "col"), ("row", "row"), ("z", "z")]
+    assert sorted(bins) == [("col", "col"), ("row", "row"), ("z", "z")]
+    assert 'aria-label="Set a cut by row and col"' in page
 
 def test_launch_widget_modules_hold_one_class_family_each():
     """Each launch widget module declares its expected class count and the merged module is gone."""
