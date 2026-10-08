@@ -1139,7 +1139,7 @@
         "use_moments": "Enable term matching mass, mean, and spread moments of the curves",
         "weight_moments": "Relative weight of the moments term in the weighted-average loss",
         "moments_weights": "Per-moment sub-weights for mass, mean, and spread combined in the moments loss",
-        "power_floor": "Minimum target integrated power below which a pixel is masked out of the total-power and moments terms; also floors those terms' power-normalization denominators"
+        "power_floor": "Integrated target power a pixel must exceed to enter the total-power and moments terms; pixels at or below it are masked out, the share kept is logged as loss_monitor/moment_valid_frac, and a batch with none contributes 0.0 and is flagged in loss_monitor/moment_empty_batch; also floors those terms' power-normalization denominators"
       }
     },
     "training/general/loss::LossCurriculumConfig": {

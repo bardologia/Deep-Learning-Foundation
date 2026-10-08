@@ -26,8 +26,9 @@ class LossConfig:
     """Enabled loss terms and their weights for one curriculum stage.
 
     Curve terms compare the reconstructed z profile against the target
-    profile; parameter terms compare matched Gaussian slots; physics terms
-    compare quantities resynthesised into the measurement domain.
+    profile; parameter terms compare matched Gaussian slots; the total-power
+    and moment terms compare the integrated power, centroid and spread of the
+    two profiles over the pixels above the power floor.
 
     Attributes:
         use_mse_curve            : Whether the squared-error curve term is active.
@@ -66,14 +67,7 @@ class LossConfig:
         use_moments              : Whether the profile moment matching term is active.
         weight_moments           : Weight of that term.
         moments_weights          : Relative weights of the matched moments.
-        use_coherence_resyn      : Whether the resynthesised coherence term is active.
-        weight_coherence_resyn   : Weight of that term.
-        use_covariance_match     : Whether the covariance matching term is active.
-        weight_covariance_match  : Weight of that term.
-        use_capon_cycle          : Whether the Capon re-beamforming cycle term is active.
-        weight_capon_cycle       : Weight of that term.
-        capon_loading            : Diagonal loading added before the Capon inversion.
-        physics_floor            : Numerical floor added to physics denominators.
+        power_floor              : Integrated target power (the profile summed over z times the z sample spacing) a pixel must exceed to enter the total-power and moment terms; pixels at or below it are excluded from both means, a batch with none contributes 0.0, and the same value floors their power denominators.
     """
 
     use_mse_curve    : bool  = False

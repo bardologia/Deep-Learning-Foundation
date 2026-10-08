@@ -33,6 +33,8 @@ class Loss:
         loss_generation : Counter incremented on every curriculum swap.
     """
 
+    MOMENT_USE_FLAGS = ("use_total_power", "use_moments")
+
     def __init__(self, z_axis, logger, tracker, gaussian_cfg, loss_cfg, norm_stats, log_all_losses=False, sampler=None, slot_vitals=None):
         """Builds the loss and logs its active terms.
 
@@ -70,6 +72,8 @@ class Loss:
         self.log_all_losses  = log_all_losses
         self.loss_generation = 0
 
+        self._moment_empty_warned = False
+
         cfg = self.loss_cfg
 
         self.logger.section("[Loss Function]")
@@ -81,6 +85,7 @@ class Loss:
 
         self.log_active_terms(cfg, title="Active Terms")
         self.log_slot_presence_config(cfg, title="Slot-Presence Loss Config")
+        self.log_moment_config(cfg, title="Moment Terms Config")
 
     @property
     def param_term_evaluated(self) -> bool:
@@ -171,6 +176,24 @@ class Loss:
             "use_active_normalization" : cfg.use_active_normalization,
         }, title=title)
 
+    def _moment_terms_enabled(self, cfg) -> bool:
+        """Returns whether the total-power or moment term of the stage is evaluated, as a loss or for monitoring."""
+        return bool(self.log_all_losses or any(getattr(cfg, flag) for flag in self.MOMENT_USE_FLAGS))
+
+    def log_moment_config(self, cfg, title: str) -> None:
+        """Logs the power floor of the total-power and moment terms when either of them is evaluated.
+
+        Args:
+            cfg   : Loss-stage configuration whose power floor is reported.
+            title : Table title.
+        """
+        if not self._moment_terms_enabled(cfg):
+            return
+
+        self.logger.kv_table({
+            "power_floor" : f"{cfg.power_floor:g}  (integrated target power a pixel must exceed to enter the total_power_relerr and moments terms; pixels at or below it are excluded, loss_monitor/moment_valid_frac tracks the share kept)",
+        }, title=title)
+
     def set_curriculum(self, complete_cfg, context: str = "curriculum swap") -> None:
         """Replaces the active loss configuration and logs the new composition.
 
@@ -185,12 +208,15 @@ class Loss:
         self.loss_cfg       = complete_cfg
         self.loss_generation += 1
 
+        self._moment_empty_warned = False
+
         if context == "curriculum swap":
             self.logger.subsection("Active loss composition changes at the curriculum swap; train/val loss curves are not comparable across the swap epoch.")
 
         self.logger.subsection(f"Param matching ({context}): {complete_cfg.param_matching.value}")
         self.log_active_terms(complete_cfg, title=f"Active Terms ({context})")
         self.log_slot_presence_config(complete_cfg, title=f"Slot-Presence Loss Config ({context})")
+        self.log_moment_config(complete_cfg, title=f"Moment Terms Config ({context})")
 
     def reconstruct_gaussians(self, params: torch.Tensor) -> torch.Tensor:
         """Renders physical Gaussian parameters into z profiles.
@@ -422,6 +448,29 @@ class Loss:
         return out
 
     @torch.no_grad()
+    def _moment_monitor(self, exp_curves) -> dict:
+        """Reports the share of pixels above the power floor and flags a batch where none is, warning once per stage.
+
+        Args:
+            exp_curves : Target profiles of shape (batch, profile_length, rows, cols).
+
+        Returns:
+            Dict with moment_valid_frac, the share of pixels the total-power and
+            moment terms averaged over, and moment_empty_batch, 1.0 when no pixel
+            cleared the floor so both terms contributed 0.0; the epoch mean of the
+            flag is the share of such batches.
+        """
+        floor      = self.loss_cfg.power_floor
+        valid_frac = MomentLoss.valid_fraction(exp_curves, self.dx, floor)
+        empty      = (valid_frac == 0.0).to(valid_frac.dtype)
+
+        if not self._moment_empty_warned and empty.item() == 1.0:
+            self._moment_empty_warned = True
+            self.logger.warning(f"No pixel of this batch has integrated target power above power_floor={floor:g}; the total_power_relerr and moments terms contribute 0.0 for such batches, and loss_monitor/moment_empty_batch counts their share per epoch")
+
+        return {"moment_valid_frac": valid_frac, "moment_empty_batch": empty}
+
+    @torch.no_grad()
     def _occupancy(self, pred_params_phys, gt_phys) -> dict:
         """Reports how many Gaussian slots the prediction activates against the ground truth.
 
@@ -485,9 +534,11 @@ class Loss:
 
         Returns:
             Dict with the scalar `total_loss`, the weighted `components`, the
-            unweighted `monitor` values (inactive terms, per-parameter L1 parts
-            and, under presence_balance, the applied per-slot presence weights),
-            the slot `occupancy` statistics and the `physical` parameter errors.
+            unweighted `monitor` values (inactive terms, per-parameter L1 parts,
+            under presence_balance the applied per-slot presence weights, and
+            with a total-power or moment term the share of pixels above the
+            power floor), the slot `occupancy` statistics and the `physical`
+            parameter errors.
         """
         cfg = self.loss_cfg
 
@@ -551,6 +602,9 @@ class Loss:
 
         if cfg.presence_balance and self.param_term_evaluated:
             monitor.update(self._presence_monitor(matched))
+
+        if self._moment_terms_enabled(cfg):
+            monitor.update(self._moment_monitor(exp_curves))
 
         if self.slot_presence_active:
             occupancy = self._occupancy(pred_params_phys, gt_phys)

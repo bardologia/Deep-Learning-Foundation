@@ -415,49 +415,123 @@ def test_presence_weights_absent_without_balance_or_param_term():
     assert not any(key.startswith("presence/") for key in curve(pred, gt)["monitor"])
 
 
-def test_physical_errors_flag_a_batch_without_active_gt_slots():
-    """Verifies the parameter errors flag a batch whose ground truth has no active slot, where the metre errors are zero by construction."""
-    loss = build_loss(n_gaussians=2)
-    gt   = valid_param_tensor(2, 2, 5, 5, seed=52)
-
-    gt[:, 0] = 0.0
-    gt[:, 3] = 0.0
-
-    out = loss(valid_param_tensor(2, 2, 5, 5, seed=51), gt)
-
-    assert out["physical"]["gt_empty_batch"].item() == 1.0
-    assert out["physical"]["mu_mae"].item()         == 0.0
-    assert out["physical"]["sigma_mae"].item()      == 0.0
-
-
 class _TableRecorder(NullLogger):
-    """Null logger that keeps every kv_table mapping so configuration tables can be asserted.
+    """Null logger that keeps every kv_table mapping and warning so configuration tables and warnings can be asserted.
 
     Attributes:
-        tables : (title, mapping) pairs in call order.
+        tables   : (title, mapping) pairs in call order.
+        warnings : Warning messages in emission order.
     """
 
     def __init__(self):
-        """Starts with no recorded table."""
-        self.tables = []
+        """Starts with no recorded table or warning."""
+        self.tables   = []
+        self.warnings = []
 
     def kv_table(self, data, title=None, **kwargs):
         """Records one configuration table."""
         self.tables.append((title, dict(data)))
 
+    def warning(self, message):
+        """Records one warning."""
+        self.warnings.append(message)
+
+
+def _recording_loss(cfg: LossConfig, log_all_losses: bool = False) -> tuple[Loss, _TableRecorder]:
+    """Builds a two-Gaussian loss over the shared axis with a table-and-warning recording logger."""
+    logger = _TableRecorder()
+    loss   = Loss(z_axis=x_axis_tensor(), logger=logger, tracker=NullTracker(), gaussian_cfg=gaussian_config(2), loss_cfg=cfg, norm_stats=identity_normalizer(6), log_all_losses=log_all_losses)
+
+    return loss, logger
+
+
+def _gt_without_active_slots(seed: int) -> torch.Tensor:
+    """Returns a valid two-Gaussian target whose amplitudes are all zero, so no slot is active and every profile is flat."""
+    gt = valid_param_tensor(2, 2, 5, 5, seed=seed)
+
+    gt[:, 0] = 0.0
+    gt[:, 3] = 0.0
+
+    return gt
+
 
 def test_slot_presence_table_states_the_derived_weights_under_balance():
     """Verifies the Slot-Presence table says the configured constants are not applied under presence_balance instead of printing them as in force."""
-    logger = _TableRecorder()
-    cfg    = LossConfig(use_param_l1=True, weight_param_l1=1.0, presence_balance=True, active_weight=2.0, inactive_weight=0.5)
-
-    Loss(z_axis=x_axis_tensor(), logger=logger, tracker=NullTracker(), gaussian_cfg=gaussian_config(2), loss_cfg=cfg, norm_stats=identity_normalizer(6))
+    _loss, logger = _recording_loss(LossConfig(use_param_l1=True, weight_param_l1=1.0, presence_balance=True, active_weight=2.0, inactive_weight=0.5))
 
     table = next(table for title, table in logger.tables if title == "Slot-Presence Loss Config")
 
     assert "active_weight" not in table
     assert "derived per slot and batch" in table["active_weight / inactive_weight"]
     assert "2 / 0.5 are not applied" in table["active_weight / inactive_weight"]
+
+
+def test_moment_table_lists_the_floor_only_when_a_moment_term_is_evaluated():
+    """Verifies the power floor is tabled with the exclusion rule under a total-power or moment term or log_all_losses, and not otherwise."""
+    _with, with_logger       = _recording_loss(LossConfig(use_total_power=True, weight_total_power=1.0, power_floor=0.02))
+    _moments, moments_logger = _recording_loss(LossConfig(use_moments=True, weight_moments=1.0))
+    _probe, probe_logger     = _recording_loss(LossConfig(use_param_l1=True, weight_param_l1=1.0), log_all_losses=True)
+    _without, without_logger = _recording_loss(LossConfig(use_param_l1=True, weight_param_l1=1.0))
+
+    table = next(table for title, table in with_logger.tables if title == "Moment Terms Config")
+
+    assert table["power_floor"].startswith("0.02  (")
+    assert "excluded" in table["power_floor"]
+    assert any(title == "Moment Terms Config" for title, _ in moments_logger.tables)
+    assert any(title == "Moment Terms Config" for title, _ in probe_logger.tables)
+    assert not any(title == "Moment Terms Config" for title, _ in without_logger.tables)
+
+
+def test_moment_terms_report_the_valid_fraction_and_flag_empty_batches():
+    """Verifies a moment term records the share of pixels above the power floor, flags a batch with none and warns once per stage."""
+    loss, logger = _recording_loss(LossConfig(use_total_power=True, weight_total_power=1.0))
+    pred         = valid_param_tensor(2, 2, 5, 5, seed=45)
+
+    full  = loss(pred, valid_param_tensor(2, 2, 5, 5, seed=46))
+    empty = loss(pred, _gt_without_active_slots(seed=47))
+    again = loss(pred, _gt_without_active_slots(seed=48))
+
+    assert full["monitor"]["moment_valid_frac"].item()      == pytest.approx(1.0)
+    assert full["monitor"]["moment_empty_batch"].item()     == 0.0
+    assert empty["monitor"]["moment_valid_frac"].item()     == 0.0
+    assert empty["monitor"]["moment_empty_batch"].item()    == 1.0
+    assert empty["components"]["total_power_relerr"].item() == 0.0
+    assert again["monitor"]["moment_empty_batch"].item()    == 1.0
+    assert len(logger.warnings) == 1
+    assert "power_floor" in logger.warnings[0]
+
+
+def test_moment_empty_batch_warning_rearms_at_the_curriculum_swap():
+    """Verifies the empty-batch warning fires again in the next stage and the swap reprints the power floor table."""
+    loss, logger = _recording_loss(LossConfig(use_moments=True, weight_moments=1.0))
+    pred         = valid_param_tensor(2, 2, 5, 5, seed=53)
+
+    loss(pred, _gt_without_active_slots(seed=54))
+    loss.set_curriculum(LossConfig(use_total_power=True, weight_total_power=1.0))
+    swapped = loss(pred, _gt_without_active_slots(seed=55))
+
+    assert swapped["monitor"]["moment_empty_batch"].item() == 1.0
+    assert len(logger.warnings) == 2
+    assert any(title == "Moment Terms Config (curriculum swap)" for title, _ in logger.tables)
+
+
+def test_moment_valid_fraction_absent_without_a_moment_term():
+    """Verifies the power-floor population monitor is not recorded when neither the total-power nor the moment term is evaluated."""
+    loss = build_loss(n_gaussians=2)
+    out  = loss(valid_param_tensor(2, 2, 5, 5, seed=49), valid_param_tensor(2, 2, 5, 5, seed=50))
+
+    assert "moment_valid_frac" not in out["monitor"]
+    assert "moment_empty_batch" not in out["monitor"]
+
+
+def test_physical_errors_flag_a_batch_without_active_gt_slots():
+    """Verifies the parameter errors flag a batch whose ground truth has no active slot, where the metre errors are zero by construction."""
+    loss = build_loss(n_gaussians=2)
+    out  = loss(valid_param_tensor(2, 2, 5, 5, seed=51), _gt_without_active_slots(seed=52))
+
+    assert out["physical"]["gt_empty_batch"].item() == 1.0
+    assert out["physical"]["mu_mae"].item()         == 0.0
+    assert out["physical"]["sigma_mae"].item()      == 0.0
 
 
 def test_occupancy_absent_when_no_slot_presence_knobs():
