@@ -101,7 +101,7 @@ class ParameterExtractor:
         )
 
         self.logger.section("[Parameter Extractor Initialized]")
-        self.logger.subsection(f"Backend : JAX GPU (modes: {', '.join(modes)})")
+        self.logger.subsection(f"Backend : JAX {self._gpu_extractor.backend} (modes: {', '.join(modes)})")
         self.logger.subsection(f"Lambdas : {list(lambda_values)}")
 
     def run(self, cube_path: Path, z_range: Tuple[float, float]) -> Dict[tuple, Tuple[np.ndarray, dict]]:

@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+import os
 from pathlib import Path
 
 from _bootstrap import EnvironmentPinner
@@ -45,7 +46,7 @@ def main() -> None:
         permutations = sum(len(group.configs) for group in groups)
 
         peak_initialiser = PeakInitialiser(n_workers=config.parameter_workers)
-        kernel_backend   = KernelBackendSelector().select()
+        kernel_backend   = KernelBackendSelector(require_gpu=True, requested_gpu_ids=config.gpu_device_ids).select()
 
         logger.section("Extraction queue")
         logger.kv_table({
@@ -60,6 +61,9 @@ def main() -> None:
             "Filter"        : config.dataset_filter or "all dataset directories",
             "Overwrite"     : config.overwrite,
             "GPUs"          : config.gpu_device_ids,
+            "CUDA mask"     : os.environ.get("CUDA_VISIBLE_DEVICES", "unset"),
+            "JAX devices"   : str(kernel_backend[3]),
+            "Backend"       : kernel_backend[2],
         }, title="Configuration")
 
         try:
