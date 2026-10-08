@@ -356,6 +356,16 @@ def test_run_selector_lists_every_run_below_the_root(runs_dir):
     assert [str(run.relative_to(runs_dir)) for run in runs] == ["backbone/unet_a", "backbone/unet_b"]
 
 
+def test_run_selector_announces_the_size_scan_before_the_table(runs_dir):
+    """Verifies the per-run file scan is announced with the run count before the run table is logged."""
+    logger = RecordingLogger()
+
+    RunContentSelector(runs_dir, logger).all()
+
+    assert logger.messages[0] == ("info", f"Scanning 2 run(s) under {runs_dir} for their file counts and sizes")
+    assert logger.messages[1] == ("metrics_table", f"Runs at or below {runs_dir}")
+
+
 def test_run_selector_takes_a_root_that_is_itself_a_run(runs_dir):
     """Verifies pointing the selector at one run offers that run instead of searching below it."""
     run_dir = runs_dir / "backbone" / "unet_a"

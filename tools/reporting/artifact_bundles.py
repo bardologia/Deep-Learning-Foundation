@@ -168,17 +168,28 @@ class RunContentSelector(RunSelector):
         return run_dirs
 
     def _present(self, run_dirs: list[Path]) -> None:
-        """Logs a numbered table of the runs with the files they hold and their size on disk."""
+        """Logs a numbered table of the runs with the files they hold and their size on disk.
+
+        Every file of every run is listed and stat'ed first, which on network
+        storage can take minutes, so the scan is announced and tracked by a
+        progress bar advancing once per run.
+        """
+        self.logger.info(f"Scanning {len(run_dirs)} run(s) under {self.runs_dir} for their file counts and sizes")
+
         rows = []
-        for index, run_dir in enumerate(run_dirs, start=1):
-            files = [path for path in run_dir.rglob("*") if path.is_file()]
-            size  = sum(path.stat().st_size for path in files)
-            rows.append({
-                "#"       : index,
-                "Run"     : self._name(run_dir),
-                "Files"   : str(len(files)),
-                "On disk" : f"{size / (1024 * 1024):,.1f} MB",
-            })
+        with self.logger.track(transient=True) as progress:
+            task = progress.add_task("Scanning runs", total=len(run_dirs))
+
+            for index, run_dir in enumerate(run_dirs, start=1):
+                files = [path for path in run_dir.rglob("*") if path.is_file()]
+                size  = sum(path.stat().st_size for path in files)
+                rows.append({
+                    "#"       : index,
+                    "Run"     : self._name(run_dir),
+                    "Files"   : str(len(files)),
+                    "On disk" : f"{size / (1024 * 1024):,.1f} MB",
+                })
+                progress.advance(task)
 
         self.logger.metrics_table(rows, columns=["#", "Run", "Files", "On disk"], title=f"Runs at or below {self.runs_dir}")
 
