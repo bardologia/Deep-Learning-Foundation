@@ -58,6 +58,18 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, para
     report = report_path.read_text()
     assert "unet" in report
 
+    marker   = json.loads((output_dir / "complete.json").read_text())
+    resolved = json.loads((output_dir / "inference_config.json").read_text())
+
+    assert marker["checkpoint"]["name"]       == "best_model.pt"
+    assert marker["checkpoint"]["epoch"] + 1  == metrics["checkpoint_epoch"]
+    assert marker["inference_config"]         == "inference_config.json"
+    assert marker["provenance"]["git_commit"] == metrics["code_commit"]
+    assert metrics["checkpoint_name"]         == "best_model.pt"
+    assert resolved["render_amp_floor"]       == config.render_amp_floor
+    assert resolved["run_directory"]          == str(run_dir)
+    assert "code_commit" in report and "render_amp_floor" in report
+
 
 @pytest.mark.dataset
 @pytest.mark.slow

@@ -18,15 +18,19 @@ class InferenceMetadata:
     """Resolved output paths of one inference run.
 
     Attributes:
-        config         : Inference configuration the paths were derived from.
-        output_dir     : Root directory of this inference run inside the training run directory.
-        figures_dir    : Directory receiving the report figures.
-        animations_dir : Directory receiving the cube animations.
-        logs_dir       : Directory receiving the run logs.
-        cube_dir       : Directory receiving the stitched cubes and metric maps.
-        metrics_path   : Path of the serialised metric dictionary.
-        report_path    : Path of the generated markdown report.
+        CONFIG_FILENAME : Name of the resolved inference configuration written into the output directory.
+        config          : Inference configuration the paths were derived from.
+        output_dir      : Root directory of this inference run inside the training run directory.
+        figures_dir     : Directory receiving the report figures.
+        animations_dir  : Directory receiving the cube animations.
+        logs_dir        : Directory receiving the run logs.
+        cube_dir        : Directory receiving the stitched cubes and metric maps.
+        metrics_path    : Path of the serialised metric dictionary.
+        report_path     : Path of the generated markdown report.
+        config_path     : Path of the resolved inference configuration the stamp was scored with.
     """
+
+    CONFIG_FILENAME = "inference_config.json"
 
     def __init__(self, config: InferenceConfig) -> None:
         """Derives every output path from the configuration, timestamping when no subdir is set."""
@@ -41,6 +45,7 @@ class InferenceMetadata:
         self.cube_dir       = self.output_dir / paths.cubes_subdir
         self.metrics_path   = self.output_dir / paths.metrics_filename
         self.report_path    = self.output_dir / paths.report_filename
+        self.config_path    = self.output_dir / self.CONFIG_FILENAME
 
     def figure_path(self, name: str, ext: str = "png") -> Path:
         """Returns the path of a named figure inside the figures directory."""

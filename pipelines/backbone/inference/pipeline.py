@@ -29,10 +29,13 @@ from pipelines.backbone.inference.failure_modes        import FailureModes
 from pipelines.backbone.inference.presence_calibration import PresenceCalibration
 from pipelines.backbone.inference.report               import Report, ReportPayloadBuilder
 from pipelines.backbone.inference.stratified           import StratifiedErrors
+from pipelines.shared.inference.metadata               import CompletedInference
 from tools.data.regions                                import CropRegion
 from tools.monitoring.logger                           import Logger
 from tools.reporting.plotting                          import PlotBase
 from tools.runtime.completion                          import CompletionMarker
+from tools.runtime.config_cli                          import ConfigCli
+from tools.runtime.git_state                           import GitState
 
 
 @dataclass(frozen=True)
@@ -72,7 +75,11 @@ class InferencePipeline:
         self.components = components if components is not None else InferenceComponents()
 
     def _setup(self, cfg: InferenceConfig) -> tuple[InferenceMetadata, Logger, Plotter]:
-        """Creates the output directories, seeds NumPy and builds the logger and plotters.
+        """Creates the output directories, records the resolved configuration, seeds NumPy and builds the logger and plotters.
+
+        The configuration the stamp is scored with, including the effective region
+        override, is written to inference_config.json inside the stamp, so two stamps of
+        one run can be told apart and reproduced from what they store.
 
         Args:
             cfg : Inference configuration.
@@ -83,23 +90,12 @@ class InferencePipeline:
 
         meta = InferenceMetadata(cfg)
         meta.create_dirs()
+        ConfigCli.save_resolved(cfg, meta.config_path)
         np.random.seed(cfg.seed)
-
-        evaluator = self.components.embedding_evaluator_cls
 
         logger = Logger(log_dir=str(meta.logs_dir), name="inference", level=cfg.log_level)
         logger.section("[Inference Pipeline]")
-        logger.kv_table({
-            "Run Directory"       : cfg.run_directory,
-            "Output Dir"          : meta.output_dir,
-            "Split"               : cfg.split,
-            "Device"              : cfg.device,
-            "Checkpoint"          : cfg.checkpoint_name,
-            "Loader"              : self.components.loader_cls.__name__,
-            "Predictor"           : self.components.predictor_cls.__name__,
-            "Param Space"         : self.components.param_space,
-            "Embedding Evaluator" : evaluator.__name__ if evaluator is not None else "none",
-        })
+        logger.kv_table(self._setup_rows(cfg, meta))
 
         PlotBase.use_style(cfg.figure_style)
 
@@ -112,6 +108,35 @@ class InferencePipeline:
         )
 
         return meta, logger, plotter
+
+    def _setup_rows(self, cfg: InferenceConfig, meta: InferenceMetadata) -> dict:
+        """Returns the table logged when the pass starts, naming the run, split, region, device, settings and components.
+
+        Args:
+            cfg  : Inference configuration.
+            meta : Output metadata of the pass.
+
+        Returns:
+            Ordered mapping of row label to value.
+        """
+
+        evaluator = self.components.embedding_evaluator_cls
+
+        return {
+            "Run Directory"       : cfg.run_directory,
+            "Output Dir"          : meta.output_dir,
+            "Split"               : cfg.split,
+            "Region override"     : cfg.region_override if cfg.region_override else "none (stored split region)",
+            "Device"              : cfg.device,
+            "Checkpoint"          : cfg.checkpoint_name,
+            "Render amp floor"    : cfg.render_amp_floor,
+            "Code commit"         : GitState.commit(),
+            "Resolved config"     : meta.config_path,
+            "Loader"              : self.components.loader_cls.__name__,
+            "Predictor"           : self.components.predictor_cls.__name__,
+            "Param Space"         : self.components.param_space,
+            "Embedding Evaluator" : evaluator.__name__ if evaluator is not None else "none",
+        }
 
     def _load_run(self, cfg: InferenceConfig, logger: Logger):
         """Loads the trained run for the configured split.
@@ -303,11 +328,13 @@ class InferencePipeline:
     def _evaluate_metrics(self, cfg: InferenceConfig, result, z_axis_np: np.ndarray, run, meta: InferenceMetadata, indices: dict, logger: Logger) -> dict:
         """Computes the core metric dictionary, annotates it with run provenance and writes metrics.json.
 
+        The provenance names the split and its region, the checkpoint file and the
+        one-based epoch it holds, and the code commit the metrics were computed with.
         Pixels with an empty GT profile are warned about, since they bias the headline
         cosine and peak statistics.
 
         Args:
-            cfg       : Inference configuration supplying the worker count.
+            cfg       : Inference configuration supplying the worker count and the checkpoint name.
             result    : Inference result carrying the cubes and per-pixel maps.
             z_axis_np : Z axis in metres, of shape (n_z,).
             run       : Loaded run supplying the split, regions and track metadata.
@@ -347,6 +374,9 @@ class InferencePipeline:
         global_metrics["split"]              = run.split_name
         global_metrics["split_region"]       = list(run.split_region.as_tuple())
         global_metrics["activity_threshold"] = run.activity_threshold
+        global_metrics["checkpoint_name"]    = cfg.checkpoint_name
+        global_metrics["checkpoint_epoch"]   = run.checkpoint_meta["epoch"] + 1
+        global_metrics["code_commit"]        = GitState.commit()
 
         if run.core_region is not None:
             global_metrics["core_region"] = list(run.core_region.as_tuple())
@@ -745,8 +775,10 @@ class InferencePipeline:
         )
 
         CompletionMarker.stamp(meta.output_dir, {
-            "stage" : "inference",
-            "split" : run.split_name,
+            "stage"                           : "inference",
+            "split"                           : run.split_name,
+            "inference_config"                : meta.config_path.name,
+            CompletedInference.CHECKPOINT_KEY : {"name": cfg.checkpoint_name, **run.checkpoint_meta},
         })
 
         logger.section("[Inference Pipeline Done]")
