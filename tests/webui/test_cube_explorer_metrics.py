@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 from pathlib      import Path
 from urllib.parse import quote
 
@@ -135,7 +134,7 @@ def test_metric_hist_route_answers_through_the_cube_router(tmp_path):
     unknown = FakeHandler("GET", f"/api/cubes/metric_hist?id={quote(cube_id)}&key=banana")
 
     assert router.handle(HttpExchange.of(known)) and router.handle(HttpExchange.of(unknown))
-    assert known.status == 200 and json.loads(known.wfile.getvalue())["counts"] == [N_ROWS] * 6
+    assert known.status == 200 and known.payload()["counts"] == [N_ROWS] * 6
     assert unknown.status == 400
 
 
