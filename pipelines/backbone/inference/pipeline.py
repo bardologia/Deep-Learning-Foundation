@@ -468,7 +468,8 @@ class InferencePipeline:
     def _stratify_errors(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
         """Stratifies the per-pixel error over scene covariates and records the rank correlations.
 
-        Skipped when the configuration disables it.
+        Skipped when the configuration disables it. A covariate that loses sparse bins or
+        non-finite pixels is warned about, naming the bins and the pixel counts left out.
 
         Args:
             cfg            : Inference configuration.
@@ -476,7 +477,7 @@ class InferencePipeline:
             run            : Loaded run supplying the covariate sources.
             result         : Inference result, updated in place with the stratification tables.
             global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section headings and result line.
+            logger         : Logger for the section headings, result line and warnings.
         """
 
         if not cfg.compute_stratified:
@@ -495,8 +496,29 @@ class InferencePipeline:
         global_metrics.update(scalars)
         Metrics.write_json(global_metrics, meta.metrics_path)
 
-        strongest = max(tables, key=lambda name: abs(scalars[f"strat_{name}_spearman"]))
-        logger.subsection(f"Stratified over {sorted(tables)}; strongest rank correlation with error: {strongest} ({scalars[f'strat_{strongest}_spearman']:.3f})")
+        for name, table in sorted(tables.items()):
+            n_nonfinite = int(scalars[f"strat_{name}_pixels_nonfinite"])
+
+            if table["dropped"]:
+                bins = ", ".join(f"{entry['center']:.4g} (n={entry['n']})" for entry in table["dropped"])
+                logger.warning(f"Stratified errors, {name}: {len(table['dropped'])} bin(s) under {StratifiedErrors.MIN_BIN_COUNT} pixels left out of the table and figure, {int(scalars[f'strat_{name}_pixels_dropped'])} pixels in all: {bins}")
+
+            if n_nonfinite:
+                logger.warning(f"Stratified errors, {name}: {n_nonfinite} pixels with a non-finite covariate or error left out of every bin")
+
+        spearman  = {name: scalars[f"strat_{name}_spearman"] for name in sorted(tables)}
+        finite    = {name: value for name, value in spearman.items() if np.isfinite(value)}
+        undefined = [name for name in spearman if name not in finite]
+
+        if undefined:
+            logger.subsection(f"No rank correlation with error for {undefined}: the covariate or the error is constant on this region")
+
+        if not finite:
+            logger.warning(f"Stratified over {sorted(tables)}, but every rank correlation with error is undefined; no covariate can be named as the strongest")
+            return
+
+        strongest = max(finite, key=lambda name: abs(finite[name]))
+        logger.subsection(f"Stratified over {sorted(tables)}; strongest rank correlation with error: {strongest} ({finite[strongest]:.3f})")
 
     def _classify_failures(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
         """Classifies each pixel into a failure mode from its matched prediction-GT component pairs.
