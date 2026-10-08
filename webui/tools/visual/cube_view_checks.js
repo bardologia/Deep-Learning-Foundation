@@ -118,10 +118,11 @@ class CubeViewChecks {
     };
 
     const host = {
-      view       : "cloud",
-      selectedId : "cube",
-      meta       : { n_rows: 10, n_cols: 20, sources: ["pred"], aux: false, params: { sources: ["pred"], threshold: 0.1, ranges: { amp: [0, 1] } } },
-      _fmt       : (value) => String(value),
+      view           : "cloud",
+      selectedId     : "cube",
+      meta           : { n_rows: 10, n_cols: 20, sources: ["pred"], aux: false, metric_maps: [], params: { sources: ["pred"], threshold: 0.1, ranges: { amp: [0, 1] } } },
+      _fmt           : (value) => String(value),
+      hasMetricLayer : (key) => host.meta.metric_maps.some((layer) => layer.key === key),
     };
 
     const refs = {
@@ -141,11 +142,12 @@ class CubeViewChecks {
     };
 
     const cloud    = new CubeCloud(refs, host);
-    cloud.points   = new Float32Array([0, 0, -5, 1, 5, 5, 5, 1, 9, 19, 15, 1]);
+    cloud.points   = new Float32Array([0, 0, -5, 1, NaN, 5, 5, 5, 1, NaN, 9, 19, 15, 1, NaN]);
+    cloud.width    = 5;
     cloud.total    = 3;
     cloud.muRange  = [-5, 15];
-    cloud.muBounds = CubeCloud.valueBounds(cloud.points, 2, 4);
-    return { cloud, refs, host, fills };
+    cloud.muBounds = CubeCloud.valueBounds(cloud.points, 2, 5);
+    return { cloud, refs, host, fills, ctx };
   }
 
   async cut() {
@@ -167,7 +169,7 @@ class CubeViewChecks {
     refs.cutPos.value  = "50";
     cloud.muBounds     = null;
     const unbounded    = cloud._cutSpec();
-    cloud.muBounds     = CubeCloud.valueBounds(cloud.points, 2, 4);
+    cloud.muBounds     = CubeCloud.valueBounds(cloud.points, 2, 5);
 
     cloud._draw();
     const cutDraw = { text: refs.at.textContent, fills: fills.count };
@@ -214,6 +216,170 @@ class CubeViewChecks {
     return { bounds, specs, unbounded, cutDraw, openDraw, started, positions, left, viewLeft, offView, reconfigured, axisOff };
   }
 
+  async uncertainty() {
+    const { CubeCloud } = this.classes;
+    Object.assign(this.sandbox.window, { innerHeight: 600, devicePixelRatio: 1, addEventListener: () => {} });
+
+    const ranges = {
+      mixed : CubeCloud.finiteRange(new Float32Array([0, NaN, 0, 0.5, 0, 0.25]), 1, 2),
+      empty : CubeCloud.finiteRange(new Float32Array([0, NaN, 0, NaN]), 1, 2),
+    };
+
+    const { cloud, refs, host, ctx } = this._cloud();
+    const buttons = ["mu", "amp", "std"].map((color) => ({ dataset: { color }, disabled: false, classList: { toggle: () => {} } }));
+    refs.color.querySelectorAll = () => buttons;
+
+    const painted = [];
+    ctx.putImageData = (image) => painted.push(image.data);
+    const greys = () => {
+      const data = painted[painted.length - 1];
+      let count  = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i] === 128 && data[i + 1] === 128 && data[i + 2] === 128 && data[i + 3] === 255) count += 1;
+      }
+      return count;
+    };
+
+    cloud.colorBy = "std";
+    cloud._syncBtns();
+    const absent = { colorBy: cloud.colorBy, disabled: buttons[2].disabled };
+
+    host.meta.metric_maps = [{ key: "seed_std_profile" }];
+    cloud.colorBy = "std";
+    cloud._syncBtns();
+    const present = { colorBy: cloud.colorBy, disabled: buttons[2].disabled };
+
+    cloud.points   = new Float32Array([0, 0, -5, 1, 0.5, 5, 5, 5, 1, NaN, 9, 19, 15, 1, 2.5]);
+    cloud.stdRange = CubeCloud.finiteRange(cloud.points, 4, 5);
+
+    const ts      = [];
+    const palette = cloud._palette.bind(cloud);
+    cloud._palette = (t) => {
+      ts.push(t);
+      return palette(t);
+    };
+
+    cloud._draw();
+    const byStd = { ts: ts.splice(0), greys: greys(), text: refs.at.textContent };
+
+    cloud.colorBy = "mu";
+    cloud._draw();
+    const byZ = { ts: ts.splice(0), greys: greys() };
+
+    const blob = new Float32Array([2, 7, 5, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    this.sandbox.fetch = async () => ({ ok: true, arrayBuffer: async () => blob.buffer });
+    cloud._draw     = () => {};
+    cloud.available = true;
+    await cloud._fetch();
+    const fetched = { width: cloud.width, total: cloud.total, muBounds: cloud.muBounds, stdRange: cloud.stdRange };
+
+    return { ranges, absent, present, byStd, byZ, fetched };
+  }
+
+  async coverage() {
+    const timers = { next: 0, live: new Map(), cleared: [] };
+    this.sandbox.setInterval   = (handler) => { timers.next += 1; timers.live.set(timers.next, handler); return timers.next; };
+    this.sandbox.clearInterval = (id) => { timers.cleared.push(id); timers.live.delete(id); };
+
+    const answers = [];
+    const { metrics, refs, host } = this._metrics((query) => new Promise((resolve) => answers.push({ query, resolve })));
+    const fetched = [];
+    metrics.layer       = { key: "pixel_mse", label: "MSE", vmin: 0, vmax: 1, classes: null };
+    metrics._onCoverage = () => fetched.push(refs.selCov.value);
+    metrics._refresh    = () => {};
+    host.view           = "metrics";
+    refs.selCov.value   = "15";
+
+    refs.selPlay.listeners.click();
+    const started = { mask: refs.selMask.checked, label: refs.selPlay.textContent, running: timers.live.size };
+
+    const tick = () => [...timers.live.values()][0]();
+    [1, 2, 3, 4].forEach(tick);
+    const swept = { values: fetched.splice(0), dir: metrics.selPlayDir };
+
+    const low = metrics._fetchSelective(0.4);
+    answers.shift().resolve({ ok: true, direction: "low", threshold: 0.2, coverage: 0.4, rows: [], n_kept: 4, n_total: 10 });
+    await low;
+    const lowWindow = metrics._keepWindow();
+
+    const high = metrics._fetchSelective(0.4);
+    answers.shift().resolve({ ok: true, direction: "high", threshold: 0.7, coverage: 0.4, rows: [], n_kept: 4, n_total: 10 });
+    await high;
+    const highWindow = metrics._keepWindow();
+
+    host.view = "explorer";
+    tick();
+    const leftView = { running: timers.live.size, label: refs.selPlay.textContent };
+
+    host.view = "metrics";
+    refs.selPlay.listeners.click();
+    metrics.leave();
+    const left = { running: timers.live.size, label: refs.selPlay.textContent };
+
+    refs.selPlay.listeners.click();
+    refs.selMask.checked = false;
+    refs.selMask.listeners.change();
+    const unmasked = { running: timers.live.size, window: metrics.maskWindow, keep: metrics._keepWindow() };
+
+    const ignored = metrics._fetchSelective(0.4);
+    answers.shift().resolve({ ok: true, direction: "low", threshold: 0.2, coverage: 0.4, rows: [], n_kept: 4, n_total: 10 });
+    await ignored;
+    const unmaskedAnswer = metrics.maskWindow;
+
+    refs.selMask.checked = true;
+    metrics.maskWindow   = { keep_min: "-inf", keep_max: 0.2 };
+    refs.selPlay.listeners.click();
+    metrics.configure({ metric_maps: [] });
+    const reconfigured = { running: timers.live.size, mask: refs.selMask.checked, window: metrics.maskWindow };
+
+    return { started, swept, lowWindow, highWindow, leftView, left, unmasked, unmaskedAnswer, reconfigured };
+  }
+
+  async profileStd() {
+    const { CubeView } = this.classes;
+    const pending      = [];
+    const calls        = [];
+
+    this.sandbox.Api = {
+      get: (url) => {
+        calls.push(url);
+        return new Promise((resolve) => pending.push(resolve));
+      },
+    };
+
+    const view = Object.create(CubeView.prototype);
+    Object.assign(view, {
+      selectedId : "cube",
+      meta       : { n_rows: 4, n_cols: 6, metric_maps: [{ key: "seed_std_profile" }] },
+      profData   : { row: 1, col: 2 },
+      profAt     : this._element({ textContent: "profiles at row = 1 · col = 2" }),
+    });
+
+    const shown = view._fetchProfStd(1, 2);
+    pending.shift()({ ok: true, row: 1, col: 2, key: "seed_std_profile", value: 0.125 });
+    await shown;
+    const value = view.profAt.textContent;
+
+    const stale = view._fetchProfStd(1, 2);
+    view.profData = { row: 3, col: 3 };
+    view.profAt.textContent = "profiles at row = 3 · col = 3";
+    pending.shift()({ ok: true, row: 1, col: 2, key: "seed_std_profile", value: 0.5 });
+    await stale;
+    const moved = view.profAt.textContent;
+
+    view.profData = { row: 3, col: 3 };
+    const empty = view._fetchProfStd(3, 3);
+    pending.shift()({ ok: true, row: 3, col: 3, key: "seed_std_profile", value: null });
+    await empty;
+    const missing = view.profAt.textContent;
+
+    const layers = { present: view.hasMetricLayer("seed_std_profile"), absent: view.hasMetricLayer("pixel_mse") };
+    view.meta    = null;
+    layers.unloaded = view.hasMetricLayer("seed_std_profile");
+
+    return { calls, value, moved, missing, layers };
+  }
+
   async pixel() {
     const { CubeParams } = this.classes;
     const pending = new Map();
@@ -249,7 +415,7 @@ class CubeViewChecks {
     this.sandbox.window.addEventListener = () => {};
 
     const refs = {};
-    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open", "histNote", "download", "rect", "regionHint", "regionTab", "regionWrap", "regionProf"].forEach((name) => {
+    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open", "selCov", "selVal", "selTab", "selMask", "selPlay", "histNote", "download", "rect", "regionHint", "regionTab", "regionWrap", "regionProf"].forEach((name) => {
       refs[name] = this._element({ innerHTML: "" });
     });
 
@@ -1023,7 +1189,7 @@ class CubeViewChecks {
     const view = Object.create(CubeView.prototype);
     Object.assign(view, {
       selectedId    : "cube",
-      meta          : { n_rows: 4, n_cols: 6, params: { sources: ["pred", "gt"] } },
+      meta          : { n_rows: 4, n_cols: 6, metric_maps: [], params: { sources: ["pred", "gt"] } },
       profMode      : "raw",
       profMix       : false,
       profData      : profile(1, 2),

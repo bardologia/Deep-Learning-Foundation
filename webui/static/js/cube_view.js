@@ -455,6 +455,10 @@ class CubeParams {
 }
 
 class CubeMetrics {
+  static COVERAGE_STEP    = 5;
+  static COVERAGE_MIN     = 5;
+  static COVERAGE_STEP_MS = 420;
+
   constructor(refs, host) {
     this.host = host;
     this.layerEl = refs.layer;
@@ -478,6 +482,8 @@ class CubeMetrics {
     this.selCovEl = refs.selCov;
     this.selValEl = refs.selVal;
     this.selTabEl = refs.selTab;
+    this.selMaskEl = refs.selMask;
+    this.selPlayEl = refs.selPlay;
     this.histEl = refs.hist;
     this.histNoteEl = refs.histNote;
     this.rectEl = refs.rect;
@@ -498,11 +504,16 @@ class CubeMetrics {
     this.hoverQueued = null;
     this.hoverFetching = false;
     this.selectiveTimer = null;
+    this.maskWindow = null;
+    this.selPlayTimer = null;
+    this.selPlayDir = -1;
     this.rectDrag = null;
     this.suppressClick = false;
     this.regionSeq = 0;
 
     if (this.selCovEl) this.selCovEl.addEventListener("input", () => this._onCoverage());
+    this.selMaskEl.addEventListener("change", () => this._onMaskToggle());
+    this.selPlayEl.addEventListener("click", () => this._toggleCoveragePlay());
 
     this.vminEl.addEventListener("change", () => this._refresh());
     this.vmaxEl.addEventListener("change", () => this._refresh());
@@ -525,6 +536,9 @@ class CubeMetrics {
     this.histKey = null;
     this.picked = null;
     this.adopted = 0;
+    this.maskWindow = null;
+    this._stopCoveragePlay();
+    this.selMaskEl.checked = false;
     this.cross.hidden = true;
     this.openBtn.hidden = true;
     this.readoutEl.innerHTML = "";
@@ -681,12 +695,70 @@ class CubeMetrics {
     this.selectiveTimer = setTimeout(() => this._fetchSelective(pct / 100), 220);
   }
 
+  _onMaskToggle() {
+    if (!this.selMaskEl.checked) {
+      this.maskWindow = null;
+      this._stopCoveragePlay();
+      this._refresh();
+      return;
+    }
+    this._onCoverage();
+  }
+
+  _toggleCoveragePlay() {
+    if (this.selPlayTimer !== null) {
+      this._stopCoveragePlay();
+      return;
+    }
+    if (!this.layer) return;
+
+    this.selMaskEl.checked = true;
+    this.selPlayDir = -1;
+    this.selPlayEl.textContent = "Pause";
+    this.selPlayTimer = setInterval(() => this._coverageStep(), CubeMetrics.COVERAGE_STEP_MS);
+  }
+
+  _coverageStep() {
+    if (this.host.view !== "metrics") {
+      this._stopCoveragePlay();
+      return;
+    }
+
+    let value = Number(this.selCovEl.value) + this.selPlayDir * CubeMetrics.COVERAGE_STEP;
+    if (value <= CubeMetrics.COVERAGE_MIN) {
+      value = CubeMetrics.COVERAGE_MIN;
+      this.selPlayDir = 1;
+    }
+    if (value >= 100) {
+      value = 100;
+      this.selPlayDir = -1;
+    }
+    this.selCovEl.value = String(value);
+    this._onCoverage();
+  }
+
+  _stopCoveragePlay() {
+    if (this.selPlayTimer !== null) clearInterval(this.selPlayTimer);
+    this.selPlayTimer = null;
+    this.selPlayEl.textContent = "Play";
+  }
+
+  leave() {
+    this._stopCoveragePlay();
+  }
+
   async _fetchSelective(coverage) {
     if (!this.layer) return;
     try {
       const data = await Api.get(
         `/api/cubes/selective?id=${encodeURIComponent(this.host.selectedId)}&key=${encodeURIComponent(this.layer.key)}&coverage=${coverage}`
       );
+      if (data.ok && this.selMaskEl.checked) {
+        this.maskWindow = data.direction === "high"
+          ? { keep_min: data.threshold, keep_max: "inf" }
+          : { keep_min: "-inf", keep_max: data.threshold };
+        this._refresh();
+      }
       if (!data.ok) {
         this.selTabEl.innerHTML = `<p class="cube-hint">${data.error || "selective metrics unavailable"}</p>`;
         return;
@@ -754,6 +826,7 @@ class CubeMetrics {
   }
 
   _keepWindow() {
+    if (this.maskWindow) return this.maskWindow;
     if (this.mode === "below") return { keep_min: "-inf", keep_max: this._threshold() };
     if (this.mode === "above") return { keep_min: this._threshold(), keep_max: "inf" };
     return { keep_min: "-inf", keep_max: "inf" };
@@ -1414,6 +1487,7 @@ class CubeCloud {
   static VIRIDIS = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
   static CURVE_SOURCES = ["full"];
   static SWEEP_MS = 9000;
+  static NO_STD_RGB = [128, 128, 128];
   static MISSING = {
     gt      : "This run has no ground-truth parameter cube.",
     full    : "The reference cube is not available for this run.",
@@ -1438,8 +1512,10 @@ class CubeCloud {
     this.source        = "pred";
     this.colorBy       = "mu";
     this.points        = null;
+    this.width         = 0;
     this.total         = 0;
     this.muBounds      = null;
+    this.stdRange      = null;
     this.auxGrid       = null;
     this.auxBounds     = null;
     this.debounceTimer = null;
@@ -1477,6 +1553,7 @@ class CubeCloud {
     if (!sources.includes(this.source)) this.source = sources[0] || "pred";
     this.points         = null;
     this.muBounds       = null;
+    this.stdRange       = null;
     this.auxGrid        = null;
     this.auxBounds      = null;
     this.auxWrap.hidden = !meta.aux;
@@ -1626,8 +1703,11 @@ class CubeCloud {
       btn.classList.toggle("is-active", btn.dataset.source === this.source);
       btn.disabled = !sources.includes(btn.dataset.source);
     });
+    const hasStd = this.host.hasMetricLayer("seed_std_profile");
+    if (!hasStd && this.colorBy === "std") this.colorBy = "mu";
     this.colorEl.querySelectorAll(".cube-space").forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.color === this.colorBy);
+      if (btn.dataset.color === "std") btn.disabled = !hasStd;
     });
 
     const binAxis       = this.source === "full";
@@ -1656,17 +1736,33 @@ class CubeCloud {
     if (!data) return;
 
     this.points   = data.rows;
+    this.width    = data.header[2];
     this.total    = data.header[1];
     this.muRange  = this._sampleRange(data.rows, 2);
-    this.muBounds = CubeCloud.valueBounds(data.rows, 2, 4);
+    this.muBounds = CubeCloud.valueBounds(data.rows, 2, this.width);
+    this.stdRange = CubeCloud.finiteRange(data.rows, 4, this.width);
     this._draw();
   }
 
   _sampleRange(rows, offset) {
     const values = [];
-    const stride = Math.max(1, Math.floor(rows.length / 4 / 4096)) * 4;
+    const stride = Math.max(1, Math.floor(rows.length / this.width / 4096)) * this.width;
     for (let i = offset; i < rows.length; i += stride) values.push(rows[i]);
     if (!values.length) return [0, 1];
+
+    values.sort((a, b) => a - b);
+    const lo = values[Math.floor(values.length * 0.02)];
+    const hi = values[Math.floor(values.length * 0.98)];
+    return hi > lo ? [lo, hi] : [lo, lo + 1];
+  }
+
+  static finiteRange(rows, offset, width) {
+    const values = [];
+    const stride = Math.max(1, Math.floor(rows.length / width / 4096)) * width;
+    for (let i = offset; i < rows.length; i += stride) {
+      if (Number.isFinite(rows[i])) values.push(rows[i]);
+    }
+    if (!values.length) return null;
 
     values.sort((a, b) => a - b);
     const lo = values[Math.floor(values.length * 0.02)];
@@ -1803,12 +1899,16 @@ class CubeCloud {
     const cutOffset = cut ? { row: 0, col: 1, z: 2 }[cut.axis] : 0;
     let drawn = 0;
 
-    for (let i = 0; i < rows.length; i += 4) {
+    const width          = this.width;
+    const [stdLo, stdHi] = this.stdRange || [0, 1];
+
+    for (let i = 0; i < rows.length; i += width) {
       if (cut && rows[i + cutOffset] > cut.threshold) continue;
       drawn += 1;
 
-      const mu = rows[i + 2];
+      const mu  = rows[i + 2];
       const amp = rows[i + 3];
+      const std = rows[i + 4];
 
       let z = mu - zMid;
       if (grid) {
@@ -1817,10 +1917,16 @@ class CubeCloud {
         z += g;
       }
 
-      const t = this.colorBy === "amp"
-        ? ((logAmp ? Math.log(Math.max(amp, 1e-6)) : amp) - ampLo) / Math.max(ampHi - ampLo, 1e-6)
-        : (mu - muLo) / zSpan;
-      plot((rows[i + 1] - cx) * colStep, (rows[i] - cy) * rowStep, z * zScale, this._palette(t));
+      let rgb;
+      if (this.colorBy === "std") {
+        rgb = Number.isFinite(std) ? this._palette((std - stdLo) / Math.max(stdHi - stdLo, 1e-9)) : CubeCloud.NO_STD_RGB;
+      } else {
+        const t = this.colorBy === "amp"
+          ? ((logAmp ? Math.log(Math.max(amp, 1e-6)) : amp) - ampLo) / Math.max(ampHi - ampLo, 1e-6)
+          : (mu - muLo) / zSpan;
+        rgb = this._palette(t);
+      }
+      plot((rows[i + 1] - cx) * colStep, (rows[i] - cy) * rowStep, z * zScale, rgb);
     }
 
     ctx.putImageData(image, 0, 0);
@@ -1831,7 +1937,7 @@ class CubeCloud {
       this._drawCutPlane(ctx, cut, { meta, cx, cy, rowStep, colStep, zMid, zScale, zLo, zHi, W, H, fit, sinY, cosY, sinP, cosP });
     }
 
-    const shown   = cut ? drawn : rows.length / 4;
+    const shown   = cut ? drawn : rows.length / width;
     const unit    = logAmp ? "components" : "voxels";
     const cutNote = cut ? ` · cut ${cut.axis} @ ${Math.round(cut.frac * 100)}%` : "";
     this.atEl.textContent = `${shown.toLocaleString()} of ${Math.round(this.total).toLocaleString()} ${unit}${cutNote} · drag to orbit · wheel to zoom · double-click to reset`;
@@ -2472,6 +2578,7 @@ class CubeView {
 
   leave() {
     this._stopSweeps();
+    if (this.metrics) this.metrics.leave();
     if (this.cloud) this.cloud.leave();
   }
 
@@ -3499,6 +3606,19 @@ class CubeView {
     this._drawProfiles();
 
     if (this.profMix && this.meta && this.meta.params && !this._mixtureMatches()) this._fetchProfParams(data.row, data.col);
+    if (this.hasMetricLayer("seed_std_profile")) this._fetchProfStd(data.row, data.col);
+  }
+
+  async _fetchProfStd(row, col) {
+    const cubeId = this.selectedId;
+    const std    = await Api.get(`/api/cubes/metric_at?id=${encodeURIComponent(cubeId)}&key=seed_std_profile&row=${row}&col=${col}`);
+    if (!std || !std.ok || cubeId !== this.selectedId || !this.profData || this.profData.row !== std.row || this.profData.col !== std.col) return;
+
+    this.profAt.textContent = `profiles at row = ${std.row} · col = ${std.col} · seed std ${std.value === null ? "–" : this._fmt(std.value)}`;
+  }
+
+  hasMetricLayer(key) {
+    return !!this.meta && this.meta.metric_maps.some((layer) => layer.key === key);
   }
 
   _drawProfiles() {

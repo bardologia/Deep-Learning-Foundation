@@ -25,6 +25,11 @@ undo, an along-line metric strip that never shows an answer for a line that was 
 cleared meanwhile, and named lines remembered per cube footprint. The volume view must ask for a
 readable WebGL2 context, map its clip axes onto the texture axes, drop a volume streamed for a cube
 or comparison that was replaced meanwhile, and render when its view opens or a cube loads into it.
+The point cloud strides its rows by the column count the blob header declares and can colour each
+point by the seed disagreement of its pixel, greying points without one, while the profile line
+names the profiled pixel's seed std. The selective-prediction mask paints only the pixels the
+coverage keeps, and its Play sweep runs the coverage down to 5% and back until the view, the tab or
+the mask is left.
 """
 
 from __future__ import annotations
@@ -694,3 +699,91 @@ def test_volume_controls_are_on_the_page_once_and_wired_to_the_cube_view():
     for ref, suffix in refs.items():
         assert html.count(f'id="cube-volume-{suffix}"') == 1, suffix
         assert re.search(rf'{ref}\s*: document\.getElementById\("cube-volume-{suffix}"\)', app), ref
+
+
+@NEEDS_JS
+def test_finite_range_skips_missing_seed_disagreement():
+    """The cloud's robust range helper ignores NaN entries and returns None for a column without a finite value."""
+    assert _check("uncertainty")["ranges"] == {"mixed": [0.25, 0.5], "empty": None}
+
+
+@NEEDS_JS
+def test_uncertainty_colour_needs_the_seed_std_layer():
+    """Without a seed_std_profile layer the uncertainty button is disabled and the colour falls back to z; with it the mode stays."""
+    observed = _check("uncertainty")
+
+    assert observed["absent"] == {"colorBy": "mu", "disabled": True}
+    assert observed["present"] == {"colorBy": "std", "disabled": False}
+
+
+@NEEDS_JS
+def test_uncertainty_colour_paints_points_by_their_seed_std_and_greys_missing_ones():
+    """Colouring by uncertainty maps each finite seed std over the cloud's range and paints a NaN one grey, unlike colouring by z."""
+    observed = _check("uncertainty")
+
+    assert observed["byStd"]["ts"] == [0, 1]
+    assert observed["byStd"]["greys"] == 4
+    assert observed["byStd"]["text"].startswith("3 of 3 components")
+    assert observed["byZ"] == {"ts": [0, 0.5, 1], "greys": 0}
+
+
+@NEEDS_JS
+def test_cloud_reads_its_row_width_from_the_blob_header():
+    """A fetched blob is strided by the column count its header declares, and the seed std range comes from the fifth column."""
+    assert _check("uncertainty")["fetched"] == {"width": 5, "total": 7, "muBounds": [3, 8], "stdRange": [5, 10]}
+
+
+@NEEDS_JS
+def test_coverage_play_sweeps_down_to_five_percent_and_back_with_the_mask_on():
+    """Play ticks the mask on and steps the coverage by 5 down to 5 percent before turning back."""
+    observed = _check("coverage")
+
+    assert observed["started"] == {"mask": True, "label": "Pause", "running": 1}
+    assert observed["swept"] == {"values": ["10", "5", "10", "15"], "dir": 1}
+
+
+@NEEDS_JS
+def test_coverage_mask_keeps_the_most_confident_side_of_the_threshold():
+    """With the mask on, the overlay keeps pixels below the threshold of an error-like layer and above that of an R2-like one."""
+    observed = _check("coverage")
+
+    assert observed["lowWindow"] == {"keep_min": "-inf", "keep_max": 0.2}
+    assert observed["highWindow"] == {"keep_min": 0.7, "keep_max": "inf"}
+
+
+@NEEDS_JS
+def test_coverage_play_stops_when_the_view_or_the_tab_is_left_or_the_mask_cleared():
+    """Leaving the metric view or the Cube tab, unticking the mask or loading another cube ends the sweep and drops the mask."""
+    observed = _check("coverage")
+
+    assert observed["leftView"] == {"running": 0, "label": "Play"}
+    assert observed["left"] == {"running": 0, "label": "Play"}
+    assert observed["unmasked"] == {"running": 0, "window": None, "keep": {"keep_min": "-inf", "keep_max": "inf"}}
+    assert observed["unmaskedAnswer"] is None
+    assert observed["reconfigured"] == {"running": 0, "mask": False, "window": None}
+
+
+@NEEDS_JS
+def test_profile_line_shows_the_seed_std_of_the_profiled_pixel_only():
+    """The profile line gains the pixel's seed std, a dash when it is missing, and ignores an answer for a pixel left meanwhile."""
+    observed = _check("profileStd")
+
+    assert observed["calls"][0] == "/api/cubes/metric_at?id=cube&key=seed_std_profile&row=1&col=2"
+    assert observed["value"] == "profiles at row = 1 · col = 2 · seed std 0.13"
+    assert observed["moved"] == "profiles at row = 3 · col = 3"
+    assert observed["missing"] == "profiles at row = 3 · col = 3 · seed std –"
+    assert observed["layers"] == {"present": True, "absent": False, "unloaded": False}
+
+
+def test_uncertainty_and_coverage_controls_are_on_the_page_and_wired():
+    """The cloud carries one uncertainty colour button, and the selective block a mask box and Play button that app.js hands to the metric view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    cloud_colours = html.split('id="cube-cloud-color"')[1].split("</div>")[0]
+    assert re.findall(r'data-color="(\w+)"', cloud_colours) == ["mu", "amp", "std"]
+
+    assert html.count('<input type="checkbox" id="cube-selective-mask" />') == 1
+    assert html.count('id="cube-selective-play"') == 1
+    assert re.search(r'selMask\s*: document\.getElementById\("cube-selective-mask"\)', app)
+    assert re.search(r'selPlay\s*: document\.getElementById\("cube-selective-play"\)', app)
