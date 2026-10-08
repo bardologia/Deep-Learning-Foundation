@@ -455,6 +455,7 @@ class App {
       btn.addEventListener("click", () => {
         if (btn.classList.contains("is-active")) return;
         wrap.querySelectorAll(".model-zoo__btn").forEach((b) => b.classList.toggle("is-active", b === btn));
+        wrap.closest(".page__head").querySelector(".page__figure").setAttribute("name", btn.dataset.figure);
         this.modelGallery.reload(btn.dataset.endpoint, btn.dataset.zoo);
       });
     });
@@ -467,6 +468,7 @@ class App {
     wrap.querySelectorAll(".model-mode__btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         wrap.querySelectorAll(".model-mode__btn").forEach((b) => b.classList.toggle("is-active", b === btn));
+        wrap.closest(".page__head").querySelector(".page__figure").setAttribute("name", btn.dataset.figure);
         const mode = btn.dataset.mode;
         views.forEach((v) => v.classList.toggle("is-hidden", v.dataset.view !== mode));
         if (mode === "walkthrough") this.flowView.load();

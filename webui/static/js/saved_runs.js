@@ -15,7 +15,7 @@ class SavedRunsView {
     const data = await Api.get("/api/saved-runs");
 
     if (data.error) {
-      this.gridEl.innerHTML = `<p class="saved-empty">Could not load saved runs: ${SharedCharts.esc(data.error)}</p>`;
+      this.gridEl.innerHTML = HairlineFigure.empty("plug", "saved-empty", `Could not load saved runs: ${SharedCharts.esc(data.error)}`);
       return;
     }
 

@@ -2,6 +2,7 @@
 
 class LeaderboardView {
   static DIFF_TAGS = ["A", "B", "C", "D", "E", "F"];
+  static FIGURES   = { table: "podium", trials: "folds", curves: "landscape", diff: "balance" };
   static AXIS_COLS = [
     { key: "model",      label: "model" },
     { key: "head",       label: "head" },
@@ -15,7 +16,8 @@ class LeaderboardView {
   ];
 
   constructor(root) {
-    this.root = root;
+    this.root     = root;
+    this.figureEl = root.closest(".page").querySelector(".page__figure");
 
     this.data     = null;
     this.view     = "table";
@@ -45,6 +47,15 @@ class LeaderboardView {
     this.curveData     = null;
   }
 
+  get view() {
+    return this._view;
+  }
+
+  set view(value) {
+    this._view = value;
+    this.figureEl.setAttribute("name", LeaderboardView.FIGURES[value]);
+  }
+
   enter() {
     if (this.view === "trials") this.loadTrials();
     else if (this.view === "curves") this.loadCurveRuns();
@@ -63,7 +74,7 @@ class LeaderboardView {
 
     if (!data || !data.ok) {
       this.data = null;
-      this.root.innerHTML = `<div class="res-empty">${SharedCharts.esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
+      this.root.innerHTML = HairlineFigure.empty("plug", "res-empty", SharedCharts.esc((data && data.error) || "Could not scan the runs directory."));
       return;
     }
 
@@ -82,7 +93,7 @@ class LeaderboardView {
 
     if (!data || !data.ok) {
       this.trialsData = null;
-      this.root.innerHTML = `<div class="res-empty">${SharedCharts.esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
+      this.root.innerHTML = HairlineFigure.empty("plug", "res-empty", SharedCharts.esc((data && data.error) || "Could not scan the runs directory."));
       return;
     }
 
@@ -99,7 +110,7 @@ class LeaderboardView {
 
     if (!data || !data.ok) {
       this.curveRuns = null;
-      this.root.innerHTML = `<div class="res-empty">${SharedCharts.esc((data && data.error) || "Could not scan the runs directory.")}</div>`;
+      this.root.innerHTML = HairlineFigure.empty("plug", "res-empty", SharedCharts.esc((data && data.error) || "Could not scan the runs directory."));
       return;
     }
 
