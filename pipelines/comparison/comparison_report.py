@@ -12,6 +12,7 @@ from pathlib import Path
 
 from pipelines.comparison.trial_collector          import TrialRecord
 from pipelines.shared.comparison.comparison_report import ComparisonReportBase
+from tools.data.io                                 import FileIO
 from tools.metrics.scoring                         import FiniteScalar, MetricOrientation
 from tools.reporting.markdown                      import MarkdownTable, ScalarFormatter
 from tools.reporting.reporting                     import MetricSectionGrouper, ReportAssets
@@ -26,6 +27,7 @@ class TrialComparisonReport(ComparisonReportBase):
         out_dir         : Directory the markdown files and assets are written to.
         compare_images  : Whether per-figure gallery pages are produced.
         compare_gifs    : Whether the animation gallery page is produced.
+        inference_split : Dataset split whose completed inference stamps the records were read from.
         logger          : Logger used for progress reporting.
         seed_dispersion : Per-trial seed statistics keyed by trial name.
         has_seed_sweep  : True when at least one trial aggregates several seeds.
@@ -88,6 +90,7 @@ class TrialComparisonReport(ComparisonReportBase):
         compare_images  : bool,
         compare_gifs    : bool,
         embed_images    : bool,
+        inference_split : str,
         logger          : Logger,
         seed_dispersion : dict | None = None,
     ) -> None:
@@ -99,6 +102,7 @@ class TrialComparisonReport(ComparisonReportBase):
             compare_images  : Whether to emit per-subdirectory figure galleries.
             compare_gifs    : Whether to emit the animation gallery.
             embed_images    : Whether images are inlined rather than linked.
+            inference_split : Dataset split the records' inference stamps were read from.
             logger          : Logger used for progress reporting.
             seed_dispersion : Per-trial seed statistics keyed by trial name.
         """
@@ -106,6 +110,7 @@ class TrialComparisonReport(ComparisonReportBase):
         self.out_dir         = Path(out_dir)
         self.compare_images  = compare_images
         self.compare_gifs    = compare_gifs
+        self.inference_split = inference_split
         self.logger          = logger
         self.seed_dispersion = seed_dispersion or {}
         self.has_seed_sweep  = any(entry["n_seeds"] > 1 for entry in self.seed_dispersion.values())
@@ -118,6 +123,7 @@ class TrialComparisonReport(ComparisonReportBase):
             Path of the written overview file.
         """
         lines  = self.assets.header("Trial Comparison Overview")
+        lines += [f"Metrics, figures and animations come from each trial's newest completed inference on the `{self.inference_split}` split; a trial without one is listed but not ranked.\n"]
         lines += ["## Runs\n"]
 
         if self.has_seed_sweep:
@@ -363,19 +369,45 @@ class TrialComparisonReport(ComparisonReportBase):
         out.write_text("\n".join(lines), encoding="utf-8")
         return out
 
+    def _write_summary_json(self) -> Path:
+        """Writes `comparison_summary.json`: the split and, per trial, its directories, checkpoint scalars, metrics and seed dispersion.
+
+        Returns:
+            Path of the written summary file.
+        """
+        trials = []
+        for r in self.records:
+            entry = {
+                "name"          : r.name,
+                "run_dir"       : str(r.run_dir),
+                "inference_dir" : str(r.inference_dir) if r.inference_dir else None,
+                "report_path"   : str(r.report_path) if r.report_path else None,
+                "checkpoint"    : r.checkpoint,
+                "metrics"       : r.metrics,
+            }
+
+            if r.name in self.seed_dispersion:
+                entry["seed_dispersion"] = self.seed_dispersion[r.name]
+
+            trials.append(entry)
+
+        payload = {"inference_split": self.inference_split, "trials": trials}
+
+        return FileIO.save_json(payload, self.out_dir / "comparison_summary.json", indent=2)
+
     def write_all(self) -> list[Path]:
         """Writes every enabled report section and returns their paths.
 
         Returns:
-            Paths of the overview, the metric comparison, and any figure or
-            animation galleries that were produced.
+            Paths of the overview, the metric comparison, the JSON summary, and
+            any figure or animation galleries that were produced.
         """
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger.section("Writing comparison reports")
 
-        written = [self._write_overview(), self._write_metrics()]
-        self.logger.info("Overview and metrics written")
+        written = [self._write_overview(), self._write_metrics(), self._write_summary_json()]
+        self.logger.info(f"Overview, metrics and summary written for split '{self.inference_split}'")
 
         if self.compare_images:
             for subdir, title in self.FIGURE_SUBDIRS:
