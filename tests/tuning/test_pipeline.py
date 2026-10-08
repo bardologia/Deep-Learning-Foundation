@@ -18,11 +18,15 @@ from optuna.trial import TrialState
 from configuration.architectures.backbone import UNetConfig
 from pipelines.tuning.pipeline            import TuningScheduler
 from pipelines.tuning.storage             import TuningStorage
-from pipelines.tuning.tuners              import ParamSampler
+from pipelines.tuning.tuners              import ParamSampler, StudyTargetStop
 
 
 class StubLogger:
-    """Logger stub recording (kind, message) pairs."""
+    """Logger stub recording (kind, message) pairs.
+
+    Attributes:
+        messages : (kind, message) pairs in arrival order.
+    """
     def __init__(self):
         """Initialises the message buffer."""
         self.messages = []
@@ -34,6 +38,10 @@ class StubLogger:
     def error(self, t):       self.messages.append(("error", t))
     def kv_table(self, *a, **k): pass
     def close(self): pass
+
+    def of_kind(self, kind: str) -> list:
+        """Returns the messages logged at one kind, such as 'warning'."""
+        return [message for logged_kind, message in self.messages if logged_kind == kind]
 
 
 def _make_config(tmp_path: Path, n_trials: int = 10):
@@ -49,6 +57,9 @@ def _make_config(tmp_path: Path, n_trials: int = 10):
         search_arch             = True,
         search_batch            = False,
         batch_sizes             = [64, 128, 256],
+        plateau_patience        = 0,
+        plateau_min_delta       = 0.0,
+        time_budget_h           = 0.0,
         emit_trial_docs         = False,
         emit_study_plots        = False,
     )
@@ -172,8 +183,8 @@ def test_load_or_create_study_is_minimize_and_idempotent(tmp_path):
     assert study1.study_name == study2.study_name
 
 
-def test_count_done_counts_complete_and_pruned(tmp_path):
-    """Verifies that done trials count complete and pruned states but not failures."""
+def test_target_count_takes_complete_and_pruned_trials(tmp_path):
+    """Verifies that the target counts complete and pruned trials but not failures, and spells the count out."""
     orch  = _orchestrator(tmp_path)
     orch.run_dir.mkdir(parents=True, exist_ok=True)
     study = orch._load_or_create_study("unet")
@@ -182,8 +193,35 @@ def test_count_done_counts_complete_and_pruned(tmp_path):
     study.add_trial(optuna.trial.create_trial(value=0.9, state=TrialState.PRUNED,   params={}, distributions={}))
     study.add_trial(optuna.trial.create_trial(state=TrialState.FAIL))
 
-    assert orch._count_done(study) == 2
+    assert StudyTargetStop.counted(study)      == 2
+    assert StudyTargetStop.describe(study, 10) == "1 complete + 1 pruned = 2 of target 10"
     assert orch._count_state(study, TrialState.FAIL) == 1
+
+
+def test_run_model_names_the_pruned_trials_when_the_target_is_already_reached(tmp_path):
+    """A study whose completed and pruned trials meet the target dispatches nothing and says how the count is made up."""
+    orch  = _orchestrator(tmp_path, n_trials=2)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    study = orch._load_or_create_study("unet")
+
+    study.add_trial(optuna.trial.create_trial(value=0.5, state=TrialState.COMPLETE, params={}, distributions={}))
+    study.add_trial(optuna.trial.create_trial(value=0.9, state=TrialState.PRUNED,   params={}, distributions={}))
+
+    assert orch._run_model(study, "unet", orch.config.tuning) is True
+    assert orch.logger.of_kind("subsection") == ["Target reached: 1 complete + 1 pruned = 2 of target 2; no worker dispatched"]
+
+
+def test_run_model_counts_only_the_workers_it_dispatches(tmp_path, monkeypatch):
+    """Two trials over a three-GPU pool start two workers, and the log says two."""
+    orch       = _orchestrator(tmp_path, n_trials=2)
+    dispatched = []
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    study = orch._load_or_create_study("unet")
+    monkeypatch.setattr(orch, "_dispatch_workers", lambda model_name, shares: dispatched.append(shares) or True)
+
+    assert orch._run_model(study, "unet", orch.config.tuning) is True
+    assert dispatched == [[1, 1, 0]]
+    assert orch.logger.of_kind("subsection") == ["0 complete + 0 pruned = 0 of target 2; running 2 across 2 worker(s)"]
 
 
 def test_running_trial_within_its_grace_period_is_left_alone(tmp_path):
@@ -398,6 +436,17 @@ def test_resume_allows_more_trials_and_a_new_gpu_pool(tmp_path):
 
     orch.config.tuning.n_trials = orch.config.tuning.n_trials + 50
     orch.config.gpus            = [0]
+
+    orch._guard_resumed_config(orch.run_dir / "resolved_config.json")
+
+
+def test_resume_allows_changed_stop_rules(tmp_path):
+    """The plateau rule and the time budget end a study early without redefining it, so a resume may change them."""
+    orch = _resumed_scheduler(tmp_path)
+
+    orch.config.tuning.plateau_patience  = 200
+    orch.config.tuning.plateau_min_delta = 0.01
+    orch.config.tuning.time_budget_h     = 12.0
 
     orch._guard_resumed_config(orch.run_dir / "resolved_config.json")
 

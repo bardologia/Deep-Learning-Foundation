@@ -1,9 +1,11 @@
-"""Search-space sampling and the per-family Optuna objective functions.
+"""Search-space sampling, study stop rules and the per-family Optuna objective functions.
 
 ParamSampler turns a declarative search space into Optuna suggestions and back,
 SearchSpace picks the part of a model's declared space a study samples,
-BestConfigWriter persists the best trial after every trial, and one tuner class
-per training family builds a shortened training run as the trial objective.
+BestConfigWriter persists the best trial after every trial, the stop rules end
+a study at its trial target, on a plateau of its best value or at a time
+budget, and one tuner class per training family builds a shortened training run
+as the trial objective.
 """
 
 from __future__ import annotations
@@ -222,21 +224,165 @@ class StudyTargetStop:
 
     Every worker is handed its own share of the trials, and a second launch
     against the same study would add that share on top of what the first one
-    already ran. Stopping on the study's own completed count keeps the target
-    authoritative however many workers or launches attach to it.
+    already ran. Stopping on the study's own count keeps the target
+    authoritative however many workers or launches attach to it. The count is
+    the one the scheduler tops a study up by: completed and pruned trials, the
+    evaluations that ran to a verdict, while a failed trial is left out so a
+    top-up replaces it.
 
     Attributes:
-        target : Completed trials the study is optimised to; zero disables the stop.
+        COUNTED : Trial states counted towards the target.
+        target  : Completed and pruned trials the study is optimised to; zero disables the stop.
+        logger  : Logger of the tuning worker, told when the rule fires.
+        fired   : Whether this rule ended the worker's optimisation.
     """
 
-    def __init__(self, target: int) -> None:
-        """Binds the callback to the study's trial target."""
+    COUNTED = (TrialState.COMPLETE, TrialState.PRUNED)
+
+    def __init__(self, target: int, logger) -> None:
+        """Binds the callback to the study's trial target and the worker's logger."""
         self.target = target
+        self.logger = logger
+        self.fired  = False
+
+    @classmethod
+    def counted(cls, study: optuna.Study) -> int:
+        """Returns the number of trials counted towards the target: the completed and the pruned ones."""
+        return len(study.get_trials(deepcopy=False, states=cls.COUNTED))
+
+    @classmethod
+    def describe(cls, study: optuna.Study, target: int) -> str:
+        """Returns the target count spelt out, as 'c complete + p pruned = n of target t'."""
+        complete = len(study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,)))
+        pruned   = len(study.get_trials(deepcopy=False, states=(TrialState.PRUNED,)))
+
+        return f"{complete} complete + {pruned} pruned = {complete + pruned} of target {target}"
+
+    def reached(self, study: optuna.Study) -> bool:
+        """Returns whether the study holds at least ``target`` completed and pruned trials; never with a zero target."""
+        return bool(self.target) and self.counted(study) >= self.target
 
     def __call__(self, study: optuna.Study, trial) -> None:
-        """Stops the study once it holds at least ``target`` completed trials."""
-        if self.target and len(study.get_trials(deepcopy=False, states=(TrialState.COMPLETE,))) >= self.target:
-            study.stop()
+        """Stops the study once it holds at least ``target`` completed and pruned trials, logging the stop."""
+        if not self.reached(study):
+            return
+
+        self.fired = True
+        self.logger.info(f"Study stop: target reached, {self.describe(study, self.target)}")
+        study.stop()
+
+
+class StudyPlateauStop:
+    """Optuna callback stopping a study whose best value stopped improving.
+
+    The finished trials are walked in trial order with a running reference: a
+    completed trial beating the reference by at least the relative margin moves
+    it, and every finished trial that follows the last move, pruned ones
+    included, counts towards the patience. The verdict is derived from the
+    shared study on every call, so every worker attached to the study reaches
+    the same one without state of its own.
+
+    Attributes:
+        FINISHED  : Trial states that count as finished evaluations.
+        patience  : Finished trials without a counted improvement before the study stops; zero disables the rule.
+        min_delta : Smallest improvement, relative to the reference value, that counts.
+        logger    : Logger of the tuning worker, told when the rule fires.
+        fired     : Whether this rule ended the worker's optimisation.
+    """
+
+    FINISHED = (TrialState.COMPLETE, TrialState.PRUNED)
+
+    def __init__(self, patience: int, min_delta: float, logger) -> None:
+        """Binds the callback to the patience, the relative margin and the worker's logger."""
+        self.patience  = patience
+        self.min_delta = min_delta
+        self.logger    = logger
+        self.fired     = False
+
+    def walk(self, study: optuna.Study) -> tuple[int, int, float | None]:
+        """Walks the finished trials in trial order and returns the stall count, the anchor and the reference.
+
+        Args:
+            study : Study whose finished trials are walked.
+
+        Returns:
+            How many finished trials followed the last counted improvement of
+            the best value, the number of the trial that made that improvement
+            (-1 before any completed trial) and the best value it set (None
+            before any completed trial).
+        """
+        finished  = sorted(study.get_trials(deepcopy=False, states=self.FINISHED), key=lambda trial: trial.number)
+        reference = None
+        anchor    = -1
+
+        for trial in finished:
+            if trial.state != TrialState.COMPLETE:
+                continue
+            if reference is None or trial.value < reference - abs(reference) * self.min_delta:
+                reference = trial.value
+                anchor    = trial.number
+
+        return sum(1 for trial in finished if trial.number > anchor), anchor, reference
+
+    def stalled(self, study: optuna.Study) -> int:
+        """Returns how many finished trials followed the last counted improvement of the best value."""
+        return self.walk(study)[0]
+
+    def __call__(self, study: optuna.Study, trial) -> None:
+        """Stops the study once the patience is used up without a counted improvement, logging the stop."""
+        stalled, anchor, reference = self.walk(study)
+        if not self.patience or stalled < self.patience:
+            return
+
+        since = f"since trial {anchor} without a {self.min_delta:.1%} improvement on {reference:.5g}" if reference is not None else "with no completed trial yet"
+
+        self.fired = True
+        self.logger.info(f"Study stop: plateau, {stalled} finished trials {since}")
+        study.stop()
+
+
+class StudyStopRules:
+    """Derives the stop rules every tuner runs ``study.optimize`` under.
+
+    The trial target always stops a worker; the plateau rule joins it when the
+    tuning settings set a patience, and the time budget becomes the timeout of
+    the optimisation, after which a worker starts no further trial.
+
+    Attributes:
+        tune_cfg : Tuning settings holding the trial target, the plateau rule and the time budget.
+        logger   : Logger of the tuning worker.
+        target   : Trial-target stop of this worker.
+        plateau  : Plateau stop of this worker, or None when no patience is set.
+    """
+
+    def __init__(self, tune_cfg, logger) -> None:
+        """Builds the rule callbacks from the tuning settings.
+
+        Args:
+            tune_cfg : Tuning settings holding the trial target, the plateau rule and the time budget.
+            logger   : Logger of the tuning worker, told when a rule fires.
+        """
+        self.tune_cfg = tune_cfg
+        self.logger   = logger
+        self.target   = StudyTargetStop(tune_cfg.n_trials, logger)
+        self.plateau  = StudyPlateauStop(tune_cfg.plateau_patience, tune_cfg.plateau_min_delta, logger) if tune_cfg.plateau_patience else None
+
+    def callbacks(self) -> list:
+        """Returns the trial-target stop and, when a patience is set, the plateau stop."""
+        return [self.target] if self.plateau is None else [self.target, self.plateau]
+
+    def timeout_s(self) -> float | None:
+        """Returns the time budget in seconds, or None when no budget is set."""
+        return self.tune_cfg.time_budget_h * 3600.0 if self.tune_cfg.time_budget_h else None
+
+    def describe(self) -> dict:
+        """Returns the rules as rows of a tuner's configuration table."""
+        return {
+            "Trial target"      : self.tune_cfg.n_trials,
+            "Plateau patience"  : self.tune_cfg.plateau_patience or "off",
+            "Plateau min delta" : self.tune_cfg.plateau_min_delta,
+            "Time budget"       : f"{self.tune_cfg.time_budget_h} h" if self.tune_cfg.time_budget_h else "none",
+        }
 
 
 class Tuner:
@@ -371,6 +517,7 @@ class Tuner:
         """
         self.logger.section(f"[Tuner — {self.model_name}]")
 
+        rules = StudyStopRules(self.tune_cfg, self.logger)
         self.logger.kv_table({
             "Trials (this worker)" : n_trials,
             "Epochs / trial"       : self.tune_cfg.n_epochs,
@@ -378,9 +525,10 @@ class Tuner:
             "Search groups"        : SearchSpace.describe(self.tune_cfg),
             "Search dimensions"    : len(self.space),
             "Log dir"              : self.log_dir,
+            **rules.describe(),
         }, title="Tuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer, StudyTargetStop(self.tune_cfg.n_trials)])
+        study.optimize(self._objective, n_trials=n_trials, timeout=rules.timeout_s(), gc_after_trial=True, callbacks=[self.best_writer, *rules.callbacks()])
 
 
 class AeTuner:
@@ -473,6 +621,7 @@ class AeTuner:
         """
         self.logger.section(f"[AeTuner — {self.model_name}]")
 
+        rules = StudyStopRules(self.tune_cfg, self.logger)
         self.logger.kv_table({
             "Trials (this worker)" : n_trials,
             "Epochs / trial"       : self.tune_cfg.n_epochs,
@@ -480,9 +629,10 @@ class AeTuner:
             "Search groups"        : SearchSpace.describe(self.tune_cfg),
             "Search dimensions"    : len(self.space),
             "Log dir"              : self.log_dir,
+            **rules.describe(),
         }, title="AeTuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer, StudyTargetStop(self.tune_cfg.n_trials)])
+        study.optimize(self._objective, n_trials=n_trials, timeout=rules.timeout_s(), gc_after_trial=True, callbacks=[self.best_writer, *rules.callbacks()])
 
 
 class JepaTuner:
@@ -582,6 +732,7 @@ class JepaTuner:
         """
         self.logger.section(f"[JepaTuner — {self.model_name}]")
 
+        rules = StudyStopRules(self.tune_cfg, self.logger)
         self.logger.kv_table({
             "Trials (this worker)" : n_trials,
             "Epochs / trial"       : self.tune_cfg.n_epochs,
@@ -589,6 +740,7 @@ class JepaTuner:
             "Search groups"        : "arch",
             "Search dimensions"    : len(self.space),
             "Log dir"              : self.log_dir,
+            **rules.describe(),
         }, title="JepaTuner config")
 
-        study.optimize(self._objective, n_trials=n_trials, gc_after_trial=True, callbacks=[self.best_writer, StudyTargetStop(self.tune_cfg.n_trials)])
+        study.optimize(self._objective, n_trials=n_trials, timeout=rules.timeout_s(), gc_after_trial=True, callbacks=[self.best_writer, *rules.callbacks()])

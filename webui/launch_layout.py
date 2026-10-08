@@ -84,6 +84,9 @@ class LaunchLayout:
     NUM_PATIENCE = {"kind": "number", "int": True, "min": 1, "max": 200, "presets": [5, 10, 20, 30, 50, 100]}
     NUM_SEED     = {"kind": "number", "int": True, "min": 0, "max": 9999, "presets": [0, 1, 42, 123, 2024]}
     TUNE_WORKERS = {"kind": "number", "int": True, "min": 0, "max": 32, "presets": [0, 2, 4, 8]}
+    NUM_PLATEAU  = {"kind": "number", "int": True, "min": 0, "max": 10000, "presets": [0, 50, 100, 200, 400]}
+    NUM_DELTA    = {"kind": "number", "min": 0, "max": 1, "step": 0.001, "presets": [0, 0.001, 0.005, 0.01, 0.02]}
+    NUM_HOURS    = {"kind": "number", "min": 0, "max": 240, "step": 0.5, "presets": [0, 12, 24, 48, 72]}
     NUM_K_MAX    = {"kind": "number", "int": True, "min": 1, "max": 10, "presets": [1, 2, 3, 5]}
     NUM_FREQ     = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 2, 5, 10]}
     NUM_PROBE    = {"kind": "number", "int": True, "min": 1, "max": 50, "presets": [1, 3, 5, 10]}
@@ -1100,6 +1103,7 @@ class LaunchLayout:
                         ]},
                         {"title": "Trials", "fields": ["tuning.n_trials", {"path": "tuning.n_epochs", "widget": NUM_EPOCHS}, {"path": "tuning.base_seed", "widget": NUM_SEED}, {"path": "tuning.early_stop_patience", "widget": NUM_PATIENCE}]},
                         {"title": "Search groups", "fields": ["tuning.search_lr", "tuning.search_arch", "tuning.search_batch", {"path": "tuning.batch_sizes", "widget": MULTI_INT}]},
+                        {"title": "Stop rules", "fields": [{"path": "tuning.plateau_patience", "widget": NUM_PLATEAU}, {"path": "tuning.plateau_min_delta", "widget": NUM_DELTA}, {"path": "tuning.time_budget_h", "widget": NUM_HOURS}]},
                         {"title": "Pruner", "fields": ["tuning.pruner_n_startup_trials", "tuning.pruner_n_warmup_steps"]},
                         {"title": "Outputs", "fields": ["tuning.emit_trial_docs", "tuning.emit_study_plots"]},
                     ]},
