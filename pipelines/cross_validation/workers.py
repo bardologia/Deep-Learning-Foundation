@@ -31,6 +31,7 @@ class FoldCollector(TrialCollector):
         splits          : Dataset splits whose inference metrics are collected.
         training_type   : Training family, deciding where inference lives.
         seed_dispersion : Within-fold seed statistics keyed by fold name.
+        scored_splits   : Splits each collected run holds a completed inference with metrics for, keyed by run name; filled while collecting.
     """
 
     CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "n_train_epochs")
@@ -49,6 +50,7 @@ class FoldCollector(TrialCollector):
         self.splits          = splits
         self.training_type   = training_type
         self.seed_dispersion = {}
+        self.scored_splits   = {}
 
     def _run_dirs(self) -> list[tuple[str, Path]]:
         """Returns the fold runs, leaving out directories under the folds directory that are no fold, such as comparison stamps."""
@@ -58,6 +60,31 @@ class FoldCollector(TrialCollector):
         """Returns the empty completion index and the training-results index of the runs."""
         return {}, TrainingResultsIndex(self.pipeline_dir, self.logger).build(runs)
 
+    def _attach_inference(self, record: TrialRecord) -> None:
+        """Notes which configured splits a run has scored, and attaches the first split's inference wherever the family keeps its stamps.
+
+        The inherited reader looks only directly under ``inference/``, which
+        made every autoencoder fold run read as uninferred; the family's own
+        inference base is used instead.
+
+        Args:
+            record : Run record filled in place with the first split's inference fields when that split is scored.
+        """
+        scored = []
+        for split in self.splits:
+            inference_dir = FoldFamily.split_inference_dir(record.run_dir, self.training_type, split)
+            if inference_dir is not None and (inference_dir / "metrics.json").exists():
+                scored.append(split)
+
+        self.scored_splits[record.name] = scored
+
+        if not self.splits or self.splits[0] not in scored:
+            return
+
+        fields = self._inference_fields(FoldFamily.split_inference_dir(record.run_dir, self.training_type, self.splits[0]))
+        for name, value in fields.items():
+            setattr(record, name, value)
+
     def _group_by_fold(self, records: list[TrialRecord]) -> list[tuple[str, list[TrialRecord]]]:
         """Groups seed runs under their fold name, ordered by fold index."""
         groups: dict[str, list[TrialRecord]] = {}
@@ -66,6 +93,19 @@ class FoldCollector(TrialCollector):
             groups.setdefault(FoldNaming.base(record.name), []).append(record)
 
         return sorted(groups.items(), key=lambda item: FoldNaming.index(item[0]))
+
+    def _log_split_coverage(self) -> None:
+        """Logs, once per configured split, how many collected runs hold a completed inference with metrics, naming the runs that do not."""
+        total = len(self.scored_splits)
+
+        for split in self.splits:
+            missing = [name for name, scored in self.scored_splits.items() if split not in scored]
+            summary = f"split {split}: {total - len(missing)}/{total} fold runs hold a completed inference with metrics"
+
+            if missing:
+                self.logger.warning(f"{summary}; missing: {missing}")
+            else:
+                self.logger.info(summary)
 
     def _split_view(self, record: TrialRecord, split: str) -> TrialRecord:
         """Returns a copy of a run record populated from one split's inference run.
@@ -184,7 +224,10 @@ class FoldCollector(TrialCollector):
             fold the seed count, the training status, the seeds used per split
             and the seeds missing from each split.
         """
+        self.scored_splits = {}
+
         groups = self._group_by_fold(self.collect())
+        self._log_split_coverage()
 
         base_records         = []
         records_by_split     = {split: [] for split in self.splits}
