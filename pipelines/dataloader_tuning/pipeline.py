@@ -2,21 +2,27 @@
 
 Sweeps batch size against worker count, optionally refines prefetch factor and
 memory pinning around the winner, and writes the recommended loader
-configuration alongside the raw measurements.
+configuration alongside the raw measurements. Every sweep writes into its own
+directory, named after the benchmarked model and the launch time, so a later
+sweep of the same mode never replaces an earlier one.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+from datetime import datetime
+from pathlib  import Path
 
 import torch
 
 from tools.benchmarking                   import LoaderSpec, GpuFeedBenchmark, GpuUtilizationSampler, DataLoaderSweep, SweepReport
 from tools.monitoring.logger              import Logger
+from tools.runtime.config_cli             import ConfigCli
 from tools.runtime.event_stream           import JsonEventStream
+from tools.runtime.git_state              import RunProvenance
 from tools.runtime.reproducibility        import Reproducibility
+from tools.runtime.run_tag                import RunTag
 from pipelines.dataloader_tuning.adapters import FeedTargetFactory
 
 
@@ -25,29 +31,38 @@ class DataLoaderTuningPipeline:
 
     Attributes:
         config     : Dataloader tuning entry configuration.
-        output_dir : Mode-specific directory holding results, logs, and figures.
-        work_dir   : Scratch directory the dataset pipelines write into.
+        model_name : Model the sweep benchmarks, the mode's default when none is configured.
+        output_dir : Directory of this sweep, ``<output_dir>/<mode>/<model>_<launch tag>``, holding results, logs and figures.
+        work_dir   : Scratch directory of the mode the dataset pipelines write into, shared by its sweeps.
         figure_dir : Directory the sweep figures are written to.
+        started_at : Moment the sweep was set up, recorded in its results.
         gpu        : Requested index, torch name and NVML index, name and UUID of the measured device, set once the benchmark is built.
         logger     : Logger used for progress reporting.
         events     : Stream emitting machine-readable progress events.
     """
 
     def __init__(self, config) -> None:
-        """Prepares the output tree, logging, and global seeding.
+        """Prepares the sweep's own output directory, logging, and global seeding.
 
         Args:
             config : Dataloader tuning entry configuration.
+
+        Raises:
+            FileExistsError : If the sweep directory already exists, which only a second launch within the same second would cause.
         """
         self.config     = config
-        self.output_dir = Path(config.output_dir) / config.mode
-        self.work_dir   = self.output_dir / "work"
+        self.model_name = FeedTargetFactory.model_name(config)
+        self.output_dir = Path(config.output_dir) / config.mode / f"{self.model_name}_{RunTag.now()}"
+        self.work_dir   = Path(config.output_dir) / config.mode / "work"
         self.figure_dir = self.output_dir / "figures"
 
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.gpu    = None
-        self.logger = Logger(log_dir=str(self.output_dir / "logs"), name="dataloader_tuning", level="INFO")
-        self.events = JsonEventStream("@TUNE")
+        self.output_dir.mkdir(parents=True)
+        ConfigCli.save_resolved(config, self.output_dir / "resolved_config.json")
+
+        self.started_at = datetime.now()
+        self.gpu        = None
+        self.logger     = Logger(log_dir=str(self.output_dir / "logs"), name="dataloader_tuning", level="INFO")
+        self.events     = JsonEventStream("@TUNE")
 
         Reproducibility.seed_everything(config.seed)
 
@@ -61,6 +76,7 @@ class DataLoaderTuningPipeline:
             "Worker counts" : self.config.worker_counts,
             "Timed batches" : self.config.timed_batches,
             "AMP"           : self.config.use_amp,
+            "Output dir"    : str(self.output_dir),
         })
 
         return FeedTargetFactory.build(self.config, self.work_dir, self.logger)
@@ -206,25 +222,23 @@ class DataLoaderTuningPipeline:
 
         return final
 
-    def _write(self, target, device, main_results, refine_results, recommendation, final, report) -> Path:
-        """Saves the sweep figures and the results payload.
+    def _write(self, target, device, main_results, refine_results, recommendation, final, status: str) -> Path:
+        """Writes the results payload with the settings, code version and device it was measured under.
 
         Args:
             target         : Benchmarked feed target, described in the payload.
             device         : Device the benchmark ran on.
             main_results   : Measurements of the main sweep.
             refine_results : Measurements of the refinement sweep.
-            recommendation : Best point of the main sweep.
-            final          : Loader configuration to adopt.
-            report         : Report of the main sweep, used to render the figures.
+            recommendation : Best point of the main sweep, or the not-found marker.
+            final          : Loader configuration to adopt, or None before the sweep has finished.
+            status         : 'partial' after the main sweep, 'complete' at the end, 'failed' when no configuration succeeded.
 
         Returns:
             Path of the written `results.json`.
         """
-        if self.config.save_figures and not report.ok_frame.empty:
-            report.save_all(self.figure_dir)
-
         payload = {
+            "status"         : status,
             "mode"           : self.config.mode,
             "device"         : str(device),
             "gpu"            : self.gpu,
@@ -232,6 +246,10 @@ class DataLoaderTuningPipeline:
             "sample"         : target.sample_text,
             "item_source"    : target.item_source,
             "config_hint"    : target.config_hint,
+            "config"         : ConfigCli.to_mapping(self.config),
+            "provenance"     : RunProvenance.collect(),
+            "started_at"     : self.started_at.isoformat(timespec="seconds"),
+            "finished_at"    : datetime.now().isoformat(timespec="seconds") if status != "partial" else None,
             "main"           : main_results,
             "refine"         : refine_results,
             "recommendation" : recommendation,
@@ -276,10 +294,13 @@ class DataLoaderTuningPipeline:
         recommendation = report.recommendation
 
         if not recommendation["found"]:
+            self._write(target, device, main_results, [], recommendation, None, "failed")
             self.events.emit("recommendation", {"recommendation": recommendation, "final": None})
             self.logger.error(f"No configuration succeeded: {recommendation['reason']}")
             self.logger.close()
             raise SystemExit(f"dataloader tuning found no working configuration: {recommendation['reason']}")
+
+        self._write(target, device, main_results, [], recommendation, None, "partial")
 
         refine_results = []
         refine_report  = None
@@ -291,7 +312,10 @@ class DataLoaderTuningPipeline:
 
         self.events.emit("recommendation", {"recommendation": recommendation, "final": final})
 
-        results_path = self._write(target, device, main_results, refine_results, recommendation, final, report)
+        if self.config.save_figures and not report.ok_frame.empty:
+            report.save_all(self.figure_dir)
+
+        results_path = self._write(target, device, main_results, refine_results, recommendation, final, "complete")
 
         self.logger.section("[Recommended configuration]")
         self.logger.kv_table({**final, "results": str(results_path)})
