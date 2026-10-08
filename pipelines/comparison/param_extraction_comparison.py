@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib     import Path
+from time        import perf_counter
 
 import matplotlib.pyplot as plt
 import numpy             as np
@@ -69,12 +70,15 @@ class ParamTrialCollector:
     """Discovers Gaussian-fit runs under the parameters root.
 
     Attributes:
-        params_dir : Root directory holding parameter-extraction runs.
-        run_tags   : Explicitly requested run tags; empty means discover all.
-        logger     : Logger used for discovery reporting.
+        MARKER              : Extraction metadata file every fitted run holds.
+        PARAMETERS_FILENAME : Fitted parameter stack every completed run holds.
+        params_dir          : Root directory holding parameter-extraction runs.
+        run_tags            : Explicitly requested run tags; empty means discover all.
+        logger              : Logger used for discovery reporting.
     """
 
-    MARKER = ParameterRunMeta.FILENAME
+    MARKER              = ParameterRunMeta.FILENAME
+    PARAMETERS_FILENAME = "parameters.npy"
 
     def __init__(self, params_dir: Path, run_tags: list[str], logger: Logger) -> None:
         """Binds the collector to a parameters root and the tags to compare.
@@ -88,9 +92,9 @@ class ParamTrialCollector:
         self.run_tags   = run_tags
         self.logger     = logger
 
-    def _is_trial(self, run_dir: Path) -> bool:
-        """Returns whether a directory is a locally fitted parameter run."""
-        return (run_dir / self.MARKER).exists() and (run_dir / "parameters.npy").exists() and not ParameterRunMeta.is_external(run_dir)
+    def _missing_artifacts(self, run_dir: Path) -> list[str]:
+        """Returns which of the extraction metadata and the parameter stack a directory lacks, empty for a completed fit run."""
+        return [name for name in (self.MARKER, self.PARAMETERS_FILENAME) if not (run_dir / name).exists()]
 
     def _discover_tags(self) -> list[str]:
         """Returns the configured run tags, or every non-external fit run found."""
@@ -100,7 +104,7 @@ class ParamTrialCollector:
         return [
             str(marker.parent.relative_to(self.params_dir))
             for marker in sorted(self.params_dir.rglob(self.MARKER))
-            if (marker.parent / "parameters.npy").exists() and not ParameterRunMeta.is_external(marker.parent)
+            if not self._missing_artifacts(marker.parent) and not ParameterRunMeta.is_external(marker.parent)
         ]
 
     def _dataset_of(self, tag: str) -> str:
@@ -132,21 +136,29 @@ class ParamTrialCollector:
             Trials sorted by Gaussian order, dataset, and run name.
 
         Raises:
-            ValueError : If a requested run holds externally injected parameters rather than a local Gaussian fit.
+            ValueError        : If a requested run holds externally injected parameters rather than a local Gaussian fit.
+            FileNotFoundError : If a requested run tag lacks the extraction metadata or the parameter stack, every such tag named with the file it lacks.
         """
         self.logger.section("Collecting parameter-extraction trials")
 
-        trials = []
+        trials  = []
+        invalid = {}
         for tag in self._discover_tags():
-            ParameterRunMeta.reject_external(self.params_dir / tag, "enter a Gaussian-fit comparison")
+            run_dir = self.params_dir / tag
+            ParameterRunMeta.reject_external(run_dir, "enter a Gaussian-fit comparison")
 
-            if not self._is_trial(self.params_dir / tag):
-                self.logger.error(f"Not a parameter-extraction trial: {self.params_dir / tag}")
+            missing = self._missing_artifacts(run_dir)
+            if missing:
+                invalid[tag] = missing
                 continue
 
             trial = self._build_trial(tag)
             self.logger.info(f"{trial.name:<48} K={trial.k_max} free/gauss={trial.free_per_gaussian}")
             trials.append(trial)
+
+        if invalid:
+            listing = "; ".join(f"{tag}: no {' or '.join(missing)}" for tag, missing in invalid.items())
+            raise FileNotFoundError(f"Requested run tags are not completed Gaussian-fit runs under {self.params_dir}: {listing}")
 
         if not trials:
             self.logger.error(f"No parameter-extraction trials found under {self.params_dir}")
@@ -608,16 +620,24 @@ class ParamExtractionComparisonPipeline:
         return collector.collect()
 
     def _measure(self, trials: list[ParamTrial]) -> None:
-        """Fills each trial's `metrics` mapping in place."""
+        """Fills each trial's `metrics` mapping in place, logging one counted line with its duration as each trial finishes."""
+        self.logger.section("Measuring trials")
+
         metrics = ParamMetrics(self.config.pixel_sample, self.config.block_size, self.logger)
 
-        for trial in trials:
+        for index, trial in enumerate(trials, start=1):
+            started       = perf_counter()
             trial.metrics = metrics.compute(trial)
+
+            self.logger.ok(f"[{index}/{len(trials)}] {trial.name} measured in {perf_counter() - started:.1f}s")
 
     def _plot(self, trials: list[ParamTrial]) -> list[Path]:
         """Returns the rendered comparison figures, empty when plotting is disabled."""
         if not self.config.make_plots:
             return []
+
+        self.logger.section("Rendering comparison plots")
+
         return ParamComparisonPlots(self.out_dir).render(trials)
 
     def _report(self, trials: list[ParamTrial], plots: list[Path]) -> list[Path]:
@@ -640,4 +660,13 @@ class ParamExtractionComparisonPipeline:
         self._measure(trials)
         plots = self._plot(trials)
 
-        return self._report(trials, plots)
+        reports = self._report(trials, plots)
+
+        self.logger.section("[Parameter Extraction Comparison Completed]")
+        self.logger.kv_table({
+            "Trials Compared" : len(trials),
+            "Plots Rendered"  : len(plots),
+            "Reports Written" : len(reports),
+        })
+
+        return reports
