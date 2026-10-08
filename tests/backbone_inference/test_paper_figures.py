@@ -156,3 +156,25 @@ def test_pack_uses_latest_completed_inference_stamp(tmp_path):
     assert (out / "run_a__pixel_maps__mse.png").read_bytes() == b"png-late"
     assert any(level == "warning" and "20260701_000000" in message for level, message in logger.messages)
     assert any(level == "info" and "20260601_000000" in message and "split 'test'" in message for level, message in logger.messages)
+
+
+def test_repacking_warns_about_overwrites_and_keeps_earlier_entries(tmp_path):
+    """A second pack over fewer runs names the figures it overwrote, keeps the other run's manifest entries and flags files with no recorded source."""
+    _run_with_figures(tmp_path / "runs", "run_a")
+    _run_with_figures(tmp_path / "runs", "run_b")
+    out = tmp_path / "figures"
+
+    PaperFigurePack(_config(tmp_path / "runs", out, ["run_a", "run_b"]), SilentLogger(), {}).run()
+    (out / "stray.png").write_bytes(b"stray")
+
+    logger  = RecordingLogger()
+    payload = PaperFigurePack(_config(tmp_path / "runs", out, ["run_a"]), logger, {}).run()
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+    manifest = json.loads((out / "figure_manifest.json").read_text(encoding="utf-8"))
+
+    assert len(payload["figures"]) == 6 and len(manifest["figures"]) == 6
+    assert {entry["run"] for entry in manifest["figures"]} == {"run_a", "run_b"}
+    assert all(entry["packed_at"] for entry in manifest["figures"])
+    assert any(message.startswith("3 figure(s) overwritten in") and "run_a__pixel_maps__mse.png" in message for message in warnings)
+    assert any("1 file(s) in" in message and "stray.png" in message for message in warnings)

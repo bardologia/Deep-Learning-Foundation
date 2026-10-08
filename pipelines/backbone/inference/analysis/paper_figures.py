@@ -14,6 +14,7 @@ from pipelines.backbone.inference.analysis.run_batch       import AnalysisConfig
 from pipelines.backbone.inference.analysis.seed_comparison import SeedInferenceResolver
 from tools.data.io                                         import FileIO
 from tools.runtime.run_selector                            import ReportRunSelector
+from tools.runtime.run_tag                                 import RunTag
 
 
 class PaperFigurePack:
@@ -66,17 +67,19 @@ class PaperFigurePack:
         relative = figure.relative_to(figures_dir)
         return f"{self._run_label(run_dir)}__{'__'.join(relative.with_suffix('').parts)}{figure.suffix}"
 
-    def _collect_run(self, run_dir: Path, resolver: SeedInferenceResolver) -> list[dict]:
+    def _collect_run(self, run_dir: Path, resolver: SeedInferenceResolver, packed_at: str, overwritten: list[str]) -> list[dict]:
         """Copies every figure of one run that matches the configured patterns.
 
         Args:
-            run_dir  : Run to collect from.
-            resolver : Resolver picking the inference directory of the run, including seed-swept runs.
+            run_dir     : Run to collect from.
+            resolver    : Resolver picking the inference directory of the run, including seed-swept runs.
+            packed_at   : Timestamp of this pack, recorded on every entry.
+            overwritten : Target filenames that already existed before this pack; the run's replaced targets are appended.
 
         Returns:
             One manifest entry per copied figure, holding the run label, the source path,
-            the target filename, the inference stamp it came from, its split and its
-            completion time.
+            the target filename, the inference stamp it came from, its split, its
+            completion time and the time it was packed.
 
         Raises:
             FileNotFoundError : If the run saved no figures directory, or if a configured pattern matches nothing in it.
@@ -99,31 +102,76 @@ class PaperFigurePack:
 
             for figure in figures:
                 target = self.output_dir / self._stable_name(run_dir, figures_dir, figure)
+                if target.exists():
+                    overwritten.append(target.name)
+
                 shutil.copy2(figure, target)
-                entries.append({"run": self._run_label(run_dir), "source": str(figure), "target": target.name, "inference": str(inference_dir), "split": record["split"], "completed_at": record["completed_at"]})
+                entries.append({"run": self._run_label(run_dir), "source": str(figure), "target": target.name, "inference": str(inference_dir), "split": record["split"], "completed_at": record["completed_at"], "packed_at": packed_at})
 
         return entries
 
+    def _merge_manifest(self, entries: list[dict]) -> list[dict]:
+        """Merges this pack's entries into the manifest already in the output directory.
+
+        Earlier entries are kept for the targets this pack did not rewrite and that are
+        still on disk, so figures left from an earlier pack keep their recorded source.
+
+        Args:
+            entries : Manifest entries of the figures copied by this pack.
+
+        Returns:
+            Every manifest entry, keyed uniquely by target and sorted by target.
+        """
+        manifest_path = self.output_dir / self.MANIFEST
+        merged        = {}
+
+        if manifest_path.is_file():
+            merged = {entry["target"]: entry for entry in FileIO.load_json(manifest_path)["figures"] if (self.output_dir / entry["target"]).is_file()}
+
+        kept = len(set(merged) - {entry["target"] for entry in entries})
+        if kept:
+            self.logger.info(f"{kept} figure(s) from earlier packs keep their manifest entries")
+
+        merged.update({entry["target"]: entry for entry in entries})
+
+        return [merged[target] for target in sorted(merged)]
+
+    def _report_uncovered(self, manifest: list[dict]) -> None:
+        """Warns about files in the output directory that no manifest entry records a source for."""
+        covered   = {entry["target"] for entry in manifest} | {self.MANIFEST}
+        uncovered = sorted(path.name for path in self.output_dir.iterdir() if path.is_file() and path.name not in covered)
+
+        if uncovered:
+            self.logger.warning(f"{len(uncovered)} file(s) in {self.output_dir} have no manifest entry and no recorded source: {', '.join(uncovered[:8])}" + (", ..." if len(uncovered) > 8 else ""))
+
     def run(self) -> dict:
-        """Packs the figures of every selected run and writes the manifest.
+        """Packs the figures of every selected run and writes the merged manifest.
 
         Returns:
             Payload with the output directory, the patterns used, a note on the figure
-            formats and the manifest entries of the copied figures.
+            formats and the merged manifest entries, earlier packs' entries included.
         """
         self.logger.section("Paper figure pack")
         AnalysisConfigTable.log(self.logger, self.config, self.profile_overrides)
 
         FileIO.ensure_dirs(self.output_dir)
 
-        resolver = SeedInferenceResolver(self.config.inference_subdir, self.config.split, self.config.metrics_filename, self.logger)
-        manifest = []
+        resolver    = SeedInferenceResolver(self.config.inference_subdir, self.config.split, self.config.metrics_filename, self.logger)
+        packed_at   = RunTag.timestamp()
+        packed      = []
+        overwritten = []
 
         for run_dir in self._select_runs():
             self.logger.subsection(f"Run: {run_dir}")
-            entries   = self._collect_run(run_dir, resolver)
-            manifest += entries
+            entries = self._collect_run(run_dir, resolver, packed_at, overwritten)
+            packed += entries
             self.logger.ok(f"{run_dir.name}: {len(entries)} figures packed")
+
+        if overwritten:
+            self.logger.warning(f"{len(overwritten)} figure(s) overwritten in {self.output_dir}: {', '.join(overwritten[:8])}" + (", ..." if len(overwritten) > 8 else ""))
+
+        manifest = self._merge_manifest(packed)
+        self._report_uncovered(manifest)
 
         payload = {
             "output_dir" : str(self.output_dir),
@@ -134,6 +182,6 @@ class PaperFigurePack:
         }
         FileIO.save_json(payload, self.output_dir / self.MANIFEST)
 
-        self.logger.ok(f"Figure pack: {len(manifest)} figures -> {self.output_dir}")
+        self.logger.ok(f"Figure pack: {len(packed)} figures packed, {len(overwritten)} overwritten, {len(manifest)} in the manifest -> {self.output_dir}")
 
         return payload
