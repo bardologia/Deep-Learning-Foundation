@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 
-from tools.metrics.scoring import FiniteScalar, MetricOrientation, R2, RelativeImprovement
+from tools.metrics.scoring import FiniteScalar, MetricOrientation, R2, RelativeImprovement, SeedAggregation
 
 
 def test_finite_scalar_accepts_floats_and_ints():
@@ -177,3 +177,12 @@ def _first_numeric(obj):
             if r is not None:
                 return r
     return None
+
+
+def test_seed_aggregation_counts_contributors_and_names_the_shortfall():
+    """Verifies the contributor count drops non-finite and absent seeds and the shortfall names them per key."""
+    seeds = [{"f1": 0.8, "mae": 0.1}, {"f1": float("nan"), "mae": 0.2}, {"mae": 0.3}]
+    names = ["seed0", "seed1", "seed2"]
+
+    assert SeedAggregation.contributors(seeds, ["f1", "mae", "absent"]) == {"f1": 1, "mae": 3, "absent": 0}
+    assert SeedAggregation.shortfall(seeds, ["f1", "mae"], names) == {"f1": ["seed1", "seed2"]}

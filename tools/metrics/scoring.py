@@ -94,6 +94,40 @@ class SeedAggregation:
         return means, stds
 
     @staticmethod
+    def contributors(dicts: list[dict], keys: list[str]) -> dict[str, int]:
+        """Returns, per key, how many of the mappings carry a finite value for it.
+
+        Args:
+            dicts : One metric mapping per seed.
+            keys  : Metric keys to count.
+
+        Returns:
+            Mapping from key to the number of seeds whose value entered the mean, zero for a key no seed reports.
+        """
+        return {key: sum(1 for d in dicts if FiniteScalar.coerce(d.get(key)) is not None) for key in keys}
+
+    @staticmethod
+    def shortfall(dicts: list[dict], keys: list[str], names: list[str]) -> dict[str, list[str]]:
+        """Returns, per key some seed lacks, the names of the seeds without a finite value for it.
+
+        Args:
+            dicts : One metric mapping per seed, aligned with names.
+            keys  : Metric keys to check.
+            names : Seed names aligned with dicts.
+
+        Returns:
+            Mapping from key to the names of the seeds that contributed nothing to it; keys every seed reports are absent.
+        """
+        missing = {}
+
+        for key in keys:
+            absent = [name for name, d in zip(names, dicts) if FiniteScalar.coerce(d.get(key)) is None]
+            if absent:
+                missing[key] = absent
+
+        return missing
+
+    @staticmethod
     def intervals(dicts: list[dict], keys: list[str], level: float = 0.95) -> tuple[dict, dict]:
         """Returns the confidence interval and finite-sample count per metric key.
 
