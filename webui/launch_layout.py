@@ -166,7 +166,7 @@ class LaunchLayout:
 
 
     INFERENCE_REPORT_GROUPS = [
-        {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window", "cube_dtype", "render_amp_floor", "active_amp_thr"]},
+        {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window", "cube_dtype", "render_amp_floor"]},
         {"title": "Flip consistency", "fields": ["compute_flip_consistency"]},
         {"title": "Stratified errors", "fields": ["compute_stratified"]},
         {"title": "Curve parameter extraction", "fields": [
@@ -1190,7 +1190,7 @@ class LaunchLayout:
                             {"path": "group_tags", "widget": {"kind": "dataset", "mode": "run_groups", "multi": True, "baseFrom": "runs_dir"}},
                         ]},
                         {"title": "Report", "fields": ["inference_subdir", "output_subdir", "metrics_filename", "report_filename"]},
-                        {"title": "Disagreement maps", "fields": ["compute_disagreement", "cubes_subdir", "active_amp_thr"]},
+                        {"title": "Disagreement maps", "fields": ["compute_disagreement", "cubes_subdir"]},
                         {"title": "Seed ensemble", "fields": ["compute_ensemble"]},
                     ]},
                 ]},

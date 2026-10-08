@@ -19,8 +19,8 @@ from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, build_run_direct
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
-    """A full run writes the report, finite curve and physics metrics, per-track agreement and the saved cubes."""
+def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, param_extraction_meta):
+    """A full run writes the report, finite curve metrics, the label run's activity threshold and the saved cubes."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
 
     config = InferenceConfig(
@@ -43,7 +43,8 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir):
 
     metrics = json.loads((output_dir / "metrics.json").read_text())
 
-    assert metrics["split"] == "test"
+    assert metrics["split"]              == "test"
+    assert metrics["activity_threshold"] == float(param_extraction_meta["activity_threshold"])
 
     for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_z_mean", "active_frac_gt", "matched_recall"):
         assert np.isfinite(metrics[key]), key

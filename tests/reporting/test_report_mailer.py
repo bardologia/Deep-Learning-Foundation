@@ -80,7 +80,7 @@ def _write_experiment(root: Path, name: str, aggregate: bool = True, comparison:
     experiment_dir = root / name
 
     seeded = experiment_dir / "trial_a"
-    for seed, metrics in (("seed0", {"curve_rmse_gt": 0.4}), ("seed1", {"curve_rmse_gt": 0.6})):
+    for seed, metrics in (("seed0", {"curve_rmse_gt": 0.4, "activity_threshold": 1e-3}), ("seed1", {"curve_rmse_gt": 0.6, "activity_threshold": 1e-3})):
         _write_report(_make_run(seeded / seed), "20260101_000000", metrics)
     if aggregate:
         _write_report(seeded, "seed_comparison")

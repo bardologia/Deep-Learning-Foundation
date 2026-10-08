@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from tools.data.io                   import FileIO
-from tools.loss.param_loss           import ParamMatcher
 from tools.metrics.gaussian_matching import GaussianMatcher
 from tools.metrics.scoring           import RankCorrelation
 from tools.reporting.plotting        import PlotBase
@@ -243,7 +242,7 @@ class SeedDisagreementMaps:
         cube_dirs        : Cube directory inside each seed's inference directory.
         metrics_filename : Metrics filename carrying the split region.
         output_dir       : Group-level directory receiving the artifacts.
-        active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active in the GT-matched slot alignment.
+        active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active in the GT-matched slot alignment, the threshold every seed's inference was scored with.
         figures_dir      : Subdirectory receiving the rendered maps.
         logger           : Logger for the written-artifact line.
         seeds            : Seed labels, relative to the group directory.
@@ -262,7 +261,7 @@ class SeedDisagreementMaps:
         "seed_std_sigma"   : "Across-seed std of predicted sigma (GT-matched slots, z units)",
     }
 
-    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], cubes_subdir: str, metrics_filename: str, output_dir: Path, logger, active_amp_thr: float = ParamMatcher.ACTIVE_AMP_THR) -> None:
+    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], cubes_subdir: str, metrics_filename: str, output_dir: Path, active_amp_thr: float, logger) -> None:
         """Binds the seed group and resolves its cube, output and figure directories.
 
         Args:
@@ -272,8 +271,8 @@ class SeedDisagreementMaps:
             cubes_subdir     : Cube subdirectory name inside an inference directory.
             metrics_filename : Metrics filename carrying the split region.
             output_dir       : Group-level directory receiving the artifacts.
+            active_amp_thr   : Activity threshold every seed's inference was scored with, applied to the GT-matched slot alignment.
             logger           : Logger for the written-artifact line.
-            active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active when matching predicted slots to the GT slots; must match the threshold the seeds' inference metrics used.
         """
         self.group_dir        = Path(group_dir)
         self.run_dirs         = [Path(d) for d in run_dirs]

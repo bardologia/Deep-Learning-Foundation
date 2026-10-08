@@ -26,7 +26,7 @@ def _run(normalized_inputs: np.ndarray, n_gaussians: int = 1, amp_max: float = 2
         enabled           : Whether the output clamp is active.
 
     Returns:
-        Run stub with the dataset, the slot count and an z axis from -20 m to 80 m.
+        Run stub with the dataset, the slot count, the activity threshold and a z axis from -20 m to 80 m.
     """
     clamp      = SimpleNamespace(enabled=enabled, floor=0.0, ceil=200.0, amp_max=amp_max)
     stats      = SimpleNamespace(clamp=clamp)
@@ -34,10 +34,11 @@ def _run(normalized_inputs: np.ndarray, n_gaussians: int = 1, amp_max: float = 2
     dataset    = SimpleNamespace(aux=None, normalizer=normalizer, assemble_window=lambda inputs, aux: normalized_inputs)
 
     return SimpleNamespace(
-        dataset        = dataset,
-        complex_inputs = None,
-        n_gaussians    = n_gaussians,
-        z_axis         = np.linspace(-20.0, 80.0, 10),
+        dataset            = dataset,
+        complex_inputs     = None,
+        n_gaussians        = n_gaussians,
+        activity_threshold = 1e-4,
+        z_axis             = np.linspace(-20.0, 80.0, 10),
     )
 
 

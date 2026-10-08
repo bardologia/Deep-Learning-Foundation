@@ -326,16 +326,16 @@ class ModelProbe:
         """
         from tools.loss.param_loss import ParamMatcher
 
-        n_k   = self.loaded["run"].n_gaussians
+        run   = self.loaded["run"]
         slots = []
-        for k in range(n_k):
+        for k in range(run.n_gaussians):
             amp = float(params_center[3 * k])
             slots.append({
                 "slot"   : k,
                 "amp"    : amp,
                 "mu"     : float(params_center[3 * k + 1]),
                 "sigma"  : float(params_center[3 * k + 2]),
-                "active" : bool(ParamMatcher.is_active(amp)),
+                "active" : bool(ParamMatcher.is_active(amp, run.activity_threshold)),
             })
         return slots
 
@@ -391,20 +391,21 @@ class ModelProbe:
 
         from tools.loss.param_loss import ParamMatcher
 
-        n_k    = self.loaded["run"].n_gaussians
+        run    = self.loaded["run"]
+        n_k    = run.n_gaussians
         pred_t = torch.from_numpy(np.asarray(pred_center, dtype=np.float32)).reshape(1, n_k, 3, 1, 1)
         gt_t   = torch.from_numpy(np.asarray(gt_center, dtype=np.float32)).reshape(1, n_k, 3, 1, 1)
         idx_t  = torch.arange(n_k, dtype=torch.float32).reshape(1, n_k, 1, 1, 1).expand_as(pred_t)
 
-        matched_pred, matched_idx, sorted_gt, _ = ParamMatcher.match(pred_t, idx_t, gt_t, gt_t, method=ParamMatcher.HUNGARIAN)
+        matched_pred, matched_idx, sorted_gt, _ = ParamMatcher.match(pred_t, idx_t, gt_t, gt_t, active_thr=run.activity_threshold, method=ParamMatcher.HUNGARIAN)
 
         amps  = np.asarray(gt_center[0::3], dtype=np.float64)
         mus   = np.asarray(gt_center[1::3], dtype=np.float64)
-        order = np.argsort(np.where(amps > ParamMatcher.ACTIVE_AMP_THR, mus, np.inf), kind="stable")
+        order = np.argsort(np.where(amps > run.activity_threshold, mus, np.inf), kind="stable")
 
         matches = []
         for j in range(n_k):
-            if float(sorted_gt[0, j, 0, 0, 0]) <= ParamMatcher.ACTIVE_AMP_THR:
+            if float(sorted_gt[0, j, 0, 0, 0]) <= run.activity_threshold:
                 continue
             matches.append({
                 "gt_slot"   : int(order[j]),
@@ -579,11 +580,11 @@ class ModelProbe:
                     ]
                     slots.append({
                         "slot"     : k,
-                        "active"   : bool(ParamMatcher.is_active(float(params[0, 3 * k, cy, cx]))),
+                        "active"   : bool(ParamMatcher.is_active(float(params[0, 3 * k, cy, cx]), run.activity_threshold)),
                         "families" : families,
                     })
 
-                activity  = ParamMatcher.is_active(params[0, 0::3]).sum(axis=0).astype(np.float32)
+                activity  = ParamMatcher.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0).astype(np.float32)
                 error_map = self._error_map(params, row, col, cy, cx)
 
                 return {

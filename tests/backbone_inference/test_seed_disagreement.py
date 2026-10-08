@@ -38,16 +38,17 @@ def _params(*slots: tuple) -> np.ndarray:
     return cube
 
 
-def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.ndarray, params_gt: np.ndarray | None = None, stamp: str = "stamp") -> Path:
+def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.ndarray, params_gt: np.ndarray | None = None, stamp: str = "stamp", activity_threshold: float = 1e-4) -> Path:
     """Writes a seed run directory with prediction cubes, metrics and a report.
 
     Args:
-        group       : Directory holding the seed runs.
-        name        : Name of the seed run directory.
-        pred_curves : Predicted curve cube of shape (N_Z, N_ROWS, N_COLS).
-        params_pred : Predicted parameter cube of shape (3 * n_slots, N_ROWS, N_COLS).
-        params_gt   : Ground-truth parameter cube, defaulting to params_pred.
-        stamp       : Name of the inference output subdirectory.
+        group              : Directory holding the seed runs.
+        name               : Name of the seed run directory.
+        pred_curves        : Predicted curve cube of shape (N_Z, N_ROWS, N_COLS).
+        params_pred        : Predicted parameter cube of shape (3 * n_slots, N_ROWS, N_COLS).
+        params_gt          : Ground-truth parameter cube, defaulting to params_pred.
+        stamp              : Name of the inference output subdirectory.
+        activity_threshold : Activity threshold recorded in the metrics file.
 
     Returns:
         Path of the created run directory.
@@ -63,14 +64,14 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
     np.save(cubes_dir / "params_gt.npy",   (params_gt if params_gt is not None else params_pred).astype(np.float32))
     np.save(cubes_dir / "pixel_mse.npy",   pred_curves.mean(axis=0).astype(np.float32) + 0.1)
 
-    (out_dir / "metrics.json").write_text(json.dumps({"curve_mse_gt": 1.0, "split_region": [0, N_ROWS, 0, N_COLS]}), encoding="utf-8")
+    (out_dir / "metrics.json").write_text(json.dumps({"curve_mse_gt": 1.0, "split_region": [0, N_ROWS, 0, N_COLS], "activity_threshold": activity_threshold}), encoding="utf-8")
     (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
 
     return run_dir
 
 
 def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: float = 1e-4) -> SeedDisagreementMaps:
-    """Returns a seed disagreement map builder over the given runs and inference stamp."""
+    """Returns a seed disagreement map builder over the given runs, inference stamp and activity threshold."""
     return SeedDisagreementMaps(
         group_dir        = group,
         run_dirs         = runs,
@@ -78,8 +79,8 @@ def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: f
         cubes_subdir     = "cubes",
         metrics_filename = "metrics.json",
         output_dir       = group / "inference" / "agg",
-        logger           = SilentLogger(),
         active_amp_thr   = active_amp_thr,
+        logger           = SilentLogger(),
     )
 
 
@@ -95,7 +96,6 @@ def _config(runs_dir: Path, compute_disagreement: bool) -> SimpleNamespace:
         compute_disagreement = compute_disagreement,
         compute_ensemble     = False,
         cubes_subdir         = "cubes",
-        active_amp_thr       = 1e-4,
     )
 
 
@@ -213,21 +213,21 @@ def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
     assert np.allclose(np.load(cubes_dir / "seed_std_sigma.npy"), 0.0)
 
 
-def test_raised_active_threshold_masks_faint_slots(tmp_path):
-    """A configured threshold above a slot's amplitude removes it from the matched parameter maps."""
-    group  = tmp_path / "group"
+def test_recorded_threshold_above_a_faint_slot_masks_it(tmp_path):
+    """Seeds scored at a threshold above a slot's amplitude lose that slot from the matched parameter maps."""
     curves = np.zeros((N_Z, N_ROWS, N_COLS))
     faint  = _params((5e-4, 5.0, 2.0))
-    runs   = [_seed_run(group, f"seed{i}", curves, faint) for i in range(2)]
+    loose  = [_seed_run(tmp_path / "loose",  f"seed{i}", curves, faint) for i in range(2)]
+    strict = [_seed_run(tmp_path / "strict", f"seed{i}", curves, faint, activity_threshold=1e-3) for i in range(2)]
 
-    _maps(group, runs).run()
-    default_mu = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
+    _maps(tmp_path / "loose",  loose,  active_amp_thr=1e-4).run()
+    _maps(tmp_path / "strict", strict, active_amp_thr=1e-3).run()
 
-    _maps(group, runs, active_amp_thr=1e-3).run()
-    raised_mu = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
+    loose_mu  = np.load(loose [0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
+    strict_mu = np.load(strict[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
 
-    assert np.allclose(default_mu, 0.0)
-    assert np.all(np.isnan(raised_mu))
+    assert np.allclose(loose_mu, 0.0)
+    assert np.all(np.isnan(strict_mu))
 
 
 def test_missing_cubes_raise(tmp_path):
@@ -266,6 +266,7 @@ def test_comparison_writes_maps_figures_and_report_section(tmp_path, monkeypatch
     text    = reports[0].read_text(encoding="utf-8")
     payload = json.loads((group / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
 
+    assert payload["activity_threshold"] == 1e-4
     assert "Seed disagreement maps" in text
     assert "seed_std_profile"       in text
     assert "AURC" in text

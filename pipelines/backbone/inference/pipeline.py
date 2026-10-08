@@ -176,7 +176,6 @@ class InferencePipeline:
             meta             = meta,
             cpu_workers      = cfg.cpu_workers,
             render_amp_floor = cfg.render_amp_floor,
-            active_amp_thr   = cfg.active_amp_thr,
             **evaluator_kwargs,
         )
         return predictor.run_inference()
@@ -245,10 +244,11 @@ class InferencePipeline:
         logger.section("[Inference: Curve Parameter Extraction]")
 
         extractor = CurveParamExtractor(
-            z_axis          = z_axis_np,
-            n_gaussians     = run.n_gaussians,
-            prominence_frac = cfg.extract_prominence_frac,
-            n_workers       = cfg.cpu_workers,
+            z_axis             = z_axis_np,
+            n_gaussians        = run.n_gaussians,
+            activity_threshold = run.activity_threshold,
+            prominence_frac    = cfg.extract_prominence_frac,
+            n_workers          = cfg.cpu_workers,
         )
 
         predicted = extractor.run(result.pred_curves)
@@ -257,7 +257,7 @@ class InferencePipeline:
         result.params_pred   = predicted.params
         result.params_source = "extracted"
         result.extract_r2    = predicted.fit_r2
-        result.extract_floor = self._extraction_floor(result, reference.params, z_axis_np, run.n_gaussians, cfg.cpu_workers, cfg.active_amp_thr)
+        result.extract_floor = self._extraction_floor(result, reference.params, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold)
 
         if cfg.save_cubes:
             np.save(meta.cube_dir / "params_pred.npy", predicted.params)
@@ -276,7 +276,7 @@ class InferencePipeline:
             z_axis_np        : Z axis in metres, of shape (n_z,).
             n_gaussians      : Gaussian count K.
             cpu_workers      : Worker count for the metric computation.
-            active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active.
+            active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active, as recorded by the label run.
 
         Returns:
             Matched-Gaussian metrics describing the best accuracy the extractor could reach.
@@ -316,7 +316,7 @@ class InferencePipeline:
 
         param_space = result.params_pred is not None and result.params_gt is not None
 
-        global_metrics = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, cfg.active_amp_thr).compute(
+        global_metrics = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold).compute(
             z_indices      = indices["all_z_idx"],
             col_indices     = indices["all_col_idx"],
             row_indices        = indices["all_row_idx"],
@@ -336,8 +336,9 @@ class InferencePipeline:
             for key, value in result.extract_floor.items():
                 global_metrics[f"extract_floor_{key}"] = value
 
-        global_metrics["split"]        = run.split_name
-        global_metrics["split_region"] = list(run.split_region.as_tuple())
+        global_metrics["split"]              = run.split_name
+        global_metrics["split_region"]       = list(run.split_region.as_tuple())
+        global_metrics["activity_threshold"] = run.activity_threshold
 
         if run.core_region is not None:
             global_metrics["core_region"] = list(run.core_region.as_tuple())
@@ -385,7 +386,7 @@ class InferencePipeline:
             logger         : Logger for the result line.
         """
 
-        r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, cfg.active_amp_thr).label_quality(run.full_curves)
+        r2_map, stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold).label_quality(run.full_curves)
 
         result.label_r2 = r2_map
         global_metrics["label_quality_status"] = "computed"
@@ -472,7 +473,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Stratified Errors]")
 
-        tables, scalars   = StratifiedErrors(run, result, active_amp_thr=cfg.active_amp_thr).run()
+        tables, scalars   = StratifiedErrors(run, result).run()
         result.stratified = tables
 
         global_metrics["stratified_status"] = "computed"
@@ -505,7 +506,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Failure Modes]")
 
-        modes = FailureModes(result.params_pred, result.params_gt, run.n_gaussians, assignment=result.assignment(run.n_gaussians, cfg.active_amp_thr), active_amp_thr=cfg.active_amp_thr)
+        modes = FailureModes(result.params_pred, result.params_gt, run.n_gaussians, assignment=result.assignment(run.n_gaussians, run.activity_threshold), active_amp_thr=run.activity_threshold)
         pairs = modes.pair_predictions()
 
         mode_map, by_sep, scalars = modes.classify(pairs)
@@ -567,7 +568,7 @@ class InferencePipeline:
 
         logger.section("[Inference: Normalization Audit]")
 
-        stats = NormalizationAudit(run, result, active_amp_thr=self.config.active_amp_thr).run()
+        stats = NormalizationAudit(run, result).run()
         global_metrics.update(stats)
         Metrics.write_json(global_metrics, meta.metrics_path)
 

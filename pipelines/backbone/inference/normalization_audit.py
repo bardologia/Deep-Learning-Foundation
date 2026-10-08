@@ -20,18 +20,18 @@ class NormalizationAudit:
     Attributes:
         loaded         : Loaded run supplying the dataset, normalization statistics and z axis.
         result         : Inference result carrying the predicted parameter cube.
-        active_amp_thr : Physical amplitude at or above which a predicted Gaussian slot counts as active.
+        active_amp_thr : Physical amplitude at or above which a predicted Gaussian slot counts as active, read from the loaded run.
     """
 
     OVERFLOW_Z    = 6.0
     EDGE_FRACTION = 1e-3
 
-    def __init__(self, run, result, active_amp_thr: float = ParamMatcher.ACTIVE_AMP_THR) -> None:
-        """Stores the loaded run, the inference result to audit and the active-amplitude threshold."""
+    def __init__(self, run, result) -> None:
+        """Stores the loaded run and the inference result to audit, taking the active-amplitude threshold from the run."""
 
         self.loaded         = run
         self.result         = result
-        self.active_amp_thr = float(active_amp_thr)
+        self.active_amp_thr = float(run.activity_threshold)
 
     def input_health(self) -> Dict[str, float]:
         """Measures how far the normalised input channels drift from zero mean and unit variance.

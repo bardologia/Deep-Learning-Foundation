@@ -15,12 +15,13 @@ H, W = 40, 30
 
 
 def _run(params_gt=None, complex_inputs=None, aux=None, n_secondaries: int = 0, n_gaussians: int = 2) -> SimpleNamespace:
-    """Returns a run stub carrying complex inputs, channel counts, slot count and the Aux."""
+    """Returns a run stub carrying complex inputs, channel counts, slot count, activity threshold and the Aux."""
     return SimpleNamespace(
-        complex_inputs = complex_inputs,
-        n_secondaries  = n_secondaries,
-        n_gaussians    = n_gaussians,
-        dataset        = SimpleNamespace(aux=aux),
+        complex_inputs     = complex_inputs,
+        n_secondaries      = n_secondaries,
+        n_gaussians        = n_gaussians,
+        activity_threshold = 1e-4,
+        dataset            = SimpleNamespace(aux=aux),
     )
 
 

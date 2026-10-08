@@ -17,7 +17,6 @@ from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatc
 from pipelines.backbone.inference.probes             import ModelDevice
 from tools.data.io                                   import FileIO
 from tools.diagnostics.activation_recorder           import ActivationRecorder
-from tools.loss.param_loss                           import ParamMatcher
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
 from tools.reporting.plotting                        import PlotBase
 
@@ -626,7 +625,7 @@ class LayerProbeRun(AnalysisRun):
             model             = run.model.module,
             layers            = layers,
             ppg               = 3,
-            amp_thr           = ParamMatcher.ACTIVE_AMP_THR,
+            amp_thr           = run.activity_threshold,
             samples_per_batch = self.config.samples_per_batch,
             probe             = RidgeProbe(self.config.ridge_lambda, self.config.n_folds, self.config.seed),
             seed              = self.config.seed,

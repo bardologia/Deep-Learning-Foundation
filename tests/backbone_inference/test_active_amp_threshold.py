@@ -1,9 +1,9 @@
-"""Behavioral tests of the configurable slot-activity threshold `active_amp_thr`.
+"""Behavioral tests of the slot-activity threshold the inference analyses receive.
 
-Places a ground-truth amplitude inside the open band between the 1e-4 default and the
-legacy 1e-3 preset value, then checks that raising the threshold flips the Hungarian
-slot assignment, the matched detection metrics and the failure-mode classification
-relative to the default.
+Places a ground-truth amplitude inside the open band between a 1e-4 and a 1e-3
+label-run threshold, then checks that the higher threshold flips the Hungarian slot
+assignment, the matched detection metrics and the failure-mode classification
+relative to the lower one.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ import numpy as np
 
 from pipelines.backbone.inference.failure_modes import FailureModes
 from pipelines.backbone.inference.metrics       import Metrics, Result
-from tools.loss.param_loss                      import ParamMatcher
 from tools.metrics.gaussian_matching            import GaussianMatcher
 
 
 N_GAUSSIANS = 2
-N_Z      = 16
+N_Z         = 16
 SUB_AMP     = 5e-4
+LOW_THR     = 1e-4
 RAISED_THR  = 1e-3
 
 
@@ -85,7 +85,7 @@ def test_raised_threshold_flips_hungarian_assignment():
     gt   = _params([(SUB_AMP, 10.0, 5.0), (1.0, 12.0, 5.0)])
     pred = _params([(1.0, 10.0, 5.0), (0.0, 0.0, 5.0)])
 
-    sel_default = GaussianMatcher().assignment(pred, gt, N_GAUSSIANS)
+    sel_default = GaussianMatcher(amp_threshold=LOW_THR).assignment(pred, gt, N_GAUSSIANS)
     sel_raised  = GaussianMatcher(amp_threshold=RAISED_THR).assignment(pred, gt, N_GAUSSIANS)
 
     assert sel_default[0, 0] == 0
@@ -97,7 +97,7 @@ def test_raised_threshold_changes_matched_metrics():
     gt   = _params([(1.0, 10.0, 5.0), (SUB_AMP, 40.0, 5.0)])
     pred = _params([(1.0, 10.0, 5.0), (1.0, 40.0, 5.0)])
 
-    default = _metrics(pred, gt, ParamMatcher.ACTIVE_AMP_THR)
+    default = _metrics(pred, gt, LOW_THR)
     raised  = _metrics(pred, gt, RAISED_THR)
 
     assert default["matched_recall"]    == 1.0
@@ -114,7 +114,7 @@ def test_raised_threshold_flips_failure_mode():
     gt   = _params([(1.0, 10.0, 5.0), (SUB_AMP, 40.0, 5.0)])
     pred = _params([(1.0, 10.0, 5.0), (1.0, 40.0, 5.0)])
 
-    mode_default, _, scalars_default = FailureModes(pred, gt, N_GAUSSIANS).run()
+    mode_default, _, scalars_default = FailureModes(pred, gt, N_GAUSSIANS, active_amp_thr=LOW_THR).run()
     mode_raised,  _, scalars_raised  = FailureModes(pred, gt, N_GAUSSIANS, active_amp_thr=RAISED_THR).run()
 
     assert FailureModes.MODES[int(mode_default[0, 0])] == "amplitude"

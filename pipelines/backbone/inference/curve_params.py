@@ -37,7 +37,7 @@ class CurveParamExtractor:
         z_axis             : Z axis in metres, shape (n_z,).
         n_gaussians        : Number of Gaussian slots fitted per pixel.
         prominence_frac    : Peak prominence threshold as a fraction of profile height.
-        activity_threshold : Amplitude below which a slot is zeroed as inactive.
+        activity_threshold : Amplitude below which a refitted slot is zeroed as inactive, as recorded by the label run.
         chunk_pixels       : Pixels solved per batch.
         n_workers          : Worker processes used by the peak initialiser.
         dx                 : Z bin spacing in metres.
@@ -48,14 +48,14 @@ class CurveParamExtractor:
     FWHM_PER_SIGMA = 2.3548200450309493
     RIDGE          = 1e-8
 
-    def __init__(self, z_axis: np.ndarray, n_gaussians: int, prominence_frac: float = 0.05, activity_threshold: float = 1e-4, chunk_pixels: int = 8192, n_workers: int = 1) -> None:
+    def __init__(self, z_axis: np.ndarray, n_gaussians: int, activity_threshold: float, prominence_frac: float = 0.05, chunk_pixels: int = 8192, n_workers: int = 1) -> None:
         """Stores the fit settings and derives the z spacing and width bounds.
 
         Args:
             z_axis             : Z axis in metres, shape (n_z,), uniformly spaced.
             n_gaussians        : Number of Gaussian slots to fit per pixel.
+            activity_threshold : Amplitude below which a refitted slot is zeroed, as recorded by the label run.
             prominence_frac    : Peak prominence threshold as a fraction of profile height.
-            activity_threshold : Amplitude below which a slot is zeroed.
             chunk_pixels       : Pixels solved per batch.
             n_workers          : Worker processes used by the peak initialiser.
 

@@ -1761,7 +1761,6 @@
         "stitch_window": "Per-patch tapering window used by CubeStitcher when overlap-adding patches into the full scene: hann, uniform, or triangular",
         "cube_dtype": "Numpy dtype string the stitched curve/parameter cubes and exported .npy arrays are cast to, e.g. float32",
         "render_amp_floor": "Physical amplitude below which a predicted or GT Gaussian component is dropped from curve reconstruction (cubes, figures, curve metrics); parameter cubes keep the raw values; 0 disables the mask, legacy mode sets 1e-3 to reject the legacy fit's prior-stuck phantom components",
-        "active_amp_thr": "Physical amplitude at or above which a Gaussian slot counts as active in the parameter analyses: Hungarian slot matching, component counting, matched-pair detection and recall/precision, failure-mode classification, stratified GT counts, the normalization audit, the report figures and the predictor's masking of inactive GT slots in the stitched parameter cube; 1e-4 is the historical ParamMatcher constant, 1e-3 matches the legacy masked loss whose absent slot-2 amplitudes freeze just below the scaled presence gate",
         "n_best_profiles": "Count of lowest-curve-MSE pixel profiles plotted in the best profile figures",
         "n_worst_profiles": "Count of highest-curve-MSE pixel profiles plotted in the worst profile figures",
         "n_random_profiles": "Count of randomly sampled pixel profiles plotted, drawn with profile_seed",
@@ -1993,7 +1992,6 @@
         "stitch_window": "window function blending overlapping inference tiles back into the full scene: hann, uniform, or triangular",
         "cube_dtype": "numpy dtype string the stitched curve/parameter cubes and exported .npy arrays are cast to, e.g. float32",
         "render_amp_floor": "physical amplitude below which a predicted or GT Gaussian component is dropped from curve reconstruction (cubes, figures, curve metrics); parameter cubes keep the raw values; 0 disables the mask",
-        "active_amp_thr": "physical amplitude at or above which a Gaussian slot counts as active in the parameter analyses: Hungarian slot matching, component counting, matched-pair detection and recall/precision, failure-mode classification, stratified GT counts, the normalization audit and the report figures; 1e-4 is the historical ParamMatcher constant",
         "compute_flip_consistency": "also run each model on row- and col-flipped inputs, unflip the predictions, and stitch the per-pixel curve disagreement into a flip-equivariance map: a label-free confidence signal saved as a cube, figure, and flip_* metrics (roughly triples the forward-chan cost)",
         "compute_stratified": "also stratify the per-pixel curve MSE by scene covariates (GT active count, primary amplitude, mean coherence, Aux slope, label fit R²): binned median curves with IQR bands as figures plus strat_* rank-correlation metrics",
         "extract_curve_params": "for runs that predict z curves instead of Gaussian parameters (JEPA with a coupled profile autoencoder), refit K Gaussians to each predicted curve so the whole parameter-space analysis becomes available, alongside the extract_floor_* measurement floor from the GT curves; inert for runs whose model already outputs parameters",
@@ -2192,8 +2190,7 @@
         "report_filename": "Filename of the generated seed-comparison markdown report, also used to link each seed's own report",
         "compute_disagreement": "Also compute per-pixel across-seed disagreement maps (profile, amplitude, mu, sigma std) from every seed's saved inference cubes, write them into each seed's cube directory as metric-map layers and render summary figures; requires save_cubes inference artifacts and raises when a seed lacks them",
         "compute_ensemble": "Also average every seed's saved prediction cube into one deep-ensemble prediction and score it against the ground truth with the same cube-wide scalars, reported next to the per-seed mean; requires save_cubes inference artifacts and raises when a seed lacks them",
-        "cubes_subdir": "Name of the cube subdirectory inside each seed's inference directory the disagreement maps are read from and written back into",
-        "active_amp_thr": "Physical amplitude at or above which a Gaussian slot counts as active when matching each seed's predicted slots to the shared GT slots for the disagreement maps; must match the inference.active_amp_thr the seeds were scored with (1e-4 default, 1e-3 legacy preset)"
+        "cubes_subdir": "Name of the cube subdirectory inside each seed's inference directory the disagreement maps are read from and written back into"
       }
     },
     "comparison::ComparisonPathsConfig": {

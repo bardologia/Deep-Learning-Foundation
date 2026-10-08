@@ -102,7 +102,7 @@ def test_param_plotter_distributions(tmp_path):
     plotter = ParamPlotter()
 
     paths = plotter.plot_param_distributions(
-        params_pred=params, params_gt=params, n_gaussians=N_GAUSSIANS, out_dir=tmp_path,
+        params_pred=params, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path,
     )
     _assert_files(paths)
 
@@ -113,7 +113,7 @@ def test_param_plotter_scatter(tmp_path):
     plotter = ParamPlotter()
 
     paths = plotter.plot_param_scatter(
-        params_pred=params + 0.01, params_gt=params, n_gaussians=N_GAUSSIANS, out_dir=tmp_path,
+        params_pred=params + 0.01, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path,
     )
     _assert_files(paths)
 
@@ -124,7 +124,7 @@ def test_param_plotter_error_maps(tmp_path):
     plotter = ParamPlotter()
 
     paths = plotter.plot_param_error_maps(
-        params_pred=params + 0.5, params_gt=params, n_gaussians=N_GAUSSIANS,
+        params_pred=params + 0.5, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4,
         out_dir=tmp_path, row_offset=0, col_offset=0,
     )
     _assert_files(paths)
@@ -137,7 +137,7 @@ def test_param_plotter_error_hists(tmp_path):
     plotter = ParamPlotter()
 
     paths = plotter.plot_param_error_hists(
-        params_pred=params + noise, params_gt=params, n_gaussians=N_GAUSSIANS, out_dir=tmp_path,
+        params_pred=params + noise, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path,
     )
     _assert_files(paths)
     assert len(paths) == N_GAUSSIANS * 3
@@ -161,16 +161,16 @@ def test_param_plotter_matches_slots_once_per_cube(tmp_path, monkeypatch):
     monkeypatch.setattr(GaussianMatcher, "aligned_prediction", counted)
 
     plotter.plot_param_scatter(
-        params_pred=pred[: N_GAUSSIANS * 3], params_gt=params[: N_GAUSSIANS * 3], n_gaussians=N_GAUSSIANS, out_dir=tmp_path / "scatter",
+        params_pred=pred[: N_GAUSSIANS * 3], params_gt=params[: N_GAUSSIANS * 3], n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path / "scatter",
     )
     plotter.plot_param_error_hists(
-        params_pred=pred[: N_GAUSSIANS * 3], params_gt=params[: N_GAUSSIANS * 3], n_gaussians=N_GAUSSIANS, out_dir=tmp_path / "hists",
+        params_pred=pred[: N_GAUSSIANS * 3], params_gt=params[: N_GAUSSIANS * 3], n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path / "hists",
     )
 
     assert len(calls) == 1
 
     plotter.plot_param_error_maps(
-        params_pred=other[: N_GAUSSIANS * 3], params_gt=params[: N_GAUSSIANS * 3], n_gaussians=N_GAUSSIANS,
+        params_pred=other[: N_GAUSSIANS * 3], params_gt=params[: N_GAUSSIANS * 3], n_gaussians=N_GAUSSIANS, amp_threshold=1e-4,
         out_dir=tmp_path / "maps", row_offset=0, col_offset=0,
     )
 
@@ -189,7 +189,7 @@ def test_slot_plotter_active_count_map(tmp_path):
     params  = _params()
     plotter = SlotPlotter()
     paths   = plotter.plot_active_count_map(
-        params_pred=params, params_gt=params, n_gaussians=N_GAUSSIANS,
+        params_pred=params, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4,
         out_dir=tmp_path, row_offset=0, col_offset=0,
     )
     _assert_files(paths)

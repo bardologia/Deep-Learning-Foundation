@@ -348,7 +348,7 @@ def test_match_sorts_gt_by_mu_among_active():
     gt_phys[:, :, 0] = torch.tensor([2.0, 0.0, 3.0, 0.0, 1.0]).reshape(1, 5, 1, 1)
     gt_phys[:, :, 1] = torch.tensor([5.0, 9.0, 1.0, 8.0, 3.0]).reshape(1, 5, 1, 1)
 
-    _, _, g, gp = PM.match(pred, pred_phys, gt, gt_phys)
+    _, _, g, gp = PM.match(pred, pred_phys, gt, gt_phys, active_thr=1e-4)
 
     active_mus = gp[0, :, 1, 0, 0][gp[0, :, 0, 0, 0] > 1e-3]
     assert torch.all(active_mus[1:] >= active_mus[:-1])
@@ -360,8 +360,8 @@ def test_match_gt_sort_is_idempotent():
     gt      = torch.randn(1, 5, 3, 3, 3)
     gt_phys = torch.rand(1, 5, 3, 3, 3) + 0.5
 
-    once  = PM.match(pred, pred.clone(), gt, gt_phys)
-    twice = PM.match(once[0], once[1], once[2], once[3])
+    once  = PM.match(pred, pred.clone(), gt, gt_phys, active_thr=1e-4)
+    twice = PM.match(once[0], once[1], once[2], once[3], active_thr=1e-4)
 
     assert torch.equal(once[2], twice[2])
     assert torch.equal(once[3], twice[3])

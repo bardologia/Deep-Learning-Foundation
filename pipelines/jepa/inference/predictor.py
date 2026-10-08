@@ -95,7 +95,7 @@ class JepaCurvePredictor(Predictor):
 
                 B         = pred_curves.shape[0]
                 H, W      = gt_params.shape[-2:]
-                gt_gauss  = Predictor._sort_by_mu(gt_params.reshape(B, n_K, 3, H, W))
+                gt_gauss  = Predictor._sort_by_mu(gt_params.reshape(B, n_K, 3, H, W), run.activity_threshold)
                 gt_curves = GaussianReconstructor.reconstruct_batch(Predictor._render_masked(gt_gauss, self.render_amp_floor), x)
                 gt_flat   = gt_gauss.reshape(B, n_K * 3, H, W)
 
@@ -121,7 +121,7 @@ class JepaCurvePredictor(Predictor):
             The same array with inactive slots' mean and sigma channels masked.
         """
         for k in range(self.run.n_gaussians):
-            inactive = ~ParamMatcher.is_active(params_gt[3 * k], self.active_amp_thr)
+            inactive = ~ParamMatcher.is_active(params_gt[3 * k], self.run.activity_threshold)
             params_gt[3 * k + 1][inactive] = np.nan
             params_gt[3 * k + 2][inactive] = np.nan
 

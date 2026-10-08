@@ -34,7 +34,7 @@ def _cube(amp: np.ndarray, mu: np.ndarray, sigma: float = 3.0) -> np.ndarray:
 
 def _calibration(params_pred: np.ndarray, params_gt: np.ndarray) -> PresenceCalibration:
     """Returns a calibration over Hungarian-matched pairs, mirroring the production pipeline path."""
-    return PresenceCalibration(FailureModes(params_pred, params_gt, 1).pair_predictions())
+    return PresenceCalibration(FailureModes(params_pred, params_gt, 1, 1e-4).pair_predictions())
 
 
 def test_perfect_predictions_have_full_precision():

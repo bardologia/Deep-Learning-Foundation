@@ -135,7 +135,7 @@ def test_match_sorts_gt_by_mu():
 
     pred = torch.zeros_like(gt)
 
-    _, _, sorted_gt, _ = ParamMatcher.match(pred, pred.clone(), gt, gt_phys)
+    _, _, sorted_gt, _ = ParamMatcher.match(pred, pred.clone(), gt, gt_phys, active_thr=1e-4)
     mus = sorted_gt[0, :, 1, 0, 0]
     assert torch.all(mus[:-1] <= mus[1:])
 
@@ -149,7 +149,7 @@ def test_match_pushes_inactive_gt_last():
     gt_phys = gt.clone()
     pred    = torch.zeros_like(gt)
 
-    _, _, sorted_gt, sorted_phys = ParamMatcher.match(pred, pred.clone(), gt, gt_phys)
+    _, _, sorted_gt, sorted_phys = ParamMatcher.match(pred, pred.clone(), gt, gt_phys, active_thr=1e-4)
     last_amp = sorted_phys[0, -1, 0, 0, 0]
     assert last_amp.item() == 0.0
 
@@ -165,7 +165,7 @@ def test_match_realigns_pred():
     pred      = gt[:, perm].clone()
     pred_phys = gt_phys[:, perm].clone()
 
-    matched, _, sorted_gt, _ = ParamMatcher.match(pred, pred_phys, gt, gt_phys)
+    matched, _, sorted_gt, _ = ParamMatcher.match(pred, pred_phys, gt, gt_phys, active_thr=1e-4)
     assert (matched - sorted_gt).abs().max().item() < 1e-9
 
 
@@ -177,7 +177,7 @@ def test_match_assignment_reaches_the_exact_cost_minimum():
     gt_phys    = gt.clone()
     gt_phys[:, :, 0] = 1.0
 
-    matched, _, sorted_gt, _ = ParamMatcher.match(pred, pred.clone(), gt, gt_phys)
+    matched, _, sorted_gt, _ = ParamMatcher.match(pred, pred.clone(), gt, gt_phys, active_thr=1e-4)
 
     achieved  = (matched - sorted_gt).abs().sum(2).sum(1)
     per_perm  = [(pred[:, list(perm)] - sorted_gt).abs().sum(2).sum(1) for perm in itertools.permutations(range(g))]
@@ -195,7 +195,7 @@ def test_match_ignores_inactive_gt():
     gt_phys[:, 2, :] = 0.0
 
     perm = [2, 0, 1]
-    matched, _, sorted_gt, sorted_phys = ParamMatcher.match(gt[:, perm].clone(), gt_phys[:, perm].clone(), gt, gt_phys)
+    matched, _, sorted_gt, sorted_phys = ParamMatcher.match(gt[:, perm].clone(), gt_phys[:, perm].clone(), gt, gt_phys, active_thr=1e-4)
     active = sorted_phys[:, :, 0] > 1e-3
     err    = ((matched - sorted_gt).abs().sum(2) * active)[active.bool()]
     assert err.max().item() < 1e-9
@@ -206,7 +206,7 @@ def test_match_rejects_large_g():
     b, g, h, w = 1, ParamMatcher.MAX_GAUSSIANS + 1, 1, 1
     t = _params(22, b, g, h, w)
     with pytest.raises(ValueError):
-        ParamMatcher.match(t, t.clone(), t, t.clone())
+        ParamMatcher.match(t, t.clone(), t, t.clone(), active_thr=1e-4)
 
 
 def test_match_rejects_unknown_method():
@@ -214,7 +214,7 @@ def test_match_rejects_unknown_method():
     b, g, h, w = 1, 3, 1, 1
     t = _params(23, b, g, h, w)
     with pytest.raises(ValueError):
-        ParamMatcher.match(t, t.clone(), t, t.clone(), method="bogus")
+        ParamMatcher.match(t, t.clone(), t, t.clone(), method="bogus", active_thr=1e-4)
 
 
 def test_sorted_gt_sorts_gt_but_leaves_pred():
@@ -228,7 +228,7 @@ def test_sorted_gt_sorts_gt_but_leaves_pred():
     pred      = gt[:, perm].clone()
     pred_phys = gt_phys[:, perm].clone()
 
-    matched, _, sorted_gt, _ = ParamMatcher.match(pred, pred_phys, gt, gt_phys, method=ParamMatcher.SORTED_GT)
+    matched, _, sorted_gt, _ = ParamMatcher.match(pred, pred_phys, gt, gt_phys, method=ParamMatcher.SORTED_GT, active_thr=1e-4)
 
     mus = sorted_gt[:, :, 1]
     assert torch.all(mus[:, :-1] <= mus[:, 1:])
@@ -244,7 +244,7 @@ def test_sorted_gt_pushes_inactive_gt_last():
     gt_phys = gt.clone()
     pred    = torch.zeros_like(gt)
 
-    _, _, _, sorted_phys = ParamMatcher.match(pred, pred.clone(), gt, gt_phys, method=ParamMatcher.SORTED_GT)
+    _, _, _, sorted_phys = ParamMatcher.match(pred, pred.clone(), gt, gt_phys, method=ParamMatcher.SORTED_GT, active_thr=1e-4)
     assert sorted_phys[0, -1, 0, 0, 0].item() == 0.0
 
 

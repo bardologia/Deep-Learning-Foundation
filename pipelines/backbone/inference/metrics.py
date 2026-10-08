@@ -200,7 +200,7 @@ class Metrics:
         z_axis         : np.ndarray,
         n_gaussians    : int,
         cpu_workers    : int,
-        active_amp_thr : float = ParamMatcher.ACTIVE_AMP_THR,
+        active_amp_thr : float,
     ) -> None:
         """Stores the result and derives the z step and SSIM worker count.
 
@@ -209,7 +209,7 @@ class Metrics:
             z_axis         : Z axis in metres, of shape (n_z,).
             n_gaussians    : Gaussian count K.
             cpu_workers    : Requested worker count, capped at the machine's CPU count.
-            active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active.
+            active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active, as recorded by the label run.
         """
 
         self.result         = result
@@ -853,14 +853,14 @@ class Metrics:
         n_K = self.n_gaussians
         out: Dict[str, float] = {}
 
-        usage = SlotOrganization.usage_fractions(pp, n_K)
+        usage = SlotOrganization.usage_fractions(pp, n_K, self.active_amp_thr)
         out["slot_usage_entropy"] = SlotOrganization.usage_entropy(usage)
 
-        rank_counts = SlotOrganization.mu_rank_matrix(pp, n_K)
+        rank_counts = SlotOrganization.mu_rank_matrix(pp, n_K, self.active_amp_thr)
         out["slot_mu_rank_diag"] = SlotOrganization.diagonality(rank_counts)
 
         if pg is not None:
-            assign_counts = SlotOrganization.assignment_matrix(pp, pg, n_K, assignment=self._param_assignment())
+            assign_counts = SlotOrganization.assignment_matrix(pp, pg, n_K, self.active_amp_thr, assignment=self._param_assignment())
             out["slot_gt_alignment"] = SlotOrganization.diagonality(assign_counts)
 
         return out

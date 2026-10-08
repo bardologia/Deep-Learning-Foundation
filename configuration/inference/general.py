@@ -56,7 +56,6 @@ class InferenceConfig:
         stitch_window            : Window applied when blending overlapping patches.
         cube_dtype               : NumPy dtype name used when writing cubes.
         render_amp_floor         : Amplitude below which components are hidden in renders.
-        active_amp_thr           : Physical amplitude at or above which a Gaussian slot counts as active in the Hungarian slot matching, metrics, failure modes, stratified errors, normalization audit, report figures and the predictor's masking of inactive GT slots in the stitched parameter cube.
         compute_flip_consistency : Whether flip-equivariance metrics run.
         compute_stratified       : Whether metrics are stratified by scene strata.
         extract_curve_params     : Whether Gaussians are refitted to predicted curves.
@@ -95,13 +94,12 @@ class InferenceConfig:
     cpu_workers     : int                 = 80
     gif_workers     : int                 = 40
 
-    save_plots      : bool = True
-    save_animations : bool = True
-    save_cubes      : bool = True
-    stitch_window   : str  = "hann"
-    cube_dtype      : str  = "float32"
+    save_plots       : bool  = True
+    save_animations  : bool  = True
+    save_cubes       : bool  = True
+    stitch_window    : str   = "hann"
+    cube_dtype       : str   = "float32"
     render_amp_floor : float = 0.0
-    active_amp_thr   : float = 1e-4
 
     compute_flip_consistency : bool  = False
     compute_stratified       : bool  = True

@@ -16,6 +16,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from configuration.dataset                      import DatasetConfig
+from configuration.dataset.gaussian             import GaussianConfig
 from tools.data.regions                         import CropRegion
 from models                                     import get_backbone
 from pipelines.backbone.dataset.datasets        import PatchDataset
@@ -79,48 +80,50 @@ class Run:
     """Everything an inference pass needs from one trained backbone run.
 
     Attributes:
-        model            : Device-resident model wrapper mapping input patches to denormalised outputs.
-        backbone_name    : Registry name of the backbone architecture.
-        in_channels      : Number of input channels the model consumes.
-        out_channels     : Number of output channels the model emits (3 * n_gaussians).
-        x_axis           : Z axis in metres, of shape (n_z,).
-        x_axis_length    : Number of z bins.
-        n_gaussians      : Gaussian count K the run was trained with.
-        dataset_config   : Dataset-creation configuration restored from the run.
-        split_name       : Name of the split being inferred ("train", "val" or "test").
-        split_region     : Crop region covered by the inference, including any guard extension.
-        core_region      : Unextended split region, set only when a region override was applied.
-        global_crop      : Crop region of the preprocessed scene the split sits inside.
-        grid             : Patch grid used to stitch per-patch outputs back into a cube.
-        dataset          : Patch dataset yielding the normalised input windows.
-        loader           : Sequential dataloader over `dataset`.
-        checkpoint_meta  : Metadata payload stored alongside the checkpoint weights.
-        full_curves      : Raw cube of shape (n_z, rows, cols), or a refusing placeholder.
-        complex_inputs   : Complex channel stack of shape (channels, rows, cols), or None.
-        n_secondaries    : Number of secondary tracks in the input stack.
-        secondary_labels : Track labels of the secondaries, or None when the full stack is used.
+        model              : Device-resident model wrapper mapping input patches to denormalised outputs.
+        backbone_name      : Registry name of the backbone architecture.
+        in_channels        : Number of input channels the model consumes.
+        out_channels       : Number of output channels the model emits (3 * n_gaussians).
+        z_axis             : Z axis in metres, of shape (n_z,).
+        x_axis_length      : Number of z bins.
+        n_gaussians        : Gaussian count K the run was trained with.
+        activity_threshold : Physical amplitude above which a Gaussian slot counts as active, read from the label run's extraction metadata.
+        dataset_config     : Dataset-creation configuration restored from the run.
+        split_name         : Name of the split being inferred ("train", "val" or "test").
+        split_region       : Crop region covered by the inference, including any guard extension.
+        core_region        : Unextended split region, set only when a region override was applied.
+        global_crop        : Crop region of the preprocessed scene the split sits inside.
+        grid               : Patch grid used to stitch per-patch outputs back into a cube.
+        dataset            : Patch dataset yielding the normalised input windows.
+        loader             : Sequential dataloader over `dataset`.
+        checkpoint_meta    : Metadata payload stored alongside the checkpoint weights.
+        full_curves        : Raw cube of shape (n_z, rows, cols), or a refusing placeholder.
+        complex_inputs     : Complex channel stack of shape (channels, rows, cols), or None.
+        n_secondaries      : Number of secondary channels in the input stack.
+        secondary_labels   : Labels of the secondary channels, or None when the full stack is used.
     """
 
-    model            : object
-    backbone_name    : str
-    in_channels      : int
-    out_channels     : int
-    z_axis           : np.ndarray
-    x_axis_length    : int
-    n_gaussians      : int
-    dataset_config   : DatasetConfig
-    split_name       : str
-    split_region     : CropRegion
-    core_region      : CropRegion | None
-    global_crop      : CropRegion
-    grid             : GridInfo
-    dataset          : PatchDataset
-    loader           : DataLoader
-    checkpoint_meta  : dict
-    full_curves      : np.ndarray | AbsentCube
-    complex_inputs   : np.ndarray | None = None
-    n_secondaries    : int               = 0
-    secondary_labels : list | None       = None
+    model              : object
+    backbone_name      : str
+    in_channels        : int
+    out_channels       : int
+    z_axis             : np.ndarray
+    x_axis_length      : int
+    n_gaussians        : int
+    activity_threshold : float
+    dataset_config     : DatasetConfig
+    split_name         : str
+    split_region       : CropRegion
+    core_region        : CropRegion | None
+    global_crop        : CropRegion
+    grid               : GridInfo
+    dataset            : PatchDataset
+    loader             : DataLoader
+    checkpoint_meta    : dict
+    full_curves        : np.ndarray | AbsentCube
+    complex_inputs     : np.ndarray | None = None
+    n_secondaries      : int               = 0
+    secondary_labels   : list | None       = None
 
 
 class RunLoader(RunArtifactLoader):
@@ -252,6 +255,8 @@ class RunLoader(RunArtifactLoader):
 
         self._validate_out_channels(out_channels, n_gaussians)
 
+        activity_threshold = GaussianConfig.from_dataset(dataset_config.preprocessing_run_directory, dataset_config.parameters_path).activity_threshold
+
         ckpt_path = self.run_directory / checkpoint_name
         model     = self._build_model(backbone_name, in_channels, out_channels, dataset_config.patch.size)
         model     = model.to(device)
@@ -291,6 +296,7 @@ class RunLoader(RunArtifactLoader):
             "In channels":  in_channels,
             "Out channels": out_channels,
             "K gaussians":  n_gaussians,
+            "Activity thr": f"{activity_threshold:g}",
         })
 
         self.logger.section(f"[Split]         : '{split}'")
@@ -302,24 +308,25 @@ class RunLoader(RunArtifactLoader):
         })
 
         return Run(
-            model            = model,
-            backbone_name    = backbone_name,
-            in_channels      = in_channels,
-            out_channels     = out_channels,
-            z_axis           = z_axis,
-            x_axis_length    = int(z_axis.size),
-            n_gaussians      = n_gaussians,
-            dataset_config   = dataset_config,
-            split_name       = split,
-            split_region     = region,
-            core_region      = core_region,
-            global_crop      = global_crop,
-            grid             = grid.grid,
-            dataset          = dataset,
-            loader           = loader,
-            checkpoint_meta  = ckpt_meta,
-            complex_inputs   = arrays["inputs"],
-            n_secondaries    = arrays["n_secondaries"],
-            secondary_labels = arrays["secondary_labels"],
-            full_curves      = arrays["cube"] if load_cube else AbsentCube(self.run_directory),
+            model              = model,
+            backbone_name      = backbone_name,
+            in_channels        = in_channels,
+            out_channels       = out_channels,
+            z_axis             = z_axis,
+            x_axis_length      = int(z_axis.size),
+            n_gaussians        = n_gaussians,
+            activity_threshold = activity_threshold,
+            dataset_config     = dataset_config,
+            split_name         = split,
+            split_region       = region,
+            core_region        = core_region,
+            global_crop        = global_crop,
+            grid               = grid.grid,
+            dataset            = dataset,
+            loader             = loader,
+            checkpoint_meta    = ckpt_meta,
+            complex_inputs     = arrays["inputs"],
+            n_secondaries      = arrays["n_secondaries"],
+            secondary_labels   = arrays["secondary_labels"],
+            full_curves        = arrays["cube"] if load_cube else AbsentCube(self.run_directory),
         )

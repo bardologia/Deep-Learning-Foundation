@@ -53,7 +53,6 @@ class SeedComparisonConfig:
         compute_disagreement : Whether inter-seed disagreement maps are computed.
         compute_ensemble     : Whether the across-seed mean prediction is scored as a deep ensemble.
         cubes_subdir         : Subdirectory holding the saved cubes used for disagreement.
-        active_amp_thr       : Physical amplitude at or above which a Gaussian slot counts as active in the GT-matched slot alignment; must match the threshold the seeds' inference metrics used.
     """
 
     runs_dir   : Path      = Path("runs")
@@ -65,10 +64,9 @@ class SeedComparisonConfig:
     metrics_filename : str = "metrics.json"
     report_filename  : str = "report.md"
 
-    compute_disagreement : bool  = False
-    compute_ensemble     : bool  = True
-    cubes_subdir         : str   = "cubes"
-    active_amp_thr       : float = 1e-4
+    compute_disagreement : bool = False
+    compute_ensemble     : bool = True
+    cubes_subdir         : str  = "cubes"
 
 
 @dataclass

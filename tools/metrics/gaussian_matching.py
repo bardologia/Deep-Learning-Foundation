@@ -24,12 +24,12 @@ class GaussianMatcher:
         chunk_size    : Number of pixels matched per batch, bounding peak memory.
     """
 
-    def __init__(self, ppg: int = 3, amp_threshold: float = ParamMatcher.ACTIVE_AMP_THR, big: float = 1e7, chunk_size: int = 250_000) -> None:
+    def __init__(self, amp_threshold: float, ppg: int = 3, big: float = 1e7, chunk_size: int = 250_000) -> None:
         """Initialises the matcher.
 
         Args:
+            amp_threshold : Amplitude above which a component counts as active, as recorded by the label run.
             ppg           : Number of parameters per Gaussian.
-            amp_threshold : Amplitude above which a component counts as active.
             big           : Sentinel cost for pairs that must not be matched.
             chunk_size    : Number of pixels matched per batch.
         """
