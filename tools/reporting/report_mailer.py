@@ -560,7 +560,7 @@ class ExperimentReportBundle(ReportBundle):
 
         self.logger.info(f"{trial_dir.name}: writing the seed-aggregate report over {len(TrialTree.seed_runs(trial_dir))} seed run(s)")
 
-        SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name])).run()
+        SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name]), self.logger).run()
 
     def _trial_report(self, trial_dir: Path) -> Path:
         """Returns the newest trial-level report, writing the seed aggregate of a seeded trial when missing or asked for.

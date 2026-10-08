@@ -513,16 +513,19 @@ class SeedComparison:
 
     Attributes:
         config   : Seed-comparison configuration.
+        logger   : Logger shared with the caller, so a mailer or console run keeps one record.
         runs_dir : Root directory holding the run groups.
     """
 
-    def __init__(self, config) -> None:
-        """Stores the configuration and resolves the runs root.
+    def __init__(self, config, logger: Logger) -> None:
+        """Stores the configuration and the caller's logger and resolves the runs root.
 
         Args:
             config : Seed-comparison configuration carrying group tags, inference selection, filenames and the disagreement toggle.
+            logger : Logger every message of the comparison goes through.
         """
         self.config   = config
+        self.logger   = logger
         self.runs_dir = Path(config.runs_dir)
 
     def _group_dirs(self) -> list[Path]:
@@ -547,14 +550,13 @@ class SeedComparison:
         """Returns the group-level output directory name, defaulting to a fresh timestamp."""
         return self.config.output_subdir or self.config.inference_subdir or RunTag.now()
 
-    def _compare_group(self, group_dir: Path, resolver: SeedInferenceResolver, output_subdir: str, logger: Logger) -> Path:
+    def _compare_group(self, group_dir: Path, resolver: SeedInferenceResolver, output_subdir: str) -> Path:
         """Aggregates one group of seed runs, optionally with disagreement maps.
 
         Args:
             group_dir     : Directory holding the seed runs of one training.
             resolver      : Resolver picking each seed's inference directory.
             output_subdir : Name of the group-level output directory.
-            logger        : Logger for progress reporting.
 
         Returns:
             The written seed-comparison report path.
@@ -571,11 +573,11 @@ class SeedComparison:
         seeds          = [str(run_dir.relative_to(group_dir)) for run_dir in run_dirs]
         threshold      = SeedActivityThreshold(self.config.metrics_filename).resolve(seeds, inference_dirs)
 
-        logger.info(f"Activity threshold {threshold:g} shared by all {len(seeds)} seeds")
+        self.logger.info(f"Activity threshold {threshold:g} shared by all {len(seeds)} seeds")
 
         ensemble = None
         if self.config.compute_ensemble:
-            ensemble = SeedEnsembleEvaluation([inference_dir / self.config.cubes_subdir for inference_dir in inference_dirs], logger).run()
+            ensemble = SeedEnsembleEvaluation([inference_dir / self.config.cubes_subdir for inference_dir in inference_dirs], self.logger).run()
 
         disagreement = None
         if self.config.compute_disagreement:
@@ -587,7 +589,7 @@ class SeedComparison:
                 metrics_filename = self.config.metrics_filename,
                 output_dir       = group_dir / "inference" / output_subdir,
                 active_amp_thr   = threshold,
-                logger           = logger,
+                logger           = self.logger,
             ).run()
 
         return SeedComparisonReport(
@@ -598,7 +600,7 @@ class SeedComparison:
             output_subdir      = output_subdir,
             metrics_filename   = self.config.metrics_filename,
             report_filename    = self.config.report_filename,
-            logger             = logger,
+            logger             = self.logger,
             disagreement       = disagreement,
             ensemble           = ensemble,
         ).run()
@@ -609,24 +611,23 @@ class SeedComparison:
         Returns:
             The written report path of each group, in group order.
         """
-        with Logger(log_dir="logs", name="compare_seeds") as logger:
-            logger.section("Seed comparison")
+        self.logger.section("Seed comparison")
 
-            group_dirs    = self._group_dirs()
-            output_subdir = self._output_subdir()
-            resolver      = SeedInferenceResolver(self.config.inference_subdir, self.config.metrics_filename)
+        group_dirs    = self._group_dirs()
+        output_subdir = self._output_subdir()
+        resolver      = SeedInferenceResolver(self.config.inference_subdir, self.config.metrics_filename)
 
-            logger.kv_table({
-                "Runs dir"     : str(self.runs_dir),
-                "Groups"       : len(group_dirs),
-                "Inference"    : self.config.inference_subdir or "latest per run",
-                "Output"       : output_subdir,
-                "Disagreement" : "maps + figures" if self.config.compute_disagreement else "disabled",
-            }, title="Configuration")
+        self.logger.kv_table({
+            "Runs dir"     : str(self.runs_dir),
+            "Groups"       : len(group_dirs),
+            "Inference"    : self.config.inference_subdir or "latest per run",
+            "Output"       : output_subdir,
+            "Disagreement" : "maps + figures" if self.config.compute_disagreement else "disabled",
+        }, title="Configuration")
 
-            reports = []
-            for group_dir in group_dirs:
-                logger.subsection(f"Group: {group_dir}")
-                reports.append(self._compare_group(group_dir, resolver, output_subdir, logger))
+        reports = []
+        for group_dir in group_dirs:
+            self.logger.subsection(f"Group: {group_dir}")
+            reports.append(self._compare_group(group_dir, resolver, output_subdir))
 
         return reports
