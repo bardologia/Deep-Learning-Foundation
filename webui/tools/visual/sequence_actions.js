@@ -10,6 +10,8 @@ class SequenceActionProbe {
   constructor() {
     this.staticDir = path.resolve(__dirname, "..", "..", "static", "js");
     this.posted    = [];
+    this.fetched   = [];
+    this.failing   = new Set();
     this.sandbox   = {
       console,
       setTimeout,
@@ -17,7 +19,7 @@ class SequenceActionProbe {
       document : { getElementById: () => null, createElement: () => ({}) },
       window   : { RunConfigCopy: class {}, ConfigTemplates: class {}, confirm: () => true },
       Toast    : { show: () => {} },
-      Api      : { post: (url, body) => this.post(url, body) },
+      Api      : { post: (url, body) => this.post(url, body), get: (url) => this.get(url) },
     };
     this.sandbox.globalThis = this.sandbox;
   }
@@ -32,6 +34,12 @@ class SequenceActionProbe {
   post(url, body) {
     this.posted.push(url);
     const reply = { ok: true, entry: JSON.parse(JSON.stringify(body)), state: { status: "running", run_dir: "", blocks: {} } };
+    return new Promise((resolve) => setImmediate(() => resolve(reply)));
+  }
+
+  get(url) {
+    this.fetched.push(url);
+    const reply = this.failing.delete(url) ? { error: "server 500" } : { ok: true, families: [], heads: [] };
     return new Promise((resolve) => setImmediate(() => resolve(reply)));
   }
 
@@ -62,11 +70,29 @@ class SequenceActionProbe {
     return this.posted.filter((url) => url.endsWith(`/${action}`)).length;
   }
 
+  async openDrawer(opens) {
+    const view   = this.view();
+    const config = "/api/scripts/train_backbone/config";
+    const models = "/api/backbones";
+
+    this.fetched = [];
+    this.failing = new Set([config, models]);
+
+    const failed = [await view._blockConfig("train_backbone"), await view._blockModels(models)].every((reply) => Boolean(reply.error));
+    for (let i = 0; i < opens; i++) {
+      await view._blockConfig("train_backbone");
+      await view._blockModels(models);
+    }
+
+    return { failed, configGets: this.fetched.filter((url) => url === config).length, modelGets: this.fetched.filter((url) => url === models).length };
+  }
+
   async orchestrate() {
     this.load();
 
     const out = {};
     for (const action of ["start", "stop", "release"]) out[action] = await this.press(action, 3);
+    out.drawer = await this.openDrawer(3);
     process.stdout.write(JSON.stringify(out));
   }
 }
