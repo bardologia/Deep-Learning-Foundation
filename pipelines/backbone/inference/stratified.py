@@ -73,7 +73,7 @@ class StratifiedErrors:
 
         return out
 
-    def _bin_rows(self, cov: np.ndarray, err: np.ndarray, discrete: bool) -> list[dict]:
+    def _bin_rows(self, cov: np.ndarray, err: np.ndarray, discrete: bool) -> tuple[list[dict], list[dict], int]:
         """Bins the error by covariate and summarises each bin by median and quartiles.
 
         Args:
@@ -82,17 +82,20 @@ class StratifiedErrors:
             discrete : Whether to bin on distinct covariate values instead of quantile edges.
 
         Returns:
-            Per-bin records carrying "center", "n", "median", "q25" and "q75", skipping bins
-            below MIN_BIN_COUNT.
+            Tuple of the per-bin records carrying "center", "n", "median", "q25" and "q75"
+            for the bins holding at least MIN_BIN_COUNT pixels, the records carrying
+            "center" and "n" of the bins dropped for holding fewer, and the number of
+            (covariate, error) pairs left out as non-finite.
 
         Raises:
             ValueError : If no finite pairs exist, the covariate is effectively constant, or every bin falls below MIN_BIN_COUNT.
         """
-        flat_cov = cov.reshape(-1)
-        flat_err = err.reshape(-1)
-        both     = np.isfinite(flat_cov) & np.isfinite(flat_err)
-        flat_cov = flat_cov[both]
-        flat_err = flat_err[both]
+        flat_cov    = cov.reshape(-1)
+        flat_err    = err.reshape(-1)
+        both        = np.isfinite(flat_cov) & np.isfinite(flat_err)
+        n_nonfinite = int((~both).sum())
+        flat_cov    = flat_cov[both]
+        flat_err    = flat_err[both]
 
         if not flat_cov.size:
             raise ValueError("Stratification received no finite (covariate, error) pairs")
@@ -108,9 +111,11 @@ class StratifiedErrors:
             index   = np.clip(np.searchsorted(edges, flat_cov, side="right") - 1, 0, edges.size - 2)
             members = [((float(edges[b]) + float(edges[b + 1])) / 2.0, flat_err[index == b]) for b in range(edges.size - 1)]
 
-        rows = []
+        rows    = []
+        dropped = []
         for center, values in members:
             if values.size < self.MIN_BIN_COUNT:
+                dropped.append({"center": center, "n": int(values.size)})
                 continue
 
             rows.append({
@@ -124,25 +129,30 @@ class StratifiedErrors:
         if not rows:
             raise ValueError(f"Every stratification bin holds fewer than {self.MIN_BIN_COUNT} pixels; the region is too small to stratify")
 
-        return rows
+        return rows, dropped, n_nonfinite
 
     def run(self) -> tuple[dict[str, list[dict]], dict[str, float]]:
         """Stratifies the per-pixel MSE by every available covariate.
 
         Returns:
-            Tuple of a per-covariate table, each holding its binned "rows" and its "discrete"
-            flag, and the scalars giving the Spearman correlation of covariate against error
-            and the number of reported bins.
+            Tuple of a per-covariate table, each holding its binned "rows", its "discrete"
+            flag and the sparse bins it "dropped", and the scalars giving the Spearman
+            correlation of covariate against error, the number of reported bins, the
+            number of dropped bins with the pixels they held, and the pixels left out as
+            non-finite.
         """
         err     = np.asarray(self.result.pixel_mse, dtype=np.float64)
         tables  = {}
         scalars = {}
 
         for name, (cov, discrete) in self.covariates().items():
-            rows          = self._bin_rows(cov, err, discrete)
-            tables[name]  = {"rows": rows, "discrete": discrete}
+            rows, dropped, n_nonfinite = self._bin_rows(cov, err, discrete)
+            tables[name]               = {"rows": rows, "discrete": discrete, "dropped": dropped}
 
-            scalars[f"strat_{name}_spearman"] = RankCorrelation.spearman(cov, err)
-            scalars[f"strat_{name}_n_bins"]   = float(len(rows))
+            scalars[f"strat_{name}_spearman"]         = RankCorrelation.spearman(cov, err)
+            scalars[f"strat_{name}_n_bins"]           = float(len(rows))
+            scalars[f"strat_{name}_n_dropped_bins"]   = float(len(dropped))
+            scalars[f"strat_{name}_pixels_dropped"]   = float(sum(entry["n"] for entry in dropped))
+            scalars[f"strat_{name}_pixels_nonfinite"] = float(n_nonfinite)
 
         return tables, scalars
