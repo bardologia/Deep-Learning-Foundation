@@ -2,8 +2,9 @@
 
 Each subclass reports the validation loss of every evaluated epoch to its
 Optuna trial and raises TrialPruned as soon as the pruner rejects the trial, so
-hopeless configurations stop early. One pair exists per training family:
-backbone, profile autoencoder, image autoencoder and JEPA.
+hopeless configurations stop early; the cut is noted in the trial's own log.
+One pair exists per training family: backbone, profile autoencoder, image
+autoencoder and JEPA.
 """
 
 from __future__ import annotations
@@ -18,6 +19,33 @@ from pipelines.jepa.training.trainer                 import Trainer as JepaTrain
 from pipelines.jepa.training.pipeline                import TrainingPipeline as JepaTrainingPipeline
 from pipelines.backbone.training.pipeline            import TrainingPipeline
 from pipelines.backbone.training.trainer             import Trainer
+
+
+class TrialPruning:
+    """Reports an epoch's validation loss to an Optuna trial and ends the trial when the pruner rejects it."""
+
+    @staticmethod
+    def report(trial: optuna.Trial, val_loss: float, epoch: int, logger) -> None:
+        """Reports the epoch's validation loss and, when the pruner rejects the trial, says so in the trial's log and prunes it.
+
+        Without the warning a pruned run would read as one that stopped at
+        epoch k and closed normally, with nothing saying the median pruner cut it.
+
+        Args:
+            trial    : Optuna trial the training belongs to.
+            val_loss : Validation loss of the epoch under the run's objective.
+            epoch    : Zero-based epoch index used as the pruning step.
+            logger   : Logger of the trial run.
+
+        Raises:
+            optuna.exceptions.TrialPruned : If the pruner rejects the trial.
+        """
+        trial.report(val_loss, epoch)
+        if not trial.should_prune():
+            return
+
+        logger.warning(f"Trial {trial.number} pruned at epoch {epoch + 1}: val_loss={val_loss:.5g} is worse than the median of earlier trials at this step")
+        raise optuna.exceptions.TrialPruned(f"pruned at epoch {epoch + 1} with val_loss {val_loss:.5g}")
 
 
 class TrialTrainer(Trainer):
@@ -45,9 +73,7 @@ class TrialTrainer(Trainer):
         Raises:
             optuna.exceptions.TrialPruned : If the pruner rejects the trial.
         """
-        self._trial.report(val_loss, epoch)
-        if self._trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+        TrialPruning.report(self._trial, val_loss, epoch, self.logger)
 
 
 class TrialPipeline(TrainingPipeline):
@@ -115,9 +141,7 @@ class TrialProfileAeTrainer(AeTrainer):
             optuna.exceptions.TrialPruned : If the pruner rejects the trial.
         """
         super()._after_eval(val_loss, epoch)
-        self._trial.report(val_loss, epoch)
-        if self._trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+        TrialPruning.report(self._trial, val_loss, epoch, self.logger)
 
 
 class TrialProfileAePipeline(AeTrainingPipeline):
@@ -163,9 +187,7 @@ class TrialImageAeTrainer(ImageAeTrainer):
             optuna.exceptions.TrialPruned : If the pruner rejects the trial.
         """
         super()._after_eval(val_loss, epoch)
-        self._trial.report(val_loss, epoch)
-        if self._trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+        TrialPruning.report(self._trial, val_loss, epoch, self.logger)
 
 
 class TrialImageAePipeline(ImageAeTrainingPipeline):
@@ -211,9 +233,7 @@ class TrialJepaTrainer(JepaTrainer):
             optuna.exceptions.TrialPruned : If the pruner rejects the trial.
         """
         super()._after_eval(val_loss, epoch)
-        self._trial.report(val_loss, epoch)
-        if self._trial.should_prune():
-            raise optuna.exceptions.TrialPruned()
+        TrialPruning.report(self._trial, val_loss, epoch, self.logger)
 
 
 class TrialJepaPipeline(JepaTrainingPipeline):

@@ -22,13 +22,14 @@ from configuration.synthesis            import SynthesisConfig
 SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
 
 
-def test_trial_callback_reports_intermediate_value():
+def test_trial_callback_reports_intermediate_value(fake_logger):
     """Verifies that the trainer callback reports the loss as an intermediate value."""
     study = optuna.create_study(direction="minimize")
     trial = study.ask()
 
     trainer = TrialTrainer.__new__(TrialTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     trainer._trial_callback(0.42, 0)
 
@@ -62,19 +63,20 @@ def test_trial_pipeline_honours_the_caller_emit_docs(monkeypatch):
     assert captured == [True, False, False, False]
 
 
-def test_trial_callback_no_prune_without_pruner():
+def test_trial_callback_no_prune_without_pruner(fake_logger):
     """Verifies that no pruning occurs when the study uses a no-op pruner."""
     study = optuna.create_study(direction="minimize", pruner=optuna.pruners.NopPruner())
     trial = study.ask()
 
     trainer = TrialTrainer.__new__(TrialTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     trainer._trial_callback(1.0, 0)
     trainer._trial_callback(2.0, 1)
 
 
-def test_trial_callback_prunes_on_bad_intermediate():
+def test_trial_callback_prunes_on_bad_intermediate(fake_logger):
     """Verifies that an intermediate value above the threshold raises TrialPruned."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
@@ -82,12 +84,15 @@ def test_trial_callback_prunes_on_bad_intermediate():
 
     trainer = TrialTrainer.__new__(TrialTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     with pytest.raises(optuna.exceptions.TrialPruned):
         trainer._trial_callback(5.0, 0)
 
+    assert fake_logger.warnings == ["Trial 0 pruned at epoch 1: val_loss=5 is worse than the median of earlier trials at this step"]
 
-def test_trial_callback_keeps_trial_under_threshold():
+
+def test_trial_callback_keeps_trial_under_threshold(fake_logger):
     """Verifies that an intermediate value below the threshold leaves the trial running."""
     pruner = optuna.pruners.ThresholdPruner(upper=10.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
@@ -95,11 +100,12 @@ def test_trial_callback_keeps_trial_under_threshold():
 
     trainer = TrialTrainer.__new__(TrialTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     trainer._trial_callback(0.5, 0)
 
 
-def test_ae_trainer_after_eval_reports_and_prunes():
+def test_ae_trainer_after_eval_reports_and_prunes(fake_logger):
     """Verifies that the profile AE trainer reports the value and prunes above threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
@@ -107,6 +113,7 @@ def test_ae_trainer_after_eval_reports_and_prunes():
 
     trainer = TrialProfileAeTrainer.__new__(TrialProfileAeTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     with pytest.raises(optuna.exceptions.TrialPruned):
         trainer._after_eval(9.0, 0)
@@ -114,7 +121,7 @@ def test_ae_trainer_after_eval_reports_and_prunes():
     assert trial.storage.get_trial(trial._trial_id).intermediate_values[0] == 9.0
 
 
-def test_ae_trainer_after_eval_survives_good_value():
+def test_ae_trainer_after_eval_survives_good_value(fake_logger):
     """Verifies that the profile AE trainer survives a value below the threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=10.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
@@ -122,11 +129,12 @@ def test_ae_trainer_after_eval_survives_good_value():
 
     trainer = TrialProfileAeTrainer.__new__(TrialProfileAeTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     trainer._after_eval(0.3, 0)
 
 
-def test_jepa_trainer_after_eval_reports_and_prunes():
+def test_jepa_trainer_after_eval_reports_and_prunes(fake_logger):
     """Verifies that the JEPA trainer prunes on an intermediate value above threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
@@ -134,12 +142,13 @@ def test_jepa_trainer_after_eval_reports_and_prunes():
 
     trainer = TrialJepaTrainer.__new__(TrialJepaTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     with pytest.raises(optuna.exceptions.TrialPruned):
         trainer._after_eval(8.0, 0)
 
 
-def test_image_ae_trainer_after_eval_reports_and_prunes():
+def test_image_ae_trainer_after_eval_reports_and_prunes(fake_logger):
     """Verifies that the image AE trainer reports the value and prunes above threshold."""
     pruner = optuna.pruners.ThresholdPruner(upper=1.0)
     study  = optuna.create_study(direction="minimize", pruner=pruner)
@@ -147,6 +156,7 @@ def test_image_ae_trainer_after_eval_reports_and_prunes():
 
     trainer = TrialImageAeTrainer.__new__(TrialImageAeTrainer)
     trainer._trial = trial
+    trainer.logger = fake_logger
 
     with pytest.raises(optuna.exceptions.TrialPruned):
         trainer._after_eval(7.0, 0)
