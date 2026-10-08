@@ -70,6 +70,9 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, para
     assert resolved["run_directory"]          == str(run_dir)
     assert "code_commit" in report and "render_amp_floor" in report
 
+    log = (output_dir / "logs" / "inference.log").read_text()
+    assert f"Cubes   : {len(list(cubes.glob('*.npy')))} .npy files in {cubes}" in log
+
 
 @pytest.mark.dataset
 @pytest.mark.slow
