@@ -2,8 +2,8 @@
 
 Covers AdamW construction from parameter groups, learning rate updates,
 state capture, cache clearing, the CPU-fallback warning, the param-group
-table, the DDP scope of the logged metrics and the abstract and no-op
-hooks.
+table, the DDP scope of the logged metrics, the warning of an evaluation
+without a finite batch and the abstract and no-op hooks.
 """
 
 from __future__ import annotations
@@ -185,6 +185,38 @@ def test_param_group_table_separates_the_base_rate_from_the_warmup_start_rate():
     assert rows[0]["Base LR"]   == "0.01"
     assert rows[0]["Step-0 LR"] == "0.001"
     assert "warmup start factor" in title
+
+
+def test_evaluate_without_a_finite_batch_warns_that_the_loss_is_nan(recording_logger):
+    """Verifies an evaluation in which every batch is non-finite warns that its loss is NaN instead of returning NaN silently."""
+    shim = TrainerShim()
+
+    shim.model                   = torch.nn.Linear(2, 1)
+    shim.logger                  = recording_logger
+    shim.stage_name              = "Backbone"
+    shim.epochs                  = 4
+    shim.device                  = torch.device("cpu")
+    shim.use_amp                 = False
+    shim.abort_on_nonfinite_loss = False
+    shim.distributed             = SimpleNamespace(active=False, sum_scalars=lambda loss_sum, batches, samples: (loss_sum, batches, samples))
+    shim._apply_memory_format    = lambda batch: batch
+    shim._eval_step              = lambda batch: {"total_loss": torch.tensor(float("nan")), "components": {"param": torch.tensor(float("nan"))}}
+    shim._log_epoch_metrics      = lambda stage, aggregator, epoch: None
+    shim._nonfinite_detail       = lambda loss_dict, batch: BaseTrainer._nonfinite_detail(shim, loss_dict, batch)
+
+    result = BaseTrainer.evaluate(shim, [(torch.zeros(1, 2),), (torch.zeros(1, 2),)], epoch=2, stage="val")
+
+    assert result["num_batches"] == 0
+    assert result["avg_loss"] != result["avg_loss"]
+    assert ("warning", "Backbone val epoch 3: no finite batch out of 2; the val loss is NaN") in recording_logger.messages
+    assert any(level == "warning" and "non-finite terms: ['param']" in message for level, message in recording_logger.messages)
+
+
+def test_nonfinite_detail_says_when_every_weighted_term_is_finite():
+    """Verifies the non-finite clause states that no weighted term is at fault when every component is finite."""
+    detail = BaseTrainer._nonfinite_detail(TrainerShim(), {"components": {"param": torch.tensor(1.0)}}, batch=None)
+
+    assert detail == "; non-finite terms: none (every weighted term is finite)"
 
 
 def test_ddp_scope_names_the_rank_local_diagnostics(recording_logger):

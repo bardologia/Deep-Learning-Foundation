@@ -577,10 +577,10 @@ class BaseTrainer:
 
                 else:
                     if self.abort_on_nonfinite_loss:
-                        raise FloatingPointError(f"{self.stage_name} loss is non-finite at step {self.global_step}")
+                        raise FloatingPointError(f"{self.stage_name} loss is non-finite at step {self.global_step}{self._nonfinite_detail(loss_dict, batch)}")
 
                     nonfinite_count += 1
-                    self.logger.warning(f"{self.stage_name} loss is non-finite at step {self.global_step}; skipping batch (abort_on_nonfinite_loss disabled).")
+                    self.logger.warning(f"{self.stage_name} loss is non-finite at step {self.global_step}{self._nonfinite_detail(loss_dict, batch)}; skipping batch (abort_on_nonfinite_loss disabled).")
 
                 if (batch_idx + 1) % self.accumulation_steps == 0 or (batch_idx + 1) == n_batches:
                     window_has_grads = self.distributed.sync_window(self.model, window_has_grads)
@@ -651,7 +651,7 @@ class BaseTrainer:
             stage  : Metric stage label, "val" or "test".
 
         Returns:
-            Dictionary with "avg_loss" (the sample-weighted mean, NaN when no batch was accepted), "num_batches" (finite-loss batches) and "num_samples" (samples behind the mean).
+            Dictionary with "avg_loss" (the sample-weighted mean, NaN with a warning when no batch was accepted), "num_batches" (finite-loss batches) and "num_samples" (samples behind the mean).
 
         Raises:
             FloatingPointError : If a batch loss is non-finite and aborting is enabled.
@@ -680,19 +680,40 @@ class BaseTrainer:
                     aggregator.add(loss_dict)
 
                 elif self.abort_on_nonfinite_loss:
-                    raise FloatingPointError(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}")
+                    raise FloatingPointError(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}{self._nonfinite_detail(loss_dict, batch)}")
 
                 else:
-                    self.logger.warning(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}; skipping batch (abort_on_nonfinite_loss disabled).")
+                    self.logger.warning(f"{self.stage_name} {stage} loss is non-finite at epoch {epoch + 1}{self._nonfinite_detail(loss_dict, batch)}; skipping batch (abort_on_nonfinite_loss disabled).")
 
                 _prog.advance(_task)
 
         loss_sum, batch_count, sample_count = self.distributed.sum_scalars(loss_sum, float(batch_count), float(sample_count))
 
+        if sample_count == 0:
+            self.logger.warning(f"{self.stage_name} {stage} epoch {epoch + 1}: no finite batch out of {len(loader)}{' on this rank' if self.distributed.active else ''}; the {stage} loss is NaN")
+
         avg = loss_sum / sample_count if sample_count > 0 else float("nan")
         self._log_epoch_metrics(stage, aggregator, epoch)
 
         return {"avg_loss": avg, "num_batches": int(batch_count), "num_samples": int(sample_count)}
+
+    def _nonfinite_detail(self, loss_dict: dict, batch) -> str:
+        """Returns the clause naming the non-finite loss terms of a failed batch.
+
+        Appended to the non-finite loss messages of the training and evaluation
+        loops, which otherwise report the weighted total alone. Subclasses extend
+        the clause with what they know about the batch layout.
+
+        Args:
+            loss_dict : Loss output of the failed batch, whose "components" hold every weighted term as a scalar tensor.
+            batch     : The batch the loss was computed on, as yielded by the loader; unused here.
+
+        Returns:
+            A clause such as "; non-finite terms: ['covariance_match']".
+        """
+        bad = [name for name, value in loss_dict["components"].items() if not torch.isfinite(torch.as_tensor(value)).all()]
+
+        return f"; non-finite terms: {bad if bad else 'none (every weighted term is finite)'}"
 
     def _log_epoch_metrics(self, stage: str, aggregator: MetricAggregator, epoch: int) -> None:
         """Logs the reduced loss terms, monitors, occupancy and parameter errors.
