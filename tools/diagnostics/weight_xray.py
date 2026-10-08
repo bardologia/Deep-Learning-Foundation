@@ -14,14 +14,16 @@ from typing      import Optional
 
 import torch
 
-from configuration.diagnostics           import WeightXrayConfig, WeightXrayEntryConfig
-from tools.diagnostics.weight_xray_plots  import WeightXrayPlots
-from tools.diagnostics.weight_xray_report import WeightXrayReport
-from tools.runtime.config_cli             import ConfigCli
-from tools.runtime.git_state              import RunProvenance
-from tools.runtime.run_selector           import RunSelector
+from configuration.diagnostics                  import WeightXrayConfig, WeightXrayEntryConfig
+from models                                     import get_backbone
+from pipelines.shared.config.config_persistence import BackboneModelConfigIO
+from tools.diagnostics.weight_xray_plots         import WeightXrayPlots
+from tools.diagnostics.weight_xray_report        import WeightXrayReport
+from tools.runtime.config_cli                    import ConfigCli
+from tools.runtime.git_state                     import RunProvenance
+from tools.runtime.run_selector                  import RunSelector
 
-from .weight_xray_analysis import IssueDetector, LayerReport, WeightAnalyzer, XraySummarizer
+from .weight_xray_analysis import IssueDetector, LayerReport, ModuleTypes, WeightAnalyzer, XraySummarizer
 
 
 @dataclass
@@ -137,6 +139,60 @@ class StateDictResolver:
         )
 
 
+class ModuleTypeResolver:
+    """Maps the tensors of a run's checkpoint to the module classes that own them.
+
+    The model is rebuilt on CPU from the architecture config persisted next to
+    the checkpoint, so the analyser can tell a transposed convolution, whose
+    weight is laid out (in_channels, out_channels, kH, kW), from a convolution
+    laid out (out_channels, in_channels, kH, kW). Only the module tree is
+    needed, so the checkpoint weights are never loaded into it.
+
+    Attributes:
+        meta_directory : The run's meta/ directory next to the checkpoint, holding the persisted architecture config.
+        TRANSPOSED     : Module classes whose weight carries the output channels on dim 1.
+    """
+
+    TRANSPOSED = (torch.nn.ConvTranspose1d, torch.nn.ConvTranspose2d, torch.nn.ConvTranspose3d)
+
+    def __init__(self, checkpoint_path: Path) -> None:
+        """Points the resolver at the meta/ directory beside a checkpoint.
+
+        Args:
+            checkpoint_path : Checkpoint file inside a run directory.
+        """
+        self.meta_directory = Path(checkpoint_path).parent / "meta"
+
+    def available(self) -> bool:
+        """Returns whether the run persisted its architecture config, without which no model can be rebuilt."""
+        return BackboneModelConfigIO.exists(self.meta_directory)
+
+    def resolve(self) -> ModuleTypes:
+        """Rebuilds the model and returns which module owns every parameter and buffer.
+
+        Returns:
+            The architecture name with the owning module class per state-dict
+            key and the keys of the transposed-convolution weights.
+        """
+        config, name = BackboneModelConfigIO.load(self.meta_directory)
+        model, _     = get_backbone(name, config=config)
+
+        by_key     = {}
+        transposed = set()
+
+        for module_name, module in model.named_modules():
+            owned = list(module.named_parameters(recurse=False)) + list(module.named_buffers(recurse=False))
+
+            for tensor_name, _tensor in owned:
+                key         = f"{module_name}.{tensor_name}" if module_name else tensor_name
+                by_key[key] = type(module).__name__
+
+                if isinstance(module, self.TRANSPOSED) and tensor_name == "weight":
+                    transposed.add(key)
+
+        return ModuleTypes(architecture=str(name), by_key=by_key, transposed=transposed)
+
+
 class WeightXray:
     """Runs the full weight x-ray for one checkpoint.
 
@@ -169,13 +225,45 @@ class WeightXray:
         self.logger.ok(f"Resolved {len(resolved.state_dict)} tensors from checkpoint entry '{resolved.key}' ({self._epoch_text(resolved)})")
         return resolved
 
-    def _analyze(self, state_dict: dict) -> list[LayerReport]:
+    def _module_types(self, resolved: ResolvedCheckpoint) -> ModuleTypes:
+        """Rebuilds the run's model to learn which module owns each tensor, or records that no architecture config exists.
+
+        A checkpoint without a persisted architecture is still x-rayed, with a
+        warning that every weight is read with its output units on dim 0, which
+        mislabels transposed convolutions.
+
+        Args:
+            resolved : Checkpoint whose tensors are about to be analysed.
+
+        Returns:
+            The module ownership, empty when unavailable.
+        """
+        resolver = ModuleTypeResolver(resolved.path)
+
+        if not resolver.available():
+            self.logger.warning(f"No {BackboneModelConfigIO.FILENAME} under {resolver.meta_directory}; module types are unknown, so every weight is read with its output units on dim 0 and a transposed convolution reports its input channels as output units")
+            return ModuleTypes.unavailable()
+
+        types   = resolver.resolve()
+        missing = [key for key in resolved.state_dict if key not in types.by_key]
+
+        if missing:
+            self.logger.warning(f"{len(missing)} checkpoint tensors have no owning module in the rebuilt {types.architecture} and are read on dim 0: {', '.join(missing)}")
+
+        self.logger.ok(f"Resolved module types from the persisted {types.architecture}: {len(types.transposed)} transposed-convolution weights read their output units on dim 1")
+        return types
+
+    def _analyze(self, state_dict: dict, module_types: ModuleTypes) -> list[LayerReport]:
         """Computes the per-tensor statistics of every analysable parameter tensor.
 
         Every check a size limit skipped is reported with the tensors it left
         unchecked, so a clean verdict can be read against what was not tested.
+
+        Args:
+            state_dict   : Mapping of parameter name to tensor.
+            module_types : Module ownership deciding which weights are read on dim 1.
         """
-        reports = WeightAnalyzer(self.config).analyze(state_dict)
+        reports = WeightAnalyzer(self.config, module_types).analyze(state_dict)
         self.logger.ok(f"Analysed {len(reports)} parameter tensors")
 
         for check in XraySummarizer.CHECKS_WITH_LIMITS:
@@ -194,21 +282,24 @@ class WeightXray:
         """Returns the checkpoint-level summary of the layer reports."""
         return XraySummarizer().build(reports, self.config.resolved_checkpoint_path)
 
-    def _provenance(self, resolved: ResolvedCheckpoint) -> dict:
+    def _provenance(self, resolved: ResolvedCheckpoint, module_types: ModuleTypes) -> dict:
         """Returns what produced this report, so a stored verdict can be tied to its thresholds, checkpoint epoch and code.
 
         Args:
-            resolved : Checkpoint the tensors were read from.
+            resolved     : Checkpoint the tensors were read from.
+            module_types : Module ownership the tensors were analysed with.
 
         Returns:
             Mapping with the creation time, the checkpoint path, entry and
-            stored epochs, every effective configuration leaf and the commit,
-            host, interpreter and library versions of this process.
+            stored epochs, the architecture the module types came from (None
+            when unavailable), every effective configuration leaf and the
+            commit, host, interpreter and library versions of this process.
         """
         return {
-            "created"    : datetime.now().isoformat(timespec="seconds"),
-            "checkpoint" : {"path": str(resolved.path), "key": resolved.key, "epoch": resolved.epoch, "best_epoch": resolved.best_epoch},
-            "config"     : ConfigCli.to_mapping(self.config),
+            "created"      : datetime.now().isoformat(timespec="seconds"),
+            "checkpoint"   : {"path": str(resolved.path), "key": resolved.key, "epoch": resolved.epoch, "best_epoch": resolved.best_epoch},
+            "architecture" : module_types.architecture,
+            "config"       : ConfigCli.to_mapping(self.config),
             **RunProvenance.collect(),
         }
 
@@ -231,13 +322,14 @@ class WeightXray:
             provenance under "provenance" and the written report paths under
             "outputs".
         """
-        resolved   = self._resolve()
-        state_dict = resolved.state_dict
+        resolved     = self._resolve()
+        state_dict   = resolved.state_dict
+        module_types = self._module_types(resolved)
 
-        reports    = self._analyze(state_dict)
+        reports    = self._analyze(state_dict, module_types)
         reports    = self._detect(reports, state_dict)
         summary    = self._summarize(reports)
-        provenance = self._provenance(resolved)
+        provenance = self._provenance(resolved, module_types)
         plot_paths = self._plot(reports, state_dict)
         outputs    = self._report(reports, summary, provenance, plot_paths)
 

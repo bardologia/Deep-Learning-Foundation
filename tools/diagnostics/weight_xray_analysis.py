@@ -36,6 +36,25 @@ class Issue:
 
 
 @dataclass
+class ModuleTypes:
+    """Module ownership of a checkpoint's tensors, rebuilt from the persisted architecture.
+
+    Attributes:
+        architecture : Persisted architecture name the model was rebuilt from, or None when no config was found.
+        by_key       : State-dict key to the class name of the module owning the tensor; empty when unavailable.
+        transposed   : State-dict keys of weights whose output channels sit on dim 1, the transposed convolutions.
+    """
+    architecture : Optional[str]
+    by_key       : dict
+    transposed   : set
+
+    @classmethod
+    def unavailable(cls) -> "ModuleTypes":
+        """Returns the empty ownership used when no architecture config exists next to the checkpoint."""
+        return cls(architecture=None, by_key={}, transposed=set())
+
+
+@dataclass
 class LayerReport:
     """Statistics and findings for a single parameter tensor.
 
@@ -49,6 +68,8 @@ class LayerReport:
         shape             : Tensor shape.
         dtype             : Tensor dtype name without the "torch." prefix.
         count             : Number of values in the tensor.
+        module_type       : Class name of the module owning the tensor, or None when module types are unavailable.
+        unit_axis         : Tensor dimension holding the output units: 0, or 1 for a transposed convolution.
         n_nonfinite       : Number of NaN or Inf values.
         n_nan             : Number of NaN values.
         n_inf             : Number of Inf values.
@@ -101,6 +122,9 @@ class LayerReport:
     cv        : float
     kurtosis  : float
 
+    module_type : Optional[str] = None
+    unit_axis   : int           = 0
+
     fan_in            : Optional[int]   = None
     out_units         : Optional[int]   = None
     dead_output_units : Optional[int]   = None
@@ -128,16 +152,19 @@ class WeightAnalyzer:
     """Computes the per-tensor statistics recorded in a LayerReport.
 
     Attributes:
-        config : Weight x-ray configuration supplying the dead-value threshold and the SVD and duplicate-detection size limits.
+        config       : Weight x-ray configuration supplying the dead-value threshold and the SVD and duplicate-detection size limits.
+        module_types : Module ownership of the tensors, deciding which weights carry their output units on dim 1.
     """
 
-    def __init__(self, config: WeightXrayConfig) -> None:
+    def __init__(self, config: WeightXrayConfig, module_types: ModuleTypes) -> None:
         """Initialises the analyzer.
 
         Args:
-            config : Weight x-ray configuration for the checkpoint.
+            config       : Weight x-ray configuration for the checkpoint.
+            module_types : Module ownership of the checkpoint's tensors, or ModuleTypes.unavailable() to read every weight on dim 0.
         """
-        self.config = config
+        self.config       = config
+        self.module_types = module_types
 
     def _classify_role(self, name: str, ndim: int) -> str:
         """Returns the tensor role inferred from its state-dict key and rank."""
@@ -199,11 +226,12 @@ class WeightAnalyzer:
             "kurtosis"  : kurtosis,
         }
 
-    def _matrix_stats(self, values: np.ndarray) -> dict:
+    def _matrix_stats(self, values: np.ndarray, transposed: bool) -> dict:
         """Returns the unit-level and spectral statistics of a weight tensor.
 
         Args:
-            values : Weight tensor of shape (out_units, ...), reshaped to a two-dimensional (out_units, fan_in) matrix.
+            values     : Weight tensor with its output units on dim 0, shape (out_units, ...), or on dim 1 for a transposed convolution, shape (in_channels, out_units, ...); it is reshaped to a two-dimensional (out_units, fan_in) matrix.
+            transposed : Whether the output units sit on dim 1.
 
         Returns:
             Mapping with fan-in and output-unit counts, dead input and output
@@ -211,7 +239,8 @@ class WeightAnalyzer:
             statistics, the duplicate output-unit pair count and the checks
             skipped because of a size limit.
         """
-        matrix    = values.reshape(values.shape[0], -1).astype(np.float64)
+        units     = np.moveaxis(values, 1, 0) if transposed else values
+        matrix    = units.reshape(units.shape[0], -1).astype(np.float64)
         matrix    = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
         out_units = matrix.shape[0]
         fan_in    = matrix.shape[1]
@@ -343,8 +372,9 @@ class WeightAnalyzer:
         if role == "counter" or tensor.dim() == 0 or not torch.is_floating_point(tensor):
             return None
 
-        values = tensor.detach().to(torch.float32).cpu().numpy()
-        basics = self._basic_stats(values)
+        values     = tensor.detach().to(torch.float32).cpu().numpy()
+        basics     = self._basic_stats(values)
+        transposed = name in self.module_types.transposed
 
         report = LayerReport(
             name        = name,
@@ -366,10 +396,12 @@ class WeightAnalyzer:
             frac_dead   = basics["frac_dead"],
             cv          = basics["cv"],
             kurtosis    = basics["kurtosis"],
+            module_type = self.module_types.by_key.get(name),
+            unit_axis   = 1 if transposed else 0,
         )
 
         if role == "weight" and tensor.dim() >= 2:
-            matrix_stats = self._matrix_stats(values)
+            matrix_stats = self._matrix_stats(values, transposed)
             for key, value in matrix_stats.items():
                 setattr(report, key, value)
 
