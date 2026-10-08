@@ -18,6 +18,7 @@ from tools.data.io                   import FileIO
 from tools.metrics.gaussian_matching import GaussianMatcher
 from tools.metrics.scoring           import RankCorrelation
 from tools.reporting.plotting        import PlotBase
+from tools.runtime.run_tag           import RunTag
 
 
 class SeedDisagreementPlots(PlotBase):
@@ -248,12 +249,14 @@ class SeedDisagreementMaps:
         seeds            : Seed labels, relative to the group directory.
     """
 
-    PROFILE_CUBE = "pred_curves.npy"
-    PARAMS_CUBE  = "params_pred.npy"
-    GT_CUBE      = "params_gt.npy"
-    RISK_CUBE    = "pixel_mse.npy"
-    MIN_ACTIVE   = 2
-    MIN_COVERAGE = 0.5
+    PROFILE_CUBE    = "pred_curves.npy"
+    PARAMS_CUBE     = "params_pred.npy"
+    GT_CUBE         = "params_gt.npy"
+    RISK_CUBE       = "pixel_mse.npy"
+    SUSPECT_CUBE    = "label_suspect.npy"
+    SOURCE_FILENAME = "seed_disagreement_source.json"
+    MIN_ACTIVE      = 2
+    MIN_COVERAGE    = 0.5
 
     MAP_TITLES = {
         "seed_std_profile" : "Across-seed std of the reconstructed profile (mean over z)",
@@ -435,8 +438,35 @@ class SeedDisagreementMaps:
 
         return maps
 
+    def _warn_replaced(self, seed: str, cube_dir: Path, names: list[str]) -> None:
+        """Warns when layers of an earlier comparison are about to be replaced in a seed's cube directory.
+
+        Args:
+            seed     : Seed label the cube directory belongs to.
+            cube_dir : Cube directory inside the seed's completed inference.
+            names    : Layer names about to be written.
+        """
+        existing = [name for name in names if (cube_dir / f"{name}.npy").is_file()]
+        if existing:
+            self.logger.warning(f"{seed}: replacing {len(existing)} layer(s) of an earlier seed comparison in {cube_dir}: {', '.join(existing)}")
+
+    def _source_record(self) -> dict:
+        """Returns the provenance written next to the layers this comparison adds to each seed's inference."""
+        return {
+            "group_dir"          : str(self.group_dir),
+            "output_subdir"      : self.output_dir.name,
+            "seeds"              : {seed: str(inference_dir) for seed, inference_dir in zip(self.seeds, self.inference_dirs)},
+            "activity_threshold" : self.active_amp_thr,
+            "written_at"         : RunTag.timestamp(),
+        }
+
     def _write_maps(self, maps: dict[str, np.ndarray]) -> dict[str, list[str]]:
-        """Writes every disagreement map into every seed's cube directory.
+        """Writes every disagreement map into every seed's cube directory, with a source record beside them.
+
+        The cube explorer shows these layers as part of the inference, so each seed
+        directory also receives a JSON naming the group, seed set, activity threshold
+        and time of the comparison that wrote them, and a layer left by an earlier
+        comparison is replaced with a warning.
 
         Args:
             maps : Mapping from map name to a map of shape (rows, cols).
@@ -444,14 +474,16 @@ class SeedDisagreementMaps:
         Returns:
             Mapping from map name to the written cube paths, one per seed.
         """
-        written = {}
-        for name, data in maps.items():
-            paths = []
-            for cube_dir in self.cube_dirs:
+        written = {name: [] for name in maps}
+        for seed, cube_dir in zip(self.seeds, self.cube_dirs):
+            self._warn_replaced(seed, cube_dir, list(maps))
+
+            for name, data in maps.items():
                 path = cube_dir / f"{name}.npy"
                 np.save(path, data)
-                paths.append(str(path))
-            written[name] = paths
+                written[name].append(str(path))
+
+            FileIO.save_json(self._source_record(), cube_dir / self.SOURCE_FILENAME)
 
         return written
 
@@ -563,8 +595,9 @@ class SeedDisagreementMaps:
 
         summary.update(scalars)
 
-        for cube_dir in self.cube_dirs:
-            np.save(cube_dir / "label_suspect.npy", mask)
+        for seed, cube_dir in zip(self.seeds, self.cube_dirs):
+            self._warn_replaced(seed, cube_dir, [self.SUSPECT_CUBE.removesuffix(".npy")])
+            np.save(cube_dir / self.SUSPECT_CUBE, mask)
 
         row_offset, col_offset     = offsets
         figures["label_suspect"] = SeedDisagreementPlots().map_figure(
