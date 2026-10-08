@@ -7,6 +7,7 @@ maps and runs whose parameters were refitted from the curves.
 
 from __future__ import annotations
 
+import contextlib
 import types
 
 import matplotlib
@@ -18,12 +19,56 @@ import pytest
 
 from configuration.inference                         import InferenceConfig
 from tools.data.regions                              import CropRegion
+from pipelines.backbone.inference                    import animation
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.backbone.inference.metrics            import Metrics, Result
 from pipelines.backbone.inference.figures            import Animator, FigureComposer
 from pipelines.backbone.inference.plots              import Plotter
 
-from tests.conftest import SilentLogger
+from tests.conftest import RecordingLogger, SilentLogger
+
+
+class _RecordingProgress:
+    """Progress-bar stub that records the tasks added to it.
+
+    Attributes:
+        tasks : Tuples of (description, total) in the order the tasks were added.
+    """
+
+    def __init__(self) -> None:
+        """Starts with no recorded task."""
+        self.tasks = []
+
+    def add_task(self, description, total=None, **kwargs):
+        """Records a task and returns its index."""
+        self.tasks.append((description, total))
+        return len(self.tasks) - 1
+
+    def advance(self, task, advance=1):
+        """Ignores a progress advance."""
+        pass
+
+
+class _TrackingLogger(RecordingLogger):
+    """Recording logger that also keeps the progress tasks opened through track.
+
+    Attributes:
+        progress : Progress stub shared by every track block, holding the added tasks.
+    """
+
+    def __init__(self) -> None:
+        """Starts with an empty message log and progress stub."""
+        super().__init__()
+        self.progress = _RecordingProgress()
+
+    @contextlib.contextmanager
+    def track(self, transient: bool = False):
+        """Yields the shared progress stub in place of a live bar."""
+        yield self.progress
+
+    def of(self, level: str) -> list:
+        """Returns the recorded messages of one level."""
+        return [message for recorded, message in self.messages if recorded == level]
 
 
 N_GAUSSIANS = 2
@@ -130,11 +175,12 @@ def _run_stub():
     )
 
 
-def _composer(tmp_path):
+def _composer(tmp_path, logger=None):
     """Builds a figure composer writing under a freshly created output tree.
 
     Args:
         tmp_path : Run directory the inference output subdirectory is created under.
+        logger   : Logger handed to the composer, a silent one when omitted.
 
     Returns:
         Tuple of the composer and the inference metadata holding its output paths.
@@ -143,7 +189,7 @@ def _composer(tmp_path):
     meta = InferenceMetadata(cfg)
     meta.create_dirs()
     plotter = Plotter(normalize=False)
-    return FigureComposer(plotter=plotter, meta=meta, logger=SilentLogger(), cfg=cfg), meta
+    return FigureComposer(plotter=plotter, meta=meta, logger=SilentLogger() if logger is None else logger, cfg=cfg), meta
 
 
 def test_animator_build_axis_bad_axis():
@@ -169,13 +215,82 @@ def test_animator_walk_gif(tmp_path):
     pred   = gt + 0.05
 
     animator = Animator(SilentLogger(), max_frames=4, num_workers=1)
-    out      = animator.walk_gif(
+    written  = animator.walk_gif(
         pred_cube=pred, gt_cube=gt, axis="z",
         out_path=tmp_path / "walk.gif", z_axis=z_axis, row_offset=0, col_offset=0,
     )
 
-    assert out.is_file()
-    assert out.stat().st_size > 0
+    assert list(written) == ["walk"]
+    assert written["walk"].is_file()
+    assert written["walk"].stat().st_size > 0
+
+
+@pytest.mark.slow
+def test_animator_renders_frames_through_the_logger_bar_and_logs_frame_counts(tmp_path):
+    """Frame progress goes through the logger's bar, named after the GIF, and the written line carries frames, delay and time."""
+    z_axis = _x_axis()
+    params = _params()
+    gt     = _curves(params, z_axis)
+    logger = _TrackingLogger()
+
+    animator = Animator(logger, max_frames=4, num_workers=1)
+    animator.walk_gif(
+        pred_cube=gt + 0.05, gt_cube=gt, axis="z",
+        out_path=tmp_path / "walk.gif", z_axis=z_axis, row_offset=0, col_offset=0,
+    )
+
+    assert logger.progress.tasks == [("GIF walk.gif", 4)]
+    assert not hasattr(animation, "tqdm")
+
+    written = [line for line in logger.of("subsection") if line.startswith("GIF (z  ) : ")]
+    assert len(written) == 1
+    assert f"[4 of {N_Z} slices, 83 ms/frame, " in written[0]
+    assert written[0].rstrip().endswith("s]")
+
+
+def test_animator_rejects_non_positive_duration():
+    """Constructing an animator with a zero duration raises ValueError."""
+    with pytest.raises(ValueError, match="duration"):
+        Animator(SilentLogger(), duration=0.0)
+
+
+def test_animator_frame_delay_from_duration_or_fps():
+    """The frame delay follows the total duration when set and the fps otherwise."""
+    assert Animator(SilentLogger(), fps=10)._frame_delay_ms(50)               == 100
+    assert Animator(SilentLogger(), fps=10, duration=5.0)._frame_delay_ms(50) == 100
+    assert Animator(SilentLogger(), fps=10, duration=2.0)._frame_delay_ms(8)  == 250
+
+
+def test_animator_panel_figsize_follows_slice_aspect():
+    """The single-panel figure keeps the slice aspect ratio with the long side fixed and the short side floored."""
+    wide_w, wide_h = Animator._panel_figsize(100, 400)
+    tall_w, tall_h = Animator._panel_figsize(400, 100)
+    thin_w, thin_h = Animator._panel_figsize(10, 400)
+
+    assert wide_w > wide_h
+    assert tall_h > tall_w
+    assert thin_h == pytest.approx(Animator.PANEL_SHORT_SIDE_IN + Animator.MARGIN_H_IN)
+
+
+@pytest.mark.slow
+def test_animator_walk_gif_separate_panels(tmp_path):
+    """Separate panels write one single-cube GIF per available cube next to the composite."""
+    z_axis = _x_axis()
+    params = _params()
+    gt     = _curves(params, z_axis)
+    pred   = gt + 0.05
+
+    animator = Animator(SilentLogger(), max_frames=3, num_workers=1, separate_panels=True, duration=1.5)
+    written  = animator.walk_gif(
+        pred_cube=pred, gt_cube=gt, axis="col",
+        out_path=tmp_path / "walk_col.gif", z_axis=z_axis, row_offset=0, col_offset=0,
+        full_cube=gt * 1.1,
+    )
+
+    assert list(written) == ["walk_col", "walk_col_pred", "walk_col_gt", "walk_col_full"]
+    for path in written.values():
+        assert path.is_file()
+        assert path.stat().st_size > 0
 
 
 @pytest.mark.slow

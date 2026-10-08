@@ -185,7 +185,7 @@ class LaunchLayout:
         ]},
         {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles", {"path": "profile_seed", "widget": NUM_SEED}]},
         {"title": "Slices", "fields": ["n_col_slices", "n_row_slices", "n_z_slices"]},
-        {"title": "GIFs", "fields": ["gif_axes", "gif_fps", "gif_max_frames", {"path": "gif_dpi", "widget": NUM_DPI}]},
+        {"title": "GIFs", "fields": ["gif_axes", "gif_fps", "gif_duration", "gif_max_frames", {"path": "gif_dpi", "widget": NUM_DPI}, "gif_separate_panels"]},
         {"title": "Figures", "fields": ["cmap_intensity", "cmap_error", "normalize_intensity", {"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
     ]
 
