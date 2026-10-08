@@ -740,13 +740,19 @@ class CubeExplorer:
     def attach_second(self, cube_id: str, other_id: str) -> dict:
         """Attaches a second run's prediction cube for side-by-side comparison.
 
+        Adds a ``predb`` source and a signed ``diff`` source holding prediction
+        A minus prediction B, and one signed ``delta_<key>`` metric layer of A
+        minus B for every continuous metric map both stamps carry with the same
+        shape.
+
         Args:
             cube_id  : Id of the loaded cube.
             other_id : Stamp directory of the run to compare against.
 
         Returns:
             Dict with ``ok`` and the updated ``cube`` metadata carrying the
-            ``predb`` and ``diff`` sources, or ``ok`` False with the reason.
+            ``predb`` and ``diff`` sources and the delta metric layers, or
+            ``ok`` False with the reason.
         """
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
@@ -767,8 +773,9 @@ class CubeExplorer:
         if not np.allclose(other_axis, pred["z_axis"]):
             return {"ok": False, "error": "comparison cube covers a different z axis"}
 
-        predb = self._ingest(raw, pred["z_axis"])
-        diff  = self._diff_entry(pred, predb)
+        predb      = self._ingest(raw, pred["z_axis"])
+        other_maps = other.metric_maps(int(raw.shape[1]), int(raw.shape[2]))
+        diff       = self._diff_entry(pred, predb)
 
         run_dir   = other.run_dir
         other_dir = other.stamp_dir
@@ -779,18 +786,23 @@ class CubeExplorer:
             self.loaded["entries"]["predb"] = predb
             self.loaded["entries"]["diff"]  = diff
 
-            meta = dict(self.loaded["meta"])
-            meta["sources"]   = [s for s in self.SOURCES if s in self.loaded["entries"]]
-            meta["n_z"]    = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
-            meta["intensity"] = {s: [e["vmin"], e["vmax"]] for s, e in self.loaded["entries"].items()}
-            meta["attached"]  = {"id": other_id, "run": run_dir.name, "stamp": other_dir.name}
+            maps = {key: data for key, data in self.loaded["metric_maps"].items() if not key.startswith(self.DELTA_PREFIX)}
+            maps.update(self._delta_maps(maps, other_maps))
+            self.loaded["metric_maps"] = maps
+
+            meta                = dict(self.loaded["meta"])
+            meta["sources"]     = [s for s in self.SOURCES if s in self.loaded["entries"]]
+            meta["n_z"]         = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
+            meta["intensity"]   = {s: [e["vmin"], e["vmax"]] for s, e in self.loaded["entries"].items()}
+            meta["attached"]    = {"id": other_id, "run": run_dir.name, "stamp": other_dir.name}
+            meta["metric_maps"] = self._metric_maps_meta(maps)
             self.loaded["meta"] = meta
 
         self.logger.ok(f"attached comparison cube: {other_id}")
         return {"ok": True, "cube": meta}
 
     def detach_second(self, cube_id: str) -> dict:
-        """Drops the attached comparison cube and its difference source.
+        """Drops the attached comparison cube, its difference source and its delta metric layers.
 
         Args:
             cube_id : Id of the loaded cube.
@@ -805,14 +817,40 @@ class CubeExplorer:
             self.loaded["entries"].pop("predb", None)
             self.loaded["entries"].pop("diff", None)
 
-            meta = dict(self.loaded["meta"])
-            meta["sources"]   = [s for s in self.SOURCES if s in self.loaded["entries"]]
-            meta["n_z"]    = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
-            meta["intensity"] = {s: [e["vmin"], e["vmax"]] for s, e in self.loaded["entries"].items()}
-            meta["attached"]  = None
+            maps = {key: data for key, data in self.loaded["metric_maps"].items() if not key.startswith(self.DELTA_PREFIX)}
+            self.loaded["metric_maps"] = maps
+
+            meta                = dict(self.loaded["meta"])
+            meta["sources"]     = [s for s in self.SOURCES if s in self.loaded["entries"]]
+            meta["n_z"]         = {s: int(self.loaded["entries"][s]["cube"].shape[0]) for s in self.loaded["entries"]}
+            meta["intensity"]   = {s: [e["vmin"], e["vmax"]] for s, e in self.loaded["entries"].items()}
+            meta["attached"]    = None
+            meta["metric_maps"] = self._metric_maps_meta(maps)
             self.loaded["meta"] = meta
 
         return {"ok": True, "cube": meta}
+
+    DELTA_PREFIX = "delta_"
+
+    @classmethod
+    def _delta_maps(cls, mine: dict, other: dict) -> dict:
+        """Builds signed A-minus-B difference layers for the metric maps both runs share.
+
+        Args:
+            mine  : Metric maps of the loaded cube keyed by name, each of shape (rows, cols).
+            other : Metric maps of the attached comparison cube keyed by name.
+
+        Returns:
+            Mapping from ``delta_<key>`` to the float32 difference map; class layers, maps only one run carries and maps whose shapes disagree are skipped.
+        """
+        deltas = {}
+        for key, data in mine.items():
+            if key in cls.METRIC_CLASSES or key not in other:
+                continue
+            if other[key].shape != data.shape:
+                continue
+            deltas[f"{cls.DELTA_PREFIX}{key}"] = (data - other[key]).astype(np.float32)
+        return deltas
 
     @staticmethod
     def _diff_entry(pred: dict, predb: dict) -> dict:
@@ -1338,8 +1376,9 @@ class CubeExplorer:
     def metric_overlay_png(self, cube_id: str, key: str, vmin: float, vmax: float, keep_min: float, keep_max: float, alpha: float) -> bytes | None:
         """Blends one metric map over the primary amplitude map as a PNG.
 
-        Continuous layers are coloured through viridis over the colour range;
-        class layers paint each rounded class index in its fixed class colour.
+        Continuous layers are coloured through viridis over the colour range,
+        and signed delta layers through the diverging coolwarm; class layers
+        paint each rounded class index in its fixed class colour.
 
         Args:
             cube_id  : Id of the loaded cube.
@@ -1371,8 +1410,9 @@ class CubeExplorer:
             index   = np.clip(np.round(np.nan_to_num(data)), 0, len(classes) - 1).astype(int)
             colored = self._class_rgb(len(classes))[index]
         else:
+            palette = "coolwarm" if key.startswith(self.DELTA_PREFIX) else "viridis"
             norm    = np.clip((data - vmin) / max(vmax - vmin, 1e-12), 0.0, 1.0)
-            colored = plt.get_cmap("viridis")(norm)[..., :3]
+            colored = plt.get_cmap(palette)(norm)[..., :3]
 
         keep  = np.isfinite(data) & (data >= keep_min) & (data <= keep_max)
         blend = np.where(keep[..., None], base * (1.0 - alpha) + colored * alpha, base)
@@ -1504,7 +1544,7 @@ class CubeExplorer:
             s_ok   = np.isfinite(data)
             rows.append({
                 "key"    : key,
-                "label"  : self.METRIC_LABELS.get(key, key),
+                "label"  : self._metric_label(key),
                 "region" : float(region[r_ok].mean()) if r_ok.any() else None,
                 "scene"  : float(data[s_ok].mean())   if s_ok.any() else None,
             })
@@ -1966,34 +2006,52 @@ class CubeExplorer:
     def _metric_maps_meta(self, metric_maps: dict) -> list:
         """Describes each metric map with its display label, colour range and class legend.
 
-        Continuous layers carry their robust colour range and no legend; layers
-        listed in METRIC_CLASSES carry the full class index range and one named,
-        coloured legend entry per class so the front end renders them discretely.
+        Continuous layers carry their robust colour range and no legend; signed
+        delta layers carry a range symmetric about zero for a diverging palette;
+        layers listed in METRIC_CLASSES carry the full class index range and one
+        named, coloured legend entry per class so the front end renders them
+        discretely.
 
         Args:
             metric_maps : Metric maps of the loaded cube keyed by name, each of shape (rows, cols).
 
         Returns:
-            One dict per map with its ``key``, ``label``, ``vmin``, ``vmax`` and ``classes`` legend (None for continuous layers).
+            One dict per map with its ``key``, ``label``, ``vmin``, ``vmax``, ``classes`` legend (None for continuous layers) and ``diverging`` flag (True for delta layers).
         """
         layers = []
         for key, data in metric_maps.items():
-            classes = self.METRIC_CLASSES.get(key)
+            classes   = self.METRIC_CLASSES.get(key)
+            diverging = key.startswith(self.DELTA_PREFIX)
+
             if classes is not None:
                 vmin, vmax = 0.0, float(len(classes) - 1)
                 legend     = [{"index": i, "name": name, "color": self.CLASS_COLORS[i % len(self.CLASS_COLORS)]} for i, name in enumerate(classes)]
+            elif diverging:
+                lo, hi     = self._metric_range(data)
+                peak       = max(abs(lo), abs(hi), 1e-12)
+                vmin, vmax = -peak, peak
+                legend     = None
             else:
                 vmin, vmax = self._metric_range(data)
                 legend     = None
 
             layers.append({
-                "key"     : key,
-                "label"   : self.METRIC_LABELS.get(key, key),
-                "vmin"    : vmin,
-                "vmax"    : vmax,
-                "classes" : legend,
+                "key"       : key,
+                "label"     : self._metric_label(key),
+                "vmin"      : vmin,
+                "vmax"      : vmax,
+                "classes"   : legend,
+                "diverging" : diverging,
             })
         return layers
+
+    @classmethod
+    def _metric_label(cls, key: str) -> str:
+        """Returns the display label of a metric map, delta layers prefixed with Δ."""
+        if key.startswith(cls.DELTA_PREFIX):
+            base = key[len(cls.DELTA_PREFIX):]
+            return f"Δ {cls.METRIC_LABELS.get(base, base)}"
+        return cls.METRIC_LABELS.get(key, key)
 
     @classmethod
     def _class_rgb(cls, count: int) -> np.ndarray:

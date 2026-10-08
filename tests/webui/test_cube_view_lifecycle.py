@@ -19,6 +19,8 @@ mixture overlay must rebuild the Gaussian mixture from the active slots at the p
 scale it with the profiles, and never draw the slots of another pixel or cube. A shift-drag on
 the metric map must ask for the statistics of the rectangle it covers, swallow the click that
 ends it but no later one, and show only the answer for the latest rectangle of the current cube.
+Signed delta layers must use the diverging colour bar, and attaching or detaching a comparison
+must refresh the metric view's layers.
 """
 
 from __future__ import annotations
@@ -375,6 +377,24 @@ def test_region_panel_is_on_the_page_and_wired_to_the_metric_view():
     for ref, element in (("rect", "cube-metric-rect"), ("regionHint", "cube-region-hint"), ("regionTab", "cube-region-table"), ("regionWrap", "cube-region-prof-wrap"), ("regionProf", "cube-region-prof")):
         assert html.count(f'id="{element}"') == 1, element
         assert re.search(rf'{ref}\s*: document\.getElementById\("{element}"\)', app), ref
+
+
+@NEEDS_JS
+def test_delta_layers_use_the_diverging_colour_bar():
+    """A signed delta layer draws the coolwarm colour bar and a plain continuous layer keeps viridis."""
+    observed = _check("delta")
+
+    assert observed["diverging"] == "/api/cubes/cbar?cmap=coolwarm"
+    assert observed["plain"] == "/api/cubes/cbar?cmap=viridis"
+
+
+@NEEDS_JS
+def test_attaching_a_comparison_refreshes_the_metric_layers():
+    """Attaching reconfigures the open metric view with the delta layers and shows its button; losing every layer leaves the view."""
+    observed = _check("delta")
+
+    assert observed["attached"] == {"calls": [["configure", "pixel_mse", "delta_pixel_mse"], ["render"]], "button": True}
+    assert observed["emptied"] == {"calls": [["configure"], ["view", "explorer"]], "button": False}
 
 
 def _mixture(z: float, slots: list) -> float:

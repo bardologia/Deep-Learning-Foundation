@@ -805,7 +805,7 @@ class CubeMetrics {
       ? classes.map((c) => `<span class="cube-cat"><i style="background:${c.color}"></i>${SharedCharts.esc(c.name)}</span>`).join("")
       : "";
 
-    this.cbar.src = `/api/cubes/cbar?cmap=viridis`;
+    this.cbar.src = `/api/cubes/cbar?cmap=${this.layer.diverging ? "coolwarm" : "viridis"}`;
     this.minEl.textContent = this.host._fmt(vmin);
     this.maxEl.textContent = this.host._fmt(vmax);
 
@@ -2223,6 +2223,17 @@ class CubeView {
     this._renderSourceToggles();
     this._applyVisibility();
     this.sweeps.forEach((sweep) => sweep.configure());
+
+    if (this.metrics) {
+      this.metrics.configure(meta);
+      const hasMaps    = (meta.metric_maps || []).length > 0;
+      const metricsBtn = this.modeBtns.find((btn) => btn.dataset.view === "metrics");
+      if (metricsBtn) metricsBtn.hidden = !hasMaps;
+      if (this.view === "metrics") {
+        if (hasMaps) this.metrics.render();
+        else this._setView("explorer");
+      }
+    }
 
     const sweep = this._sweepFor(this.view);
     if (sweep) sweep.render();

@@ -641,6 +641,44 @@ class CubeViewChecks {
     return { painted, request, shown, swallowed, tiny, clipped, offMap, late, replaced, toasts, reset };
   }
 
+  async delta() {
+    const { CubeView }      = this.classes;
+    const { metrics, refs } = this._metrics(() => ({}));
+
+    metrics.layer = { key: "delta_pixel_mse", label: "Δ MSE", vmin: -1, vmax: 1, classes: null, diverging: true };
+    metrics._draw();
+    const diverging = refs.cbar.src;
+
+    metrics.layer = { key: "pixel_mse", label: "MSE", vmin: 0, vmax: 1, classes: null, diverging: false };
+    metrics._draw();
+    const plain = refs.cbar.src;
+
+    const calls      = [];
+    const metricsBtn = { dataset: { view: "metrics" }, hidden: true };
+    const view       = Object.create(CubeView.prototype);
+    Object.assign(view, {
+      view     : "metrics",
+      visible  : new Set(["pred"]),
+      panels   : [],
+      sweeps   : [],
+      modeBtns : [metricsBtn],
+      point    : null,
+      locked   : null,
+      metrics  : { configure: (meta) => calls.push(["configure", ...meta.metric_maps.map((layer) => layer.key)]), render: () => calls.push(["render"]) },
+    });
+    ["_clearBitmapCache", "_renderSourceToggles", "_applyVisibility"].forEach((name) => { view[name] = () => {}; });
+    view._sweepFor = () => null;
+    view._setView  = (name) => calls.push(["view", name]);
+
+    view._refreshSources({ sources: ["pred", "predb", "diff", "gt"], metric_maps: [{ key: "pixel_mse" }, { key: "delta_pixel_mse" }] });
+    const attached = { calls: calls.splice(0), button: !metricsBtn.hidden };
+
+    view._refreshSources({ sources: ["pred", "gt"], metric_maps: [] });
+    const emptied = { calls: calls.splice(0), button: !metricsBtn.hidden };
+
+    return { diverging, plain, attached, emptied };
+  }
+
   async mixture() {
     const { CubeView } = this.classes;
     const calls        = [];
