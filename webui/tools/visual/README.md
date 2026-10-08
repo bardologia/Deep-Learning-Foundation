@@ -44,9 +44,11 @@ without.
 every mode button in turn, and screenshots each one. It prints the per-mode summary line
 and run-name preview as JSON, along with every `pageerror` and console error the page
 raised, which is the fastest way to catch a panel that silently fails to build.
+Raise `--settle` on a loaded machine when a route reports `experimentsTab: false`; the
+launch form has not finished building when the tab is looked for.
 
 ```
-node snap_experiments.js --port 8765 --out /tmp/experiments launch/train_jepa launch/train_backbone
+node snap_experiments.js --port 8772 --out /tmp/ml-template-experiments [--settle 1200] launch/train_jepa launch/train_backbone
 ```
 
 `trial_names.js` runs the builder script under plain node with no DOM and no server. It
@@ -134,7 +136,7 @@ the binary is `playwright-core`, not `playwright`: this package ships no `playwr
 and calling that name would pull an unrelated release from the registry. The shared
 `chromium.js` module picks the highest build number present there, so an older leftover
 build never wins; it fails with a message naming the cache directory when there is nothing
-to pick. Override the executable with `PW_CHROMIUM=/path/to/chrome`. All four scripts
+to pick. Override the executable with `PW_CHROMIUM=/path/to/chrome`. All five browser scripts
 resolve it the same way.
 
 ## Usage
