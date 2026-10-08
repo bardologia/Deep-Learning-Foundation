@@ -20,7 +20,7 @@ from models                               import BACKBONE_HEADS, config_registry
 from pipelines.shared.model.model_builder import ModelBuilder
 from pipelines.tuning.plots               import StudyPlotter
 from pipelines.tuning.storage             import TuningStorage
-from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace, StudyProgress, StudyTargetStop
+from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace, StudyProgress, StudyStopRules, StudyTargetStop
 from tools.data.io                        import FileIO
 from tools.orchestration.gpu_queue        import GpuJob, GpuPoolFile, GpuQueue
 from tools.monitoring.logger              import Logger
@@ -34,6 +34,7 @@ class TuningScheduler:
         SUPPORTED_TYPES : Training types that can be tuned.
         STUDY_KEYS      : Config keys whose values define a study and may not change on resume.
         MUTABLE_KEYS    : Study keys exempted from that rule.
+        RECORD_KEYS     : Fields of one model's record in tuning_results.json.
         STAGES          : Parts of a tuning run that can be executed on their own, so separate launches can create the studies, run the workers and write the reports.
         tag             : Run tag naming the tuning directory and the studies.
         config          : Tuning entry configuration.
@@ -44,13 +45,15 @@ class TuningScheduler:
         summary_path    : Path of the per-model results JSON.
         db_path         : Path of the Optuna SQLite database.
         logger          : Logger of the scheduler, created when scheduling starts.
-        results         : Per-model result records collected during the run.
+        results         : Per-model result records: those earlier launches wrote, with the ones this launch reports in their place.
         prepared        : Model keys whose studies this launch created and whose it loaded, under those two keys.
+        reported        : Model keys this launch wrote a result record for.
     """
 
     SUPPORTED_TYPES = ("backbone", "image_autoencoder", "jepa", "profile_autoencoder")
     STUDY_KEYS      = ("training_type", "heads", "skip_models", "tuning", "curriculum", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
     MUTABLE_KEYS    = ("tuning.n_trials", "tuning.plateau_patience", "tuning.plateau_min_delta", "tuning.time_budget_h")
+    RECORD_KEYS     = ("model", "status", "trials_completed", "trials_pruned", "trials_failed", "trials_running", "target", "stop_reason", "val_loss", "best_config")
     STAGES          = ("full", "prepare", "compare")
 
     def __init__(self, tag: str, config, entry_script: Path, resumed=None) -> None:
@@ -74,6 +77,7 @@ class TuningScheduler:
         self.logger   = None
         self.results  = []
         self.prepared = {"created": [], "loaded": []}
+        self.reported = []
 
         self._quiet_optuna()
 
@@ -303,8 +307,9 @@ class TuningScheduler:
         """Returns the number of trials in the given state."""
         return len(study.get_trials(deepcopy=False, states=(state,)))
 
-    def _save_results(self) -> None:
-        """Writes the per-model result records collected so far to disk."""
+    def _store(self, record: dict) -> None:
+        """Puts a model's record in place of the one an earlier launch wrote and saves every record to disk."""
+        self.results = [kept for kept in self.results if kept["model"] != record["model"]] + [record]
         FileIO.save_json(self.results, self.summary_path, indent=2)
 
     def _plot_study(self, study: optuna.Study, model_name: str) -> None:
@@ -314,27 +319,31 @@ class TuningScheduler:
         saved    = plotter.render(study, plot_dir)
         self.logger.info(f"Saved {len(saved)} study plots to {plot_dir}")
 
-    def _record(self, model_name: str, status: str, study: optuna.Study, payload, path) -> dict:
+    def _record(self, model_name: str, status: str, study: optuna.Study, payload, path, stop_reason: str | None) -> dict:
         """Builds the summary record of one tuned model.
 
         Args:
-            model_name : Model key that was tuned.
-            status     : Outcome label (DONE, PARTIAL or FAILED).
-            study      : The model's Optuna study, read for trial counts.
-            payload    : Best-trial payload, or None when no trial completed.
-            path       : Path of the written best-config file, or None.
+            model_name  : Model key that was tuned.
+            status      : Outcome label (DONE, PARTIAL or FAILED).
+            study       : The model's Optuna study, read for trial counts.
+            payload     : Best-trial payload, or None when no trial completed.
+            path        : Path of the written best-config file, or None.
+            stop_reason : Stop rule that ended the study, or None when none is known.
 
         Returns:
-            The result record appended to the tuning summary.
+            The result record stored in the tuning summary.
         """
         return {
-            "model"           : model_name,
-            "status"          : status,
-            "trials_completed": self._count_state(study, TrialState.COMPLETE),
-            "trials_pruned"   : self._count_state(study, TrialState.PRUNED),
-            "trials_failed"   : self._count_state(study, TrialState.FAIL),
-            "val_loss"        : payload["val_loss"] if payload is not None else None,
-            "best_config"     : str(path) if path is not None else None,
+            "model"            : model_name,
+            "status"           : status,
+            "trials_completed" : self._count_state(study, TrialState.COMPLETE),
+            "trials_pruned"    : self._count_state(study, TrialState.PRUNED),
+            "trials_failed"    : self._count_state(study, TrialState.FAIL),
+            "trials_running"   : self._count_state(study, TrialState.RUNNING),
+            "target"           : self.config.tuning.n_trials,
+            "stop_reason"      : stop_reason,
+            "val_loss"         : payload["val_loss"] if payload is not None else None,
+            "best_config"      : str(path) if path is not None else None,
         }
 
     def _warn_running(self, study: optuna.Study, model_name: str) -> None:
@@ -409,6 +418,32 @@ class TuningScheduler:
 
         return self._dispatch_workers(model_name, shares)
 
+    def _stop_reason(self, study: optuna.Study, model_name: str, tune_cfg: TuningConfig) -> str | None:
+        """Returns the rule that ended a model's study, or None when none is known.
+
+        The trial target and the plateau are read off the study itself, so
+        they hold whichever worker saw them; the time budget runs per worker
+        and is known only from the reason the last worker to finish recorded
+        in the study snapshot.
+
+        Args:
+            study      : Study the rules are evaluated on.
+            model_name : Model key, locating the snapshot the workers wrote.
+            tune_cfg   : Tuning settings holding the trial target and the plateau rule.
+
+        Returns:
+            One of the StudyStopRules reason codes, or None when no worker wrote a snapshot.
+        """
+        met = StudyStopRules(tune_cfg, self.logger).already_met(study)
+        if met is not None:
+            return met
+
+        snapshot = self.run_dir / model_name / StudyProgress.FILENAME
+        if not snapshot.exists():
+            return None
+
+        return FileIO.load_json(snapshot)["stop_reason"]
+
     def _warn_trials(self, study: optuna.Study, model_name: str) -> None:
         """Warns about the failed trials of a reported study and the trials still running after its workers ended.
 
@@ -425,24 +460,62 @@ class TuningScheduler:
         if running:
             self.logger.warning(f"{model_name}: {len(running)} trial(s) still RUNNING after the workers ended, left by workers that died mid-trial: {', '.join(f'#{trial.number}' for trial in running)}")
 
+    def _status(self, model_name: str, payload, stop_reason: str | None, ok: bool, counts: str) -> str:
+        """Returns a model's outcome and warns why a study that has a best trial is not DONE.
+
+        Args:
+            model_name  : Model key being reported.
+            payload     : Best-trial payload, or None when no trial completed.
+            stop_reason : Stop rule that ended the study, or None.
+            ok          : Whether every worker this launch dispatched finished.
+            counts      : The study's trial counts as one phrase.
+
+        Returns:
+            FAILED without a completed trial, DONE when every worker finished and a stop rule ended the study (the target, the plateau or the time budget), PARTIAL otherwise.
+        """
+        if payload is None:
+            return "FAILED"
+
+        if ok and stop_reason in StudyStopRules.STUDY_ENDS:
+            return "DONE"
+
+        if not ok:
+            why = "a worker of this launch failed"
+        elif stop_reason is None:
+            why = "no stop rule fired and no worker recorded why it ended"
+        else:
+            why = f"the workers ended on the {stop_reason} stop before the target or a stop rule was reached"
+
+        self.logger.warning(f"{model_name}: PARTIAL, {counts}; {why}. Resuming the run tops the study up")
+
+        return "PARTIAL"
+
     def _report_model(self, study: optuna.Study, model_name: str, tune_cfg: TuningConfig, ok: bool) -> None:
         """Writes one model's best configuration, plots and summary record.
+
+        The outcome is read from the study: DONE needs the target or a stop
+        rule to have ended it and, in the full stage, every worker to have
+        finished.
 
         Args:
             study      : Study the report is written from.
             model_name : Model key being reported.
-            tune_cfg   : Tuning settings holding the plot flag.
-            ok         : Whether every dispatched worker finished, which decides between DONE and PARTIAL.
+            tune_cfg   : Tuning settings holding the trial target, the stop rules and the plot flag.
+            ok         : Whether every dispatched worker finished; always True in the compare stage, which dispatches none.
         """
-        writer  = BestConfigWriter(model_name, self._search_space(model_name), self.run_dir / model_name / "best_config.json")
-        payload = writer.write(study)
+        writer      = BestConfigWriter(model_name, self._search_space(model_name), self.run_dir / model_name / "best_config.json")
+        payload     = writer.write(study)
+        stop_reason = self._stop_reason(study, model_name, tune_cfg)
+        counts      = StudyProgress.phrase(StudyProgress.counts(study), tune_cfg.n_trials)
 
+        self.reported.append(model_name)
         self._warn_trials(study, model_name)
 
+        status = self._status(model_name, payload, stop_reason, ok, counts)
+
         if payload is None:
-            self.logger.error(f"No completed trials for {model_name}")
-            self.results.append(self._record(model_name, "FAILED", study, None, None))
-            self._save_results()
+            self.logger.error(f"No completed trials for {model_name}: {counts}")
+            self._store(self._record(model_name, status, study, None, None, stop_reason))
             return
 
         self.logger.subsection(f"Best, trial {payload['trial']}, best validation loss under the {self.config.training_type} objective = {payload['val_loss']:.6f}")
@@ -451,8 +524,7 @@ class TuningScheduler:
         if tune_cfg.emit_study_plots:
             self._plot_study(study, model_name)
 
-        self.results.append(self._record(model_name, "DONE" if ok else "PARTIAL", study, payload, writer.path))
-        self._save_results()
+        self._store(self._record(model_name, status, study, payload, writer.path, stop_reason))
 
     def _tune_model(self, model_name: str, tune_cfg: TuningConfig) -> None:
         """Runs the configured stage for one model: open the study, top it up, report it.
@@ -494,8 +566,47 @@ class TuningScheduler:
             "Log dir"          : str(self.run_dir),
         }
 
+    def _load_results(self) -> None:
+        """Takes over the records earlier launches wrote, so a launch over fewer models keeps the records of the others.
+
+        Raises:
+            SystemExit : If a stored record does not have the current record layout.
+        """
+        if self.config.stage == "prepare" or not self.summary_path.is_file():
+            return
+
+        stored = FileIO.load_json(self.summary_path)
+        stale  = [record["model"] for record in stored if set(record) != set(self.RECORD_KEYS)]
+        if stale:
+            sys.exit(f"ERROR: {self.summary_path} holds records in an older layout for {', '.join(stale)}; delete it, and the compare or full launches rewrite it from the studies")
+
+        self.results = stored
+        self.logger.info(f"{self.summary_path.name} holds the records of {len(stored)} model(s) from earlier launches ({', '.join(record['model'] for record in stored)}); this launch replaces those of the models it reports")
+
+    def _log_summary(self) -> list[str]:
+        """Logs one row per reported model and returns the models of this launch that did not end DONE.
+
+        Returns:
+            'model STATUS' labels of the records this launch wrote whose status is PARTIAL or FAILED.
+        """
+        self.logger.section("Summary")
+        if not self.results:
+            return []
+
+        rows = {}
+        for record in self.results:
+            val_loss              = f"{record['val_loss']:.6f}" if record["val_loss"] is not None else "none"
+            rows[record["model"]] = f"status={record['status']}, {record['trials_completed']} complete, {record['trials_pruned']} pruned, {record['trials_failed']} failed, {record['trials_running']} running of target {record['target']}, stop={record['stop_reason'] or 'none'}, val_loss={val_loss}"
+        self.logger.kv_table(rows, title="Models")
+
+        unfinished = [f"{record['model']} {record['status']}" for record in self.results if record["model"] in self.reported and record["status"] != "DONE"]
+        if unfinished:
+            self.logger.error(f"{len(unfinished)} model(s) did not finish their study: {', '.join(unfinished)}; the run exits non-zero so no caller carries a short study forward")
+
+        return unfinished
+
     def _log_done(self) -> None:
-        """Logs what this launch produced: the studies a prepare stage created or loaded, else the models it tuned and where their records went."""
+        """Logs what this launch produced: the studies a prepare stage created or loaded, else the models it reported and where their records went."""
         if self.config.stage == "prepare":
             self.logger.kv_table({
                 "Studies prepared" : len(self.prepared["created"]) + len(self.prepared["loaded"]),
@@ -505,10 +616,12 @@ class TuningScheduler:
             }, title="Done")
             return
 
-        self.logger.kv_table({
-            "Models tuned" : len(self.results),
-            "Results saved": str(self.summary_path),
-        }, title="Done")
+        kept = [record["model"] for record in self.results if record["model"] not in self.reported]
+        done = {"Models reported": len(self.reported), "Records kept from earlier launches": ", ".join(kept) or "none"}
+        if self.reported:
+            done["Results saved"] = str(self.summary_path)
+
+        self.logger.kv_table(done, title="Done")
 
     def schedule(self, target_model: str | None = None, resume: bool = False) -> None:
         """Validates the request, then tunes every selected model in turn.
@@ -532,7 +645,7 @@ class TuningScheduler:
             resume       : Whether to continue an existing study database.
 
         Raises:
-            SystemExit : If the training type or stage is unsupported, a full run has an empty GPU pool, the resume flag disagrees with the database on disk, a compare stage finds no database, or an unknown model, head or skip_models entry was requested.
+            SystemExit : If the training type or stage is unsupported, a full run has an empty GPU pool, the resume flag disagrees with the database on disk, a compare stage finds no database, an unknown model, head or skip_models entry was requested, tuning_results.json holds records in an older layout, or a model this launch reported ended PARTIAL or FAILED.
         """
         if self.config.training_type not in self.SUPPORTED_TYPES:
             sys.exit(f"ERROR: tuning does not support training_type '{self.config.training_type}'; supported: {', '.join(self.SUPPORTED_TYPES)}")
@@ -574,8 +687,13 @@ class TuningScheduler:
             if self.resumed is not None:
                 self.resumed.log(self.logger)
 
+            self._load_results()
+
             for model_name in models_to_run:
                 self._tune_model(model_name, tune_cfg)
 
-            self.logger.section("Summary")
+            unfinished = self._log_summary()
             self._log_done()
+
+        if unfinished:
+            sys.exit(f"ERROR: tuning run '{self.tag}' ended with model(s) not DONE: {', '.join(unfinished)}; see {self.summary_path}")

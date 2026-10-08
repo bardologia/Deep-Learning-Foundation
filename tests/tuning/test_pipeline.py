@@ -327,13 +327,107 @@ def test_record_summarizes_counts(tmp_path):
 
     study.add_trial(optuna.trial.create_trial(value=0.5, state=TrialState.COMPLETE, params={}, distributions={}))
 
-    record = orch._record("unet", "DONE", study, {"val_loss": 0.5}, Path("/tmp/best.json"))
+    record = orch._record("unet", "DONE", study, {"val_loss": 0.5}, Path("/tmp/best.json"), "plateau")
+
+    assert tuple(record) == TuningScheduler.RECORD_KEYS
 
     assert record["model"]            == "unet"
     assert record["status"]           == "DONE"
     assert record["trials_completed"] == 1
+    assert record["trials_running"]   == 0
+    assert record["target"]           == 10
+    assert record["stop_reason"]      == "plateau"
     assert record["val_loss"]         == 0.5
     assert record["best_config"]      == "/tmp/best.json"
+
+
+def _reported_study(orch, values, snapshot_reason=None):
+    """Returns the scheduler's unet study holding one trial per value (None for a failed one), with a worker snapshot naming the reason when given."""
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    study = orch._load_or_create_study("unet")
+
+    for value in values:
+        if value is None:
+            study.add_trial(optuna.trial.create_trial(state=TrialState.FAIL))
+        else:
+            study.add_trial(optuna.trial.create_trial(value=value, state=TrialState.COMPLETE, params={"dropout": 0.1}, distributions={"dropout": optuna.distributions.FloatDistribution(0.0, 0.5)}))
+
+    if snapshot_reason is not None:
+        (orch.run_dir / "unet").mkdir(parents=True, exist_ok=True)
+        (orch.run_dir / "unet" / "study_progress.json").write_text(json.dumps({"stop_reason": snapshot_reason}))
+
+    return study
+
+
+def test_report_marks_a_study_short_of_its_target_partial_with_the_reason(tmp_path):
+    """A study whose workers used up their shares below the target is PARTIAL, says why, and records the reason and the counts."""
+    orch = _orchestrator(tmp_path, n_trials=4)
+    orch.config.tuning.search_arch = False
+    orch.config.stage              = "compare"
+    study = _reported_study(orch, [0.5, 0.4, None], snapshot_reason="worker_share")
+
+    orch._report_model(study, "unet", orch.config.tuning, ok=True)
+
+    record = orch.results[-1]
+    assert record["status"]        == "PARTIAL"
+    assert record["stop_reason"]   == "worker_share"
+    assert record["trials_failed"] == 1
+    assert any(message.startswith("unet: PARTIAL, 2 complete, 0 pruned, 1 failed, 0 running of target 4; the workers ended on the worker_share stop") for message in orch.logger.of_kind("warning"))
+
+
+def test_report_marks_a_study_done_when_a_stop_rule_ended_it(tmp_path):
+    """A study below its target that the time budget ended, or that reached its target, is DONE unless a worker failed."""
+    orch = _orchestrator(tmp_path, n_trials=4)
+    orch.config.tuning.search_arch = False
+    study = _reported_study(orch, [0.5, 0.4], snapshot_reason="time_budget")
+
+    orch._report_model(study, "unet", orch.config.tuning, ok=True)
+    assert orch.results[-1]["status"] == "DONE"
+
+    study.add_trial(optuna.trial.create_trial(value=0.3, state=TrialState.COMPLETE, params={"dropout": 0.1}, distributions={"dropout": optuna.distributions.FloatDistribution(0.0, 0.5)}))
+    study.add_trial(optuna.trial.create_trial(value=0.2, state=TrialState.COMPLETE, params={"dropout": 0.1}, distributions={"dropout": optuna.distributions.FloatDistribution(0.0, 0.5)}))
+
+    orch._report_model(study, "unet", orch.config.tuning, ok=False)
+    assert orch.results[-1]["status"]      == "PARTIAL"
+    assert orch.results[-1]["stop_reason"] == "target"
+    assert any("a worker of this launch failed" in message for message in orch.logger.of_kind("warning"))
+
+
+def test_report_keeps_one_record_per_model(tmp_path):
+    """Reporting a model twice replaces its record instead of appending a second one."""
+    orch = _orchestrator(tmp_path, n_trials=2)
+    orch.config.tuning.search_arch = False
+    study = _reported_study(orch, [0.5, 0.4])
+
+    orch._report_model(study, "unet", orch.config.tuning, ok=True)
+    orch._report_model(study, "unet", orch.config.tuning, ok=True)
+
+    assert [record["model"] for record in json.loads(orch.summary_path.read_text())] == ["unet"]
+
+
+def test_schedule_exits_non_zero_when_a_reported_model_is_not_done(tmp_path, monkeypatch):
+    """A launch that reports a PARTIAL model logs it in the summary and exits non-zero once the log is closed."""
+    from configuration.tuning import TuningEntryConfig
+
+    cfg                    = TuningEntryConfig()
+    cfg.paths.log_base_dir = tmp_path
+    cfg.gpus               = [0]
+    orch                   = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
+
+    def fake_tune(model_name, tune_cfg):
+        """Records a PARTIAL outcome for the model as a short study would."""
+        orch.reported.append(model_name)
+        orch.results.append({"model": model_name, "status": "PARTIAL", "trials_completed": 2, "trials_pruned": 0, "trials_failed": 1, "trials_running": 0, "target": 4, "stop_reason": "worker_share", "val_loss": 0.4, "best_config": None})
+
+    monkeypatch.setattr(orch, "_tune_model", fake_tune)
+
+    with pytest.raises(SystemExit, match="ended with model\\(s\\) not DONE: unet PARTIAL"):
+        orch.schedule(target_model="unet")
+
+    text = (orch.run_dir / "tune_scheduler.log").read_text()
+    assert "status=PARTIAL, 2 complete, 0 pruned, 1 failed, 0 running of target 4, stop=worker_share, val_loss=0.400000" in text
+    assert "1 model(s) did not finish their study: unet PARTIAL" in text
+    assert ">>> END tune_scheduler" in text
 
 
 def test_a_scheduler_crash_closes_its_log_with_the_exception(tmp_path, monkeypatch):
@@ -776,6 +870,53 @@ def test_done_table_reports_prepared_studies_in_the_prepare_stage(tmp_path):
     orch._log_done()
 
     assert orch.logger.tables[-1] == ("Done", {"Studies prepared": 2, "Created": "unet", "Loaded": "resunet", "Storage": orch.storage_url})
+
+
+def test_done_table_names_the_reported_models_and_the_results_file_once_one_was_written(tmp_path):
+    """The compare and full stages close with the models reported, and name the results file only once a record was written."""
+    orch = _orchestrator(tmp_path)
+    orch.config.stage = "compare"
+
+    orch._log_done()
+    assert orch.logger.tables[-1] == ("Done", {"Models reported": 0, "Records kept from earlier launches": "none"})
+
+    orch.reported = ["unet"]
+    orch._log_done()
+    assert orch.logger.tables[-1] == ("Done", {"Models reported": 1, "Records kept from earlier launches": "none", "Results saved": str(orch.summary_path)})
+
+
+def _stored_record(model: str, status: str = "DONE") -> dict:
+    """Returns a tuning_results.json record of the current layout for one model."""
+    return {"model": model, "status": status, "trials_completed": 3, "trials_pruned": 0, "trials_failed": 0, "trials_running": 0, "target": 3, "stop_reason": "target", "val_loss": 0.5, "best_config": None}
+
+
+def test_a_launch_over_one_model_keeps_the_other_models_records(tmp_path):
+    """A '--model' launch replaces its own model's record and keeps the records earlier launches wrote for the others."""
+    orch = _orchestrator(tmp_path)
+    orch.config.stage = "compare"
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    orch.summary_path.write_text(json.dumps([_stored_record("resunet"), _stored_record("unet", "PARTIAL")]))
+
+    orch._load_results()
+    orch.reported = ["unet"]
+    orch._store(_stored_record("unet"))
+    orch._log_done()
+
+    saved = json.loads(orch.summary_path.read_text())
+    assert [(record["model"], record["status"]) for record in saved] == [("resunet", "DONE"), ("unet", "DONE")]
+    assert orch.logger.tables[-1][1]["Records kept from earlier launches"] == "resunet"
+    assert any("holds the records of 2 model(s) from earlier launches (resunet, unet)" in message for message in orch.logger.of_kind("info"))
+
+
+def test_records_in_an_older_layout_are_refused(tmp_path):
+    """A stored record without the current fields stops the launch with a message to delete the file."""
+    orch = _orchestrator(tmp_path)
+    orch.config.stage = "compare"
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    orch.summary_path.write_text(json.dumps([{"model": "unet", "status": "DONE", "trials_completed": 3}]))
+
+    with pytest.raises(SystemExit, match="older layout for unet; delete it"):
+        orch._load_results()
 
 
 def test_compare_stage_reports_without_dispatching(tmp_path, monkeypatch):
