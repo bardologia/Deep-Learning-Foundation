@@ -449,18 +449,21 @@ class DataLoaderSweep:
         benchmark : Benchmark used to measure each spec.
         specs     : Configurations to measure, in order.
         on_result : Callback invoked with each finished record, or None.
+        on_start  : Callback invoked with each spec before it is measured, or None.
     """
-    def __init__(self, benchmark: GpuFeedBenchmark, specs: list[LoaderSpec], on_result: Optional[Callable[[dict], None]] = None) -> None:
-        """Stores the benchmark, the specs to run and the per-result callback.
+    def __init__(self, benchmark: GpuFeedBenchmark, specs: list[LoaderSpec], on_result: Optional[Callable[[dict], None]] = None, on_start: Optional[Callable[[LoaderSpec], None]] = None) -> None:
+        """Stores the benchmark, the specs to run and the per-spec callbacks.
 
         Args:
             benchmark : Benchmark used to measure each spec.
             specs     : Configurations to measure, in order.
             on_result : Callback invoked with each finished record, or None.
+            on_start  : Callback invoked with each spec before it is measured, or None, so a hung loader shows which spec it belongs to.
         """
         self.benchmark = benchmark
         self.specs     = list(specs)
         self.on_result = on_result
+        self.on_start  = on_start
 
     def _measure_spec(self, spec: LoaderSpec) -> Optional[dict]:
         """Measures one spec, returning an 'oom' record instead of raising on out-of-memory."""
@@ -486,6 +489,9 @@ class DataLoaderSweep:
         results = []
 
         for spec in self.specs:
+            if self.on_start is not None:
+                self.on_start(spec)
+
             record = self._measure_spec(spec)
             if record is None:
                 continue

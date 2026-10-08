@@ -204,21 +204,25 @@ class DataLoaderTuningPipeline:
         Returns:
             One measurement record per spec.
         """
+        total    = len(specs)
+        finished = 0
+
+        def _on_start(spec):
+            self.logger.debug(f"[{phase} {finished + 1}/{total}] measuring {spec.label}")
+
         def _on_result(record):
+            nonlocal finished
+            finished       += 1
             record["phase"] = phase
             self.events.emit("result", record)
-            if record.get("status") == "ok":
-                self.logger.subsection(
-                    f"bs={record['batch_size']:>5} workers={record['num_workers']} "
-                    f"pf={record['prefetch_factor']} pin={int(record['pin_memory'])} "
-                    f"-> {record['end_to_end_samples_per_s']:.0f} samp/s, "
-                    f"wait {100.0 * record['data_wait_fraction']:.1f}%, "
-                    f"gpu {record['gpu_util_mean']:.0f}%, feed {record['feed_ratio']:.2f}"
-                )
-            else:
-                self.logger.subsection(f"bs={record['batch_size']} workers={record['num_workers']} -> {record['status']}")
 
-        return DataLoaderSweep(benchmark, specs, on_result=_on_result).run()
+            position = f"[{phase} {finished}/{total}]"
+            if record["status"] == "ok":
+                self.logger.subsection(f"{position} bs={record['batch_size']:>5} workers={record['num_workers']} pf={record['prefetch_factor']} pin={int(record['pin_memory'])} -> {record['end_to_end_samples_per_s']:.0f} samp/s, wait {100.0 * record['data_wait_fraction']:.1f}%, gpu {record['gpu_util_mean']:.0f}%, feed {record['feed_ratio']:.2f}")
+            else:
+                self.logger.subsection(f"{position} bs={record['batch_size']} workers={record['num_workers']} -> {record['status']}")
+
+        return DataLoaderSweep(benchmark, specs, on_result=_on_result, on_start=_on_start).run()
 
     def _refine_specs(self, recommendation: dict) -> list[LoaderSpec]:
         """Returns the prefetch-factor by pinning grid at the recommended batch size and worker count."""
@@ -285,6 +289,31 @@ class DataLoaderTuningPipeline:
         self.logger.info(f"Refinement winner prefetch {final['prefetch_factor']}, pin_memory {final['pin_memory']}: {best['end_to_end_samples_per_s']:.0f} samp/s against {recommendation['end_to_end_samples_per_s']:.0f} samp/s at the reference prefetch {self.config.reference_prefetch} with pinning")
 
         return final
+
+    @staticmethod
+    def _tally(results: list[dict]) -> str:
+        """Returns how many of a phase's specs ran and how many ran out of memory, as one phrase."""
+        ok = sum(1 for record in results if record["status"] == "ok")
+
+        return f"{ok} ok, {len(results) - ok} out of memory"
+
+    def _log_sweep_summary(self, main_results: list[dict], refine_results: list[dict], report: SweepReport, recommendation: dict) -> None:
+        """Logs how many specs of each phase ran and ran out of memory, how many saturated the GPU, and warns when none did.
+
+        Args:
+            main_results   : Measurements of the main sweep.
+            refine_results : Measurements of the refinement sweep.
+            report         : Report of the main sweep.
+            recommendation : Best point of the main sweep.
+        """
+        self.logger.kv_table({
+            "Main sweep" : self._tally(main_results),
+            "Refinement" : self._tally(refine_results) if refine_results else "not run",
+            "Saturated"  : f"{len(report.saturated())} of {len(report.ok_frame)} working specs",
+        }, title="Sweep summary")
+
+        if recommendation["cpu_bound"]:
+            self.logger.warning(f"No configuration reached the {self.config.data_wait_target:.0%} data-wait target or fed the GPU as fast as it computes; recommending the fastest unsaturated setting, so training will wait on data")
 
     def _write(self, target, device, main_results, refine_results, recommendation, final, status: str) -> Path:
         """Writes the results payload with the settings, code version and device it was measured under.
@@ -372,6 +401,7 @@ class DataLoaderTuningPipeline:
             refine_results, refine_report = self._refine(benchmark, recommendation)
 
             final = self._final_config(recommendation, refine_report)
+            self._log_sweep_summary(main_results, refine_results, report, recommendation)
 
             self.events.emit("recommendation", {"recommendation": recommendation, "final": final})
 
