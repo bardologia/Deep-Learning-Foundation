@@ -14,6 +14,7 @@ import numpy as np
 
 from configuration.dataset       import InputConfig, OutputConfig
 from configuration.normalization import ChannelStats, ChannelStrategy, NormalizationConfig, NormMethod
+from tools.data.gaussians        import GaussianActivity
 from tools.monitoring.logger     import Logger
 from tools.reporting.ranges      import RangeFormatter
 
@@ -215,7 +216,7 @@ class StatsComputer:
             logger             : Logger receiving the strategy, grouping and per-channel tables.
             input_config       : Selection and representation of the input groups.
             n_secondaries      : Number of secondary channels in the stack.
-            n_derived   : Number of derived channel layers in the stack.
+            n_derived          : Number of derived channel layers in the stack.
             normalization      : Normalization configuration; defaults are used when omitted.
             max_vals_per_group : Sample budget per channel group.
 
@@ -414,7 +415,7 @@ class StatsComputer:
                 a_flat   = params[g * 3 + 0].ravel().astype(np.float64)
                 mu_flat  = params[g * 3 + 1].ravel().astype(np.float64)
                 sig_flat = params[g * 3 + 2].ravel().astype(np.float64)
-                active   = a_flat > activity_threshold
+                active   = GaussianActivity.is_active(a_flat, activity_threshold)
 
                 amp_pool_vals.append(a_flat[active])
                 mu_pool_vals.append(mu_flat[active])
