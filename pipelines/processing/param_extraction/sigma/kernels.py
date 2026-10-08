@@ -2,6 +2,9 @@
 
 Provides the per-pixel loss and its `lax.scan` Adam loop, a single-device jitted
 kernel and a `pmap` variant that shards the pixel batch across several GPUs.
+Besides the fitted mixtures, the loop returns its loss trajectory and each
+pixel's loss at the start of its last tenth of steps, so whether the step
+budget converged can be judged.
 """
 
 from __future__ import annotations
@@ -16,6 +19,11 @@ from tools.data.gaussians import GaussianMixture
 
 class SigmaScan:
     """Loss and masked Adam loop for one batch of profiles."""
+
+    @staticmethod
+    def mark_step(n_steps : int) -> int:
+        """Returns the step whose per-pixel loss is kept, where the last tenth of the Adam steps begins."""
+        return n_steps - max(1, n_steps // 10)
 
     @staticmethod
     def per_pixel_loss(amps, mus, sigmas, z_axis, profile):
@@ -64,7 +72,9 @@ class SigmaScan:
 
         Amplitudes are kept non-negative and means and sigmas are clipped to
         their bounds after every step; a zero mask freezes the matching
-        parameter group.
+        parameter group. The loss of every step is summed over the batch, and
+        each pixel's loss at ``mark_step`` is carried to the end, so the
+        trajectory and the late improvement of the fit can be read.
 
         Args:
             batched_vg   : Vmapped value-and-grad of `per_pixel_loss`.
@@ -88,7 +98,9 @@ class SigmaScan:
 
         Returns:
             Tuple of fitted amplitudes, means in metres and sigmas in metres of
-            shape (B, K), and the final per-pixel MSE of shape (B,).
+            shape (B, K), the final per-pixel MSE of shape (B,), the per-step
+            loss summed over the batch of shape (n_steps,), and the per-pixel
+            loss at ``mark_step`` of shape (B,).
         """
         b1_         = jnp.float32(b1)
         b2_         = jnp.float32(b2)
@@ -109,6 +121,9 @@ class SigmaScan:
         m_s = jnp.zeros_like(s)
         v_s = jnp.zeros_like(s)
 
+        mark      = SigmaScan.mark_step(n_steps)
+        loss_mark = jnp.zeros(a.shape[0], dtype=jnp.float32)
+
         def _adam(p, m_, v_, g, tf):
             m_ = b1_ * m_ + (1.0 - b1_) * g
             v_ = b2_ * v_ + (1.0 - b2_) * g * g
@@ -116,8 +131,10 @@ class SigmaScan:
             return p, m_, v_
 
         def _step(carry, t):
-            a_, u_, s_, m_a_, v_a_, m_u_, v_u_, m_s_, v_s_ = carry
-            _, (g_a, g_u, g_s) = batched_vg(a_, u_, s_, z_axis, profiles)
+            a_, u_, s_, m_a_, v_a_, m_u_, v_u_, m_s_, v_s_, mark_ = carry
+            loss, (g_a, g_u, g_s) = batched_vg(a_, u_, s_, z_axis, profiles)
+
+            mark_ = jnp.where(t == mark, loss, mark_)
 
             g_a = g_a * amp_mask_
             g_u = g_u * mu_mask_
@@ -132,17 +149,22 @@ class SigmaScan:
             u_ = jnp.clip(u_, mu_lower,    mu_upper)
             s_ = jnp.clip(s_, sigma_lower, sigma_upper)
 
-            return (a_, u_, s_, m_a_, v_a_, m_u_, v_u_, m_s_, v_s_), None
+            return (a_, u_, s_, m_a_, v_a_, m_u_, v_u_, m_s_, v_s_, mark_), loss.sum()
 
-        carry0                 = (a, u, s, m_a, v_a, m_u, v_u, m_s, v_s)
-        (a_f, u_f, s_f, *_), _ = jax.lax.scan(_step, carry0, jnp.arange(n_steps))
-        mse_f                  = batched_loss(a_f, u_f, s_f, z_axis, profiles)
+        carry0                                = (a, u, s, m_a, v_a, m_u, v_u, m_s, v_s, loss_mark)
+        (a_f, u_f, s_f, *_, mark_f), loss_sum = jax.lax.scan(_step, carry0, jnp.arange(n_steps))
+        mse_f                                 = batched_loss(a_f, u_f, s_f, z_axis, profiles)
 
-        return a_f, u_f, s_f, mse_f
+        return a_f, u_f, s_f, mse_f, loss_sum, mark_f
 
 
 class SigmaAdamKernel:
-    """Single-device jitted Adam fitting kernel."""
+    """Single-device jitted Adam fitting kernel.
+
+    ``fit`` returns the fitted mixtures with the loss trajectory, and calling
+    the kernel returns the fitted mixtures alone; both run the same compiled
+    scan.
+    """
 
     def __init__(self) -> None:
         """Vmaps the per-pixel loss and jit-compiles the Adam scan."""
@@ -175,6 +197,44 @@ class SigmaAdamKernel:
             return SigmaScan.adam_scan(batched_vg, batched_loss, amps_init, mus_init, sigmas_init, z_axis, profiles, amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper, n_steps, lr, b1, b2)
         return _run
 
+    def fit(
+        self,
+        amps_init, mus_init, sigmas_init, z_axis, profiles,
+        amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
+        n_steps=2000, lr=1e-2, b1=0.9, b2=0.999,
+    ):
+        """Fits a batch of mixtures on one device and returns the loss trajectory with them.
+
+        Args:
+            amps_init   : Initial amplitudes of shape (B, K).
+            mus_init    : Initial means of shape (B, K), in metres.
+            sigmas_init : Initial sigmas of shape (B, K), in metres.
+            z_axis      : Z axis of shape (H,), in metres.
+            profiles    : Target profiles of shape (B, H).
+            amp_mask    : Amplitude gradient mask, 1.0 free and 0.0 frozen.
+            mu_mask     : Mean gradient mask, 1.0 free and 0.0 frozen.
+            sigma_mask  : Sigma gradient mask, 1.0 free and 0.0 frozen.
+            mu_lower    : Lower mean clamp in metres.
+            mu_upper    : Upper mean clamp in metres.
+            sigma_lower : Lower sigma clamp in metres.
+            sigma_upper : Upper sigma clamp in metres.
+            n_steps     : Number of Adam iterations.
+            lr          : Adam learning rate.
+            b1          : Adam first-moment decay.
+            b2          : Adam second-moment decay.
+
+        Returns:
+            Tuple of fitted amplitudes, means and sigmas of shape (B, K), the
+            per-pixel MSE of shape (B,), the per-step loss summed over the
+            batch of shape (n_steps,) and the per-pixel loss at the start of
+            the last tenth of steps of shape (B,).
+        """
+        return self._run(
+            amps_init, mus_init, sigmas_init, z_axis, profiles,
+            amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
+            n_steps, lr, b1, b2,
+        )
+
     def __call__(
         self,
         amps_init, mus_init, sigmas_init, z_axis, profiles,
@@ -205,15 +265,20 @@ class SigmaAdamKernel:
             Tuple of fitted amplitudes, means and sigmas of shape (B, K) and the
             per-pixel MSE of shape (B,).
         """
-        return self._run(
+        return self.fit(
             amps_init, mus_init, sigmas_init, z_axis, profiles,
             amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
             n_steps, lr, b1, b2,
-        )
+        )[:4]
 
 
 class PmapSigmaAdamKernel:
-    """Multi-device Adam fitting kernel that shards pixels across GPUs."""
+    """Multi-device Adam fitting kernel that shards pixels across GPUs.
+
+    ``fit`` returns the fitted mixtures with the loss trajectory, and calling
+    the kernel returns the fitted mixtures alone; both run the same compiled
+    scan.
+    """
 
     def __init__(self, devices: list) -> None:
         """Compiles the pmapped Adam scan over the given JAX devices.
@@ -256,6 +321,80 @@ class PmapSigmaAdamKernel:
             devices                    = devices,
         )
 
+    def fit(
+        self,
+        amps_init, mus_init, sigmas_init, z_axis, profiles,
+        amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
+        n_steps=2000, lr=1e-2, b1=0.9, b2=0.999,
+    ):
+        """Pads, shards and fits a batch of mixtures across all devices and returns the loss trajectory with them.
+
+        Args:
+            amps_init   : Initial amplitudes of shape (n, K).
+            mus_init    : Initial means of shape (n, K), in metres.
+            sigmas_init : Initial sigmas of shape (n, K), in metres.
+            z_axis      : Z axis of shape (H,), in metres.
+            profiles    : Target profiles of shape (n, H).
+            amp_mask    : Amplitude gradient mask, 1.0 free and 0.0 frozen.
+            mu_mask     : Mean gradient mask, 1.0 free and 0.0 frozen.
+            sigma_mask  : Sigma gradient mask, 1.0 free and 0.0 frozen.
+            mu_lower    : Lower mean clamp in metres.
+            mu_upper    : Upper mean clamp in metres.
+            sigma_lower : Lower sigma clamp in metres.
+            sigma_upper : Upper sigma clamp in metres.
+            n_steps     : Number of Adam iterations.
+            lr          : Adam learning rate.
+            b1          : Adam first-moment decay.
+            b2          : Adam second-moment decay.
+
+        Returns:
+            Tuple of fitted amplitudes, means and sigmas of shape (n, K), the
+            per-pixel MSE of shape (n,), the per-step loss summed over every
+            device's shard of shape (n_steps,) and the per-pixel loss at the
+            start of the last tenth of steps of shape (n,), with the device
+            padding stripped.
+        """
+        n, K = sigmas_init.shape
+        H    = profiles.shape[1]
+        D    = self._n_devices
+        pad  = (-n) % D
+
+        if pad > 0:
+            z_K         = jnp.zeros((pad, K), dtype=jnp.float32)
+            z_H         = jnp.zeros((pad, H), dtype=jnp.float32)
+            amps_init   = jnp.concatenate([amps_init,   z_K], axis=0)
+            mus_init    = jnp.concatenate([mus_init,    z_K], axis=0)
+            sigmas_init = jnp.concatenate([sigmas_init, z_K], axis=0)
+            profiles    = jnp.concatenate([profiles,    z_H], axis=0)
+
+        n_pad = n + pad
+        shard = n_pad // D
+
+        out_a, out_u, out_s, out_e, out_l, out_k = self._run(
+            amps_init  .reshape(D, shard, K),
+            mus_init   .reshape(D, shard, K),
+            sigmas_init.reshape(D, shard, K),
+            z_axis,
+            profiles   .reshape(D, shard, H),
+            amp_mask,
+            mu_mask,
+            sigma_mask,
+            mu_lower,
+            mu_upper,
+            sigma_lower,
+            sigma_upper,
+            n_steps, lr, b1, b2,
+        )
+
+        out_a = out_a.reshape(n_pad, K)[:n]
+        out_u = out_u.reshape(n_pad, K)[:n]
+        out_s = out_s.reshape(n_pad, K)[:n]
+        out_e = out_e.reshape(n_pad)[:n]
+        out_l = out_l.sum(axis=0)
+        out_k = out_k.reshape(n_pad)[:n]
+
+        return out_a, out_u, out_s, out_e, out_l, out_k
+
     def __call__(
         self,
         amps_init, mus_init, sigmas_init, z_axis, profiles,
@@ -286,41 +425,8 @@ class PmapSigmaAdamKernel:
             Tuple of fitted amplitudes, means and sigmas of shape (n, K) and the
             per-pixel MSE of shape (n,), with the device padding stripped.
         """
-        n, K = sigmas_init.shape
-        H    = profiles.shape[1]
-        D    = self._n_devices
-        pad  = (-n) % D
-
-        if pad > 0:
-            z_K         = jnp.zeros((pad, K), dtype=jnp.float32)
-            z_H         = jnp.zeros((pad, H), dtype=jnp.float32)
-            amps_init   = jnp.concatenate([amps_init,   z_K], axis=0)
-            mus_init    = jnp.concatenate([mus_init,    z_K], axis=0)
-            sigmas_init = jnp.concatenate([sigmas_init, z_K], axis=0)
-            profiles    = jnp.concatenate([profiles,    z_H], axis=0)
-
-        n_pad = n + pad
-        shard = n_pad // D
-
-        out_a, out_u, out_s, out_e = self._run(
-            amps_init  .reshape(D, shard, K),
-            mus_init   .reshape(D, shard, K),
-            sigmas_init.reshape(D, shard, K),
-            z_axis,
-            profiles   .reshape(D, shard, H),
-            amp_mask,
-            mu_mask,
-            sigma_mask,
-            mu_lower,
-            mu_upper,
-            sigma_lower,
-            sigma_upper,
+        return self.fit(
+            amps_init, mus_init, sigmas_init, z_axis, profiles,
+            amp_mask, mu_mask, sigma_mask, mu_lower, mu_upper, sigma_lower, sigma_upper,
             n_steps, lr, b1, b2,
-        )
-
-        out_a = out_a.reshape(n_pad, K)[:n]
-        out_u = out_u.reshape(n_pad, K)[:n]
-        out_s = out_s.reshape(n_pad, K)[:n]
-        out_e = out_e.reshape(n_pad)[:n]
-
-        return out_a, out_u, out_s, out_e
+        )[:4]

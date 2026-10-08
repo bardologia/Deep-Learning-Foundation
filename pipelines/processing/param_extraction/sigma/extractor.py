@@ -28,6 +28,7 @@ from tools.data.preprocessing                      import ProfilePreprocessor
 from tools.monitoring.logger                       import Logger
 
 from .initialiser import PeakInitialiser
+from .kernels     import SigmaScan
 from .selection   import BestKSelector, KernelBackendSelector
 
 
@@ -160,6 +161,104 @@ class FitProgress:
         eta            = elapsed / self.done * (self.total - self.done)
 
         self.logger.subsection(f"{batch_tag} | mode {mode} | K={K} | chunk {chunk}/{n_chunks} | {self.done:,}/{self.total:,} kernel calls | elapsed {elapsed / 60:.1f} min | ETA {eta / 60:.1f} min")
+
+
+class AdamConvergence:
+    """Sums the Adam loss trajectories and the still-improving pixels of every kernel call, per fit mode and K.
+
+    A pixel counts as still improving when its loss fell by more than
+    IMPROVEMENT_RTOL over the last tenth of the Adam steps, from the step
+    ``SigmaScan.mark_step`` names to the final loss. The losses are those of
+    the peak-normalised profiles the kernel fits.
+
+    Attributes:
+        IMPROVEMENT_RTOL     : Relative loss drop over the last tenth of the steps above which a pixel counts as still improving.
+        WARN_IMPROVING_SHARE : Share of still-improving pixels at one mode and K above which the results warn that adam_steps may be too few.
+        n_steps              : Adam steps per kernel call.
+        loss_sum             : Per mode, the per-step loss summed over every fitted pixel, of shape (k_max, n_steps).
+        pixels               : Per mode, the fitted pixels per K, of shape (k_max,).
+        improving            : Per mode, the still-improving pixels per K, of shape (k_max,).
+    """
+
+    IMPROVEMENT_RTOL     = 0.01
+    WARN_IMPROVING_SHARE = 0.1
+
+    def __init__(self, modes : list, k_max : int, n_steps : int) -> None:
+        """Zeroes the per-mode accumulators.
+
+        Args:
+            modes   : Fit modes of the extraction.
+            k_max   : Largest mixture order fitted.
+            n_steps : Adam steps per kernel call.
+        """
+        self.n_steps   = n_steps
+        self.loss_sum  = {mode: np.zeros((k_max, n_steps), dtype=np.float64) for mode in modes}
+        self.pixels    = {mode: np.zeros(k_max, dtype=np.int64) for mode in modes}
+        self.improving = {mode: np.zeros(k_max, dtype=np.int64) for mode in modes}
+
+    @classmethod
+    def still_improving(cls, loss_mark : np.ndarray, final_mse : np.ndarray) -> int:
+        """Returns how many pixels lost more than IMPROVEMENT_RTOL of their loss over the last tenth of the steps.
+
+        Args:
+            loss_mark : Per-pixel loss at the start of the last tenth of the steps, of shape (n,).
+            final_mse : Per-pixel loss after the last step, of shape (n,).
+        """
+        return int(((loss_mark - final_mse) > cls.IMPROVEMENT_RTOL * loss_mark).sum())
+
+    def describe(self, loss_curve : np.ndarray, n_pixels : int, n_improving : int) -> str:
+        """Returns the mean loss at the first, middle and last step and the still-improving share of one batch, mode and K.
+
+        Args:
+            loss_curve  : Per-step loss summed over the pixels, of shape (n_steps,).
+            n_pixels    : Pixels the curve sums over.
+            n_improving : Pixels still improving at the end.
+        """
+        mean = loss_curve / max(n_pixels, 1)
+        mid  = self.n_steps // 2
+
+        return f"mean loss {mean[0]:.3e} at step 0, {mean[mid]:.3e} at step {mid}, {mean[-1]:.3e} at step {self.n_steps - 1}; {n_improving / max(n_pixels, 1):.1%} of pixels still improving by > {self.IMPROVEMENT_RTOL:.0%} over the last {self.n_steps - SigmaScan.mark_step(self.n_steps)} steps"
+
+    def add(self, mode : str, K : int, loss_curve : np.ndarray, n_pixels : int, n_improving : int) -> None:
+        """Adds one batch's sums for a mode and K to the totals.
+
+        Args:
+            mode        : Fit mode of the batch.
+            K           : Mixture order of the batch.
+            loss_curve  : Per-step loss summed over the batch's pixels, of shape (n_steps,).
+            n_pixels    : Pixels the batch fitted.
+            n_improving : Pixels of the batch still improving at the end.
+        """
+        self.loss_sum [mode][K - 1] += loss_curve
+        self.pixels   [mode][K - 1] += n_pixels
+        self.improving[mode][K - 1] += n_improving
+
+    def report(self, logger : Logger) -> None:
+        """Logs the still-improving share of every mode and K and warns above WARN_IMPROVING_SHARE.
+
+        Args:
+            logger : Logger receiving the lines and warnings.
+        """
+        for mode, pixels in self.pixels.items():
+            shares = self.improving[mode] / np.maximum(pixels, 1)
+            logger.subsection(f"Mode {mode} still improving at the last step, per K : {', '.join(f'K={K} {share:.1%}' for K, share in enumerate(shares, start=1))}")
+
+            for K, share in enumerate(shares, start=1):
+                if share > self.WARN_IMPROVING_SHARE:
+                    logger.warning(f"Mode {mode}, K={K}: {share:.1%} of the fitted pixels still lost more than {self.IMPROVEMENT_RTOL:.0%} of their loss over the last {self.n_steps - SigmaScan.mark_step(self.n_steps)} of {self.n_steps} Adam steps; adam_steps may be too few for this fit to converge")
+
+    def diagnostics(self, mode : str) -> Dict[str, np.ndarray]:
+        """Returns a mode's convergence arrays as saved into fit_diagnostics.npz.
+
+        Returns:
+            Mapping with ``adam_loss_curve``, the mean per-step loss of shape (k_max, n_steps), and ``adam_improving_frac``, the still-improving share of shape (k_max,).
+        """
+        pixels = np.maximum(self.pixels[mode], 1)
+
+        return {
+            "adam_loss_curve"     : (self.loss_sum[mode] / pixels[:, None]).astype(np.float32),
+            "adam_improving_frac" : (self.improving[mode] / pixels).astype(np.float32),
+        }
 
 
 class SigmaFittingExtractor:
@@ -498,6 +597,7 @@ class SigmaFittingExtractor:
         batch_tag     : str,
         fit_progress  : FitProgress,
         n_chunks      : int,
+        convergence   : AdamConvergence,
     ) -> dict:
         """Fits every mixture order from 1 to k_max for one batch and mode.
 
@@ -515,6 +615,7 @@ class SigmaFittingExtractor:
             batch_tag     : Label used in log sections.
             fit_progress  : Kernel-call counter advanced after every call.
             n_chunks      : Kernel calls one K takes on this batch.
+            convergence   : Accumulator of the Adam loss trajectories, logged per K and summed over batches.
 
         Returns:
             Mapping from K to (amplitudes, means in metres, sigmas in metres,
@@ -536,11 +637,13 @@ class SigmaFittingExtractor:
             final_mus  = np.empty((N_act, K), dtype=np.float32)
             final_sigs = np.empty((N_act, K), dtype=np.float32)
             final_mse  = np.empty(N_act,      dtype=np.float32)
+            loss_curve = np.zeros(self.adam_steps, dtype=np.float64)
+            improving  = 0
 
             pending = None
             for i_start in range(0, N_act, B):
                 i_end = min(i_start + B, N_act)
-                out_a, out_m, out_s, out_e = self._kernel(
+                out_a, out_m, out_s, out_e, out_l, out_k = self._kernel.fit(
                     jnp.array(self._pad_rows(amps_norm    [i_start:i_end], B)),
                     jnp.array(self._pad_rows(mus          [i_start:i_end], B)),
                     jnp.array(self._pad_rows(sigs_init    [i_start:i_end], B)),
@@ -560,16 +663,21 @@ class SigmaFittingExtractor:
                 )
 
                 if pending is not None:
-                    self._materialize_chunk(pending, final_amps, final_mus, final_sigs, final_mse)
-                pending = (out_a, out_m, out_s, out_e, i_start, i_end)
+                    chunk_curve, chunk_improving = self._materialize_chunk(pending, final_amps, final_mus, final_sigs, final_mse)
+                    loss_curve += chunk_curve
+                    improving  += chunk_improving
+                pending = (out_a, out_m, out_s, out_e, out_l, out_k, i_start, i_end)
 
                 fit_progress.advance(batch_tag, mode, K, i_start // B + 1, n_chunks)
 
             if pending is not None:
-                self._materialize_chunk(pending, final_amps, final_mus, final_sigs, final_mse)
+                chunk_curve, chunk_improving = self._materialize_chunk(pending, final_amps, final_mus, final_sigs, final_mse)
+                loss_curve += chunk_curve
+                improving  += chunk_improving
 
             gpu_results[K] = (final_amps, final_mus, final_sigs, final_mse)
-            self.logger.subsection(f"K={K} done ({n_chunks} kernel calls)")
+            convergence.add(mode, K, loss_curve, N_act, improving)
+            self.logger.subsection(f"K={K} done ({n_chunks} kernel calls) | {convergence.describe(loss_curve, N_act, improving)}")
 
         gc.collect()
 
@@ -578,23 +686,28 @@ class SigmaFittingExtractor:
         return gpu_results
 
     @staticmethod
-    def _materialize_chunk(pending : tuple, final_amps : np.ndarray, final_mus : np.ndarray, final_sigs : np.ndarray, final_mse : np.ndarray) -> None:
-        """Copies one pending device chunk into the batch result arrays.
+    def _materialize_chunk(pending : tuple, final_amps : np.ndarray, final_mus : np.ndarray, final_sigs : np.ndarray, final_mse : np.ndarray) -> Tuple[np.ndarray, int]:
+        """Copies one pending device chunk into the batch result arrays and returns its convergence sums.
 
         Args:
-            pending    : Tuple of device amplitudes, means, sigmas, MSE and the inclusive-exclusive row range they belong to.
+            pending    : Tuple of device amplitudes, means, sigmas, MSE, per-step summed loss, per-pixel loss at the start of the last tenth of steps, and the inclusive-exclusive row range they belong to.
             final_amps : Destination amplitudes of shape (N_act, K).
             final_mus  : Destination means of shape (N_act, K), in metres.
             final_sigs : Destination sigmas of shape (N_act, K), in metres.
             final_mse  : Destination per-pixel MSE of shape (N_act,).
+
+        Returns:
+            Tuple of the chunk's per-step loss summed over its pixels, of shape (n_steps,), and its count of still-improving pixels; padded rows fit a zero profile at zero loss and add nothing.
         """
-        out_a, out_m, out_s, out_e, i_start, i_end = pending
+        out_a, out_m, out_s, out_e, out_l, out_k, i_start, i_end = pending
         n_chunk = i_end - i_start
 
         final_amps[i_start:i_end] = np.array(out_a[:n_chunk], dtype=np.float32)
         final_mus [i_start:i_end] = np.array(out_m[:n_chunk], dtype=np.float32)
         final_sigs[i_start:i_end] = np.array(out_s[:n_chunk], dtype=np.float32)
         final_mse [i_start:i_end] = np.array(out_e[:n_chunk], dtype=np.float32)
+
+        return np.array(out_l, dtype=np.float64), AdamConvergence.still_improving(np.array(out_k[:n_chunk], dtype=np.float32), final_mse[i_start:i_end])
 
     def _init_batch(
         self,
@@ -739,6 +852,7 @@ class SigmaFittingExtractor:
         n_params_out  : int,
         outputs       : Dict[tuple, dict],
         census        : FitBoundCensus,
+        convergence   : AdamConvergence,
     ) -> int:
         """Streams col batches through load, init, fit and scoring stages.
 
@@ -759,6 +873,7 @@ class SigmaFittingExtractor:
             n_params_out  : Flattened parameter count 3 * k_max.
             outputs       : Destination maps keyed by (mode, lambda_k).
             census        : Clamp-bound census handed to every scoring job.
+            convergence   : Accumulator of the Adam loss trajectories of every kernel call.
 
         Returns:
             Number of active pixels that were fitted.
@@ -807,7 +922,7 @@ class SigmaFittingExtractor:
                             n_total                                            = profiles_flat.shape[0]
 
                             for mode in self.modes:
-                                gpu_results = self._fit_all_K(inits, prof_norm_all, scale_all, z_ax_j, sigma_lower_j, sigma_upper_j, mu_lower_j, mu_upper_j, N_act, mode, batch_tag, fit_progress, n_chunks)
+                                gpu_results = self._fit_all_K(inits, prof_norm_all, scale_all, z_ax_j, sigma_lower_j, sigma_upper_j, mu_lower_j, mu_upper_j, N_act, mode, batch_tag, fit_progress, n_chunks, convergence)
 
                                 t_throttle = perf_counter()
                                 self._throttle_scorings(score_futures, self.MAX_PENDING_SCORINGS)
@@ -856,7 +971,10 @@ class SigmaFittingExtractor:
             (3 * k_max, n_row, n_col) — amplitude, mean in metres and sigma in
             metres interleaved per Gaussian — and a diagnostics dict holding
             `mse_per_k` and `penalised_per_k` of shape (k_max, n_row, n_col),
-            the `best_k_map` of shape (n_row, n_col) and the scalar `lambda_k`.
+            the `best_k_map` of shape (n_row, n_col), the scalar `lambda_k`,
+            the mode's mean Adam loss per step `adam_loss_curve` of shape
+            (k_max, adam_steps) and its still-improving share
+            `adam_improving_frac` of shape (k_max,).
 
         Raises:
             ValueError : If no pixel cleared the activity threshold, so nothing was fitted.
@@ -873,8 +991,9 @@ class SigmaFittingExtractor:
         self._warmup_kernel(z_ax_j, H, sigma_lower_j, sigma_upper_j, mu_lower_j, mu_upper_j)
         self._log_memory_budget(H, n_row, n_col)
 
-        census  = FitBoundCensus(z_axis, self.activity_threshold)
-        outputs = {}
+        census      = FitBoundCensus(z_axis, self.activity_threshold)
+        convergence = AdamConvergence(self.modes, self.k_max, self.adam_steps)
+        outputs     = {}
         for mode in self.modes:
             for lambda_k in self.lambda_values:
                 outputs[(mode, lambda_k)] = {
@@ -892,7 +1011,7 @@ class SigmaFittingExtractor:
                 cube_mmap, z_axis, z_ax_j,
                 sigma_lower_j, sigma_upper_j,
                 mu_lower_j, mu_upper_j,
-                n_row, n_col, H, n_params_out, outputs, census,
+                n_row, n_col, H, n_params_out, outputs, census, convergence,
             )
         finally:
             if self._owns_initialiser:
@@ -923,6 +1042,8 @@ class SigmaFittingExtractor:
         self.logger.subsection(f"Backend              : {self.backend} on {self.outcome.devices}")
         self.logger.subsection(f"Fit elapsed          : {self.outcome.fit_seconds:.1f}s")
 
+        convergence.report(self.logger)
+
         for (mode, lambda_k), maps in outputs.items():
             census.report(maps["bounds"], self.logger, f"mode {mode} | lambda_k={lambda_k:g}")
             self.bound_shares[(mode, lambda_k)] = FitBoundCensus.fractions(maps["bounds"])
@@ -935,6 +1056,7 @@ class SigmaFittingExtractor:
                 "penalised_per_k" : maps["pen"],
                 "best_k_map"      : maps["best_k"],
                 "lambda_k"        : np.float32(lambda_k),
+                **convergence.diagnostics(mode),
             }
             results[key] = (maps["params"], diagnostics)
 
