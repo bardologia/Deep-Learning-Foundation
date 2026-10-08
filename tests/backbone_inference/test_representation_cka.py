@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
+import torch
 
 from configuration.diagnostics                                import CkaConfig
 from pipelines.backbone.inference.analysis.representation_cka import CkaComparison, CkaComputation
 
 from tests.backbone_inference._helpers import StageLogger, build_run_directory
-from tests.conftest                    import SilentLogger
+from tests.conftest                    import RecordingLogger, SilentLogger
 
 
 def _features(n: int = 200, d: int = 8, seed: int = 0) -> np.ndarray:
@@ -146,6 +150,59 @@ def test_comparison_announces_and_tracks_its_matrices(tmp_path, test_data_dir, p
     infos = [message for level, message in logger.messages if level == "info"]
 
     assert "2 runs -> 2 self matrices and 1 pair matrices" in infos
-    assert any("probed layers usable, 64 sampled pixels" in message for message in infos)
+    assert any("probed layers usable (thinned from" in message and "64 sampled pixels" in message for message in infos)
     assert logger.totals == [3] and logger.advances == 3
     assert logger.timers == ["CKA features [1/2] a/run_unet_e2e", "CKA features [2/2] b/run_unet_e2e", "CKA matrices (3)"]
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_comparison_records_layers_matrices_and_config(tmp_path, test_data_dir, params_dir):
+    """cka.json maps every matrix row to a layer name, names each run's checkpoint and commit, and the matrices and config sit beside it."""
+    config = _aligned_runs(tmp_path, test_data_dir, params_dir)
+
+    CkaComparison(config, SilentLogger()).run()
+
+    output  = next((tmp_path / "cka").iterdir())
+    payload = json.loads((output / "cka.json").read_text())
+    record  = payload["run_layers"]["a/run_unet_e2e"]
+
+    with np.load(output / "cka_matrices.npz") as matrices:
+        pair = matrices[payload["matrices"]["pairs"]["a/run_unet_e2e|b/run_unet_e2e"]]
+
+    assert pair.shape == (len(record["layers"]), len(payload["run_layers"]["b/run_unet_e2e"]["layers"]))
+    assert record["n_samples"] == 64 and record["checkpoint"] == {"name": "best_model.pt", "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}
+    assert payload["git_commit"]
+    assert json.loads((output / "cka_config.json").read_text())["max_layers"] == 4
+
+
+class _MixedNet(torch.nn.Module):
+    """Convolution emitting a feature map, a flattening head emitting vectors, and a module that is never called."""
+
+    def __init__(self) -> None:
+        """Builds the convolution, the vector head and the unused module."""
+        super().__init__()
+        self.conv   = torch.nn.Conv2d(2, 3, kernel_size=3, padding=1)
+        self.head   = torch.nn.Linear(3 * 8 * 8, 4)
+        self.unused = torch.nn.Linear(4, 4)
+
+    def forward(self, x):
+        """Returns the vector head applied to the flattened feature map of x, shape (batch, 2, 8, 8)."""
+        return self.head(self.conv(x).flatten(1))
+
+
+def test_collect_records_the_dropped_layers_and_their_reason(tmp_path):
+    """A vector output and a never-called module are dropped with their reason, named in one warning and left out of the layer record."""
+    logger     = RecordingLogger()
+    comparison = CkaComparison(CkaConfig(output_dir=tmp_path, samples_per_batch=16, max_batches=1), logger)
+    run        = SimpleNamespace(model=SimpleNamespace(module=_MixedNet()), loader=[(torch.randn(2, 2, 8, 8),)], backbone_name="mixed")
+
+    features, record = comparison._collect(run, "mixed")
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert list(features) == ["conv"] and record["layers"] == ["conv"]
+    assert record["n_leaf_layers"] == 3 and record["n_samples"] == 16
+    assert record["dropped"]["unused"] == "produced no tensor output"
+    assert record["dropped"]["head"].startswith("output of shape (2, 4) is not a feature map")
+    assert len(warnings) == 1 and "2 probed layer(s) dropped" in warnings[0]
