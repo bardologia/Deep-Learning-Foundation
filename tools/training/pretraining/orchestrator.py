@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import gc
 from dataclasses import dataclass
+from pathlib     import Path
 from typing      import Callable, Optional
 
 import torch
 
+from tools.data.io                           import FileIO
 from tools.monitoring.logger                 import Logger
 from tools.training.pretraining.batch_finder import BatchSizeFinder
 from tools.training.pretraining.loader_tuner import LoaderTuner
@@ -51,10 +53,12 @@ class PretrainOrchestrator:
 
     Attributes:
         TUNED_LEAVES : Entry-config probe flag to the flattened leaves that probe rewrites once it ran, the flag itself included.
+        LR_RECORD    : File name, inside the result directory, of the LR range test's evidence record.
         pretrain     : Pre-training configuration selecting and parameterising the probes.
         training     : Training configuration whose batch size and loader fields the probes override for this run.
         build        : Factory returning a fresh probe context per probe.
         logger       : Logger for the probe sections and resolved values.
+        result_dir   : Directory the probes' evidence records are written into, ``<run>/pretrain``.
         label        : Model label reported by the batch-size finder, or None.
     """
 
@@ -64,21 +68,25 @@ class PretrainOrchestrator:
         "pretrain.find_lr"         : ("pretrain.find_lr", "training.lr_multiplier"),
     }
 
-    def __init__(self, pretrain_config, training_config, build_context: Callable[[], PretrainContext], logger: Logger, label: Optional[str] = None) -> None:
-        """Stores the configurations, the context factory and the logger.
+    LR_RECORD = "lr_range_test.json"
+
+    def __init__(self, pretrain_config, training_config, build_context: Callable[[], PretrainContext], logger: Logger, result_dir: Path, label: Optional[str] = None) -> None:
+        """Stores the configurations, the context factory, the logger and the result directory.
 
         Args:
             pretrain_config : Pre-training configuration.
             training_config : Training configuration modified in place by the probes.
             build_context   : Factory returning a fresh probe context.
             logger          : Logger for the probe output.
+            result_dir      : Directory the probes' evidence records are written into.
             label           : Model label used in the batch-size result.
         """
-        self.pretrain = pretrain_config
-        self.training = training_config
-        self.build    = build_context
-        self.logger   = logger
-        self.label    = label
+        self.pretrain   = pretrain_config
+        self.training   = training_config
+        self.build      = build_context
+        self.logger     = logger
+        self.result_dir = Path(result_dir)
+        self.label      = label
 
     @classmethod
     def tuned_leaves(cls, mapping: dict) -> set:
@@ -222,9 +230,15 @@ class PretrainOrchestrator:
             seed              = self.pretrain.seed,
         )
 
-        result = test.run(self.training.batch_size)
+        configured = float(self.training.lr_multiplier)
+        result     = test.run(self.training.batch_size)
 
         self.pretrain.find_lr = False
+
+        if result is not None:
+            self.training.lr_multiplier = configured * float(result["multiplier"])
+
+        self._save_lr_record(test.record, configured)
 
         if result is None:
             self.logger.subsection(f"find_lr switched off for the rest of this run: the test refused to answer, the configured training.lr_multiplier={self.training.lr_multiplier:.4g} stays, and a relaunch or resume keeps it instead of probing again")
@@ -232,10 +246,34 @@ class PretrainOrchestrator:
 
         divergence = f"x{result['divergence_multiplier']:.4g}" if result["divergence_multiplier"] is not None else "not reached"
 
-        self.training.lr_multiplier = float(self.training.lr_multiplier) * float(result["multiplier"])
-
         self.logger.subsection(f"Resolved learning rate: multiplier x{result['multiplier']:.4g} (loss minimum at x{result['min_loss_multiplier']:.4g}, divergence at {divergence}, safety /{self.pretrain.lr_safety_factor:g}) sets training.lr_multiplier={self.training.lr_multiplier:.4g} for this run, applied on top of the batch-size rule")
         self.logger.subsection("find_lr switched off for the rest of this run: the resolved entry config now records the measured multiplier, so a relaunch reuses it instead of probing again and compounding a second one.")
+
+    def _save_lr_record(self, record: dict, configured: float) -> Path:
+        """Writes the LR range test's evidence, accepted or refused, beside the preflight log.
+
+        The record holds the ladder settings, every completed rung and the
+        statistics of the selection, with the multiplier configured before the
+        test and the one the run trains with after it, so a pick can be checked
+        without re-running the probe.
+
+        Args:
+            record     : Evidence record the range test kept from its run.
+            configured : Learning-rate multiplier configured before the test.
+
+        Returns:
+            Path of the written record.
+        """
+        path    = self.result_dir / self.LR_RECORD
+        payload = {**record, "lr_multiplier_configured": configured, "lr_multiplier_resolved": float(self.training.lr_multiplier)}
+
+        if path.is_file():
+            self.logger.warning(f"replacing the LR range test record of an earlier probe in this run directory: {path}")
+
+        FileIO.save_json(payload, path, indent=2)
+        self.logger.subsection(f"LR range test record (settings, every rung, selection statistics) -> {path}")
+
+        return path
 
     def run(self) -> None:
         """Runs the enabled probes in order, each on a fresh context, releasing memory in between."""

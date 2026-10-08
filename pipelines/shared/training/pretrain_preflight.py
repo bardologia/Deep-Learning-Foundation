@@ -105,7 +105,7 @@ class PretrainPreflight:
             torch.cuda.empty_cache()
 
     def run(self) -> None:
-        """Runs the preflight probes, writing results under ``<run>/pretrain``.
+        """Runs the preflight probes, writing their log and evidence records under ``<run>/pretrain``.
 
         Returns immediately when none of the batch-size search, loader tuning
         and LR range test is enabled. The preflight log appends across
@@ -134,6 +134,7 @@ class PretrainPreflight:
                 training_config = self.training,
                 build_context   = lambda: self._build_context(logger, device, context_gb),
                 logger          = logger,
+                result_dir      = result_dir,
                 label           = self.label,
             )
 

@@ -18,10 +18,24 @@ from tools.training.pretraining.lr_finder import LrRangeTest, TrainerStateSnapsh
 
 
 class _Logger:
-    """Logger stub swallowing the subsection calls made by the range test."""
-    def subsection(self, *args, **kwargs):
-        """Ignores a subsection heading."""
-        pass
+    """Logger stub recording the subsection lines and table titles of the range test.
+
+    Attributes:
+        lines  : Subsection messages in emission order.
+        tables : (title, rows) pairs of the metrics tables in emission order.
+    """
+    def __init__(self):
+        """Starts with no recorded output."""
+        self.lines  = []
+        self.tables = []
+
+    def subsection(self, message, *args, **kwargs):
+        """Records a subsection line."""
+        self.lines.append(message)
+
+    def metrics_table(self, rows, columns=None, title=None):
+        """Records a metrics table's title and rows."""
+        self.tables.append((title, list(rows)))
 
 
 class _Clipper:
@@ -282,6 +296,38 @@ def test_gradient_accumulation_is_mirrored():
 
     assert trainer.optimizer_steps == 12 * 2
     assert len(trainer.batches)    == 3 * trainer.optimizer_steps
+
+
+def test_accepted_pick_keeps_its_curve_and_selection_evidence():
+    """Verifies an accepted pick logs every rung in one table, logs the drop it cleared, and keeps the curve and statistics in the record."""
+    logger = _Logger()
+    test   = _test(_ResponseTrainer(base_lr=0.05, optimum=10.0), logger=logger)
+    result = test.run(batch_size=4)
+
+    title, rows = logger.tables[-1]
+    evidence    = test.record["evidence"]
+
+    assert result is not None
+    assert len(rows) == result["rungs_run"]
+    assert f"{result['rungs_run']} completed rung(s)" in title
+    assert evidence["outcome"] == "accepted"
+    assert evidence["drop"] >= evidence["threshold"] > 0.0
+    assert evidence["min_loss_rung"] == result["losses"].index(min(result["losses"])) + 1
+    assert any("clearing the" in line and "standard errors" in line for line in logger.lines)
+    assert test.record["multiplier"] == result["multiplier"]
+    assert test.record["losses"]     == result["losses"]
+    assert test.record["settings"]["rungs"] == 40
+    assert test.record["batch_size"] == 4
+
+
+def test_refused_pick_still_keeps_its_curve_and_the_reason():
+    """Verifies a refusal leaves the full curve and the refusal reason in the record."""
+    test = _test(_FlatTrainer(base_lr=0.05))
+
+    assert test.run(batch_size=4) is None
+    assert test.record["multiplier"] is None
+    assert test.record["evidence"]["outcome"] == "minimum on the first rung"
+    assert test.record["rungs_run"] == len(test.record["losses"]) == len(test.record["spreads"]) > 0
 
 
 def test_monotone_increasing_response_is_rejected():
