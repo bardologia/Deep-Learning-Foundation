@@ -54,8 +54,6 @@ class MaxBatchProbeBase:
         logger        : Logger for the probe.
     """
 
-    CONTEXT_WARN_GB = 1.5
-
     def __init__(self, config: BenchmarkConfig, model_name: str, work_dir: Path) -> None:
         """Stores the probe settings and opens the log under the work directory.
 
@@ -189,7 +187,7 @@ class MaxBatchProbeBase:
             self.context_gb      = self._measure_context()
             result["context_gb"] = self.context_gb
             self.logger.subsection(f"CUDA context: {self.context_gb:.2f} GB")
-            if self.context_gb > self.CONTEXT_WARN_GB:
+            if self.context_gb > TrainStepMemoryProbe.CONTEXT_WARN_GB:
                 self.logger.warning(f"Context {self.context_gb:.2f} GB exceeds a bare CUDA context; other processes are using this GPU and shrink the measured budget")
 
             trainer, dataset = self._build_probe_setup()
