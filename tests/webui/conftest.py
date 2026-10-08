@@ -35,6 +35,7 @@ from system_monitor  import ActiveUsers, SystemHistory, SystemMonitor
 from web_logger      import WebLogger
 
 N_Z, N_ROWS, N_COLS, N_SLOTS = 5, 8, 6, 2
+ACTIVITY_THRESHOLD           = 1e-4
 
 SLEEP_LONG = "import time\ntime.sleep(30)\n"
 ARGS_DUMP  = "import pathlib, sys\npathlib.Path('argv.txt').write_text(' '.join(sys.argv[1:]))\n"
@@ -224,7 +225,7 @@ def make_stamp(run: Path, preproc: Path, rng: np.random.Generator, sources: tupl
     (run / "meta").mkdir(parents=True)
 
     (run / "meta" / "dataset_creation_config.json").write_text(json.dumps({"preprocessing_run_directory": str(preproc)}))
-    (stamp / "metrics.json").write_text(json.dumps({"x_axis_min": x_min, "x_axis_max": 30.0, "split_region": [0, N_ROWS, 0, N_COLS]}))
+    (stamp / "metrics.json").write_text(json.dumps({"x_axis_min": x_min, "x_axis_max": 30.0, "split_region": [0, N_ROWS, 0, N_COLS], "activity_threshold": ACTIVITY_THRESHOLD}))
 
     for source in sources:
         np.save(stamp / "cubes" / f"{source}_curves.npy", rng.random(shape).astype(np.float32))

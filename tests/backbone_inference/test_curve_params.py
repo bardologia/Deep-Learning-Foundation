@@ -77,7 +77,7 @@ def test_extractor_recovers_separated_gaussians():
     """Centres, widths and amplitudes of well-separated Gaussians are recovered within tight tolerances."""
     curves, amps, mus, sigs, z_axis = _separated_scene()
 
-    result = CurveParamExtractor(z_axis, 2).run(curves)
+    result = CurveParamExtractor(z_axis, 2, 1e-4).run(curves)
     params = result.params
 
     assert params.shape == (6, *curves.shape[1:])
@@ -92,7 +92,7 @@ def test_extractor_fit_quality_is_high_on_exact_mixtures():
     """Per-pixel fit R2 exceeds 0.99 when the curves are exact Gaussian mixtures."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene()
 
-    result = CurveParamExtractor(z_axis, 2).run(curves)
+    result = CurveParamExtractor(z_axis, 2, 1e-4).run(curves)
 
     assert result.fit_r2.shape == curves.shape[1:]
     assert result.fit_r2.min() > 0.99
@@ -102,7 +102,7 @@ def test_extractor_orders_components_by_position():
     """Extracted slots come out sorted by ascending centre."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=3)
 
-    params = CurveParamExtractor(z_axis, 2).run(curves).params
+    params = CurveParamExtractor(z_axis, 2, 1e-4).run(curves).params
 
     assert np.all(params[1] <= params[4])
 
@@ -111,7 +111,7 @@ def test_extractor_render_round_trips_its_own_parameters():
     """Rendering the extracted parameters reproduces the input curves."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=5)
 
-    extractor = CurveParamExtractor(z_axis, 2)
+    extractor = CurveParamExtractor(z_axis, 2, 1e-4)
     params    = extractor.run(curves).params
     rendered  = extractor.render(params)
 
@@ -124,7 +124,7 @@ def test_extractor_returns_inactive_amplitudes_on_empty_profiles():
     z_axis = _axis()
     curves = np.zeros((N_Z, 3, 2), dtype=np.float32)
 
-    params = CurveParamExtractor(z_axis, 2).run(curves).params
+    params = CurveParamExtractor(z_axis, 2, 1e-4).run(curves).params
 
     assert np.all(params[0] == 0.0)
     assert np.all(params[3] == 0.0)
@@ -134,8 +134,8 @@ def test_extractor_is_deterministic():
     """Two runs on the same curves give bit-identical parameters."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=7)
 
-    first  = CurveParamExtractor(z_axis, 2).run(curves).params
-    second = CurveParamExtractor(z_axis, 2).run(curves).params
+    first  = CurveParamExtractor(z_axis, 2, 1e-4).run(curves).params
+    second = CurveParamExtractor(z_axis, 2, 1e-4).run(curves).params
 
     np.testing.assert_array_equal(first, second)
 
@@ -144,8 +144,8 @@ def test_extractor_chunking_does_not_change_the_result():
     """Chunking the pixel dimension leaves parameters and fit R2 unchanged."""
     curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=9, height=6, width=5)
 
-    whole   = CurveParamExtractor(z_axis, 2, chunk_pixels=10_000).run(curves)
-    chunked = CurveParamExtractor(z_axis, 2, chunk_pixels=7).run(curves)
+    whole   = CurveParamExtractor(z_axis, 2, 1e-4, chunk_pixels=10_000).run(curves)
+    chunked = CurveParamExtractor(z_axis, 2, 1e-4, chunk_pixels=7).run(curves)
 
     np.testing.assert_allclose(whole.params, chunked.params, rtol=1e-5, atol=1e-6)
     np.testing.assert_allclose(whole.fit_r2, chunked.fit_r2, rtol=1e-5, atol=1e-6)
@@ -156,13 +156,13 @@ def test_extractor_rejects_a_mismatched_z_axis():
     curves = np.zeros((N_Z + 1, 2, 2), dtype=np.float32)
 
     with pytest.raises(ValueError, match="different z grids"):
-        CurveParamExtractor(_axis(), 2).run(curves)
+        CurveParamExtractor(_axis(), 2, 1e-4).run(curves)
 
 
 def test_extractor_rejects_a_degenerate_axis():
     """An z axis shorter than three samples is rejected at construction."""
     with pytest.raises(ValueError, match="at least 3 samples"):
-        CurveParamExtractor(np.array([0.0, 1.0], dtype=np.float32), 1)
+        CurveParamExtractor(np.array([0.0, 1.0], dtype=np.float32), 1, 1e-4)
 
 
 def test_wider_gaussians_yield_wider_extracted_sigmas():
@@ -171,8 +171,8 @@ def test_wider_gaussians_yield_wider_extracted_sigmas():
     amps   = np.ones((1, 2, 2), dtype=np.float32)
     mus    = np.zeros((1, 2, 2), dtype=np.float32)
 
-    narrow = CurveParamExtractor(z_axis, 1).run(_mixture(amps, mus, np.full((1, 2, 2), 1.5, np.float32), z_axis)).params
-    wide   = CurveParamExtractor(z_axis, 1).run(_mixture(amps, mus, np.full((1, 2, 2), 4.0, np.float32), z_axis)).params
+    narrow = CurveParamExtractor(z_axis, 1, 1e-4).run(_mixture(amps, mus, np.full((1, 2, 2), 1.5, np.float32), z_axis)).params
+    wide   = CurveParamExtractor(z_axis, 1, 1e-4).run(_mixture(amps, mus, np.full((1, 2, 2), 4.0, np.float32), z_axis)).params
 
     assert wide[2].mean() > narrow[2].mean()
     assert np.abs(narrow[2] - 1.5).max() < 0.4
@@ -218,7 +218,7 @@ def _pipeline_pieces(tmp_path, seed=11):
         InferenceComponents(param_space=False),
     )
 
-    run  = SimpleNamespace(n_gaussians=2, split_name="test", split_region=SimpleNamespace(as_tuple=lambda: (0, 4, 0, 3)), core_region=None, track_baselines=None, track_profiles=None)
+    run  = SimpleNamespace(n_gaussians=2, activity_threshold=1e-4, split_name="test", split_region=SimpleNamespace(as_tuple=lambda: (0, 4, 0, 3)), core_region=None, track_baselines=None, track_profiles=None)
     meta = SimpleNamespace(cube_dir=tmp_path, metrics_path=tmp_path / "metrics.json")
 
     return pipeline, pipeline.config, meta, run, result, z_axis
@@ -299,7 +299,7 @@ def test_extractor_handles_a_descending_z_axis():
     mus    = np.full((1, 2, 2), 3.0, dtype=np.float32)
     sigs   = np.full((1, 2, 2), 2.5, dtype=np.float32)
 
-    params = CurveParamExtractor(z_axis, 1).run(_mixture(amps, mus, sigs, z_axis)).params
+    params = CurveParamExtractor(z_axis, 1, 1e-4).run(_mixture(amps, mus, sigs, z_axis)).params
 
     assert np.abs(params[1] - 3.0).max() < 0.5
     assert np.abs(params[2] - 2.5).max() < 0.5
@@ -330,7 +330,7 @@ def test_extractor_does_not_fork_a_process_pool_by_default():
     PeakInitialiser.__init__ = spy
     try:
         curves, _amps, _mus, _sigs, z_axis = _separated_scene(seed=13)
-        CurveParamExtractor(z_axis, 2).run(curves)
+        CurveParamExtractor(z_axis, 2, 1e-4).run(curves)
     finally:
         PeakInitialiser.__init__ = build
 

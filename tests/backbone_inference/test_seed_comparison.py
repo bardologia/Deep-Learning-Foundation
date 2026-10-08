@@ -10,19 +10,20 @@ from types   import SimpleNamespace
 import numpy as np
 import pytest
 
-from pipelines.backbone.inference.analysis.seed_comparison import SeedComparison, SeedComparisonReport, SeedEnsembleEvaluation, SeedInferenceResolver
+from pipelines.backbone.inference.analysis.seed_comparison import SeedActivityThreshold, SeedComparison, SeedComparisonReport, SeedEnsembleEvaluation, SeedInferenceResolver
 
 from tests.conftest import SilentLogger
 
 
-def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp") -> Path:
+def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp", activity_threshold: float | None = 1e-3) -> Path:
     """Writes a seed run directory holding one inference stamp with metrics and a report.
 
     Args:
-        group     : Directory holding the seed runs.
-        seed_name : Name of the seed run directory.
-        metrics   : Metric payload written to the inference metrics file.
-        stamp     : Name of the inference output subdirectory.
+        group              : Directory holding the seed runs.
+        seed_name          : Name of the seed run directory.
+        metrics            : Metric payload written to the inference metrics file.
+        stamp              : Name of the inference output subdirectory.
+        activity_threshold : Activity threshold recorded in the metrics file, or None to leave it out as inference wrote it before the field existed.
 
     Returns:
         Path of the created run directory.
@@ -31,8 +32,12 @@ def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp") 
     out_dir = run_dir / "inference" / stamp
     out_dir.mkdir(parents=True)
 
+    recorded = dict(metrics)
+    if activity_threshold is not None:
+        recorded["activity_threshold"] = activity_threshold
+
     (run_dir / "meta").mkdir(exist_ok=True)
-    (out_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    (out_dir / "metrics.json").write_text(json.dumps(recorded), encoding="utf-8")
     (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
 
     return run_dir
@@ -41,13 +46,14 @@ def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp") 
 def _report(group: Path, runs: list[Path], stamp: str = "stamp") -> SeedComparisonReport:
     """Returns a seed comparison report over the given run directories and inference stamp."""
     return SeedComparisonReport(
-        group_dir        = group,
-        run_dirs         = runs,
-        inference_dirs   = [run / "inference" / stamp for run in runs],
-        output_subdir    = stamp,
-        metrics_filename = "metrics.json",
-        report_filename  = "report.md",
-        logger           = SilentLogger(),
+        group_dir          = group,
+        run_dirs           = runs,
+        inference_dirs     = [run / "inference" / stamp for run in runs],
+        activity_threshold = 1e-3,
+        output_subdir      = stamp,
+        metrics_filename   = "metrics.json",
+        report_filename    = "report.md",
+        logger             = SilentLogger(),
     )
 
 
@@ -115,6 +121,7 @@ def test_report_aggregates_mean_and_sample_std(tmp_path):
     payload = json.loads((group / "inference" / "stamp" / "metrics.json").read_text(encoding="utf-8"))
 
     assert payload["n_seeds"]               == 2
+    assert payload["activity_threshold"]    == 1e-3
     assert list(payload["seed_runs"])       == ["seed0", "seed1"]
     assert payload["seed_inference"]        == {"seed0": "stamp", "seed1": "stamp"}
     assert payload["mean"]["curve_mse_gt"]  == pytest.approx(2.0)
@@ -192,6 +199,42 @@ def _config(runs_dir: Path, group_tags: list[str], inference_subdir: str = "", o
         compute_ensemble     = False,
         cubes_subdir         = "cubes",
     )
+
+
+def test_activity_threshold_is_the_value_every_seed_recorded(tmp_path):
+    """Seeds scored at one recorded threshold resolve to that value."""
+    group = tmp_path / "group"
+    runs  = [_seed_run(group, f"seed{i}", {"curve_mse_gt": 1.0}, activity_threshold=1e-4) for i in range(2)]
+
+    threshold = SeedActivityThreshold("metrics.json").resolve(["seed0", "seed1"], [run / "inference" / "stamp" for run in runs])
+
+    assert threshold == 1e-4
+
+
+def test_seeds_scored_at_different_thresholds_are_refused_on_the_default_path(tmp_path, monkeypatch):
+    """Seeds whose metrics record different activity thresholds are refused before any metric is averaged."""
+    monkeypatch.chdir(tmp_path)
+
+    group = tmp_path / "runs" / "group"
+    _seed_run(group, "seed0", {"curve_mse_gt": 1.0}, activity_threshold=1e-4)
+    _seed_run(group, "seed1", {"curve_mse_gt": 3.0}, activity_threshold=1e-3)
+
+    with pytest.raises(ValueError, match="different activity thresholds"):
+        SeedComparison(_config(group, [], output_subdir="agg")).run()
+
+    assert not (group / "inference" / "agg" / "metrics.json").exists()
+
+
+def test_metrics_without_a_recorded_threshold_are_refused(tmp_path, monkeypatch):
+    """Metrics written before the threshold was recorded are refused with a request to re-run inference."""
+    monkeypatch.chdir(tmp_path)
+
+    group = tmp_path / "runs" / "group"
+    _seed_run(group, "seed0", {"curve_mse_gt": 1.0}, activity_threshold=None)
+    _seed_run(group, "seed1", {"curve_mse_gt": 3.0}, activity_threshold=None)
+
+    with pytest.raises(KeyError, match="re-run inference for seed seed0"):
+        SeedComparison(_config(group, [], output_subdir="agg")).run()
 
 
 def test_comparison_compares_each_selected_group_in_isolation(tmp_path, monkeypatch):
@@ -324,14 +367,15 @@ def test_report_renders_the_ensemble_section(tmp_path):
     ]
 
     report = SeedComparisonReport(
-        group_dir        = group,
-        run_dirs         = runs,
-        inference_dirs   = [run / "inference" / "stamp" for run in runs],
-        output_subdir    = "stamp",
-        metrics_filename = "metrics.json",
-        report_filename  = "report.md",
-        logger           = SilentLogger(),
-        ensemble         = {"n_seeds": 2, "curve_mse_gt": 0.5},
+        group_dir          = group,
+        run_dirs           = runs,
+        inference_dirs     = [run / "inference" / "stamp" for run in runs],
+        activity_threshold = 1e-3,
+        output_subdir      = "stamp",
+        metrics_filename   = "metrics.json",
+        report_filename    = "report.md",
+        logger             = SilentLogger(),
+        ensemble           = {"n_seeds": 2, "curve_mse_gt": 0.5},
     )
 
     text    = report.run().read_text(encoding="utf-8")

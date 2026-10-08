@@ -77,7 +77,7 @@ def _global_metrics():
         params_gt          = params.copy(),
     )
 
-    m = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2)
+    m = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)
     return m.compute(
         z_indices   = np.arange(N_Z),
         col_indices = np.arange(W),

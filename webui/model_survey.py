@@ -337,13 +337,13 @@ class ModelSurvey:
         ph, pw = self.loaded["patch"]
         gt     = run.dataset.gt_parameters
 
-        pred_active = ParamMatcher.is_active(params[0, 0::3]).sum(axis=0)
+        pred_active = ParamMatcher.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0)
         acc["pred_active"].append(pred_active.ravel())
 
         gt_tile = None
         if gt is not None:
             gt_tile   = np.asarray(gt[:, top:top + ph, left:left + pw], dtype=np.float32)
-            gt_active = ParamMatcher.is_active(gt_tile[0::3]).sum(axis=0)
+            gt_active = ParamMatcher.is_active(gt_tile[0::3], run.activity_threshold).sum(axis=0)
             acc["gt_active"].append(gt_active.ravel())
             acc["count_match"].append((pred_active == gt_active).ravel())
 
@@ -351,9 +351,9 @@ class ModelSurvey:
             pred_t = torch.from_numpy(params[0].reshape(n_k, 3, ph, pw)[None].copy())
             gt_t   = torch.from_numpy(gt_tile.reshape(n_k, 3, ph, pw)[None].copy())
 
-            matched, _, sorted_gt, _ = ParamMatcher.match(pred_t, pred_t, gt_t, gt_t, method=ParamMatcher.HUNGARIAN)
+            matched, _, sorted_gt, _ = ParamMatcher.match(pred_t, pred_t, gt_t, gt_t, active_thr=run.activity_threshold, method=ParamMatcher.HUNGARIAN)
 
-            mask  = (sorted_gt[:, :, 0] > ParamMatcher.ACTIVE_AMP_THR).float()
+            mask  = (sorted_gt[:, :, 0] > run.activity_threshold).float()
             error = (matched - sorted_gt).abs()
 
             for offset, family in enumerate(ModelProbe.FAMILIES):
@@ -431,9 +431,9 @@ class ModelSurvey:
         params = run.model(batch)
         deltas = self._delta_pass(params)
 
-        base_active = ParamMatcher.is_active(params[0, 0::3])
+        base_active = ParamMatcher.is_active(params[0, 0::3], run.activity_threshold)
         for channel in range(n_channels):
-            variant_active = ParamMatcher.is_active(params[channel + 1, 0::3])
+            variant_active = ParamMatcher.is_active(params[channel + 1, 0::3], run.activity_threshold)
             acc["abl_delta"][channel] += float(deltas[channel + 1].sum())
             acc["abl_flips"][channel] += float((variant_active != base_active).any(axis=0).sum())
         acc["abl_pixels"] += deltas.shape[1] * deltas.shape[2]

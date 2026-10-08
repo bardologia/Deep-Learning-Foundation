@@ -270,7 +270,7 @@ class FigureComposer:
         slot_plotter  = self.plotter.slot
         meta          = self.meta
         logger        = self.logger
-        assignment    = result.assignment(run.n_gaussians, self.cfg.active_amp_thr) if result.params_gt is not None else None
+        assignment    = result.assignment(run.n_gaussians, run.activity_threshold) if result.params_gt is not None else None
 
         figure_paths["param_distributions"] = param_plotter.plot_param_distributions(
             params_pred   = result.params_pred[: run.n_gaussians * 3],
@@ -278,7 +278,7 @@ class FigureComposer:
             n_gaussians   = run.n_gaussians,
             out_dir       = meta.figures_dir / "param_distributions",
             assignment    = assignment,
-            amp_threshold = self.cfg.active_amp_thr,
+            amp_threshold = run.activity_threshold,
         )
 
         figure_paths["param_scatter"] = param_plotter.plot_param_scatter(
@@ -287,7 +287,7 @@ class FigureComposer:
             n_gaussians   = run.n_gaussians,
             out_dir       = meta.figures_dir / "param_scatter",
             assignment    = assignment,
-            amp_threshold = self.cfg.active_amp_thr,
+            amp_threshold = run.activity_threshold,
         )
 
         figure_paths["param_error_maps"] = param_plotter.plot_param_error_maps(
@@ -298,7 +298,7 @@ class FigureComposer:
             row_offset     = result.row_offset,
             col_offset     = result.col_offset,
             assignment    = assignment,
-            amp_threshold = self.cfg.active_amp_thr,
+            amp_threshold = run.activity_threshold,
         )
 
         figure_paths["param_error_hists"] = param_plotter.plot_param_error_hists(
@@ -307,7 +307,7 @@ class FigureComposer:
             n_gaussians   = run.n_gaussians,
             out_dir       = meta.figures_dir / "param_error_hists",
             assignment    = assignment,
-            amp_threshold = self.cfg.active_amp_thr,
+            amp_threshold = run.activity_threshold,
         )
 
         figure_paths["active_count_map"] = slot_plotter.plot_active_count_map(
@@ -317,7 +317,7 @@ class FigureComposer:
             out_dir       = meta.figures_dir / "slots",
             row_offset     = result.row_offset,
             col_offset     = result.col_offset,
-            amp_threshold = self.cfg.active_amp_thr,
+            amp_threshold = run.activity_threshold,
         )
 
         logger.subsection(f"Param plots : distributions, scatter, error maps, error histograms, active-count map written to {meta.figures_dir}")
@@ -340,12 +340,12 @@ class FigureComposer:
         params_pred = result.params_pred[: n_K * 3]
         params_gt   = result.params_gt  [: n_K * 3] if result.params_gt is not None else None
 
-        figure_paths["slot_usage"]      = org_plotter.plot_slot_usage(params_pred, n_K, out_dir, amp_threshold=self.cfg.active_amp_thr)
-        figure_paths["slot_param_dist"] = org_plotter.plot_slot_param_distributions(params_pred, n_K, out_dir, amp_threshold=self.cfg.active_amp_thr)
-        figure_paths["slot_mu_rank"]    = org_plotter.plot_mu_rank_matrix(params_pred, n_K, out_dir, amp_threshold=self.cfg.active_amp_thr)
+        figure_paths["slot_usage"]      = org_plotter.plot_slot_usage(params_pred, n_K, out_dir, amp_threshold=run.activity_threshold)
+        figure_paths["slot_param_dist"] = org_plotter.plot_slot_param_distributions(params_pred, n_K, out_dir, amp_threshold=run.activity_threshold)
+        figure_paths["slot_mu_rank"]    = org_plotter.plot_mu_rank_matrix(params_pred, n_K, out_dir, amp_threshold=run.activity_threshold)
 
         if params_gt is not None:
-            figure_paths["slot_assignment"] = org_plotter.plot_assignment_matrix(params_pred, params_gt, n_K, out_dir, assignment=result.assignment(n_K, self.cfg.active_amp_thr), amp_threshold=self.cfg.active_amp_thr)
+            figure_paths["slot_assignment"] = org_plotter.plot_assignment_matrix(params_pred, params_gt, n_K, out_dir, assignment=result.assignment(n_K, run.activity_threshold), amp_threshold=run.activity_threshold)
 
         logger.subsection(f"Slot organization : usage, per-slot distributions, μ-rank and GT-assignment matrices written to {out_dir}")
 

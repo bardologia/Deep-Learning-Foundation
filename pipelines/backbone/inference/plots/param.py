@@ -96,9 +96,9 @@ class ParamPlotter(PlotTools):
         params_gt     : Optional[np.ndarray],
         n_gaussians   : int,
         out_dir       : Path,
+        amp_threshold : float,
         assignment    : Optional[np.ndarray] = None,
-        bins          : int   = 80,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
+        bins          : int = 80,
     ) -> List[Path]:
         """Plots predicted-versus-GT histograms of each parameter, one figure per Gaussian and parameter.
 
@@ -112,9 +112,9 @@ class ParamPlotter(PlotTools):
             params_gt     : Ground-truth parameter cube of the same shape, or None.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
             assignment    : Precomputed predicted-to-GT assignment, or None to match here.
             bins          : Number of histogram bins.
-            amp_threshold : Amplitude above which a slot counts as active.
 
         Returns:
             Paths of the written figures.
@@ -303,10 +303,10 @@ class ParamPlotter(PlotTools):
         params_gt     : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
+        amp_threshold : float,
         assignment    : Optional[np.ndarray] = None,
-        max_points    : int   = 8_000,
-        seed          : int   = 0,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
+        max_points    : int = 8_000,
+        seed          : int = 0,
     ) -> List[Path]:
         """Plots matched prediction against ground truth as a density scatter, one figure per Gaussian and parameter.
 
@@ -318,10 +318,10 @@ class ParamPlotter(PlotTools):
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
             assignment    : Precomputed predicted-to-GT assignment, or None to match here.
             max_points    : Maximum number of scatter points drawn per figure.
             seed          : Seed of the subsampling generator.
-            amp_threshold : Amplitude above which a slot counts as active.
 
         Returns:
             Paths of the written figures.
@@ -387,10 +387,10 @@ class ParamPlotter(PlotTools):
         params_gt     : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
-        row_offset     : int,
-        col_offset     : int,
+        row_offset    : int,
+        col_offset    : int,
+        amp_threshold : float,
         assignment    : Optional[np.ndarray] = None,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
     ) -> List[Path]:
         """Maps the absolute matched parameter error over the scene, one figure per Gaussian and parameter.
 
@@ -402,10 +402,10 @@ class ParamPlotter(PlotTools):
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
-            row_offset     : Row index of the crop origin, used for the axis extent.
-            rg_offset     : Range index of the crop origin, used for the axis extent.
+            row_offset    : Row index of the crop origin, used for the axis extent.
+            col_offset    : Column index of the crop origin, used for the axis extent.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
             assignment    : Precomputed predicted-to-GT assignment, or None to match here.
-            amp_threshold : Amplitude above which a slot counts as active.
 
         Returns:
             Paths of the written figures.
@@ -455,9 +455,9 @@ class ParamPlotter(PlotTools):
         params_gt     : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
+        amp_threshold : float,
         assignment    : Optional[np.ndarray] = None,
-        bins          : int   = 80,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
+        bins          : int = 80,
     ) -> List[Path]:
         """Plots the signed matched parameter error histogram, one figure per Gaussian and parameter.
 
@@ -469,9 +469,9 @@ class ParamPlotter(PlotTools):
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
             assignment    : Precomputed predicted-to-GT assignment, or None to match here.
             bins          : Number of histogram bins.
-            amp_threshold : Amplitude above which a slot counts as active.
 
         Returns:
             Paths of the written figures.

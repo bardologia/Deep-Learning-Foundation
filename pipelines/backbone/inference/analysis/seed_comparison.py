@@ -94,6 +94,48 @@ class SeedInferenceResolver:
         return self._latest(inference_root)
 
 
+class SeedActivityThreshold:
+    """Resolves the one activity threshold every seed inference of a group was scored with.
+
+    Active-slot metrics and matched slots depend on that threshold, so seeds scored
+    at different values, or before the value was recorded, are refused on every
+    comparison path rather than averaged.
+
+    Attributes:
+        metrics_filename : Metrics file read from each seed's inference directory.
+    """
+
+    def __init__(self, metrics_filename: str) -> None:
+        """Stores the metrics filename the recorded threshold is read from."""
+        self.metrics_filename = metrics_filename
+
+    def resolve(self, seeds: list[str], inference_dirs: list[Path]) -> float:
+        """Returns the activity threshold shared by every seed's inference.
+
+        Args:
+            seeds          : Seed labels aligned with inference_dirs.
+            inference_dirs : Resolved inference directory of each seed.
+
+        Returns:
+            The common activity threshold the seeds were scored with.
+
+        Raises:
+            KeyError   : If a seed's metrics file carries no activity_threshold, which inference written before the field existed lacks.
+            ValueError : If the seeds were scored with different activity thresholds, which makes their active-slot metrics and matched slots incomparable.
+        """
+        thresholds = {}
+        for seed, inference_dir in zip(seeds, inference_dirs):
+            metrics = FileIO.load_json(Path(inference_dir) / self.metrics_filename)
+            if "activity_threshold" not in metrics:
+                raise KeyError(f"{Path(inference_dir) / self.metrics_filename} has no activity_threshold; re-run inference for seed {seed}")
+
+            thresholds[seed] = float(metrics["activity_threshold"])
+
+        if len(set(thresholds.values())) != 1:
+            raise ValueError(f"The seeds were scored with different activity thresholds {thresholds}; re-run their inference against one label run before comparing them")
+
+        return next(iter(thresholds.values()))
+
 
 class SeedEnsembleEvaluation:
     """Scores the across-seed mean prediction cube against the ground-truth curves.
@@ -186,29 +228,33 @@ class SeedComparisonReport:
     """Reduces the metrics of one seed group to mean +/- std and writes the report.
 
     Attributes:
-        group_dir        : Directory holding the seed runs.
-        run_dirs         : Seed run directories in aggregation order.
-        inference_dirs   : Inference directory chosen for each seed run.
-        metrics_filename : Metrics filename read per seed and written aggregated.
-        report_filename  : Filename of each seed's own report and of this report.
-        logger           : Logger for the written-artifact lines.
-        disagreement     : Seed-disagreement payload, or None when not computed.
-        output_dir       : Group-level inference directory receiving the aggregate.
-        seeds            : Seed labels, relative to the group directory.
+        group_dir          : Directory holding the seed runs.
+        run_dirs           : Seed run directories in aggregation order.
+        inference_dirs     : Inference directory chosen for each seed run.
+        activity_threshold : Activity threshold every seed's inference was scored with.
+        metrics_filename   : Metrics filename read per seed and written aggregated.
+        report_filename    : Filename of each seed's own report and of this report.
+        logger             : Logger for the written-artifact lines.
+        disagreement       : Seed-disagreement payload, or None when not computed.
+        ensemble           : Seed-ensemble scores, or None when not computed.
+        output_dir         : Group-level inference directory receiving the aggregate.
+        seeds              : Seed labels, relative to the group directory.
     """
 
-    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
+    def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], activity_threshold: float, output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
         """Binds the seed group and validates that at least two seeds are present.
 
         Args:
-            group_dir        : Directory holding the seed runs.
-            run_dirs         : Seed run directories.
-            inference_dirs   : Inference directory chosen for each seed run.
-            output_subdir    : Name of the group-level output directory.
-            metrics_filename : Metrics filename read per seed.
-            report_filename  : Report filename of each seed and of this aggregate.
-            logger           : Logger for the written-artifact lines.
-            disagreement     : Payload from the seed-disagreement analysis, or None.
+            group_dir          : Directory holding the seed runs.
+            run_dirs           : Seed run directories.
+            inference_dirs     : Inference directory chosen for each seed run.
+            activity_threshold : Activity threshold every seed's inference was scored with, as resolved by SeedActivityThreshold.
+            output_subdir      : Name of the group-level output directory.
+            metrics_filename   : Metrics filename read per seed.
+            report_filename    : Report filename of each seed and of this aggregate.
+            logger             : Logger for the written-artifact lines.
+            disagreement       : Payload from the seed-disagreement analysis, or None.
+            ensemble           : Scores of the seed-ensemble evaluation, or None.
 
         Raises:
             ValueError : If fewer than two seed runs are given.
@@ -216,14 +262,15 @@ class SeedComparisonReport:
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
 
-        self.group_dir        = Path(group_dir)
-        self.run_dirs         = [Path(d) for d in run_dirs]
-        self.inference_dirs   = [Path(d) for d in inference_dirs]
-        self.metrics_filename = metrics_filename
-        self.report_filename  = report_filename
-        self.logger           = logger
-        self.disagreement     = disagreement
-        self.ensemble         = ensemble
+        self.group_dir          = Path(group_dir)
+        self.run_dirs           = [Path(d) for d in run_dirs]
+        self.inference_dirs     = [Path(d) for d in inference_dirs]
+        self.activity_threshold = float(activity_threshold)
+        self.metrics_filename   = metrics_filename
+        self.report_filename    = report_filename
+        self.logger             = logger
+        self.disagreement       = disagreement
+        self.ensemble           = ensemble
 
         self.output_dir = self.group_dir / "inference" / output_subdir
         self.seeds      = [str(d.relative_to(self.group_dir)) for d in self.run_dirs]
@@ -253,13 +300,14 @@ class SeedComparisonReport:
             The written JSON path.
         """
         payload = {
-            "n_seeds"        : len(self.run_dirs),
-            "seed_runs"      : {seed: str(run_dir) for seed, run_dir in zip(self.seeds, self.run_dirs)},
-            "seed_inference" : {seed: inference_dir.name for seed, inference_dir in zip(self.seeds, self.inference_dirs)},
-            "mean"           : means,
-            "std"            : stds,
-            "ci95"           : {key: list(interval) for key, interval in cis.items()},
-            "n"              : counts,
+            "n_seeds"            : len(self.run_dirs),
+            "activity_threshold" : self.activity_threshold,
+            "seed_runs"          : {seed: str(run_dir) for seed, run_dir in zip(self.seeds, self.run_dirs)},
+            "seed_inference"     : {seed: inference_dir.name for seed, inference_dir in zip(self.seeds, self.inference_dirs)},
+            "mean"               : means,
+            "std"                : stds,
+            "ci95"               : {key: list(interval) for key, interval in cis.items()},
+            "n"                  : counts,
         }
 
         if self.disagreement is not None:
@@ -423,7 +471,7 @@ class SeedComparisonReport:
         lines = ["# ML Template Seed-Comparison Report", ""]
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")
-        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's existing inference (no inference re-run). Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std with a 95% confidence interval.")
+        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's existing inference (no inference re-run), all scored at activity threshold {self._fmt(self.activity_threshold)}. Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std with a 95% confidence interval.")
 
         lines += self._build_seed_runs_section()
         lines += self._build_metrics_section(per_seed, means, stds, cis, counts)
@@ -512,13 +560,18 @@ class SeedComparison:
             The written seed-comparison report path.
 
         Raises:
-            ValueError : If the group holds fewer than two seed runs.
+            ValueError : If the group holds fewer than two seed runs, or if the seeds were scored at different activity thresholds.
+            KeyError   : If a seed's metrics record no activity threshold.
         """
         run_dirs = sorted(RunDirectoryWalk.walk(group_dir))
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
 
         inference_dirs = [resolver.resolve(run_dir) for run_dir in run_dirs]
+        seeds          = [str(run_dir.relative_to(group_dir)) for run_dir in run_dirs]
+        threshold      = SeedActivityThreshold(self.config.metrics_filename).resolve(seeds, inference_dirs)
+
+        logger.info(f"Activity threshold {threshold:g} shared by all {len(seeds)} seeds")
 
         ensemble = None
         if self.config.compute_ensemble:
@@ -533,20 +586,21 @@ class SeedComparison:
                 cubes_subdir     = self.config.cubes_subdir,
                 metrics_filename = self.config.metrics_filename,
                 output_dir       = group_dir / "inference" / output_subdir,
+                active_amp_thr   = threshold,
                 logger           = logger,
-                active_amp_thr   = self.config.active_amp_thr,
             ).run()
 
         return SeedComparisonReport(
-            group_dir        = group_dir,
-            run_dirs         = run_dirs,
-            inference_dirs   = inference_dirs,
-            output_subdir    = output_subdir,
-            metrics_filename = self.config.metrics_filename,
-            report_filename  = self.config.report_filename,
-            logger           = logger,
-            disagreement     = disagreement,
-            ensemble         = ensemble,
+            group_dir          = group_dir,
+            run_dirs           = run_dirs,
+            inference_dirs     = inference_dirs,
+            activity_threshold = threshold,
+            output_subdir      = output_subdir,
+            metrics_filename   = self.config.metrics_filename,
+            report_filename    = self.config.report_filename,
+            logger             = logger,
+            disagreement       = disagreement,
+            ensemble           = ensemble,
         ).run()
 
     def run(self) -> list[Path]:

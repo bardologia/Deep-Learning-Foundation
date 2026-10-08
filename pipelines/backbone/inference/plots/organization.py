@@ -17,7 +17,6 @@ import matplotlib.pyplot    as plt
 import numpy                as np
 
 from pipelines.backbone.inference.plots.base import PlotTools
-from tools.loss.param_loss                   import ParamMatcher
 from tools.metrics.slot_organization         import SlotOrganization
 
 
@@ -29,7 +28,7 @@ class SlotOrganizationPlotter(PlotTools):
         params_pred   : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
+        amp_threshold : float,
     ) -> List[Path]:
         """Plots the fraction of pixels on which each raw output slot is active.
 
@@ -37,7 +36,7 @@ class SlotOrganizationPlotter(PlotTools):
             params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figure is written into.
-            amp_threshold : Amplitude above which a slot counts as active.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
 
         Returns:
             Single-element list holding the written figure path.
@@ -69,8 +68,8 @@ class SlotOrganizationPlotter(PlotTools):
         params_pred   : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
-        bins          : int   = 80,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
+        amp_threshold : float,
+        bins          : int = 80,
     ) -> List[Path]:
         """Plots one overlaid histogram per parameter, with a curve per raw slot over active pixels.
 
@@ -81,8 +80,8 @@ class SlotOrganizationPlotter(PlotTools):
             params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figures are written into.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
             bins          : Number of histogram bins.
-            amp_threshold : Amplitude above which a slot counts as active.
 
         Returns:
             Paths of the written figures, one per parameter that had populated slots.
@@ -145,7 +144,7 @@ class SlotOrganizationPlotter(PlotTools):
         params_pred   : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
+        amp_threshold : float,
     ) -> List[Path]:
         """Plots the row-normalised matrix of raw slot index against within-pixel μ rank.
 
@@ -155,7 +154,7 @@ class SlotOrganizationPlotter(PlotTools):
             params_pred   : Predicted parameter cube of shape (3 * K, rows, cols).
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figure is written into.
-            amp_threshold : Amplitude above which a slot counts as active.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
 
         Returns:
             Single-element list holding the written figure path.
@@ -182,8 +181,8 @@ class SlotOrganizationPlotter(PlotTools):
         params_gt     : np.ndarray,
         n_gaussians   : int,
         out_dir       : Path,
-        assignment    : np.ndarray | None    = None,
-        amp_threshold : float                = ParamMatcher.ACTIVE_AMP_THR,
+        amp_threshold : float,
+        assignment    : np.ndarray | None = None,
     ) -> List[Path]:
         """Plots the row-normalised matrix of raw slot index against matched ground-truth index.
 
@@ -194,8 +193,8 @@ class SlotOrganizationPlotter(PlotTools):
             params_gt     : Ground-truth parameter cube of the same shape.
             n_gaussians   : Gaussian count K.
             out_dir       : Directory the figure is written into.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
             assignment    : Precomputed predicted-to-GT assignment, or None to match here.
-            amp_threshold : Amplitude above which a slot counts as active.
 
         Returns:
             Single-element list holding the written figure path.

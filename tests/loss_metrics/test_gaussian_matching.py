@@ -33,7 +33,7 @@ def _reorder(params, order):
 def test_assignment_is_identity_for_separated_match():
     """Matching well-separated identical parameters assigns each slot to itself."""
     p        = _separated_params()
-    sel      = GaussianMatcher().assignment(p, p.copy(), N_K)
+    sel      = GaussianMatcher(amp_threshold=1e-4).assignment(p, p.copy(), N_K)
     expected = np.tile(np.arange(N_K), (sel.shape[0], 1))
     assert np.array_equal(sel, expected)
 
@@ -47,7 +47,7 @@ def test_aligned_prediction_invariant_to_pred_slot_order():
         pred[3 * k + 1] += 0.5 * rng.standard_normal((4, 4)).astype(np.float32)
         pred[3 * k + 2] += 0.2 * rng.standard_normal((4, 4)).astype(np.float32)
 
-    matcher  = GaussianMatcher()
+    matcher  = GaussianMatcher(amp_threshold=1e-4)
     base     = matcher.aligned_prediction(pred,                          gt, N_K)
     shuffled = matcher.aligned_prediction(_reorder(pred, [2, 0, 4, 1, 3]), gt, N_K)
 
@@ -65,7 +65,7 @@ def test_aligned_prediction_marks_missed_gt_as_nan():
 
     pred[0], pred[1], pred[2] = 1.0, 0.0, 3.0
 
-    aligned = GaussianMatcher().aligned_prediction(pred, gt, N_K)
+    aligned = GaussianMatcher(amp_threshold=1e-4).aligned_prediction(pred, gt, N_K)
 
     assert np.isfinite(aligned[1, 0, 0])
     assert aligned[1, 0, 0] == 0.0

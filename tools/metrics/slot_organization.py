@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from tools.loss.param_loss           import ParamMatcher
 from tools.metrics.gaussian_matching import GaussianMatcher
 
 
@@ -17,7 +16,7 @@ class SlotOrganization:
     """Slot usage, z-rank and assignment statistics of a prediction."""
 
     @staticmethod
-    def usage_fractions(params_pred: np.ndarray, n_K: int, amp_threshold: float = ParamMatcher.ACTIVE_AMP_THR) -> np.ndarray:
+    def usage_fractions(params_pred: np.ndarray, n_K: int, amp_threshold: float) -> np.ndarray:
         """Returns the fraction of pixels in which each slot is active.
 
         Args:
@@ -54,7 +53,7 @@ class SlotOrganization:
         return h / float(np.log(p.size))
 
     @staticmethod
-    def mu_rank_matrix(params_pred: np.ndarray, n_K: int, amp_threshold: float = ParamMatcher.ACTIVE_AMP_THR) -> np.ndarray:
+    def mu_rank_matrix(params_pred: np.ndarray, n_K: int, amp_threshold: float) -> np.ndarray:
         """Counts how often each slot takes each z rank among the active slots.
 
         Args:
@@ -87,7 +86,7 @@ class SlotOrganization:
         return counts
 
     @staticmethod
-    def assignment_matrix(params_pred: np.ndarray, params_gt: np.ndarray, n_K: int, amp_threshold: float = ParamMatcher.ACTIVE_AMP_THR, assignment: np.ndarray | None = None) -> np.ndarray:
+    def assignment_matrix(params_pred: np.ndarray, params_gt: np.ndarray, n_K: int, amp_threshold: float, assignment: np.ndarray | None = None) -> np.ndarray:
         """Counts how often each predicted slot is matched to each ground-truth slot.
 
         Args:

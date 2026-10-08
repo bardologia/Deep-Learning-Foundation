@@ -77,16 +77,17 @@ def _build_run(n_rows: int, n_cols: int, in_channels: int = 4):
     dataset = types.SimpleNamespace(normalizer=_IdentityNormalizer())
 
     run = types.SimpleNamespace(
-        model         = wrapper,
-        n_gaussians   = N_GAUSSIANS,
-        out_channels  = OUT_CH,
-        z_axis        = z_axis,
-        x_axis_length = N_Z,
-        grid          = grid,
-        loader        = loader,
-        dataset       = dataset,
-        split_region  = region,
-        full_curves   = None,
+        model              = wrapper,
+        n_gaussians        = N_GAUSSIANS,
+        activity_threshold = 1e-4,
+        out_channels       = OUT_CH,
+        z_axis             = z_axis,
+        x_axis_length      = N_Z,
+        grid               = grid,
+        loader             = loader,
+        dataset            = dataset,
+        split_region       = region,
+        full_curves        = None,
     )
     return run
 
@@ -233,8 +234,8 @@ def test_cpu_worker_render_floor_drops_weak_components():
 
     gt = pred.copy()
 
-    unmasked = Predictor._cpu_worker((pred, gt, z_axis, 2, 0.0))
-    masked   = Predictor._cpu_worker((pred, gt, z_axis, 2, 1e-3))
+    unmasked = Predictor._cpu_worker((pred, gt, z_axis, 2, 0.0,  1e-4))
+    masked   = Predictor._cpu_worker((pred, gt, z_axis, 2, 1e-3, 1e-4))
 
     idx20 = int(np.argmin(np.abs(z_axis - 20.0)))
 

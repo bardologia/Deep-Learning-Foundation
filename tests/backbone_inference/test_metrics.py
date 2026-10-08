@@ -186,15 +186,15 @@ def test_ssim_pool_follows_the_configured_cpu_workers():
     curve = rng.random((N_Z, 4, 4)).astype(np.float32)
     result = _make_result(curve, curve)
 
-    assert Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=3).num_workers  == 3
-    assert Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=10_000).num_workers == (os.cpu_count() or 1)
+    assert Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=3, active_amp_thr=1e-4).num_workers  == 3
+    assert Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=10_000, active_amp_thr=1e-4).num_workers == (os.cpu_count() or 1)
 
 
 def test_curve_scalar_metrics_identical():
     """Identical curves give zero MSE, MAE and RMSE, unit R2 and infinite PSNR."""
     rng   = np.random.default_rng(2)
     curve = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.2
-    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS, cpu_workers=2)
+    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)
 
     scal = m._curve_scalar_metrics(curve, curve, suffix="gt")
 
@@ -210,7 +210,7 @@ def test_curve_scalar_metrics_rmse_is_sqrt_mse():
     rng  = np.random.default_rng(3)
     ref  = rng.random((N_Z, 3, 3)).astype(np.float32)
     pred = ref + 0.1 * rng.standard_normal(ref.shape).astype(np.float32)
-    m    = Metrics(_make_result(pred, ref), _x_axis(), N_GAUSSIANS, cpu_workers=2)
+    m    = Metrics(_make_result(pred, ref), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)
 
     scal = m._curve_scalar_metrics(pred, ref, suffix="gt")
 
@@ -292,7 +292,7 @@ def test_z_metrics_identical_perfect():
     """Per-z MAE and RMSE vanish and R2 is one for identical curves."""
     rng   = np.random.default_rng(5)
     curve = rng.random((N_Z, 4, 4)).astype(np.float32) + 0.3
-    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS, cpu_workers=2)
+    m     = Metrics(_make_result(curve, curve), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)
 
     z = m._z_metrics(curve, curve, suffix="gt")
 
@@ -311,7 +311,7 @@ def test_active_count_stats_identical_perfect_agreement():
     params[6] = 0.0
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=params.copy(), params_gt=params.copy())
-    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._active_count_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)._active_count_stats()
 
     assert out["count_exact_frac"]      == pytest.approx(1.0)
     assert out["count_under_frac"]      == pytest.approx(0.0)
@@ -337,7 +337,7 @@ def test_active_count_stats_per_slot_pred_is_permutation_invariant():
     order = [2, 0, 1, 3, 4]
     pred  = _reorder_groups(gt, order)
 
-    out = Metrics(_make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt), _x_axis(), N_GAUSSIANS, cpu_workers=2)._active_count_stats()
+    out = Metrics(_make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)._active_count_stats()
 
     for k in range(N_GAUSSIANS):
         assert out[f"slot_{k}_active_pred_frac"] == pytest.approx(out[f"slot_{k}_active_gt_frac"])
@@ -355,7 +355,7 @@ def test_active_count_stats_undercount_when_pred_drops_slot():
     pred[3] = 0.0
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._active_count_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)._active_count_stats()
 
     assert out["count_under_frac"]       == pytest.approx(1.0)
     assert out["count_exact_frac"]       == pytest.approx(0.0)
@@ -393,7 +393,7 @@ def test_param_population_stats_active_inactive_global_means():
     pred[1, :, :2] += 1.0
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._param_population_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)._param_population_stats()
 
     assert out["slot_0_amp_active_gt_mean"]   == pytest.approx(2.0)
     assert out["slot_0_amp_inactive_gt_mean"] == pytest.approx(0.0)
@@ -428,12 +428,12 @@ def test_param_population_stats_on_nan_masked_ground_truth():
     pred = gt.copy()
 
     for k in range(N_GAUSSIANS):
-        inactive = ~ParamMatcher.is_active(gt[3 * k])
+        inactive = ~ParamMatcher.is_active(gt[3 * k], 1e-4)
         gt[3 * k + 1][inactive] = np.nan
         gt[3 * k + 2][inactive] = np.nan
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._param_population_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)._param_population_stats()
 
     assert out["slot_0_mu_active_gt_mean"]  == pytest.approx(10.0)
     assert out["slot_0_sig_active_gt_mean"] == pytest.approx(4.0)
@@ -457,7 +457,7 @@ def test_param_population_stats_pred_is_permutation_invariant():
     pred  = _reorder_groups(gt, order)
 
     res = _make_result(np.zeros((N_Z, H, W), np.float32), np.zeros((N_Z, H, W), np.float32), params_pred=pred, params_gt=gt)
-    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2)._param_population_stats()
+    out = Metrics(res, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)._param_population_stats()
 
     for k in range(3):
         for param in ("amp", "mu", "sig"):
@@ -477,7 +477,7 @@ def _matched(pred, gt, n_gaussians=N_GAUSSIANS, tol=5.0):
         Mapping of matched-metric name to value.
     """
     res = _make_result(np.zeros((N_Z, *pred.shape[1:]), np.float32), np.zeros((N_Z, *pred.shape[1:]), np.float32), params_pred=pred, params_gt=gt)
-    return Metrics(res, _x_axis(), n_gaussians, cpu_workers=2).matched_gaussian_metrics(match_tol=tol)
+    return Metrics(res, _x_axis(), n_gaussians, cpu_workers=2, active_amp_thr=1e-4).matched_gaussian_metrics(match_tol=tol)
 
 
 def test_matched_identical_is_perfect():
@@ -572,7 +572,7 @@ def test_metrics_identical_scene_parameter_window_is_perfect(parameters):
     curve       = _curves_from_params(params, z_axis, n_gaussians)
 
     res = _make_result(curve, curve, params_pred=params.copy(), params_gt=params.copy())
-    m   = Metrics(res, z_axis, n_gaussians, cpu_workers=2)
+    m   = Metrics(res, z_axis, n_gaussians, cpu_workers=2, active_amp_thr=1e-4)
 
     metrics = m.compute(param_space=True)
 
@@ -593,8 +593,8 @@ def test_metrics_perturbed_scene_window_is_worse(parameters):
     pred_small = gt + 0.001 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
     pred_large = gt + 0.200 * rng.standard_normal(gt.shape).astype(np.float32) * gt.std()
 
-    m_small = Metrics(_make_result(pred_small, gt), z_axis, n_gaussians, cpu_workers=2)
-    m_large = Metrics(_make_result(pred_large, gt), z_axis, n_gaussians, cpu_workers=2)
+    m_small = Metrics(_make_result(pred_small, gt), z_axis, n_gaussians, cpu_workers=2, active_amp_thr=1e-4)
+    m_large = Metrics(_make_result(pred_large, gt), z_axis, n_gaussians, cpu_workers=2, active_amp_thr=1e-4)
 
     s = m_small.compute(param_space=False)
     l = m_large.compute(param_space=False)
@@ -611,7 +611,7 @@ def test_label_quality_perfect_fit_gives_r2_one():
     curves = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
     result = _make_result(curves, curves)
 
-    r2_map, stats = Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(curves.copy())
+    r2_map, stats = Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).label_quality(curves.copy())
 
     assert r2_map.shape == (4, 3)
     assert np.allclose(r2_map, 1.0, atol=1e-5)
@@ -626,8 +626,8 @@ def test_label_quality_noisier_labels_score_lower():
     clean = raw + rng.normal(0.0, 0.01, size=raw.shape).astype(np.float32)
     noisy = raw + rng.normal(0.0, 0.60, size=raw.shape).astype(np.float32)
 
-    _map_clean, stats_clean = Metrics(_make_result(clean, clean), _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(raw)
-    _map_noisy, stats_noisy = Metrics(_make_result(noisy, noisy), _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(raw)
+    _map_clean, stats_clean = Metrics(_make_result(clean, clean), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).label_quality(raw)
+    _map_noisy, stats_noisy = Metrics(_make_result(noisy, noisy), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).label_quality(raw)
 
     assert stats_clean["label_r2_mean"] > stats_noisy["label_r2_mean"]
 
@@ -638,7 +638,7 @@ def test_label_quality_shape_mismatch_raises():
     result = _make_result(curves, curves)
 
     with pytest.raises(ValueError):
-        Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=2).label_quality(np.ones((N_Z, 5, 3), dtype=np.float32))
+        Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).label_quality(np.ones((N_Z, 5, 3), dtype=np.float32))
 
 
 def test_roughness_map_is_zero_for_a_linear_ramp():
@@ -663,7 +663,7 @@ def test_roughness_metrics_report_unit_ratio_for_identical_curves():
     params = _gaussian_params(seed=1)
     curves = _curves_from_params(params, z_axis, N_GAUSSIANS)
 
-    metrics = Metrics(_make_result(curves.copy(), curves), z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=False)
+    metrics = Metrics(_make_result(curves.copy(), curves), z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).compute(param_space=False)
 
     assert metrics["roughness_ratio"]       == pytest.approx(1.0, rel=1e-6)
     assert metrics["roughness_excess_frac"] == pytest.approx(0.0)
@@ -678,7 +678,7 @@ def test_roughness_ratio_exceeds_one_when_the_prediction_carries_jitter():
     jitter = np.tile(np.array([1.0, -1.0], dtype=np.float32), N_Z // 2).reshape(-1, 1, 1)
     pred   = gt + 0.2 * jitter
 
-    metrics = Metrics(_make_result(pred, gt), z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=False)
+    metrics = Metrics(_make_result(pred, gt), z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).compute(param_space=False)
 
     assert metrics["roughness_ratio"] > 2.0
     assert metrics["roughness_excess_frac"] > 0.5
@@ -691,8 +691,8 @@ def test_slot_organization_can_be_switched_off():
     curves = _curves_from_params(params, z_axis, N_GAUSSIANS)
     result = _make_result(curves.copy(), curves, params_pred=params.copy(), params_gt=params)
 
-    with_slots    = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=True, slot_organization=True)
-    without_slots = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2).compute(param_space=True, slot_organization=False)
+    with_slots    = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).compute(param_space=True, slot_organization=True)
+    without_slots = Metrics(result, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4).compute(param_space=True, slot_organization=False)
 
     assert "slot_usage_entropy" in with_slots
     assert "slot_usage_entropy" not in without_slots

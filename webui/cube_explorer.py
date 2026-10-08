@@ -16,7 +16,6 @@ import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
 from catalog_roots            import CatalogRoots, RunScanner
-from tools.loss.param_loss    import ParamMatcher
 from tools.reporting.plotting import PlotBase
 from web_logger               import WebLogger
 
@@ -881,7 +880,7 @@ class CubeExplorer:
             "x_min"       : float(curve_axis[0]),
             "x_max"       : float(curve_axis[-1]),
             "intensity"   : {s: [entries[s]["vmin"], entries[s]["vmax"]] for s in entries},
-            "params"      : self._params_meta(params, curve_axis),
+            "params"      : self._params_meta(params, curve_axis, stamp_dir),
             "metric_maps" : self._metric_maps_meta(metric_maps),
             "attached"    : None,
             "aux"         : aux is not None,
@@ -967,12 +966,12 @@ class CubeExplorer:
 
         return params
 
-    def _params_meta(self, params: dict, curve_axis: np.ndarray) -> dict | None:
+    def _params_meta(self, params: dict, curve_axis: np.ndarray, stamp_dir: Path) -> dict | None:
         if not params:
             return None
 
         n_slots   = next(iter(params.values())).shape[0] // 3
-        threshold = ParamMatcher.ACTIVE_AMP_THR
+        threshold = self._activity_threshold(stamp_dir)
         has_error = "pred" in params and "gt" in params
 
         ranges = {
@@ -996,6 +995,21 @@ class CubeExplorer:
             "error"     : has_error,
             "ranges"    : ranges,
         }
+
+    def _activity_threshold(self, stamp_dir: Path) -> float:
+        """Returns the activity threshold the stamp's parameter cubes were scored with.
+
+        Args:
+            stamp_dir : Inference stamp whose metrics.json is read.
+
+        Raises:
+            KeyError : If the metrics carry no activity_threshold, which inference written before the field existed lacks.
+        """
+        metrics = self._metrics(stamp_dir)
+        if "activity_threshold" not in metrics:
+            raise KeyError(f"metrics.json of {stamp_dir} has no activity_threshold, so the parameter overlays cannot tell active slots apart; re-run inference for it")
+
+        return float(metrics["activity_threshold"])
 
     @staticmethod
     def _field_ceiling(params: dict, offset: int) -> float:

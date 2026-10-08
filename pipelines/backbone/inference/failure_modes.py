@@ -35,15 +35,15 @@ class FailureModes:
     N_SEP_BINS    = 8
     MIN_BIN_COUNT = 30
 
-    def __init__(self, params_pred: np.ndarray, params_gt: np.ndarray, n_gaussians: int, assignment: np.ndarray | None = None, active_amp_thr: float = ParamMatcher.ACTIVE_AMP_THR) -> None:
+    def __init__(self, params_pred: np.ndarray, params_gt: np.ndarray, n_gaussians: int, active_amp_thr: float, assignment: np.ndarray | None = None) -> None:
         """Binds the predicted and ground-truth parameter cubes.
 
         Args:
             params_pred    : Predicted interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, rows, cols).
             params_gt      : Ground-truth parameters of the same shape.
             n_gaussians    : Number of Gaussian slots per pixel.
+            active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active, as recorded by the label run.
             assignment     : Precomputed slot assignment of shape (pixels, n_gaussians), or None to compute it on demand.
-            active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active.
         """
         self.params_pred    = np.asarray(params_pred, dtype=np.float64)
         self.params_gt      = np.asarray(params_gt, dtype=np.float64)

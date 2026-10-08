@@ -17,21 +17,21 @@ class StratifiedErrors:
     """Bins per-pixel curve MSE against scene covariates and scores their rank correlation.
 
     Attributes:
-        N_BINS           : Number of quantile bins used for continuous covariates.
-        MIN_BIN_COUNT    : Minimum pixels a bin needs before it is reported.
+        N_BINS         : Number of quantile bins used for continuous covariates.
+        MIN_BIN_COUNT  : Minimum pixels a bin needs before it is reported.
         loaded         : Loaded run supplying the complex stack, the aux channel and the slot count.
         result         : Inference result supplying the ground-truth parameters and the per-pixel MSE map.
-        active_amp_thr : Physical amplitude at or above which a ground-truth Gaussian slot counts as active.
+        active_amp_thr : Physical amplitude at or above which a ground-truth Gaussian slot counts as active, read from the loaded run.
     """
 
     N_BINS        = 12
     MIN_BIN_COUNT = 30
 
-    def __init__(self, run, result, active_amp_thr: float = ParamMatcher.ACTIVE_AMP_THR) -> None:
-        """Stores the run, the inference result and the active-amplitude threshold."""
+    def __init__(self, run, result) -> None:
+        """Stores the run and the inference result, taking the active-amplitude threshold from the run."""
         self.loaded         = run
         self.result         = result
-        self.active_amp_thr = float(active_amp_thr)
+        self.active_amp_thr = float(run.activity_threshold)
 
     def _gt_active_count(self) -> np.ndarray:
         """Returns the number of active ground-truth Gaussians per pixel, of shape (rows, cols)."""

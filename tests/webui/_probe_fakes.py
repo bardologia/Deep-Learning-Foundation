@@ -132,8 +132,8 @@ def fake_run(n_slots: int = 1, with_gt: bool = True):
     Returns:
         Namespace carrying the wrapped model, a dataset stub, complex inputs of
         shape (2, N_ROWS, N_COLS), unit reference curves of shape
-        (N_Z, N_ROWS, N_COLS), a height axis from -10 to 40 metres and the split
-        region covering the whole scene.
+        (N_Z, N_ROWS, N_COLS), a z axis from -10 to 40 metres, the label run's
+        activity threshold and the split region covering the whole scene.
     """
     rng            = np.random.default_rng(0)
     complex_inputs = (rng.uniform(0.5, 1.0, size=(2, N_ROWS, N_COLS)) + 1j * rng.uniform(0.0, 0.2, size=(2, N_ROWS, N_COLS))).astype(np.complex64)
@@ -151,12 +151,13 @@ def fake_run(n_slots: int = 1, with_gt: bool = True):
     )
 
     return SimpleNamespace(
-        model          = Wrapper(BareModel() if n_slots == 1 else TwoSlotModel()),
-        dataset        = dataset,
-        complex_inputs = complex_inputs,
-        full_curves    = np.ones((N_Z, N_ROWS, N_COLS), dtype=np.float32),
-        z_axis         = np.linspace(-10.0, 40.0, N_Z).astype(np.float32),
-        n_gaussians    = n_slots,
-        in_channels    = 2,
-        split_region   = SimpleNamespace(row_size=N_ROWS, col_size=N_COLS, row_start=0, col_start=0),
+        model              = Wrapper(BareModel() if n_slots == 1 else TwoSlotModel()),
+        dataset            = dataset,
+        complex_inputs     = complex_inputs,
+        full_curves        = np.ones((N_Z, N_ROWS, N_COLS), dtype=np.float32),
+        z_axis             = np.linspace(-10.0, 40.0, N_Z).astype(np.float32),
+        n_gaussians        = n_slots,
+        activity_threshold = 1e-4,
+        in_channels        = 2,
+        split_region       = SimpleNamespace(row_size=N_ROWS, col_size=N_COLS, row_start=0, col_start=0),
     )

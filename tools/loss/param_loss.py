@@ -19,19 +19,18 @@ class ParamMatcher:
     usable number of Gaussians at MAX_GAUSSIANS.
     """
 
-    MAX_GAUSSIANS  = 6
-    ACTIVE_AMP_THR = 1e-4
+    MAX_GAUSSIANS = 6
 
     HUNGARIAN = "hungarian"
     SORTED_GT = "sorted_gt"
 
     @staticmethod
-    def is_active(amplitude, thr: float = ACTIVE_AMP_THR):
+    def is_active(amplitude, thr: float):
         """Returns whether an amplitude reaches the active-component threshold.
 
         Args:
             amplitude : Physical amplitude tensor or array of any shape.
-            thr       : Physical amplitude at or above which a slot counts as active.
+            thr       : Physical amplitude at or above which a slot counts as active, as recorded by the label run.
 
         Returns:
             Boolean tensor or array of the same shape as amplitude.
@@ -134,8 +133,8 @@ class ParamMatcher:
         pred_phys  : torch.Tensor,
         gt         : torch.Tensor,
         gt_phys    : torch.Tensor,
-        method     : str   = "hungarian",
-        active_thr : float = ACTIVE_AMP_THR,
+        active_thr : float,
+        method     : str = "hungarian",
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Aligns predicted and ground-truth Gaussian slots with the requested strategy.
 
@@ -144,8 +143,8 @@ class ParamMatcher:
             pred_phys  : Physical-unit predicted parameters of the same shape.
             gt         : Normalised ground-truth parameters of the same shape.
             gt_phys    : Physical-unit ground-truth parameters of the same shape.
+            active_thr : Amplitude above which a ground-truth slot counts as active, as recorded by the label run.
             method     : Either "hungarian" for per-pixel minimum-cost assignment or "sorted_gt" for z-sorted ground truth only.
-            active_thr : Amplitude above which a ground-truth slot counts as active.
 
         Returns:
             Tuple of aligned (pred, pred_phys, gt, gt_phys) tensors.

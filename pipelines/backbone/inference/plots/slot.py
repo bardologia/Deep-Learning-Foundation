@@ -17,7 +17,6 @@ import numpy                as np
 from matplotlib.patches     import Patch
 
 from pipelines.backbone.inference.plots.base import PlotTools
-from tools.loss.param_loss                   import ParamMatcher
 
 
 class SlotPlotter(PlotTools):
@@ -31,7 +30,7 @@ class SlotPlotter(PlotTools):
         out_dir       : Path,
         row_offset    : int,
         col_offset    : int,
-        amp_threshold : float = ParamMatcher.ACTIVE_AMP_THR,
+        amp_threshold : float,
     ) -> List[Path]:
         """Saves the active-count agreement map and the signed count-difference map.
 
@@ -40,9 +39,9 @@ class SlotPlotter(PlotTools):
             params_gt     : Ground-truth Gaussian parameter cube in the same layout as params_pred.
             n_gaussians   : Number of Gaussian slots to count over.
             out_dir       : Directory the two PNG figures are written into.
-            row_offset     : Row index of the first row of the cube, used for axis extents.
-            rg_offset     : Range index of the first column of the cube, used for axis extents.
-            amp_threshold : Amplitude above which a slot counts as active.
+            row_offset    : Row index of the first row of the cube, used for axis extents.
+            col_offset    : Column index of the first column of the cube, used for axis extents.
+            amp_threshold : Amplitude above which a slot counts as active, as recorded by the label run.
 
         Returns:
             Paths of the agreement map and the signed-difference map, in that order.

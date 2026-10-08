@@ -255,14 +255,15 @@ def build_fake_run(model_fn, n_gaussians, n_z, spatial):
     region  = types.SimpleNamespace(row_start=0, col_start=0)
 
     return types.SimpleNamespace(
-        n_gaussians   = n_gaussians,
-        z_axis        = z_axis,
-        x_axis_length = n_z,
-        loader        = loader,
-        model         = model_fn,
-        dataset       = dataset,
-        grid          = grid,
-        split_region  = region,
+        n_gaussians        = n_gaussians,
+        activity_threshold = 1e-4,
+        z_axis             = z_axis,
+        x_axis_length      = n_z,
+        loader             = loader,
+        model              = model_fn,
+        dataset            = dataset,
+        grid               = grid,
+        split_region       = region,
     )
 
 
@@ -332,14 +333,15 @@ def test_jepa_curve_predictor_zero_error_on_identical_output(tmp_path):
             return tensor
 
     fake_run = types.SimpleNamespace(
-        n_gaussians   = n_gaussians,
-        z_axis        = np.linspace(-4.0, 4.0, n_z).astype(np.float32),
-        x_axis_length = n_z,
-        loader        = loader,
-        model         = model_fn,
-        dataset       = types.SimpleNamespace(normalizer=FakeNormalizer()),
-        grid          = grid,
-        split_region  = types.SimpleNamespace(row_start=0, col_start=0),
+        n_gaussians        = n_gaussians,
+        activity_threshold = 1e-4,
+        z_axis             = np.linspace(-4.0, 4.0, n_z).astype(np.float32),
+        x_axis_length      = n_z,
+        loader             = loader,
+        model              = model_fn,
+        dataset            = types.SimpleNamespace(normalizer=FakeNormalizer()),
+        grid               = grid,
+        split_region       = types.SimpleNamespace(row_start=0, col_start=0),
     )
 
     predictor = JepaCurvePredictor(
@@ -376,7 +378,7 @@ def test_jepa_curve_predictor_stitches_mu_sorted_gt_parameters(tmp_path):
     assert result.params_pred is None
 
     raw      = run.loader[0][1].numpy().reshape(1, n_gaussians, 3, spatial, spatial)
-    expected = Predictor._sort_by_mu(raw).reshape(1, n_gaussians * 3, spatial, spatial)[0]
+    expected = Predictor._sort_by_mu(raw, run.activity_threshold).reshape(1, n_gaussians * 3, spatial, spatial)[0]
 
     np.testing.assert_allclose(result.params_gt[0], expected[0], rtol=1e-5)
     np.testing.assert_allclose(result.params_gt[3], expected[3], rtol=1e-5)
@@ -403,8 +405,8 @@ def test_jepa_curve_predictor_masks_inactive_gt_slots(tmp_path):
     assert not np.any(np.isnan(result.params_gt[1]))
 
 
-def test_jepa_curve_predictor_masks_at_the_configured_threshold(tmp_path):
-    """A slot whose amplitude sits below a raised active_amp_thr is masked, while the default keeps it."""
+def test_jepa_curve_predictor_masks_at_the_run_threshold(tmp_path):
+    """A slot whose amplitude sits below the run's activity threshold is masked, while a lower threshold keeps it."""
     n_gaussians = 2
     n_elev      = 6
     spatial     = 4
@@ -422,8 +424,11 @@ def test_jepa_curve_predictor_masks_at_the_configured_threshold(tmp_path):
         run.loader[0][1][:, 4] = 0.9
         return run
 
+    strict_run                    = faint_run()
+    strict_run.activity_threshold = 1e-3
+
     kept   = JepaCurvePredictor(faint_run(), SilentLogger(), window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=types.SimpleNamespace(cube_dir=tmp_path)).run_inference()
-    masked = JepaCurvePredictor(faint_run(), SilentLogger(), window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=types.SimpleNamespace(cube_dir=tmp_path), active_amp_thr=1e-3).run_inference()
+    masked = JepaCurvePredictor(strict_run,  SilentLogger(), window_kind="uniform", cube_dtype="float32", save_cubes=False, meta=types.SimpleNamespace(cube_dir=tmp_path)).run_inference()
 
     assert not np.any(np.isnan(kept.params_gt[4]))
     assert np.all(np.isnan(masked.params_gt[4]))

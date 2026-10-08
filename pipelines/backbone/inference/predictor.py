@@ -242,7 +242,6 @@ class Predictor:
         cube_dir            : Directory receiving the cubes and the stitching memmaps.
         cpu_workers         : Number of worker processes rendering curves.
         render_amp_floor    : Amplitude below which a Gaussian is zeroed before rendering.
-        active_amp_thr      : Physical amplitude at or above which a ground-truth Gaussian slot counts as active when masking inactive slots in the stitched parameter cube.
     """
 
     RESULT_BUDGET_BYTES = 2 * 1024 ** 3
@@ -258,7 +257,6 @@ class Predictor:
         meta             : InferenceMetadata,
         cpu_workers      : int | None = None,
         render_amp_floor : float = 0.0,
-        active_amp_thr   : float = ParamMatcher.ACTIVE_AMP_THR,
     ) -> None:
         """Stores the run handle and the stitching options for this inference pass.
 
@@ -271,7 +269,6 @@ class Predictor:
             meta             : Inference metadata supplying the cube directory.
             cpu_workers      : Worker processes for curve rendering; defaults to min(8, cpu count).
             render_amp_floor : Amplitude floor below which Gaussians are suppressed before rendering.
-            active_amp_thr   : Physical amplitude at or above which a ground-truth Gaussian slot counts as active when masking inactive slots in the stitched parameter cube.
         """
 
         self.run              = run
@@ -282,7 +279,6 @@ class Predictor:
         self.cube_dir         = meta.cube_dir
         self.cpu_workers      = cpu_workers if cpu_workers is not None else min(8, os.cpu_count() or 1)
         self.render_amp_floor = float(render_amp_floor)
-        self.active_amp_thr   = float(active_amp_thr)
 
     def _forward_pass(self) -> Tuple[List[List[int]], List[np.ndarray], List[np.ndarray]]:
         """Runs the model over every batch of the split loader and denormalises the labels.
@@ -340,16 +336,17 @@ class Predictor:
         return masked
 
     @staticmethod
-    def _sort_by_mu(gauss: np.ndarray) -> np.ndarray:
+    def _sort_by_mu(gauss: np.ndarray, activity_threshold: float) -> np.ndarray:
         """Sorts Gaussian slots by z position, pushing inactive slots to the end.
 
         Args:
-            gauss : Gaussian parameters of shape (batch, n_gaussians, 3, height, width), with amplitude, mu in metres and sigma along axis 2.
+            gauss              : Gaussian parameters of shape (batch, n_gaussians, 3, height, width), with amplitude, mu in metres and sigma along axis 2.
+            activity_threshold : Physical amplitude at or above which a slot counts as active, as recorded by the label run.
 
         Returns:
             Parameter array of the same shape with slots ordered by ascending mu per pixel.
         """
-        sort_key   = np.where(ParamMatcher.is_active(gauss[:, :, 0]), gauss[:, :, 1], np.inf)
+        sort_key   = np.where(ParamMatcher.is_active(gauss[:, :, 0], activity_threshold), gauss[:, :, 1], np.inf)
         sort_idx   = np.argsort(sort_key, axis=1)
         sort_idx_e = sort_idx[:, :, None, :, :].repeat(3, axis=2)
 
@@ -360,14 +357,14 @@ class Predictor:
         """Renders one batch of predicted and ground-truth Gaussians into z curves.
 
         Args:
-            args : Tuple of the predicted parameter batch of shape (batch, out_channels, z, width), the ground-truth parameter batch of shape (batch, 3 * n_gaussians, z, width), the z axis in metres, the number of Gaussians and the render amplitude floor.
+            args : Tuple of the predicted parameter batch of shape (batch, out_channels, height, width), the ground-truth parameter batch of shape (batch, 3 * n_gaussians, height, width), the z axis in metres, the number of Gaussians, the render amplitude floor and the label run's activity threshold.
 
         Returns:
             Tuple of predicted curves and ground-truth curves, both of shape
             (batch, n_z, z, width), followed by the flattened predicted and
             mu-sorted ground-truth parameters, both of shape (batch, 3 * n_gaussians, z, width).
         """
-        pred_params_chunk, gt_params_chunk, z_axis, n_gaussians, render_amp_floor = args
+        pred_params_chunk, gt_params_chunk, z_axis, n_gaussians, render_amp_floor, activity_threshold = args
 
         x          = z_axis.reshape(1, 1, -1, 1, 1).astype(np.float32)
         B, _, H, W = pred_params_chunk.shape
@@ -376,7 +373,7 @@ class Predictor:
         pred_gauss = pred_params_chunk[:, :n_K * 3].reshape(B, n_K, 3, H, W).astype(np.float32)
         gt_gauss   = gt_params_chunk[:,   :n_K * 3].reshape(B, n_K, 3, H, W).astype(np.float32)
 
-        gt_gauss_matched = Predictor._sort_by_mu(gt_gauss)
+        gt_gauss_matched = Predictor._sort_by_mu(gt_gauss, activity_threshold)
 
         pred_gauss_flat = pred_gauss.reshape(      B, n_K * 3, H, W)
         gt_gauss_flat   = gt_gauss_matched.reshape(B, n_K * 3, H, W)
@@ -412,7 +409,7 @@ class Predictor:
         param_pred_stitcher = self._create_param_stitcher(out_ch,  "params_pred")
         gt_param_stitcher   = self._create_param_stitcher(n_K * 3, "params_gt")
 
-        tasks     = [(pred, gt, run.z_axis, n_K, self.render_amp_floor) for pred, gt in zip(all_pred_params, all_gt_params)]
+        tasks     = [(pred, gt, run.z_axis, n_K, self.render_amp_floor, run.activity_threshold) for pred, gt in zip(all_pred_params, all_gt_params)]
         in_flight = self._result_window(all_pred_params)
 
         with self.logger.track(transient=True) as prog:
@@ -521,7 +518,7 @@ class Predictor:
         n_K = self.run.n_gaussians
         for k in range(n_K):
             a_gt    = params_gt_cube[3 * k]
-            mask_gt = ~ParamMatcher.is_active(a_gt, self.active_amp_thr)
+            mask_gt = ~ParamMatcher.is_active(a_gt, self.run.activity_threshold)
             params_gt_cube[3 * k + 1][mask_gt] = np.nan
             params_gt_cube[3 * k + 2][mask_gt] = np.nan
 

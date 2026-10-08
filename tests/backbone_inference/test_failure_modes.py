@@ -46,7 +46,7 @@ def test_perfect_prediction_is_ok_everywhere():
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = gt.copy()
 
-    mode_map, _by_sep, scalars = FailureModes(pred, gt, 2).run()
+    mode_map, _by_sep, scalars = FailureModes(pred, gt, 2, 1e-4).run()
 
     assert np.all(mode_map == 0)
     assert scalars["failure_miss_rate"]      == pytest.approx(0.0)
@@ -59,7 +59,7 @@ def test_missing_component_is_flagged():
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = _params([(1.0, 10.0, 3.0), (0.0, 0.0, 0.0)])
 
-    mode_map, _by_sep, scalars = FailureModes(pred, gt, 2).run()
+    mode_map, _by_sep, scalars = FailureModes(pred, gt, 2, 1e-4).run()
 
     assert _mode_name(mode_map) == "missed"
     assert scalars["failure_miss_rate"] == pytest.approx(0.5)
@@ -70,7 +70,7 @@ def test_hallucinated_component_is_flagged():
     gt   = _params([(1.0, 10.0, 3.0), (0.0, 0.0, 0.0)])
     pred = _params([(1.0, 10.0, 3.0), (2.0, 60.0, 4.0)])
 
-    mode_map, _by_sep, scalars = FailureModes(pred, gt, 2).run()
+    mode_map, _by_sep, scalars = FailureModes(pred, gt, 2, 1e-4).run()
 
     assert _mode_name(mode_map) == "hallucinated"
     assert scalars["failure_halluc_rate"] == pytest.approx(0.5)
@@ -81,7 +81,7 @@ def test_position_shift_within_tolerance_is_flagged_as_position():
     gt   = _params([(1.0, 10.0, 3.0)])
     pred = _params([(1.0, 13.0, 3.0)])
 
-    mode_map, _by_sep, _scalars = FailureModes(pred, gt, 1).run()
+    mode_map, _by_sep, _scalars = FailureModes(pred, gt, 1, 1e-4).run()
 
     assert _mode_name(mode_map) == "position"
 
@@ -92,8 +92,8 @@ def test_width_and_amplitude_errors_are_flagged():
     pred_width = _params([(1.0, 10.0, 6.0)])
     pred_amp   = _params([(2.5, 10.0, 3.0)])
 
-    width_map, _s1, _x1 = FailureModes(pred_width, gt, 1).run()
-    amp_map,   _s2, _x2 = FailureModes(pred_amp, gt, 1).run()
+    width_map, _s1, _x1 = FailureModes(pred_width, gt, 1, 1e-4).run()
+    amp_map,   _s2, _x2 = FailureModes(pred_amp, gt, 1, 1e-4).run()
 
     assert _mode_name(width_map) == "width"
     assert _mode_name(amp_map)   == "amplitude"
@@ -104,7 +104,7 @@ def test_missed_takes_priority_over_matched_errors():
     gt   = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
     pred = _params([(1.0, 13.0, 3.0), (0.0, 0.0, 0.0)])
 
-    mode_map, _by_sep, _scalars = FailureModes(pred, gt, 2).run()
+    mode_map, _by_sep, _scalars = FailureModes(pred, gt, 2, 1e-4).run()
 
     assert _mode_name(mode_map) == "missed"
 
@@ -114,7 +114,7 @@ def test_far_prediction_counts_as_miss_plus_hallucination():
     gt   = _params([(1.0, 10.0, 3.0)])
     pred = _params([(1.0, 50.0, 3.0)])
 
-    mode_map, _by_sep, scalars = FailureModes(pred, gt, 1).run()
+    mode_map, _by_sep, scalars = FailureModes(pred, gt, 1, 1e-4).run()
 
     assert _mode_name(mode_map) == "missed"
     assert scalars["failure_miss_rate"]   == pytest.approx(1.0)
@@ -139,7 +139,7 @@ def test_miss_by_separation_rises_for_close_components():
     pred[:3]             = gt[:3]
     pred[3:, H_ // 2 :]  = gt[3:, H_ // 2 :]
 
-    _mode_map, by_sep, _scalars = FailureModes(pred, gt, 2).run()
+    _mode_map, by_sep, _scalars = FailureModes(pred, gt, 2, 1e-4).run()
 
     assert by_sep
     close = [row for row in by_sep if row["center"] < 20.0]

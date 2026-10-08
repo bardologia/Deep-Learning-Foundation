@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import numpy as np
 
 from cube_explorer import CubeExplorer
 
-from tools.loss.param_loss import ParamMatcher
-
-from tests.webui.conftest import N_ROWS, N_Z, N_COLS, N_SLOTS, load_cube, loaded_cube, make_cube_run, open_explorer
+from tests.webui.conftest import ACTIVITY_THRESHOLD, N_ROWS, N_Z, N_COLS, N_SLOTS, load_cube, loaded_cube, make_cube_run, open_explorer
 
 PARAM_SOURCES = ("pred", "gt")
 
@@ -26,7 +25,7 @@ def test_meta_reports_param_block(tmp_path):
     assert meta["sources"] == ["pred", "gt"]
     assert meta["n_slots"] == N_SLOTS
     assert meta["error"] is True
-    assert meta["threshold"] == ParamMatcher.ACTIVE_AMP_THR
+    assert meta["threshold"] == ACTIVITY_THRESHOLD
     assert meta["ranges"]["mu"] == [-10.0, 30.0]
     assert meta["ranges"]["count"] == [0.0, float(N_SLOTS)]
     assert meta["ranges"]["error_count"] == [-float(N_SLOTS), float(N_SLOTS)]
@@ -234,3 +233,21 @@ def test_params_with_nan_survive_load_and_lookup(tmp_path):
 
     assert explorer.param_map_png(cube_id, "pred", "mu", 0) is not None
     assert explorer.param_map_png(cube_id, "error", "mu", 1) is not None
+
+
+def test_params_without_a_recorded_threshold_fail_the_load(tmp_path):
+    stamp   = make_cube_run(tmp_path, with_params=PARAM_SOURCES)
+    payload = json.loads((stamp / "metrics.json").read_text(encoding="utf-8"))
+    del payload["activity_threshold"]
+    (stamp / "metrics.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    explorer, cube_ids = open_explorer(tmp_path, expected=1)
+    assert explorer.start_load(cube_ids[0])["ok"]
+
+    deadline = time.time() + 30.0
+    while explorer.load_status()["state"] == "loading" and time.time() < deadline:
+        time.sleep(0.05)
+
+    status = explorer.load_status()
+    assert status["state"] == "error"
+    assert "re-run inference" in status["error"]
