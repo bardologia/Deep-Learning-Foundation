@@ -65,6 +65,18 @@ class BenchmarkPipeline(StagedPipeline):
         return [ModelBuilder.model_key(name, head) for name in registry for head in config.heads]
 
     @classmethod
+    def unknown_skips(cls, config: BenchmarkConfig) -> list[str]:
+        """Returns the skip_models entries that name neither a model key of the training type nor a backbone name.
+
+        Args:
+            config : Benchmark configuration carrying the training type, heads and skip list.
+        """
+        keys  = cls._model_keys(config)
+        known = set(keys) | {ModelBuilder.split_key(key)[0] for key in keys}
+
+        return [entry for entry in config.skip_models if entry not in known]
+
+    @classmethod
     def validate_sweep(cls, config: BenchmarkConfig) -> None:
         """Validates the sweep settings and resolves the size-match reference model.
 
@@ -72,7 +84,7 @@ class BenchmarkPipeline(StagedPipeline):
             config : Benchmark configuration, mutated in place when the reference model has to be expanded into a full model key.
 
         Raises:
-            SystemExit : On an unsupported training type or stage, an invalid loss component, an unknown or empty head list, or a reference model that is not among the swept keys.
+            SystemExit : On an unsupported training type or stage, an invalid loss component, an unknown or empty head list, a skip_models entry that matches no model, or a reference model that is not among the swept keys.
         """
         if config.training_type not in cls.SUPPORTED_TYPES:
             raise SystemExit(f"benchmark does not support training_type '{config.training_type}'; supported: {', '.join(cls.SUPPORTED_TYPES)}")
@@ -88,6 +100,10 @@ class BenchmarkPipeline(StagedPipeline):
         if config.training_type == "backbone" and not config.heads:
             raise SystemExit("heads is empty; select at least one output head to benchmark")
 
+        unknown_skips = cls.unknown_skips(config)
+        if unknown_skips:
+            raise SystemExit(f"skip_models lists {unknown_skips}, which match no {config.training_type} model key and no backbone name, so the model meant to be skipped would be benchmarked; valid keys: {', '.join(cls._model_keys(config))}")
+
         if config.runs_size_match():
             config.size_match.reference_model = SizeMatchStage.resolve_reference(config.size_match.reference_model, cls.select_models(config), config.heads)
 
@@ -95,6 +111,15 @@ class BenchmarkPipeline(StagedPipeline):
         """Validates this pipeline's own configuration before any stage runs."""
         self._begin_stage("validation")
         self.validate_sweep(self.config)
+
+    def _log_model_selection(self) -> None:
+        """Logs the model keys this benchmark covers and the ones the skip list removed."""
+        skipped = [key for key in self._model_keys(self.config) if key not in self.models]
+
+        self.logger.kv_table({
+            "Selected"               : ", ".join(self.models),
+            "Skipped by skip_models" : ", ".join(skipped) or "none",
+        }, title=f"Model selection: {len(self.models)} benchmarked, {len(skipped)} skipped")
 
     def _run_max_batch(self) -> dict:
         """Probes the maximum batch size of every model and records the outcome.
@@ -212,6 +237,7 @@ class BenchmarkPipeline(StagedPipeline):
 
         self._log_launch()
         self._validate_sweep()
+        self._log_model_selection()
 
         if self.config.stage == "compare":
             comparison_dir = self._run_comparison()
