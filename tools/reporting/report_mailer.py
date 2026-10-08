@@ -724,26 +724,28 @@ class ExperimentReportBundle(ReportBundle):
 
         self.freshness.check(f"seed aggregate of {trial_dir.name}", report.parent, seeds, split, uncovered)
 
-    def _aggregate_seeds(self, trial_dir: Path) -> None:
-        """Writes the seed-aggregate report of a seeded trial as the seed comparison entry does, logging through the mail run's logger.
+    def _aggregate_seeds(self, trial_dir: Path, split: str) -> None:
+        """Writes the seed-aggregate report of a seeded trial on one split as the seed comparison entry does, logging through the mail run's logger.
 
         Args:
             trial_dir : Trial directory holding the seed runs.
+            split     : Split whose completed inference of every seed is averaged, the one the trial comparison reads.
         """
         from configuration.comparison                              import SeedComparisonConfig
         from pipelines.backbone.inference.analysis.seed_comparison import SeedComparison
 
-        self.logger.info(f"{trial_dir.name}: writing the seed-aggregate report over {len(TrialTree.seed_runs(trial_dir))} seed run(s)")
+        self.logger.info(f"{trial_dir.name}: writing the '{split}' seed-aggregate report over {len(TrialTree.seed_runs(trial_dir))} seed run(s)")
 
-        reports = SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name]), self.logger).run()
+        reports = SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name], split=split), self.logger).run()
 
         self.logger.ok(f"{trial_dir.name}: seed-aggregate report written to {reports[0]}")
 
     def _check_aggregate_split(self, trial_dir: Path, report: Path, split: str) -> None:
         """Warns when a seed aggregate averaged an inference of another split, or an unfinished one, for any seed.
 
-        The seed comparison averages each seed's newest inference whatever
-        split it scored, while the trial comparison reads one split.
+        An aggregate written here averages the split the comparison reads, but
+        a reused aggregate may have been written by the seed comparison entry
+        for another split, or before a seed's inference finished.
 
         Args:
             trial_dir : Seeded trial directory.
@@ -786,7 +788,7 @@ class ExperimentReportBundle(ReportBundle):
         if aggregates and not self.config.regenerate_reports:
             self._check_reused_aggregate(trial_dir, aggregates[-1], split)
         else:
-            self._aggregate_seeds(trial_dir)
+            self._aggregate_seeds(trial_dir, split)
             aggregates = self._seed_aggregates(trial_dir)
 
         self._check_aggregate_split(trial_dir, aggregates[-1], split)
