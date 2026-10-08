@@ -1,7 +1,11 @@
+"""Tests for run-vs-run comparison in the cube explorer: the attached pred B and A minus B sources, their delta metric layers, transects and saved figures."""
+
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from cube_explorer import CubeExplorer
@@ -176,3 +180,102 @@ def test_cmap_selection_and_diverging_override(tmp_path):
     assert explorer.slice_png(cube_a, "pred", "col", row=0, col=0, cmap="viridis")[:4] == b"\x89PNG"
     assert explorer.plane_png(cube_a, "pred", frac=0.5, cmap="gray")[:4] == b"\x89PNG"
     assert explorer.transect_png(cube_a, "pred", 0, 0, 2, 2, cmap="inferno")[:4] == b"\x89PNG"
+
+
+def _delta_runs(base: Path) -> tuple[CubeExplorer, Path, Path]:
+    """Loads run A beside run B, both carrying a pixel MSE and a failure-mode map, with a map only run A carries."""
+    preproc = make_preproc(base)
+    stamp_a = _make_run(base, preproc, "run_a", seed=1)
+    stamp_b = _make_run(base, preproc, "run_b", seed=2)
+
+    rng = np.random.default_rng(3)
+    for stamp in (stamp_a, stamp_b):
+        np.save(stamp / "cubes" / "pixel_mse.npy", rng.random((N_ROWS, N_COLS)).astype(np.float32))
+        np.save(stamp / "cubes" / "failure_mode.npy", np.zeros((N_ROWS, N_COLS), dtype=np.float32))
+    np.save(stamp_a / "cubes" / "only_a.npy", rng.random((N_ROWS, N_COLS)).astype(np.float32))
+
+    explorer, _ = open_explorer(base, expected=2)
+    load_cube(explorer, str(stamp_a))
+
+    return explorer, stamp_a, stamp_b
+
+
+def test_attach_adds_delta_metric_layers(tmp_path):
+    """Shared continuous metric maps gain a signed delta layer that detach removes again."""
+    explorer, stamp_a, stamp_b = _delta_runs(tmp_path)
+
+    attached = explorer.attach_second(str(stamp_a), str(stamp_b))
+    assert attached["ok"]
+
+    layers = {layer["key"]: layer for layer in attached["cube"]["metric_maps"]}
+    assert "delta_pixel_mse" in layers
+    assert "delta_failure_mode" not in layers
+    assert "delta_only_a" not in layers
+
+    delta = layers["delta_pixel_mse"]
+    assert delta["label"] == "Δ MSE"
+    assert delta["diverging"] is True
+    assert delta["vmin"] == -delta["vmax"] and delta["vmax"] > 0
+    assert layers["pixel_mse"]["diverging"] is False
+
+    a     = np.load(stamp_a / "cubes" / "pixel_mse.npy")
+    b     = np.load(stamp_b / "cubes" / "pixel_mse.npy")
+    value = explorer.metric_value_at(str(stamp_a), "delta_pixel_mse", row=2, col=3)
+    assert abs(value["value"] - float(a[2, 3] - b[2, 3])) < 1e-6
+
+    png = explorer.metric_overlay_png(str(stamp_a), "delta_pixel_mse", delta["vmin"], delta["vmax"], float("-inf"), float("inf"), 0.8)
+    assert png and png[:4] == b"\x89PNG"
+
+    detached = explorer.detach_second(str(stamp_a))
+    assert all(not layer["key"].startswith("delta_") for layer in detached["cube"]["metric_maps"])
+    assert explorer.metric_value_at(str(stamp_a), "delta_pixel_mse", row=2, col=3)["ok"] is False
+
+
+def test_delta_overlay_paints_through_the_diverging_palette(tmp_path):
+    """At full opacity a delta layer shows coolwarm colours over its symmetric range instead of viridis."""
+    explorer, stamp_a, stamp_b = _delta_runs(tmp_path)
+    delta = next(layer for layer in explorer.attach_second(str(stamp_a), str(stamp_b))["cube"]["metric_maps"] if layer["key"] == "delta_pixel_mse")
+
+    png  = explorer.metric_overlay_png(str(stamp_a), "delta_pixel_mse", delta["vmin"], delta["vmax"], float("-inf"), float("inf"), 1.0)
+    rgb  = plt.imread(io.BytesIO(png))[..., :3]
+    data = np.load(stamp_a / "cubes" / "pixel_mse.npy") - np.load(stamp_b / "cubes" / "pixel_mse.npy")
+    norm = np.clip((data - delta["vmin"]) / (delta["vmax"] - delta["vmin"]), 0.0, 1.0)
+
+    assert np.allclose(rgb, plt.get_cmap("coolwarm")(norm)[..., :3], atol=1.0 / 255.0 + 1e-6)
+
+
+def test_attaching_another_run_replaces_the_delta_layers(tmp_path):
+    """Attaching a third run swaps the delta layers for A minus that run instead of stacking them."""
+    explorer, stamp_a, stamp_b = _delta_runs(tmp_path)
+    stamp_c                    = _make_run(tmp_path, tmp_path / "preproc", "run_c", seed=4)
+    np.save(stamp_c / "cubes" / "pixel_mse.npy", np.full((N_ROWS, N_COLS), 0.25, dtype=np.float32))
+
+    explorer.attach_second(str(stamp_a), str(stamp_b))
+    attached = explorer.attach_second(str(stamp_a), str(stamp_c))
+
+    keys = [layer["key"] for layer in attached["cube"]["metric_maps"] if layer["key"].startswith("delta_")]
+    a    = np.load(stamp_a / "cubes" / "pixel_mse.npy")
+    assert keys == ["delta_pixel_mse"]
+    assert abs(explorer.metric_value_at(str(stamp_a), "delta_pixel_mse", row=1, col=1)["value"] - float(a[1, 1] - 0.25)) < 1e-6
+
+
+def test_region_rows_label_delta_layers(tmp_path):
+    """Region statistics name delta layers with the same delta label the layer list carries."""
+    explorer, stamp_a, stamp_b = _delta_runs(tmp_path)
+    explorer.attach_second(str(stamp_a), str(stamp_b))
+
+    rows = {row["key"]: row for row in explorer.region_metrics(str(stamp_a), 0, 1, 0, 1)["rows"]}
+    assert rows["delta_pixel_mse"]["label"] == "Δ MSE"
+
+
+def test_reloading_a_cube_from_memory_drops_its_delta_layers(tmp_path):
+    """Switching back to a cube kept in memory detaches its comparison, delta layers included."""
+    explorer, stamp_a, stamp_b = _delta_runs(tmp_path)
+    explorer.attach_second(str(stamp_a), str(stamp_b))
+
+    load_cube(explorer, str(stamp_b))
+    status = load_cube(explorer, str(stamp_a))
+
+    assert status["cube"]["attached"] is None
+    assert all(not layer["key"].startswith("delta_") for layer in status["cube"]["metric_maps"])
+    assert "delta_pixel_mse" not in explorer.loaded["metric_maps"]
