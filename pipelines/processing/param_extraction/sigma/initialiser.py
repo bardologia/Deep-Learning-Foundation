@@ -120,8 +120,20 @@ class PeakInitialiser:
 
     @classmethod
     def sigma_guess(cls, z_axis : np.ndarray, K : int, sigma_divisor : float) -> float:
-        """Returns the initial sigma in metres after applying the divisor."""
-        return cls.sigma_base(z_axis, K) / max(float(sigma_divisor), 1e-6)
+        """Returns the initial sigma in metres after applying the divisor.
+
+        Args:
+            z_axis        : Z axis of shape (H,) in metres.
+            K             : Number of Gaussians the z span is shared by.
+            sigma_divisor : Positive divisor of the heuristic initial sigma.
+
+        Raises:
+            ValueError : If the divisor is zero or negative.
+        """
+        if sigma_divisor <= 0:
+            raise ValueError(f"sigma_init_divisor must be positive, got {sigma_divisor}; it divides the heuristic initial sigma, so zero or a negative value has no meaningful width")
+
+        return cls.sigma_base(z_axis, K) / float(sigma_divisor)
 
     def run(self, prof_raw : np.ndarray, z_axis : np.ndarray, K : int, prominence_frac : float = 0.05, sigma_divisor : float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Initialises every profile, splitting the work across the pool.

@@ -563,6 +563,29 @@ def test_clamped_sigma_init_divisor_is_reported(tmp_path):
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_sigma_init_divisor_above_the_upper_bound_warns_and_a_non_positive_one_is_refused(tmp_path):
+    """Verifies an initial sigma above h_span / 2 is reported like the lower-bound clamp, and a zero divisor is refused by the resolver and the initialiser."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.sigma.extractor   import SigmaFittingExtractor
+    from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
+
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, np.zeros((150, 2, 2), dtype=np.float32))
+
+    logger    = RecordingLogger()
+    extractor = SigmaFittingExtractor(logger=logger, modes=["sigma"], lambda_values=[LAMBDA_K], k_max=5, sigma_init_divisor=0.01, peak_initialiser=PeakInitialiser(n_workers=1))
+    extractor._prepare_data(cube_path, Z_RANGE)
+
+    assert any("sigma_init_divisor 0.01" in message and "above the fit upper bound 50.0000" in message and "every divisor below 0.050" in message for level, message in logger.messages if level == "warning")
+
+    with pytest.raises(ValueError, match="fit_sigma_init_divisor must be positive"):
+        ExtractionPlanResolver(ExtractParamsEntryConfig(fit_sigma_init_divisor=0.0), [Path("/data/a")]).resolve()
+
+    with pytest.raises(ValueError, match="sigma_init_divisor must be positive"):
+        PeakInitialiser.sigma_guess(np.linspace(Z_RANGE[0], Z_RANGE[1], 150, dtype=np.float32), 5, 0.0)
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_truncation_beyond_the_z_axis_is_reported(tmp_path):
     """Verifies a truncation index at or past the last z bin is reported as a no-op, and one inside is not."""
     from tests.conftest import RecordingLogger
