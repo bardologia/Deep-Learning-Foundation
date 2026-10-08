@@ -11,9 +11,12 @@ class PipelineTransport {
     this.speedBtn = document.getElementById("proc-speed");
     this.chapEl   = document.getElementById("proc-chapter");
     this.timeEl   = document.getElementById("proc-time");
+    this.stagesEl = document.getElementById("proc-stages");
 
     this.def       = null;
     this.segs      = [];
+    this.chips     = [];
+    this.stageOf   = [];
     this.speeds    = [1, 1.5, 2, 0.5];
     this.speedIdx  = 0;
     this.hoverName = null;
@@ -23,9 +26,10 @@ class PipelineTransport {
     this._wire();
   }
 
-  bind() {
+  bind(stages) {
     this.def = this.animator.sceneDef();
     this._buildSegments();
+    this._buildStages(stages);
     this._update(this.animator.position(), this.animator.chapterIndex(), this.animator.playing());
   }
 
@@ -38,6 +42,11 @@ class PipelineTransport {
 
   nextChapter() {
     this.animator.seekChapter(this.animator.chapterIndex() + 1);
+  }
+
+  seekStage(stage) {
+    const chapter = this.stageOf.findIndex((owner) => owner >= stage);
+    this.animator.seekChapter(chapter >= 0 ? chapter : this.stageOf.length - 1);
   }
 
   cycleSpeed() {
@@ -95,6 +104,38 @@ class PipelineTransport {
     });
   }
 
+  _buildStages(stages) {
+    this.stagesEl.innerHTML = "";
+    this.chips = stages.map((name, j) => {
+      if (j > 0) this.stagesEl.insertAdjacentHTML("beforeend", '<span class="stage-arrow">→</span>');
+      const chip       = document.createElement("button");
+      chip.type        = "button";
+      chip.className   = "stage";
+      chip.textContent = name;
+      chip.title       = `Seek the animation to the ${name} stage`;
+      chip.addEventListener("click", () => this.seekStage(j));
+      this.stagesEl.appendChild(chip);
+      return chip;
+    });
+    this.stageOf = this._mapStages(stages);
+  }
+
+  _mapStages(stages) {
+    const chapters = this.def.chapters;
+    let reached    = 0;
+
+    return chapters.map((chapter, i) => {
+      const words = this._stageWords(chapter.name);
+      const named = stages.findIndex((stage) => this._stageWords(stage).some((word) => words.some((other) => word.startsWith(other) || other.startsWith(word))));
+      reached     = Math.max(reached, named >= 0 ? named : Math.floor((i * stages.length) / chapters.length));
+      return reached;
+    });
+  }
+
+  _stageWords(text) {
+    return text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length >= 3 && word !== "and" && word !== "the");
+  }
+
   _timeAt(clientX) {
     for (let i = 0; i < this.segs.length; i++) {
       const s = this.segs[i], r = s.el.getBoundingClientRect();
@@ -117,6 +158,12 @@ class PipelineTransport {
       s.el.classList.toggle("is-done", i < idx);
       const frac = i < idx ? 1 : i > idx ? 0 : (tt - s.t0) / (s.t1 - s.t0);
       s.fill.style.width = (frac * 100).toFixed(2) + "%";
+    });
+
+    const stage = this.stageOf[idx];
+    this.chips.forEach((chip, j) => {
+      chip.classList.toggle("is-active", j === stage);
+      chip.classList.toggle("is-done", j < stage);
     });
 
     if (!this.hoverName) this.chapEl.textContent = this.def.chapters[idx].name;
@@ -219,13 +266,6 @@ class PipelineFlow {
     document.getElementById("proc-kicker").textContent = p.script ? `main/${p.script}.py` : "pipeline";
     document.getElementById("proc-title").textContent = p.name + " pipeline";
 
-    const stages = document.getElementById("proc-stages");
-    stages.innerHTML = "";
-    p.stages.forEach((s, j) => {
-      if (j > 0) stages.insertAdjacentHTML("beforeend", '<span class="stage-arrow">→</span>');
-      stages.insertAdjacentHTML("beforeend", `<span class="stage">${s}</span>`);
-    });
-
     modal.classList.add("is-open");
     modal.setAttribute("aria-hidden", "false");
 
@@ -235,7 +275,7 @@ class PipelineFlow {
     }
     requestAnimationFrame(() => {
       this.animator.start(p.key);
-      this.transport.bind();
+      this.transport.bind(p.stages);
     });
   }
 
