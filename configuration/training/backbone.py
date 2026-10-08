@@ -25,10 +25,11 @@ from configuration.training.general.trials       import TrialCatalog
 
 
 def default_curriculum() -> LossCurriculumConfig:
-    """Builds the standard curriculum: parameter L1 plus cosine, then covariance.
+    """Builds the standard curriculum: parameter L1 plus cosine, then the same terms with a balanced presence loss.
 
     The warmup stage optimises Hungarian-matched parameter L1 with the cosine
-    curve term; the complete stage adds the covariance-matching physics term.
+    curve term; the complete stage keeps both terms and class-balances the
+    per-slot presence loss.
 
     Returns:
         The two-stage LossCurriculumConfig used as the default for backbone runs.
