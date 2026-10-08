@@ -488,6 +488,14 @@ class TrainingPipeline:
         with TrainingRunMetadata(self.trainer_config, self.backbone_name, Path(self.trainer_config.io.logdir), self.entry.run_name) as run_meta:
             logger = run_meta.logger
 
+            logger.section("[JEPA Training Pipeline Execution]")
+            logger.kv_table({
+                "Backbone"      : self.backbone_name,
+                "Backbone Head" : self.entry.backbone_head,
+                "Seed"          : self.entry.seed,
+                "Run Directory" : str(run_meta.run_directory),
+            })
+
             run_meta.save_dataset_fingerprint(self.entry.paths.dataset_path, self.entry.paths.parameters_path, enabled=self.entry.paths.fingerprint_dataset)
 
             loaders, datasets, z_axis, z_len = self._prepare_datasets(run_meta.run_directory, logger, self.entry.seed)
@@ -495,6 +503,7 @@ class TrainingPipeline:
             model, backbone_cfg = self._build_module(datasets, z_len, z_axis, logger)
 
             self._save_metadata(run_meta, backbone_cfg, z_len)
+            logger.ok(f"Run metadata saved : {run_meta.run_directory}")
 
             profile_normalizer = self._profile_normalizer(run_meta.metadata_directory, logger)
 
