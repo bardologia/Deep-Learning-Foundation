@@ -6,11 +6,14 @@ import numpy as np
 import pytest
 import torch
 
+from configuration.diagnostics                               import RobustnessConfig
 from pipelines.backbone.inference.analysis.input_attribution import TrackChannels
-from pipelines.backbone.inference.analysis.robustness        import RobustnessCore
+from pipelines.backbone.inference.analysis.robustness        import RobustnessCore, RobustnessRun
 from pipelines.backbone.inference.probes                     import PredictionCurves
 
 from types import SimpleNamespace
+
+from tests.backbone_inference._helpers import StageLogger, build_run_directory
 
 
 H, W, N_Z = 8, 8, 10
@@ -54,7 +57,7 @@ def _batches():
 def test_noise_curve_starts_clean_and_degrades():
     """The clean anchor scores zero error and error grows with the noise sigma."""
     batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer)
+    core = RobustnessCore(_model, renderer, lambda: None)
 
     rows = core.noise_curve(batches, [0.0, 0.5, 2.0])
 
@@ -68,13 +71,13 @@ def test_noise_curve_requires_the_clean_anchor():
     batches, renderer = _batches()
 
     with pytest.raises(ValueError):
-        RobustnessCore(_model, renderer).noise_curve(batches, [0.5, 2.0])
+        RobustnessCore(_model, renderer, lambda: None).noise_curve(batches, [0.5, 2.0])
 
 
 def test_noise_curve_orders_an_out_of_order_sigma_list():
     """Sigmas are sorted before evaluation so the clean anchor comes first."""
     batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer)
+    core = RobustnessCore(_model, renderer, lambda: None)
 
     rows = core.noise_curve(batches, [0.5, 0.0, 2.0])
 
@@ -91,7 +94,7 @@ def test_tolerance_sigma_rejects_rows_that_do_not_start_clean_and_rise():
 def test_noise_on_unused_channels_is_harmless():
     """Noise restricted to channels the model ignores leaves the error at zero."""
     batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer)
+    core = RobustnessCore(_model, renderer, lambda: None)
 
     unused = core.noise_curve(batches, [0.0, 1.0], channels=[0])
     used   = core.noise_curve(batches, [0.0, 1.0], channels=[1, 2])
@@ -103,7 +106,7 @@ def test_noise_on_unused_channels_is_harmless():
 def test_noise_draws_report_spread():
     """Repeated draws report a standard deviation for the noisy rows but not for the clean anchor."""
     batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer)
+    core = RobustnessCore(_model, renderer, lambda: None)
 
     rows = core.noise_curve(batches, [0.0, 0.5], draws=3)
 
@@ -114,7 +117,7 @@ def test_noise_draws_report_spread():
 def test_gain_curve_always_holds_the_reference():
     """The gain sweep inserts the unit-gain reference, which alone reproduces the clean curves."""
     batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer)
+    core = RobustnessCore(_model, renderer, lambda: None)
 
     rows  = core.gain_curve(batches, [0.5, 2.0])
     gains = [row["gain"] for row in rows]
@@ -128,7 +131,7 @@ def test_gain_curve_always_holds_the_reference():
 def test_drop_curve_degrades_with_more_tracks():
     """Dropping more tracks raises the error above the zero-drop baseline."""
     batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer)
+    core = RobustnessCore(_model, renderer, lambda: None)
 
     rows = core.drop_curve(batches, [[1], [2]], draws=2)
 
@@ -148,7 +151,7 @@ def test_drop_curve_evaluates_each_distinct_subset_once():
         calls.append(images)
         return _model(images)
 
-    core = RobustnessCore(counting_model, renderer)
+    core = RobustnessCore(counting_model, renderer, lambda: None)
     rows = core.drop_curve(batches, [[1], [2]], draws=8)
 
     assert len(calls) == 4
@@ -160,7 +163,7 @@ def test_drop_curve_evaluates_each_distinct_subset_once():
 def test_shift_consistency_is_zero_for_a_pointwise_model():
     """A pointwise model is exactly shift-consistent."""
     batches, renderer = _batches()
-    core = RobustnessCore(_model, renderer)
+    core = RobustnessCore(_model, renderer, lambda: None)
 
     rows = core.shift_consistency(batches, [1, 3])
 
@@ -177,7 +180,7 @@ def test_shift_consistency_detects_position_dependence():
         params[:, 0] += np.arange(H, dtype=np.float32)[None, :, None]
         return params
 
-    rows = RobustnessCore(positional_model, renderer).shift_consistency(batches, [2])
+    rows = RobustnessCore(positional_model, renderer, lambda: None).shift_consistency(batches, [2])
 
     assert rows[0]["mse"] > 1e-6
 
@@ -187,7 +190,7 @@ def test_shift_consistency_rejects_out_of_range_shifts():
     batches, renderer = _batches()
 
     with pytest.raises(ValueError):
-        RobustnessCore(_model, renderer).shift_consistency(batches, [H])
+        RobustnessCore(_model, renderer, lambda: None).shift_consistency(batches, [H])
 
 
 def test_tolerance_sigma_interpolates_and_censors():
@@ -244,3 +247,39 @@ def test_track_channels_without_tracks_raise():
 
     with pytest.raises(ValueError):
         TrackChannels.build(run)
+
+
+def test_planned_sweep_counts_match_the_sweeps_run():
+    """Every stress reports one sweep per pass over the batches, matching the planned count the progress total is built from."""
+    batches, renderer = _batches()
+    sweeps            = []
+    core              = RobustnessCore(_model, renderer, lambda: sweeps.append(1))
+
+    core.noise_curve(batches, [0.0, 0.5, 2.0], draws=3)
+    assert len(sweeps) == RobustnessCore.noise_sweeps([0.0, 0.5, 2.0], 3) == 7
+
+    core.gain_curve(batches, [0.5, 2.0])
+    assert len(sweeps) == 7 + RobustnessCore.gain_sweeps([0.5, 2.0]) == 10
+
+    core.drop_curve(batches, [[0], [1], [2]], draws=2)
+    assert len(sweeps) == 10 + RobustnessCore.drop_sweeps(3, 2) == 16
+
+    core.shift_consistency(batches, [1, 2])
+    assert len(sweeps) == 18
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_robustness_pass_plans_tracks_and_times_every_stress(tmp_path, test_data_dir, params_dir):
+    """A robustness pass on a real run announces its sweep total, advances the bar once per sweep and times each stress."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+    config  = RobustnessConfig(batch_size=2, max_batches=1, noise_sigmas=[0.0, 0.5], noise_draws=1, gain_factors=[0.5], shift_pixels=[1], draws_per_count=1)
+    logger  = StageLogger()
+
+    RobustnessRun(run_dir, config, logger).run()
+
+    planned = [message for level, message in logger.messages if level == "info" and "sweeps over" in message]
+
+    assert len(planned) == 1
+    assert logger.totals == [logger.advances]
+    assert [label.split(" (")[0] for label in logger.timers] == ["Robustness: noise", "Robustness: gain", "Robustness: dropout", "Robustness: shift"]
