@@ -2,8 +2,8 @@
 
 Checks that every JavaScript module on disk is loaded by index.html exactly once and in
 dependency order, that shared helpers (MathJax bootstrap, HTML escaper, results roots,
-network layer) are each defined in a single module, and that launch widget modules hold
-the expected number of classes.
+network layer) are each defined in a single module, that launch widget modules hold
+the expected number of classes, and that every input tag declares a valid HTML type.
 """
 
 from __future__ import annotations
@@ -87,6 +87,23 @@ def test_the_network_layer_is_reached_through_its_class():
         assert "window.toast(" not in text, path.name
 
     assert "class Api {" in (JS_DIR / "api.js").read_text()
+
+
+def test_every_input_declares_a_valid_html_type():
+    """Every input tag in index.html uses a type the browser knows, so no slider degrades to a text box."""
+    valid = {"button", "checkbox", "color", "date", "datetime-local", "email", "file", "hidden", "image", "month", "number", "password", "radio", "range", "reset", "search", "submit", "tel", "text", "time", "url", "week"}
+    types = re.findall(r'<input[^>]*\btype="([^"]*)"', INDEX.read_text())
+
+    assert types
+    assert sorted(set(types) - valid) == []
+
+
+def test_cube_sliders_are_range_inputs():
+    """The point-cloud threshold, metric threshold, overlay alpha and coverage controls render as sliders."""
+    html = INDEX.read_text()
+
+    for control in ("cube-cloud-thr", "cube-metric-thr", "cube-metric-alpha", "cube-selective-cov"):
+        assert re.search(rf'<input type="range" id="{control}"', html), control
 
 
 def test_launch_widget_modules_hold_one_class_family_each():
