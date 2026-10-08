@@ -14,6 +14,7 @@ import pytest
 
 from configuration.inference               import InferenceConfig
 from pipelines.backbone.inference.pipeline import InferencePipeline
+from pipelines.shared.inference.metadata   import CompletedInference
 
 from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, build_run_directory
 
@@ -123,6 +124,51 @@ def test_region_override_must_contain_the_stored_split_region(tmp_path, test_dat
 
     with pytest.raises(ValueError, match="must contain the stored"):
         InferencePipeline(config).run()
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_backbone_runner_scores_each_region_of_a_split_stored_as_two(tmp_path, test_data_dir, params_dir):
+    """A test split stored as two disjoint regions is scored once per region, each pass reporting its own region as split and core region and its region pass."""
+    from configuration.inference                       import BackboneInferenceEntryConfig
+    from pipelines.shared.inference.inference_dispatch import BackboneInferenceRunner
+
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+    regions = [[1200, 1296, 500, 596], [1300, 1396, 500, 596]]
+
+    dataset_path = run_dir / "meta" / "dataset_creation_config.json"
+    payload      = json.loads(dataset_path.read_text())
+    payload["split_regions"]["test"] = [dict(zip(("row_start", "row_end", "col_start", "col_end"), region)) for region in regions]
+    dataset_path.write_text(json.dumps(payload))
+
+    inference = InferenceConfig(
+        run_directory   = run_dir,
+        device          = "cpu",
+        split           = "test",
+        num_workers     = 0,
+        cpu_workers     = 2,
+        save_plots      = False,
+        save_animations = False,
+        save_cubes      = False,
+    )
+
+    BackboneInferenceRunner(BackboneInferenceEntryConfig(inference=inference)).run(run_dir)
+
+    stamps = sorted((run_dir / "inference").glob("*_region*"))
+    assert [stamp.name[-len("_region0"):] for stamp in stamps] == ["_region0", "_region1"]
+
+    group = stamps[0].name[:-len("_region0")]
+
+    for index, (stamp, region) in enumerate(zip(stamps, regions)):
+        metrics = json.loads((stamp / "metrics.json").read_text())
+        marker  = json.loads((stamp / "complete.json").read_text())
+        assert metrics["split_region"] == region
+        assert metrics["core_region"]  == region
+        assert metrics["region_pass"]  == {"index": index, "count": 2, "group": group}
+        assert marker["region_pass"]   == {"index": index, "count": 2, "group": group}
+
+    assert CompletedInference.stamps(run_dir / "inference", "test") == stamps
+    assert "Cubes   : not saved (save_cubes=False)" in (stamps[0] / "logs" / "inference.log").read_text()
 
 
 def test_equal_indices_are_unique_and_inside_the_axis():
