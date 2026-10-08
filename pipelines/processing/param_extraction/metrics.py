@@ -342,6 +342,127 @@ class ParameterMapBuilder:
         return summary
 
 
+class FitBoundCensus:
+    """Counts the active fitted slots whose width or centroid ended on the fitter's clamp bounds.
+
+    The projected Adam fit clips every sigma to [dh, h_span / 2] and every
+    mean to the ends of the z axis after each step, where dh is the z step
+    and h_span the axis extent. A slot sitting on one of these bounds was
+    placed by the clamp rather than by the profile, so the shares tell whether
+    a fit setting moves the labels or only the clamp.
+
+    Attributes:
+        RELATIVE_TOLERANCE : Distance to a bound, as a fraction of that bound for sigma and of h_span for the mean, within which a slot counts as on it.
+        WARN_FRACTION      : Share of active slots on a bound above which the census warns.
+        activity_threshold : Amplitude above which a slot counts as active.
+        sigma_lower        : Lower sigma bound dh, in metres.
+        sigma_upper        : Upper sigma bound h_span / 2, in metres.
+        mu_lower           : Lowest z of the axis, in metres.
+        mu_upper           : Highest z of the axis, in metres.
+        mu_tolerance       : Distance to an axis end within which a mean counts as on it, in metres.
+    """
+
+    RELATIVE_TOLERANCE = 1e-4
+    WARN_FRACTION      = 0.05
+
+    def __init__(self, z_axis : np.ndarray, activity_threshold : float) -> None:
+        """Derives the fitter's clamp bounds from the z axis.
+
+        Args:
+            z_axis             : Evenly spaced z axis of shape (n_z,) the fit ran on, in metres.
+            activity_threshold : Amplitude above which a slot counts as active, as recorded by the run.
+        """
+        h_span = float(z_axis[-1] - z_axis[0])
+
+        self.activity_threshold = activity_threshold
+        self.sigma_lower        = h_span / (len(z_axis) - 1)
+        self.sigma_upper        = h_span / 2.0
+        self.mu_lower           = float(z_axis[0])
+        self.mu_upper           = float(z_axis[-1])
+        self.mu_tolerance       = self.RELATIVE_TOLERANCE * h_span
+
+    def count(self, amplitudes : np.ndarray, means : np.ndarray, sigmas : np.ndarray) -> Dict[str, int]:
+        """Counts the active slots and those on each bound.
+
+        Args:
+            amplitudes : Physical slot amplitudes of any shape.
+            means      : Slot means of the same shape, in metres.
+            sigmas     : Slot widths of the same shape, in metres.
+
+        Returns:
+            Mapping with ``active_slots``, ``sigma_at_lower``, ``sigma_at_upper`` and ``mu_at_bound`` counts.
+        """
+        active = GaussianActivity.is_active(amplitudes, self.activity_threshold)
+
+        return {
+            "active_slots"   : int(active.sum()),
+            "sigma_at_lower" : int((active & (sigmas <= self.sigma_lower * (1.0 + self.RELATIVE_TOLERANCE))).sum()),
+            "sigma_at_upper" : int((active & (sigmas >= self.sigma_upper * (1.0 - self.RELATIVE_TOLERANCE))).sum()),
+            "mu_at_bound"    : int((active & ((means <= self.mu_lower + self.mu_tolerance) | (means >= self.mu_upper - self.mu_tolerance))).sum()),
+        }
+
+    def count_rows(self, parameters : np.ndarray) -> Dict[str, int]:
+        """Counts a flattened batch whose rows interleave amplitude, mean and sigma per slot.
+
+        Args:
+            parameters : Parameters of shape (pixels, 3 * k_max).
+        """
+        return self.count(parameters[:, 0::3], parameters[:, 1::3], parameters[:, 2::3])
+
+    def count_stack(self, parameters_array : np.ndarray, n_gaussians : int) -> Dict[str, int]:
+        """Counts a parameter stack slot by slot, holding one slot's maps at a time.
+
+        Args:
+            parameters_array : Parameter stack of shape (3 * n_gaussians, rows, cols).
+            n_gaussians      : Number of Gaussian slots in the stack.
+        """
+        totals = {"active_slots": 0, "sigma_at_lower": 0, "sigma_at_upper": 0, "mu_at_bound": 0}
+
+        for k in range(n_gaussians):
+            counts = self.count(parameters_array[3 * k], parameters_array[3 * k + 1], parameters_array[3 * k + 2])
+            for key in totals:
+                totals[key] += counts[key]
+
+        return totals
+
+    @staticmethod
+    def add(totals : Dict[str, int], counts : Dict[str, int]) -> None:
+        """Adds one batch's counts into running totals in place."""
+        for key, value in counts.items():
+            totals[key] += value
+
+    @staticmethod
+    def fractions(counts : Dict[str, int]) -> Dict[str, float]:
+        """Returns each bound count as a share of the active slots, NaN when no slot is active.
+
+        Returns:
+            Mapping with ``sigma_at_lower_frac``, ``sigma_at_upper_frac`` and ``mu_at_bound_frac``.
+        """
+        active = counts["active_slots"]
+
+        return {
+            f"{key}_frac" : counts[key] / active if active > 0 else float("nan")
+            for key in ("sigma_at_lower", "sigma_at_upper", "mu_at_bound")
+        }
+
+    def report(self, counts : Dict[str, int], logger : Logger, label : str) -> None:
+        """Logs the bound shares and warns for every share above WARN_FRACTION.
+
+        Args:
+            counts : Counts as ``count`` returns them, possibly summed over batches.
+            logger : Logger receiving the line and the warnings.
+            label  : Run or permutation the counts belong to, named in every line.
+        """
+        shares = self.fractions(counts)
+
+        logger.subsection(f"{label} | slots on a clamp bound of {counts['active_slots']:,} active : sigma at dh={self.sigma_lower:.4f} m {shares['sigma_at_lower_frac']:.2%}, sigma at h_span/2={self.sigma_upper:.2f} m {shares['sigma_at_upper_frac']:.2%}, mean at an axis end {shares['mu_at_bound_frac']:.2%}")
+
+        bounds = {"sigma_at_lower_frac": f"the lower sigma bound dh = {self.sigma_lower:.4f} m", "sigma_at_upper_frac": f"the upper sigma bound h_span/2 = {self.sigma_upper:.2f} m", "mu_at_bound_frac": f"an end of the z axis [{self.mu_lower:.2f}, {self.mu_upper:.2f}] m"}
+        for key, where in bounds.items():
+            if shares[key] > self.WARN_FRACTION:
+                logger.warning(f"{label}: {shares[key]:.1%} of {counts['active_slots']:,} active slots end on {where}, above the {self.WARN_FRACTION:.0%} limit; the clamp, not the profile, sets those labels")
+
+
 class FittingMetricsCalculator:
     """Scores a fitted parameter stack against the cube it was fitted to.
 
@@ -560,6 +681,12 @@ class FittingMetricsCalculator:
         gauss_maps   = self.maps.per_gaussian_maps(parameters_array)
         sep_maps     = self.maps.mu_separation_maps(parameters_array)
         summary      = self._compute_global_summary(r2_map, activity_map)
+
+        self.logger.subsection("Counting active slots on the fitter's clamp bounds")
+        census       = FitBoundCensus(z_axis, self.amp_threshold)
+        bound_counts = census.count_stack(parameters_array, self.n_gaussians)
+        census.report(bound_counts, self.logger, "Fit bounds")
+        summary.update(census.fractions(bound_counts))
 
         k_maps    : Dict[str, np.ndarray] = {}
         k_summary : Dict[str, float]      = {}

@@ -111,6 +111,11 @@ class ParameterExtractor:
         """Returns the fitter's record of what the last run fitted, or None before run()."""
         return self._gpu_extractor.outcome
 
+    @property
+    def bound_shares(self) -> Dict[tuple, Dict[str, float]]:
+        """Returns the per (mode, lambda) shares of active slots that ended on a clamp bound in the last run."""
+        return self._gpu_extractor.bound_shares
+
     def run(self, cube_path: Path, z_range: Tuple[float, float]) -> Dict[tuple, Tuple[np.ndarray, dict]]:
         """Fits every mode/lambda permutation and sorts each result by centroid z.
 
@@ -247,7 +252,7 @@ class ParamExtractionPipeline:
             config           : Extraction configuration of this permutation, naming its output paths.
             parameters_array : Parameter stack of shape (3 * k_max, rows, cols).
             diagnostics      : Fit diagnostics arrays for this permutation.
-            record           : Fit outcome keys recorded into the run metadata, from ``_run_record``.
+            record           : Fit outcome keys recorded into the run metadata, from ``_run_record``, joined with this permutation's clamp-bound shares.
 
         Returns:
             Mapping with the parameter, diagnostics and metadata paths, the output
@@ -325,7 +330,7 @@ class ParamExtractionPipeline:
                 for key, (parameters_array, diagnostics) in results.items():
                     config     = self.group.configs[key]
                     self.logger.section(f"[Saving] {config.output_subdir_name}")
-                    saved[key] = self._stage_save(config, parameters_array, diagnostics, record)
+                    saved[key] = self._stage_save(config, parameters_array, diagnostics, {**record, **self.parameter_extractor.bound_shares[key]})
 
                 del results
                 gc.collect()

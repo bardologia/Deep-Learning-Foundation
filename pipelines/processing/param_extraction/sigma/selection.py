@@ -13,7 +13,8 @@ import numpy as np
 
 import jax
 
-from tools.monitoring.logger import Logger
+from pipelines.processing.param_extraction.metrics import FitBoundCensus
+from tools.monitoring.logger                       import Logger
 
 from .kernels import PmapSigmaAdamKernel, SigmaAdamKernel
 
@@ -60,9 +61,10 @@ class BestKSelector:
         scale_all     : np.ndarray,
         lambda_k      : float,
         n_params_out  : int,
+        census        : FitBoundCensus,
         batch_tag     : str = "",
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Selects the best K per pixel and assembles its flattened parameters.
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, Dict[str, int]]:
+        """Selects the best K per pixel, assembles its flattened parameters and counts the winners on a clamp bound.
 
         Args:
             gpu_results  : Mapping from K to (normalised amplitudes, means in metres, sigmas in metres, MSE).
@@ -70,13 +72,15 @@ class BestKSelector:
             scale_all    : Per-pixel peak scale of shape (N_act,) used to restore physical amplitudes.
             lambda_k     : Penalty added per Gaussian in the selection criterion.
             n_params_out : Flattened parameter count 3 * k_max.
+            census       : Clamp-bound census built on the fit's z axis and activity threshold.
             batch_tag    : Label used in log lines.
 
         Returns:
             Tuple of the selected parameters of shape (N_act, n_params_out) with
             amplitude, mean and sigma interleaved per Gaussian, the per-K MSE
-            and penalised MSE of shape (N_act, k_max), and the zero-based index
-            of the winning K of shape (N_act,).
+            and penalised MSE of shape (N_act, k_max), the zero-based index of
+            the winning K of shape (N_act,), and the census counts of the
+            selected active slots on a sigma or mean bound.
         """
 
         N_act = mse_all.shape[0]
@@ -100,12 +104,15 @@ class BestKSelector:
             best_params[np.ix_(idx, list(range(1, K * 3, 3)))] = mus       [idx]
             best_params[np.ix_(idx, list(range(2, K * 3, 3)))] = final_sigs[idx]
 
-        k_dist = {K: int((best_K_idx == K - 1).sum()) for K in range(1, self.k_max + 1)}
+        k_dist       = {K: int((best_K_idx == K - 1).sum()) for K in range(1, self.k_max + 1)}
+        bound_counts = census.count_rows(best_params)
+
         self.logger.subsection(f"{tag}Best-K at lambda_k={lambda_k:g}")
         self.logger.subsection(f"Best-K dist     : {k_dist}")
         self.logger.subsection(f"Mean MSE (best) : {float(mse_all[np.arange(N_act), best_K_idx].mean()):.5f}")
+        self.logger.subsection(f"On clamp bounds : sigma at dh {bound_counts['sigma_at_lower']:,}, sigma at h_span/2 {bound_counts['sigma_at_upper']:,}, mean at an axis end {bound_counts['mu_at_bound']:,} of {bound_counts['active_slots']:,} active slots")
 
-        return best_params, mse_all.astype(np.float32), penalised_all.astype(np.float32), best_K_idx.astype(np.int16)
+        return best_params, mse_all.astype(np.float32), penalised_all.astype(np.float32), best_K_idx.astype(np.int16), bound_counts
 
 
 class KernelBackendSelector:
