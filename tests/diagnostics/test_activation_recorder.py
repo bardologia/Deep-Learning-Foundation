@@ -142,7 +142,7 @@ def test_issue_detector_flags_dead_and_exploding_layers():
 
     reports  = ActivationIssueDetector(config).run(stats)
     by_name  = {report.name: report for report in reports}
-    summary  = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1)
+    summary  = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={})
 
     assert by_name["dead"].severity    == "critical"
     assert by_name["explode"].severity == "warning"
@@ -188,7 +188,7 @@ def test_summary_ranks_worst_layers_by_severity():
     }
 
     reports = ActivationIssueDetector(config).run(stats)
-    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1)
+    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={})
 
     assert summary["worst_layers"][0] == "critical"
     assert "warned" in summary["worst_layers"]
@@ -299,3 +299,60 @@ def test_all_zero_layer_has_no_dynamic_range():
     assert stats["abs_p50"]       == 0.0
     assert stats["abs_p99"]       == 0.0
     assert stats["dynamic_range"] is None
+
+
+class _SharedActNet(torch.nn.Module):
+    """Two convolutions of different width sharing one ReLU module, so the ReLU fires twice per forward."""
+    def __init__(self) -> None:
+        """Builds the 4- and 8-channel convolutions and the shared ReLU."""
+        super().__init__()
+        self.conv_a = torch.nn.Conv2d(2, 4, kernel_size=1)
+        self.conv_b = torch.nn.Conv2d(4, 8, kernel_size=1)
+        self.act    = torch.nn.ReLU()
+
+    def forward(self, x):
+        """Returns the twice-activated output for an input of shape (batch, 2, H, W)."""
+        return self.act(self.conv_b(self.act(self.conv_a(x))))
+
+
+def test_reused_leaf_module_is_recorded_per_call_site():
+    """A module firing twice per forward gets one row per call site with the right width, and is reported as reused."""
+    model    = _SharedActNet()
+    recorder = ActivationRecorder(model)
+    recorder.attach_stats()
+
+    with torch.no_grad():
+        model(torch.randn(2, 2, 6, 6))
+        model(torch.randn(2, 2, 6, 6))
+
+    recorder.detach()
+    stats = recorder.stats()
+
+    assert {"act", "act#1"} <= set(stats)
+    assert stats["act"]["n_channels"]   == 4
+    assert stats["act#1"]["n_channels"] == 8
+    assert stats["act"]["n_batches"]    == 2
+    assert stats["act#1"]["n_batches"]  == 2
+    assert stats["act#1"]["module_type"] == "ReLU"
+    assert recorder.reused_modules() == {"act": 2}
+
+
+def test_unshared_modules_are_not_reported_as_reused():
+    """A network whose leaves fire once per forward reports no reused module."""
+    recorder = ActivationRecorder(_TinyNet())
+    recorder.attach_stats()
+
+    with torch.no_grad():
+        recorder.model(torch.randn(1, 2, 8, 8))
+
+    recorder.detach()
+
+    assert recorder.reused_modules() == {}
+
+
+def test_summary_carries_the_reused_modules():
+    """The run summary persists which modules were recorded per call site."""
+    reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
+    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={"pool": 4})
+
+    assert summary["reused_modules"] == {"pool": 4}
