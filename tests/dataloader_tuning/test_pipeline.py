@@ -84,6 +84,33 @@ def test_a_sweep_refuses_an_existing_directory(tmp_path, monkeypatch):
         DataLoaderTuningPipeline(_config(tmp_path))
 
 
+def test_feed_target_table_names_the_default_model_device_and_threads(tmp_path):
+    """The log names the benchmarked model, marking a substituted default, its size, the device and the torch threads in force, and warns about a CPU run."""
+    pipeline     = DataLoaderTuningPipeline(_config(tmp_path, warmup_batches=4, timed_batches=20))
+    pipeline.gpu = {"index": 0, "name": None, "nvml_index": None, "nvml_name": None, "uuid": None}
+    tables       = []
+    warnings     = []
+    pipeline.logger.kv_table = lambda data, title=None: tables.append((title, dict(data)))
+    pipeline.logger.warning  = warnings.append
+
+    class Target:
+        """Feed target stub with a two-by-two linear model."""
+        model       = torch.nn.Linear(2, 2)
+        model_name  = "mlp_ae"
+        sample_text = "96 samples"
+        item_source = "synthetic"
+
+    assert pipeline._log_feed_target(Target(), torch.device("cpu")) == 6
+
+    title, rows = tables[0]
+    assert title                 == "Feed target"
+    assert rows["Model"]         == "mlp_ae (default)"
+    assert rows["GPU"]           == "none (CPU)"
+    assert rows["Torch threads"] == torch.get_num_threads()
+    assert rows["Warm-up/timed"] == "4/20 batches"
+    assert warnings[0].startswith("No CUDA device is visible")
+
+
 def test_worker_counts_drops_counts_above_cores(tmp_path, monkeypatch):
     """Worker counts exceeding the CPU core count are discarded."""
     config   = _config(tmp_path, worker_counts=[0, 2, 1000000])
