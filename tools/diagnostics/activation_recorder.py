@@ -128,16 +128,31 @@ class LayerActivationStats:
         return float(np.exp(entropy) / channel_abs_sum.size)
 
     def _abs_percentile(self, q: float) -> float:
-        """Returns the q-quantile of |activation| read off the histogram bin edges."""
-        total = int(self.hist_counts.sum())
+        """Returns the upper bin edge holding the q-quantile of the non-zero |activation| values.
+
+        Bin 0 of COUNT_EDGES holds the exact zeros and the values below 1e-8,
+        which the zero fraction and the dead-channel count report separately.
+        Taking the quantile over the remaining bins keeps a ReLU layer with
+        half its outputs at zero from reading a p50 of 1e-8 and a p99/p50
+        ratio near 1e8. The value is the bin's upper edge, an upper bound
+        quantised to half a decade and capped at the observed maximum.
+
+        Args:
+            q : Quantile in [0, 1].
+
+        Returns:
+            The bound in activation units, or 0 when no value exceeds 1e-8.
+        """
+        counts = self.hist_counts[1:]
+        total  = int(counts.sum())
         if total == 0:
             return 0.0
 
-        cumulative = np.cumsum(self.hist_counts)
+        cumulative = np.cumsum(counts)
         idx        = int(np.searchsorted(cumulative, q * total))
-        idx        = min(idx, self.hist_counts.size - 1)
+        idx        = min(idx, counts.size - 1)
 
-        upper = self.COUNT_EDGES[idx + 1]
+        upper = self.COUNT_EDGES[idx + 2]
         return self.max_abs if not np.isfinite(upper) else float(min(upper, self.max_abs))
 
     def finalize(self) -> dict:
@@ -146,9 +161,11 @@ class LayerActivationStats:
         Returns:
             Mapping with layer identity, output shape, forward order, element
             and batch counts, non-finite and exact-zero fractions, mean, std,
-            peak and percentile magnitudes, dynamic range, channel counts,
-            dead- and effective-channel measures, the channel Gini value, and
-            the log-spaced magnitude histogram counts.
+            peak magnitude, the p50 and p99 of the non-zero magnitudes as
+            upper half-decade bin edges, their ratio as dynamic range (None
+            when no value exceeds 1e-8), channel counts, dead- and
+            effective-channel measures, the channel Gini value, and the
+            log-spaced magnitude histogram counts.
 
         Raises:
             ValueError : If the module never produced an activation.

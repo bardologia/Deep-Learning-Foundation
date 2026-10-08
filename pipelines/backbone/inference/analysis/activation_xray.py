@@ -96,7 +96,8 @@ class ActivationXrayRun(AnalysisRun):
             "Depth profiles are ordered by first forward call and coloured by module family; flagged layers carry a severity ring. "
             "Channel utilisation is the entropy-effective number of channels (by mean |activation| share) over the channel count: "
             "1.0 means all channels carry equal mass, low values mean the layer routes its signal through a few channels. "
-            "Dynamic range is the p99/p50 ratio of |activation|; large values indicate heavy-tailed activations."
+            "Dynamic range is the p99/p50 ratio of the non-zero |activation| values, each read as the upper edge of a half-decade histogram bin; "
+            "large values indicate heavy-tailed activations, and exact zeros are reported by zero% instead."
         )
 
         doc.kv_table({
