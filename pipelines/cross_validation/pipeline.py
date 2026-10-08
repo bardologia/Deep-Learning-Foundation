@@ -19,22 +19,25 @@ class CrossValidationPipeline(StagedPipeline):
     """Runs the training, inference, and reporting stages of cross-validation.
 
     Attributes:
-        factory : Builds the fold planner and per-fold configs.
+        factory   : Builds the fold planner and per-fold configs.
+        inherited : Warmup curriculum fields the entry copied from typed complete-stage overrides, mapped to the copied values.
     """
 
     LOGGER_NAME = "cross_validation_pipeline"
     STAGES      = ("full", "prepare", "compare")
 
-    def __init__(self, config: CrossValidationConfig, entry_script: Path, resumed=None) -> None:
+    def __init__(self, config: CrossValidationConfig, entry_script: Path, resumed=None, inherited: dict | None = None) -> None:
         """Binds the pipeline to its configuration and entry script.
 
         Args:
             config       : Cross-validation configuration.
             entry_script : Entry point the stages re-invoke for each unit.
             resumed      : Resumed-run description logged when the pipeline starts, or None for a fresh run.
+            inherited    : Warmup curriculum fields the entry's curriculum inheritance copied from the complete stage, mapped to their values, or None when it copied none.
         """
         super().__init__(config, entry_script, resumed=resumed)
-        self.factory = FoldConfigFactory(config)
+        self.factory   = FoldConfigFactory(config)
+        self.inherited = dict(inherited or {})
 
     @classmethod
     def validate_sweep(cls, config: CrossValidationConfig) -> None:
@@ -60,6 +63,13 @@ class CrossValidationPipeline(StagedPipeline):
         """Validates this pipeline's own configuration."""
         self._begin_stage("validation")
         self.validate_sweep(self.config)
+
+    def _log_inherited(self) -> None:
+        """Logs the warmup curriculum fields copied from typed complete-stage overrides, which the configuration records without saying where they came from."""
+        if not self.inherited:
+            return
+
+        self.logger.kv_table({f"curriculum.warmup.{name}": repr(value) for name, value in self.inherited.items()}, title=f"{len(self.inherited)} warmup field(s) inherited from the complete stage")
 
     def _log_unit_status(self) -> None:
         """Logs what every fold x seed unit already holds on disk, and which directories no unit claims.
@@ -156,6 +166,7 @@ class CrossValidationPipeline(StagedPipeline):
         }, title="Configuration")
 
         self._log_launch()
+        self._log_inherited()
 
         if self.config.stage == "compare":
             reports_dir = self._run_reports(planner)

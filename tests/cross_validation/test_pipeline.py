@@ -317,3 +317,31 @@ def test_pipeline_abort_in_training_is_logged_and_marked_failed(tmp_path, test_d
     assert state["stages"]["pipeline"]["status"] == "failed"
     assert "Aborted in stage 'training' by RuntimeError: no device left in the pool" in text
     assert ">>> ABORTED cross_validation_pipeline" in text
+
+
+@pytest.mark.dataset
+def test_pipeline_logs_the_inherited_warmup_fields_and_reports_them_as_resumed_changes(tmp_path, test_data_dir, monkeypatch):
+    """The fields curriculum inheritance copied into the warmup stage are logged, and on a resume they join the change table of the launch."""
+    from configuration.training                     import CurriculumInheritance, default_curriculum
+    from pipelines.shared.orchestration.resumed_run import ResumedRun
+    from tools.runtime.config_cli                   import ConfigCli
+
+    CrossValidationPipeline(pipeline_config(tmp_path, test_data_dir), entry_script=Path("e.py"))
+
+    cli       = ConfigCli(CrossValidationConfig())
+    launch    = cli.apply(["--resume_from", str(tmp_path / "rt"), "--curriculum.complete.weight_mse_curve", "0.25"])
+    resumed   = ResumedRun(CrossValidationConfig, launch, cli.overrides)
+    config    = resumed.load()
+    inherited = CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
+
+    order = []
+    install_fake_stages(monkeypatch, order)
+
+    pipeline = CrossValidationPipeline(config, entry_script=Path("e.py"), resumed=resumed, inherited=inherited)
+    pipeline.run()
+
+    text = (pipeline.pipeline_dir / "cross_validation_pipeline.log").read_text(encoding="utf-8")
+
+    assert "1 warmup field(s) inherited from the complete stage" in text
+    assert "curriculum.warmup.weight_mse_curve" in text
+    assert resumed.changed["curriculum.warmup.weight_mse_curve"] == (1.0, 0.25)

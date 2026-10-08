@@ -16,7 +16,7 @@ from _bootstrap import EnvironmentPinner
 
 
 def _scheduler() -> None:
-    """Applies curriculum inheritance and runs the cross-validation pipeline.
+    """Applies curriculum inheritance and runs the cross-validation pipeline, which logs the inherited fields.
 
     With ``resume_from`` set, the configuration the run recorded is loaded
     first and the command-line overrides are applied on top, so the run is
@@ -38,9 +38,9 @@ def _scheduler() -> None:
         resumed = ResumedRun(CrossValidationConfig, config, cli.overrides)
         config  = resumed.load()
 
-    CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
+    inherited = CurriculumInheritance(config.curriculum, default_curriculum(), cli.overrides).apply()
 
-    pipeline = CrossValidationPipeline(config=config, entry_script=Path(__file__).resolve(), resumed=resumed)
+    pipeline = CrossValidationPipeline(config=config, entry_script=Path(__file__).resolve(), resumed=resumed, inherited=inherited)
     pipeline.run()
 
 
