@@ -145,13 +145,12 @@ class ExtractionConfig:
 
     Attributes:
         processed_data_path  : Root of the processed dataset holding data/ and meta/.
-        pyrat_directory      : PyRAT source directory used to read the cube.
         output_prefix        : Leading token of the parameter run directory name.
         output_suffix        : Explicit suffix, or None to derive one from the fit settings.
-        height_range         : Z axis extent in metres, or None to read it from the dataset metadata.
+        z_range              : Z axis extent in metres, or None to read it from the dataset metadata.
         fit_settings         : Fit hyperparameters and the implied fit mode.
         parameter_workers    : CPU worker processes writing the parameter chunks.
-        range_batch_size     : Number of range lines loaded per batch.
+        col_batch_size       : Number of cols loaded per batch.
         gpu_pixel_batch_size : Number of pixels fitted per GPU batch.
         adam_steps           : Adam iterations per pixel batch.
         adam_lr              : Adam learning rate.
@@ -236,14 +235,14 @@ class ExtractionConfig:
     def discover_z_range(self) -> Tuple[float, float]:
         """Returns the z axis extent of the cube.
 
-        The configured override wins; otherwise the col is read from the
+        The configured override wins; otherwise the z range is read from the
         dataset config_state.json.
 
         Returns:
             The (minimum, maximum) z in metres.
 
         Raises:
-            FileNotFoundError : If no override is set and the metadata does not carry a cube z col.
+            FileNotFoundError : If no override is set and the metadata does not carry a cube z range.
         """
         if self.z_range is not None:
             return tuple(self.z_range)
@@ -271,10 +270,9 @@ class ExtractParamsEntryConfig:
     Attributes:
         dataset_base_path      : Root directory scanned for processed datasets.
         dataset_filter         : Exact dataset directory names under the base path to select; empty selects every dataset.
-        pyrat_directory        : PyRAT source directory used to read the cubes.
         output_prefix          : Leading token of each parameter run directory name.
         output_suffix          : Explicit suffix, or None to derive one per combination.
-        z_range           : Z axis extent in metres, or None to read it per dataset.
+        z_range                : Z axis extent in metres, or None to read it per dataset.
         fit_k_values           : Maximum component counts swept.
         fit_lambda_values      : Component-count penalty weights swept.
         fit_modes              : Fit modes swept, each naming the free components.
@@ -286,7 +284,7 @@ class ExtractParamsEntryConfig:
         adam_steps             : Adam iterations per pixel batch.
         adam_lr                : Adam learning rate.
         gpu_device_ids         : GPU device indices available to the extraction workers.
-        col_batch_size       : Number of col lines loaded per batch.
+        col_batch_size         : Number of cols loaded per batch.
         gpu_pixel_batch_size   : Number of pixels fitted per GPU batch.
         parameter_workers      : CPU worker processes writing the parameter chunks.
     """
