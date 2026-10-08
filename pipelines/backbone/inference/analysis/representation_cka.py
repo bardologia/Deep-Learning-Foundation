@@ -17,6 +17,7 @@ import torch
 
 from configuration.diagnostics                          import CkaConfig
 from pipelines.backbone.inference.analysis.layer_probes import FeatureSampler
+from pipelines.backbone.inference.analysis.run_batch    import AnalysisConfigTable
 from pipelines.backbone.inference.loader                import RunLoader
 from pipelines.backbone.inference.probes                import ModelDevice
 from tools.data.io                                      import FileIO
@@ -280,20 +281,23 @@ class CkaComparison:
     """Compares the layer representations of several runs on a shared pixel sample.
 
     Attributes:
-        config     : CKA configuration carrying run selection, split and sampling fields.
-        logger     : Logger for progress reporting.
-        output_dir : Timestamped directory receiving figures, JSON and the report.
+        config            : CKA configuration carrying run selection, split and sampling fields.
+        logger            : Logger for progress reporting.
+        profile_overrides : Leaf path to value of every default the machine profile rewrote.
+        output_dir        : Timestamped directory receiving figures, JSON and the report.
     """
 
-    def __init__(self, config: CkaConfig, logger) -> None:
+    def __init__(self, config: CkaConfig, logger, profile_overrides: dict) -> None:
         """Stores the configuration and resolves the timestamped output directory.
 
         Args:
-            config : CKA configuration.
-            logger : Logger for progress reporting.
+            config            : CKA configuration.
+            logger            : Logger for progress reporting.
+            profile_overrides : Leaf path to value of every default the machine profile rewrote, tagged in the configuration table.
         """
-        self.config = config
-        self.logger = logger
+        self.config            = config
+        self.logger            = logger
+        self.profile_overrides = profile_overrides
 
         self.output_dir = Path(config.output_dir) / RunTag.now()
 
@@ -488,6 +492,9 @@ class CkaComparison:
         """
         FileIO.ensure_dirs(self.output_dir)
         PlotBase.use_style(self.config.figure_style)
+
+        self.logger.section("Representation similarity (CKA)")
+        AnalysisConfigTable.log(self.logger, self.config, self.profile_overrides)
 
         run_dirs = self._select_runs()
         names    = ["/".join(run_dir.relative_to(self.config.runs_dir).parts) if run_dir.is_relative_to(self.config.runs_dir) else run_dir.name for run_dir in run_dirs]

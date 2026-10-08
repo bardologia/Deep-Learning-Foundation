@@ -17,12 +17,11 @@ def main() -> None:
     from tools.runtime.config_cli                                 import ConfigCli
     from tools.monitoring.logger                                  import Logger
 
-    config = ConfigCli(TrainingEvolutionConfig(), description="Animate how a backbone run learned: re-predict probe pixels from every epoch snapshot saved during training (snapshot_every_n_epochs > 0) and render one GIF per pixel of the prediction converging onto the fixed ground truth; GIFs, JSON and a markdown report land inside each run directory").apply()
+    cli    = ConfigCli(TrainingEvolutionConfig(), description="Animate how a backbone run learned: re-predict probe pixels from every epoch snapshot saved during training (snapshot_every_n_epochs > 0) and render one GIF per pixel of the prediction converging onto the fixed ground truth; GIFs, JSON and a markdown report land inside each run directory")
+    config = cli.apply()
 
-    logger = Logger(log_dir="logs", name="animate_training")
-    TrainingEvolutionBatch(config, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="animate_training") as logger:
+        TrainingEvolutionBatch(config, logger, cli.profile_overrides).run()
 
 
 if __name__ == "__main__":

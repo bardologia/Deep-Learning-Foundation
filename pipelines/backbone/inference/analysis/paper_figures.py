@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 
 from configuration.diagnostics                             import PaperFigurePackConfig
+from pipelines.backbone.inference.analysis.run_batch       import AnalysisConfigTable
 from pipelines.backbone.inference.analysis.seed_comparison import SeedInferenceResolver
 from tools.data.io                                         import FileIO
 from tools.runtime.run_selector                            import ReportRunSelector
@@ -19,21 +20,25 @@ class PaperFigurePack:
     """Copies the figures matching a set of patterns out of several runs into one directory.
 
     Attributes:
-        config     : Run selection, figure patterns and output directory of the pack.
-        output_dir : Directory receiving the copied figures and the manifest.
+        config            : Run selection, figure patterns and output directory of the pack.
+        logger            : Logger receiving the per-run progress.
+        profile_overrides : Leaf path to value of every default the machine profile rewrote.
+        output_dir        : Directory receiving the copied figures and the manifest.
     """
 
     MANIFEST = "figure_manifest.json"
 
-    def __init__(self, config: PaperFigurePackConfig, logger) -> None:
+    def __init__(self, config: PaperFigurePackConfig, logger, profile_overrides: dict) -> None:
         """Stores the pack configuration and resolves the output directory.
 
         Args:
-            config : Figure-pack configuration.
-            logger : Logger receiving the per-run progress.
+            config            : Figure-pack configuration.
+            logger            : Logger receiving the per-run progress.
+            profile_overrides : Leaf path to value of every default the machine profile rewrote, tagged in the configuration table.
         """
-        self.config = config
-        self.logger = logger
+        self.config            = config
+        self.logger            = logger
+        self.profile_overrides = profile_overrides
 
         self.output_dir = Path(config.output_dir)
 
@@ -106,6 +111,9 @@ class PaperFigurePack:
             Payload with the output directory, the patterns used, a note on the figure
             formats and the manifest entries of the copied figures.
         """
+        self.logger.section("Paper figure pack")
+        AnalysisConfigTable.log(self.logger, self.config, self.profile_overrides)
+
         FileIO.ensure_dirs(self.output_dir)
 
         resolver = SeedInferenceResolver(self.config.inference_subdir, self.config.split, self.config.metrics_filename, self.logger)

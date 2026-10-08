@@ -21,12 +21,11 @@ def main() -> None:
     from tools.runtime.config_cli                              import ConfigCli
     from tools.monitoring.logger                               import Logger
 
-    config = ConfigCli(ActivationXrayConfig(), description="X-ray the activations of trained backbone runs on real data: hook every leaf module, run a few batches, and report dead layers, dead channels, exploding or constant activations with depth profiles, per-layer histograms, a JSON dump and a markdown report inside each run directory").apply()
+    cli    = ConfigCli(ActivationXrayConfig(), description="X-ray the activations of trained backbone runs on real data: hook every leaf module, run a few batches, and report dead layers, dead channels, exploding or constant activations with depth profiles, per-layer histograms, a JSON dump and a markdown report inside each run directory")
+    config = cli.apply()
 
-    logger = Logger(log_dir="logs", name="xray_activations")
-    ActivationXrayBatch(config, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="xray_activations") as logger:
+        ActivationXrayBatch(config, logger, cli.profile_overrides).run()
 
 
 if __name__ == "__main__":

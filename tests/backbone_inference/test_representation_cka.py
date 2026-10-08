@@ -119,7 +119,7 @@ def test_alignment_score_of_identity_matrix_is_one():
 
 def test_alignment_is_validated_from_sample_grids(tmp_path):
     """Sample grids must share crop, patch size and stride across the compared runs."""
-    comparison = CkaComparison(CkaConfig(output_dir=tmp_path), SilentLogger())
+    comparison = CkaComparison(CkaConfig(output_dir=tmp_path), SilentLogger(), {})
 
     grid    = ((1000, 2000, 500, 900), (64, 32), (32, 16))
     strided = ((1000, 2000, 500, 900), (64, 32), (64, 32))
@@ -145,7 +145,7 @@ def test_comparison_announces_and_tracks_its_matrices(tmp_path, test_data_dir, p
     """The matrix stage announces the pair count, drives one progress task over every matrix and times each stage."""
     logger = StageLogger()
 
-    CkaComparison(_aligned_runs(tmp_path, test_data_dir, params_dir), logger).run()
+    CkaComparison(_aligned_runs(tmp_path, test_data_dir, params_dir), logger, {}).run()
 
     infos = [message for level, message in logger.messages if level == "info"]
 
@@ -161,7 +161,7 @@ def test_comparison_records_layers_matrices_and_config(tmp_path, test_data_dir, 
     """cka.json maps every matrix row to a layer name, names each run's checkpoint and commit, and the matrices and config sit beside it."""
     config = _aligned_runs(tmp_path, test_data_dir, params_dir)
 
-    CkaComparison(config, SilentLogger()).run()
+    CkaComparison(config, SilentLogger(), {}).run()
 
     output  = next((tmp_path / "cka").iterdir())
     payload = json.loads((output / "cka.json").read_text())
@@ -194,7 +194,7 @@ class _MixedNet(torch.nn.Module):
 def test_collect_records_the_dropped_layers_and_their_reason(tmp_path):
     """A vector output and a never-called module are dropped with their reason, named in one warning and left out of the layer record."""
     logger     = RecordingLogger()
-    comparison = CkaComparison(CkaConfig(output_dir=tmp_path, samples_per_batch=16, max_batches=1), logger)
+    comparison = CkaComparison(CkaConfig(output_dir=tmp_path, samples_per_batch=16, max_batches=1), logger, {})
     run        = SimpleNamespace(model=SimpleNamespace(module=_MixedNet()), loader=[(torch.randn(2, 2, 8, 8),)], backbone_name="mixed")
 
     features, record = comparison._collect(run, "mixed")
