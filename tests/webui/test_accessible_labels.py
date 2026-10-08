@@ -3,7 +3,9 @@
 A placeholder disappears once the user types and is not a reliable accessible
 name, so every text input in the page shell needs an ``aria-label``, an
 enclosing ``<label>`` or a ``<label for>``, and every filter or search box the
-front-end modules build needs an ``aria-label`` of its own.
+front-end modules build needs an ``aria-label`` of its own. The cube metric
+colour-range bounds and keep-window threshold share a group with other controls,
+so each of them carries an ``aria-label`` as well.
 """
 
 from __future__ import annotations
@@ -74,6 +76,14 @@ class PlaceholderInputAudit(HTMLParser):
 def test_page_shell_placeholder_inputs_have_an_accessible_name():
     """Every placeholder input in index.html is named by an aria-label, an enclosing label or a label for."""
     assert PlaceholderInputAudit().unnamed(INDEX.read_text()) == []
+
+
+def test_metric_bounds_and_threshold_carry_an_aria_label():
+    """The cube metric colour-range bounds and keep-window threshold, which share a group with other controls, carry an aria-label of their own."""
+    tags    = {ident: tag for tag in re.findall(r"<input\b[^>]*>", INDEX.read_text()) for ident in re.findall(r'\bid="([^"]+)"', tag)}
+    unnamed = [ident for ident in ("cube-metric-vmin", "cube-metric-vmax", "cube-metric-thr") if "aria-label=" not in tags[ident]]
+
+    assert unnamed == []
 
 
 def test_markup_filter_boxes_carry_an_aria_label():
