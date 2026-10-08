@@ -30,7 +30,7 @@ class ContrastEstimator:
     Attributes:
         logger         : Logger available to the estimator.
         floor_fraction : Fraction of the lowest profile bins averaged into the floor.
-        col_chunk    : Number of col bins processed per streaming chunk.
+        col_chunk      : Number of cols processed per streaming chunk.
     """
 
     def __init__(self, logger : Logger, floor_fraction : float = 0.25, col_chunk : int = 512) -> None:
@@ -39,7 +39,7 @@ class ContrastEstimator:
         Args:
             logger         : Logger available to the estimator.
             floor_fraction : Fraction of the lowest profile bins averaged into the floor.
-            col_chunk    : Number of col bins processed per streaming chunk.
+            col_chunk      : Number of cols processed per streaming chunk.
         """
         self.logger         = logger
         self.floor_fraction = floor_fraction
@@ -84,8 +84,8 @@ class ContrastEstimator:
         Returns:
             Peak-to-floor contrast of shape (rows, cols), in dB.
         """
-        H, n_row, n_col    = cube.shape
-        contrast_db = np.full((n_row, n_col), np.nan, dtype=np.float32)
+        H, n_row, n_col = cube.shape
+        contrast_db     = np.full((n_row, n_col), np.nan, dtype=np.float32)
 
         for r_start in range(0, n_col, self.col_chunk):
             r_end = min(r_start + self.col_chunk, n_col)
@@ -473,7 +473,7 @@ class FittingMetricsCalculator:
         threshold_factor   : Peak fraction below which profile bins were zeroed by the fitter.
         truncation_index   : Z bin above which the profile was truncated by the fitter.
         amp_threshold      : Amplitude above which a Gaussian slot counts as active, as recorded by the run metadata.
-        col_chunk          : Number of col bins processed per streaming chunk.
+        col_chunk          : Number of cols processed per streaming chunk.
         contrast_estimator : Peak-to-floor contrast estimator.
         k_diagnostics      : Model-order selection diagnostics.
         maps               : Builder of the activity, per-slot and separation maps.
@@ -491,7 +491,7 @@ class FittingMetricsCalculator:
             threshold_factor : Peak fraction below which profile bins were zeroed.
             truncation_index : Z bin above which the profile was truncated.
             amp_threshold    : Amplitude above which a Gaussian slot counts as active, as recorded by the run metadata.
-            col_chunk        : Number of col bins processed per streaming chunk.
+            col_chunk        : Number of cols processed per streaming chunk.
         """
         self.n_gaussians      = n_gaussians
         self.logger           = logger
@@ -656,7 +656,7 @@ class FittingMetricsCalculator:
         Args:
             parameters_array : Parameter stack of shape (3 * n_gaussians, row, col).
             metadata         : Run metadata carrying ``z_range`` in metres.
-            cube_path    : Path of the cube the fit was performed on.
+            cube_path        : Path of the cube the fit was performed on.
             diagnostics      : Fitter diagnostics; model-order metrics are skipped when absent.
 
         Returns:
@@ -666,13 +666,13 @@ class FittingMetricsCalculator:
         """
         self.logger.section("[Fitting Metrics Calculation]")
 
-        self.logger.subsection(f"Loading cube : {Path(cube_path).name}")
+        self.logger.subsection(f"Loading cube    : {Path(cube_path).name}")
         cube    = self._open_cube(Path(cube_path))
         z_range = tuple(metadata["z_range"])
         z_axis  = GaussianAxis.build(float(z_range[0]), float(z_range[1]), cube.shape[0])
 
-        self.logger.subsection(f"Cube shape  : {cube.shape}")
-        self.logger.subsection(f"Z range       : [{z_range[0]:.1f}, {z_range[1]:.1f}] m")
+        self.logger.subsection(f"Cube shape      : {cube.shape}")
+        self.logger.subsection(f"Z range         : [{z_range[0]:.1f}, {z_range[1]:.1f}] m")
 
         n_z        = int(cube.shape[0])
         truncation = f"bins >= {self.truncation_index} of {n_z} zeroed" if self.truncation_index < n_z else f"no bin truncated, the index lies beyond the {n_z} z bins"

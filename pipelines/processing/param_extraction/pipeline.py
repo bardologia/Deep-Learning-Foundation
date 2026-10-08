@@ -65,7 +65,7 @@ class ParameterExtractor:
             prominence_frac      : Minimum peak prominence, as a fraction of the profile peak.
             sigma_init_divisor   : Divisor applied to the initial Gaussian widths.
             activity_threshold   : Profile peak above which a pixel is fitted; the same value is recorded as the slot activity threshold of the run.
-            range_batch_size     : Number of range bins loaded per batch.
+            col_batch_size       : Number of cols loaded per batch.
             adam_steps           : Adam iterations per fit.
             adam_lr              : Adam learning rate.
             adam_b1              : Adam first-moment decay.
@@ -121,7 +121,7 @@ class ParameterExtractor:
 
         Args:
             cube_path : Path of the cube of shape (z, row, col).
-            z_range  : Z axis limits as (minimum, maximum), in metres.
+            z_range   : Z axis limits as (minimum, maximum), in metres.
 
         Returns:
             Mapping from (mode, lambda) to the parameter stack of shape
