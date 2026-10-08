@@ -48,6 +48,7 @@ class WeightXrayReport:
             "Parameters"      : f"{summary['parameters']:,}",
             "Flagged tensors" : summary["flagged_tensors"],
             "Total issues"    : summary["issues"],
+            "Unchecked"       : self._unchecked_text(summary),
             "Verdict"         : summary["verdict"],
         }, title="Summary")
 
@@ -92,9 +93,18 @@ class WeightXrayReport:
 
         return table
 
+    @staticmethod
+    def _checked_cell(report, check: str, value, fmt: str) -> str:
+        """Returns a metric cell, "skipped" when the check was size-limited and "-" when the tensor has no matrix statistics."""
+        if check in report.skipped_checks:
+            return "skipped"
+        if value is None:
+            return "-"
+        return format(value, fmt)
+
     def _metric_table(self, reports: list) -> MarkdownTable:
         """Returns the markdown table of per-tensor metrics in state-dict order."""
-        table = MarkdownTable(["Tensor", "Role", "Params", "Std", "Dead %", "Rank ratio", "Spectral", "Severity"], align=["left", "left", "right", "right", "right", "right", "right", "left"])
+        table = MarkdownTable(["Tensor", "Role", "Params", "Std", "Dead %", "Rank ratio", "Spectral", "Dup. pairs", "Severity"], align=["left", "left", "right", "right", "right", "right", "right", "right", "left"])
         for report in reports:
             table.add_row(
                 report.name,
@@ -102,8 +112,9 @@ class WeightXrayReport:
                 f"{report.count:,}",
                 f"{report.std:.3g}",
                 f"{100.0 * report.frac_dead:.1f}",
-                f"{report.rank_ratio:.2f}" if report.rank_ratio is not None else "-",
-                f"{report.spectral_norm:.3g}" if report.spectral_norm is not None else "-",
+                self._checked_cell(report, "spectral",   report.rank_ratio,      ".2f"),
+                self._checked_cell(report, "spectral",   report.spectral_norm,   ".3g"),
+                self._checked_cell(report, "duplicates", report.duplicate_units, "d"),
                 report.severity,
             )
         return table
@@ -134,6 +145,7 @@ class WeightXrayReport:
             "Critical"        : summary["severity_counts"]["critical"],
             "Warning"         : summary["severity_counts"]["warning"],
             "Info"            : summary["severity_counts"]["info"],
+            "Unchecked"       : self._unchecked_text(summary),
         })
 
         if summary["issue_codes"]:
@@ -156,6 +168,11 @@ class WeightXrayReport:
         doc.table(self._metric_table(reports))
 
         return doc.save(self.config.report_markdown_path)
+
+    @staticmethod
+    def _unchecked_text(summary: dict) -> str:
+        """Returns the tensors each size-limited check skipped as one phrase, e.g. "spectral 0, duplicates 3"."""
+        return ", ".join(f"{check} {count}" for check, count in summary["unchecked"].items())
 
     def _write_json(self, reports: list, summary: dict) -> Path:
         """Serialises the summary and every tensor report to JSON and returns the path."""

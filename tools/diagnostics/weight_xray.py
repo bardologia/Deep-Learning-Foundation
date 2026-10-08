@@ -119,9 +119,20 @@ class WeightXray:
         return state_dict
 
     def _analyze(self, state_dict: dict) -> list[LayerReport]:
-        """Computes the per-tensor statistics of every analysable parameter tensor."""
+        """Computes the per-tensor statistics of every analysable parameter tensor.
+
+        Every check a size limit skipped is reported with the tensors it left
+        unchecked, so a clean verdict can be read against what was not tested.
+        """
         reports = WeightAnalyzer(self.config).analyze(state_dict)
         self.logger.ok(f"Analysed {len(reports)} parameter tensors")
+
+        for check in XraySummarizer.CHECKS_WITH_LIMITS:
+            skipped = [report for report in reports if check in report.skipped_checks]
+            if skipped:
+                named = ", ".join(f"{report.name} ({report.skipped_checks[check]})" for report in skipped)
+                self.logger.warning(f"{check} check skipped for {len(skipped)} of {len(reports)} tensors, which count as unchecked rather than clean: {named}")
+
         return reports
 
     def _detect(self, reports: list[LayerReport], state_dict: dict) -> list[LayerReport]:

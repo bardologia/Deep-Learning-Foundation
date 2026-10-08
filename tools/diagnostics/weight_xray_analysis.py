@@ -74,7 +74,8 @@ class LayerReport:
         rank_ratio        : Effective rank divided by the smaller matrix dimension.
         condition_number  : Ratio of largest to smallest positive singular value.
         init_ratio        : std multiplied by sqrt(fan_in), an initialisation-scale probe.
-        duplicate_units   : Number of collinear output-unit pairs.
+        duplicate_units   : Number of collinear output-unit pairs, None when the check was skipped.
+        skipped_checks    : Check name ("spectral" or "duplicates") to the size limit that excluded this tensor from it.
         issues            : Findings attached by the issue detector.
     """
     name  : str
@@ -113,7 +114,8 @@ class LayerReport:
     init_ratio        : Optional[float] = None
     duplicate_units   : Optional[int]   = None
 
-    issues: list = field(default_factory=list)
+    skipped_checks : dict = field(default_factory=dict)
+    issues         : list = field(default_factory=list)
 
     @property
     def severity(self) -> str:
@@ -206,12 +208,22 @@ class WeightAnalyzer:
         Returns:
             Mapping with fan-in and output-unit counts, dead input and output
             unit counts, the initialisation-scale ratio, the spectral
-            statistics and the duplicate output-unit pair count.
+            statistics, the duplicate output-unit pair count and the checks
+            skipped because of a size limit.
         """
         matrix    = values.reshape(values.shape[0], -1).astype(np.float64)
         matrix    = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
         out_units = matrix.shape[0]
         fan_in    = matrix.shape[1]
+
+        skipped        = {}
+        spectral_skip  = self._spectral_skip(out_units, fan_in)
+        duplicate_skip = self._duplicate_skip(out_units)
+
+        if spectral_skip is not None:
+            skipped["spectral"] = spectral_skip
+        if duplicate_skip is not None:
+            skipped["duplicates"] = duplicate_skip
 
         row_norms = np.sqrt((matrix ** 2).sum(axis=1))
         col_norms = np.sqrt((matrix ** 2).sum(axis=0))
@@ -236,7 +248,21 @@ class WeightAnalyzer:
 
         stats.update(self._spectral_stats(matrix, out_units, fan_in))
         stats["duplicate_units"] = self._duplicate_units(matrix, row_norms)
+        stats["skipped_checks"]  = skipped
         return stats
+
+    def _spectral_skip(self, out_units: int, fan_in: int) -> Optional[str]:
+        """Returns why the SVD is skipped for a matrix of this size, or None when it runs."""
+        smaller = min(out_units, fan_in)
+        if smaller > self.config.svd_max_dim:
+            return f"min(out_units, fan_in) {smaller} > svd_max_dim {self.config.svd_max_dim}"
+        return None
+
+    def _duplicate_skip(self, out_units: int) -> Optional[str]:
+        """Returns why the duplicate-unit check is skipped for this many units, or None when it runs."""
+        if out_units > self.config.duplicate_max_units:
+            return f"{out_units} output units > duplicate_max_units {self.config.duplicate_max_units}"
+        return None
 
     def _spectral_stats(self, matrix: np.ndarray, out_units: int, fan_in: int) -> dict:
         """Returns the singular-value statistics of a weight matrix.
@@ -252,7 +278,7 @@ class WeightAnalyzer:
             configured SVD size limit, and all zero when it has no positive
             singular value.
         """
-        if min(out_units, fan_in) > self.config.svd_max_dim:
+        if self._spectral_skip(out_units, fan_in) is not None:
             return {"spectral_norm": None, "stable_rank": None, "effective_rank": None, "rank_ratio": None, "condition_number": None}
 
         singular = np.linalg.svd(matrix, compute_uv=False)
@@ -282,11 +308,14 @@ class WeightAnalyzer:
 
         Returns:
             Count of unit pairs whose absolute cosine similarity reaches the
-            configured threshold, or None when the matrix has fewer than two
-            output units or more than the duplicate-detection limit.
+            configured threshold, zero when the matrix has a single output
+            unit, or None when it has more units than the duplicate-detection
+            limit and the check is skipped.
         """
         out_units = matrix.shape[0]
-        if out_units < 2 or out_units > self.config.duplicate_max_units:
+        if out_units < 2:
+            return 0
+        if self._duplicate_skip(out_units) is not None:
             return None
 
         safe       = np.where(row_norms > 0, row_norms, 1.0)
@@ -511,7 +540,13 @@ class IssueDetector:
 
 
 class XraySummarizer:
-    """Condenses per-tensor reports into a checkpoint-level summary."""
+    """Condenses per-tensor reports into a checkpoint-level summary.
+
+    Attributes:
+        CHECKS_WITH_LIMITS : Checks a size limit can skip, counted as unchecked tensors in the summary.
+    """
+
+    CHECKS_WITH_LIMITS = ("spectral", "duplicates")
 
     def build(self, reports: list[LayerReport], checkpoint_path: Path) -> dict:
         """Builds the checkpoint-level summary of a weight x-ray.
@@ -523,7 +558,8 @@ class XraySummarizer:
         Returns:
             Mapping with the checkpoint path, tensor and parameter counts,
             flagged tensor and issue totals, severity and issue-code
-            histograms, and a textual verdict.
+            histograms, the number of tensors each size-limited check skipped,
+            and a textual verdict.
         """
         issues       = [issue for report in reports for issue in report.issues]
         flagged      = [report for report in reports if report.severity != "ok"]
@@ -537,6 +573,11 @@ class XraySummarizer:
         for issue in issues:
             code_counts[issue.code] = code_counts.get(issue.code, 0) + 1
 
+        unchecked = {check: 0 for check in self.CHECKS_WITH_LIMITS}
+        for report in reports:
+            for check in report.skipped_checks:
+                unchecked[check] += 1
+
         return {
             "checkpoint"      : str(checkpoint_path),
             "tensors"         : len(reports),
@@ -545,6 +586,7 @@ class XraySummarizer:
             "issues"          : len(issues),
             "severity_counts" : severity_counts,
             "issue_codes"     : dict(sorted(code_counts.items(), key=lambda item: item[1], reverse=True)),
+            "unchecked"       : unchecked,
             "verdict"         : self._verdict(severity_counts),
         }
 
