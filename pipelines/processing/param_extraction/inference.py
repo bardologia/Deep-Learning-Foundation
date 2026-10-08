@@ -1,8 +1,8 @@
 """Inference stage over fitted Gaussian parameter runs: metrics and plots.
 
-Scores a parameter-extraction run against the cube it was fitted to, analyses the
-writes the summary JSON
-and figures. External parameter injections carry no fit diagnostics and are rejected.
+Scores a parameter-extraction run against the cube it was fitted to and writes
+the figures and the summary JSON, the summary last. External parameter
+injections carry no fit diagnostics and are rejected.
 """
 
 from __future__ import annotations
@@ -48,6 +48,17 @@ class ParamRunInferencePipeline:
         self.logger.section("[Param Extraction Inference]")
         self.logger.subsection(f"Run directory : {self.run_dir}")
 
+    def _clear_previous_analysis(self) -> None:
+        """Removes the summary of an earlier analysis of this run.
+
+        The dataset browser and the mail picker count a run as analysed once
+        fit_metrics_summary.json exists, so an analysis that fails part-way
+        must not leave the earlier summary beside half-written new figures.
+        """
+        (self.run_dir / self.SUMMARY_FILENAME).unlink(missing_ok=True)
+
+        self.logger.subsection(f"Cleared any earlier {self.SUMMARY_FILENAME}; the summary is written last, once every stage has finished")
+
     def _load(self) -> tuple:
         """Loads the run metadata, parameter stack, fit diagnostics and cube path.
 
@@ -86,28 +97,6 @@ class ParamRunInferencePipeline:
 
         return calculator.run(parameters, meta, cube_path, diagnostics)
 
-    def _summary(self, metrics_dict: dict) -> Path:
-        """Writes the metrics summary JSON, stamped with the analysing commit.
-
-        Args:
-            metrics_dict : Metric maps and summaries from the metrics stage.
-
-        Returns:
-            Path of the written summary JSON.
-        """
-        payload = {
-            "git_commit"     : GitState.commit(),
-            "global_summary" : metrics_dict["global_summary"],
-            "per_k_summary"  : metrics_dict["per_k_summary"],
-            "snr_summary"    : metrics_dict["snr_summary"],
-        }
-
-        summary_path = self.run_dir / self.SUMMARY_FILENAME
-        FileIO.save_json(payload, summary_path)
-
-        self.logger.subsection(f"-> Metrics summary written: {summary_path}")
-        return summary_path
-
     def _plots(self, parameters, meta: dict, metrics_dict: dict, cube_path: Path) -> dict[str, Path]:
         """Renders the fit-result figures unless plotting is disabled.
 
@@ -134,18 +123,49 @@ class ParamRunInferencePipeline:
 
         return plotter.run(parameters, metrics_dict, meta, cube_path)
 
+    def _summary(self, metrics_dict: dict) -> Path:
+        """Writes the metrics summary JSON, stamped with the analysing commit, as the last artifact of the analysis.
+
+        The dataset browser and the mail picker count a run as analysed once
+        this summary exists, so it is written after every figure.
+
+        Args:
+            metrics_dict : Metric maps and summaries from the metrics stage.
+
+        Returns:
+            Path of the written summary JSON.
+        """
+        payload = {
+            "git_commit"     : GitState.commit(),
+            "global_summary" : metrics_dict["global_summary"],
+            "per_k_summary"  : metrics_dict["per_k_summary"],
+            "snr_summary"    : metrics_dict["snr_summary"],
+        }
+
+        summary_path = self.run_dir / self.SUMMARY_FILENAME
+        FileIO.save_json(payload, summary_path)
+
+        self.logger.subsection(f"-> Metrics summary written: {summary_path}")
+        return summary_path
+
     def run(self) -> dict[str, Path]:
-        """Runs the metrics, summary and plot stages for the run.
+        """Runs the metrics, plot and summary stages for the run.
+
+        The previous analysis's summary is removed first and the summary is
+        written last, so a run counts as analysed only once every stage of
+        this analysis has finished.
 
         Returns:
             Dictionary with the summary JSON path, the output directory and the
             mapping of saved figure paths.
         """
+        self._clear_previous_analysis()
+
         meta, parameters, diagnostics, cube_path = self._load()
 
         metrics_dict = self._metrics(parameters, meta, diagnostics, cube_path)
-        summary_path = self._summary(metrics_dict)
         plot_paths   = self._plots(parameters, meta, metrics_dict, cube_path)
+        summary_path = self._summary(metrics_dict)
 
         del parameters, diagnostics
         gc.collect()
