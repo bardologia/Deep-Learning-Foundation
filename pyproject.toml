@@ -32,4 +32,9 @@ dev     = ["pytest==9.0.3", "pyflakes==3.4.0"]
 include = ["configuration*", "models*", "pipelines*", "tools*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths      = ["tests"]
+strict_markers = true
+markers        = [
+    "dataset: test runs against the generated synthetic dataset scene",
+    "slow: heavier test (full-frame numerics, many model forwards)",
+]
