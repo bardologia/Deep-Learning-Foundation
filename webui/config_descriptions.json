@@ -75,7 +75,8 @@
         "gpu_device_ids": "GPU indices pinned via EnvironmentPinner.gpus before extraction runs",
         "col_batch_size": "number of range bins loaded and fit together per batch, shared across the sweep",
         "gpu_pixel_batch_size": "fixed number of pixels per GPU batch the JAX Adam-fit kernel is compiled and iterated over, shared across the sweep",
-        "parameter_workers": "CPU worker count for the shared PeakInitialiser pool, defaulting to min(64, cpu_count)"
+        "parameter_workers": "CPU worker count for the shared PeakInitialiser pool, defaulting to min(64, cpu_count)",
+        "resources": "ResourceConfig sub-config of the host and GPU resource monitor that samples RAM, swap, /dev/shm, CPU and NVML counters while each extraction group fits, warns at the RAM/VRAM/shm thresholds and logs the peaks; the TensorBoard flag has no effect here since extraction writes no TensorBoard run"
       }
     },
     "param_extraction::ParamExtractionInferenceConfig": {

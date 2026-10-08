@@ -70,7 +70,7 @@ def main() -> None:
             for index, group in enumerate(groups):
                 logger.section(f"[Group {index + 1}/{len(groups)}] {group.processed_data_path.name} :: k{group.k_max} ({len(group.configs)} permutations, one shared load + init)")
 
-                pipeline = ParamExtractionPipeline(group, peak_initialiser=peak_initialiser, kernel_backend=kernel_backend, entry_config=config, overwrite=config.overwrite)
+                pipeline = ParamExtractionPipeline(group, peak_initialiser=peak_initialiser, kernel_backend=kernel_backend, entry_config=config, overwrite=config.overwrite, resources=config.resources)
                 logger.subsection(f"Group log : {pipeline.group_log_path}")
                 saved    = pipeline.run()
 
