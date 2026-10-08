@@ -35,6 +35,7 @@ class CubeRouter(SubRouter):
         table.add("GET", "/api/cubes/cbar",         self.cbar)
         table.add("GET", "/api/cubes/metric_map",   self.metric_map)
         table.add("GET", "/api/cubes/metric_at",    self.metric_at)
+        table.add("GET", "/api/cubes/metric_hist",  self.metric_hist)
         table.add("GET", "/api/cubes/selective",    self.selective)
         table.add("GET", "/api/cubes/points",       self.points)
         table.add("GET", "/api/cubes/aux_grid",     self.aux_grid)
@@ -118,6 +119,10 @@ class CubeRouter(SubRouter):
             col     = exchange.integer("col"),
         )
         exchange.send_result(result, 404)
+
+    def metric_hist(self, exchange: HttpExchange) -> None:
+        """Answers with the value distribution of one metric map."""
+        exchange.send_result(self.cubes.metric_histogram(exchange.text("id"), exchange.text("key")))
 
     def selective(self, exchange: HttpExchange) -> None:
         """Answers with the pixel metrics over the most confident share of pixels."""

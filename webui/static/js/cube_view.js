@@ -459,11 +459,15 @@ class CubeMetrics {
     this.selCovEl = refs.selCov;
     this.selValEl = refs.selVal;
     this.selTabEl = refs.selTab;
+    this.histEl = refs.hist;
+    this.histNoteEl = refs.histNote;
 
     this.layers = [];
     this.layer = null;
     this.mode = "all";
     this.alpha = 0.75;
+    this.hist = null;
+    this.histKey = null;
     this.picked = null;
     this.debounceTimer = null;
     this.hoverQueued = null;
@@ -485,6 +489,8 @@ class CubeMetrics {
 
   configure(meta) {
     this.layers = meta.metric_maps || [];
+    this.hist = null;
+    this.histKey = null;
     this.picked = null;
     this.cross.hidden = true;
     this.openBtn.hidden = true;
@@ -507,7 +513,97 @@ class CubeMetrics {
     if (!this.layer) return;
     this._syncBtns();
     this._refresh();
+    this._fetchHist();
     this._onCoverage();
+  }
+
+  async _fetchHist() {
+    if (this.histKey === this.layer.key && this.hist) {
+      this._drawHist();
+      return;
+    }
+
+    const cubeId = this.host.selectedId;
+    const key    = this.layer.key;
+    const data   = await Api.get(`/api/cubes/metric_hist?id=${encodeURIComponent(cubeId)}&key=${encodeURIComponent(key)}`);
+    if (!this.layer || this.layer.key !== key || this.host.selectedId !== cubeId) return;
+
+    this.hist    = data && data.ok ? data : null;
+    this.histKey = key;
+    this._drawHist();
+  }
+
+  _drawHist() {
+    const canvas = this.histEl;
+    const dpr    = window.devicePixelRatio || 1;
+    const w      = canvas.clientWidth || 240;
+    const h      = canvas.clientHeight || 92;
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width  = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
+
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    this.histNoteEl.hidden = true;
+    if (!this.hist || this.histKey !== this.layer.key) return;
+
+    const counts = this.hist.counts;
+    const peak   = Math.max(...counts, 1);
+    const pad    = 3;
+    const innerH = h - 2 * pad;
+
+    if (this.hist.kind === "classes") {
+      const classes = this.layer.classes;
+      const bw      = (w - 2 * pad) / counts.length;
+      counts.forEach((count, i) => {
+        const bh = (count / peak) * innerH;
+        ctx.fillStyle = classes[i].color;
+        ctx.fillRect(pad + i * bw + 1, h - pad - bh, Math.max(1, bw - 2), bh);
+      });
+      return;
+    }
+
+    const edges = this.hist.edges;
+    const lo    = edges[0];
+    const span  = edges[edges.length - 1] - lo || 1;
+    const xAt   = (value) => pad + ((value - lo) / span) * (w - 2 * pad);
+
+    const vmin = Number(this.vminEl.value);
+    const vmax = Number(this.vmaxEl.value);
+    if (Number.isFinite(vmin) && Number.isFinite(vmax) && vmax > vmin) {
+      const x0 = Math.max(pad, xAt(vmin));
+      const x1 = Math.min(w - pad, xAt(vmax));
+      ctx.fillStyle = CubeView.tint(this.host.colors.accent, 0.10);
+      if (x1 > x0) ctx.fillRect(x0, pad, x1 - x0, innerH);
+    }
+
+    ctx.fillStyle = CubeView.tint(this.host.colors.accent, 0.72);
+    counts.forEach((count, i) => {
+      const bh = (count / peak) * innerH;
+      const x0 = xAt(edges[i]);
+      const x1 = xAt(edges[i + 1]);
+      ctx.fillRect(x0, h - pad - bh, Math.max(1, x1 - x0 - 0.6), bh);
+    });
+
+    if (this.mode !== "all") {
+      const x = xAt(this._threshold());
+      if (x >= pad && x <= w - pad) {
+        ctx.strokeStyle = CubeView.tint(this.host.colors.warn, 0.95);
+        ctx.lineWidth   = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(x, pad);
+        ctx.lineTo(x, h - pad);
+        ctx.stroke();
+      }
+    }
+
+    if (this.hist.n_low || this.hist.n_high) {
+      this.histNoteEl.hidden      = false;
+      this.histNoteEl.textContent = `${this.hist.n_low.toLocaleString()} px below and ${this.hist.n_high.toLocaleString()} px above the shown range`;
+    }
   }
 
   _setLayer(key) {
@@ -655,6 +751,8 @@ class CubeMetrics {
     this.cbar.src = `/api/cubes/cbar?cmap=viridis`;
     this.minEl.textContent = this.host._fmt(vmin);
     this.maxEl.textContent = this.host._fmt(vmax);
+
+    this._drawHist();
   }
 
   _pointFromEvent(ev) {
@@ -1380,6 +1478,15 @@ class CubeView {
   static HOLD_HINT_MS = 800;
   static SWEEP_CACHE_BYTES = 192 * 1024 * 1024;
 
+  static tint(hex, alpha) {
+    const raw  = hex.replace("#", "");
+    const full = raw.length === 3 ? raw.split("").map((c) => c + c).join("") : raw;
+    const r    = parseInt(full.slice(0, 2), 16);
+    const g    = parseInt(full.slice(2, 4), 16);
+    const b    = parseInt(full.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
   constructor(refs) {
     this.strip         = refs.strip;
     this.stage         = refs.stage;
@@ -1702,6 +1809,8 @@ class CubeView {
       full    : css.getPropertyValue("--src-full").trim(),
       range   : css.getPropertyValue("--cut-col").trim(),
       row     : css.getPropertyValue("--cut-row").trim(),
+      accent  : css.getPropertyValue("--accent").trim(),
+      warn    : css.getPropertyValue("--warn").trim(),
     };
 
     this._syncSpaceBtns();
