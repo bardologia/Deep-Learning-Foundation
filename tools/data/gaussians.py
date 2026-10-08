@@ -190,6 +190,9 @@ class GaussianSlotSorter:
     def by_mean(parameters_array: np.ndarray, n_gaussians: int, activity_threshold: float) -> np.ndarray:
         """Sorts the slots of every pixel by mean z, pushing inactive slots last.
 
+        The sort is stable, so slots sharing a key, which inactive slots all do,
+        keep their stored relative order.
+
         Args:
             parameters_array   : Parameter cube of shape (3*n_gaussians, rows, cols).
             n_gaussians        : Number of slots held in the cube.
@@ -205,7 +208,7 @@ class GaussianSlotSorter:
         mus  = reshaped[:, 1, :, :]
 
         sort_keys = np.where(GaussianActivity.is_active(amps, activity_threshold), mus, np.inf)
-        order     = np.argsort(sort_keys, axis=0)
+        order     = np.argsort(sort_keys, axis=0, kind="stable")
         ordered   = np.take_along_axis(reshaped, order[:, np.newaxis, :, :], axis=0)
 
         return ordered.reshape(n_params, n_row, n_col)

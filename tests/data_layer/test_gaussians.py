@@ -47,6 +47,19 @@ def test_slot_sorter_treats_threshold_amplitude_as_inactive():
     assert ordered[4, 0, 0] == 5.0
 
 
+def test_slot_sorter_keeps_the_stored_order_of_inactive_slots():
+    """Verifies inactive slots, which all share the same sort key, keep their stored relative order behind the active one."""
+    cube = np.zeros((9, 1, 1), dtype=np.float32)
+    cube[1, 0, 0], cube[2, 0, 0] = 7.0, 1.0
+    cube[3, 0, 0], cube[4, 0, 0] = 1.0, 30.0
+    cube[7, 0, 0], cube[8, 0, 0] = 9.0, 3.0
+
+    ordered = GaussianSlotSorter.by_mean(cube, 3, 1e-3)
+
+    assert ordered[4, 0, 0] == 7.0
+    assert ordered[7, 0, 0] == 9.0
+
+
 def test_head_total_channels():
     """Verifies the head channel count is the parameter count times the Gaussian count."""
     assert GaussianHead.total_channels(3, 4) == 12
