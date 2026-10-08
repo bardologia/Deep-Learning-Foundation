@@ -468,3 +468,36 @@ def test_every_launch_appends_its_provenance_to_the_launch_record(tmp_path, monk
     assert lines[0]["archived_config"]          is None
     assert lines[1]["resumed_from"]             is None
     assert f"Commit        : {GitState.commit()}" in text
+
+
+def test_a_skip_entry_matching_no_model_is_refused(tmp_path):
+    """A skip_models entry that names no model key and no backbone name stops the sweep before anything runs, naming the entry."""
+    config = _config(tmp_path, skip_models=["unet", "resnut"])
+
+    with pytest.raises(SystemExit, match=r"skip_models lists \['resnut'\], which match no backbone model key"):
+        BenchmarkPipeline.validate_sweep(config)
+
+
+def test_a_skip_entry_may_name_a_full_key_or_a_backbone_name(tmp_path):
+    """A skip entry naming a backbone-and-head key or a bare backbone name is accepted."""
+    config = _config(tmp_path, heads=["conv", "set_pred"], skip_models=["unet-set_pred", "resunet"])
+
+    BenchmarkPipeline.validate_sweep(config)
+
+    assert BenchmarkPipeline.unknown_skips(config) == []
+
+
+def test_the_pipeline_logs_the_selected_and_the_skipped_models(tmp_path, monkeypatch):
+    """The pipeline head lists the benchmarked keys and the keys skip_models removed."""
+    pipeline = BenchmarkPipeline(_config(tmp_path, skip_models=["resunet"]), entry_script=ENTRY)
+
+    order = []
+    _patch_stage_methods(pipeline, monkeypatch, order)
+
+    pipeline.run()
+
+    text = (pipeline.pipeline_dir / "benchmark_pipeline.log").read_text(encoding="utf-8")
+
+    assert f"Model selection: {len(pipeline.models)} benchmarked, 1 skipped" in text
+    assert "Skipped by skip_models : resunet" in text
+    assert f"Selected               : {', '.join(pipeline.models)}" in text
