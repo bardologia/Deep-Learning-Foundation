@@ -152,7 +152,9 @@ class AeInferencePipeline:
         logger.section(f"[{self.FAMILY} Inference: Plots]")
         PlotBase.use_style(self.config.figure_style)
 
-        return self._plot_figures(result, run, metrics, metrics_obj, meta)
+        figures = self._plot_figures(result, run, metrics, metrics_obj, meta)
+        logger.subsection(f"Composed {sum(len(paths) for paths in figures.values())} figure(s)")
+        return figures
 
     def _build_report(self, meta, run, metrics: dict, figures: dict) -> Path:
         """Assembles the markdown inference report and returns its path."""
