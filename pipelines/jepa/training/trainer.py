@@ -68,6 +68,8 @@ class Trainer(BaseTrainer):
         has_image          : Whether an image autoencoder is coupled.
         image_mode         : CouplingMode of the image autoencoder, or None.
         profile_mode       : CouplingMode of the profile autoencoder, or None.
+        masked_batches     : Training batches of the current epoch whose input went through the mask.
+        train_batches      : Training batches of the current epoch, masked or not.
     """
 
     stage_name    = "JEPA"
@@ -109,6 +111,9 @@ class Trainer(BaseTrainer):
         self.masking      = config.masking
         self.mask_sampler = None
         self.input_masker = None
+
+        self.masked_batches = 0
+        self.train_batches  = 0
         if self.masking.enabled:
             if not self.has_profile:
                 raise ValueError("masking.enabled requires a coupled profile autoencoder: the mask restricts the embedding loss to hidden pixels, which the Gaussian parameter loss does not support. Couple a profile_autoencoder_run or disable masking.")
@@ -256,12 +261,20 @@ class Trainer(BaseTrainer):
         probe.run(train_loader, self.model, self.device, self.z_axis)
 
     def _set_train_mode(self):
-        """Puts the backbone and every fine-tuned autoencoder into train mode."""
-        self.model.backbone.train()
-        if self.has_profile and self.profile_mode.trainable:
-            self.model.profile_autoencoder.train()
-        if self.has_image and self.image_mode.trainable:
-            self.model.image_autoencoder.train()
+        """Puts the module into train mode, pins frozen autoencoders back to eval and resets the batch counters.
+
+        The whole module must enter train mode, since evaluate() leaves the
+        JepaModule itself in eval and the masked loss path checks that flag;
+        switching only the children would keep every later epoch unmasked.
+        """
+        self.model.train()
+        if self.has_profile:
+            self.profile_mode.apply(self.model.profile_autoencoder)
+        if self.has_image:
+            self.image_mode.apply(self.model.image_autoencoder)
+
+        self.masked_batches = 0
+        self.train_batches  = 0
 
     def _compute_loss(self, batch):
         """Runs the module on a batch and evaluates the active criterion.
@@ -275,7 +288,7 @@ class Trainer(BaseTrainer):
         deterministic and comparable to an unmasked run.
 
         Args:
-            batch : Tuple of the input patch batch of shape (batch, channels, rows, cols), the normalized ground-truth parameter batch, and, for the parameter loss, an optional per-pixel kz map in rad/m.
+            batch : Tuple of the input patch batch of shape (batch, channels, rows, cols) and the normalized ground-truth parameter batch.
 
         Returns:
             The criterion's loss dict for this batch.
@@ -284,11 +297,35 @@ class Trainer(BaseTrainer):
         gt_params = batch[1].to(self.device)
 
         if self.has_profile:
+            if self.model.training:
+                self.train_batches += 1
+
             if not self.masking.enabled or not self.model.training:
                 return self.criterion(self.model(images), gt_params)
 
             mask   = self.mask_sampler.sample(images.shape[0], images.shape[-2], images.shape[-1], images.device)
             pred   = self.model(self.input_masker.apply(images, mask))
+            self.masked_batches += 1
             return self.criterion(pred, gt_params, mask if self.masking.loss_on == "masked" else None)
 
         return self.criterion(self.model(images), gt_params)
+
+    def _log_train_epoch_extra(self, avg_loss: float, epoch: int) -> None:
+        """Reports how many training batches were masked and refuses an epoch in which masking never applied.
+
+        Args:
+            avg_loss : Mean training loss over the epoch.
+            epoch    : Zero-based epoch index.
+
+        Raises:
+            RuntimeError : If masking is enabled, batches were trained, and none of them was masked.
+        """
+        if not self.masking.enabled:
+            return
+
+        fraction = self.masked_batches / self.train_batches if self.train_batches else 0.0
+        self.logger.subsection(f"Input masking : applied to {self.masked_batches}/{self.train_batches} training batches")
+        self.tracker.log_scalar("masking/masked_batch_fraction", fraction, step=epoch)
+
+        if self.train_batches and not self.masked_batches:
+            raise RuntimeError(f"masking.enabled is set but none of the {self.train_batches} training batches of epoch {epoch + 1} was masked; the module was not in train mode during the epoch")

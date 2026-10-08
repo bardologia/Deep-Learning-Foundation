@@ -20,8 +20,11 @@ from pipelines.shared.training.run_naming import RunNaming
 
 from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStats
 
-from tests.jepa.conftest import EMBEDDING_DIM, N_GAUSSIANS, PROFILE_LENGTH, SPATIAL, IdentityNormStats, make_autoencoder
+from tests.jepa.conftest     import EMBEDDING_DIM, N_GAUSSIANS, PROFILE_LENGTH, SPATIAL, IdentityNormStats, make_autoencoder
 from tests.jepa.test_trainer import make_trainer_shim
+from tools.monitoring.logger  import NullLogger
+from tools.monitoring.tracker import NullTracker
+
 
 def make_criterion(emb_cfg=None):
     """Returns an embedding criterion over the tiny autoencoder of the conftest."""
@@ -274,3 +277,39 @@ def test_training_pass_still_masks_after_an_eval_pass():
     trainer._compute_loss((images, torch.rand(2, 3 * N_GAUSSIANS, SPATIAL, SPATIAL)))
 
     assert not torch.equal(seen[-1], images)
+
+
+def test_epoch_start_restores_masking_after_an_evaluation_pass():
+    """The trainer's own epoch start puts the module back into train mode after evaluate() left it in eval, so masking applies beyond the first epoch, while a frozen autoencoder stays in eval."""
+    trainer              = make_trainer_shim(trainable=False)
+    trainer.masking      = JepaMaskingConfig(enabled=True, strategy="random", mask_ratio=0.5, loss_on="all")
+    trainer.mask_sampler = MaskSampler(trainer.masking)
+    trainer.input_masker = InputMasker(trainer.masking)
+
+    trainer.model.eval()
+    assert not trainer.model.training
+
+    trainer._set_train_mode()
+
+    assert trainer.model.training
+    assert trainer.model.backbone.training
+    assert not trainer.model.profile_autoencoder.training
+
+    trainer._compute_loss((torch.rand(2, 2, SPATIAL, SPATIAL), torch.rand(2, 3 * N_GAUSSIANS, SPATIAL, SPATIAL)))
+
+    assert trainer.masked_batches == 1
+    assert trainer.train_batches  == 1
+
+
+def test_epoch_log_refuses_an_unmasked_epoch():
+    """An epoch that trained batches without masking any of them raises instead of passing as a masked run."""
+    trainer         = _masked_trainer("all")
+    trainer.logger  = NullLogger()
+    trainer.tracker = NullTracker()
+
+    trainer.train_batches, trainer.masked_batches = 3, 3
+    trainer._log_train_epoch_extra(0.1, epoch=0)
+
+    trainer.train_batches, trainer.masked_batches = 3, 0
+    with pytest.raises(RuntimeError, match="none of the 3 training batches"):
+        trainer._log_train_epoch_extra(0.1, epoch=1)
