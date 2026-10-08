@@ -501,3 +501,40 @@ def test_the_pipeline_logs_the_selected_and_the_skipped_models(tmp_path, monkeyp
     assert f"Model selection: {len(pipeline.models)} benchmarked, 1 skipped" in text
     assert "Skipped by skip_models : resunet" in text
     assert f"Selected               : {', '.join(pipeline.models)}" in text
+
+
+def test_comparison_receives_the_unit_plan_of_the_launch(tmp_path, monkeypatch):
+    """The comparison stage is handed every planned unit with the directory the training stage matched it to."""
+    import pipelines.benchmark.pipeline as pipeline_module
+
+    class FakeTraining:
+        """Training stage stub planning two units, one matched to a renamed directory."""
+        items = ["unet/seed0", "unet/seed1"]
+
+        def __init__(self, **kwargs):
+            """Accepts the stage arguments."""
+            pass
+
+        def unit_name(self, item):
+            """Maps the second unit to its renamed directory."""
+            return "renamed/seed1" if item == "unet/seed1" else item
+
+    seen = {}
+
+    class FakeComparison:
+        """Comparison stage stub recording the plan it receives."""
+        def __init__(self, **kwargs):
+            """Records the planned units."""
+            seen["planned_units"] = kwargs["planned_units"]
+
+        def run(self):
+            """Returns a fixed output directory."""
+            return tmp_path / "comparison"
+
+    monkeypatch.setattr(pipeline_module, "TrainingStage",   FakeTraining)
+    monkeypatch.setattr(pipeline_module, "ComparisonStage", FakeComparison)
+
+    pipeline = BenchmarkPipeline(_config(tmp_path, stage="compare"), entry_script=ENTRY)
+    pipeline.run()
+
+    assert seen["planned_units"] == {"unet/seed0": "unet/seed0", "unet/seed1": "renamed/seed1"}

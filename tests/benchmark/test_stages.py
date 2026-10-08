@@ -19,11 +19,12 @@ from pipelines.benchmark.stages import (
     SizeMatchStage,
     TrainingStage,
 )
-from configuration.benchmark            import BenchmarkConfig
-from tools.data.io                      import FileIO
-from tools.orchestration                import QueuedInferenceStage, QueuedTrainingStage
-from configuration.training.general.run import DEFAULT_PARAMS_RUN
-from configuration.synthesis            import SynthesisConfig
+from configuration.benchmark                      import BenchmarkConfig
+from pipelines.shared.comparison.trial_collection import TrialRecord
+from tools.data.io                                import FileIO
+from tools.orchestration                          import QueuedInferenceStage, QueuedTrainingStage
+from configuration.training.general.run           import DEFAULT_PARAMS_RUN
+from configuration.synthesis                      import SynthesisConfig
 
 
 SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
@@ -404,15 +405,16 @@ def test_comparison_stage_run_invokes_collector_and_report(config, logger_stub, 
     collected = {}
 
     class FakeCollector:
-        """Stand-in seed collector that records its arguments and returns no records."""
+        """Stand-in seed collector that records its arguments and returns one record."""
         def __init__(self, run_dir, logger, inference_split):
             """Records the run directory and inference split and exposes a fixed dispersion."""
             collected["run_dir"]         = run_dir
             collected["inference_split"] = inference_split
+            self.runs            = [TrialRecord(name="unet", run_dir=run_dir / "training" / "unet")]
             self.seed_dispersion = {"unet": {"n_seeds": 2}}
         def collect(self):
-            """Returns an empty record list."""
-            return []
+            """Returns the single record."""
+            return list(self.runs)
 
     class FakeReport:
         """Stand-in comparison report that records its keyword arguments."""
@@ -576,3 +578,81 @@ def test_a_manifestless_directory_at_a_planned_units_path_is_reported_as_that_un
     TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
 
     assert ("warning", f"{planned}: sits at planned unit '{planned}'s own path and holds a completion marker, so the stage uses it as that unit's completed run") in recording_logger.messages
+
+
+def _comparison_stage(config, logger, planned_units, monkeypatch, runs):
+    """Returns a comparison stage whose collector yields the given per-run records and whose report writes nothing."""
+    stage = ComparisonStage(config=config, run_tag="t", logger=logger, reference_model="unet", embed_images=False, inference_split="test", planned_units=planned_units)
+
+    class FakeCollector:
+        """Collector stub exposing canned per-run records."""
+        def __init__(self, run_dir, logger, inference_split):
+            """Exposes the canned records and an empty dispersion."""
+            self.runs            = runs
+            self.seed_dispersion = {}
+        def collect(self):
+            """Returns the canned records."""
+            return list(runs)
+
+    class FakeReport:
+        """Report stub writing nothing."""
+        def __init__(self, **kwargs):
+            """Accepts the report arguments."""
+            pass
+        def write_all(self):
+            """Returns no written paths."""
+            return []
+
+    monkeypatch.setattr("pipelines.benchmark.stages.BenchmarkSeedCollector", FakeCollector)
+    monkeypatch.setattr("pipelines.benchmark.stages.ComparisonReport", FakeReport)
+
+    return stage
+
+
+def _run_record(root, name, scored):
+    """Returns a per-run record, with an inference directory attached when scored."""
+    record = TrialRecord(name=name, run_dir=root / name)
+    if scored:
+        record.inference_dir = root / name / "inference" / "stamp"
+    return record
+
+
+def test_comparison_stage_names_planned_units_it_did_not_collect_and_runs_outside_the_plan(config, recording_logger, monkeypatch):
+    """A planned unit without a run directory and a collected run no unit claims are each named in a warning."""
+    root  = config.paths.log_base_dir / "t" / "training"
+    runs  = [_run_record(root, "unet/seed0", True), _run_record(root, "stray/seed0", False)]
+    stage = _comparison_stage(config, recording_logger, {"unet/seed0": "unet/seed0", "unet/seed1": "unet/seed1"}, monkeypatch, runs)
+
+    stage.run()
+
+    assert ("warning", "unet/seed1: planned unit not collected, no run at training/unet/seed1; absent from the reports") in recording_logger.messages
+    assert ("warning", "stray/seed0: collected but planned by no unit; ranked in the reports beside the planned units") in recording_logger.messages
+
+
+def test_comparison_stage_matches_planned_units_through_their_directories(config, recording_logger, monkeypatch):
+    """A unit matched to a renamed directory on resume counts as collected under that directory."""
+    root  = config.paths.log_base_dir / "t" / "training"
+    runs  = [_run_record(root, "renamed/seed7", True)]
+    stage = _comparison_stage(config, recording_logger, {"unet-conv__param_l1/seed7": "renamed/seed7"}, monkeypatch, runs)
+
+    stage.run()
+
+    assert [message for level, message in recording_logger.messages if level == "warning"] == []
+
+
+def test_comparison_stage_refuses_an_empty_collection(config, recording_logger, monkeypatch):
+    """Collecting nothing is an error instead of a set of empty reports."""
+    stage = _comparison_stage(config, recording_logger, {"unet/seed0": "unet/seed0"}, monkeypatch, [])
+
+    with pytest.raises(SystemExit, match="no run collected"):
+        stage.run()
+
+
+def test_comparison_stage_without_a_plan_compares_every_run(config, recording_logger, monkeypatch):
+    """The standalone comparison, which knows no plan, compares whatever it collected without plan warnings."""
+    root  = config.paths.log_base_dir / "t" / "training"
+    stage = _comparison_stage(config, recording_logger, None, monkeypatch, [_run_record(root, "unet", True)])
+
+    stage.run()
+
+    assert [message for level, message in recording_logger.messages if level == "warning"] == []
