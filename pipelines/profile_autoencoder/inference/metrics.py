@@ -100,7 +100,14 @@ class ProfileAeMetrics(AeMetricsBase):
         }
 
     def compute(self) -> dict:
-        """Returns the full metric dictionary for the reconstructed split."""
+        """Returns the full metric dictionary for the reconstructed split.
+
+        Raises:
+            ValueError : If no curve peaks above the activity threshold, which would leave the shape, power and peak metrics undefined.
+        """
+        if not self.active.any():
+            raise ValueError(f"None of the {self.gt.shape[0]} reconstructed curves peaks above the activity threshold {self.activity_threshold:g}; the shape, power and peak metrics are defined over active curves only and would all be NaN. Score a split or subsample that carries components.")
+
         metrics = {
             "n_curves"         : int(self.gt.shape[0]),
             "n_active_curves"  : int(self.active.sum()),

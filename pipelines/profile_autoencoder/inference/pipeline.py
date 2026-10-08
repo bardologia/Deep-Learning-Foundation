@@ -67,13 +67,14 @@ class ProfileAeInferencePipeline(AeInferencePipeline):
         return {"split_regions": [list(region.as_tuple()) for region in run.split_regions]}
 
     def _metrics_summary(self, metrics: dict) -> dict:
-        """Returns the headline metrics formatted for the console summary."""
+        """Returns the headline metrics formatted for the console summary, naming the active subset the shape and peak metrics cover."""
         return {
-            "MSE"          : f"{metrics['mse_mean']:.6g}",
-            "R2"           : f"{metrics['r2']:.4f}",
-            "Pearson"      : f"{metrics['pearson_mean']:.4f}",
-            "Relative L2"  : f"{metrics['relative_l2_mean']:.4f}",
-            "Peak loc MAE" : f"{metrics['peak_location_mae']:.4f}",
+            "MSE"           : f"{metrics['mse_mean']:.6g}",
+            "R2"            : f"{metrics['r2']:.4f}",
+            "Active curves" : f"{metrics['n_active_curves']:,} of {metrics['n_curves']:,} (Pearson, Relative L2 and Peak loc MAE are over these)",
+            "Pearson"       : f"{metrics['pearson_mean']:.4f}",
+            "Relative L2"   : f"{metrics['relative_l2_mean']:.4f}",
+            "Peak loc MAE"  : f"{metrics['peak_location_mae']:.4f}",
         }
 
     def _plot_figures(self, result, run, metrics: dict, metrics_obj, meta) -> dict:

@@ -1,8 +1,9 @@
 """Tests for the image and profile autoencoder inference metric computations.
 
-Covers the shared metric base, the key sets each family reports, the pass-through of
-normalized errors measured before denormalization, and that the metric objects reuse the
-result arrays instead of copying them into float64.
+Covers the shared metric base, the key sets each family reports, the refusal of a profile
+split with no active curve, the pass-through of normalized errors measured before
+denormalization, and that the metric objects reuse the result arrays instead of copying them
+into float64.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from pipelines.autoencoder_common.inference.metrics  import AeMetricsBase
 from pipelines.image_autoencoder.inference.metrics   import ImageAeMetrics
@@ -59,6 +61,19 @@ def test_profile_metrics_compute_keys():
     assert out["profile_length"] == 20
     for key in ("mse_mean", "pearson_mean", "power_rel_error_mean", "peak_location_mae", "embedding_norm_mean"):
         assert key in out
+
+
+def test_profile_metrics_refuse_a_split_with_no_active_curve():
+    """Curves all below the activity threshold raise instead of yielding NaN shape and peak metrics."""
+    res = SimpleNamespace(
+        gt                = np.full((10, 20), 1e-6, dtype=np.float32),
+        pred              = np.zeros((10, 20), dtype=np.float32),
+        embeddings        = np.zeros((10, 4), dtype=np.float32),
+        normalized_errors = dict(NORMALIZED),
+    )
+
+    with pytest.raises(ValueError, match="None of the 10 reconstructed curves"):
+        ProfileAeMetrics(res, np.linspace(0.0, 1.0, 20), 1e-3).compute()
 
 
 def test_normalized_errors_are_the_measured_ones_not_a_renormalized_round_trip():
