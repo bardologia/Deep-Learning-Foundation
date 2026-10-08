@@ -104,6 +104,11 @@ class ParameterExtractor:
         self.logger.subsection(f"Backend : JAX {self._gpu_extractor.backend} (modes: {', '.join(modes)})")
         self.logger.subsection(f"Lambdas : {list(lambda_values)}")
 
+    @property
+    def outcome(self):
+        """Returns the fitter's record of what the last run fitted, or None before run()."""
+        return self._gpu_extractor.outcome
+
     def run(self, cube_path: Path, z_range: Tuple[float, float]) -> Dict[tuple, Tuple[np.ndarray, dict]]:
         """Fits every mode/lambda permutation and sorts each result by centroid z.
 
@@ -133,6 +138,7 @@ class ParamExtractionPipeline:
         cube_path           : Cube discovered for the group's dataset.
         z_range             : The z axis limits as (minimum, maximum).
         owns_logger         : Whether the pipeline created the logger and must close it.
+        group_log_path      : File of the owned group logger, recorded in every permutation's metadata; None when the logger was passed in.
         logger              : Logger for the stage report.
         parameter_extractor : Fitter driving the group's permutations.
         parameter_io        : Writer for the parameter stacks and diagnostics.
@@ -161,8 +167,9 @@ class ParamExtractionPipeline:
         log_dir = Path(self.shared.processed_data_path) / "params" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        self.owns_logger = logger is None
-        self.logger      = logger or Logger(log_dir = str(log_dir), name = f"param_extraction_k{group.k_max}", level = "INFO")
+        self.owns_logger    = logger is None
+        self.logger         = logger or Logger(log_dir = str(log_dir), name = f"param_extraction_k{group.k_max}", level = "INFO")
+        self.group_log_path = Path(self.logger.log_dir) / f"{self.logger.name}.log" if self.owns_logger else None
 
         fit_cfg = self.shared.fit_settings.fit_config
 
@@ -206,13 +213,25 @@ class ParamExtractionPipeline:
         self.logger.subsection("Extracting multi-Gaussian parameters (shared load + init across modes and lambdas)")
         return self.parameter_extractor.run(cube_path = self.cube_path, z_range = self.z_range)
 
-    def _stage_save(self, config: ExtractionConfig, parameters_array: np.ndarray, diagnostics: dict) -> dict[str, Path]:
+    def _run_record(self) -> dict:
+        """Returns the fit outcome of the group joined with the pipeline's own facts about the run.
+
+        Returns:
+            The extractor outcome keys plus ``extraction_log``, the group log file or None.
+        """
+        return {
+            **self.parameter_extractor.outcome.to_metadata(),
+            "extraction_log" : None if self.group_log_path is None else str(self.group_log_path),
+        }
+
+    def _stage_save(self, config: ExtractionConfig, parameters_array: np.ndarray, diagnostics: dict, record: dict) -> dict[str, Path]:
         """Saves one permutation's parameters, diagnostics and run metadata.
 
         Args:
             config           : Extraction configuration of this permutation, naming its output paths.
             parameters_array : Parameter stack of shape (3 * k_max, rows, cols).
             diagnostics      : Fit diagnostics arrays for this permutation.
+            record           : Fit outcome keys recorded into the run metadata, from ``_run_record``.
 
         Returns:
             Mapping with the parameter, diagnostics and metadata paths, the output
@@ -226,7 +245,7 @@ class ParamExtractionPipeline:
 
         npy_path  = self.parameter_io.save_params(parameters_array, config.parameters_npy_path)
         diag_path = self.parameter_io.save_diagnostics(diagnostics, config.diagnostics_npz_path)
-        meta_path = metadata.save_run_metadata(npy_path, diag_path, self.cube_path, self.z_range)
+        meta_path = metadata.save_run_metadata(npy_path, diag_path, self.cube_path, self.z_range, record)
 
         if self.entry_config is not None:
             ResolvedEntryConfigWriter.save(self.entry_config, config.output_directory, self.logger)
@@ -259,11 +278,12 @@ class ParamExtractionPipeline:
             self.logger.section("[Param Extraction Pipeline Execution]")
 
             results = self._stage_extract()
+            record  = self._run_record()
 
             for key, (parameters_array, diagnostics) in results.items():
                 config     = self.group.configs[key]
                 self.logger.section(f"[Saving] {config.output_subdir_name}")
-                saved[key] = self._stage_save(config, parameters_array, diagnostics)
+                saved[key] = self._stage_save(config, parameters_array, diagnostics, record)
 
             del results
             gc.collect()

@@ -16,6 +16,7 @@ from pipelines.processing.param_extraction.plots      import FittingResultPlotte
 from pipelines.shared.orchestration.session_scheduler import SequentialSessionScheduler
 from tools.data.io                                    import FileIO
 from tools.monitoring.logger                          import Logger
+from tools.runtime.git_state                          import GitState
 
 
 class ParamRunInferencePipeline:
@@ -86,7 +87,7 @@ class ParamRunInferencePipeline:
         return calculator.run(parameters, meta, cube_path, diagnostics)
 
     def _summary(self, metrics_dict: dict) -> Path:
-        """Writes the metrics summary JSON.
+        """Writes the metrics summary JSON, stamped with the analysing commit.
 
         Args:
             metrics_dict : Metric maps and summaries from the metrics stage.
@@ -95,6 +96,7 @@ class ParamRunInferencePipeline:
             Path of the written summary JSON.
         """
         payload = {
+            "git_commit"     : GitState.commit(),
             "global_summary" : metrics_dict["global_summary"],
             "per_k_summary"  : metrics_dict["per_k_summary"],
             "snr_summary"    : metrics_dict["snr_summary"],

@@ -155,7 +155,7 @@ def test_run_metadata_records_the_activity_threshold_later_stages_read(tmp_path,
     (tmp_path / "meta" / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": list(Z_RANGE)}}))
     plan.output_directory.mkdir(parents=True)
 
-    ExtractionMetadataManager(plan, logger).save_run_metadata(plan.output_directory / "parameters.npy", plan.output_directory / "fit_diagnostics.npz", tmp_path / "cube.npy", Z_RANGE)
+    ExtractionMetadataManager(plan, logger).save_run_metadata(plan.output_directory / "parameters.npy", plan.output_directory / "fit_diagnostics.npz", tmp_path / "cube.npy", Z_RANGE, {})
 
     gaussian = GaussianConfig.from_dataset(tmp_path, plan.output_directory / "parameters.npy")
 
@@ -264,10 +264,10 @@ def test_stage_save_replaces_an_existing_run_only_when_overwriting(tmp_path, mon
     diagnostics = {"best_k_map": np.zeros((2, 4), dtype=np.int16)}
 
     with pytest.raises(FileExistsError, match="already exists"):
-        pipeline_module.ParamExtractionPipeline(group, logger=RecordingLogger())._stage_save(config, parameters, diagnostics)
+        pipeline_module.ParamExtractionPipeline(group, logger=RecordingLogger())._stage_save(config, parameters, diagnostics, {})
 
     logger = RecordingLogger()
-    pipeline_module.ParamExtractionPipeline(group, logger=logger, overwrite=True)._stage_save(config, parameters, diagnostics)
+    pipeline_module.ParamExtractionPipeline(group, logger=logger, overwrite=True)._stage_save(config, parameters, diagnostics, {})
 
     warnings = [message for level, message in logger.messages if level == "warning"]
 
@@ -307,6 +307,45 @@ def test_pipeline_run_records_an_abort_in_the_group_log(tmp_path, monkeypatch):
     assert "RuntimeError: kernel blew up [/tmp/x]" in log_text
     assert ">>> ABORTED param_extraction_k3" in log_text
     assert ">>> END" not in log_text
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_pipeline_run_records_the_fit_outcome_and_commit_in_the_metadata(tmp_path, monkeypatch):
+    """Verifies every saved permutation's metadata carries the commit, the fit outcome and the group log path."""
+    from pipelines.processing.param_extraction                 import pipeline as pipeline_module
+    from pipelines.processing.param_extraction.sigma.extractor import ExtractionOutcome
+
+    class _StubExtractor:
+        """Extractor stand-in returning one fitted permutation and a fixed outcome."""
+
+        def __init__(self, **kwargs):
+            """Records a fixed outcome in place of fitting."""
+            self.outcome = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=1.5)
+
+        def run(self, cube_path, z_range):
+            """Returns zero parameters for the single permutation."""
+            return {("sigma", 1e-2): (np.zeros((9, 2, 4), dtype=np.float32), {"best_k_map": np.zeros((2, 4), dtype=np.int16)})}
+
+    _dataset_stub(tmp_path)
+    monkeypatch.setattr(pipeline_module, "ParameterExtractor", _StubExtractor)
+
+    entry = ExtractParamsEntryConfig(fit_k_values=[3], fit_lambda_values=[1e-2], fit_modes=["sigma"])
+    group = ExtractionPlanResolver(entry, [tmp_path]).resolve()[0]
+    saved = pipeline_module.ParamExtractionPipeline(group).run()
+
+    meta = json.loads(saved[("sigma", 1e-2)]["metadata"].read_text(encoding="utf-8"))
+
+    assert meta["git_commit"]
+    assert meta["n_z_bins"]           == 2
+    assert meta["total_pixels"]       == 8
+    assert meta["active_pixels"]      == 6
+    assert meta["active_fraction"]    == pytest.approx(0.75)
+    assert meta["truncation_applied"] is False
+    assert meta["backend"]            == "jit (1 cpu device)"
+    assert meta["devices"]            == ["CpuDevice(id=0)"]
+    assert meta["fit_seconds"]        == pytest.approx(1.5)
+    assert meta["extraction_log"]     == str(tmp_path / "params" / "logs" / "param_extraction_k3.log")
+    assert meta["adam_steps"]         == entry.adam_steps
 
 
 def test_inference_session_records_an_abort_in_the_run_log(tmp_path, monkeypatch):
@@ -393,6 +432,27 @@ def test_clamped_sigma_init_divisor_is_reported(tmp_path):
     extractor._prepare_data(cube_path, Z_RANGE)
 
     assert any("sigma_init_divisor 4.0" in message for message in recorder.warnings)
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_truncation_beyond_the_z_axis_is_reported(tmp_path):
+    """Verifies a truncation index at or past the last z bin is reported as a no-op, and one inside is not."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.sigma.extractor   import SigmaFittingExtractor
+    from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
+
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, np.zeros((150, 2, 2), dtype=np.float32))
+
+    def warnings_for(truncation_index):
+        """Returns the warnings data preparation logs at the given truncation index."""
+        logger    = RecordingLogger()
+        extractor = SigmaFittingExtractor(logger=logger, modes=["sigma"], lambda_values=[LAMBDA_K], k_max=K_MAX, sigma_init_divisor=1.0, truncation_index=truncation_index, peak_initialiser=PeakInitialiser(n_workers=1))
+        extractor._prepare_data(cube_path, Z_RANGE)
+        return [message for level, message in logger.messages if level == "warning"]
+
+    assert any("truncation_index 170 >= 150 z bins" in message for message in warnings_for(170))
+    assert not any("truncation_index" in message for message in warnings_for(120))
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
@@ -798,6 +858,29 @@ def test_r2_statistics_ignore_never_fitted_pixels(logger, tmp_path):
     assert summary["r2_neg_frac"] == 0.0
 
 
+def test_metrics_report_names_the_effective_truncation(tmp_path):
+    """Verifies the metrics report says whether the recorded truncation index truncated any bin of this cube."""
+    from tests.conftest import RecordingLogger
+
+    n_z, n_rows, n_cols = 32, 2, 2
+
+    cube_path = tmp_path / "cube.npy"
+    np.save(cube_path, np.ones((n_z, n_rows, n_cols), dtype=np.complex64))
+
+    params          = np.zeros((3 * K_MAX, n_rows, n_cols), dtype=np.float32)
+    params[0, 0, 0] = 1.0
+    params[2, 0, 0] = 6.0
+
+    def report_for(truncation_index):
+        """Returns the subsection lines the metrics calculator logs at the given truncation index."""
+        logger = RecordingLogger()
+        FittingMetricsCalculator(n_gaussians=K_MAX, logger=logger, threshold_factor=THRESHOLD_FACTOR, truncation_index=truncation_index, amp_threshold=ACTIVITY_THRESH).run(params, {"z_range": list(Z_RANGE)}, cube_path)
+        return [message for level, message in logger.messages if level == "subsection"]
+
+    assert any("truncation_index=170: no bin truncated" in line for line in report_for(170))
+    assert any("truncation_index=20: bins >= 20 of 32 zeroed" in line for line in report_for(20))
+
+
 @pytest.mark.dataset
 def test_k_selection_diagnostics_runs(fit_diagnostics, logger):
     """Verifies the K-selection diagnostics emit the margin map and active-pixel summary."""
@@ -1064,7 +1147,7 @@ def test_stage_save_persists_the_entry_config(tmp_path, monkeypatch):
             """Returns no fit settings to compare a replacement against."""
             return {}
 
-        def save_run_metadata(self, npy_path, diag_path, cube_path, z_range):
+        def save_run_metadata(self, npy_path, diag_path, cube_path, z_range, fit_outcome):
             """Returns the parameter path as the metadata location."""
             return npy_path
 
@@ -1077,7 +1160,7 @@ def test_stage_save_persists_the_entry_config(tmp_path, monkeypatch):
 
     built  = pipeline_module.ParamExtractionPipeline(group, entry_config=entry)
     config = group.configs[("sigma", 1e-2)]
-    built._stage_save(config, np.zeros((9, 2, 4), dtype=np.float32), {})
+    built._stage_save(config, np.zeros((9, 2, 4), dtype=np.float32), {}, {})
     built.logger.close()
 
     loaded = ConfigCli.load_resolved(ExtractParamsEntryConfig(), config.output_directory / "docs" / "resolved_entry_config.json")

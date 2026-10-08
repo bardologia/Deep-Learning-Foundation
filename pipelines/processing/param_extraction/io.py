@@ -16,6 +16,7 @@ import numpy as np
 from configuration.param_extraction import ExtractionConfig
 from tools.data.io                  import FileIO
 from tools.monitoring.logger        import Logger
+from tools.runtime.git_state        import GitState
 
 
 class ParameterRunMeta:
@@ -129,14 +130,21 @@ class ExtractionMetadataManager:
             "fitting_method"       : self.config.fit_settings.fitting_method,
         }
 
-    def save_run_metadata(self, npy_path: Path, diagnostics_path: Path, cube_path: Path, z_range: tuple) -> Path:
+    def save_run_metadata(self, npy_path: Path, diagnostics_path: Path, cube_path: Path, z_range: tuple, fit_outcome: dict) -> Path:
         """Writes the run metadata JSON for a completed fit.
+
+        Beside the fit settings, the record names the commit the fitter ran
+        from and what the fit did: the z bins, the active and total pixels,
+        whether truncation applied, the backend and devices, the duration and
+        the group log, so the run can be judged from its own directory after
+        the shared group log has moved on.
 
         Args:
             npy_path         : Path of the saved parameter stack.
             diagnostics_path : Path of the saved fit diagnostics archive.
             cube_path        : Path of the cube the fit was performed on.
             z_range          : Z axis limits as (minimum, maximum), in metres.
+            fit_outcome      : Outcome keys of the fit, as ``ExtractionOutcome.to_metadata`` returns them, plus the pipeline's ``extraction_log``.
 
         Returns:
             Path of the written metadata JSON.
@@ -145,6 +153,7 @@ class ExtractionMetadataManager:
 
         payload = {
             "timestamp"            : datetime.now().isoformat(timespec="seconds"),
+            "git_commit"           : GitState.commit(),
             "processed_data_path"  : str(self.config.processed_data_path),
             "source_cube"          : str(cube_path),
             "z_range"              : list(z_range),
@@ -154,6 +163,7 @@ class ExtractionMetadataManager:
             "parameters_npy"       : npy_path.name,
             "diagnostics_npz"      : diagnostics_path.name,
             **self.settings(),
+            **fit_outcome,
         }
 
         FileIO.save_json(payload, meta_path)

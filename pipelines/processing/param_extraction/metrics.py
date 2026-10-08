@@ -497,8 +497,11 @@ class FittingMetricsCalculator:
         self.logger.subsection(f"Cube shape  : {cube.shape}")
         self.logger.subsection(f"Z range       : [{z_range[0]:.1f}, {z_range[1]:.1f}] m")
 
+        n_z        = int(cube.shape[0])
+        truncation = f"bins >= {self.truncation_index} of {n_z} zeroed" if self.truncation_index < n_z else f"no bin truncated, the index lies beyond the {n_z} z bins"
+
         self.logger.subsection("Computing per-pixel peak-to-floor contrast map (peak over lowest-quartile profile amplitude, uncalibrated proxy)")
-        self.logger.subsection(f"Applying fitter preprocessing for R² (threshold_factor={self.threshold_factor}, truncation_index={self.truncation_index})")
+        self.logger.subsection(f"Applying fitter preprocessing for R² (threshold_factor={self.threshold_factor}, truncation_index={self.truncation_index}: {truncation})")
         self.logger.subsection(f"Computing per-pixel R² map against thresholded/truncated profile (memory-mapped, range chunks of {self.col_chunk} bins, float32)")
         snr_db_map, r2_map = self._contrast_and_r2_maps(cube, parameters_array, z_axis)
 

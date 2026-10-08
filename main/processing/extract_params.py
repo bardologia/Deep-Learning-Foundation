@@ -71,6 +71,7 @@ def main() -> None:
                 logger.section(f"[Group {index + 1}/{len(groups)}] {group.processed_data_path.name} :: k{group.k_max} ({len(group.configs)} permutations, one shared load + init)")
 
                 pipeline = ParamExtractionPipeline(group, peak_initialiser=peak_initialiser, kernel_backend=kernel_backend, entry_config=config, overwrite=config.overwrite)
+                logger.subsection(f"Group log : {pipeline.group_log_path}")
                 saved    = pipeline.run()
 
                 for key, outputs in saved.items():
