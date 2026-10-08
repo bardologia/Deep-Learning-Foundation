@@ -1597,6 +1597,7 @@ class CubeFigures {
 
 class CubeView {
   static LABELS = { pred: "pred", predb: "pred B", diff: "A − B", gt: "gt", full: "reference" };
+  static SLOT_COLORS = ["#e45756", "#4c78a8", "#54a24b", "#b279a2", "#eeca3b", "#72b7b2", "#f58518", "#9d755d"];
   static HOLD_SAVE_MS = 4000;
   static STATUS_TIMEOUT_MS = 15000;
   static STALL_AFTER_S = 5;
@@ -1629,6 +1630,8 @@ class CubeView {
     this.profAt        = refs.profAt;
     this.profMetricsEl = refs.profMetrics;
     this.profModeBtns  = refs.profModeBtns;
+    this.profMixWrap   = refs.profMixWrap;
+    this.profMixChk    = refs.profMix;
     this.profPanels    = refs.profPanels;
     this.spaceBtns     = refs.spaceBtns || [];
     this.modeBtns      = refs.modeBtns || [];
@@ -1671,6 +1674,8 @@ class CubeView {
     this.polling = false;
     this.profMode = "raw";
     this.profData = null;
+    this.profParams = null;
+    this.profMix = false;
     this.profQueued = null;
     this.profFetching = false;
     this.ssimQueued = null;
@@ -1714,6 +1719,7 @@ class CubeView {
     this.profModeBtns.forEach((btn) => {
       btn.addEventListener("click", () => this._setProfMode(btn.dataset.mode));
     });
+    this.profMixChk.addEventListener("change", () => this._setProfMix(this.profMixChk.checked));
     this.modeBtns.forEach((btn) => {
       btn.addEventListener("click", () => this._setView(btn.dataset.view));
     });
@@ -1851,6 +1857,7 @@ class CubeView {
     });
     this.profQueued = null;
     this.profData = null;
+    this.profParams = null;
     this.ssimQueued = null;
     this._clearProfMetrics();
     this.deck.dataset.mode = "map";
@@ -1976,6 +1983,7 @@ class CubeView {
       const paramsBtn = this.modeBtns.find((btn) => btn.dataset.view === "params");
       if (paramsBtn) paramsBtn.hidden = !meta.params;
       this.jumpParams.hidden = !meta.params;
+      this.profMixWrap.hidden = !meta.params;
       if (!meta.params && this.view === "params") this._setView("explorer");
     }
 
@@ -2691,6 +2699,25 @@ class CubeView {
     this.profFetching = false;
   }
 
+  _setProfMix(on) {
+    this.profMix = !!on;
+    if (this.profMix && this.profData && !this._mixtureMatches()) this._fetchProfParams(this.profData.row, this.profData.col);
+    else this._drawProfiles();
+  }
+
+  _mixtureMatches() {
+    return !!this.profParams && !!this.profData && this.profParams.row === this.profData.row && this.profParams.col === this.profData.col;
+  }
+
+  async _fetchProfParams(row, col) {
+    const cubeId = this.selectedId;
+    const data   = await Api.get(`/api/cubes/params_at?id=${encodeURIComponent(cubeId)}&row=${row}&col=${col}`);
+    if (!data || !data.ok || cubeId !== this.selectedId || !this.profData || data.row !== this.profData.row || data.col !== this.profData.col) return;
+
+    this.profParams = data;
+    this._drawProfiles();
+  }
+
   async _fetchProfiles(row, col) {
     const staleTimer = setTimeout(() => {
       this.profPanels.forEach((panel) => panel.root.classList.add("is-stale"));
@@ -2709,6 +2736,8 @@ class CubeView {
     if (!data || !data.ok) return;
     this.profData = data;
     this._drawProfiles();
+
+    if (this.profMix && this.meta && this.meta.params && !this._mixtureMatches()) this._fetchProfParams(data.row, data.col);
   }
 
   _drawProfiles() {
@@ -2857,6 +2886,62 @@ class CubeView {
     ctx.fillText(this._fmt(hMin), padL + 2, h - padB - 3);
     ctx.textAlign = "right";
     ctx.fillText(`peak ${this._fmt(values[peak])} @ ${this._fmt(zValues[peak])}`, w - 4, padT - 5);
+
+    this._drawMixture(panel, series, ctx, xAt, yAt);
+  }
+
+  _drawMixture(panel, series, ctx, xAt, yAt) {
+    if (!this.profMix || !this._mixtureMatches()) return;
+
+    const slotData = this.profParams.sources[panel.source];
+    if (!slotData) return;
+
+    const slots = slotData.filter((slot) => slot.active && Number.isFinite(slot.mu) && Number.isFinite(slot.amp));
+    if (!slots.length) return;
+
+    const zValues = series.z_values;
+    const mixture = zValues.map((z) => slots.reduce((sum, slot) => {
+      const sigma = Math.max(Math.abs(slot.sigma), 1e-6);
+      return sum + slot.amp * Math.exp(-((z - slot.mu) ** 2) / (2 * sigma * sigma));
+    }, 0));
+
+    let factor = 1;
+    if (this.profMode === "unit") {
+      let area = 0;
+      for (let i = 1; i < mixture.length; i++) area += 0.5 * (mixture[i] + mixture[i - 1]) * Math.abs(zValues[i] - zValues[i - 1]);
+      factor = area > 0 ? 1 / area : 0;
+    }
+
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = "rgba(220, 235, 245, 0.75)";
+    ctx.lineWidth   = 1.2;
+    ctx.beginPath();
+    mixture.forEach((value, i) => {
+      const x = xAt(value * factor);
+      const y = yAt(zValues[i]);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    slots.forEach((slot, index) => {
+      const y     = yAt(slot.mu);
+      const x     = xAt(slot.amp * factor);
+      const color = CubeView.SLOT_COLORS[index % CubeView.SLOT_COLORS.length];
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(xAt(0), y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   _scaledValues(series) {

@@ -14,12 +14,15 @@ The cut, profile and transect downloads must hand the visible panels and the pro
 shared exporter under names carrying the run, stamp and pixel. The Figures view must list a
 stamp's saved figures once per cube, drop a listing that lands after the cube changed, and
 list the new cube's figures when one loads while the view is open. A pixel locked in the cuts,
-the parameter map or the metric map becomes the one shared focus the other views adopt.
+the parameter map or the metric map becomes the one shared focus the other views adopt. The
+mixture overlay must rebuild the Gaussian mixture from the active slots at the profiled pixel,
+scale it with the profiles, and never draw the slots of another pixel or cube.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -307,6 +310,93 @@ def test_opening_the_cube_at_a_pixel_moves_the_focus_without_locking_the_previou
 def test_params_here_button_shows_only_for_cubes_with_parameters():
     """The cuts bar offers the Params here jump only when the loaded cube carries Gaussian parameters."""
     assert _check("focus")["button"] == {"withParams": True, "withoutParams": False}
+
+
+def _mixture(z: float, slots: list) -> float:
+    """Returns the Gaussian mixture of the given (amp, mu, sigma) slots at one z."""
+    return sum(amp * math.exp(-((z - mu) ** 2) / (2 * sigma * sigma)) for amp, mu, sigma in slots)
+
+
+def _trapezoid(xs: list, ys: list) -> float:
+    """Returns the trapezoid area under ys over xs."""
+    return sum(0.5 * (ys[i] + ys[i - 1]) * abs(xs[i] - xs[i - 1]) for i in range(1, len(xs)))
+
+
+@NEEDS_JS
+def test_mixture_toggle_fetches_the_slots_at_the_profiled_pixel_before_drawing():
+    """Ticking the mixture box asks for the Gaussian slots at the profiled pixel and draws nothing until they arrive."""
+    assert _check("mixture")["requested"] == {"calls": ["/api/cubes/params_at 1,2"], "drawn": {"dashed": 0, "stems": []}}
+
+
+@NEEDS_JS
+def test_mixture_draws_one_dashed_curve_per_panel_and_one_stem_per_active_slot():
+    """Each parameter source's panel gets the dashed mixture and a coloured stem for every active slot only."""
+    assert _check("mixture")["drawn"] == {"dashed": 2, "stems": ["#e45756", "#4c78a8", "#e45756"]}
+
+
+@NEEDS_JS
+def test_mixture_curve_sums_the_active_gaussians_and_stems_sit_at_mu_with_the_amplitude():
+    """The dashed curve is the sum of the active slots' Gaussians on the profile's z axis, and each stem reaches its amplitude at its mu."""
+    raw    = _check("mixture")["raw"]
+    active = [(2.0, 1.0, 0.5), (1.0, 3.0, 0.25)]
+
+    assert [point[1] for point in raw["curve"]] == [0, 1, 2, 3, 4]
+    assert [point[0] for point in raw["curve"]] == pytest.approx([_mixture(z, active) for z in range(5)])
+    assert raw["stems"] == [{"color": "#e45756", "points": [[0, 1], [2, 1]]}, {"color": "#4c78a8", "points": [[0, 3], [1, 3]]}]
+
+
+@NEEDS_JS
+def test_unit_area_mode_scales_the_mixture_and_its_stems_to_unit_area():
+    """In unit-area mode the dashed mixture integrates to one over z and the stems shrink by the same factor."""
+    observed = _check("mixture")
+    raw      = [point[0] for point in observed["raw"]["curve"]]
+    unit     = observed["unit"]
+
+    factor = 1.0 / _trapezoid(list(range(5)), raw)
+
+    assert _trapezoid(list(range(5)), [point[0] for point in unit["curve"]]) == pytest.approx(1.0)
+    assert [stem["points"][1][0] for stem in unit["stems"]] == pytest.approx([2.0 * factor, 1.0 * factor])
+
+
+@NEEDS_JS
+def test_unticking_the_mixture_redraws_without_it_and_ticking_again_reuses_the_slots():
+    """Unticking redraws the profiles without the overlay, and ticking again at the same pixel draws it without asking again."""
+    observed = _check("mixture")
+
+    assert observed["off"] == {"calls": [], "drawn": {"dashed": 0, "stems": []}}
+    assert observed["cached"]["calls"] == [] and observed["cached"]["drawn"]["dashed"] == 2
+
+
+@NEEDS_JS
+def test_profiles_at_a_new_pixel_fetch_its_slots_while_the_mixture_is_on():
+    """With the overlay on, profiles landing for another pixel ask for that pixel's slots."""
+    assert _check("mixture")["followed"] == ["/api/cubes/profiles 3,4", "/api/cubes/params_at 3,4"]
+
+
+@NEEDS_JS
+def test_mixture_drops_slots_answered_for_an_earlier_pixel_or_another_cube():
+    """Slots arriving after the profiles moved on, or after the cube changed, are dropped instead of replacing the current ones."""
+    observed = _check("mixture")
+
+    assert observed["late"] == {"params": [2, 2], "matches": True}
+    assert observed["replaced"] == {"params": None}
+
+
+@NEEDS_JS
+def test_mixture_box_shows_only_for_cubes_with_parameters():
+    """The profiles header offers the mixture box only when the loaded cube carries Gaussian parameters."""
+    assert _check("mixture")["toggle"] == {"withParams": True, "withoutParams": False}
+
+
+def test_mixture_box_is_on_the_page_and_wired_to_the_cube_view():
+    """The profiles header carries a hidden mixture box and app.js hands it and its wrapper to the cube view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    assert html.count('id="cube-prof-mix-wrap" hidden') == 1
+    assert html.count('<input type="checkbox" id="cube-prof-mix" />') == 1
+    for ref, element in (("profMixWrap", "cube-prof-mix-wrap"), ("profMix", "cube-prof-mix")):
+        assert re.search(rf'{ref}\s*: document\.getElementById\("{element}"\)', app), ref
 
 
 def test_params_here_button_is_on_the_page_and_wired_to_the_cube_view():
