@@ -573,12 +573,15 @@ class InferencePipeline:
     def _audit_normalization(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
         """Audits input-normalization drift and output-clamp saturation on this split.
 
+        Non-finite normalised inputs, drift past the audit bounds and clamp saturation
+        above the audit share are raised as warnings naming the channel or bound.
+
         Args:
             meta           : Run metadata resolving the metrics path.
             run            : Loaded run supplying the dataset and normalization statistics.
             result         : Inference result supplying the predicted parameter cube.
             global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section heading and result lines.
+            logger         : Logger for the section heading, result lines and warnings.
         """
 
         logger.section("[Inference: Normalization Audit]")
@@ -587,10 +590,13 @@ class InferencePipeline:
         global_metrics.update(stats)
         Metrics.write_json(global_metrics, meta.metrics_path)
 
-        logger.subsection(f"Input drift : worst |mean| {stats['norm_in_worst_abs_mean']:.3f}, worst |std-1| {stats['norm_in_worst_std_dev']:.3f}, overflow {stats['norm_in_overflow_frac'] * 100.0:.3f}%")
+        logger.subsection(f"Input drift : worst |mean| {stats['norm_in_worst_abs_mean']:.3f}, worst |std-1| {stats['norm_in_worst_std_dev']:.3f}, overflow {stats['norm_in_overflow_frac'] * 100.0:.3f}%, non-finite {stats['norm_in_nonfinite_frac'] * 100.0:.4f}%")
 
         if "clamp_amp_ceil_frac" in stats:
             logger.subsection(f"Clamp hits  : amp ceil {stats['clamp_amp_ceil_frac'] * 100.0:.2f}%, sigma floor {stats['clamp_sigma_floor_frac'] * 100.0:.2f}%, mu at axis edge {stats['clamp_mu_edge_frac'] * 100.0:.2f}%")
+
+        for line in NormalizationAudit.warning_lines(stats):
+            logger.warning(f"Normalization audit, {line}")
 
     def _compose_figures(self, composer: FigureComposer, result, run, global_metrics: dict, z_axis_np: np.ndarray, indices: dict) -> Dict[str, List[Path]]:
         """Delegates figure composition, enabling parameter figures only when both parameter cubes exist.

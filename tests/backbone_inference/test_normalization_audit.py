@@ -13,7 +13,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from configuration.inference                          import InferenceConfig
 from pipelines.backbone.inference.normalization_audit import NormalizationAudit
+from pipelines.backbone.inference.pipeline            import InferencePipeline
+from pipelines.backbone.inference.run_metadata_paths  import InferenceMetadata
+
+from tests.conftest import RecordingLogger
 
 
 def _run(normalized_inputs: np.ndarray, n_gaussians: int = 1, amp_max: float = 200.0, enabled: bool = True):
@@ -120,3 +125,76 @@ def test_degenerate_input_channel_raises():
 
     with pytest.raises(ValueError):
         NormalizationAudit(_run(inputs), _result(None)).run()
+
+
+def test_input_health_counts_non_finite_values_over_every_value_of_the_channel():
+    """NaN and inf inputs are counted per channel and pooled, over all values rather than the finite ones."""
+    rng = np.random.default_rng(1)
+    ch0 = rng.normal(0.0, 1.0, size=(50, 40))
+    ch1 = rng.normal(0.0, 1.0, size=(50, 40))
+
+    ch0[0, :5] = np.nan
+    ch1[1, :3] = np.inf
+
+    out = NormalizationAudit(_run(np.stack([ch0, ch1])), _result(None)).run()
+
+    assert out["norm_in_ch0_nonfinite_frac"] == pytest.approx(5 / 2000)
+    assert out["norm_in_ch1_nonfinite_frac"] == pytest.approx(3 / 2000)
+    assert out["norm_in_nonfinite_frac"]     == pytest.approx(8 / 4000)
+    assert math.isfinite(out["norm_in_ch1_mean"])
+
+
+def test_warning_lines_name_non_finite_channels_drift_and_saturation():
+    """Each crossed bound yields one line naming the channel or quantity, its value and the bound."""
+    stats = {
+        "norm_in_ch0_nonfinite_frac" : 0.0,
+        "norm_in_ch1_nonfinite_frac" : 0.002,
+        "norm_in_worst_abs_mean"     : 0.7,
+        "norm_in_worst_std_dev"      : 0.1,
+        "norm_in_overflow_frac"      : 0.02,
+        "clamp_amp_ceil_frac"        : 0.05,
+        "clamp_sigma_floor_frac"     : 0.0,
+        "clamp_sigma_ceil_frac"      : float("nan"),
+        "clamp_mu_edge_frac"         : 0.001,
+    }
+
+    lines = NormalizationAudit.warning_lines(stats)
+
+    assert len(lines) == 4
+    assert lines[0].startswith("input channel 1: 0.2000%")
+    assert lines[1].startswith("input drift: worst channel |mean| 0.700 exceeds 0.5")
+    assert lines[2].startswith("input overflow: 2.00%")
+    assert lines[3].startswith("clamp saturation: 5.00% of the active predicted Gaussians sit on the amplitude ceiling")
+
+
+def test_warning_lines_are_empty_inside_the_bounds():
+    """A split whose inputs are finite, centred, scaled and unsaturated yields no warning line, with or without a parameter cube."""
+    stats = {"norm_in_ch0_nonfinite_frac": 0.0, "norm_in_worst_abs_mean": 0.1, "norm_in_worst_std_dev": 0.2, "norm_in_overflow_frac": 0.001}
+
+    assert NormalizationAudit.warning_lines(stats) == []
+    assert NormalizationAudit.warning_lines({**stats, "clamp_amp_ceil_frac": 0.005, "clamp_mu_edge_frac": 0.0}) == []
+
+
+def test_pipeline_audit_warns_for_every_crossed_bound(tmp_path):
+    """The pipeline stage raises one warning per audit finding and none when every quantity is inside its bound."""
+    rng = np.random.default_rng(3)
+    ch0 = rng.normal(0.0, 1.0, size=(50, 40))
+    ch1 = rng.normal(0.0, 1.0, size=(50, 40))
+
+    ch1[0, :4] = np.nan
+
+    config = InferenceConfig(run_directory=tmp_path, output_subdir="audit", device="cpu")
+    meta   = InferenceMetadata(config)
+    meta.create_dirs()
+
+    dirty  = RecordingLogger()
+    clean  = RecordingLogger()
+
+    InferencePipeline(config)._audit_normalization(meta, _run(np.stack([ch0, ch1])), _result(None), {}, dirty)
+    InferencePipeline(config)._audit_normalization(meta, _run(np.stack([ch0, ch0])), _result(None), {}, clean)
+
+    warnings = [msg for level, msg in dirty.messages if level == "warning"]
+
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Normalization audit, input channel 1: 0.2000%")
+    assert not any(level == "warning" for level, _msg in clean.messages)
