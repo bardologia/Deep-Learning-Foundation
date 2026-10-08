@@ -13,9 +13,12 @@ import numpy as np
 import pytest
 import torch
 
-from pipelines.backbone.inference.analysis.input_attribution import ChannelGroups, ChannelLabeler, ChannelOcclusion, GradientAttribution
-from tools.metrics.scoring                                  import RankCorrelation
-from pipelines.backbone.inference.probes            import PredictionCurves
+from configuration.diagnostics                               import InputAttributionConfig
+from pipelines.backbone.inference.analysis.input_attribution import ChannelGroups, ChannelLabeler, ChannelOcclusion, GradientAttribution, InputAttributionRun
+from pipelines.backbone.inference.probes                     import PredictionCurves
+from tools.metrics.scoring                                   import RankCorrelation
+
+from tests.backbone_inference._helpers import StageLogger, build_run_directory
 
 
 WINDOW = 16
@@ -122,12 +125,14 @@ def test_occlusion_shifts_only_for_used_channel_sets():
     renderer = PredictionCurves(1, np.linspace(-5.0, 15.0, 12))
     loader   = [(torch.from_numpy(np.random.default_rng(1).uniform(0.3, 1.0, size=(2, 3, 8, 8))).float(), None)]
 
-    deltas = ChannelOcclusion(_model_wrapper(), renderer).deltas(loader, max_batches=1, channel_sets=[[0], [1], [2], [1, 2]])
+    passes = []
+    deltas = ChannelOcclusion(_model_wrapper(), renderer, lambda: passes.append(1)).deltas(loader, max_batches=1, channel_sets=[[0], [1], [2], [1, 2]])
 
     assert deltas[0] > 1e-6
     assert deltas[1] == pytest.approx(0.0, abs=1e-12)
     assert deltas[2] == pytest.approx(0.0, abs=1e-12)
     assert deltas[3] == pytest.approx(0.0, abs=1e-12)
+    assert len(passes) == 4
 
 
 def test_occlusion_without_batches_raises():
@@ -135,7 +140,7 @@ def test_occlusion_without_batches_raises():
     renderer = PredictionCurves(1, np.linspace(-5.0, 15.0, 12))
 
     with pytest.raises(ValueError):
-        ChannelOcclusion(_model_wrapper(), renderer).deltas([], max_batches=0, channel_sets=[[0]])
+        ChannelOcclusion(_model_wrapper(), renderer, lambda: None).deltas([], max_batches=0, channel_sets=[[0]])
 
 
 def test_spearman_detects_perfect_and_inverted_rankings():
@@ -212,3 +217,18 @@ def test_channel_groups_mismatch_raises():
 
     with pytest.raises(ValueError):
         ChannelGroups.of_channels(groups, 7)
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_attribution_pass_tracks_the_occlusion_and_times_both_stages(tmp_path, test_data_dir, params_dir):
+    """An attribution pass on a real run drives one bar over every occluded forward pass and times the gradient and occlusion stages."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+    config  = InputAttributionConfig(window=32, n_row_probes=2, n_col_probes=2, batch_size=2, max_batches=1)
+    logger  = StageLogger()
+
+    InputAttributionRun(run_dir, config, logger).run()
+
+    assert len(logger.totals) == 1 and logger.totals[0] == logger.advances
+    assert logger.timers[0] == "Input attribution: gradient pass (4 probe windows)"
+    assert logger.timers[1] == f"Input attribution: occlusion ({logger.advances} passes)"
