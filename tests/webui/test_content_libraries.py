@@ -9,7 +9,10 @@ and real configuration fields.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
 
 
 import pytest
@@ -166,6 +169,23 @@ def test_every_flow_sketch_matches_a_declared_step(flows):
     steps = {step["id"] for flow in flows for step in flow["steps"]}
 
     assert keys <= steps, f"sketches without a flow step: {sorted(keys - steps)}"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is required to load the flow sketch catalogue")
+def test_flow_sketch_catalogue_resolves_under_the_name_the_walkthrough_reads():
+    """Loads flow_sketches.js beside flow_view.js and builds every sketch through FlowSketches.CATALOG, the name the walkthrough reads."""
+    text    = (WEBUI_ROOT / "static" / "js" / "flow_sketches.js").read_text()
+    harness = WEBUI_ROOT / "tools" / "visual" / "flow_sketch_catalog.js"
+    result  = subprocess.run(["node", str(harness)], capture_output=True, text=True, timeout=60)
+
+    assert result.returncode == 0, result.stderr
+    assert "FlowSketches.CATALOG[step.id]" in (WEBUI_ROOT / "static" / "js" / "flow_view.js").read_text()
+
+    sketches = json.loads(result.stdout)
+
+    assert set(sketches) == set(re.findall(r"^  (\w+): \{$", text, re.M))
+    assert all(sketch["tip"] and sketch["markup"] for sketch in sketches.values())
+    assert any(sketch["animated"] for sketch in sketches.values())
 
 
 
