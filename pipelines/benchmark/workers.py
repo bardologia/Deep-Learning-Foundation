@@ -348,8 +348,9 @@ class TrainingWorker(BenchmarkWorker):
         """Trains one benchmark unit, dispatching on the sweep training type.
 
         The unit's manifest is written first, so even a run that dies before
-        its first epoch is identifiable when the benchmark is resumed, and a
-        unit that already finished is left as it is.
+        its first epoch is identifiable when the benchmark is resumed; a unit
+        that already finished is left as it is on a resume and refused when
+        resume is off.
 
         Args:
             model_name     : Registry key of the model to train.
@@ -359,6 +360,7 @@ class TrainingWorker(BenchmarkWorker):
 
         Raises:
             ValueError : If the configured training type is not one of 'backbone', 'jepa', or 'profile_autoencoder'.
+            SystemExit : If the unit already holds a completed run while resume is off.
         """
         from pipelines.benchmark.stages import BenchmarkUnitManifest
 
@@ -370,7 +372,7 @@ class TrainingWorker(BenchmarkWorker):
 
         BenchmarkUnitManifest.write(self.run_dir / "training" / run_name, run_tag=self.run_tag, unit=run_name, model=model_name, loss_component=loss_component, seed=seed)
 
-        if self.skip_complete(self.run_dir / "training" / run_name, "benchmark_training"):
+        if self.skip_complete(self.run_dir / "training" / run_name, "benchmark_training", self.config.resume):
             return
 
         if training_type == "profile_autoencoder":
