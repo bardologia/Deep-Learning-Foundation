@@ -425,6 +425,27 @@ def test_pipeline_run_samples_resources_into_the_group_log(tmp_path, monkeypatch
     assert log_text.index(">>> [RESOURCE MONITOR]") < log_text.index(">>> [PARAM EXTRACTION PIPELINE EXECUTION]") < log_text.index(">>> [RESOURCE MONITOR - PEAKS]")
 
 
+def test_trial_collector_names_the_runs_discovery_skips(tmp_path):
+    """Verifies discovery keeps fitted runs, lists injected ones at info level and warns about a run without parameters."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.inference import ParamInferenceTrialCollector
+
+    runs = {"fitted": "fitted", "injected": "external", "incomplete": "fitted"}
+    for name, source in runs.items():
+        run_dir = tmp_path / name
+        run_dir.mkdir()
+        (run_dir / "param_extraction_meta.json").write_text(json.dumps({"source": source, "timestamp": "2026-06-12T18:33:45"}), encoding="utf-8")
+        if name != "incomplete":
+            np.save(run_dir / "parameters.npy", np.zeros((3, 1, 1), dtype=np.float32))
+
+    logger = RecordingLogger()
+
+    assert ParamInferenceTrialCollector(tmp_path, [], logger).collect() == [tmp_path / "fitted"]
+    assert any(level == "info" and "Skipped injected" in message for level, message in logger.messages)
+    assert any(level == "warning" and "Skipped incomplete" in message and "no parameters.npy" in message for level, message in logger.messages)
+    assert any("Discovered 1 fitted runs; skipped 1 injected and 1 without parameters.npy" in message for level, message in logger.messages)
+
+
 def test_inference_session_records_an_abort_in_the_run_log(tmp_path, monkeypatch):
     """Verifies a failing inference stage ends the run's own log with the error and an ABORTED banner."""
     from pipelines.processing.param_extraction import inference as inference_module
