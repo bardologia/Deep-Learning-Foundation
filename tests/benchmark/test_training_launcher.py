@@ -89,7 +89,7 @@ def test_seed_sweep_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
     class FakeScheduler:
         """Stand-in fan-out scheduler recording its factory arguments."""
         @classmethod
-        def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False):
+        def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False, infer_after=False):
             """Records the config, overrides, entry script, runner factory and base label."""
             captured["for_runner"] = (config, cli_overrides, entry_script, runner_factory, base_label)
             return cls()
@@ -167,10 +167,11 @@ def test_backbone_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
     class FakeFanout:
         """Stand-in fan-out scheduler recording the entry script and runner factory."""
         @classmethod
-        def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False):
-            """Records the entry script, runner factory and batched-inference flag."""
+        def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False, infer_after=False):
+            """Records the entry script, runner factory and both inference flags."""
             ran["for_runner"] = (entry_script, runner_factory)
             ran["infer_at_end"] = infer_at_end
+            ran["infer_after"]  = infer_after
             return cls()
         def run(self):
             """Marks the fan-out as executed."""
