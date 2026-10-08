@@ -9,7 +9,7 @@ class CubeViewChecks {
     vm.createContext(this.sandbox);
 
     const source = fs.readFileSync(path.join(staticDir, "cube_view.js"), "utf8");
-    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeCloud, CubeView };`, this.sandbox, { filename: "cube_view.js" });
+    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeTransect, CubeCloud, CubeView };`, this.sandbox, { filename: "cube_view.js" });
     this.classes = this.sandbox.classes;
   }
 
@@ -248,7 +248,7 @@ class CubeViewChecks {
     this.sandbox.Api          = { get: async (url) => answer(new URLSearchParams(url.split("?")[1])) };
 
     const refs = {};
-    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open", "histNote"].forEach((name) => {
+    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open", "histNote", "download"].forEach((name) => {
       refs[name] = this._element({ innerHTML: "" });
     });
 
@@ -336,6 +336,73 @@ class CubeViewChecks {
     const late = { hist: metrics.hist, histKey: metrics.histKey };
 
     return { classes, stale, continuous, late };
+  }
+
+  _exports() {
+    const saved = [];
+    const toasts = [];
+
+    this.sandbox.Blob         = Blob;
+    this.sandbox.Toast        = { show: (text, kind) => toasts.push({ text, kind }) };
+    this.sandbox.FigureExport = {
+      download   : (name, source) => saved.push({ via: "download", name, source }),
+      saveCanvas : (canvas, name) => saved.push({ via: "canvas", name, source: canvas }),
+      saveBitmap : (bitmap, name) => saved.push({ via: "bitmap", name, source: bitmap }),
+    };
+    return { saved, toasts };
+  }
+
+  async downloads() {
+    const { CubeView, CubeTransect } = this.classes;
+    const { saved, toasts } = this._exports();
+
+    const view      = Object.create(CubeView.prototype);
+    view.cubes      = [{ id: "cube", run: "group/run a", stamp: "stamp_1" }];
+    view.selectedId = "cube";
+    view.space      = "physical";
+    view.meta       = { n_rows: 8, n_cols: 6 };
+
+    view.point    = null;
+    view.profData = null;
+    view.panels   = [];
+    view._downloadCuts();
+    view._downloadProfilesCsv();
+    const refused = toasts.map((toast) => toast.kind);
+
+    const shown  = { root: { hidden: false }, bitmap: { id: "shown" }, axis: "col", source: "pred" };
+    const hidden = { root: { hidden: true }, bitmap: { id: "hidden" }, axis: "row", source: "gt" };
+    const blank  = { root: { hidden: false }, bitmap: null, axis: "row", source: "pred" };
+    view.point   = { row: 3, col: 12 };
+    view.panels  = [shown, hidden, blank];
+    view._downloadCuts();
+    const cuts = saved.splice(0).map((entry) => ({ via: entry.via, name: entry.name, bitmap: entry.source.id }));
+
+    view.profData = { row: 3, col: 4, sources: { pred: { z_values: [-1, 0.5], values: [0.25, 2] }, gt: { z_values: [-1, 0.5], values: [0, 1] } } };
+    view._downloadProfilesCsv();
+    const csvEntry = saved.splice(0)[0];
+    const csv      = { name: csvEntry.name, type: csvEntry.source.type, text: await csvEntry.source.text() };
+
+    const transect       = Object.create(CubeTransect.prototype);
+    transect.host        = view;
+    transect.start       = { row: 1, col: 2 };
+    transect.end         = { row: 5, col: 0 };
+    transect.panels      = [{ root: { hidden: false }, canvas: { width: 40 }, source: "pred" }, { root: { hidden: false }, canvas: { width: 0 }, source: "gt" }];
+    transect._download();
+    const line = saved.splice(0).map((entry) => ({ via: entry.via, name: entry.name }));
+
+    const { metrics, refs } = this._metrics(() => ({}));
+    const exported          = this._exports();
+    metrics.host            = view;
+    metrics.layer           = { key: "failure_mode" };
+    refs.img.src            = "/api/cubes/metric_map?id=cube&key=failure_mode";
+
+    this.sandbox.fetch = async () => ({ ok: true, blob: async () => "png-bytes" });
+    await metrics._downloadOverlay();
+    this.sandbox.fetch = async () => ({ ok: false });
+    await metrics._downloadOverlay();
+    const overlay = { saved: exported.saved.map((entry) => ({ via: entry.via, name: entry.name, source: entry.source })), toasts: exported.toasts.map((toast) => toast.kind) };
+
+    return { refused, cuts, csv, line, overlay, tag: view.fileTag() };
   }
 
   async run(name) {
