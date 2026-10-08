@@ -1,7 +1,8 @@
 """Tests for the data loader throughput tuner used before training.
 
-Covers the prefetch grid it explores and the worker/prefetch choice it
-returns on a CPU device.
+Covers the prefetch grid it explores, the worker/prefetch choice it returns
+on a CPU device, and the per-configuration logging and records of both
+sweeps, out-of-memory configurations included.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
+import tools.training.pretraining.loader_tuner as tuner_module
 from tools.training.pretraining.loader_tuner import LoaderTuner
 
 
@@ -42,18 +44,28 @@ class _Model(nn.Module):
 
 
 class _Logger:
-    """Logger stub swallowing the section calls made by the tuner."""
+    """Logger stub recording the subsection and warning lines of the tuner.
+
+    Attributes:
+        lines    : Subsection messages in emission order.
+        warnings : Warning messages in emission order, NVML-unavailable notices included.
+    """
+    def __init__(self):
+        """Starts with no recorded output."""
+        self.lines    = []
+        self.warnings = []
+
     def section(self, *args, **kwargs):
         """Ignores a section heading."""
         pass
 
-    def subsection(self, *args, **kwargs):
-        """Ignores a subsection heading."""
-        pass
+    def subsection(self, message, *args, **kwargs):
+        """Records a subsection line."""
+        self.lines.append(message)
 
-    def warning(self, *args, **kwargs):
-        """Ignores a warning, emitted when NVML is unavailable on the test machine."""
-        pass
+    def warning(self, message, *args, **kwargs):
+        """Records a warning line."""
+        self.warnings.append(message)
 
 
 def _forward_loss(model, batch):
@@ -105,3 +117,62 @@ def test_loader_tuner_returns_two_field_config_on_cpu():
     assert set(choice)           == {"num_workers", "prefetch_factor"}
     assert choice["num_workers"] == 0
     assert choice["prefetch_factor"] > 0
+
+
+def _tuner(logger, **overrides) -> LoaderTuner:
+    """Returns a CPU loader tuner over cheap vectors with a one-point grid unless overridden."""
+    dim      = 8
+    settings = dict(
+        dataset          = _Vectors(2000, dim),
+        model            = _Model(dim),
+        to_model_input   = lambda batch, device: batch.to(device),
+        forward_loss     = _forward_loss,
+        device           = torch.device("cpu"),
+        logger           = logger,
+        worker_counts    = (0,),
+        prefetch_factors = (2,),
+        warmup_batches   = 2,
+        timed_batches    = 4,
+    )
+    settings.update(overrides)
+    return LoaderTuner(**settings)
+
+
+def test_every_measured_configuration_is_logged_and_kept():
+    """Verifies each configuration of both sweeps is logged with its throughput and kept, and the final line carries the chosen one's measurements."""
+    logger = _Logger()
+    tuner  = _tuner(logger)
+
+    tuner.run(batch_size=32)
+
+    assert [record["phase"] for record in tuner.records] == ["workers", "prefetch"]
+    assert all(record["status"] == "ok" for record in tuner.records)
+    assert sum("samples/s end to end" in line for line in logger.lines) == 3
+    assert "feed ratio" in logger.lines[-1] and logger.lines[-1].startswith("Loader tuner -> workers=0")
+
+
+def test_out_of_memory_configurations_and_an_empty_sweep_are_warnings(monkeypatch):
+    """Verifies an out-of-memory configuration is a warning naming it, and a sweep without any success warns that the settings are kept."""
+    class _OomSweep:
+        """Sweep stub reporting every configuration out of memory through the callback."""
+        def __init__(self, benchmark, specs, on_result=None):
+            """Stores the specs and the callback."""
+            self.specs     = specs
+            self.on_result = on_result
+
+        def run(self):
+            """Reports one 'oom' record per spec."""
+            records = [{**spec.as_record(), "status": "oom"} for spec in self.specs]
+            for record in records:
+                self.on_result(record)
+            return records
+
+    monkeypatch.setattr(tuner_module, "DataLoaderSweep", _OomSweep)
+
+    logger = _Logger()
+    tuner  = _tuner(logger, worker_counts=(0, 1))
+
+    assert tuner.run(batch_size=32) is None
+    assert [record["status"] for record in tuner.records] == ["oom", "oom"]
+    assert any("workers=1" in line and "ran out of memory" in line for line in logger.warnings)
+    assert "found no successful configuration among 2 measured" in logger.warnings[-1]
