@@ -13,6 +13,7 @@ from pathlib import Path
 from configuration.benchmark                 import BenchmarkConfig
 from pipelines.shared.config.config_factory  import ConfigFactory
 from pipelines.shared.training.seed_sweep    import SeedSet
+from pipelines.shared.training.unit_resume   import UnitResume
 from pipelines.shared.training.worker_base   import WorkerBase
 from tools.data.io                           import FileIO
 
@@ -392,6 +393,11 @@ class InferenceWorker(BenchmarkWorker):
     def run(self, model_name: str, seed: int | None = None, loss_component: str | None = None, run_name: str | None = None) -> None:
         """Runs the backbone inference pipeline over one trained unit.
 
+        On a resume a unit that already holds a completed inference for the
+        scored split is left as it is, and its unfinished stamps are deleted
+        first; both decisions go to the unit's ``logs/unit_resume.log``, as in
+        the local inference stage and the cross-validation worker.
+
         Args:
             model_name     : Registry key of the trained model.
             seed           : Seed of the unit, defaulting to the unseeded run name.
@@ -402,6 +408,9 @@ class InferenceWorker(BenchmarkWorker):
         from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 
         run_directory = self.run_dir / "training" / self.unit_run_name(model_name, loss_component, seed, run_name)
+
+        if UnitResume(run_directory, enabled=self.config.resume).skip_inference(self.config.inference.split):
+            return
 
         components = InferenceComponentsResolver.for_run(run_directory)
         pipeline   = InferencePipeline(self.factory.inference_config(run_directory), components=components)

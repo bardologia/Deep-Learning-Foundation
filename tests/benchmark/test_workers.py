@@ -578,3 +578,86 @@ def test_training_worker_trains_an_unfinished_unit_when_resume_is_off(config, mo
     worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
 
     assert trained == ["renamed/seed3"]
+
+
+def _stub_inference(monkeypatch) -> list:
+    """Replaces the backbone inference pipeline and its component resolver with stubs, returning the list of scored run directories."""
+    import pipelines.backbone.inference.pipeline           as pipeline_module
+    import pipelines.shared.inference.inference_components as components_module
+
+    ran = []
+
+    class FakePipeline:
+        """Inference pipeline stub recording the run directory it scores."""
+
+        def __init__(self, inference_config, components=None):
+            """Stores the run directory of the inference configuration."""
+            self.run_directory = inference_config.run_directory
+
+        def run(self):
+            """Records the run directory as scored."""
+            ran.append(self.run_directory)
+
+    monkeypatch.setattr(pipeline_module, "InferencePipeline", FakePipeline, raising=True)
+    monkeypatch.setattr(components_module.InferenceComponentsResolver, "for_run", staticmethod(lambda run_directory: None), raising=True)
+
+    return ran
+
+
+def test_inference_worker_reuses_a_completed_inference_on_resume(config, monkeypatch):
+    """A resumed unit that already holds a completed stamp for the scored split is not inferred again, its unfinished stamps are deleted and the reuse is logged in the unit."""
+    from pipelines.benchmark.workers import InferenceWorker
+    from tools.runtime.completion    import CompletionMarker
+
+    ran    = _stub_inference(monkeypatch)
+    worker = InferenceWorker(config, "tag")
+    unit   = worker.run_dir / "training" / "renamed/seed3"
+    done   = unit / "inference" / "stamp_done"
+    torn   = unit / "inference" / "stamp_torn"
+    done.mkdir(parents=True)
+    torn.mkdir(parents=True)
+    CompletionMarker.stamp(done, {"stage": "inference", "split": config.inference.split})
+
+    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+
+    log = (unit / "logs" / "unit_resume.log").read_text()
+    assert ran == []
+    assert done.is_dir()
+    assert not torn.exists()
+    assert f"existing '{config.inference.split}' inference reused" in log
+    assert "unfinished inference 'stamp_torn' deleted" in log
+
+
+def test_inference_worker_scores_a_unit_without_a_completed_inference_for_the_split(config, monkeypatch):
+    """A stamp completed on another split does not count, so the unit is scored on the configured one."""
+    from pipelines.benchmark.workers import InferenceWorker
+    from tools.runtime.completion    import CompletionMarker
+
+    ran    = _stub_inference(monkeypatch)
+    worker = InferenceWorker(config, "tag")
+    unit   = worker.run_dir / "training" / "renamed/seed3"
+    other  = unit / "inference" / "stamp_other"
+    other.mkdir(parents=True)
+    CompletionMarker.stamp(other, {"stage": "inference", "split": "train"})
+
+    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+
+    assert ran == [unit]
+
+
+def test_inference_worker_rescores_a_completed_unit_when_resume_is_off(config, monkeypatch):
+    """With resume off the worker scores the unit again even when a completed stamp for the split exists."""
+    from pipelines.benchmark.workers import InferenceWorker
+    from tools.runtime.completion    import CompletionMarker
+
+    config.resume = False
+    ran           = _stub_inference(monkeypatch)
+    worker        = InferenceWorker(config, "tag")
+    unit          = worker.run_dir / "training" / "renamed/seed3"
+    done          = unit / "inference" / "stamp_done"
+    done.mkdir(parents=True)
+    CompletionMarker.stamp(done, {"stage": "inference", "split": config.inference.split})
+
+    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+
+    assert ran == [unit]
