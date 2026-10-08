@@ -2,7 +2,7 @@
 
 A project skeleton for supervised deep learning, lifted out of a working research
 codebase. It carries the configuration layer, the dataset, training and inference
-pipelines, the experiment and analysis entry points, a local web console and about 5000
+pipelines, the experiment and analysis entry points, a local web console and about 6700
 tests. The domain code is gone; what is left is the machinery around a model.
 
 The example task is per-pixel Gaussian-mixture estimation along a z axis from a stack of
@@ -32,10 +32,17 @@ no default in `configuration/` ever has to be edited.
 
 Run `./install.sh` again whenever something changes; each question defaults to the
 current answer. `./install.sh --yes` accepts every default without asking,
-`--skip-install` reruns only the questions, `--torch-index cu128` forces a torch build,
-and `--answers FILE` takes the answers from a JSON file keyed by question. On a desktop
-session the installer also offers an application-menu entry that starts the console and
-opens it in the browser.
+`--skip-install` reruns only the questions, `--torch-index cu130`, `cu128` or `cpu`
+picks the torch build by hand instead of from the driver, and `--answers FILE` takes the
+answers from a JSON file keyed by question. On a desktop session the installer also
+offers an application-menu entry that starts the console and opens it in the browser.
+
+When `nvidia-smi` is installed but fails, which usually means the driver no longer
+matches the running kernel, the installer stops instead of guessing a build: fix the
+driver or pass `--torch-index`. The setup wizard (`scripts/setup_machine.py`) reports
+that case apart from a missing driver and suggests installing the `linux-modules-nvidia`
+package for the new kernel. Its verification step imports torch in the new environment
+and, when torch cannot use a GPU the driver lists, quotes torch's own reason.
 
 Then generate the example dataset and start the console:
 
@@ -48,8 +55,9 @@ webui/run.sh          # http://127.0.0.1:8772
 
 A Linux machine with an NVIDIA GPU and driver for training and inference at a useful
 speed. The tests, the dataset generator and the web console run fine on CPU. Training
-falls back to CPU on its own when no CUDA device is visible; inference has to be told,
-with `--inference.device cpu`. You also need conda.
+falls back to CPU on its own, with a warning, when no CUDA device is visible; inference
+has to be told, with `--inference.device cpu`. Fitting parameter runs with
+`extract_params` needs a GPU that JAX can see. You also need conda.
 
 ## 1. Environment
 
@@ -69,6 +77,8 @@ as long as the installer is told about it (`./install.sh --skip-install --env <n
 `requirements.txt` pins `torch==2.11.0`, and the reference machine runs the `cu130`
 build. If your driver needs a different CUDA build, install torch from the PyTorch index
 first and then run the requirements file, which will leave the existing torch alone.
+Progress bars come from the project `Logger`, which draws them with rich, so tqdm is not
+a dependency.
 
 The second pip line covers the optional extras declared in `pyproject.toml`: `fitting`
 installs `jax` for the Gaussian-fit kernels under
@@ -110,6 +120,20 @@ Everything downstream reads that directory, so this is the first thing to run on
 clone. The tests are the exception: they synthesize their own copy of the scene into a
 temporary directory, so they pass before you ever run the generator.
 
+The generator refuses an output directory that already holds a finished dataset (a
+`data/dataset.json` or any parameter run under `params/`); delete the directory to
+generate it again. It writes `dataset.json` last and records the generating commit in
+`dataset.json`, `meta/config_state.json` and the parameter run's metadata.
+
+The parameter run also fixes the activity threshold, the amplitude above which a
+Gaussian slot counts as active. It is chosen once, by `SynthesisConfig.activity_threshold`
+when the generator writes the labels or by `fit_activity_threshold` when `extract_params`
+fits them (1e-3 by default in both), and recorded in `param_extraction_meta.json`.
+Training (loss masks, slot matching, slot diagnostics, output normalization statistics),
+inference, the profile autoencoder, the seed comparison and the console all read it from
+there, and none of them has a threshold setting of its own. A slot is active only when
+its amplitude is strictly above the threshold.
+
 ## 3. Run the tests
 
 The suite splits in two. The backend half:
@@ -118,9 +142,10 @@ The suite splits in two. The backend half:
 python -m pytest tests --ignore=tests/webui -q
 ```
 
-3375 passed and 4 skipped in about 8 minutes on the reference machine. Three of the skips
-are VRAM reservation tests that stand down when the GPU has no memory to spare, the
-fourth is an architecture test whose config has no dropout field.
+5354 passed and 1 skipped in about 11 minutes on the reference machine with its GPU
+visible. The skip is an architecture test whose config has no dropout field. With
+`CUDA_VISIBLE_DEVICES=""` the tests that need a CUDA device skip as well, and the VRAM
+reservation tests stand down when the GPU has no memory to spare.
 
 The console half needs `webui/` on `sys.path`, which `tests/webui/conftest.py` arranges:
 
@@ -128,7 +153,7 @@ The console half needs `webui/` on `sys.path`, which `tests/webui/conftest.py` a
 python -m pytest tests/webui -q
 ```
 
-614 passed in about a minute. Plain `python -m pytest -q` runs both halves, since
+1319 passed in under three minutes. Plain `python -m pytest -q` runs both halves, since
 `testpaths` in `pyproject.toml` points at `tests`. A green run is your proof the
 environment is correct.
 
@@ -145,16 +170,18 @@ dataset and its parameter run), the GPU lists name device 0, and the worker coun
 plain numbers. On any machine where the data or the runs should live elsewhere, the
 installer's machine profile retargets them.
 
-The profile lives at `~/.config/ml-template/machine.json` (or wherever
-`MLTEMPLATE_MACHINE_PROFILE` points; an empty value disables it, which is what the test
-suite does). `ConfigCli` applies it before parsing any flag: path defaults below a
-reference root are rebased onto the profile's root, the most specific root winning, so a
-default such as `runs/benchmark` becomes `<your runs root>/benchmark` with no per-field
-bookkeeping; `gpus`, `gpu_device_ids` and `gpu` take the profile's GPU pool;
-`vram_budget_gb`, `cpu_workers` and `gif_workers` take the profile's values; loader worker
-counts are capped at its limit; the report-mail identity follows it too. A
-`config_overrides` section of the form `{"ClassName.field": value}` handles anything
-else. `--help-config` marks every rewritten default with `[machine profile]`, and the
+The profile lives at `~/.config/ml-template/machine.json`, or wherever
+`MLTEMPLATE_MACHINE_PROFILE` points. An empty value disables it, which is what the test
+suite does; a value naming a file that does not exist stops the entry point with
+`FileNotFoundError` instead of quietly running without a profile. `ConfigCli` applies
+the profile before parsing any flag: path defaults below a reference root are rebased
+onto the profile's root, the most specific root winning, so a default such as
+`runs/benchmark` becomes `<your runs root>/benchmark` with no per-field bookkeeping;
+`gpus`, `gpu_device_ids` and `gpu` take the profile's GPU pool; `vram_budget_gb`,
+`cpu_workers` and `gif_workers` take the profile's values; loader worker counts are
+capped at its limit; the report-mail identity follows it too. A `config_overrides`
+section of the form `{"ClassName.field": value}` handles anything else.
+`--help-config` marks every rewritten default with `[machine profile]`, and the
 console's launch pages mark the same fields.
 
 Nothing needs a profile: without one the checkout-relative defaults apply unchanged, so
@@ -169,12 +196,21 @@ python main/training/train_backbone.py --help-config
 ```
 
 Then override what you need. Nested fields use dots, values are coerced to the declared
-type, lists and tuples are parsed with `ast.literal_eval`, and an unrecognised flag stops
-the run instead of being ignored. Besides the config fields there is a fixed set of
-bootstrap flags, listed as `ConfigCli.BOOTSTRAP_FLAGS` in `tools/runtime/config_cli.py`:
-`--help-config`, `--detach` (alias `--nohup`), `--gpu`, `--trial`, `--worker`,
-`--resume`, `--model`, `--n-trials`, `--study-name`, `--storage-url`, `--run-tag`,
-`--run-dir`, `--run-name`, `--fold`, `--split`.
+type, and an unrecognised flag stops the run instead of being ignored. Every override
+takes exactly one value. Lists and tuples are parsed with `ast.literal_eval` or as
+comma-separated tokens, so a list is written `--seeds 0,1,2` or `--seeds "[0, 1, 2]"`;
+`--seeds 0 1 2` is refused with a message naming the option. Besides the config fields
+there is a fixed set of bootstrap flags, listed as `ConfigCli.BOOTSTRAP_FLAGS` in
+`tools/runtime/config_cli.py`: `--help-config`, `--detach` (alias `--nohup`), `--gpu`,
+`--trial`, `--worker`, `--resume`, `--model`, `--n-trials`, `--study-name`,
+`--storage-url`, `--run-tag`, `--run-dir`, `--run-name`, `--fold`, `--split`.
+
+`Logger` (`tools/monitoring/logger.py`) appends to an existing log of the same name by
+default, so relaunching an entry adds to its earlier log. A run's log opens with the
+host, the process id, the command line and, for a `--detach` launch, the output file,
+followed by a Configuration sources table: whether a machine profile applied, every
+default it rewrote and every command-line override. A run that ends on an exception
+closes with an `ABORTED` banner and the traceback instead of `END`.
 
 To change a default for good, edit the dataclass under `configuration/`. Never put
 values in the `main/` scripts.
@@ -220,18 +256,65 @@ carries its own settings:
 `resunet-set_pred-hungarian-K_2-hv-AB-param_l1_1-cosine_curve_0.05_20260805_004432`. It
 holds `best_model.pt`, `last.pt`, `complete.json`, TensorBoard events, the resolved entry
 config and model documentation under `docs/`, and the crop, patch, normalization and
-metric metadata under `meta/`. Every run also records its provenance: an environment
-snapshot (library versions, CUDA stack, GPUs) and sha256 hashes of the dataset
-artifacts under `meta/`, plus the git state under `docs/`, including the full diff
-whenever the working tree was dirty. With `--training.use_swa True` the last quarter
-of training (configurable) is additionally averaged into `swa_model.pt`, scored on
+metric metadata under `meta/`. With `--training.use_swa True` the last quarter of
+training (configurable) is additionally averaged into `swa_model.pt`, scored on
 validation with refreshed batch-norm statistics.
+
+Every run also records its provenance. `meta/` holds an environment snapshot (library
+versions, CUDA stack, GPUs) and sha256 hashes of the dataset artifacts. `docs/` holds the
+git state, with the diff of tracked changes whenever the working tree was dirty, and
+`docs/provenance.json` beside the resolved entry config: the commit, host, Python,
+conda environment, machine profile, numpy, torch and CUDA versions, and where every
+non-default setting came from. `complete.json` and `meta/run_summary.json` carry the
+same provenance block, and the run summary also records the configured and the effective
+patch geometry, which differ when a square-only backbone squares the patch.
 
 Resume is driven by `complete.json`. `tools/training/trainer.py` writes the marker when
 training finishes, and with `--resume` (on by default) `UnitResume` reuses a run
 directory that has one and deletes a run directory that does not before restarting it.
+A reused run's recorded configuration and commit are compared with the launch, and every
+leaf that differs is warned about. The deletion warning says what was discarded,
+including the size and save time of a `last.pt` that `--training.resume` could have
+continued. With `--resume false` an unfinished attempt's checkpoints, trainer state,
+inference stamps and event files are deleted when training starts and its logs are
+kept, while a completed unit is refused rather than retrained in place: the training run
+will not start in its directory, and the benchmark and cross-validation workers exit
+naming it. Relaunch under a new run tag, or delete the directory, to train it again.
+
 `--training.resume` is the other kind of resume: it continues an unfinished run from
-`last.pt` instead of deleting it.
+`last.pt` instead of deleting it. `last.pt` records the batch geometry (micro-batch,
+accumulation steps, rank count and learning-rate scale), and a resume under other values,
+or from a state saved before the geometry was recorded, is refused. A state that had
+already stopped early goes straight to the final checkpoint, the best-weight restore and
+the test evaluation.
+
+The pre-run probes `pretrain.find_batch_size`, `pretrain.tune_loader` and
+`pretrain.find_lr` each switch their own flag off once they have run, so the resolved
+entry config records the measured batch size, loader settings and learning-rate
+multiplier instead of the request to measure them. They are refused on a run that
+resumes from `last.pt`. The evidence stays in the run under `pretrain/`:
+`lr_range_test.json` with the settings, every rung and the selection statistics, and
+`loader_sweep.csv`. The preflight warns when the GPU is already occupied (a CUDA context
+above 1.5 GB) or when the dataset size lowers the batch ceiling.
+
+The loss refuses a curriculum stage with no enabled term or with weights summing to zero,
+warns about enabled terms of weight zero, and refuses a z axis with fewer than two
+samples. The normalization fit refuses a non-finite location or scale. `prior_bias_init`
+(on `train_backbone` and `cross_validate`, off by default) starts the conv head's biases
+at the training-label prior in normalized output space and writes
+`meta/head_prior_bias.json`; it needs `--backbone_head conv`. Attention backbones run
+torch's fused `scaled_dot_product_attention`; only the attention-capture analysis
+switches to the explicit path that exposes the weights.
+
+The autoencoder and JEPA entries follow the same resume and provenance rules. A JEPA run
+couples only finished autoencoder runs (a `complete.json` in the run directory), records
+each imported checkpoint and its dataset provenance in `meta/coupled_autoencoders.json`,
+and refuses an image autoencoder trained on another input selection or other secondary
+labels; a different preprocessing run, parameter run or input statistics only warn. The
+JEPA curriculum swap resets the best-checkpoint baseline, so `best_model.pt` comes from
+the main loss stage. The profile autoencoder takes `pixel_subsample` in (0, 1] and
+`keep_empty_frac` in [0, 1], and refuses a training split whose sampled curves are
+near-constant.
 
 ### Finishing a run that broke
 
@@ -270,16 +353,36 @@ same choice beside `resume_from` on the benchmark, cross-validation and tuning f
 its `resume_from` picker lists the runs under the log directory that recorded a
 configuration.
 
+A benchmark or cross-validation run whose units partly failed still writes its reports,
+then logs the unit totals and each failed unit and exits non-zero
+(`Partial: k of n units failed`). An exception marks the stage it ended in, and the
+pipeline, as failed in `pipeline/state.json`. Every launch appends a record to
+`pipeline/launches.jsonl` (start time, stage, resume source, provenance); a relaunch by
+`run_tag` whose settings differ from the recording logs the changed leaves and moves the
+earlier recording to `pipeline/config_history/`.
+
+Resumed seed and trial sweeps of the training entries re-infer every reused unit that
+lacks an inference for the split, sort unfinished units into resumable (a `last.pt` is
+there) and restarting, and keep the earlier launches' entries in their training and
+inference results files. A trial sweep or multi-seed fan-out with the loss-scale probe
+set to exit after its report (`probe.enabled` with `probe.exit_after`) is refused,
+since every unit would stop with nothing trained.
+
 Inference works the same way from the other side. Point an inference entry at any path
-and it scores every run of its family found below it, skipping the ones already scored
-on the requested split:
+and it scores every run of its family found below it:
 
 ```bash
 python main/inference/infer_backbone.py --runs_dir runs/sequences/plan/augmentation
 ```
 
-A cross-validation fold is scored over the row block its manifest records. To re-score
-everything, pass `--skip_completed false`.
+A run is skipped only when a stamp on the requested split records the requested
+`checkpoint_name`; a stamp scored with another checkpoint does not count. The backbone
+and dual entries score a split stored as several disjoint regions region by region, one
+stamp per region named `<stamp>_region<i>`, and count the split as scored only when
+every region has its stamp. The scheduler names the stamps itself, so leave
+`output_subdir` unset and `run_directory` at `.` in the family block; it refuses either
+when set. A cross-validation fold is scored over the row block its manifest records. To
+re-score everything, pass `--skip_completed false`.
 
 Mailing the results takes one path as well:
 
@@ -288,10 +391,18 @@ python main/analysis/mail_experiment_reports.py --experiments_dir runs/sequences
 ```
 
 Every experiment found below the path is mailed as one message: a sweep of trial runs, a
-cross-validation run, a benchmark run, or a workspace holding several of them. The mailer
-writes the seed-aggregate report of a seeded trial, the trial comparison, and a
-cross-validation run's cross-fold report when they are missing, then attaches them
-together with the configuration the experiment ran with.
+cross-validation run, a benchmark run, or a workspace holding several of them. The scan
+continues below a sweep, so a runs tree that holds standalone runs beside sweeps,
+cross-validation and benchmark runs mails all of them. The mailer writes the
+seed-aggregate report of a seeded trial, the trial comparison, and a cross-validation
+run's cross-fold report when they are missing, then attaches them together with the
+configuration the experiment ran with. Each trial is mailed from its newest completed
+inference on the split its comparison scores: `test` for sweeps and cross-validation
+folds, the recorded `inference.split` for a benchmark run. A trial without one stops the
+mailing with a message naming the splits it does have. Reused aggregates, comparisons
+and cross-fold reports are named in the log, with a warning when a run completed an
+inference after them, when they miss a trial or seed, or when they scored another split;
+`--regenerate_reports true` rewrites them.
 
 To read a run rather than compare it, mail the run itself:
 
@@ -304,7 +415,14 @@ attachment cap: the configuration and metadata it recorded, its logs and docs, t
 TensorBoard events, and every report and figure its inference wrote. What is too heavy to
 mail is named by `run_excluded_paths`, `run_excluded_suffixes` and `run_max_file_mb`,
 whose defaults leave the checkpoints, the reconstructed cubes and the walk animations
-behind. Unpacking every volume of a run into one directory rebuilds its tree.
+behind; a warning lists the files the size cap left out, largest first. Unpacking every
+volume of a run into one directory rebuilds its tree.
+
+Every mailing logs its effective settings and writes `mail_<target>_<tag>.json` into
+`staging_dir` with each source's subjects, staged paths and counts. With `--dry_run true`
+everything is staged and the log says nothing was sent. `smtp_timeout_s` (300 s) bounds
+the SMTP connect, login and upload, and each message is logged with its encoded size and
+send time.
 
 ## 6. Run inference
 
@@ -314,15 +432,33 @@ python main/inference/infer_backbone.py --runs_dir runs/backbone --gpus "[0]"
 
 The entry walks `--runs_dir` at any depth, finds every backbone run under it and
 dispatches one inference job per run across the GPU pool. Each job writes an
-`inference/<timestamp>/` directory into the run: `metrics.json`, `report.md`, the
-stitched prediction cubes under `cubes/`, plus figures, animations and its own
-`complete.json`. Those directories are what the console's results, leaderboard, cube,
-triage and autopsy tabs read.
+`inference/<timestamp>/` directory into the run: `metrics.json`, `report.md`,
+`inference_config.json` with the resolved settings and region override, the stitched
+prediction cubes under `cubes/`, plus figures, animations and its own `complete.json`,
+which records the scored checkpoint (name, epoch, best epoch and best validation loss).
+`metrics.json` carries the checkpoint name, its one-based epoch, the code commit and the
+activity threshold it scored with. Those directories are what the console's results,
+leaderboard, cube, triage and autopsy tabs read.
 
 `--inference.device` defaults to `cuda` and is used as given, so without a GPU the job
 fails with `No CUDA GPUs are available`. Pass `--inference.device cpu` on a machine
 without one. Add `--inference.save_animations False` if you do not want to wait for the
-GIFs, which are the slowest part of a small run.
+GIFs, which are the slowest part of a small run. `--inference.gif_duration` sets the
+total playback length of each GIF and overrides `gif_fps`, and
+`--inference.gif_separate_panels True` also writes each cube as its own single-panel GIF;
+the benchmark's inference block has both fields too.
+
+The loader refuses a checkpoint whose z axis differs from the dataset's and logs the
+checkpoint epoch, both axes, the region and where the region came from. The metrics count
+what they leave out: pixel R² is NaN where the reference profile is constant and those
+pixels are counted, pixels with an empty ground truth are counted and left out of the
+cosine and peak errors (the `*_nonempty` statistics), the SSIM means record how many
+slices they scored, and the normalization audit and the stratification tables record
+non-finite inputs and dropped bins.
+
+`scripts/export_slice_ssim.py <metrics.json>...` saves the per-slice SSIM of a stamp as
+`ssim_gt_col.npy` and `ssim_gt_row.npy` beside each file, in slice order with
+non-finite slices kept as NaN.
 
 ## 7. Start the web console
 
@@ -349,6 +485,28 @@ launch rail. It also carries the run leaderboard, the results and cube browsers,
 lab, the model microscope and server telemetry; the browse roots of the results tabs
 start at the profile's data and runs roots. `webui/README.md` documents every tab.
 
+The console uses one dark theme. Every wait on the backend shows an animated orb, and
+every page carries a line figure that follows the view; on the Home board several of
+them draw live state (the watchdog, the GPU week schedule, the job queue, the GPU
+guard). The Home board is a set of cards for the resource watchdog, notifications, the
+GPU week, the CUDA devices, memory and storage, GPU activity, neighbour impact, host
+history, jobs, the GPU guard, the server log and a 30-day GPU heatmap. Its watchdog card
+holds the kill front end button, which stops every console server on the same project
+root; running and detached jobs survive it and are adopted again on the next start.
+
+On the launch pages the secondary-channel field is a picker filled from the selected
+dataset's channel labels, and the cross-validation and JEPA forms show the architecture
+fields of the model their training type selects. An ended job's console tile has a Retry
+button that reopens the launch page with the job's overrides, interpreter and finalize
+switches. A dropped job stream reconnects and replays from its last event. TensorBoard
+runs are picked from a folder tree, and a data-parallel job opens rank zero's run.
+Finalize steps chain onto blocks of plain sequences as well as isolated ones, and a
+tuning block records its best configuration as its verdict while the sequence board
+shows its study progress. The cube explorer reads cubes whole through a shared read
+pool, shows the load in bytes and keeps the last eight cubes in memory; the slice
+collector puts cuts in a basket that is saved as one folder and can be mailed
+(`REPORT_MAIL_PASSWORD`).
+
 The frontend pulls MathJax, GSAP, highlight.js and xterm.js from a CDN. Offline it still
 works, with plain text where the equations would be.
 
@@ -360,7 +518,52 @@ scene; `tune.py` drives an Optuna study; `tune_dataloader.py` searches batch siz
 worker count and prefetch depth for throughput. Patch-shape sweeps run through the
 training entries themselves as `trials_mode=patch`, alongside the other fan-out modes
 (curriculum, warmup, presence, pair, log-energy, secondary, input, context, reach, head,
-augmentation, clamp, stability, EMA, AMP and ablation ladders).
+augmentation, clamp, stability, EMA, AMP and ablation ladders). The patch sweep report
+follows the planned seeds and names the seeds a trial mean drops.
+
+`benchmark.py` refuses a `skip_models` entry that matches no model key and no backbone
+name, lists the selected and skipped models at the start, and checks its comparison
+against the planned units, warning about each missing or unplanned run. A resumed
+benchmark reuses a completed inference of the scored split. Comparison summaries record
+per model the seeds each metric mean used (`n_used`) and the seeds without metrics
+(`missing_seeds`), and the log warns when a mean covers fewer seeds than were trained.
+`cv_summary.json` records `fold_status`, the seeds each fold used, the missing seeds and
+the provenance; the cross-fold report shows Status and Seeds columns and names any
+metric that is non-finite in every fold. The cross-validation collector logs, per
+inference split, which fold runs hold a completed inference.
+
+`tune.py` samples three groups of settings, each with its own switch:
+`tuning.search_lr` (learning rates, weight decays and dropout), `tuning.search_arch`
+(architecture fields) and `tuning.search_batch` (a batch size from `tuning.batch_sizes`,
+with the optimizer rescaled by the training batch rule). JEPA studies search the
+architecture only. `plateau_patience` and `plateau_min_delta` stop a study whose best
+value has stalled, and `time_budget_h` stops workers from starting new trials; these may
+change on resume, the search groups may not. The workers of one model share its study
+in the run's SQLite database (`optuna.db`), whose heartbeat lets a dead worker's trials
+be named and failed when the study is next opened; `n_workers` may exceed the GPU count,
+and each worker is seeded and named by its index (`<model>/workerNN/`). Per model the
+run keeps `best_config.json` and `study_progress.json` (trial counts, best value, stall
+count, rate and time to the target). A trial's checkpoints are deleted once its
+objective is read unless `keep_trial_checkpoints` is on. `tuning_results.json` holds
+each model's status (`DONE`, `PARTIAL` or `FAILED`) and stop reason, and the entry exits
+non-zero when a reported model is not `DONE`. The `prepare` and `full` stages refuse an
+existing study without `--resume` or `resume_from`.
+
+`tune_dataloader.py` writes each sweep into its own
+`<output_dir>/<mode>/<model>_<timestamp>/` with its logs, figures, `resolved_config.json`
+and a `results.json` that carries the status, the settings, the provenance and the GPU it
+measured, found by its NVML UUID. `<mode>/work/` is scratch space the sweeps share.
+
+`main/processing/extract_params.py` fits parameter runs onto a dataset. It refuses a
+permutation whose `params/<run>` already exists unless `overwrite` is on, which deletes
+and refits it; refuses repeated sweep values, a dataset queued twice and modes that
+collide on one run name; refuses to fit when JAX sees no GPU; and raises when no pixel
+clears the activity threshold. Its `resources` block samples RAM, VRAM and shared memory
+around every group. Each parameter run records the commit, the fit outcome (active
+pixels, truncation, backend, devices, duration), where its z range came from and the
+share of slots that ended on the sigma and mean clamp bounds, and keeps its own copy of
+the group log under `logs/`. `analyze_param_extraction` writes `fit_metrics_summary.json`
+after every figure, so a run counts as analysed only once the analysis finished.
 
 Twenty-two analysis entries under `main/analysis/` read finished runs rather than
 producing them: trial, seed and run comparisons (the seed comparison also reports 95%
@@ -372,6 +575,19 @@ TensorBoard, result-table (CSV/LaTeX/markdown) and ONNX exporters. Each one take
 `--help-config` like everything else, and each one has a card in the console's
 Scripts tab.
 
+Every per-run analysis pass writes `analysis_config.json`, `analysis_provenance.json`
+and a completion marker into its output subdirectory and warns before it replaces an
+earlier result; a batch closes with a summary table of its runs. The seed comparison,
+the paper figure pack and the result-table export read only completed inference stamps
+of their `split` (default `test`), and `compare_runs.py` takes `--inference_split`. The
+seed comparison refuses seeds scored at different activity thresholds. Trial comparisons
+write `comparison_summary.json` and state their split, seed means show the seeds they
+cover as used/total, and leaderboards name the smallest p-value the seed count allows.
+The weight x-ray records its checkpoint entry, thresholds and provenance and reads
+transposed convolutions on their output axis; the activation x-ray records the leaf
+modules that are reused or never fire. `collect_reports.py` also gathers the reports of
+profile and image autoencoder runs, which stamp under `inference/<family>/`.
+
 ## Repository map
 
 ```
@@ -382,7 +598,7 @@ pipelines/      the pipelines behind the entry points
 models/         backbones, heads, blocks
 tools/          shared components (logger, training, metrics, monitoring)
 webui/          the control console, stdlib HTTP server plus static frontend
-tests/          about 5000 tests, self-contained
+tests/          about 6700 tests, self-contained
 scripts/        maintenance utilities and the setup wizard
 notes/          model and design notes, read by the console
 datasets/       generated example datasets, gitignored
@@ -395,7 +611,35 @@ logs/           entry-point logs and console state, gitignored
 `ADAPTING.md` is the guide for turning this into a real project: the dataset contract
 your importer has to emit, how to change the target specification and the loss to match
 it, where the normalization strategies live, the strict gates that will fail loudly if
-you add a config field or an entry point without wiring it up, and the rename checklist.
+you add a config field or an entry point without wiring it up, the rename checklist, and
+where the console's figures and palette live.
+
+## Artifacts from older checkouts
+
+Formats change without migration scripts; artifacts written by an older checkout are
+regenerated, not converted. These changes, made in October 2026, affect existing files:
+
+- Parameter runs need `activity_threshold` in `param_extraction_meta.json`. Generate or
+  extract them again.
+- Trainer states saved before `last.pt` recorded the batch geometry cannot be resumed,
+  and profile autoencoder runs whose `profile_dataset_config.json` lacks
+  `activity_threshold` cannot be loaded. Retrain them.
+- Inference stamps scored before `metrics.json` recorded the activity threshold are
+  refused by the seed comparison and by the cube explorer's parameter overlays, and
+  stamps without a completion marker are ignored by the split-aware readers
+  (`scripts/backfill_completion_markers.py` writes markers for older stamps). Metric
+  values moved too: slot activity is strict, scoring uses the label run's threshold
+  where it used a fixed 1e-4, and pixel R² is NaN at constant references. Run inference
+  again before comparing old and new runs. Attention backbones now run on the fused
+  attention kernel, so their GPU results differ from older runs at noise level.
+- Saved launch configs, config templates and sequence plans that set `amp_zero_thr`,
+  `active_amp_thr` or `col_chunk` are rejected by `ConfigCli`, and so is a command line
+  that writes a list as space-separated values.
+- Tuning runs from an older checkout cannot be resumed, because their recorded
+  configuration lacks the new study keys, and an older `tuning_results.json` is refused.
+  Start a new run tag.
+- The mailer's reused seed aggregates need `seed_runs` and `seed_inference` records in
+  their `metrics.json`; pass `--regenerate_reports true` to rewrite older ones.
 
 ## Housekeeping
 
@@ -407,3 +651,8 @@ ignored. Keep large run outputs outside the repository.
 `scripts/generate_state_dict_baseline.py` regenerates `tests/state_dict_baseline.json`,
 the file that guarantees old checkpoints still load. Run it only for an intentional
 architecture change, and commit it on its own.
+
+`scripts/rename_runs.py <roots>` plans the move of run directories from older naming
+generations to the current run tag scheme, and performs it with `--apply`. It ends each
+root and the whole run with an outcome totals table, and an abort logs how many groups
+were already applied.
