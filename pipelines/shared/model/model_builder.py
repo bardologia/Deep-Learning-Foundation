@@ -65,6 +65,33 @@ class ModelBuilder:
         return (side, side), (step, step)
 
     @staticmethod
+    def squaring_note(model_names, size, stride) -> str | None:
+        """Returns the warning a run logs when ``square_patch`` changes its patch geometry.
+
+        The squared patch changes the patch count and the spatial context the
+        backbone sees, while the entry configuration keeps recording the
+        configured rectangle, so a run that squares must say so in its log.
+
+        Args:
+            model_names : Backbone names participating in the run.
+            size        : Configured patch extent as (height, width) in pixels.
+            stride      : Configured patch stride as (height, width) in pixels.
+
+        Returns:
+            The warning naming the configured and the squared geometry and the
+            backbones requiring a square input, or None when the geometry stays
+            as configured.
+        """
+        squared_size, squared_stride = ModelBuilder.square_patch(model_names, size, stride)
+
+        if squared_size == tuple(size) and squared_stride == tuple(stride):
+            return None
+
+        square_only = [name for name in model_names if name in BACKBONE_IMAGE_SIZE_MODELS]
+
+        return f"patch {size[0]}x{size[1]} with stride {stride[0]}x{stride[1]} squared to {squared_size[0]}x{squared_size[1]} with stride {squared_stride[0]}x{squared_stride[1]}: {', '.join(square_only)} need a square input. The patch count and spatial context differ from the configured geometry, which docs/resolved_entry_config.json still records"
+
+    @staticmethod
     def split_key(model_key: str) -> tuple[str, str]:
         """Splits a model key into (backbone name, head), defaulting to ``conv``."""
         name, sep, head = model_key.partition("-")
