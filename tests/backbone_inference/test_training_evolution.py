@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import shutil
+
 import numpy as np
 import pytest
 import torch
 
 from pipelines.backbone.inference.analysis.training_evolution import EvolutionFrames, TrainingEvolutionRun
-from configuration.diagnostics                       import TrainingEvolutionConfig
+from configuration.diagnostics                                import TrainingEvolutionConfig
 
-from tests.conftest import SilentLogger
+from tests.backbone_inference._helpers import StageLogger, build_run_directory
+from tests.conftest                    import SilentLogger
 
 
 def test_evolution_frame_renders_an_image():
@@ -47,3 +50,20 @@ def test_snapshots_are_discovered_in_epoch_order(tmp_path):
     snapshots = run._snapshots()
 
     assert [path.name for path in snapshots] == ["epoch_0002.pt", "epoch_0010.pt", "epoch_0030.pt"]
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_evolution_pass_announces_tracks_and_times_replay_and_frames(tmp_path, test_data_dir, params_dir):
+    """Replaying two snapshots at two probe pixels announces the snapshot range, advances one bar per snapshot and one per frame, and times both stages."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+    (run_dir / "checkpoints").mkdir()
+    for epoch in (1, 2):
+        shutil.copy(run_dir / "best_model.pt", run_dir / "checkpoints" / f"epoch_{epoch:04d}.pt")
+
+    logger = StageLogger()
+    TrainingEvolutionRun(run_dir, TrainingEvolutionConfig(window=32, n_row_probes=2, n_col_probes=1), logger).run()
+
+    assert ("info", f"{run_dir.name}: replaying 2 snapshots (epoch_0001 .. epoch_0002) at 2 probe pixels, then rendering 4 frames") in logger.messages
+    assert logger.totals == [2, 4] and logger.advances == 6
+    assert logger.timers == ["Training evolution: snapshot replay (2 snapshots)", "Training evolution: frame rendering (4 frames)"]
