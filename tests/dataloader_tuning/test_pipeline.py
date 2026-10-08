@@ -1,8 +1,11 @@
 """Tests for the dataloader tuning pipeline's spec planning and selection logic.
 
-Covers clamping of worker counts to the available cores, the cartesian main
-sweep, the prefetch/pin refinement sweep, assembly of the final loader config,
-and the end-to-end run that picks the highest-throughput configuration.
+Covers the per-sweep output directory, the measured device and feed target,
+clamping of worker counts to the available cores, the cartesian main sweep,
+the prefetch/pin refinement sweep and its skip for a 0-worker pick, assembly
+of the final loader config, the numbered sweep lines and closing summary, and
+the end-to-end run that picks the highest-throughput configuration and records
+partial, failed and complete results.
 """
 
 from __future__ import annotations
