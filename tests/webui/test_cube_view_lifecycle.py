@@ -16,7 +16,9 @@ stamp's saved figures once per cube, drop a listing that lands after the cube ch
 list the new cube's figures when one loads while the view is open. A pixel locked in the cuts,
 the parameter map or the metric map becomes the one shared focus the other views adopt. The
 mixture overlay must rebuild the Gaussian mixture from the active slots at the profiled pixel,
-scale it with the profiles, and never draw the slots of another pixel or cube.
+scale it with the profiles, and never draw the slots of another pixel or cube. A shift-drag on
+the metric map must ask for the statistics of the rectangle it covers, swallow the click that
+ends it but no later one, and show only the answer for the latest rectangle of the current cube.
 """
 
 from __future__ import annotations
@@ -310,6 +312,69 @@ def test_opening_the_cube_at_a_pixel_moves_the_focus_without_locking_the_previou
 def test_params_here_button_shows_only_for_cubes_with_parameters():
     """The cuts bar offers the Params here jump only when the loaded cube carries Gaussian parameters."""
     assert _check("focus")["button"] == {"withParams": True, "withoutParams": False}
+
+
+@NEEDS_JS
+def test_shift_drag_paints_the_rectangle_and_asks_for_the_rows_and_cols_it_covers():
+    """A shift-drag paints the dashed rectangle and requests the region spanning the pixels under it."""
+    observed = _check("region")
+
+    assert observed["painted"]["hidden"] is False and observed["painted"]["prevented"] == 1
+    assert observed["painted"]["style"]["top"] == "12.5%" and observed["painted"]["style"]["height"] == "75%"
+    assert observed["request"] == {"bounds": [0, 3, 1, 4], "id": "cube"}
+    assert observed["clipped"] == [0, 3, 0, 5]
+
+
+@NEEDS_JS
+def test_region_answer_fills_the_table_and_draws_one_mean_profile_per_source():
+    """The region table lists each layer's region and scene means with a dash for a missing one, and each source draws its mean profile."""
+    shown = _check("region")["shown"]
+
+    assert shown["hint"] == "rows 0–3 · cols 1–4 · 16 pixels · shift-drag again to replace"
+    assert "<tr><td>R2</td><td>0.5</td><td>0.25</td></tr>" in shown["table"]
+    assert "<tr><td>label R2</td><td>–</td><td>0.75</td></tr>" in shown["table"]
+    assert shown["wrap"] and shown["strokes"] == ["#a3c0ff", "#34d399"]
+
+
+@NEEDS_JS
+def test_the_click_ending_a_drag_and_a_shift_click_lock_no_pixel():
+    """The click that ends a drag is swallowed, and a shift-click too short to span a region neither asks nor locks a pixel."""
+    observed = _check("region")
+
+    assert observed["swallowed"] == {"picked": None, "suppress": False, "asked": 0}
+    assert observed["tiny"] == {"rect": True, "asked": 0, "picked": None}
+
+
+@NEEDS_JS
+def test_a_drag_ending_off_the_map_does_not_swallow_the_next_click():
+    """After a drag released outside the map, whose click never reaches it, the next plain click still locks its pixel."""
+    assert _check("region")["offMap"] == {"picked": [2, 3]}
+
+
+@NEEDS_JS
+def test_region_answers_for_an_earlier_rectangle_or_another_cube_are_dropped():
+    """Only the latest rectangle's statistics are shown, an answer landing after the cube changed is dropped, and a refusal is toasted."""
+    observed = _check("region")
+
+    assert observed["late"] == "rows 2–3 · cols 2–3 · 4 pixels · shift-drag again to replace"
+    assert observed["replaced"] == observed["late"]
+    assert observed["toasts"] == [{"text": "cube not loaded", "kind": "error"}]
+
+
+@NEEDS_JS
+def test_configuring_the_metric_view_clears_the_region():
+    """Loading a cube hides the rectangle and the profile chart, empties the table and restores the hint."""
+    assert _check("region")["reset"] == {"rect": True, "table": "", "wrap": True, "hint": "Shift-drag a rectangle on the map to compare it against the scene."}
+
+
+def test_region_panel_is_on_the_page_and_wired_to_the_metric_view():
+    """The metric map carries the rectangle and the side panel the region hint, table and profile chart, all handed to the metric view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    for ref, element in (("rect", "cube-metric-rect"), ("regionHint", "cube-region-hint"), ("regionTab", "cube-region-table"), ("regionWrap", "cube-region-prof-wrap"), ("regionProf", "cube-region-prof")):
+        assert html.count(f'id="{element}"') == 1, element
+        assert re.search(rf'{ref}\s*: document\.getElementById\("{element}"\)', app), ref
 
 
 def _mixture(z: float, slots: list) -> float:

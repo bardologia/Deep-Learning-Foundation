@@ -1466,6 +1466,74 @@ class CubeExplorer:
             return None
         return data, primary, clim
 
+    REGION_PROFILE_SOURCES = ("pred", "predb", "gt")
+
+    def region_metrics(self, cube_id: str, row0: int, row1: int, col0: int, col1: int) -> dict:
+        """Compares one rectangular region of the loaded cube against the whole scene.
+
+        The bounds are clipped into the cube and may come in either order. Mean
+        profiles are built for the curve sources in REGION_PROFILE_SOURCES, which
+        share the metric z axis; the full reference cube lives on bin indices and
+        is left out.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            row0    : First row of the region, clipped into range.
+            row1    : Last row of the region, inclusive, clipped into range.
+            col0    : First column of the region, clipped into range.
+            col1    : Last column of the region, inclusive, clipped into range.
+
+        Returns:
+            Dict with ``ok``, the ordered bounds ``row0``, ``row1``, ``col0`` and ``col1``, the region's ``n_pixels``, one entry per metric map in ``rows`` with its ``key``, ``label`` and the ``region`` and ``scene`` means of its finite values (None when there is none), and per loaded profile source the region's mean z profile under ``profiles`` as ascending ``z_values`` and ``values``, or ``ok`` False when another cube is loaded.
+        """
+        with self.lock:
+            if self.loaded is None or self.loaded["id"] != cube_id:
+                return {"ok": False, "error": "cube not loaded"}
+            entries = self.loaded["entries"]
+            maps    = dict(self.loaded["metric_maps"])
+            meta    = self.loaded["meta"]
+
+        row0, row1 = sorted((int(np.clip(row0, 0, meta["n_rows"] - 1)), int(np.clip(row1, 0, meta["n_rows"] - 1))))
+        col0, col1 = sorted((int(np.clip(col0, 0, meta["n_cols"] - 1)), int(np.clip(col1, 0, meta["n_cols"] - 1))))
+
+        rows = []
+        for key in sorted(maps):
+            data   = maps[key]
+            region = data[row0:row1 + 1, col0:col1 + 1]
+            r_ok   = np.isfinite(region)
+            s_ok   = np.isfinite(data)
+            rows.append({
+                "key"    : key,
+                "label"  : self.METRIC_LABELS.get(key, key),
+                "region" : float(region[r_ok].mean()) if r_ok.any() else None,
+                "scene"  : float(data[s_ok].mean())   if s_ok.any() else None,
+            })
+
+        profiles = {}
+        for source in self.REGION_PROFILE_SOURCES:
+            entry = entries.get(source)
+            if entry is None:
+                continue
+
+            block = entry["cube"][:, row0:row1 + 1, col0:col1 + 1]
+            order = np.argsort(entry["z_axis"])
+            mean  = np.nanmean(block.reshape(block.shape[0], -1), axis=1)[order]
+            profiles[source] = {
+                "z_values" : np.asarray(entry["z_axis"])[order].tolist(),
+                "values"   : [float(v) if np.isfinite(v) else 0.0 for v in mean],
+            }
+
+        return {
+            "ok"       : True,
+            "row0"     : row0,
+            "row1"     : row1,
+            "col0"     : col0,
+            "col1"     : col1,
+            "n_pixels" : (row1 - row0 + 1) * (col1 - col0 + 1),
+            "rows"     : rows,
+            "profiles" : profiles,
+        }
+
     SELECTIVE_KEYS   = ("pixel_mse", "pixel_mae", "pixel_r2", "pixel_cos", "pixel_peak")
     HIGH_IS_CONFIDENT = ("pixel_r2", "pixel_cos", "label_r2")
 

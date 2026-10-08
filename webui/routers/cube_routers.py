@@ -37,6 +37,7 @@ class CubeRouter(SubRouter):
         table.add("GET", "/api/cubes/metric_at",    self.metric_at)
         table.add("GET", "/api/cubes/metric_hist",  self.metric_hist)
         table.add("GET", "/api/cubes/selective",    self.selective)
+        table.add("GET", "/api/cubes/region",       self.region)
         table.add("GET", "/api/cubes/points",       self.points)
         table.add("GET", "/api/cubes/aux_grid",     self.aux_grid)
         table.add("GET", "/api/cubes/transect",     self.transect)
@@ -132,6 +133,17 @@ class CubeRouter(SubRouter):
             cube_id  = exchange.text("id"),
             key      = exchange.text("key"),
             coverage = exchange.number("coverage", "1.0"),
+        )
+        exchange.send_result(result)
+
+    def region(self, exchange: HttpExchange) -> None:
+        """Answers with the metric means and mean profiles of one rectangular region against the whole scene."""
+        result = self.cubes.region_metrics(
+            cube_id = exchange.text("id"),
+            row0    = exchange.integer("row0"),
+            row1    = exchange.integer("row1"),
+            col0    = exchange.integer("col0"),
+            col1    = exchange.integer("col1"),
         )
         exchange.send_result(result)
 
