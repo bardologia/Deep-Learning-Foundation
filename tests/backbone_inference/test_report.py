@@ -256,6 +256,36 @@ def _report_for(tmp_path, metrics):
     )
 
 
+def test_report_includes_cube_ssim_section_only_when_the_sweep_ran(tmp_path):
+    """The raw-cube SSIM subsection appears exactly when its metric keys are present, with both forms."""
+    gm = _global_metrics()
+
+    assert _report_for(tmp_path, gm)._build_cube_ssim_headline() == []
+
+    sweep = {f"ssim_cube_{axis}_mean": 0.6 + 0.01 * i for i, axis in enumerate(("z", "col", "row"))}
+    sweep.update({f"ssim_cube_norm_{axis}_mean": 0.7 + 0.01 * i for i, axis in enumerate(("z", "col", "row"))})
+    text = "\n".join(_report_for(tmp_path, dict(gm, cube_ssim_status="computed", **sweep))._build_cube_ssim_headline())
+
+    assert "SSIM against the raw cube" in text
+    assert "0.61" in text
+    assert "0.72" in text
+    assert "Pred vs raw cube" in text
+    assert "Pred vs GT" not in text
+
+
+def test_report_routes_cube_ssim_keys_to_their_own_section():
+    """Raw-cube SSIM summaries get section 3.4c and their per-slice values stay out of the tables."""
+    assert _metric_group("ssim_cube_col_mean")    == "3.4c SSIM summaries (prediction vs raw cube)"
+    assert _metric_group("ssim_cube_norm_z_mean") == "3.4c SSIM summaries (prediction vs raw cube)"
+    assert _metric_group("cube_ssim_status")      == "3.1 Dataset statistics"
+
+    assert Report._is_per_slice_ssim("ssim_cube_col_3")        is True
+    assert Report._is_per_slice_ssim("ssim_cube_norm_row_0")   is True
+    assert Report._is_per_slice_ssim("ssim_cube_col_mean")     is False
+    assert Report._is_per_slice_ssim("ssim_cube_col_n_scored") is False
+
+    groups = dict(Report.group_metric_keys(["ssim_cube_z_mean", "ssim_cube_z_0", "ssim_cube_norm_z_1"]))
+    assert groups == {"3.4c SSIM summaries (prediction vs raw cube)": ["ssim_cube_z_mean"]}
 
 
 def _metric_group(key: str) -> str:

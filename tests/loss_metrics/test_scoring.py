@@ -93,6 +93,7 @@ def test_orientation_higher_tokens():
     """Verifies R-squared, SSIM, F1, accuracy and improvement names are higher-is-better."""
     assert MetricOrientation.direction("r2_curve")                   == "higher"
     assert MetricOrientation.direction("ssim_z")                     == "higher"
+    assert MetricOrientation.direction("ssim_cube_norm_col_mean")    == "higher"
     assert MetricOrientation.higher_is_better("matched_f1")          is True
     assert MetricOrientation.direction("count_acc_gt3")              == "higher"
     assert MetricOrientation.direction("count_acc_pred3")            == "higher"
@@ -137,7 +138,7 @@ def test_orientation_fractions_of_faults_are_lower():
 
 def test_orientation_descriptive_slot_and_audit_keys_are_neutral():
     """Verifies per-slot parameter statistics, normalization channel moments, coverage counts and config echoes are not ranked."""
-    for key in ("slot_1_amp_active_gt_mean", "slot_3_mu_global_pred_std", "slot_0_mu_gt_mean", "norm_in_ch0_mean", "clamp_n_active", "activity_threshold", "roughness_ratio", "checkpoint_epoch", "n_pixels_gt_empty", "gt_empty_frac", "strat_label_r2_spearman", "strat_gt_active_count_n_bins", "strat_label_r2_pixels_dropped", "ssim_gt_z_n_scored", "ssim_norm_col_n_nonfinite", "jepa_decoder_floor_frac", "jepa_decode_amplification"):
+    for key in ("slot_1_amp_active_gt_mean", "slot_3_mu_global_pred_std", "slot_0_mu_gt_mean", "norm_in_ch0_mean", "clamp_n_active", "activity_threshold", "roughness_ratio", "checkpoint_epoch", "n_pixels_gt_empty", "gt_empty_frac", "strat_label_r2_spearman", "strat_gt_active_count_n_bins", "strat_label_r2_pixels_dropped", "ssim_gt_z_n_scored", "ssim_norm_col_n_nonfinite", "ssim_cube_norm_row_n_nonfinite", "jepa_decoder_floor_frac", "jepa_decode_amplification"):
         assert MetricOrientation.direction(key) is None, key
 
 

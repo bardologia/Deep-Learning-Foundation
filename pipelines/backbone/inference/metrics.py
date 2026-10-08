@@ -2,10 +2,10 @@
 
 Holds the `Result` container that carries every cube and per-pixel map produced by an
 inference pass, the `Metrics` calculator that turns them into the flat metric
-dictionary written to metrics.json (curve errors, per-slice SSIM, per-z
-profiles, Gaussian-parameter statistics, the classical-baseline comparison and the
-label-quality split) and the `BoundedProcessPool` scheduler both
-SSIM sweeps run their per-slice workers on.
+dictionary written to metrics.json (curve errors, per-slice SSIM against the labels
+and, when requested, against the raw cube, per-z profiles, Gaussian-parameter
+statistics and the label-quality split) and the `BoundedProcessPool` scheduler every
+SSIM sweep runs its per-slice workers on.
 """
 
 from __future__ import annotations
@@ -1081,5 +1081,37 @@ class Metrics:
         if low.size:
             out["label_err_mean_low_r2"]    = float(low.mean())
             out["label_err_ratio_low_high"] = float(low.mean() / max(high.mean(), 1e-12))
+
+        return out
+
+    def cube_ssim(self, full_curves: np.ndarray, *, z_indices: Optional[np.ndarray], col_indices: Optional[np.ndarray], row_indices: Optional[np.ndarray]) -> Dict[str, float]:
+        """Scores the prediction against the raw cube with the standard slice SSIM.
+
+        The sweep is the one the headline SSIM runs against the Gaussian labels (window up
+        to 7, dynamic range from the reference slice, the same slice indices), with the
+        raw cube as the reference instead: once in raw intensity and once with every
+        profile of both cubes normalised to unit area.
+
+        Args:
+            full_curves : Raw cube of shape (n_z, rows, cols).
+            z_indices   : Z indices to score, or None to skip that axis.
+            col_indices : Column indices to score, or None to skip that axis.
+            row_indices : Row indices to score, or None to skip that axis.
+
+        Returns:
+            Scalar metrics keyed "ssim_cube_<axis>_<i>" and "ssim_cube_norm_<axis>_<i>" per slice, plus per axis the finite-value mean under "ssim_cube_<axis>_mean" and "ssim_cube_norm_<axis>_mean" with the counts of scored and non-finite slices beside it.
+
+        Raises:
+            ValueError : If the predicted cube and the raw cube disagree in shape.
+        """
+
+        pred = self.result.pred_curves
+
+        if pred.shape != full_curves.shape:
+            raise ValueError(f"Predicted curves {pred.shape} and raw cube {full_curves.shape} disagree in shape; the cube SSIM needs both on the same region and z axis")
+
+        out: Dict[str, float] = {}
+        out.update(self._slice_ssim(pred, full_curves, z_indices, col_indices, row_indices, prefix="cube"))
+        out.update(self._slice_ssim(self.result.pred_unit_area(), ProfileNormalizer.unit_area(full_curves), z_indices, col_indices, row_indices, prefix="cube_norm"))
 
         return out
