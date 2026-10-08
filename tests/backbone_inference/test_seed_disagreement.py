@@ -14,7 +14,8 @@ from pipelines.backbone.inference.analysis.seed_comparison   import SeedComparis
 from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps
 from tools.runtime.completion                                import CompletionMarker
 
-from tests.conftest import SilentLogger
+from tests.backbone_inference._helpers import StageLogger
+from tests.conftest                    import SilentLogger
 
 
 N_Z, N_ROWS, N_COLS = 4, 3, 2
@@ -78,7 +79,7 @@ def _seed_run(group: Path, name: str, pred_curves: np.ndarray, params_pred: np.n
     return run_dir
 
 
-def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: float = 1e-4) -> SeedDisagreementMaps:
+def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: float = 1e-4, logger=None) -> SeedDisagreementMaps:
     """Returns a seed disagreement map builder over the given runs, inference stamp and activity threshold."""
     return SeedDisagreementMaps(
         group_dir        = group,
@@ -88,7 +89,7 @@ def _maps(group: Path, runs: list[Path], stamp: str = "stamp", active_amp_thr: f
         metrics_filename = "metrics.json",
         output_dir       = group / "inference" / "agg",
         active_amp_thr   = active_amp_thr,
-        logger           = SilentLogger(),
+        logger           = logger if logger is not None else SilentLogger(),
     )
 
 
@@ -126,6 +127,23 @@ def test_identical_seeds_give_zero_disagreement(tmp_path):
 
     assert result["summary"]["n_seeds"]               == 2
     assert result["summary"]["seed_std_profile_mean"] == pytest.approx(0.0)
+
+
+def test_stages_are_timed_and_the_profile_map_reports_progress(tmp_path):
+    """Every heavy stage runs under a timer, the profile map drives one bar over the z bins, and the summary is tabled."""
+    group  = tmp_path / "group"
+    curves = np.ones((N_Z, N_ROWS, N_COLS))
+    params = _params((1.0, 5.0, 2.0))
+    runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
+
+    logger = StageLogger()
+    _maps(group, runs, logger=logger).run()
+
+    assert logger.timers == ["Seed disagreement: profile map", "Seed disagreement: slot matching", "Seed disagreement: maps written", "Seed disagreement: risk-coverage"]
+    assert logger.totals == [N_Z]
+    assert logger.tables == ["Seed disagreement summary"]
+    assert ("info", f"Profile cubes of 2 seeds: {N_Z} z bins x {N_ROWS} rows x {N_COLS} cols") in logger.messages
+    assert ("info", "Seed disagreement over 2 seeds at activity threshold 0.0001") in logger.messages
 
 
 def test_known_offsets_give_the_sample_std(tmp_path):

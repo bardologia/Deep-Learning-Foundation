@@ -351,10 +351,15 @@ class SeedDisagreementMaps:
         curves             = self._open_cubes(self.PROFILE_CUBE)
         n_z, n_rows, n_cols = curves[0].shape
 
+        self.logger.info(f"Profile cubes of {len(curves)} seeds: {n_z} z bins x {n_rows} rows x {n_cols} cols")
+
         acc = np.zeros((n_rows, n_cols), dtype=np.float64)
-        for e in range(n_z):
-            stack = np.stack([np.asarray(cube[e], dtype=np.float64) for cube in curves])
-            acc  += stack.std(axis=0, ddof=1)
+        with self.logger.track(transient=True) as progress:
+            task = progress.add_task("[section]Seed disagreement: profile map[/section]", total=n_z)
+            for e in range(n_z):
+                stack = np.stack([np.asarray(cube[e], dtype=np.float64) for cube in curves])
+                acc  += stack.std(axis=0, ddof=1)
+                progress.advance(task)
 
         return (acc / n_z).astype(np.float32)
 
@@ -566,19 +571,28 @@ class SeedDisagreementMaps:
         self._validate_cubes()
         FileIO.ensure_dirs(self.figures_dir)
 
-        maps = {"seed_std_profile": self._profile_map()}
-        maps.update(self._param_maps())
+        self.logger.info(f"Seed disagreement over {len(self.seeds)} seeds at activity threshold {self.active_amp_thr:g}")
+
+        with self.logger.timer("Seed disagreement: profile map"):
+            maps = {"seed_std_profile": self._profile_map()}
+        with self.logger.timer("Seed disagreement: slot matching"):
+            maps.update(self._param_maps())
 
         offsets  = self._offsets()
         risk_map = self._mean_risk_map()
 
-        written  = self._write_maps(maps)
-        summary  = self._summarize(maps)
-        figures  = self._render_figures(maps, offsets)
-        coverage = self._risk_coverage(maps, risk_map, summary, figures)
+        with self.logger.timer("Seed disagreement: maps written"):
+            written = self._write_maps(maps)
+
+        summary = self._summarize(maps)
+        figures = self._render_figures(maps, offsets)
+
+        with self.logger.timer("Seed disagreement: risk-coverage"):
+            coverage = self._risk_coverage(maps, risk_map, summary, figures)
 
         self._flag_label_suspects(maps, risk_map, offsets, summary, figures)
 
+        self.logger.kv_table(summary, title="Seed disagreement summary")
         self.logger.info(f"Seed-disagreement maps written into {len(self.cube_dirs)} seed cube dirs: {sorted(maps)}")
 
         return {"summary": summary, "figures": figures, "maps_written": written, "risk_coverage": coverage}
