@@ -59,8 +59,8 @@ class BenchmarkClusterScheduler(SeedExpandedStage):
 
     @property
     def sweep_name(self) -> str:
-        """The cluster sweep name, derived from the benchmarked training type and the run tag so two concurrent runs never share job names or bundle manifests."""
-        return f"sweep_benchmark_{self.config.training_type}_{self.run_tag}"
+        """The cluster sweep name, derived from the benchmarked training type."""
+        return f"sweep_benchmark_{self.config.training_type}"
 
     @property
     def entry_flags(self) -> tuple:
