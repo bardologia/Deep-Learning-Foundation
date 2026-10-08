@@ -14,6 +14,7 @@ import numpy as np
 
 from tools.reporting.reporting import ReportAssets
 from tools.reporting.markdown  import MarkdownTable, ScalarFormatter
+from tools.runtime.git_state   import GitState
 from tools.runtime.run_tag     import RunTag
 
 
@@ -52,35 +53,41 @@ class ReportPayloadBuilder:
 
     @staticmethod
     def inference_config(cfg, run) -> Dict[str, Any]:
-        """Collects the stitching, plotting, animation and device settings of the run.
+        """Collects the checkpoint, scoring, stitching, plotting, animation and device settings of the run.
 
         Args:
             cfg : Inference configuration of the run.
             run : Loaded run, supplying the dataset batch size.
 
         Returns:
-            Serialisable configuration snapshot consumed by the report's configuration table.
+            Serialisable configuration snapshot consumed by the report's configuration table, including the settings that change the scores (render amplitude floor, curve extraction, region override) and the code commit the report was built with.
         """
         return {
-            "stitch_window"       : cfg.stitch_window,
-            "cube_dtype"          : cfg.cube_dtype,
-            "save_cubes"          : cfg.save_cubes,
-            "save_plots"          : cfg.save_plots,
-            "save_animations"     : cfg.save_animations,
-            "n_best_profiles"     : cfg.n_best_profiles,
-            "n_worst_profiles"    : cfg.n_worst_profiles,
-            "n_random_profiles"   : cfg.n_random_profiles,
-            "n_col_slices"        : cfg.n_col_slices,
-            "n_row_slices"        : cfg.n_row_slices,
-            "n_z_slices"          : cfg.n_z_slices,
-            "gif_axes"            : cfg.gif_axes,
-            "gif_fps"             : cfg.gif_fps,
-            "gif_duration"        : cfg.gif_duration,
-            "gif_max_frames"      : cfg.gif_max_frames,
-            "gif_separate_panels" : cfg.gif_separate_panels,
-            "device"              : cfg.device,
-            "batch_size"          : run.dataset_config.batch_size,
-            "num_workers"         : cfg.num_workers,
+            "checkpoint_name"         : cfg.checkpoint_name,
+            "region_override"         : cfg.region_override,
+            "render_amp_floor"        : cfg.render_amp_floor,
+            "extract_curve_params"    : cfg.extract_curve_params,
+            "extract_prominence_frac" : cfg.extract_prominence_frac,
+            "code_commit"             : GitState.commit(),
+            "stitch_window"           : cfg.stitch_window,
+            "cube_dtype"              : cfg.cube_dtype,
+            "save_cubes"              : cfg.save_cubes,
+            "save_plots"              : cfg.save_plots,
+            "save_animations"         : cfg.save_animations,
+            "n_best_profiles"         : cfg.n_best_profiles,
+            "n_worst_profiles"        : cfg.n_worst_profiles,
+            "n_random_profiles"       : cfg.n_random_profiles,
+            "n_col_slices"            : cfg.n_col_slices,
+            "n_row_slices"            : cfg.n_row_slices,
+            "n_z_slices"              : cfg.n_z_slices,
+            "gif_axes"                : cfg.gif_axes,
+            "gif_fps"                 : cfg.gif_fps,
+            "gif_duration"            : cfg.gif_duration,
+            "gif_max_frames"          : cfg.gif_max_frames,
+            "gif_separate_panels"     : cfg.gif_separate_panels,
+            "device"                  : cfg.device,
+            "batch_size"              : run.dataset_config.batch_size,
+            "num_workers"             : cfg.num_workers,
         }
 
 
@@ -241,33 +248,39 @@ class Report:
 
         out.append("\n### 1.4 Checkpoint\n")
         out.append(self._kv_table([
-            ("epoch",         ck["epoch"]),
-            ("best_epoch",    ck["best_epoch"]),
+            ("epoch",         ck["epoch"] + 1),
+            ("best_epoch",    ck["best_epoch"] + 1),
             ("best_val_loss", ck["best_val_loss"]),
         ]))
         out.append("")
 
         out.append("\n### 1.5 Inference configuration\n")
         out.append(self._kv_table([
-            ("device",              cfg["device"]),
-            ("batch_size",          cfg["batch_size"]),
-            ("num_workers",         cfg["num_workers"]),
-            ("stitch_window",       cfg["stitch_window"]),
-            ("cube_dtype",          cfg["cube_dtype"]),
-            ("save_cubes",          cfg["save_cubes"]),
-            ("save_plots",          cfg["save_plots"]),
-            ("save_animations",     cfg["save_animations"]),
-            ("n_best_profiles",     cfg["n_best_profiles"]),
-            ("n_worst_profiles",    cfg["n_worst_profiles"]),
-            ("n_random_profiles",   cfg["n_random_profiles"]),
-            ("n_col_slices",        cfg["n_col_slices"]),
-            ("n_row_slices",        cfg["n_row_slices"]),
-            ("n_z_slices",          cfg["n_z_slices"]),
-            ("gif_axes",            cfg["gif_axes"]),
-            ("gif_fps",             cfg["gif_fps"]),
-            ("gif_duration",        cfg["gif_duration"]),
-            ("gif_max_frames",      cfg["gif_max_frames"]),
-            ("gif_separate_panels", cfg["gif_separate_panels"]),
+            ("checkpoint_name",         cfg["checkpoint_name"]),
+            ("code_commit",             cfg["code_commit"]),
+            ("region_override",         cfg["region_override"]),
+            ("render_amp_floor",        cfg["render_amp_floor"]),
+            ("extract_curve_params",    cfg["extract_curve_params"]),
+            ("extract_prominence_frac", cfg["extract_prominence_frac"]),
+            ("device",                  cfg["device"]),
+            ("batch_size",              cfg["batch_size"]),
+            ("num_workers",             cfg["num_workers"]),
+            ("stitch_window",           cfg["stitch_window"]),
+            ("cube_dtype",              cfg["cube_dtype"]),
+            ("save_cubes",              cfg["save_cubes"]),
+            ("save_plots",              cfg["save_plots"]),
+            ("save_animations",         cfg["save_animations"]),
+            ("n_best_profiles",         cfg["n_best_profiles"]),
+            ("n_worst_profiles",        cfg["n_worst_profiles"]),
+            ("n_random_profiles",       cfg["n_random_profiles"]),
+            ("n_col_slices",            cfg["n_col_slices"]),
+            ("n_row_slices",            cfg["n_row_slices"]),
+            ("n_z_slices",              cfg["n_z_slices"]),
+            ("gif_axes",                cfg["gif_axes"]),
+            ("gif_fps",                 cfg["gif_fps"]),
+            ("gif_duration",            cfg["gif_duration"]),
+            ("gif_max_frames",          cfg["gif_max_frames"]),
+            ("gif_separate_panels",     cfg["gif_separate_panels"]),
         ]))
         out.append("")
 
@@ -651,7 +664,7 @@ class Report:
 
         return out
 
-    _METRIC_SKIP_KEYS = ("split", "split_region")
+    _METRIC_SKIP_KEYS = ("split", "split_region", "checkpoint_name", "checkpoint_epoch", "code_commit")
 
     _SLOT_ORGANIZATION_KEYS = frozenset({"slot_usage_entropy", "slot_mu_rank_diag", "slot_gt_alignment"})
 

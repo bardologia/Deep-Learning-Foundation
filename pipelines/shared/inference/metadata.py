@@ -11,7 +11,13 @@ from tools.runtime.run_tag             import RunTag
 
 
 class CompletedInference:
-    """Finds the completed inference stamps of a run for a given data split."""
+    """Finds the completed inference stamps of a run for a given data split.
+
+    Attributes:
+        CHECKPOINT_KEY : Completion-marker entry recording the checkpoint a stamp was scored with.
+    """
+
+    CHECKPOINT_KEY = "checkpoint"
 
     @staticmethod
     def stamps(base: Path, split: str) -> list[Path]:

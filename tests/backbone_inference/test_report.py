@@ -12,10 +12,11 @@ import numpy as np
 import pytest
 
 from tools.data.regions                   import CropRegion
-
-from tests.conftest import SilentLogger
 from pipelines.backbone.inference.metrics import Metrics, Result
 from pipelines.backbone.inference.report  import Report, ReportPayloadBuilder
+from tools.runtime.git_state              import GitState
+
+from tests.conftest import SilentLogger
 
 
 N_GAUSSIANS = 2
@@ -119,6 +120,8 @@ def _cfg_stub():
         save_animations=False, n_best_profiles=4, n_worst_profiles=4, n_random_profiles=4,
         n_col_slices=3, n_row_slices=3, n_z_slices=3, gif_axes=["col"],
         gif_fps=12, gif_duration=None, gif_max_frames=10, gif_separate_panels=False, device="cpu", num_workers=2,
+        checkpoint_name="last_model.pt", region_override=None, render_amp_floor=0.02, extract_curve_params=True,
+        extract_prominence_frac=0.05,
     )
 
 
@@ -144,6 +147,16 @@ def test_report_payload_inference_config_structure():
     assert payload["batch_size"]  == 8
     assert payload["gif_axes"]    == ["col"]
     assert "n_best_profiles" in payload
+
+
+def test_report_payload_inference_config_records_the_scoring_settings_and_commit():
+    """The inference-config payload names the checkpoint, the settings that change the scores and the code commit."""
+    payload = ReportPayloadBuilder.inference_config(_cfg_stub(), _run_stub())
+
+    assert payload["checkpoint_name"]  == "last_model.pt"
+    assert payload["render_amp_floor"] == 0.02
+    assert payload["region_override"] is None
+    assert payload["code_commit"]      == GitState.commit()
 
 
 def test_report_assemble_writes_markdown(tmp_path):
