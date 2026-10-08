@@ -65,14 +65,12 @@ class CrossValidationPipeline(StagedPipeline):
 
         A full run gets the same table from its training stage; this is the
         prepare stage's version, so a resume can be inspected before anything
-        is launched.
+        is launched. The stage itself warns about the run directories no unit
+        claims while it reconciles.
         """
         stage = FoldTrainingStage(config=self.config, entry_script=self.entry_script, run_tag=self.run_tag, logger=self.logger)
 
         stage.status_report().log(self.logger, "Unit status")
-
-        for directory in stage.unidentified:
-            self.logger.warning(f"{directory.relative_to(stage.stage_dir)}: run directory without a cross-validation manifest, left untouched")
 
     def _run_training(self) -> list[dict]:
         """Trains every fold x seed unit and records the stage status.

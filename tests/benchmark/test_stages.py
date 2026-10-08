@@ -254,6 +254,18 @@ def test_training_and_inference_stages_subclass_queued_bases(data_config, logger
     assert infer.worker_action == "infer"
 
 
+@pytest.mark.dataset
+def test_fresh_run_stages_report_no_unidentified_directory(data_config, logger_stub):
+    """Verifies a run without resume still exposes an empty unidentified list, which the prepare stage's unit status reads."""
+    data_config.resume = False
+
+    train = TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
+    infer = InferenceStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
+
+    assert train.unidentified == []
+    assert infer.unidentified == []
+
+
 def test_comparison_stage_run_invokes_collector_and_report(config, logger_stub, monkeypatch):
     """Verifies the comparison stage hands the collector the run directory and split, and forwards the reference model and seed dispersion to the report."""
     stage = ComparisonStage(config=config, run_tag="t", logger=logger_stub, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images)
@@ -385,3 +397,40 @@ def test_training_stage_hands_a_fresh_unit_its_own_name(data_config, logger_stub
     job = stage._job(f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7")
 
     assert job.command[job.command.index("--run-name") + 1] == f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7"
+
+
+@pytest.mark.dataset
+def test_resumed_stages_warn_about_run_directories_without_a_manifest(data_config, recording_logger):
+    """Both the training and the inference stage warn, while reconciling, about a run directory no planned unit's manifest claims."""
+    data_config.resume = True
+    data_config.seeds  = [7]
+
+    stray = data_config.paths.log_base_dir / "t" / "training" / "old_run" / "seed7"
+    (stray / "meta").mkdir(parents=True)
+
+    TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+    InferenceStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    warnings = [message for level, message in recording_logger.messages if level == "warning"]
+
+    assert any(message.startswith("TrainingStage: 1 run directory(ies)") for message in warnings)
+    assert any(message.startswith("InferenceStage: 1 run directory(ies)") for message in warnings)
+    assert warnings.count("old_run/seed7: claimed by no planned unit, ignored by the stage; the comparison still collects it beside the planned units") == 2
+
+
+@pytest.mark.dataset
+def test_a_manifestless_directory_at_a_planned_units_path_is_reported_as_that_units_run(data_config, recording_logger):
+    """A directory without a manifest sitting at a planned unit's own path is reported as the run the stage will use for that unit."""
+    from tools.runtime.completion import CompletionMarker
+
+    data_config.resume = True
+    data_config.seeds  = [7]
+
+    planned = f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7"
+    unit    = data_config.paths.log_base_dir / "t" / "training" / planned
+    (unit / "meta").mkdir(parents=True)
+    CompletionMarker.stamp(unit, {"stage": "training"})
+
+    TrainingStage(config=data_config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=recording_logger)
+
+    assert ("warning", f"{planned}: sits at planned unit '{planned}'s own path and holds a completion marker, so the stage uses it as that unit's completed run") in recording_logger.messages

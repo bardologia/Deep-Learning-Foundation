@@ -19,7 +19,7 @@ from pipelines.benchmark.results                   import BenchmarkSeedCollector
 from pipelines.shared.comparison.comparison_report import ComparisonReport
 from pipelines.benchmark.sizing                    import SizeMatcher, SizeMatchResult
 from pipelines.shared.model.model_builder          import ModelBuilder
-from pipelines.shared.orchestration.unit_manifest  import UnitLedger, UnitManifest
+from pipelines.shared.orchestration.unit_manifest  import UnidentifiedRuns, UnitLedger, UnitManifest
 from pipelines.shared.training.run_naming          import JepaNamingSpec, RunNaming
 from pipelines.shared.training.seed_sweep          import SeedSet
 from tools.orchestration                           import ExperimentStage, GpuJob, QueuedInferenceStage, QueuedTrainingStage
@@ -198,6 +198,10 @@ class SeedExpandedStage:
             directory = ledger.directory(self._identity(name))
             if directory is not None:
                 self.unit_dirs[name] = directory.relative_to(training_dir).as_posix()
+
+    def _log_unidentified(self) -> None:
+        """Warns, from a queued stage, about the run directories under its stage directory that no planned unit's manifest claims."""
+        UnidentifiedRuns(self.stage_dir, self.unidentified, BenchmarkUnitManifest.KIND, {item: self.unit_dir(item) for item in self.items}).log(self.logger, type(self).__name__)
 
     def _worker_argv(self, action: str, name: str) -> list[str]:
         """Returns the worker arguments running `action` for the unit named `name`."""
@@ -615,9 +619,11 @@ class TrainingStage(SeedExpandedStage, QueuedTrainingStage):
         """
         items = self._expand(config, models)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
+        self.unidentified = []
 
         if config.resume:
             self._reconcile(self.stage_dir)
+            self._log_unidentified()
 
 
 class InferenceStage(SeedExpandedStage, QueuedInferenceStage):
@@ -635,9 +641,11 @@ class InferenceStage(SeedExpandedStage, QueuedInferenceStage):
         """
         items = self._expand(config, models)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
+        self.unidentified = []
 
         if config.resume:
             self._reconcile(self.stage_dir)
+            self._log_unidentified()
 
 
 class ComparisonStage(ExperimentStage):
