@@ -208,13 +208,19 @@ def test_mu_is_nan_where_fewer_than_two_seeds_are_active(tmp_path):
         _seed_run(group, "seed1", curves, inactive, params_gt=active),
     ]
 
-    _maps(group, runs).run()
+    logger = StageLogger()
+    result = _maps(group, runs, logger=logger).run()
 
     mu  = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_mu.npy")
     amp = np.load(runs[0] / "inference" / "stamp" / "cubes" / "seed_std_amp.npy")
 
     assert np.all(np.isnan(mu))
     assert np.all(np.isnan(amp))
+    assert result["summary"]["seed_std_mu_finite_n"]         == 0
+    assert result["summary"]["seed_std_mu_finite_frac"]      == 0.0
+    assert result["summary"]["seed_std_mu_mean"]             is None
+    assert result["summary"]["seed_std_profile_finite_frac"] == 1.0
+    assert any(level == "warning" and message.startswith("seed_std_mu: statistics cover 0.0% of the region") for level, message in logger.messages)
 
 
 def test_swapped_slot_order_across_seeds_gives_zero_disagreement(tmp_path):
@@ -305,7 +311,9 @@ def test_comparison_writes_maps_figures_and_report_section(tmp_path):
     payload = json.loads((group / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
 
     assert payload["activity_threshold"] == 1e-4
+    assert payload["disagreement"]["seed_std_amp_finite_frac"] == 1.0
     assert "Seed disagreement maps" in text
+    assert f"100.0% ({N_ROWS * N_COLS} px)" in text
     assert "seed_std_profile"       in text
     assert "AURC" in text
     assert payload["disagreement"]["seed_std_amp_mean"] == pytest.approx(math.sqrt(0.5))

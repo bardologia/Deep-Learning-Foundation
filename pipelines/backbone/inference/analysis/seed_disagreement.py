@@ -253,6 +253,7 @@ class SeedDisagreementMaps:
     GT_CUBE      = "params_gt.npy"
     RISK_CUBE    = "pixel_mse.npy"
     MIN_ACTIVE   = 2
+    MIN_COVERAGE = 0.5
 
     MAP_TITLES = {
         "seed_std_profile" : "Across-seed std of the reconstructed profile (mean over z)",
@@ -455,17 +456,28 @@ class SeedDisagreementMaps:
         return written
 
     def _summarize(self, maps: dict[str, np.ndarray]) -> dict:
-        """Reduces each map to mean, median and 95th percentile over its finite pixels.
+        """Reduces each map to mean, median and 95th percentile over its finite pixels, recording the coverage.
+
+        The parameter maps are NaN wherever fewer than MIN_ACTIVE seeds matched a
+        slot, so each map's statistics come with the count and fraction of pixels
+        they describe, and a map covering less than MIN_COVERAGE of the region is
+        warned about.
 
         Args:
             maps : Mapping from map name to a map of shape (rows, cols).
 
         Returns:
-            The seed count plus per-map statistics, None where no pixel is finite.
+            The seed count plus, per map, the statistics (None where no pixel is
+            finite), the finite pixel count and the finite fraction of the region.
         """
         summary = {"n_seeds": len(self.seeds)}
         for name, data in maps.items():
-            finite = data[np.isfinite(data)]
+            finite   = data[np.isfinite(data)]
+            fraction = finite.size / data.size
+
+            summary[f"{name}_finite_n"]    = int(finite.size)
+            summary[f"{name}_finite_frac"] = float(fraction)
+
             if finite.size:
                 summary[f"{name}_mean"]   = float(finite.mean())
                 summary[f"{name}_median"] = float(np.median(finite))
@@ -474,6 +486,9 @@ class SeedDisagreementMaps:
                 summary[f"{name}_mean"]   = None
                 summary[f"{name}_median"] = None
                 summary[f"{name}_p95"]    = None
+
+            if fraction < self.MIN_COVERAGE:
+                self.logger.warning(f"{name}: statistics cover {fraction * 100.0:.1f}% of the region ({finite.size}/{data.size} pixels with at least {self.MIN_ACTIVE} matched seeds)")
 
         return summary
 
