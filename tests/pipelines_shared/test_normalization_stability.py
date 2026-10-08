@@ -198,3 +198,16 @@ def test_strategy_fit_rejects_empty_pool():
 
     loc, scale = ChannelStrategy(NormMethod.FIXED_DIV_PI).fit(np.array([]))
     assert scale == _pytest.approx(np.pi)
+
+
+def test_output_stats_reject_a_train_split_with_no_active_slot():
+    """Output statistics raise the empty-pool error when no train pixel exceeds the amplitude threshold, instead of saving a 1e-8 scale."""
+    from types import SimpleNamespace
+
+    from configuration.dataset                     import OutputConfig
+    from pipelines.backbone.dataset.stats_computer import StatsComputer
+
+    dataset = SimpleNamespace(gt_parameters=np.zeros((15, 4, 4)))
+
+    with pytest.raises(ValueError, match="empty sample pool"):
+        StatsComputer.compute_output_stats(dataset, n_gaussians=5, output_config=OutputConfig(), activity_threshold=AMP_THR)
