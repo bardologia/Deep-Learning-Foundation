@@ -681,6 +681,50 @@ def test_configuration_table_names_the_selected_and_skipped_models(tmp_path):
     assert rows["Mode"]    == "resume"
 
 
+def test_prepare_stage_refuses_an_existing_study_without_resume(tmp_path):
+    """A prepare launch that meets a study under its run tag without resuming stops before touching the study, as the full stage does."""
+    orch = _orchestrator(tmp_path, n_trials=2)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    orch.config.stage = "prepare"
+    orch._load_or_create_study("unet")
+
+    with pytest.raises(SystemExit, match="already has a study"):
+        orch.schedule()
+
+
+def test_prepare_model_says_whether_the_study_was_created_or_loaded(tmp_path):
+    """Opening a study logs its creation; opening it again warns with its trial counts that the launch tops it up."""
+    orch = _orchestrator(tmp_path, n_trials=4)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+
+    orch._prepare_model("unet")
+
+    assert orch.prepared == {"created": ["unet"], "loaded": []}
+    assert any("created study 'unet_testtag'" in message for message in orch.logger.of_kind("info"))
+
+    study = orch._load_or_create_study("unet")
+    study.add_trial(optuna.trial.create_trial(value=0.5, state=TrialState.COMPLETE, params={}, distributions={}))
+    study.add_trial(optuna.trial.create_trial(state=TrialState.PRUNED, params={}, distributions={}))
+
+    again        = _orchestrator(tmp_path, n_trials=4)
+    again.config = orch.config
+    again._prepare_model("unet")
+
+    assert again.prepared == {"created": [], "loaded": ["unet"]}
+    assert any("existing study 'unet_testtag' holds 1 complete, 1 pruned, 0 failed, 0 running of target 4; this launch tops it up" in message for message in again.logger.of_kind("warning"))
+
+
+def test_done_table_reports_prepared_studies_in_the_prepare_stage(tmp_path):
+    """The prepare stage closes with the studies it created and loaded and the storage they live in."""
+    orch = _orchestrator(tmp_path)
+    orch.config.stage = "prepare"
+    orch.prepared     = {"created": ["unet"], "loaded": ["resunet"]}
+
+    orch._log_done()
+
+    assert orch.logger.tables[-1] == ("Done", {"Studies prepared": 2, "Created": "unet", "Loaded": "resunet", "Storage": orch.storage_url})
+
+
 def test_compare_stage_reports_without_dispatching(tmp_path, monkeypatch):
     """The compare stage writes the reports of a study the workers filled without running more trials."""
     orch = _orchestrator(tmp_path, n_trials=2)
