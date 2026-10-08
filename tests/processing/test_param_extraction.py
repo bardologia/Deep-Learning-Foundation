@@ -348,6 +348,42 @@ def test_pipeline_run_records_the_fit_outcome_and_commit_in_the_metadata(tmp_pat
     assert meta["adam_steps"]         == entry.adam_steps
 
 
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_pipeline_run_samples_resources_into_the_group_log(tmp_path, monkeypatch):
+    """Verifies a configured resource monitor logs its startup table and peak summary into the group log around the fit."""
+    import time
+
+    from configuration.resources                               import ResourceConfig
+    from pipelines.processing.param_extraction                 import pipeline as pipeline_module
+    from pipelines.processing.param_extraction.sigma.extractor import ExtractionOutcome
+
+    class _SlowStubExtractor:
+        """Extractor stand-in that holds the fit open long enough for several resource samples."""
+
+        def __init__(self, **kwargs):
+            """Records a fixed outcome in place of fitting."""
+            self.outcome = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=0.3)
+
+        def run(self, cube_path, z_range):
+            """Waits for the sampler, then returns zero parameters for the single permutation."""
+            time.sleep(0.3)
+            return {("sigma", 1e-2): (np.zeros((9, 2, 4), dtype=np.float32), {"best_k_map": np.zeros((2, 4), dtype=np.int16)})}
+
+    _dataset_stub(tmp_path)
+    monkeypatch.setattr(pipeline_module, "ParameterExtractor", _SlowStubExtractor)
+
+    entry = ExtractParamsEntryConfig(fit_k_values=[3], fit_lambda_values=[1e-2], fit_modes=["sigma"])
+    group = ExtractionPlanResolver(entry, [tmp_path]).resolve()[0]
+
+    pipeline_module.ParamExtractionPipeline(group, resources=ResourceConfig(poll_interval_sec=0.05)).run()
+
+    log_text = (tmp_path / "params" / "logs" / "param_extraction_k3.log").read_text(encoding="utf-8")
+
+    assert ">>> [RESOURCE MONITOR]" in log_text
+    assert ">>> [RESOURCE MONITOR - PEAKS]" in log_text
+    assert log_text.index(">>> [RESOURCE MONITOR]") < log_text.index(">>> [PARAM EXTRACTION PIPELINE EXECUTION]") < log_text.index(">>> [RESOURCE MONITOR - PEAKS]")
+
+
 def test_inference_session_records_an_abort_in_the_run_log(tmp_path, monkeypatch):
     """Verifies a failing inference stage ends the run's own log with the error and an ABORTED banner."""
     from pipelines.processing.param_extraction import inference as inference_module

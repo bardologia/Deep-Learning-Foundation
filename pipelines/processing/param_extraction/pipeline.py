@@ -7,8 +7,9 @@ load and the peak initialisation across every fit mode and lambda permutation.
 from __future__ import annotations
 
 import gc
-from pathlib import Path
-from typing  import Dict, Tuple
+from contextlib import nullcontext
+from pathlib    import Path
+from typing     import Dict, Tuple
 
 import numpy as np
 from rich.markup import escape
@@ -19,6 +20,7 @@ from pipelines.processing.param_extraction.queue   import ExtractionGroup
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from tools.data.gaussians                          import GaussianSlotSorter
 from tools.monitoring.logger                       import Logger
+from tools.monitoring.resource_monitor             import ResourceMonitor
 
 
 class ParameterExtractor:
@@ -144,9 +146,10 @@ class ParamExtractionPipeline:
         parameter_io        : Writer for the parameter stacks and diagnostics.
         entry_config        : Resolved entry config persisted into every permutation's docs, or None.
         overwrite           : Whether a permutation may delete and replace an existing run in its output directory.
+        resources           : Resource-monitor configuration sampled while the group runs, or None to run unmonitored.
     """
 
-    def __init__(self, group: ExtractionGroup, logger: Logger | None = None, peak_initialiser: object | None = None, kernel_backend: tuple | None = None, entry_config=None, overwrite: bool = False) -> None:
+    def __init__(self, group: ExtractionGroup, logger: Logger | None = None, peak_initialiser: object | None = None, kernel_backend: tuple | None = None, entry_config=None, overwrite: bool = False, resources=None) -> None:
         """Discovers the group's cube and builds its extractor and writers.
 
         Args:
@@ -156,11 +159,13 @@ class ParamExtractionPipeline:
             kernel_backend   : Override for the fitting kernel backend, or None for the default.
             entry_config     : Optional resolved entry config persisted into every permutation's output directory so the sweep can be copied from the launch console.
             overwrite        : Whether a permutation may delete and replace an existing run in its output directory; off, saving over one raises.
+            resources        : Resource-monitor configuration block whose sampler runs while the group fits and saves, logging threshold warnings and peaks into the group log; None runs unmonitored.
         """
         self.group        = group
         self.shared       = group.shared
         self.entry_config = entry_config
         self.overwrite    = overwrite
+        self.resources    = resources
         self.cube_path    = self.shared.discover_cube_path()
         self.z_range      = self.shared.discover_z_range()
 
@@ -202,6 +207,13 @@ class ParamExtractionPipeline:
         self.logger.subsection(f"Fit modes       : {group.modes}")
         self.logger.subsection(f"Lambda values   : {group.lambda_values}")
         self.logger.subsection(f"Permutations    : {len(group.configs)}")
+
+    def _resource_monitor(self):
+        """Returns the resource monitor sampling this group, or a no-op context when none is configured."""
+        if self.resources is None:
+            return nullcontext()
+
+        return ResourceMonitor(config=self.resources, logger=self.logger)
 
     def _stage_extract(self) -> Dict[tuple, Tuple[np.ndarray, dict]]:
         """Fits every permutation in the group.
@@ -261,9 +273,12 @@ class ParamExtractionPipeline:
     def run(self) -> Dict[tuple, dict]:
         """Fits and saves every permutation in the group.
 
-        An exception ends the group log with the error, naming the dataset, the
-        k_max and how many permutations were saved, and an owned logger closes
-        with the ABORTED banner and the traceback in place of END.
+        The configured resource monitor samples host RAM, swap, /dev/shm, CPU
+        and GPU counters for the whole of the fit and the saves, so the group
+        log records threshold warnings and peaks. An exception ends the group
+        log with the error, naming the dataset, the k_max and how many
+        permutations were saved, and an owned logger closes with the ABORTED
+        banner and the traceback in place of END.
 
         Returns:
             Mapping from (mode, lambda) to that permutation's saved-artifact paths.
@@ -275,22 +290,23 @@ class ParamExtractionPipeline:
         error = None
 
         try:
-            self.logger.section("[Param Extraction Pipeline Execution]")
+            with self._resource_monitor():
+                self.logger.section("[Param Extraction Pipeline Execution]")
 
-            results = self._stage_extract()
-            record  = self._run_record()
+                results = self._stage_extract()
+                record  = self._run_record()
 
-            for key, (parameters_array, diagnostics) in results.items():
-                config     = self.group.configs[key]
-                self.logger.section(f"[Saving] {config.output_subdir_name}")
-                saved[key] = self._stage_save(config, parameters_array, diagnostics, record)
+                for key, (parameters_array, diagnostics) in results.items():
+                    config     = self.group.configs[key]
+                    self.logger.section(f"[Saving] {config.output_subdir_name}")
+                    saved[key] = self._stage_save(config, parameters_array, diagnostics, record)
 
-            del results
-            gc.collect()
+                del results
+                gc.collect()
 
-            self.logger.section("[Param Extraction Completed]")
+                self.logger.section("[Param Extraction Completed]")
 
-            return saved
+                return saved
         except BaseException as exc:
             error = exc
             self.logger.error(f"[Group Aborted] {self.group.processed_data_path.name} :: k{self.group.k_max} failed with {len(saved)} of {len(self.group.configs)} permutations saved: {type(exc).__name__}: {escape(str(exc))}")

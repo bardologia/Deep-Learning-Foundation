@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib     import Path
 from typing      import Optional, Tuple
 
+from configuration.resources import ResourceConfig
+
 
 @dataclass
 class FitConfig:
@@ -288,6 +290,7 @@ class ExtractParamsEntryConfig:
         col_batch_size         : Number of cols loaded per batch.
         gpu_pixel_batch_size   : Number of pixels fitted per GPU batch.
         parameter_workers      : CPU worker processes writing the parameter chunks.
+        resources              : Host and GPU resource sampling that runs beside every extraction group, warning near the RAM, VRAM and shared-memory thresholds and logging the peaks.
     """
 
     dataset_base_path : Path = Path("datasets")
@@ -314,6 +317,8 @@ class ExtractParamsEntryConfig:
     col_batch_size       : int  = 3500
     gpu_pixel_batch_size : int  = 24576
     parameter_workers    : int  = field(default_factory=lambda: min(64, os.cpu_count() or 16))
+
+    resources : ResourceConfig = field(default_factory=ResourceConfig)
 
 
 @dataclass
