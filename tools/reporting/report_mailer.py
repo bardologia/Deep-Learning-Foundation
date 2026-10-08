@@ -93,13 +93,15 @@ class Experiment:
     """One mailable experiment: a directory of trial runs, their comparison and the configuration they ran with.
 
     Attributes:
-        KIND       : Name of the experiment kind in tables and messages.
-        root       : Directory identifying the experiment.
-        trials_dir : Directory holding the trial runs.
-        selected   : Trials the experiment is restricted to, or None for every trial under the trials directory.
+        KIND         : Name of the experiment kind in tables and messages.
+        SEARCH_BELOW : Whether the scan goes on below the experiment: a sweep directory may hold further experiments beside its trials, a run's tree holds none.
+        root         : Directory identifying the experiment.
+        trials_dir   : Directory holding the trial runs.
+        selected     : Trials the experiment is restricted to, or None for every trial under the trials directory.
     """
 
-    KIND = "sweep"
+    KIND         = "sweep"
+    SEARCH_BELOW = True
 
     def __init__(self, root: Path, trials_dir: Path, selected: list[Path] | None = None) -> None:
         """Binds the experiment to its root and the directory holding its trials."""
@@ -203,7 +205,8 @@ class CrossValidationExperiment(Experiment):
         PIPELINE_FILES    : Paths inside the run describing what it ran with.
     """
 
-    KIND = "cross-validation"
+    KIND         = "cross-validation"
+    SEARCH_BELOW = False
 
     FOLDS_DIRNAME     = "folds"
     REPORTS_DIRNAME   = "reports"
@@ -283,7 +286,8 @@ class BenchmarkExperiment(Experiment):
         PIPELINE_FILES     : Paths inside the run describing what it ran with.
     """
 
-    KIND = "benchmark"
+    KIND         = "benchmark"
+    SEARCH_BELOW = False
 
     TRAINING_DIRNAME   = "training"
     COMPARISON_DIRNAME = "comparison"
@@ -336,10 +340,11 @@ class ExperimentScanner:
     The walk classifies every directory it reaches: a cross-validation run by
     its folds, a benchmark run by its pipeline and training directories, and
     any other directory with trial children as a sweep. It stops at each
-    experiment and at each trial, so run trees are never entered, and gives up
-    below ``MAX_DEPTH``. The root may also be a trial itself, which is then
-    mailed as an experiment of one, or the folds or training directory of a
-    run, which resolves to that run.
+    trial and at each run-shaped experiment, so run trees are never entered,
+    goes on below a sweep, whose standalone runs may sit beside further
+    sweeps and runs, and gives up below ``MAX_DEPTH``. The root may also be a
+    trial itself, which is then mailed as an experiment of one, or the folds
+    or training directory of a run, which resolves to that run.
 
     Attributes:
         root      : Directory the scan starts at, itself a candidate.
@@ -383,16 +388,15 @@ class ExperimentScanner:
         return root.relative_to(self.root).as_posix()
 
     def _walk(self, directory: Path, depth: int):
-        """Yields the experiments under a directory, stopping at each trial, each experiment and the depth cap."""
+        """Yields the experiments under a directory, stopping at each trial, at each run-shaped experiment and at the depth cap."""
         if TrialTree.is_trial(directory):
             return
 
         experiment = self.classify(directory)
         if experiment is not None:
             yield experiment
-            return
 
-        if depth >= self.MAX_DEPTH:
+        if (experiment is not None and not experiment.SEARCH_BELOW) or depth >= self.MAX_DEPTH:
             return
 
         for child in TrialTree.candidates(directory):
