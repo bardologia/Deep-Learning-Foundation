@@ -278,8 +278,8 @@ def test_fit_real_window_stats_finite_and_roundtrip(data_dir, derived, parameter
 
 @pytest.mark.dataset
 @pytest.mark.slow
-def test_compute_logs_the_effective_clamp(data_dir, derived, parameters, param_extraction_meta, tmp_path):
-    """The fitting log states the effective clamp, so a disabled clamp is visible on the training side."""
+def test_compute_logs_the_effective_clamp_and_the_pool_sizes(data_dir, derived, parameters, param_extraction_meta, tmp_path):
+    """The fitting log states the effective clamp, so a disabled clamp is visible on the training side, and the per-slot active pixel counts."""
     ds, ic, oc = _window_dataset(derived, parameters)
 
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_clamp", level="ERROR")
@@ -293,10 +293,29 @@ def test_compute_logs_the_effective_clamp(data_dir, derived, parameters, param_e
     text = (tmp_path / "logs" / "norm_clamp.log").read_text(encoding="utf-8")
 
     assert "Output clamp : disabled" in text
+    assert f"Active pixels per slot (train split, 1 region(s), amplitude > {float(param_extraction_meta['activity_threshold']):g})" in text
+    assert "of 576 pixels active" in text
 
 
-def test_output_stats_table_labels_the_clamp_column_clampable(tmp_path):
-    """The output table labels the clamp column clampable, since it describes the role, not the run's clamp setting."""
+def test_fit_input_rejects_a_nan_in_a_pool(logger_stub):
+    """A NaN or Inf in a sampled input pool is refused by group with its non-finite count instead of fitting NaN statistics."""
+    strategies = {"chan/mag": NormalizationConfig().strategy("input", "chan/mag")}
+    collected  = {"chan/mag": np.array([1.0, 2.0, np.nan, 3.0, np.inf])}
+
+    with pytest.raises(ValueError, match=r"Channel groups \['chan/mag'\] fit a non-finite location or scale; non-finite samples per pool: \{'chan/mag': 2\}"):
+        StatsComputer._fit_input(logger=logger_stub, group_keys=["chan/mag"], strategies=strategies, collected=collected)
+
+
+def test_fit_output_rejects_a_nan_in_a_role_pool():
+    """A NaN among the active amplitudes is refused by role instead of fitting NaN statistics."""
+    pools = {"out/amp": np.array([1.0, np.nan]), "out/mu": np.array([1.0, 2.0]), "out/sigma": np.array([1.0, 2.0])}
+
+    with pytest.raises(ValueError, match=r"Output roles \['out/amp'\] fit a non-finite location or scale; non-finite samples per pool: \{'out/amp': 1\}"):
+        StatsComputer._fit_output(logger=None, role_pools=pools, output_config=OutputConfig(), n_gaussians=1)
+
+
+def test_output_stats_table_reports_sample_counts_and_clampable_roles(tmp_path):
+    """The output table carries the pooled sample count per role and labels the clamp column clampable, since it describes the role, not the run's clamp setting."""
     logger = Logger(log_dir=str(tmp_path / "logs"), name="norm_table", level="ERROR")
     pools  = {"out/amp": np.array([1.0, 2.0, 3.0]), "out/mu": np.array([1.0, 2.0, 3.0]), "out/sigma": np.array([1.0, 2.0, 3.0])}
 
@@ -305,6 +324,7 @@ def test_output_stats_table_labels_the_clamp_column_clampable(tmp_path):
 
     text = (tmp_path / "logs" / "norm_table.log").read_text(encoding="utf-8")
 
+    assert "Samples" in text
     assert "clampable" in text
     assert "clamped" not in text.replace("clampable", "")
 
