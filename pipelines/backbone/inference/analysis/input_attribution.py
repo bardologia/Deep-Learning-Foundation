@@ -202,23 +202,27 @@ class GradientAttribution:
         self.model  = model
         self.window = int(window)
 
-    def channel_importance(self, windows: torch.Tensor) -> dict[str, dict[str, np.ndarray]]:
+    def channel_importance(self, windows: torch.Tensor) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, dict[str, int]]]:
         """Measures the share of output sensitivity carried by each input channel.
 
         For every probe window and every output family, the absolute gradient of the
         summed centre-pixel prediction is accumulated per channel and normalized into a
-        share, then averaged over the windows.
+        share, then averaged over the windows. A probe whose gradient mass is zero
+        carries no share and is left out of that family's mean; the kept probes are
+        counted.
 
         Args:
             windows : Probe windows of shape (probes, channels, window, window) in normalized input units.
 
         Returns:
-            Per output family ("amp", "mu", "sigma"), a dictionary with the mean gradient
-            "share", its "share_std" across probes and the "grad_x_input" share, each an
-            array of shape (channels,).
+            A pair of the attribution and the probe counts. Per output family ("amp",
+            "mu", "sigma"), the attribution holds the mean gradient "share", its
+            "share_std" across probes and the "grad_x_input" share, each an array of
+            shape (channels,), and the counts hold how many probes entered the "share"
+            and the "grad_x_input" mean.
 
         Raises:
-            ValueError : If the gradient vanishes for every output family, meaning the output does not depend on the input.
+            ValueError : If a gradient is non-finite, naming the probe and family, or if the gradient vanishes for every output family, meaning the output does not depend on the input.
         """
         half       = self.window // 2
         device     = ModelDevice.of(self.model)
@@ -237,6 +241,9 @@ class GradientAttribution:
 
                 grad_mass = grad.abs().sum(dim=(0, 2, 3)).cpu().numpy().astype(np.float64)
                 gxi_mass  = (grad * x).abs().sum(dim=(0, 2, 3)).detach().cpu().numpy().astype(np.float64)
+
+                if not (np.isfinite(grad_mass).all() and np.isfinite(gxi_mass).all()):
+                    raise ValueError(f"Input gradient of the predicted {family} at probe window {p} is non-finite; the checkpoint or the window is degenerate")
 
                 if grad_mass.sum() > 0.0:
                     grad_shares[family].append(grad_mass / grad_mass.sum())
@@ -260,7 +267,9 @@ class GradientAttribution:
 
             importance[family] = {"share": share, "share_std": spread, "grad_x_input": grad_x_input}
 
-        return importance
+        kept = {family: {"share": len(grad_shares[family]), "grad_x_input": len(gxi_shares[family])} for family in self.FAMILIES}
+
+        return importance, kept
 
     @classmethod
     def combined(cls, importance: dict[str, dict[str, np.ndarray]], key: str) -> np.ndarray:
@@ -476,21 +485,41 @@ class InputAttributionRun(AnalysisRun):
     SUMMARY_FILENAME = "input_attribution.json"
     REPORT_FILENAME  = "input_attribution.md"
 
-    def _gradient_importance(self, run) -> dict[str, dict[str, np.ndarray]]:
+    def _gradient_importance(self, run) -> tuple[dict[str, dict[str, np.ndarray]], dict]:
         """Assembles the probe windows of the split and runs the gradient attribution on them.
+
+        Families that left probes out of their share for a zero gradient are warned
+        about once each.
 
         Args:
             run : Loaded run bundling the model and the dataset.
 
         Returns:
-            Per-family attribution as returned by GradientAttribution.channel_importance.
+            A pair of the per-family attribution, as returned by
+            GradientAttribution.channel_importance, and the probe record holding the
+            total "n_probes" and the per-family "kept" counts.
         """
         probes  = ProbeWindows(run, self.config.window)
         centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
 
         with self.logger.timer(f"Input attribution: gradient pass ({len(centers)} probe windows)"):
-            return GradientAttribution(run.model.module, self.config.window).channel_importance(windows)
+            importance, kept = GradientAttribution(run.model.module, self.config.window).channel_importance(windows)
+
+        self._warn_dropped_probes(kept, len(centers))
+
+        return importance, {"n_probes": len(centers), "kept": kept}
+
+    def _warn_dropped_probes(self, kept: dict[str, dict[str, int]], n_probes: int) -> None:
+        """Warns once per output family whose share or gradient-times-input mean left probes out for a zero gradient.
+
+        Args:
+            kept     : Per family, the probes kept in the "share" and the "grad_x_input" mean.
+            n_probes : Number of probe windows attributed.
+        """
+        for family, counts in kept.items():
+            if counts["share"] < n_probes or counts["grad_x_input"] < n_probes:
+                self.logger.warning(f"{self.run_dir.name}: gradient attribution of {family}: {n_probes - counts['share']}/{n_probes} probes had a zero gradient (share over {counts['share']}, gradient x input over {counts['grad_x_input']} probes)")
 
     def _occlusion(self, run, per_track: list[list[int]] | None) -> tuple[np.ndarray, np.ndarray | None] | tuple[None, None]:
         """Runs the single-channel and whole-track occlusion tests when enabled.
@@ -574,7 +603,7 @@ class InputAttributionRun(AnalysisRun):
 
         return figures
 
-    def _write_report(self, run, labels, groups_by_channel, importance, occlusion, track_deltas, track_labels, spearman, figures) -> Path:
+    def _write_report(self, run, labels, groups_by_channel, importance, probes, occlusion, track_deltas, track_labels, spearman, figures) -> Path:
         """Writes the markdown report of the attribution.
 
         Args:
@@ -582,6 +611,7 @@ class InputAttributionRun(AnalysisRun):
             labels            : Channel labels, in channel order.
             groups_by_channel : Group name of each channel.
             importance        : Per-family gradient attribution.
+            probes            : Probe record with the total probe count and the probes each family kept.
             occlusion         : Per-channel occlusion deltas, or None.
             track_deltas      : Per-track occlusion deltas, or None.
             track_labels      : Track labels, in track order.
@@ -591,9 +621,12 @@ class InputAttributionRun(AnalysisRun):
         Returns:
             Path of the written report.
         """
+        kept = ", ".join(f"{family} {probes['kept'][family]['share']}" for family in GradientAttribution.FAMILIES)
+
         doc = MarkdownDoc(title=f"Input attribution: {run.backbone_name}")
         doc.paragraph(
-            f"Gradient attribution on {self.config.n_row_probes * self.config.n_col_probes} probe windows of the '{self.config.split}' split: "
+            f"Gradient attribution on {probes['n_probes']} probe windows of the '{self.config.split}' split "
+            f"(share over {kept} probes; a probe with a zero gradient for a family carries no share): "
             "the share of |∂ output / ∂ input| falling on each input channel, per output family, with the spread across probe windows. "
             "Gradient × input weights the same sensitivities by the actual input signal, so channels that are sensitive but quiet rank lower. "
             "Occlusion, when computed, is the mean shift of the predicted profile when one channel (or one whole channel) is zeroed in normalized units, "
@@ -646,10 +679,10 @@ class InputAttributionRun(AnalysisRun):
             labels and groups, the per-family gradient attribution, the occlusion deltas
             per channel and per secondary, and the gradient-occlusion Spearman correlation.
         """
-        labels            = ChannelLabeler.build(run)
-        groups            = ChannelGroups.build(run)
-        groups_by_channel = ChannelGroups.of_channels(groups, run.in_channels)
-        importance        = self._gradient_importance(run)
+        labels             = ChannelLabeler.build(run)
+        groups             = ChannelGroups.build(run)
+        groups_by_channel  = ChannelGroups.of_channels(groups, run.in_channels)
+        importance, probes = self._gradient_importance(run)
 
         input_config = run.dataset.input_config
         has_tracks   = input_config.use_secondaries or input_config.use_derived
@@ -667,13 +700,14 @@ class InputAttributionRun(AnalysisRun):
             "channels"        : labels,
             "channel_groups"  : groups_by_channel,
             "gradient"        : {family: {key: values.tolist() for key, values in entry.items()} for family, entry in importance.items()},
+            "gradient_probes" : probes,
             "occlusion"       : occlusion.tolist() if occlusion is not None else None,
             "occlusion_tracks": {label: float(value) for label, value in zip(track_labels, track_deltas)} if track_deltas is not None else None,
             "spearman"        : spearman,
         }
         FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
-        report_path = self._write_report(run, labels, groups_by_channel, importance, occlusion, track_deltas, track_labels, spearman, figures)
+        report_path = self._write_report(run, labels, groups_by_channel, importance, probes, occlusion, track_deltas, track_labels, spearman, figures)
 
         combined = GradientAttribution.combined(importance, "share")
         top      = labels[int(np.nanargmax(combined))]
