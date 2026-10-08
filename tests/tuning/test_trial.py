@@ -268,6 +268,35 @@ def test_ae_tuner_objective_returns_best_val_loss(fake_logger, tune_cfg, tmp_pat
     assert study.best_value == 0.7
 
 
+def test_ae_tuner_names_the_error_of_a_failed_trial(fake_logger, tune_cfg, tmp_path):
+    """A divergence or device error in an autoencoder trial is logged with its type and message and kept on the trial, as the backbone tuner does."""
+    class DivergingAePipeline:
+        """Trial pipeline stub whose run diverges."""
+        def __init__(self, entry, trial):
+            """Ignores the entry config."""
+
+        def run(self):
+            """Raises the trainer's divergence error."""
+            raise FloatingPointError("reconstruction loss is non-finite at step 3")
+
+    tuner = AeTuner(
+        model_name         = "mlp_ae",
+        config_cls         = FakeAeConfig,
+        entry_template     = FakeAeEntry(),
+        trial_pipeline_cls = DivergingAePipeline,
+        tune_cfg           = tune_cfg,
+        log_dir            = str(tmp_path),
+        logger             = fake_logger,
+    )
+
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=0))
+    study.optimize(tuner._objective, n_trials=1, catch=(FloatingPointError,))
+
+    assert study.trials[0].state                     == optuna.trial.TrialState.FAIL
+    assert study.trials[0].user_attrs["fail_reason"] == "FloatingPointError: reconstruction loss is non-finite at step 3"
+    assert fake_logger.errors == ["Trial 0 failed and is recorded as such: FloatingPointError: reconstruction loss is non-finite at step 3"]
+
+
 def test_ae_tuner_image_entry_gets_model_overrides(fake_logger, tune_cfg, tmp_path):
     """Verifies that the image AE entry receives the sampled model overrides."""
     captured = {}
