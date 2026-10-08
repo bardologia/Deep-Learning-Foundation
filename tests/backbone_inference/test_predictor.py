@@ -340,3 +340,26 @@ def test_predictor_offsets_from_region(tmp_path):
 
     assert result.row_offset == 100
     assert result.col_offset   == 50
+
+
+def test_backend_row_names_the_model_device_not_cuda_availability(tmp_path, monkeypatch):
+    """A model on the CPU is logged as a CPU backend even when CUDA is available, with no GPU rows."""
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+
+    rows = _make_predictor(tmp_path, _build_run(PATCH, PATCH))._device_rows()
+
+    assert rows == {"Backend": "PyTorch / cpu"}
+
+
+def test_backend_rows_name_the_physical_gpu_on_cuda(tmp_path, monkeypatch):
+    """A model on a CUDA device is logged with the GPU name, the pinned CUDA_VISIBLE_DEVICES token and the inherited mask."""
+    run       = _build_run(PATCH, PATCH)
+    run.model = types.SimpleNamespace(device="cuda:0")
+
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda device: "Test GPU")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+    monkeypatch.setenv("MLTEMPLATE_INHERITED_CUDA_MASK", "2,3")
+
+    rows = _make_predictor(tmp_path, run)._device_rows()
+
+    assert rows == {"Backend": "PyTorch / cuda:0", "GPU": "Test GPU", "CUDA_VISIBLE_DEVICES": "3", "Inherited CUDA mask": "2,3"}
