@@ -15,24 +15,24 @@ class ProfileAeMetrics(AeMetricsBase):
     """Scores reconstructed z profiles against their ground truth.
 
     Attributes:
-        z_axis       : Z axis of shape (H,), in metres.
-        amp_zero_thr : Amplitude above which a curve counts as active.
-        active       : Boolean mask of shape (n_curves,) marking active curves.
+        z_axis             : Z axis of shape (H,), in metres.
+        activity_threshold : Amplitude above which a curve counts as active, as recorded by the parameter run.
+        active             : Boolean mask of shape (n_curves,) marking active curves.
     """
 
-    def __init__(self, result, z_axis: np.ndarray, amp_zero_thr: float) -> None:
+    def __init__(self, result, z_axis: np.ndarray, activity_threshold: float) -> None:
         """Stores the reconstruction result and derives the activity mask.
 
         Args:
-            result       : Reconstruction result holding ground truth, predictions and embeddings of shape (n_curves, H) and (n_curves, embedding_dim).
-            z_axis       : Z axis of shape (H,), in metres.
-            amp_zero_thr : Amplitude above which a curve counts as active.
+            result             : Reconstruction result holding ground truth, predictions and embeddings of shape (n_curves, H) and (n_curves, embedding_dim).
+            z_axis             : Z axis of shape (H,), in metres.
+            activity_threshold : Amplitude above which a curve counts as active, as recorded by the parameter run.
         """
         super().__init__(result)
 
-        self.z_axis       = np.asarray(z_axis, dtype=np.float64)
-        self.amp_zero_thr = amp_zero_thr
-        self.active       = self.gt.max(axis=1) > self.amp_zero_thr
+        self.z_axis             = np.asarray(z_axis, dtype=np.float64)
+        self.activity_threshold = activity_threshold
+        self.active             = self.gt.max(axis=1) > self.activity_threshold
 
     def _physical_errors(self) -> dict:
         """Returns MSE, MAE, RMSE, max absolute error and R2 in physical units."""

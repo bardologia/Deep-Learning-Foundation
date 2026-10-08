@@ -262,13 +262,17 @@ class ProfileDatasetConfigIO:
 
         Raises:
             FileNotFoundError : The run predates dataset-config persistence and must be backfilled or retrained.
+            KeyError          : The persisted config predates the recorded activity threshold and the run must be retrained.
         """
         path = Path(meta_directory) / ProfileDatasetConfigIO.FILENAME
         if not path.is_file():
             raise FileNotFoundError(f"No {ProfileDatasetConfigIO.FILENAME} under {meta_directory}; this profile-autoencoder run predates dataset-config persistence and is not self-describing. Retrain the run.")
 
         payload = FileIO.load_json(path)
-        splits  = payload["split_regions"]
+        if "activity_threshold" not in payload:
+            raise KeyError(f"{path} carries no activity_threshold; this profile-autoencoder run predates the recorded label threshold. Retrain the run.")
+
+        splits = payload["split_regions"]
 
         split_regions = SplitRegions(
             train = ProfileDatasetConfigIO._parse_split(splits["train"]),
@@ -285,7 +289,7 @@ class ProfileDatasetConfigIO:
             x_max                       = float(payload["x_max"]),
             pixel_subsample             = float(payload["pixel_subsample"]),
             keep_empty_frac             = float(payload["keep_empty_frac"]),
-            amp_zero_thr                = float(payload["amp_zero_thr"]),
+            activity_threshold          = float(payload["activity_threshold"]),
             batch_size                  = int(payload["batch_size"]),
             num_workers                 = int(payload["num_workers"]),
             prefetch_factor             = int(payload["prefetch_factor"]),

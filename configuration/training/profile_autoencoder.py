@@ -206,7 +206,6 @@ class ProfileAeEntryConfig:
         logdir               : Root directory the run folders are created under.
         pixel_subsample      : Fraction of scene pixels kept as training profiles.
         keep_empty_frac      : Fraction of profiles with no component kept in the sample.
-        amp_zero_thr         : Amplitude below which a profile counts as empty.
         stats_max_samples    : Profiles drawn when estimating normalization statistics.
         profile_augmentation : Augmentation applied to the sampled profiles.
         ae_model_name        : Registry key of the profile-autoencoder architecture.
@@ -248,7 +247,6 @@ class ProfileAeEntryConfig:
 
     pixel_subsample   : float = 1.0
     keep_empty_frac   : float = 0.05
-    amp_zero_thr      : float = ProfileDatasetConfig.amp_zero_thr
     stats_max_samples : int   = ProfileDatasetConfig.stats_max_samples
 
     profile_augmentation : ProfileAugmentationConfig = field(default_factory=ProfileAugmentationConfig)

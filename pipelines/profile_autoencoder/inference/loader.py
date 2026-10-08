@@ -40,7 +40,7 @@ class ProfileAeRun:
         checkpoint_meta             : Best epoch and validation loss of the checkpoint.
         preprocessing_run_directory : Preprocessing run the parameters came from.
         split_regions               : Crop regions covered by the split.
-        amp_zero_thr                : Amplitude above which a pixel counts as active.
+        activity_threshold          : Amplitude above which a pixel counts as active, as recorded by the parameter run.
     """
 
     model                       : object
@@ -54,7 +54,7 @@ class ProfileAeRun:
     checkpoint_meta             : dict
     preprocessing_run_directory : Path
     split_regions               : list[CropRegion]
-    amp_zero_thr                : float
+    activity_threshold          : float
 
 
 class ProfileAeRunLoader(RunArtifactLoader):
@@ -96,17 +96,17 @@ class ProfileAeRunLoader(RunArtifactLoader):
         z_axis       = GaussianAxis.build(dataset_config.x_min, dataset_config.x_max, z_len)
 
         dataset = ProfileDataset(
-            param_arrays    = param_arrays,
-            z_axis          = z_axis,
-            n_gaussians     = dataset_config.n_gaussians,
-            split_name      = config.split,
-            amp_zero_thr    = dataset_config.amp_zero_thr,
-            pixel_subsample = config.pixel_subsample,
-            keep_empty_frac = config.keep_empty_frac,
-            seed            = config.seed,
-            normalizer      = normalizer,
-            augmenter       = None,
-            logger          = self.logger,
+            param_arrays       = param_arrays,
+            z_axis             = z_axis,
+            n_gaussians        = dataset_config.n_gaussians,
+            split_name         = config.split,
+            activity_threshold = dataset_config.activity_threshold,
+            pixel_subsample    = config.pixel_subsample,
+            keep_empty_frac    = config.keep_empty_frac,
+            seed               = config.seed,
+            normalizer         = normalizer,
+            augmenter          = None,
+            logger             = self.logger,
         )
 
         return dataset, z_axis, z_len
@@ -197,5 +197,5 @@ class ProfileAeRunLoader(RunArtifactLoader):
             checkpoint_meta             = ckpt_meta,
             preprocessing_run_directory = Path(dataset_config.preprocessing_run_directory),
             split_regions               = regions,
-            amp_zero_thr                = dataset_config.amp_zero_thr,
+            activity_threshold          = dataset_config.activity_threshold,
         )

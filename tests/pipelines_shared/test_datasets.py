@@ -256,7 +256,7 @@ def _profile_dataset(parameters, tmp_path, **kw):
     z_axis = np.linspace(0.0, 1.0, 150, dtype=np.float32)
     logger = Logger(log_dir=str(tmp_path / "logs"), name="prof_ds", level="ERROR")
 
-    defaults = dict(n_gaussians=params[0].shape[0] // 3, split_name="train", amp_zero_thr=1e-3, keep_empty_frac=0.05, pixel_subsample=1.0, seed=0)
+    defaults = dict(n_gaussians=params[0].shape[0] // 3, split_name="train", activity_threshold=1e-3, keep_empty_frac=0.05, pixel_subsample=1.0, seed=0)
     defaults.update(kw)
 
     return ProfileDataset(param_arrays=params, z_axis=z_axis, logger=logger, **defaults)
@@ -360,5 +360,5 @@ def test_profiledataset_without_active_pixels_names_the_split_and_threshold(tmp_
     """An all-zero parameter cube raises a ValueError naming the amplitude threshold."""
     empty = np.zeros((15, 8, 8), dtype=np.float32)
 
-    with pytest.raises(ValueError, match="amp_zero_thr"):
+    with pytest.raises(ValueError, match="activity threshold"):
         _profile_dataset(empty, tmp_path, pixel_subsample=pixel_subsample)

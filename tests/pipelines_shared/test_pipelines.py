@@ -164,6 +164,7 @@ def test_profile_pipeline_runs_and_returns_normalizer(test_data_dir, params_dir,
     """The profile pipeline writes its stats file and returns loaders, height axis, and normalizer."""
     config = ProfileDatasetConfig(
         preprocessing_run_directory = test_data_dir,
+        activity_threshold          = _activity_threshold(test_data_dir, params_dir),
         parameters_path             = params_dir / "parameters.npy",
         split_regions               = SplitRegions(
             train = CropRegion(1000, 1040, 500, 540),
@@ -202,6 +203,7 @@ def test_profile_pipeline_train_order_reproducible(test_data_dir, params_dir, tm
         """Returns the first training batch of a profile pipeline run seeded at 3 under run_dir."""
         config = ProfileDatasetConfig(
             preprocessing_run_directory = test_data_dir,
+            activity_threshold          = _activity_threshold(test_data_dir, params_dir),
             parameters_path             = params_dir / "parameters.npy",
             split_regions               = SplitRegions(
                 train = CropRegion(1000, 1040, 500, 540),

@@ -1,25 +1,31 @@
 """Tests for persisting and reloading model configurations.
 
 Covers the backbone, profile-autoencoder and image-autoencoder config IO helpers:
-the round trip of every registered config, the head recovered alongside it, and
-the failure modes when the stored file is missing.
+the round trip of every registered config, the head recovered alongside it, the
+profile dataset config with its recorded activity threshold, and the failure modes
+when the stored file or a recorded field is missing.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import json
 
 import pytest
 
+from configuration.dataset.profile_autoencoder  import ProfileDatasetConfig
 from pipelines.shared.config.config_persistence import (
     BackboneModelConfigIO,
     ProfileAutoencoderConfigIO,
+    ProfileDatasetConfigIO,
     ImageAutoencoderConfigIO,
 )
 from models.backbone                            import BACKBONE_CONFIG_REGISTRY
 from models.profile_autoencoder                 import PROFILE_AE_CONFIG_REGISTRY
 from models.image_autoencoder                   import IMAGE_AE_CONFIG_REGISTRY
 from tools.data.io                              import FileIO
+
+from tests.configuration._helpers import make_split_regions
 
 
 BACKBONE_CASES = [pytest.param(name, id=name) for name in BACKBONE_CONFIG_REGISTRY]
@@ -82,6 +88,30 @@ def test_image_ae_config_io_round_trips(tmp_path, name):
     assert raw_name == name
     assert type(loaded) is type(config)
     assert dataclasses.asdict(loaded) == dataclasses.asdict(config)
+
+
+def test_profile_dataset_config_io_round_trips_the_activity_threshold(tmp_path):
+    """Verifies the persisted profile dataset config reloads with the label run's activity threshold."""
+    config = ProfileDatasetConfig(preprocessing_run_directory=tmp_path, split_regions=make_split_regions(), activity_threshold=2.5e-3)
+    ProfileDatasetConfigIO.save(config, tmp_path)
+
+    loaded = ProfileDatasetConfigIO.load(tmp_path)
+
+    assert loaded.activity_threshold == 2.5e-3
+    assert loaded.split_regions      == config.split_regions
+
+
+def test_profile_dataset_config_io_refuses_a_config_without_the_activity_threshold(tmp_path):
+    """Verifies a persisted profile dataset config written before the threshold was recorded is refused."""
+    config = ProfileDatasetConfig(preprocessing_run_directory=tmp_path, split_regions=make_split_regions(), activity_threshold=1e-3)
+    path   = ProfileDatasetConfigIO.save(config, tmp_path)
+
+    payload = json.loads(path.read_text())
+    del payload["activity_threshold"]
+    path.write_text(json.dumps(payload))
+
+    with pytest.raises(KeyError, match="Retrain the run"):
+        ProfileDatasetConfigIO.load(tmp_path)
 
 
 def test_config_io_exists_false_when_missing(tmp_path):

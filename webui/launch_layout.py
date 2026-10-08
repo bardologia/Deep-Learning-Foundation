@@ -747,7 +747,7 @@ class LaunchLayout:
                 {"key": "data", "title": "Data", "panels": [
                     {"kind": "fields", "title": "Paths", "template": "paths_train", "at": "paths"},
                     {"kind": "fields", "title": "Sampling", "groups": [
-                        {"title": None, "fields": [{"path": "pixel_subsample", "widget": NUM_FRACTION}, {"path": "keep_empty_frac", "widget": NUM_FRACTION}, "amp_zero_thr", {"path": "stats_max_samples", "widget": NUM_CELLS}]},
+                        {"title": None, "fields": [{"path": "pixel_subsample", "widget": NUM_FRACTION}, {"path": "keep_empty_frac", "widget": NUM_FRACTION}, {"path": "stats_max_samples", "widget": NUM_CELLS}]},
                     ]},
                     {"kind": "fields", "title": "Profile augmentation", "template": "profile_augmentation", "at": "profile_augmentation"},
                 ]},

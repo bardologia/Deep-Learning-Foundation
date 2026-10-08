@@ -82,7 +82,7 @@ class TrainingPipeline(AutoencoderTrainingPipeline):
             x_max                       = gaussian_cfg.x_max,
             pixel_subsample             = self.entry.pixel_subsample,
             keep_empty_frac             = self.entry.keep_empty_frac,
-            amp_zero_thr                = self.entry.amp_zero_thr,
+            activity_threshold          = gaussian_cfg.activity_threshold,
             stats_max_samples           = self.entry.stats_max_samples,
             batch_size                  = training.batch_size,
             num_workers                 = training.num_workers,
