@@ -1200,16 +1200,25 @@ class PatchSizeTrialPlanner:
         """Returns the trial run name encoding one (rows, cols) patch shape."""
         return f"p-{patch_size[0]:03d}x{patch_size[1]:03d}"
 
+    def _batch_label(self) -> str:
+        """Returns the batch size and learning-rate reference each trial trains with, per trial under the pixel budget."""
+        if not self.trials.constant_pixel_budget:
+            return f"{self.training.batch_size} / {self.training.lr_reference_batch_size} in every trial (constant pixel budget off)"
+
+        return ", ".join(f"{name} {overrides['training.batch_size']} / {overrides['training.lr_reference_batch_size']}" for name, overrides in self.plan())
+
     def summary(self) -> dict:
-        """Returns the patch step, both axis grids, the stride ratio and the budget switch."""
+        """Returns the patch step, both axis grids, the stride ratio, the budget switch, the pinned batch-size probe and the batch sizes each trial trains with."""
         row_sizes, col_sizes = self.patch_sizes()
 
         return {
-            "Patch step"            : self.patch_step(),
-            "Row sizes"             : row_sizes,
-            "Col sizes"             : col_sizes,
-            "Stride ratio"          : self.trials.stride_ratio,
-            "Constant pixel budget" : self.trials.constant_pixel_budget,
+            "Patch step"                : self.patch_step(),
+            "Row sizes"                 : row_sizes,
+            "Col sizes"                 : col_sizes,
+            "Stride ratio"              : self.trials.stride_ratio,
+            "Constant pixel budget"     : self.trials.constant_pixel_budget,
+            "Batch-size probe"          : "off in every trial (pretrain.find_batch_size pinned to false)",
+            "Batch size / LR reference" : self._batch_label(),
         }
 
     def plan(self) -> list[tuple[str, dict]]:

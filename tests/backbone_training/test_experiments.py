@@ -229,6 +229,25 @@ def test_patch_planner_leaves_the_batch_alone_without_the_budget():
         assert overrides["pretrain.find_batch_size"] is False
 
 
+def test_patch_planner_summary_names_the_pinned_probe_and_the_per_trial_batches():
+    """Verifies the summary states the pinned batch-size probe and lists each trial's batch size and LR reference under the pixel budget."""
+    planner = make_patch_planner(maximum=(16, 16))
+    summary = planner.summary()
+    batches = ", ".join(f"{name} {overrides['training.batch_size']} / {overrides['training.lr_reference_batch_size']}" for name, overrides in planner.plan())
+
+    assert summary["Batch-size probe"]          == "off in every trial (pretrain.find_batch_size pinned to false)"
+    assert summary["Batch size / LR reference"] == batches
+    assert summary["Batch size / LR reference"].startswith("p-008x008 ")
+
+
+def test_patch_planner_summary_reports_one_batch_without_the_budget():
+    """Verifies the summary names the single configured batch size and LR reference when the pixel budget is off."""
+    training = TrainingQueueConfig(batch_size=32, lr_reference_batch_size=64)
+    planner  = make_patch_planner(training, maximum=(16, 16), constant_pixel_budget=False)
+
+    assert planner.summary()["Batch size / LR reference"] == "32 / 64 in every trial (constant pixel budget off)"
+
+
 def test_patch_planner_rejects_an_inadmissible_minimum():
     """Verifies a minimum that is not a multiple of the step is rejected."""
     planner = make_patch_planner(minimum=(20, 0))

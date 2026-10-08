@@ -302,6 +302,42 @@ class TrainScheduler(TrialSweepScheduler):
         for path in written:
             self.logger.info(f"{path}")
 
+    @staticmethod
+    def _same_value(trial_value, forwarded) -> bool:
+        """Returns whether a trial override equals a forwarded value, comparing lists and tuples element-wise."""
+        if isinstance(trial_value, (list, tuple)) and isinstance(forwarded, (list, tuple)):
+            return list(trial_value) == list(forwarded)
+
+        return trial_value == forwarded
+
+    def _warn_shadowed_overrides(self) -> None:
+        """Warns about each forwarded override that the planned trials replace with a different value.
+
+        The per-trial overrides are merged over the forwarded ones, so a forwarded
+        value of a key the planner sets never reaches those units, while the
+        configuration table lists the forwarded overrides without naming the keys
+        a trial replaces; a patch sweep, for instance, pins pretrain.find_batch_size
+        to false and, under the pixel budget, sets the batch sizes per trial.
+        """
+        experiments = self.planner().plan()
+
+        for path, value in self.forward_overrides.items():
+            replaced = [overrides[path] for _name, overrides in experiments if path in overrides and not self._same_value(overrides[path], value)]
+            if not replaced:
+                continue
+
+            trial_values = ", ".join(dict.fromkeys(str(trial_value) for trial_value in replaced))
+            self.logger.warning(f"Forwarded override {path}={value} is replaced by the {self.config.trials_mode} planner in {len(replaced)} of {len(experiments)} trial(s) (trial values: {trial_values}); those units train on the trial values")
+
+    def run(self) -> None:
+        """Warns about forwarded overrides the planned trials replace, then runs the sweep.
+
+        Raises:
+            SystemExit : If any training or inference job did not finish DONE.
+        """
+        self._warn_shadowed_overrides()
+        super().run()
+
 
 class BackboneTrainingLauncher:
     """Command-line entry point dispatching between a single run and a sweep.

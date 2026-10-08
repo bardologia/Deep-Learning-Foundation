@@ -230,3 +230,40 @@ def test_scheduler_writes_no_report_outside_patch_mode(tmp_path):
     scheduler._write_mode_report()
 
     assert not (tmp_path / "ablation" / "report").exists()
+
+
+def _patch_scheduler(tmp_path, cli_overrides: dict):
+    """Returns a patch-mode backbone scheduler over a two-by-two grid with the given forwarded overrides."""
+    config                      = BackboneEntryConfig()
+    config.logdir               = tmp_path
+    config.seeds                = [0]
+    config.trials_mode          = "patch"
+    config.backbone_name        = "unet"
+    config.model_overrides      = {"features": [64, 128, 256]}
+    config.patch_trials.maximum = (16, 16)
+
+    return backbone_launcher.TrainScheduler(config=config, cli_overrides=cli_overrides, entry_script=Path("/entry/train_backbone.py"))
+
+
+def test_scheduler_warns_when_a_trial_replaces_a_forwarded_override(tmp_path):
+    """Verifies a forwarded pretrain.find_batch_size=true that every patch trial pins to false is named in a warning with the trial value."""
+    scheduler = _patch_scheduler(tmp_path, {"pretrain.find_batch_size": True, "training.epochs": 3})
+    scheduler._warn_shadowed_overrides()
+    scheduler.logger.close()
+
+    text = (Path(scheduler.log_dir) / "train_scheduler.log").read_text(encoding="utf-8")
+
+    assert "Forwarded override pretrain.find_batch_size=True is replaced by the patch planner in 4 of 4 trial(s) (trial values: False)" in text
+    assert "training.epochs" not in text
+
+
+def test_scheduler_stays_quiet_when_a_forwarded_override_matches_every_trial(tmp_path):
+    """Verifies a forwarded value equal to the trial value, a tuple against a list included, raises no warning."""
+    scheduler = _patch_scheduler(tmp_path, {"pretrain.find_batch_size": False})
+    scheduler._warn_shadowed_overrides()
+    scheduler.logger.close()
+
+    text = (Path(scheduler.log_dir) / "train_scheduler.log").read_text(encoding="utf-8")
+
+    assert "Forwarded override" not in text
+    assert backbone_launcher.TrainScheduler._same_value((8, 8), [8, 8])
