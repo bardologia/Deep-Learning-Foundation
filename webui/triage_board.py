@@ -346,7 +346,7 @@ class TriageBoard:
         Returns:
             Dictionary with ``ok``, the pixel indices, the z ``z_axis`` in metres
             taken from the run metrics, and the ``pred`` and ``gt`` profile samples;
-            ``ok`` is False with an ``error`` when the pixel is out of col or the
+            ``ok`` is False with an ``error`` when the pixel is out of range or the
             cube files cannot be read.
         """
 
