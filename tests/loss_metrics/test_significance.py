@@ -33,6 +33,30 @@ def test_consistent_shift_is_maximally_significant_for_five_pairs():
     assert outcome["p_value"]   == pytest.approx(2.0 / 32.0)
 
 
+def test_smallest_p_is_two_over_two_to_the_n_in_the_exact_regime():
+    """Verifies the exact regime reports the 2 / 2^n floor as p_min, 0.0625 for the standard five seeds."""
+    test    = PairedPermutationTest()
+    outcome = test.test([1.0, 2.0, 3.0, 4.0, 5.0], [2.0, 3.1, 4.2, 5.05, 6.3])
+
+    assert test.smallest_p(5)  == pytest.approx(0.0625)
+    assert outcome["p_min"]    == pytest.approx(0.0625)
+    assert outcome["p_value"]  >= outcome["p_min"]
+    assert test.smallest_p(12) == pytest.approx(2.0 / 4096.0)
+
+
+def test_smallest_p_is_the_add_one_floor_in_the_sampled_regime():
+    """Verifies the sampled regime reports 1 / (n_permutations + 1) as p_min and never a smaller p-value."""
+    rng  = np.random.default_rng(3)
+    a    = rng.normal(0.0, 1.0, size=20)
+    test = PairedPermutationTest(n_permutations=5000, seed=1)
+
+    outcome = test.test(list(a), list(a + 1.0))
+
+    assert test.smallest_p(20)   == pytest.approx(1.0 / 5001.0)
+    assert outcome["p_min"]      == pytest.approx(1.0 / 5001.0)
+    assert outcome["p_value"]    >= outcome["p_min"]
+
+
 def test_exact_and_montecarlo_agree_roughly():
     """Verifies the Monte Carlo regime detects a unit shift over twenty pairs at the one percent level."""
     rng = np.random.default_rng(0)
@@ -79,8 +103,10 @@ def test_significance_vs_leader_pairs_common_seeds_and_adjusts():
 
     assert results["worse"]["p_value"]     == pytest.approx(2.0 / 32.0)
     assert results["worse"]["p_adjusted"]  >= results["worse"]["p_value"]
+    assert results["worse"]["p_min"]       == pytest.approx(2.0 / 32.0)
     assert results["tied"]["p_value"]      == pytest.approx(1.0)
     assert results["sparse"]["p_value"]    is None
+    assert results["sparse"]["p_min"]      is None
     assert results["sparse"]["n_pairs"]    == 1
     assert "leader" not in results
 
