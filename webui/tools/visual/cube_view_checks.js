@@ -527,13 +527,135 @@ class CubeViewChecks {
     const reopened = { picked: [metrics.picked.row, metrics.picked.col], readouts: readouts.splice(0) };
 
     const jumpParams = this._element({ hidden: true });
-    const display    = this._displayStub("explorer", { jumpParams, params: { configure: () => {} } });
+    const display    = this._displayStub("explorer", { jumpParams, profMixWrap: this._element(), params: { configure: () => {} } });
     display._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4, params: { sources: ["pred"] } });
     const withParams = !jumpParams.hidden;
     display._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4, params: null });
     const button = { withParams, withoutParams: !jumpParams.hidden };
 
     return { clamped, paramPick, adopted, metricPick, paramAdopt, entered, kept, opened, reopened, button };
+  }
+
+  _recordingCtx() {
+    const ops = { strokes: [], dots: [], path: [], dash: [] };
+    const ctx = {
+      setTransform : () => {},
+      clearRect    : () => {},
+      closePath    : () => {},
+      fill         : () => {},
+      fillText     : () => {},
+      setLineDash  : (dash) => { ops.dash = dash; },
+      beginPath    : () => { ops.path = []; },
+      moveTo       : (x, y) => ops.path.push([x, y]),
+      lineTo       : (x, y) => ops.path.push([x, y]),
+      arc          : (x, y) => ops.dots.push({ x, y, color: ctx.fillStyle }),
+      stroke       : () => ops.strokes.push({ color: ctx.strokeStyle, dashed: ops.dash.length > 0, points: ops.path.slice() }),
+    };
+    ops.reset = () => { ops.strokes = []; ops.dots = []; };
+    return { ctx, ops };
+  }
+
+  async mixture() {
+    const { CubeView } = this.classes;
+    const calls        = [];
+    const pending      = [];
+
+    this.sandbox.Api = {
+      get: (url) => {
+        const query = new URLSearchParams(url.split("?")[1]);
+        calls.push(`${url.split("?")[0]} ${query.get("row")},${query.get("col")}`);
+        return new Promise((resolve) => pending.push(resolve));
+      },
+    };
+
+    const slots = {
+      pred : [{ amp: 2, mu: 1, sigma: 0.5, active: true }, { amp: 1, mu: 3, sigma: 0.25, active: true }, { amp: 0.5, mu: 2, sigma: 1, active: false }],
+      gt   : [{ amp: 1, mu: 2, sigma: 0.5, active: true }, { amp: 0, mu: null, sigma: null, active: false }],
+    };
+    const series  = { z_values: [0, 1, 2, 3, 4], values: [0, 2, 0.5, 1, 0] };
+    const params  = (row, col) => ({ ok: true, row, col, n_slots: 3, threshold: 0.1, sources: slots });
+    const profile = (row, col) => ({ ok: true, row, col, sources: { pred: series, gt: series } });
+
+    const { ctx, ops } = this._recordingCtx();
+    const slotColors   = new Set(CubeView.SLOT_COLORS);
+    const summary      = () => ({ dashed: ops.strokes.filter((stroke) => stroke.dashed).length, stems: ops.dots.filter((dot) => slotColors.has(dot.color)).map((dot) => dot.color) });
+
+    const view = Object.create(CubeView.prototype);
+    Object.assign(view, {
+      selectedId    : "cube",
+      meta          : { n_rows: 4, n_cols: 6, params: { sources: ["pred", "gt"] } },
+      profMode      : "raw",
+      profMix       : false,
+      profData      : profile(1, 2),
+      profParams    : null,
+      profMetricsEl : null,
+      colors        : {},
+      profAt        : this._element(),
+      profPanels    : ["pred", "gt"].map((source) => ({
+        source,
+        root   : this._element(),
+        canvas : { clientWidth: 240, clientHeight: 190, width: 0, height: 0, getContext: () => ctx },
+      })),
+    });
+
+    view._setProfMix(true);
+    const requested = { calls: calls.splice(0), drawn: summary() };
+    pending.shift()(params(1, 2));
+    await this._settle();
+    const drawn = summary();
+
+    const identity = (value) => value;
+    const curve    = () => ops.strokes.find((stroke) => stroke.dashed).points;
+    const stems    = () => ops.strokes.filter((stroke) => slotColors.has(stroke.color)).map((stroke) => ({ color: stroke.color, points: stroke.points }));
+
+    ops.reset();
+    view._drawMixture(view.profPanels[0], series, ctx, identity, identity);
+    const raw = { curve: curve(), stems: stems() };
+
+    ops.reset();
+    view.profMode = "unit";
+    view._drawMixture(view.profPanels[0], series, ctx, identity, identity);
+    const unit = { curve: curve(), stems: stems() };
+
+    ops.reset();
+    view.profMode = "raw";
+    view._setProfMix(false);
+    const off = { calls: calls.splice(0), drawn: summary() };
+
+    view._setProfMix(true);
+    const cached = { calls: calls.splice(0), drawn: summary() };
+
+    const moved = view._fetchProfiles(3, 4);
+    pending.shift()(profile(3, 4));
+    await moved;
+    const followed = calls.splice(0);
+    pending.shift()(params(3, 4));
+    await this._settle();
+
+    const early = view._fetchProfParams(3, 4);
+    view.profData = profile(2, 2);
+    const later = view._fetchProfParams(2, 2);
+    pending.pop()(params(2, 2));
+    await later;
+    pending.pop()(params(3, 4));
+    await early;
+    const late = { params: [view.profParams.row, view.profParams.col], matches: view._mixtureMatches() };
+
+    const swapped = view._fetchProfParams(2, 2);
+    view.selectedId = "other";
+    view.profParams = null;
+    pending.pop()(params(2, 2));
+    await swapped;
+    const replaced = { params: view.profParams };
+
+    const profMixWrap = this._element({ hidden: true });
+    const display     = this._displayStub("explorer", { jumpParams: this._element(), profMixWrap, params: { configure: () => {} } });
+    display._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4, params: { sources: ["pred"] } });
+    const withParams = !profMixWrap.hidden;
+    display._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4, params: null });
+    const toggle = { withParams, withoutParams: !profMixWrap.hidden };
+
+    return { requested, drawn, raw, unit, off, cached, followed, late, replaced, toggle };
   }
 
   _reloaded(view) {
