@@ -65,6 +65,30 @@ def test_duplicate_unit_and_seed_tags_collapse_once(tmp_path):
     assert collector.seed_dispersion["trial_a"]["n_seeds"] == 2
 
 
+def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
+    """Verifies a seed without inference and a seed with a NaN metric are counted out of the mean and warned about, and the seed standing for the trial is named."""
+    _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
+    _run_with_metrics(tmp_path / "trial_a" / "seed1", float("nan"))
+    (tmp_path / "trial_a" / "seed2").mkdir()
+    _run_with_metrics(tmp_path / "run_x", 1.0)
+
+    logger    = RecordingLogger()
+    collector = TrialCollector(runs_dir=tmp_path, run_tags=["trial_a", "run_x"], logger=logger, inference_split="test")
+    records   = collector.collect()
+
+    dispersion = collector.seed_dispersion["trial_a"]
+    warnings   = [message for level, message in logger.messages if level == "warning"]
+    infos      = [message for level, message in logger.messages if level == "info"]
+    oks        = [message for level, message in logger.messages if level == "ok"]
+
+    assert records[0].metrics["curve_rmse_gt"] == 2.0
+    assert dispersion["n_seeds"]               == 3
+    assert dispersion["n_used"]                == {"curve_rmse_gt": 1}
+    assert any("seed2" in message and "curve_rmse_gt" in message and "1 of 3" in message for message in warnings)
+    assert any(message == "trial_a: figures and report from trial_a/seed0" for message in infos)
+    assert any(message.startswith("Aggregated 3 seed run(s) into 1 trial(s)") for message in oks)
+
+
 def test_flat_runs_pass_through_unchanged(tmp_path):
     """Verifies runs without a seed level are kept separate and report no dispersion."""
     _run_with_metrics(tmp_path / "run_x", 1.0)

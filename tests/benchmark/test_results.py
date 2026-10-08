@@ -207,6 +207,7 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
 
     dispersion = collector.seed_dispersion["unet"]
     assert dispersion["n_seeds"]                  == 2
+    assert dispersion["n_used"]                   == {"curve_rmse_gt": 2}
     assert dispersion["metrics"]["curve_rmse_gt"] == pytest.approx(float(np.std([2.0, 4.0], ddof=1)))
 
 
