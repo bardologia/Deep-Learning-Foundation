@@ -23,10 +23,8 @@ def main() -> None:
 
     entry  = ConfigCli(ReportCollectionEntryConfig(), description="Scan a runs directory for training runs with inference reports, select one or more, and gather each run's report into a single collector directory renamed after the run; image links are re-pointed at the original figures or embedded as self-contained data").apply()
 
-    logger = Logger(log_dir="logs", name="collect_reports")
-    ReportCollectionBatch(entry, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="collect_reports") as logger:
+        ReportCollectionBatch(entry, logger).run()
 
 
 if __name__ == "__main__":
