@@ -196,6 +196,34 @@ def test_training_pipeline_overfit_check_abort_leaves_configs(test_data_dir, par
     assert not (run_directory / "best_model.pt").exists()
 
 
+def test_training_pipeline_records_a_dataset_stage_abort_in_its_run_log(tmp_path, monkeypatch):
+    """Verifies an error raised before training, in the dataset stage, ends the run's own log with the traceback and an ABORTED banner instead of a bare cut-off."""
+    trainer_config                   = _square_patch_trainer_config()
+    trainer_config.io.logdir         = str(tmp_path)
+    trainer_config.resources.enabled = False
+
+    dataset_config                     = _square_patch_dataset_config()
+    dataset_config.fingerprint_dataset = False
+
+    pipeline = TrainingPipeline(trainer_config=trainer_config, dataset_config=dataset_config, backbone_name="resunet", run_name="dataset_abort")
+
+    def _broken_dataset_pipeline(run_directory, logger):
+        """Raises the way a dataset build fails on a missing artifact."""
+        raise ValueError("dataset stage broke")
+
+    monkeypatch.setattr(pipeline, "_build_dataset_pipeline", _broken_dataset_pipeline)
+
+    with pytest.raises(ValueError, match="dataset stage broke"):
+        pipeline.run(probe_config=None)
+
+    text = (pipeline.run_metadata.run_directory / "logs" / "resunet_metadata.log").read_text(encoding="utf-8")
+
+    assert "[Aborted] ValueError: dataset stage broke" in text
+    assert "Traceback (most recent call last)" in text
+    assert ">>> ABORTED resunet_metadata" in text
+    assert ">>> END" not in text
+
+
 def _square_patch_dataset_config() -> DatasetConfig:
     """Returns a dataset config with a rectangular (64, 32) patch and (32, 16) stride."""
     splits = SplitRegions(
