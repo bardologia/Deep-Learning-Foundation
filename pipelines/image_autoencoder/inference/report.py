@@ -28,7 +28,7 @@ class ImageAeReport(InferenceReportBase):
     ]
 
     def _summary(self) -> dict:
-        """Returns the run identity table: architecture, widths, split, checkpoint and data source."""
+        """Returns the run identity table: architecture, widths, split, scored checkpoint and data source."""
         return {
             "model_name"        : self.run.ae_name,
             "embedding_dim"     : self.run.embedding_dim,
@@ -36,7 +36,9 @@ class ImageAeReport(InferenceReportBase):
             "patch_size"        : self.run.patch_size,
             "split"             : self.run.split_name,
             "split_region"      : str(self.run.split_region.as_tuple()),
-            "best_epoch"        : self.run.checkpoint_meta["best_epoch"],
+            "checkpoint"        : self.config.checkpoint_name,
+            "checkpoint_epoch"  : int(self.run.checkpoint_meta["epoch"]) + 1,
+            "best_epoch"        : int(self.run.checkpoint_meta["best_epoch"]) + 1,
             "best_val_loss"     : self.run.checkpoint_meta["best_val_loss"],
             "preprocessing_dir" : str(self.run.preprocessing_run_directory),
         }

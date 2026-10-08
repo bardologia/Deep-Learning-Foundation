@@ -84,6 +84,25 @@ class AeInferencePipeline:
         """Returns the subset of metrics shown in the log table; implemented by subclasses."""
         raise NotImplementedError
 
+    def _scored_weights(self, run) -> dict:
+        """Returns the checkpoint name and one-based epoch of the weights being scored.
+
+        Args:
+            run : Loaded run bundle whose checkpoint_meta carries the zero-based checkpoint epoch.
+
+        Returns:
+            Mapping with 'checkpoint' and 'checkpoint_epoch', so a final_model.pt
+            inference stays distinguishable from a best_model.pt one.
+        """
+        return {
+            "checkpoint"       : self.config.checkpoint_name,
+            "checkpoint_epoch" : int(run.checkpoint_meta["epoch"]) + 1,
+        }
+
+    def _provenance_metrics(self, run) -> dict:
+        """Returns the run-level fields recorded next to the metrics: the scored weights, by default."""
+        return self._scored_weights(run)
+
     def _evaluate_metrics(self, result, run, meta, logger: Logger):
         """Computes, writes and logs the metrics, returning them with the metrics object."""
         metrics_obj = self._metrics_object(result, run)
@@ -91,6 +110,7 @@ class AeInferencePipeline:
 
         metrics["split"] = run.split_name
         metrics.update(self._region_metrics(run))
+        metrics.update(self._provenance_metrics(run))
 
         AeMetricsBase.write_json(metrics, meta.metrics_path)
 
@@ -151,6 +171,7 @@ class AeInferencePipeline:
         CompletionMarker.stamp(meta.output_dir, {
             "stage" : "inference",
             "split" : run.split_name,
+            **self._scored_weights(run),
         })
 
         logger.section(f"[{self.FAMILY} Inference Done]")
