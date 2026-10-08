@@ -199,8 +199,8 @@ class ProcessAnimator {
       const x = pad.l + ((w - pad.l - pad.r) / 6) * i;
       ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
     }
-    ctx.fillStyle = "rgba(143,176,170,0.8)";
-    ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(143, 176, 170, 0.94)";
+    ctx.font = "600 11px 'IBM Plex Mono', monospace";
     ctx.fillText(ylab, pad.l - 38, pad.t + 10);
     ctx.fillText(xlab, w - pad.r - ctx.measureText(xlab).width, h - 8);
   }
@@ -361,7 +361,7 @@ class ProcessAnimator {
         const gx = this._lerp(w - pad.r, truncX, sw);
         ctx.strokeStyle = "rgba(255,207,107,0.85)"; ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.moveTo(gx, pad.t); ctx.lineTo(gx, h - pad.b); ctx.stroke();
-        ctx.fillStyle = "rgba(255,207,107,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(255, 207, 107, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("truncation_index", Math.max(pad.l + 4, gx - 116), pad.t + 14);
       }
 
@@ -395,8 +395,8 @@ class ProcessAnimator {
       ctx.beginPath(); ctx.moveTo(px(c.mu), py(0)); ctx.lineTo(px(c.mu), py(c.a)); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = lit ? "#7cff9b" : "rgba(124,255,155,0.35)";
       ctx.beginPath(); ctx.arc(px(c.mu), py(c.a), lit ? 4.5 : 3, 0, 7); ctx.fill();
-      ctx.fillStyle = lit ? "#7cff9b" : "rgba(124,255,155,0.5)";
-      ctx.font = "10px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = lit ? "#7cff9b" : "rgba(124, 255, 155, 0.75)";
+      ctx.font = "600 10px 'IBM Plex Mono', monospace";
       ctx.fillText(String(rank + 1), px(c.mu) - 3, py(c.a) - 9);
     };
 
@@ -421,12 +421,12 @@ class ProcessAnimator {
           ctx.strokeRect(bx - 3, cyp + ch - mseH - penH - 3, bw2 + 6, mseH + penH + 6);
           ctx.fillStyle = "#7cff9b"; ctx.fillText("K*", bx + 9, cyp + ch - mseH - penH - 10);
         }
-        ctx.fillStyle = "rgba(143,176,170,0.95)";
+        ctx.fillStyle = "rgba(143, 176, 170, 0.98)";
         ctx.fillText("K" + k, bx + 8, cyp + ch + 17);
       }
       const ly = cyp + ch + 38;
       ctx.fillStyle = "rgba(53,230,208,0.75)"; ctx.fillRect(cxp - 2, ly - 10, 11, 11);
-      ctx.fillStyle = "rgba(143,176,170,0.95)"; ctx.fillText("mse", cxp + 15, ly);
+      ctx.fillStyle = "rgba(143, 176, 170, 0.98)"; ctx.fillText("mse", cxp + 15, ly);
       ctx.fillStyle = "rgba(255,207,107,0.8)"; ctx.fillRect(cxp + 64, ly - 10, 11, 11);
       ctx.fillStyle = "rgba(143,176,170,0.95)"; ctx.fillText("λ·Σa", cxp + 81, ly);
       ctx.restore();
@@ -442,7 +442,7 @@ class ProcessAnimator {
       if (!inZoom) {
         ctx.strokeStyle = "rgba(255,207,107,0.55)"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.moveTo(pad.l, thrY); ctx.lineTo(w - pad.r, thrY); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(255,207,107,0.75)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(255, 207, 107, 0.93)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("0.25 × max", w - pad.r - 78, thrY - 6);
       }
 
@@ -460,7 +460,7 @@ class ProcessAnimator {
         ctx.beginPath(); ctx.moveTo(px(m.x) - 5, py(m.base)); ctx.lineTo(px(m.x) + 5, py(m.base)); ctx.stroke();
         dot(m, "#ffcf6b", 4.5);
         if (withValue) {
-          ctx.fillStyle = "#ffcf6b"; ctx.font = "12px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "#ffcf6b"; ctx.font = "600 12px 'IBM Plex Mono', monospace";
           ctx.fillText("prom = " + m.prom.toFixed(2), Math.min(px(m.x) + 10, w - 116), py((m.y + m.base) / 2));
         }
       };
@@ -502,12 +502,12 @@ class ProcessAnimator {
         const yMax = py(pmaxV);
         ctx.strokeStyle = "rgba(53,230,208,0.7)"; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.moveTo(pad.l, yMax); ctx.lineTo(w - pad.r, yMax); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(53,230,208,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(53, 230, 208, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("peak value", pad.l + 6, yMax - 6);
         const relab = this._ease(Math.min(1, Math.max(0, (tn - 0.8) / 1.2)));
         if (relab > 0) {
           ctx.save(); ctx.globalAlpha = relab;
-          ctx.fillStyle = "rgba(124,255,155,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "rgba(124, 255, 155, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
           ctx.fillText("1.0", pad.l - 26, yMax + 4);
           ctx.fillText("0.0", pad.l - 26, py(0) + 4);
           ctx.restore();
@@ -568,7 +568,7 @@ class ProcessAnimator {
         if (z > 0.5) {
           pt(focusI - 1, "#ffcf6b", 5.5);
           pt(focusI + 1, "#ffcf6b", 5.5);
-          ctx.font = "13px 'IBM Plex Mono', monospace";
+          ctx.font = "600 13px 'IBM Plex Mono', monospace";
           if (leftOk != null) {
             ctx.fillStyle = leftOk ? "#7cff9b" : "#ff6b7d";
             ctx.fillText(leftOk ? "lower" : "higher", zx((focusI - 1) / NS) - 46, zy(smo[focusI - 1]) + (leftOk ? 36 : -24));
@@ -579,7 +579,7 @@ class ProcessAnimator {
           }
           if (verdict) {
             ctx.fillStyle = verdict === "max" ? "#7cff9b" : "#ff6b7d";
-            ctx.font = "14px 'IBM Plex Mono', monospace";
+            ctx.font = "600 14px 'IBM Plex Mono', monospace";
             const label = verdict === "max" ? "LOCAL MAXIMUM" : "not a maximum";
             ctx.fillText(label, zx(focusI / NS) - 54, zy(smo[focusI]) - 24);
           }
@@ -677,7 +677,7 @@ class ProcessAnimator {
             ctx.beginPath(); ctx.moveTo(rx2, byy - 5); ctx.lineTo(rx2, byy + 5); ctx.stroke();
             if (regP >= 1) {
               ctx.save(); ctx.textAlign = "center";
-              ctx.fillStyle = `rgba(124,255,155,${0.9 * z})`; ctx.font = "12px 'IBM Plex Mono', monospace";
+              ctx.fillStyle = `rgba(124,255,155,${0.9 * z})`; ctx.font = "600 12px 'IBM Plex Mono', monospace";
               ctx.fillText(`± min_dist = ${minD} samples`, (rx1 + rx2) / 2, byy - 12);
               ctx.restore();
             }
@@ -754,7 +754,7 @@ class ProcessAnimator {
           const baseMark = (idx, label, lit) => {
             ctx.strokeStyle = lit ? "#7cff9b" : "rgba(255,207,107,0.85)"; ctx.lineWidth = 1.6;
             ctx.beginPath(); ctx.arc(px(idx / NS), py(smo[idx]), 5, 0, 7); ctx.stroke();
-            ctx.fillStyle = lit ? "#7cff9b" : "rgba(255,207,107,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+            ctx.fillStyle = lit ? "#7cff9b" : "rgba(255, 207, 107, 0.93)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
             ctx.fillText(label, px(idx / NS) - 24, py(smo[idx]) + 19);
           };
 
@@ -804,7 +804,7 @@ class ProcessAnimator {
           const ki = kept.indexOf(m);
           if (ki >= 0) {
             dot(m, "#7cff9b", 4.5);
-            ctx.fillStyle = "#7cff9b"; ctx.font = "11px 'IBM Plex Mono', monospace";
+            ctx.fillStyle = "#7cff9b"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
             ctx.fillText(String(ki + 1), px(m.x) - 3, py(m.y) - 10);
           } else {
             dot(m, "rgba(255,107,125,0.7)", 2.5, 1 - fade * 0.85);
@@ -849,7 +849,7 @@ class ProcessAnimator {
       ctx.save(); ctx.globalAlpha = fitFade;
       ctx.fillStyle = "rgba(4,7,10,0.78)"; ctx.fillRect(lgX - 6, lgY - 14, 96, 40);
       ctx.strokeStyle = "rgba(120,200,220,0.22)"; ctx.lineWidth = 1; ctx.strokeRect(lgX - 6, lgY - 14, 96, 40);
-      ctx.font = "12px 'IBM Plex Mono', monospace";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
       ctx.fillStyle = "#7cff9b"; ctx.fillText("a, μ fixed", lgX, lgY + 1);
       ctx.fillStyle = "#ffcf6b"; ctx.fillText("σ →", lgX, lgY + 18);
       ctx.restore();
@@ -875,7 +875,7 @@ class ProcessAnimator {
       if (guessing) {
         const divP = this._ease(Math.min(1, segT / HOLD));
         const half = this._lerp(S0base, S0, divP);
-        ctx.font = "13px 'IBM Plex Mono', monospace";
+        ctx.font = "600 13px 'IBM Plex Mono', monospace";
         cands.slice(0, k).forEach((c, ci) => {
           const yb = py(c.a * 0.607);
           const bx1 = px(c.mu - S0base), bx2 = px(c.mu + S0base);
@@ -890,7 +890,7 @@ class ProcessAnimator {
           ctx.beginPath(); ctx.moveTo(x2, yb - 5); ctx.lineTo(x2, yb + 5); ctx.stroke();
           ctx.save(); ctx.textAlign = "center";
           ctx.fillStyle = "#ffcf6b"; ctx.fillText("σ₀", px(c.mu), yb + 19);
-          if (ci === 0) { ctx.fillStyle = "rgba(255,207,107,0.6)"; ctx.fillText("σ_base", (bx1 + bx2) / 2, yb - 9); }
+          if (ci === 0) { ctx.fillStyle = "rgba(255, 207, 107, 0.88)"; ctx.fillText("σ_base", (bx1 + bx2) / 2, yb - 9); }
           ctx.restore();
         });
         caption = `K = ${k}  ·  ONE shared init at K_max = 5: σ_base = max(2·Δξ, h_span/40) = ${sigmaGuess(5).toFixed(1)} m, σ₀ = σ_base / 4 = ${(sigmaGuess(5) / DIVISOR).toFixed(2)} m  ·  first ${k} seed${k > 1 ? "s" : ""} reused`;
@@ -931,10 +931,10 @@ class ProcessAnimator {
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(x, y, swH, shH, 8); else ctx.rect(x, y, swH, shH);
         ctx.fill(); ctx.stroke();
-        ctx.font = "12px 'IBM Plex Mono', monospace";
+        ctx.font = "600 12px 'IBM Plex Mono', monospace";
         lines.forEach((ln, i2) => {
           if (i2 === hlLine) ctx.fillStyle = "#7cff9b";
-          else ctx.fillStyle = dim ? "rgba(255,107,125,0.5)" : "rgba(230,247,243,0.95)";
+          else ctx.fillStyle = dim ? "rgba(255, 107, 125, 0.75)" : "rgba(230, 247, 243, 0.97)";
           ctx.fillText(ln, x + 11, y + 19 + i2 * 16);
         });
         if (tag) { ctx.fillStyle = "#7cff9b"; ctx.fillText(tag, x + swH - 27, y + 16); }
@@ -953,14 +953,14 @@ class ProcessAnimator {
           ctx.save(); ctx.globalAlpha = slotsA;
           ctx.strokeStyle = "rgba(120,200,220,0.3)"; ctx.setLineDash([5, 5]); ctx.lineWidth = 1.1;
           ctx.strokeRect(xH(j), yRow, swH, shH); ctx.setLineDash([]);
-          ctx.fillStyle = "rgba(143,176,170,0.75)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "rgba(143, 176, 170, 0.93)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
           ctx.fillText("slot " + (j + 1), xH(j) + 4, yRow + shH + 17);
           ctx.restore();
         }
       }
 
       if (allLanded) {
-        ctx.fillStyle = "rgba(124,255,155,0.85)"; ctx.font = "12px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(124, 255, 155, 0.95)"; ctx.font = "600 12px 'IBM Plex Mono', monospace";
         ctx.fillText("μ ascending →", xH0 + 2, yRow - 18);
       }
 
@@ -1037,11 +1037,11 @@ class ProcessAnimator {
         }
       }
 
-      ctx.font = "12px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = "rgba(150,176,182,0.9)";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(150, 176, 182, 0.97)";
       ctx.fillText("raw", pad.l + 92, plotT + 18);
       if (r > 0.05) {
-        ctx.fillStyle = "rgba(53,230,208,0.9)";
+        ctx.fillStyle = "rgba(53, 230, 208, 0.97)";
         ctx.fillText("model", pad.l + 92, this._lerp(midY + 26, plotT + 36, q));
       }
 
@@ -1083,9 +1083,9 @@ class ProcessAnimator {
         const bx = px(0.30), bw = 30, baseY = mapY(0), topY = mapY(topVal * 0.78);
         ctx.fillStyle = "rgba(255,107,125,0.6)"; ctx.fillRect(bx, this._lerp(baseY, topY, ssr * 0.62), bw, this._lerp(0, baseY - topY, ssr) * 0.62);
         ctx.fillStyle = "rgba(230,247,243,0.55)"; ctx.fillRect(bx + 50, this._lerp(baseY, topY, ssr), bw, this._lerp(0, baseY - topY, ssr));
-        ctx.font = "11px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = "rgba(255,107,125,0.9)"; ctx.fillText("SS_res", bx - 4, baseY + 16);
-        ctx.fillStyle = "rgba(230,247,243,0.8)"; ctx.fillText("SS_tot", bx + 46, baseY + 16);
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(255, 107, 125, 0.97)"; ctx.fillText("SS_res", bx - 4, baseY + 16);
+        ctx.fillStyle = "rgba(230, 247, 243, 0.94)"; ctx.fillText("SS_tot", bx + 46, baseY + 16);
         const r2A = Math.min(this._ease(Math.min(1, (tr - 1.6) / 0.6)), 1 - this._ease(Math.min(1, Math.max(0, (tr - 4.1) / 0.4))));
         this._texDraw("R^2=1-\\dfrac{\\sum_i (\\hat{\\gamma}_i-\\gamma_i)^2}{\\sum_i (\\gamma_i-\\bar{\\gamma})^2}", px(0.42), plotT + 4, 15, { align: "left", alpha: r2A, color: "rgba(230,247,243,0.95)" });
       }
@@ -1093,7 +1093,7 @@ class ProcessAnimator {
       if (tr >= 3.0) {
         const ap = this._ease(Math.min(1, (tr - 3.0) / 0.8));
         ctx.save(); ctx.globalAlpha = ap; ctx.textAlign = "center";
-        ctx.font = "15px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7cff9b";
+        ctx.font = "600 15px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7cff9b";
         ctx.fillText("R² = 0.97 (example)", w / 2, plotT + (plotB - plotT) * 0.32);
         ctx.restore();
       }
@@ -1107,7 +1107,7 @@ class ProcessAnimator {
           if (ci + ri * cols > gp * cols * rows) continue;
           this._paramHeatTile(gx0 + ci * s, gy0 + ri * s, s - 2, r2demo[j]);
         }
-        ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(143,176,170,0.85)";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(143, 176, 170, 0.95)";
         ctx.save(); ctx.textAlign = "center";
         ctx.fillText("R² map  ·  n_row × R", w / 2, gy0 + rows * s + 16);
         ctx.restore();
@@ -1138,8 +1138,8 @@ class ProcessAnimator {
       }
 
       const cnt = Math.round(this._ease(Math.min(1, tc / 1.8)) * 4.7);
-      ctx.font = "13px 'IBM Plex Mono', monospace"; ctx.save(); ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(124,255,155,0.95)";
+      ctx.font = "600 13px 'IBM Plex Mono', monospace"; ctx.save(); ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(124, 255, 155, 0.98)";
       ctx.fillText(`${cnt.toFixed(1)} M profiles`, w / 2, gy0 + rows * s + 22);
       ctx.restore();
       caption = "This runs independently for every row × range pixel  ·  millions of profiles  ·  output (3·K_max, n_row, R)";
@@ -1209,19 +1209,19 @@ class ProcessAnimator {
       }
     };
     const label = (txt, x, y, color, size) => {
-      ctx.fillStyle = color || "rgba(206,228,222,0.9)";
-      ctx.font = `${size || 13}px 'IBM Plex Mono', monospace`;
+      ctx.fillStyle = color || "rgba(206, 228, 222, 0.97)";
+      ctx.font = `600 ${size || 13}px 'IBM Plex Mono', monospace`;
       ctx.fillText(txt, x, y);
     };
     const centerLabel = (txt, cx2, y, color, size) => {
-      ctx.font = `${size || 13}px 'IBM Plex Mono', monospace`;
+      ctx.font = `600 ${size || 13}px 'IBM Plex Mono', monospace`;
       const tw2 = ctx.measureText(txt).width;
-      ctx.fillStyle = color || "rgba(206,228,222,0.9)";
+      ctx.fillStyle = color || "rgba(206, 228, 222, 0.97)";
       ctx.fillText(txt, cx2 - tw2 / 2, y);
     };
     const chip = (txt, x, y, color, alpha, size) => {
       const fs3 = size || 13;
-      ctx.font = `${fs3}px 'IBM Plex Mono', monospace`;
+      ctx.font = `600 ${fs3}px 'IBM Plex Mono', monospace`;
       const tw = ctx.measureText(txt).width + 20;
       if (alpha != null && alpha <= 0) return tw;
       ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
@@ -1230,7 +1230,7 @@ class ProcessAnimator {
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x, y - ch4 + 8, tw, ch4, 6); else ctx.rect(x, y - ch4 + 8, tw, ch4);
       ctx.fill(); ctx.stroke();
-      ctx.fillStyle = color; ctx.font = `${fs3}px 'IBM Plex Mono', monospace`; ctx.fillText(txt, x + 10, y + 1);
+      ctx.fillStyle = color; ctx.font = `600 ${fs3}px 'IBM Plex Mono', monospace`; ctx.fillText(txt, x + 10, y + 1);
       ctx.restore();
       return tw;
     };
@@ -1951,7 +1951,7 @@ class ProcessAnimator {
               });
               ctx.setLineDash([]);
               if (q3 > 0.6) {
-                ctx.fillStyle = "rgba(255,207,107,0.85)"; ctx.font = "10px 'IBM Plex Mono', monospace";
+                ctx.fillStyle = "rgba(255, 207, 107, 0.95)"; ctx.font = "600 10px 'IBM Plex Mono', monospace";
                 ctx.fillText("0", xMu - 3, hb - hh3 - 3);
               }
               ctx.restore();
@@ -2149,8 +2149,8 @@ class ProcessAnimator {
     ctx.save();
     ctx.fillStyle = "#35e6d0";
     ctx.fillRect(12, h - 19, 3, 12);
-    ctx.font = "11px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(143,176,170,0.85)";
+    ctx.font = "600 11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(143, 176, 170, 0.95)";
     ctx.fillText(txt, 21, h - 9);
     ctx.restore();
   }
@@ -2163,8 +2163,8 @@ class ProcessAnimator {
       if (pa <= 0) return;
       ctx.save();
       ctx.globalAlpha = pa;
-      ctx.font = `${p2.up ? "" : "italic "}${p2.sub ? Math.round(size * 0.64) : size}px Georgia, 'Times New Roman', serif`;
-      ctx.fillStyle = p2.c || "rgba(230,247,243,0.95)";
+      ctx.font = `${p2.up ? "" : "italic "}600 ${p2.sub ? Math.round(size * 0.64) : size}px Georgia, 'Times New Roman', serif`;
+      ctx.fillStyle = p2.c || "rgba(230, 247, 243, 0.98)";
       ctx.fillText(p2.t, cx, y + (p2.sub ? size * 0.28 : 0));
       cx += ctx.measureText(p2.t).width + (p2.pad || 2);
       ctx.restore();
@@ -2188,8 +2188,8 @@ class ProcessAnimator {
     if (ctx.roundRect) ctx.roundRect(x, y, bw, bh, 7); else ctx.rect(x, y, bw, bh);
     if (active) { ctx.shadowColor = col; ctx.shadowBlur = 8; }
     ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
-    ctx.font = "12px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = active ? col : "rgba(230,247,243,0.82)";
+    ctx.font = "600 12px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = active ? col : "rgba(230, 247, 243, 0.91)";
     ctx.fillText(text, x + (bw - ctx.measureText(text).width) / 2, y + bh / 2 + 4);
     ctx.restore();
   }
@@ -2258,7 +2258,7 @@ class ProcessAnimator {
         { t: "clamp_gaussian_params", t0: 0.8, a0: 5.6, a1: 22.0 },
         { t: "normalize_output", t0: 1.3, a0: 22.0, a1: 26.0 },
       ];
-      ctx.font = "12px 'IBM Plex Mono', monospace";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
       const widths = chips.map((c) => ctx.measureText(c.t).width + 24);
       const totW = widths.reduce((s, v) => s + v, 0) + 2 * 46;
       let cx0 = (w - totW) / 2;
@@ -2273,7 +2273,7 @@ class ProcessAnimator {
           ctx.beginPath();
           if (ctx.roundRect) ctx.roundRect(cx0, chipY - 17, widths[i], 26, 7); else ctx.rect(cx0, chipY - 17, widths[i], 26);
           ctx.fill(); ctx.stroke();
-          ctx.fillStyle = activeC ? "#7cff9b" : "rgba(230,247,243,0.85)";
+          ctx.fillStyle = activeC ? "#7cff9b" : "rgba(230, 247, 243, 0.93)";
           ctx.fillText(c.t, cx0 + 12, chipY);
           if (i < 2) {
             const ax0 = cx0 + widths[i] + 9, ax1 = cx0 + widths[i] + 38;
@@ -2298,8 +2298,8 @@ class ProcessAnimator {
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(bx, by, bw2, bh, 10); else ctx.rect(bx, by, bw2, bh);
         ctx.fill(); ctx.stroke();
-        ctx.font = "14px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = "rgba(143,176,170,0.95)";
+        ctx.font = "600 14px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(143, 176, 170, 0.98)";
         ctx.fillText(fromHead, bx + 130, by + 30);
         ctx.fillText(toHead, bx + 470, by + 30);
         ctx.strokeStyle = "rgba(120,200,220,0.15)";
@@ -2311,10 +2311,10 @@ class ProcessAnimator {
           const mp = this._ease(Math.min(1, Math.max(0, (ts - t0 - 1.0 - ri * stag) / dur)));
           const val = this._lerp(r.v0, r.v1, mp);
           ctx.save(); ctx.globalAlpha = pa * a0;
-          ctx.font = "16px 'IBM Plex Mono', monospace";
-          ctx.fillStyle = "rgba(143,176,170,0.9)";
+          ctx.font = "600 16px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "rgba(143, 176, 170, 0.97)";
           ctx.fillText(r.k, bx + 36, y);
-          ctx.fillStyle = "rgba(230,247,243,0.9)";
+          ctx.fillStyle = "rgba(230, 247, 243, 0.97)";
           ctx.fillText(`${r.v0.toFixed(2)}${r.u0}`, bx + 130, y);
           ctx.strokeStyle = "rgba(143,176,170,0.85)"; ctx.fillStyle = "rgba(143,176,170,0.85)"; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.moveTo(bx + 330, y - 5); ctx.lineTo(bx + 408, y - 5); ctx.stroke();
@@ -2345,7 +2345,7 @@ class ProcessAnimator {
       const rowsFade = ts < 14.6 ? 1 : Math.max(0, 1 - (ts - 14.6) / 0.5);
       if (ts >= 5.6 && rowsFade > 0) {
         ctx.save(); ctx.globalAlpha = rowsFade;
-        ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#5e7280";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#abb6bd";
         const subl = "bounds from dataset metadata (example values)";
         ctx.fillText(subl, w / 2 - ctx.measureText(subl).width / 2, h - pad.b - 6);
         ctx.restore();
@@ -2360,10 +2360,10 @@ class ProcessAnimator {
         ctx.beginPath(); ctx.moveTo(rx0, y); ctx.lineTo(rx1, y); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(rx0, y - 9); ctx.lineTo(rx0, y + 9); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(rx1, y - 9); ctx.lineTo(rx1, y + 9); ctx.stroke();
-        ctx.font = "15px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = focus ? "#ffcf6b" : "rgba(230,247,243,0.9)";
+        ctx.font = "600 15px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = focus ? "#ffcf6b" : "rgba(230, 247, 243, 0.95)";
         ctx.fillText(r.k, r.raw > 1 ? rx0 - 86 : rx1 + 34, y + 5);
-        ctx.font = "12px 'IBM Plex Mono', monospace";
+        ctx.font = "600 12px 'IBM Plex Mono', monospace";
         ctx.fillStyle = "rgba(143,176,170,0.85)";
         ctr(r.lo, rx0, y + 26);
         ctr(r.hi, rx1, y + 26);
@@ -2385,7 +2385,7 @@ class ProcessAnimator {
           ctx.strokeStyle = "rgba(255,107,125,0.85)"; ctx.lineWidth = 1.6;
           ctx.beginPath(); ctx.arc(xOf(r.raw), y, 12 + Math.sin(this.t * 5) * 1.6, 0, 7); ctx.stroke();
         }
-        ctx.font = "13px 'IBM Plex Mono', monospace";
+        ctx.font = "600 13px 'IBM Plex Mono', monospace";
         if (cp >= 1) {
           ctx.fillStyle = "#7cff9b";
           ctr(`clamped: ${r.pc.toFixed(1)}${r.u}`, xOf(vNow), y - 19);
@@ -2421,8 +2421,8 @@ class ProcessAnimator {
           const fn = (x) => x <= 1 ? x : 1 + pn.slope * (x - 1);
           const dfn = (x) => x <= 1 ? 1 : pn.slope;
 
-          ctx.font = "13px 'IBM Plex Mono', monospace";
-          ctx.fillStyle = "rgba(230,247,243,0.92)";
+          ctx.font = "600 13px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "rgba(230, 247, 243, 0.98)";
           ctx.fillText(pn.title, pn.x0, fy0 - 10);
 
           ctx.strokeStyle = "rgba(120,200,220,0.22)"; ctx.lineWidth = 1;
@@ -2431,8 +2431,8 @@ class ProcessAnimator {
           ctx.strokeStyle = "rgba(255,207,107,0.5)";
           ctx.beginPath(); ctx.moveTo(xT(1), fy0); ctx.lineTo(xT(1), dy1); ctx.stroke();
           ctx.setLineDash([]);
-          ctx.font = "11px 'IBM Plex Mono', monospace";
-          ctx.fillStyle = "rgba(255,207,107,0.85)";
+          ctx.font = "600 11px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "rgba(255, 207, 107, 0.95)";
           ctx.fillText("bound", xT(1) + 6, fy1 - 8);
 
           if (hl > 0) {
@@ -2491,8 +2491,8 @@ class ProcessAnimator {
             ctx.strokeStyle = "rgba(150,176,182,0.5)"; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
             ctx.beginPath(); ctx.moveTo(pn.x0, yD(0)); ctx.lineTo(pn.x1, yD(0)); ctx.stroke();
             ctx.setLineDash([]);
-            ctx.font = "11px 'IBM Plex Mono', monospace";
-            ctx.fillStyle = "rgba(150,176,182,0.8)";
+            ctx.font = "600 11px 'IBM Plex Mono', monospace";
+            ctx.fillStyle = "rgba(150, 176, 182, 0.94)";
             ctx.fillText("0", pn.x0 - 12, yD(0) + 4);
             const drawTo = 1.7 * dP;
             ctx.beginPath();
@@ -2504,14 +2504,14 @@ class ProcessAnimator {
             }
             ctx.strokeStyle = pn.oc; ctx.lineWidth = 2.6; ctx.stroke();
             if (dP >= 1) {
-              ctx.font = "13px 'IBM Plex Mono', monospace";
+              ctx.font = "600 13px 'IBM Plex Mono', monospace";
               ctx.fillStyle = pn.oc;
               ctx.fillText(pn.dv, xT(1.32), yD(pn.slope) - 10);
             }
           }
         });
-        ctx.font = "11px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = "rgba(143,176,170,0.85)";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(143, 176, 170, 0.95)";
         if (dP > 0) ctx.fillText("gradient  d(out)/d(raw)", 70, dy1 + 16);
         ctx.restore();
       }
@@ -2539,15 +2539,15 @@ class ProcessAnimator {
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(pn.x0, pTop, pn.x1 - pn.x0, pBot - pTop, 10); else ctx.rect(pn.x0, pTop, pn.x1 - pn.x0, pBot - pTop);
         ctx.fill(); ctx.stroke();
-        ctx.font = "12px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = "rgba(230,247,243,0.9)";
+        ctx.font = "600 12px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(230, 247, 243, 0.97)";
         ctx.fillText(i === 0 ? "parameter space" : "curve space", pn.x0 + 14, pTop - 8);
       });
       ctx.restore();
 
       const eqA = Math.min(1, Math.max(0, (ts - 26.8) / 0.6));
       ctx.save(); ctx.globalAlpha = eqA * ap;
-      ctx.font = "14px 'IBM Plex Mono', monospace";
+      ctx.font = "600 14px 'IBM Plex Mono', monospace";
       ctx.fillStyle = "#ffcf6b";
       ctx.fillText("L1 param loss", pL.x0 + 16, pTop + 30);
       ctx.fillText("MSE curve loss", pR.x0 + 16, pTop + 30);
@@ -2575,7 +2575,7 @@ class ProcessAnimator {
         const hd = Math.min(1, Math.max(0, (ts - 27.6 - i * 0.3) / 0.5));
         if (hd <= 0) return;
         ctx.save(); ctx.globalAlpha = hd;
-        ctx.font = "14px 'IBM Plex Mono', monospace";
+        ctx.font = "600 14px 'IBM Plex Mono', monospace";
         ctx.fillStyle = G; ctx.fillText(`slot ${i + 1}`, pL.x0 + 14, y0 + 38);
 
         ranges.forEach((r, ri) => {
@@ -2585,7 +2585,7 @@ class ProcessAnimator {
           const gv = [g.a, g.mu, g.s][ri], pv = [p.a, p.mu, p.s][ri];
           const X = (v) => tx0 + (v / r.max) * (tx1 - tx0);
           ctx.save(); ctx.globalAlpha = hd * ra;
-          ctx.font = "13px 'IBM Plex Mono', monospace";
+          ctx.font = "600 13px 'IBM Plex Mono', monospace";
           ctx.fillStyle = PC[ri]; ctx.fillText(r.k, pL.x0 + 76, y + 4);
           ctx.strokeStyle = "rgba(120,200,220,0.14)"; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(tx0, y); ctx.lineTo(tx1, y); ctx.stroke();
@@ -2599,7 +2599,7 @@ class ProcessAnimator {
           ctx.fillStyle = "#35e6d0";
           ctx.beginPath(); ctx.arc(X(pv), y, 3.8, 0, 7); ctx.fill();
           if (gp >= 1) {
-            ctx.fillStyle = PC[ri]; ctx.font = "13px 'IBM Plex Mono', monospace";
+            ctx.fillStyle = PC[ri]; ctx.font = "600 13px 'IBM Plex Mono', monospace";
             ctx.fillText(Math.abs(gv - pv).toFixed(2), tx1 + 14, y + 4);
           }
           ctx.restore();
@@ -2610,7 +2610,7 @@ class ProcessAnimator {
       const prA = Math.min(1, Math.max(0, (ts - 31.4) / 0.5));
       if (prA > 0) {
         ctx.save(); ctx.globalAlpha = prA;
-        ctx.font = "13px 'IBM Plex Mono', monospace";
+        ctx.font = "600 13px 'IBM Plex Mono', monospace";
         ctx.fillStyle = G;
         const rtot = `param_l1 = ${(slotL1[0] + slotL1[1] + slotL1[2]).toFixed(2)}`;
         ctx.fillText(rtot, pL.x1 - ctx.measureText(rtot).width - 14, pTop + 30);
@@ -2671,8 +2671,8 @@ class ProcessAnimator {
           ctx.strokeStyle = "rgba(255,207,107,0.7)"; ctx.lineWidth = 1.2;
           ctx.beginPath(); ctx.moveTo(pxc(xs), cy0); ctx.lineTo(pxc(xs), cy1); ctx.stroke();
         }
-        ctx.font = "13px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = sp >= 1 ? G : "rgba(255,207,107,0.95)";
+        ctx.font = "600 13px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = sp >= 1 ? G : "rgba(255, 207, 107, 0.97)";
         ctx.fillText(sp >= 1 ? `mse = ${mseRun.toFixed(3)}` : `running mse = ${mseRun.toFixed(3)}  ·  ${upto + 1}/${NSW + 1}`, pR.x0 + 14, pBot - 16);
         ctx.restore();
       }
@@ -2740,7 +2740,7 @@ class ProcessAnimator {
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(ampReg.x0, ampReg.y0, ampReg.x1 - ampReg.x0, ampReg.y1 - ampReg.y0, 9); else ctx.rect(ampReg.x0, ampReg.y0, ampReg.x1 - ampReg.x0, ampReg.y1 - ampReg.y0);
       ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
-      ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(53,230,208,0.9)";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(53, 230, 208, 0.97)";
       ctx.fillText("torch.autocast(bfloat16)  ·  use_amp (default off)", ampReg.x0 + 6, ampReg.y0 - 6);
       ctx.restore();
     }
@@ -2758,7 +2758,7 @@ class ProcessAnimator {
       const cx = nodeX(2) + nodeW / 2;
       const dv = ts < 9.0 ? "1.00" : (1 / A).toFixed(2);
       ctx.save(); ctx.globalAlpha = da;
-      ctx.font = "12px 'IBM Plex Mono', monospace"; ctx.fillStyle = dv === "1.00" ? "#ffcf6b" : "#7cff9b";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.fillStyle = dv === "1.00" ? "#ffcf6b" : "#7cff9b";
       ctx.fillText(`${dv}  (A = ${A})`, cx - 34, railY - 6);
       ctx.restore();
     }
@@ -2774,7 +2774,7 @@ class ProcessAnimator {
       ctx.save();
       ctx.strokeStyle = "rgba(120,200,220,0.4)"; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, bh);
       ctx.fillStyle = "rgba(124,255,155,0.7)"; ctx.fillRect(bx + 1, by + 1, (bw - 2) * Math.min(1, accFull), bh - 2);
-      ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(143,176,170,0.85)";
+      ctx.font = "600 10px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(143, 176, 170, 0.95)";
       ctx.fillText("grads accumulate", bx, by + bh + 12);
       ctx.restore();
     }
@@ -2782,7 +2782,7 @@ class ProcessAnimator {
     if (ts >= 11.0) {
       const la = this._ease(Math.min(1, (ts - 11.0) / 0.5));
       ctx.save(); ctx.globalAlpha = la * 0.9;
-      ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(143,176,170,0.85)";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(143, 176, 170, 0.95)";
       ctx.fillText("loss.backward()", nodeX(3), railY - 6);
       ctx.restore();
     }
@@ -2791,8 +2791,8 @@ class ProcessAnimator {
       const ga = this._ease(Math.min(1, (ts - 13.5) / 0.8));
       const cx = (nodeX(3) + nodeW / 2);
       ctx.save(); ctx.globalAlpha = ga;
-      ctx.font = "12px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = boundary ? "#7cff9b" : "rgba(143,176,170,0.85)";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = boundary ? "#7cff9b" : "rgba(143, 176, 170, 0.93)";
       const gtxt = "(batch_idx + 1) % A == 0  or  last batch";
       ctx.fillText(gtxt, w / 2 - ctx.measureText(gtxt).width / 2, (railY + nodeH + dockY) / 2 + 2);
       ctx.restore();
@@ -2820,7 +2820,7 @@ class ProcessAnimator {
         ctx.stroke();
       }
       ctx.setLineDash([]);
-      ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(94,114,128,0.9)";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(171, 182, 189, 0.97)";
       ctx.fillText("conditional update — opens on a boundary", dockX0, dockY - 8);
       ctx.restore();
     }
@@ -2833,14 +2833,14 @@ class ProcessAnimator {
       ctx.save(); ctx.globalAlpha = wa;
       ctx.strokeStyle = "rgba(124,255,155,0.45)"; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.moveTo(panX, dockY + dockH); ctx.lineTo(panX, panTop + 1); ctx.stroke();
-      ctx.fillStyle = "rgba(124,255,155,0.85)"; ctx.font = "10px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(124, 255, 155, 0.95)"; ctx.font = "600 10px 'IBM Plex Mono', monospace";
       const htxt = "inside optimizer.step → AdamW (decoupled weight decay)";
       ctx.fillText(htxt, cxm - ctx.measureText(htxt).width / 2, panTop + 6);
       ctx.restore();
       this._texDraw("\\hat m_t=\\tfrac{m_t}{1-\\beta_1^{t}},\\ \\hat v_t=\\tfrac{v_t}{1-\\beta_2^{t}}", cxm, panTop + 8, 11, { align: "center", alpha: wa, color: "rgba(143,176,170,0.9)" });
       this._texDraw("\\theta\\leftarrow\\theta-\\eta\\,(\\,\\tfrac{\\hat m_t}{\\sqrt{\\hat v_t}+\\epsilon}+\\lambda\\theta\\,)", cxm, panTop + 24, 14, { align: "center", alpha: wa, color: "rgba(124,255,155,0.95)" });
       ctx.save(); ctx.globalAlpha = wa;
-      ctx.font = "10px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7e8c94";
+      ctx.font = "600 10px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#acb5bb";
       const ctag = "β1=0.9 · β2=0.999 · ε=1e-8 · λ=0.1 · per-group η";
       ctx.fillText(ctag, cxm - ctx.measureText(ctag).width / 2, panTop + 64);
       ctx.restore();
@@ -2851,12 +2851,12 @@ class ProcessAnimator {
       const sm = Math.sin(this.t * 0.8) > 0;
       const ry = h - 54, ry2 = h - 30;
       ctx.save();
-      ctx.font = "11px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = "rgba(53,230,208,0.9)";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(53, 230, 208, 0.97)";
       ctx.fillText("warmup.step()  ·  every mini-batch", 24, ry);
       ctx.fillStyle = wm ? "#35e6d0" : "rgba(53,230,208,0.25)";
       ctx.beginPath(); ctx.arc(w - 40, ry - 4, 5, 0, 7); ctx.fill();
-      ctx.fillStyle = "rgba(124,255,155,0.9)";
+      ctx.fillStyle = "rgba(124, 255, 155, 0.97)";
       ctx.fillText("scheduler.step()  ·  once per epoch", 24, ry2);
       ctx.fillStyle = sm ? "#7cff9b" : "rgba(124,255,155,0.25)";
       ctx.beginPath(); ctx.arc(w - 40, ry2 - 4, 5, 0, 7); ctx.fill();
@@ -2874,12 +2874,12 @@ class ProcessAnimator {
 
     {
       ctx.save();
-      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.textAlign = "right";
-      ctx.fillStyle = "rgba(230,247,243,0.92)";
+      ctx.fillStyle = "rgba(230, 247, 243, 0.98)";
       ctx.fillText(`batch ${batchIdx}`, w - 18, 22);
       ctx.fillText(`global_step ${gstep}`, w - 18, 38);
-      ctx.fillStyle = "#5e7280";
+      ctx.fillStyle = "#abb6bd";
       ctx.fillText(`A = ${A} (example)`, w - 18, 54);
       ctx.textAlign = "left";
       ctx.restore();
@@ -2914,7 +2914,7 @@ class ProcessAnimator {
 
     ctx.strokeStyle = "rgba(150,176,182,0.5)"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(pad.l, pyL(d.BASE)); ctx.lineTo(w - pad.r, pyL(d.BASE)); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = "rgba(150,176,182,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(150, 176, 182, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
     ctx.fillText("base_lr = 1e-3", (ts >= 15 ? pxS(d.WS) : pad.l) + 8, pyL(d.BASE) - 6);
 
     if (view <= 1200) {
@@ -2923,7 +2923,7 @@ class ProcessAnimator {
       ctx.fillRect(pad.l, pad.t, xw - pad.l, h - pad.t - pad.b);
       ctx.strokeStyle = "rgba(255,207,107,0.4)"; ctx.setLineDash([4, 4]);
       ctx.beginPath(); ctx.moveTo(xw, pad.t); ctx.lineTo(xw, h - pad.b); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(255,207,107,0.85)";
+      ctx.fillStyle = "rgba(255, 207, 107, 0.95)";
       ctx.fillText("warmup_steps = 200", pad.l + 8, h - pad.b - 10);
     }
 
@@ -2938,13 +2938,13 @@ class ProcessAnimator {
       ctx.beginPath(); ctx.moveTo(xW, pad.t); ctx.lineTo(xW, h - pad.b); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(xM, pad.t); ctx.lineTo(xM, h - pad.b); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.font = "11px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = "rgba(255,207,107,0.9)";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(255, 207, 107, 0.97)";
       ctx.save(); ctx.translate(pad.l + (xW - pad.l) / 2 + 4, pad.t + 62); ctx.rotate(-Math.PI / 2); ctx.fillText("warmup", 0, 0); ctx.restore();
-      ctx.fillStyle = "rgba(53,230,208,0.9)";
+      ctx.fillStyle = "rgba(53, 230, 208, 0.97)";
       let lb = "high lr  ·  coarse structure";
       ctx.fillText(lb, xW + (xM - xW) / 2 - ctx.measureText(lb).width / 2, pad.t + 14);
-      ctx.fillStyle = "rgba(124,255,155,0.9)";
+      ctx.fillStyle = "rgba(124, 255, 155, 0.97)";
       lb = "low lr  ·  fine convergence";
       ctx.fillText(lb, xM + (w - pad.r - xM) / 2 - ctx.measureText(lb).width / 2, pad.t + 14);
       ctx.restore();
@@ -2967,7 +2967,7 @@ class ProcessAnimator {
     }
     if (upTo >= d.WS && view <= 1200) {
       ctx.fillStyle = "#7cff9b"; ctx.beginPath(); ctx.arc(pxS(d.WS), pyL(d.lrAt(d.WS)), 4.5, 0, 7); ctx.fill();
-      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.fillText("factor = 1.0", pxS(d.WS) + 10, pyL(d.lrAt(d.WS)) - 10);
     }
 
@@ -2995,7 +2995,7 @@ class ProcessAnimator {
       ctx.fillStyle = "#7cff9b"; ctx.beginPath(); ctx.arc(X, Y, 5.5, 0, 7); ctx.fill();
       ctx.strokeStyle = "rgba(124,255,155,0.5)"; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.arc(X, Y, 10 + Math.sin(this.t * 5) * 1.5, 0, 7); ctx.stroke();
-      ctx.font = "12px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7cff9b";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7cff9b";
       ctx.fillText(`epoch ${ep}  ·  lr ${d.lrAt(st).toExponential(1)}`, Math.min(X + 16, w - pad.r - 190), Math.max(pad.t + 16, Y - 16));
       const zone = ep < 5 ? "warmup: stabilising the first updates" : ep < 50 ? "high-lr half: big steps, coarse structure" : "low-lr half: small steps, fine detail";
       cap = `The dot moves at the speed of the lr  ·  epoch ${ep}/100  ·  ${zone}`;
@@ -3003,7 +3003,7 @@ class ProcessAnimator {
       const yE = pyL(d.ETA);
       ctx.strokeStyle = "rgba(255,207,107,0.55)"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.moveTo(pad.l, yE); ctx.lineTo(w - pad.r, yE); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(255,207,107,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(255, 207, 107, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.fillText("eta_min = 1e-6", w - pad.r - 108, yE - 8);
       cap = "Anneals to eta_min = 1e-6 over T_max = 100 epochs  ·  the best epoch's weights are saved to the checkpoint";
     }
@@ -3045,7 +3045,7 @@ class ProcessAnimator {
       ctx.strokeStyle = "rgba(255,207,107,0.75)"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.moveTo(pad.l, pyN(thr)); ctx.lineTo(pad.l + rev * (w - pad.l - pad.r), pyN(thr)); ctx.stroke(); ctx.setLineDash([]);
       if (rev >= 1) {
-        ctx.fillStyle = "rgba(255,207,107,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(255, 207, 107, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("max_grad_norm = 1.0", w - pad.r - 136, pyN(thr) - 7);
       }
     }
@@ -3080,7 +3080,7 @@ class ProcessAnimator {
       const X = pxN(demoI);
       ctx.strokeStyle = "rgba(255,207,107,0.9)"; ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.arc(X, pyN(vNow), 9 + Math.sin(this.t * 5) * 1.5, 0, 7); ctx.stroke();
-      ctx.font = "12px 'IBM Plex Mono', monospace";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
       if (ts < 8.2) {
         ctx.fillStyle = "#ff6b7d";
         ctx.fillText(`|g| = ${demoV.toFixed(2)} > 1.0`, X + 14, pyN(demoV) - 4);
@@ -3139,9 +3139,9 @@ class ProcessAnimator {
         const X = pxE(50);
         ctx.strokeStyle = "rgba(255,207,107,0.7)"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.4;
         ctx.beginPath(); ctx.moveTo(X, pad.t); ctx.lineTo(X, h - pad.b); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(255,207,107,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "rgba(255, 207, 107, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("swap_epoch = 50", X + 8, pad.t + 14);
-        ctx.fillStyle = "#5e7280";
+        ctx.fillStyle = "#abb6bd";
         ctx.fillText("(example)", X + 8, pad.t + 28);
       }
 
@@ -3168,7 +3168,7 @@ class ProcessAnimator {
       ctx.strokeStyle = "#ffcf6b"; ctx.setLineDash([7, 5]); ctx.lineWidth = 1.6;
       ctx.strokeRect(rxA, pad.t + 4, rxB - rxA, h - pad.t - pad.b - 8);
       ctx.setLineDash([]);
-      ctx.fillStyle = "#ffcf6b"; ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "#ffcf6b"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.fillText("zoom", rxA + 6, pad.t + 20);
       ctx.restore();
     }
@@ -3188,7 +3188,7 @@ class ProcessAnimator {
       const bx = w - panW - 16, by = 30, rh = 31;
       ctx.fillStyle = "rgba(4,7,10,0.86)"; ctx.fillRect(bx - 10, by - 20, panW + 18, terms.length * rh + 48);
       ctx.strokeStyle = "rgba(120,200,220,0.28)"; ctx.strokeRect(bx - 10, by - 20, panW + 18, terms.length * rh + 48);
-      ctx.fillStyle = "rgba(143,176,170,0.95)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(143, 176, 170, 0.98)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.fillText(swapP < 0.5 ? "loss = curriculum.warmup" : "loss = curriculum.complete", bx, by - 6);
       terms.forEach((t2, i) => {
         const act = this._lerp(t2.p1 ? 1 : 0, t2.p2 ? 1 : 0, swapP);
@@ -3201,11 +3201,11 @@ class ProcessAnimator {
         ctx.beginPath();
         if (ctx.roundRect) ctx.roundRect(bx, y, panW - 4, rh - 7, 5); else ctx.rect(bx, y, panW - 4, rh - 7);
         ctx.fill(); ctx.stroke();
-        ctx.font = "12px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = act > 0.5 ? "rgba(230,247,243,0.95)" : "rgba(124,160,176,0.55)";
+        ctx.font = "600 12px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = act > 0.5 ? "rgba(230, 247, 243, 0.97)" : "rgba(124, 160, 176, 0.78)";
         ctx.fillText(t2.name, bx + 9, y + 16);
         const tag = act > 0.5 ? "a=" + t2.w : "off";
-        ctx.fillStyle = act > 0.5 ? "#7cff9b" : "rgba(124,160,176,0.55)";
+        ctx.fillStyle = act > 0.5 ? "#7cff9b" : "rgba(124, 160, 176, 0.78)";
         ctx.fillText(tag, bx + panW - 13 - ctx.measureText(tag).width, y + 16);
         ctx.restore();
       });
@@ -3227,7 +3227,7 @@ class ProcessAnimator {
             ctx.restore();
             this._texDraw("\\mathcal{L}=w_a\\mathcal{L}_a+w_{\\mu}\\mathcal{L}_{\\mu}+w_{\\sigma}\\mathcal{L}_{\\sigma}", fx, fy - tex.h, 15, { alpha: ea, color: "rgba(230,247,243,0.95)" });
             ctx.save(); ctx.globalAlpha = ea;
-            ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#5e7280";
+            ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#abb6bd";
             ctx.fillText("(example)", fx + tex.w + 8, fy - 3);
             ctx.restore();
           }
@@ -3243,7 +3243,7 @@ class ProcessAnimator {
           "checkpoint baseline reset",
         ];
         const x0 = pad.l + 14, y0 = pad.t + 26;
-        ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillStyle = "rgba(4,7,10,0.8)";
         ctx.fillRect(x0 - 8, y0 - 16, 246, items.length * 18 + 12);
         items.forEach((s, i) => {
@@ -3251,7 +3251,7 @@ class ProcessAnimator {
           if (a <= 0) return;
           ctx.save(); ctx.globalAlpha = a * (1 - zp);
           ctx.fillStyle = "#7cff9b"; ctx.fillText("✓", x0, y0 + i * 18);
-          ctx.fillStyle = "rgba(230,247,243,0.9)"; ctx.fillText(s, x0 + 16, y0 + i * 18);
+          ctx.fillStyle = "rgba(230, 247, 243, 0.97)"; ctx.fillText(s, x0 + 16, y0 + i * 18);
           ctx.restore();
         });
       }
@@ -3267,18 +3267,18 @@ class ProcessAnimator {
       const zx = (e) => padL.l + ((e - e0) / (e1 - e0)) * (w - padL.l - padL.r);
       const zy = (f) => padL.t + (1 - Math.min(1, f / 1.1)) * (h - padL.t - padL.b);
 
-      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
       for (let e = 45; e <= 60; e += 5) {
         ctx.strokeStyle = "rgba(120,200,220,0.10)"; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(zx(e), padL.t); ctx.lineTo(zx(e), h - padL.b); ctx.stroke();
-        ctx.fillStyle = "rgba(143,176,170,0.6)";
+        ctx.fillStyle = "rgba(143, 176, 170, 0.88)";
         ctx.fillText(String(e), zx(e) - 7, h - padL.b + 14);
       }
       ctx.strokeStyle = "rgba(120,200,220,0.2)"; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(padL.l, zy(1)); ctx.lineTo(w - padL.r, zy(1)); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(padL.l, zy(0.1)); ctx.lineTo(w - padL.r, zy(0.1)); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(143,176,170,0.8)";
+      ctx.fillStyle = "rgba(143, 176, 170, 0.94)";
       ctx.fillText("1.0", padL.l - 30, zy(1) + 4);
       ctx.fillText("0.1", padL.l - 30, zy(0.1) + 4);
 
@@ -3301,16 +3301,16 @@ class ProcessAnimator {
       if (dropP > 0) {
         ctx.strokeStyle = "rgba(255,207,107,0.85)"; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.moveTo(zx(50), padL.t); ctx.lineTo(zx(50), h - padL.b); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = "#ffcf6b"; ctx.font = "12px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = "#ffcf6b"; ctx.font = "600 12px 'IBM Plex Mono', monospace";
         ctx.fillText("lr_scheduler.reset(epoch_offset = 50)", padL.l + 14, padL.t + 40);
-        ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.strokeStyle = "rgba(255,107,125,0.9)"; ctx.lineWidth = 2.4;
         ctx.beginPath(); ctx.moveTo(zx(50), zy(fOf(49.99))); ctx.lineTo(zx(50), zy(this._lerp(fOf(49.99), 0.1, dropP))); ctx.stroke();
         if (dropP >= 1) {
-          ctx.fillStyle = "#ff6b7d"; ctx.font = "12px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "#ff6b7d"; ctx.font = "600 12px 'IBM Plex Mono', monospace";
           const dtxt = "factor -> 0.1";
           ctx.fillText(dtxt, zx(50) - 12 - ctx.measureText(dtxt).width, zy(0.13));
-          ctx.font = "11px 'IBM Plex Mono', monospace";
+          ctx.font = "600 11px 'IBM Plex Mono', monospace";
         }
       }
 
@@ -3323,11 +3323,11 @@ class ProcessAnimator {
         }
         ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 2.4; ctx.shadowColor = "rgba(124,255,155,0.45)"; ctx.shadowBlur = 7; ctx.stroke(); ctx.shadowBlur = 0;
         if (ePost >= 55) {
-          ctx.fillStyle = "rgba(124,255,155,0.9)";
+          ctx.fillStyle = "rgba(124, 255, 155, 0.97)";
           ctx.fillText("warmup re-ramp: 200 steps", zx(52.3), zy(0.48));
         }
         if (ePost >= 60) {
-          ctx.fillStyle = "rgba(124,255,155,0.9)";
+          ctx.fillStyle = "rgba(124, 255, 155, 0.97)";
           ctx.fillText("fresh cosine", zx(56.5), zy(1) + 18);
         }
       }
@@ -3387,9 +3387,9 @@ class ProcessAnimator {
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x, y, cw, chh, 8); else ctx.rect(x, y, cw, chh);
       ctx.fill(); ctx.stroke();
-      ctx.font = "12px 'IBM Plex Mono', monospace";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
       lines.forEach((ln, i2) => {
-        ctx.fillStyle = dim ? "rgba(124,160,176,0.55)" : "rgba(230,247,243,0.95)";
+        ctx.fillStyle = dim ? "rgba(124, 160, 176, 0.78)" : "rgba(230, 247, 243, 0.97)";
         ctx.fillText(ln, x + 11, y + 19 + i2 * 16);
       });
       if (tag) { ctx.fillStyle = "#7cff9b"; ctx.fillText(tag, x + cw - 27, y + 16); }
@@ -3400,8 +3400,8 @@ class ProcessAnimator {
     const sortP = this._ease(Math.min(1, Math.max(0, (ts - 4.5) / 2.0)));
     const prA = Math.min(1, Math.max(0, (ts - 7.0) / 0.9));
 
-    ctx.font = "11px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(143,176,170,0.9)";
+    ctx.font = "600 11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(143, 176, 170, 0.97)";
     ctx.fillText(sortP >= 1 ? "gt sorted  ·  mu ascending, inactive last" : "gt gaussians  ·  slot order as stored", rowX(0), yGt - 12);
 
     slots.forEach((s2, i) => {
@@ -3416,7 +3416,7 @@ class ProcessAnimator {
         if (ka > 0) {
           ctx.save(); ctx.globalAlpha = ka;
           ctx.fillStyle = active ? "#ffcf6b" : "#ff6b7d";
-          ctx.font = "11px 'IBM Plex Mono', monospace";
+          ctx.font = "600 11px 'IBM Plex Mono', monospace";
           ctx.fillText(active ? `key = ${s2.mu.toFixed(1)}` : "key = inf", x + 8, yGt + chh + 16);
           ctx.restore();
         }
@@ -3446,7 +3446,7 @@ class ProcessAnimator {
         ctx.beginPath();
         ctx.moveTo(x, yPr - 8); ctx.lineTo(x - 4, yPr - 16); ctx.lineTo(x + 4, yPr - 16);
         ctx.closePath(); ctx.fill();
-        ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("l1", x + 6, (yGt + chh + yPr - 18) / 2 + 4);
         ctx.restore();
       }
@@ -3458,7 +3458,7 @@ class ProcessAnimator {
       ctx.save(); ctx.globalAlpha = ma;
       ctx.strokeStyle = "#ffcf6b"; ctx.lineWidth = 1.3;
       ctx.strokeRect(bx4 + 6, yGt + 7, cw - 12, 17);
-      ctx.fillStyle = "#ffcf6b"; ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "#ffcf6b"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.fillText("inactive: amp <= activity threshold", bx4 - 48, yGt - 8);
 
       const sa = Math.min(1, Math.max(0, (ts - 10.4) / 0.6));
@@ -3499,7 +3499,7 @@ class ProcessAnimator {
         const la2 = Math.min(1, Math.max(0, (ts - 11.6) / 0.5));
         if (la2 > 0) {
           ctx.save(); ctx.globalAlpha = ma * la2;
-          ctx.font = "11px 'IBM Plex Mono', monospace";
+          ctx.font = "600 11px 'IBM Plex Mono', monospace";
           const midY = (yGt + yPr) / 2;
           ctx.fillStyle = "#7cff9b";
           ctx.fillText("l1", xe4 + 42, midY + 18);
@@ -3529,7 +3529,7 @@ class ProcessAnimator {
       ctx.save(); ctx.globalAlpha = fa;
       ctx.strokeStyle = "rgba(143,176,170,0.6)"; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.moveTo(axL, yAx); ctx.lineTo(axR, yAx); ctx.stroke();
-      ctx.fillStyle = "rgba(143,176,170,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(143, 176, 170, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.fillText("mu ->", axR + 8, yAx + 4);
       ctx.beginPath();
       for (let i = 0; i <= 160; i++) {
@@ -3556,7 +3556,7 @@ class ProcessAnimator {
         ctx.beginPath(); ctx.moveTo(rowX(j) + cw / 2, yPr + chh + 4); ctx.lineTo(xMu(p.mu), yPk - 7); ctx.stroke();
         ctx.fillStyle = "#7cff9b";
         ctx.beginPath(); ctx.arc(xMu(p.mu), yPk, 3.5, 0, 7); ctx.fill();
-        ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("#" + (j + 1), xMu(p.mu) + 8, yPk + 4);
         ctx.fillText(layers[j], xMu(p.mu) - ctx.measureText(layers[j]).width / 2, yAx + 16);
         ctx.restore();
@@ -3609,16 +3609,16 @@ class ProcessAnimator {
     draw(vaBad, t2, "#ffcf6b", 2.4);
     draw(vaGood, t3, "#7cff9b", 2.4);
 
-    ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#5e7280";
+    ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#abb6bd";
     ctx.fillText("illustrative", w - pad.r - ctx.measureText("illustrative").width, h - pad.b - 6);
 
-    ctx.font = "13px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(53,230,208,0.95)"; ctx.fillText("train", pad.l + 14, pad.t + 20);
+    ctx.font = "600 13px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(53, 230, 208, 0.98)"; ctx.fillText("train", pad.l + 14, pad.t + 20);
     if (ts >= 1.5) { ctx.fillStyle = "#ffcf6b"; ctx.fillText("val  ·  no regularisation", pad.l + 14, pad.t + 40); }
     if (ts >= 5.6) { ctx.fillStyle = "#7cff9b"; ctx.fillText("val  ·  weight_decay = 0.1", pad.l + 14, pad.t + 60); }
 
     if (t2 >= 1 && ts < 5.6) {
-      ctx.fillStyle = "#ff6b7d"; ctx.font = "13px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "#ff6b7d"; ctx.font = "600 13px 'IBM Plex Mono', monospace";
       ctx.fillText("val turns up  ->  overfitting", ux(0.50), uy(vaBad(0.78)) - 18);
     }
 
@@ -3628,7 +3628,7 @@ class ProcessAnimator {
       ctx.fillStyle = "rgba(7,12,17,0.95)";
       ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 1.3;
       const txt = "AdamW  ·  weight_decay = 0.1";
-      ctx.font = "12px 'IBM Plex Mono', monospace";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
       const tw = ctx.measureText(txt).width + 22;
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(w - pad.r - tw - 10, pad.t + 8, tw, 26, 7); else ctx.rect(w - pad.r - tw - 10, pad.t + 8, tw, 26);
@@ -3648,7 +3648,7 @@ class ProcessAnimator {
       ctx.beginPath(); ctx.moveTo(gx, y1 + 6); ctx.lineTo(gx, y2 - 6); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(gx, y1); ctx.lineTo(gx - 4, y1 + 7); ctx.lineTo(gx + 4, y1 + 7); ctx.closePath(); ctx.fill();
       ctx.beginPath(); ctx.moveTo(gx, y2); ctx.lineTo(gx - 4, y2 - 7); ctx.lineTo(gx + 4, y2 - 7); ctx.closePath(); ctx.fill();
-      ctx.font = "12px 'IBM Plex Mono', monospace";
+      ctx.font = "600 12px 'IBM Plex Mono', monospace";
       ctx.fillText("the gap is", gx - 96, (y1 + y2) / 2 - 4);
       ctx.fillText("overfitting", gx - 96, (y1 + y2) / 2 + 12);
       ctx.restore();
@@ -3743,7 +3743,7 @@ class ProcessAnimator {
         }
         if (scaling && !isDrop && (c === 1 || c === 2)) {
           ctx.save(); ctx.globalAlpha = na * Math.min(1, (ts - 7.9) / 0.5);
-          ctx.font = "9px 'IBM Plex Mono', monospace";
+          ctx.font = "600 9px 'IBM Plex Mono', monospace";
           ctx.fillStyle = "#ffcf6b";
           ctx.fillText("x1/(1-p)", cols[c].x + 11, ny(c, r) + 3);
           ctx.restore();
@@ -3758,7 +3758,7 @@ class ProcessAnimator {
       else if (!evalMode) { chipTxt = `training  ·  forward pass #${pass}`; chipCol = "#ffcf6b"; }
       else { chipTxt = "model.eval()  ·  dropout off"; chipCol = "#7cff9b"; }
       if (chipTxt) {
-        ctx.font = "12px 'IBM Plex Mono', monospace";
+        ctx.font = "600 12px 'IBM Plex Mono', monospace";
         const tw = ctx.measureText(chipTxt).width + 22;
         const bx = w - tw - 26, by = 28;
         ctx.fillStyle = "rgba(7,12,17,0.95)";
@@ -3805,8 +3805,8 @@ class ProcessAnimator {
     drawCurve(d.trainL, pe, "rgba(53,230,208,0.85)", 2);
     drawCurve(d.valL, pe, "#ffcf6b", 2.2);
 
-    ctx.font = "11px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(53,230,208,0.9)"; ctx.fillText("train", pad.l + 12, pad.t + 16);
+    ctx.font = "600 11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(53, 230, 208, 0.97)"; ctx.fillText("train", pad.l + 12, pad.t + 16);
     ctx.fillStyle = "#ffcf6b"; ctx.fillText("val", pad.l + 12, pad.t + 32);
 
     const eNow = Math.floor(pe);
@@ -3825,7 +3825,7 @@ class ProcessAnimator {
       ctx.fillStyle = pc >= 15 ? "#ff6b7d" : "#ffcf6b";
       const ptxt = `patience ${Math.min(pc, 15)} / 15`;
       ctx.fillText(ptxt, (w - ctx.measureText(ptxt).width) / 2, pad.t + 20);
-      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
     }
 
     if (ts >= 5.5) {
@@ -3833,9 +3833,9 @@ class ProcessAnimator {
       ctx.save(); ctx.globalAlpha = la;
       ctx.strokeStyle = "rgba(255,107,125,0.9)"; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.moveTo(pxE(d.esStopE), pad.t); ctx.lineTo(pxE(d.esStopE), h - pad.b); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "#ff6b7d"; ctx.font = "12px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "#ff6b7d"; ctx.font = "600 12px 'IBM Plex Mono', monospace";
       ctx.fillText(`early stop @ ${d.esStopE}`, pxE(d.esStopE) - 116, pad.t + 16);
-      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
       ctx.restore();
     }
 
@@ -3860,7 +3860,7 @@ class ProcessAnimator {
       ctx.save(); ctx.globalAlpha = ra;
       ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.arc(pxE(d.esBestE), pyV(d.valL(d.esBestE)), 11 + Math.sin(this.t * 4) * 2, 0, 7); ctx.stroke();
-      ctx.font = "13px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7cff9b";
+      ctx.font = "600 13px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7cff9b";
       const rtxt = `restore_best = True  ->  checkpoint @ epoch ${d.esBestE}`;
       ctx.fillText(rtxt, (w - ctx.measureText(rtxt).width) / 2, pad.t + 20);
       ctx.restore();
@@ -3897,8 +3897,8 @@ class ProcessAnimator {
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(q.x0, q.y0, q.x1 - q.x0, q.y1 - q.y0, 8); else ctx.rect(q.x0, q.y0, q.x1 - q.x0, q.y1 - q.y0);
       ctx.fill(); ctx.stroke();
-      ctx.font = "13px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = "rgba(230,247,243,0.95)";
+      ctx.font = "600 13px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(230, 247, 243, 0.98)";
       ctx.fillText(q.title, q.x0 + 12, q.y0 + 19);
     });
     ctx.restore();
@@ -3938,8 +3938,8 @@ class ProcessAnimator {
       }
       if (eP >= 100) { ctx.beginPath(); ctx.arc(qx(q, 100), qy(q, valF(100), 0.85), 2.6, 0, 7); ctx.fill(); }
     }
-    ctx.font = "10px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(53,230,208,0.9)"; ctx.fillText("train", qs[1].x1 - 84, qs[1].y0 + 18);
+    ctx.font = "600 10px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(53, 230, 208, 0.97)"; ctx.fillText("train", qs[1].x1 - 84, qs[1].y0 + 18);
     ctx.fillStyle = "#ffcf6b"; ctx.fillText("val", qs[1].x1 - 38, qs[1].y0 + 18);
     ctx.fillStyle = "#5e7280";
     ctx.fillText("val + checkpoint + early-stop: every 5 epochs", qs[1].x0 + 12, qs[1].y1 - 8);
@@ -3979,16 +3979,16 @@ class ProcessAnimator {
       if (eP >= 50) {
         ctx.fillStyle = "#7cff9b";
         ctx.beginPath(); ctx.arc(qx(q, 50), qy(q, 100, 108), 4, 0, 7); ctx.fill();
-        ctx.font = "11px 'IBM Plex Mono', monospace";
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
         ctx.fillText("100% @ swap", qx(q, 50) + 8, qy(q, 100, 108) + 14);
       }
-      ctx.font = "10px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = "rgba(143,176,170,0.8)";
+      ctx.font = "600 10px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(143, 176, 170, 0.94)";
       ctx.fillText("% of pixels with mu-sorted slots", q.x0 + 12, q.y1 - 8);
     }
 
-    ctx.font = "13px 'IBM Plex Mono', monospace";
-    ctx.fillStyle = "rgba(230,247,243,0.95)";
+    ctx.font = "600 13px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(230, 247, 243, 0.98)";
     const eTxt = `epoch ${Math.floor(eP)} / 100`;
     ctx.fillText(eTxt, (w - ctx.measureText(eTxt).width) / 2, 22);
 
@@ -4046,7 +4046,7 @@ class ProcessAnimator {
   _infChip(txt, x, y, color, alpha, size) {
     const ctx = this.ctx;
     const fs = size || 13;
-    ctx.font = `${fs}px 'IBM Plex Mono', monospace`;
+    ctx.font = `600 ${fs}px 'IBM Plex Mono', monospace`;
     const tw = ctx.measureText(txt).width + 20;
     if (alpha != null && alpha <= 0) return tw;
     ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
@@ -4075,8 +4075,8 @@ class ProcessAnimator {
 
   _infText(txt, x, y, color, size) {
     const ctx = this.ctx;
-    ctx.fillStyle = color || "rgba(206,228,222,0.9)";
-    ctx.font = `${size || 13}px 'IBM Plex Mono', monospace`;
+    ctx.fillStyle = color || "rgba(206, 228, 222, 0.97)";
+    ctx.font = `600 ${size || 13}px 'IBM Plex Mono', monospace`;
     ctx.fillText(txt, x, y);
   }
 
@@ -4215,7 +4215,7 @@ class ProcessAnimator {
 
     if (ts >= 11.5) {
       ctx.save();
-      ctx.font = "15px 'IBM Plex Mono', monospace";
+      ctx.font = "600 15px 'IBM Plex Mono', monospace";
       const emTxt = "eval-mode model ready";
       this._infText(emTxt, w * 0.30 - ctx.measureText(emTxt).width / 2, h / 2 + cardH / 2 + 30, "#e6f7f3", 15);
       ctx.restore();
@@ -4442,7 +4442,7 @@ class ProcessAnimator {
         ctx.fillRect(gxg + cc * cz, gyg + r * cz, cz - 1, cz - 1);
       }
       ctx.save();
-      ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
       const ppTxt = "ProcessPoolExecutor · 80 workers";
       this._infText(ppTxt, gxg + 10 * cz - ctx.measureText(ppTxt).width, gyg - 8, "rgba(143,176,170,0.85)", 11);
       ctx.restore();
@@ -4911,14 +4911,14 @@ class ProcessAnimator {
       ctx.fillRect(x + (i / steps) * ww, y, ww / steps + 1, 8);
     }
     ctx.strokeStyle = "rgba(143,176,170,0.4)"; ctx.lineWidth = 1; ctx.strokeRect(x, y, ww, 8);
-    ctx.fillStyle = "rgba(143,176,170,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(143, 176, 170, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
     ctx.fillText("val loss  high → low", x, y - 6);
     ctx.restore();
   }
 
   _tuChip(x, y, txt, color, alpha, size) {
     const ctx = this.ctx, fs = size || 13;
-    ctx.font = `${fs}px 'IBM Plex Mono', monospace`;
+    ctx.font = `600 ${fs}px 'IBM Plex Mono', monospace`;
     const tw = ctx.measureText(txt).width + 20;
     if (alpha != null && alpha <= 0) return tw;
     ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
@@ -4951,13 +4951,13 @@ class ProcessAnimator {
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(x, y, ww, hh, 10); else ctx.rect(x, y, ww, hh);
     ctx.fill(); ctx.stroke();
-    ctx.fillStyle = accent; ctx.font = "14px 'IBM Plex Mono', monospace"; ctx.fillText(title, x + 12, y + 20);
+    ctx.fillStyle = accent; ctx.font = "600 14px 'IBM Plex Mono', monospace"; ctx.fillText(title, x + 12, y + 20);
     ctx.strokeStyle = "rgba(120,200,220,0.2)"; ctx.beginPath(); ctx.moveTo(x + 8, y + 28); ctx.lineTo(x + ww - 8, y + 28); ctx.stroke();
-    ctx.font = "12px 'IBM Plex Mono', monospace";
+    ctx.font = "600 12px 'IBM Plex Mono', monospace";
     rows.forEach((r, i) => {
       const ry = y + 46 + i * 20;
-      ctx.fillStyle = "rgba(206,228,222,0.78)"; ctx.fillText(r[0], x + 12, ry);
-      ctx.fillStyle = r[2] || "rgba(124,255,155,0.92)";
+      ctx.fillStyle = "rgba(206, 228, 222, 0.93)"; ctx.fillText(r[0], x + 12, ry);
+      ctx.fillStyle = r[2] || "rgba(124, 255, 155, 0.98)";
       ctx.fillText(r[1], x + ww - 12 - ctx.measureText(r[1]).width, ry);
     });
     ctx.restore();
@@ -4981,7 +4981,7 @@ class ProcessAnimator {
     ctx.strokeStyle = "rgba(120,200,220,0.08)"; ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) { const yy = pad.t + ((h - pad.t - pad.b) / 4) * i; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(plW - pad.r, yy); ctx.stroke(); }
     for (let i = 0; i <= 4; i++) { const xx = pad.l + ((plW - pad.l - pad.r) / 4) * i; ctx.beginPath(); ctx.moveTo(xx, pad.t); ctx.lineTo(xx, h - pad.b); ctx.stroke(); }
-    ctx.fillStyle = "rgba(143,176,170,0.8)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(143, 176, 170, 0.94)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
     ctx.fillText("log₁₀ learning rate", pad.l, h - 10);
     ctx.save(); ctx.translate(pad.l - 32, pad.t + 70); ctx.rotate(-Math.PI / 2); ctx.fillText("log₁₀ weight decay", 0, 0); ctx.restore();
     for (let i = 8; i < 56; i++) {
@@ -5000,7 +5000,7 @@ class ProcessAnimator {
     ctx.fillStyle = "#e6f7f3"; ctx.font = "14px 'IBM Plex Mono', monospace"; ctx.fillText("Phase 2 · architecture", bx, pad.t + 14);
     tu.p2dims.slice(0, 3).forEach((d, i) => {
       const ry = pad.t + 50 + i * 36;
-      ctx.fillStyle = "rgba(143,176,170,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], bx, ry - 17);
+      ctx.fillStyle = "rgba(143, 176, 170, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], bx, ry - 17);
       let cx = bx;
       d[1].slice(0, 3).forEach((c, j) => { cx += this._tuChip(cx, ry, c, j === d[2] ? "#7cff9b" : "rgba(143,176,170,0.6)", 1, 11) + 6; });
     });
@@ -5019,7 +5019,7 @@ class ProcessAnimator {
     for (let i = 0; i <= 4; i++) { const yy = pad.t + ((h - pad.t - pad.b) / 4) * i; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(plW - pad.r, yy); ctx.stroke(); }
     for (let i = 0; i <= 4; i++) { const xx = pad.l + ((plW - pad.l - pad.r) / 4) * i; ctx.beginPath(); ctx.moveTo(xx, pad.t); ctx.lineTo(xx, h - pad.b); ctx.stroke(); }
     if (plW >= 300) {
-      ctx.fillStyle = "rgba(143,176,170,0.8)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = "rgba(143, 176, 170, 0.94)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
       this._tu.lrTicks.forEach((tk, i) => ctx.fillText(tk, pad.l + (i / 3) * (plW - pad.l - pad.r) - 12, h - 18));
       ctx.fillText("log₁₀ learning rate", plW - pad.r - 116, h - 6);
       ctx.save(); ctx.translate(pad.l - 32, pad.t + 70); ctx.rotate(-Math.PI / 2); ctx.fillText("log₁₀ weight decay", 0, 0); ctx.restore();
@@ -5053,8 +5053,8 @@ class ProcessAnimator {
       const ry = pad.t + 42 + i * 26;
       ctx.save(); ctx.globalAlpha = ra;
       ctx.beginPath(); ctx.arc(cx + 4, ry - 4, 3.2, 0, 7); ctx.fillStyle = d[3]; ctx.fill();
-      ctx.fillStyle = "rgba(206,228,222,0.9)"; ctx.font = "12px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], cx + 14, ry);
-      ctx.fillStyle = "rgba(143,176,170,0.7)";
+      ctx.fillStyle = "rgba(206, 228, 222, 0.97)"; ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], cx + 14, ry);
+      ctx.fillStyle = "rgba(143, 176, 170, 0.91)";
       ctx.fillText(d[1], cx + 134, ry); ctx.fillText(d[2], cx + cw - 8 - ctx.measureText(d[2]).width, ry);
       ctx.restore();
     });
@@ -5099,7 +5099,7 @@ class ProcessAnimator {
       ctx.strokeStyle = "rgba(255,207,107,0.7)"; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.4;
       const gx = pad.l + sw * (plW - pad.l - pad.r);
       ctx.beginPath(); ctx.moveTo(gx, pad.t); ctx.lineTo(gx, h - pad.b); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(255,207,107,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("warmup complete", Math.max(pad.l + 4, gx - 110), pad.t + 14);
+      ctx.fillStyle = "rgba(255, 207, 107, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText("warmup complete", Math.max(pad.l + 4, gx - 110), pad.t + 14);
     }
     this._tuChip(pad.l + 4, pad.t + 16, `trial ${Math.min(shown, 100)} / 100`, "#35e6d0", 1, 12);
     this._tuColorbar(w - 168, h - 26, 130, 1);
@@ -5122,7 +5122,7 @@ class ProcessAnimator {
     set.forEach((t) => (t.loss <= lossThr ? good : bad).push(t));
     ctx.strokeStyle = "rgba(120,200,220,0.25)"; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(pad.l, axisY); ctx.lineTo(w - pad.r, axisY); ctx.stroke();
-    ctx.fillStyle = "rgba(143,176,170,0.8)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(143, 176, 170, 0.94)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
     tu.lrTicks.forEach((tk, i) => ctx.fillText(tk, pad.l + (i / 3) * (w - pad.l - pad.r) - 12, axisY + 18));
     ctx.fillText("log₁₀ learning rate", w - pad.r - 116, h - 10);
     set.forEach((t) => {
@@ -5154,8 +5154,8 @@ class ProcessAnimator {
       ctx.beginPath();
       for (let i = 0; i <= 60; i++) { const x = i / 60, sx = px(x), sy = dy(this._tuDensity(lpts, bw, x)); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }
       ctx.strokeStyle = "rgba(53,230,208,0.9)"; ctx.lineWidth = 2; ctx.stroke();
-      ctx.fillStyle = "rgba(53,230,208,0.9)"; ctx.font = "12px 'IBM Plex Mono', monospace"; ctx.fillText("l(lr) good", px(0.78), axisY + 44);
-      ctx.fillStyle = "rgba(143,176,170,0.8)"; ctx.fillText("g(lr) rest", px(0.12), axisY + 44);
+      ctx.fillStyle = "rgba(53, 230, 208, 0.97)"; ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.fillText("l(lr) good", px(0.78), axisY + 44);
+      ctx.fillStyle = "rgba(143, 176, 170, 0.94)"; ctx.fillText("g(lr) rest", px(0.12), axisY + 44);
       ctx.restore();
       this._texDraw("l(x)=p(x\\mid y<y^{*})", pad.l + 4, pad.t + 4, 14, { alpha: da, color: "rgba(53,230,208,0.92)" });
       this._texDraw("g(x)=p(x\\mid y\\geq y^{*})", pad.l + 4, pad.t + 28, 14, { alpha: da, color: "rgba(143,176,170,0.9)" });
@@ -5170,7 +5170,7 @@ class ProcessAnimator {
         if (sel >= 0.95) {
           ctx.beginPath(); ctx.arc(cand, axisY - 4, 5, 0, 7); ctx.fillStyle = "#7cff9b"; ctx.fill();
           ctx.strokeStyle = "#35e6d0"; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cand, axisY - 4, 9, 0, 7); ctx.stroke();
-          ctx.fillStyle = "rgba(143,176,170,0.55)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("random would spray ↔", px(0.12), axisY - 30);
+          ctx.fillStyle = "rgba(143, 176, 170, 0.86)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText("random would spray ↔", px(0.12), axisY - 30);
         }
       }
     }
@@ -5195,7 +5195,7 @@ class ProcessAnimator {
     ctx.save(); ctx.globalAlpha = zoom;
     ctx.strokeStyle = "rgba(120,200,220,0.08)"; ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) { const yy = pad.t + ((h - pad.t - pad.b) / 4) * i; ctx.beginPath(); ctx.moveTo(pad.l, yy); ctx.lineTo(w - pad.r, yy); ctx.stroke(); }
-    ctx.fillStyle = "rgba(143,176,170,0.8)"; ctx.font = "11px 'IBM Plex Mono', monospace";
+    ctx.fillStyle = "rgba(143, 176, 170, 0.94)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
     for (let e = 0; e <= 30; e += 6) ctx.fillText(String(e), ex(e) - 4, h - 22);
     ctx.fillText("epoch  0..30", w - pad.r - 92, h - 8);
     ctx.save(); ctx.translate(pad.l - 40, pad.t + 50); ctx.rotate(-Math.PI / 2); ctx.fillText("val loss", 0, 0); ctx.restore();
@@ -5205,7 +5205,7 @@ class ProcessAnimator {
     if (warm) {
       const wa = this._ease((ts - 6.5) / 1.0);
       ctx.save(); ctx.globalAlpha = 0.5 * wa; ctx.fillStyle = "rgba(255,207,107,0.10)"; ctx.fillRect(pad.l, pad.t, ex(8) - pad.l, h - pad.t - pad.b); ctx.restore();
-      ctx.fillStyle = `rgba(255,207,107,${0.8 * wa})`; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("warmup (n_warmup_steps = 8)", pad.l + 4, pad.t + 14);
+      ctx.fillStyle = `rgba(255,207,107,${0.8 * wa})`; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText("warmup (n_warmup_steps = 8)", pad.l + 4, pad.t + 14);
     }
     const drawCurve = (ix, slot) => {
       const t = tu.trials[ix];
@@ -5224,13 +5224,13 @@ class ProcessAnimator {
       if (slot === 0 && reveal >= 1) {
         let mi = 0; for (let e = 1; e <= 30; e++) if (t.curve[e] < t.curve[mi]) mi = e;
         ctx.beginPath(); ctx.arc(ex(mi), ly(t.curve[mi]), 4, 0, 7); ctx.fillStyle = "#7cff9b"; ctx.fill();
-        ctx.fillStyle = "rgba(124,255,155,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("best epoch", ex(mi) + 6, ly(t.curve[mi]) - 6);
+        ctx.fillStyle = "rgba(124, 255, 155, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText("best epoch", ex(mi) + 6, ly(t.curve[mi]) - 6);
       }
       if (pruneNow && drawEnd >= t.pruneEpoch) {
         const sx = ex(t.pruneEpoch), sy = ly(t.curve[t.pruneEpoch]);
         ctx.strokeStyle = "#ff6b7d"; ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.moveTo(sx - 4, sy - 4); ctx.lineTo(sx + 4, sy + 4); ctx.moveTo(sx + 4, sy - 4); ctx.lineTo(sx - 4, sy + 4); ctx.stroke();
-        ctx.fillStyle = "rgba(255,107,125,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText(`pruned @ epoch ${t.pruneEpoch}  (example)`, Math.min(sx + 8, w - 200), sy - 12);
+        ctx.fillStyle = "rgba(255, 107, 125, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText(`pruned @ epoch ${t.pruneEpoch}  (example)`, Math.min(sx + 8, w - 200), sy - 12);
         ctx.strokeStyle = "rgba(255,107,125,0.3)"; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.beginPath();
         for (let e = t.pruneEpoch; e <= 30; e++) { const xx = ex(e), yy = ly(t.curve[e]); e === t.pruneEpoch ? ctx.moveTo(xx, yy) : ctx.lineTo(xx, yy); }
         ctx.stroke(); ctx.setLineDash([]);
@@ -5245,12 +5245,12 @@ class ProcessAnimator {
       ctx.beginPath();
       for (let e = 8; e <= 30; e++) { const sx = ex(e), sy = ly(tu.median[e]); e === 8 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy); }
       ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(255,207,107,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("running median", ex(16), ly(tu.median[16]) + 18);
+      ctx.fillStyle = "rgba(255, 207, 107, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText("running median", ex(16), ly(tu.median[16]) + 18);
       ctx.restore();
       this._texDraw("\\mathrm{prune\\ if}\\;\\;y_t>\\mathrm{median}\\{y_t^{(i)}\\}", w - pad.r - 4, pad.t + 4, 15, { align: "right", alpha: ma, color: "rgba(255,207,107,0.92)" });
     }
     if (ts >= 4 && ts < 6.5) {
-      ctx.fillStyle = "rgba(143,176,170,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("early stopping · patience = 8", ex(20), pad.t + 14);
+      ctx.fillStyle = "rgba(143, 176, 170, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText("early stopping · patience = 8", ex(20), pad.t + 14);
     }
     if (ts < 2.5) this._cap("Open one trial  ·  it is a full 30-epoch training run of the model");
     else if (ts < 6.5) this._cap("Validation loss reported each epoch  ·  the score is its best epoch  (early-stop patience 8)");
@@ -5273,7 +5273,7 @@ class ProcessAnimator {
       ctx.save(); ctx.globalAlpha = born;
       ctx.strokeStyle = "rgba(120,200,220,0.2)"; ctx.lineWidth = 1.1;
       ctx.beginPath(); ctx.moveTo(lx, ly + laneH * 0.5); ctx.lineTo(lx + lw, ly + laneH * 0.5); ctx.stroke();
-      ctx.fillStyle = "rgba(206,228,222,0.85)"; ctx.font = "12px 'IBM Plex Mono', monospace"; ctx.fillText(`GPU ${g} · 25 trials`, lx, ly + 8);
+      ctx.fillStyle = "rgba(206, 228, 222, 0.95)"; ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.fillText(`GPU ${g} · 25 trials`, lx, ly + 8);
       ctx.restore();
       if (ts >= 2.5) {
         const rate = 0.55 + g * 0.13;
@@ -5291,14 +5291,14 @@ class ProcessAnimator {
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(dbx, dby, dbw, dbh, 8); else ctx.rect(dbx, dby, dbw, dbh);
     ctx.fill(); ctx.stroke();
-    ctx.fillStyle = "rgba(124,255,155,0.9)"; ctx.font = "12px 'IBM Plex Mono', monospace"; ctx.fillText("optuna.db", dbx + 8, dby + 22); ctx.fillText("(SQLite)", dbx + 8, dby + 40);
-    ctx.fillStyle = "rgba(206,228,222,0.85)"; ctx.fillText(`trials: ${Math.min(inStudy, 100)}`, dbx + 8, dby + dbh - 12);
+    ctx.fillStyle = "rgba(124, 255, 155, 0.97)"; ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.fillText("optuna.db", dbx + 8, dby + 22); ctx.fillText("(SQLite)", dbx + 8, dby + 40);
+    ctx.fillStyle = "rgba(206, 228, 222, 0.95)"; ctx.fillText(`trials: ${Math.min(inStudy, 100)}`, dbx + 8, dby + dbh - 12);
     if (ts >= 7.0 && ts < 10.5) {
       const ph = this._ease((ts - 7.0) / 1.5);
       const sx = lx + lw * 0.5, sy = 40 + 1 * laneH + laneH * 0.5;
       const tx = this._lerp(sx, dbx, ph), ty = this._lerp(sy, dby + dbh * 0.5, ph);
       ctx.beginPath(); ctx.arc(tx, ty, 4, 0, 7); ctx.strokeStyle = "rgba(255,207,107,0.9)"; ctx.lineWidth = 1.4; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(255,207,107,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("phantom loss", tx + 6, ty - 6);
+      ctx.fillStyle = "rgba(255, 207, 107, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText("phantom loss", tx + 6, ty - 6);
     }
     if (ts < 2.5) this._cap("100 trials are split across 4 GPUs  ·  ~25 trials per worker");
     else if (ts < 7) this._cap("Four worker subprocesses, one shared SQLite study  (load_if_exists)");
@@ -5340,7 +5340,7 @@ class ProcessAnimator {
       ctx.fillStyle = "#e6f7f3"; ctx.font = "14px 'IBM Plex Mono', monospace"; ctx.fillText("Phase 2 · architecture", bx, by - 4);
       tu.p2dims.forEach((d, i) => {
         const ry = by + 32 + i * 36;
-        ctx.fillStyle = "rgba(143,176,170,0.85)"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], bx, ry - 17);
+        ctx.fillStyle = "rgba(143, 176, 170, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], bx, ry - 17);
         let cx = bx;
         const lock = ts >= 11;
         d[1].forEach((c, j) => {
@@ -5389,7 +5389,7 @@ class ProcessAnimator {
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(tnx, tny - 22, 130, 44, 9); else ctx.rect(tnx, tny - 22, 130, 44);
       ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "#7cff9b"; ctx.font = "13px 'IBM Plex Mono', monospace"; ctx.fillText("Training", tnx + 14, tny - 2); ctx.fillText("pipeline", tnx + 14, tny + 14);
+      ctx.fillStyle = "#7cff9b"; ctx.font = "600 13px 'IBM Plex Mono', monospace"; ctx.fillText("Training", tnx + 14, tny - 2); ctx.fillText("pipeline", tnx + 14, tny + 14);
       ctx.restore();
     }
     if (ts >= 5.5) {

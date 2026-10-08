@@ -6,9 +6,9 @@ class TrainingScene extends CanvasBase {
     super(canvas);
     this.t     = 0;
     this.frame = 0;
-    this.blue  = "29, 79, 216";
-    this.teal  = "15, 118, 110";
-    this.ink   = "20, 30, 40";
+    this.blue  = "111, 155, 255";
+    this.teal  = "45, 212, 191";
+    this.ink   = "214, 226, 236";
 
     this.nLanes    = 4;
     this.lanes     = [];

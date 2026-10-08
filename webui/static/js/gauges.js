@@ -114,10 +114,10 @@ class DialGauge extends AnimatedGauge {
       ctx.stroke();
     }
 
-    ctx.font         = `500 ${this.big ? 9 : 8}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.font         = `600 ${this.big ? 9 : 8}px 'JetBrains Mono', ui-monospace, monospace`;
     ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle    = "rgba(220, 235, 245, 0.45)";
+    ctx.fillStyle    = "rgba(220, 235, 245, 0.83)";
     for (let m = 0; m <= this.majors; m++) {
       const val = this.min + (m / this.majors) * (this.max - this.min);
       const a   = this._angle(val);
@@ -155,12 +155,12 @@ class DialGauge extends AnimatedGauge {
 
     const vy   = cy + r * (this.big ? 0.40 : 0.42);
     const vtxt = `${this.v.toFixed(this.digits)}${this.unit}`;
-    ctx.font      = `600 ${this.big ? 19 : 12}px 'JetBrains Mono', ui-monospace, monospace`;
-    ctx.fillStyle = "rgba(230, 240, 246, 0.95)";
+    ctx.font      = `700 ${this.big ? 19 : 12}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.fillStyle = "rgba(230, 240, 246, 0.98)";
     ctx.fillText(vtxt, cx, vy);
 
-    ctx.font      = `600 ${this.big ? 8.5 : 7.5}px 'JetBrains Mono', ui-monospace, monospace`;
-    ctx.fillStyle = "rgba(158, 173, 181, 0.85)";
+    ctx.font      = `700 ${this.big ? 8.5 : 7.5}px 'JetBrains Mono', ui-monospace, monospace`;
+    ctx.fillStyle = "rgba(158, 173, 181, 0.95)";
     ctx.fillText(this.label, cx, this.big ? cy - r * 0.34 : vy + 12);
   }
 }
@@ -193,15 +193,15 @@ class LinearMeter extends AnimatedGauge {
     const x1 = w - 2;
     const ty = h - 12;
 
-    ctx.font         = "600 8px 'JetBrains Mono', ui-monospace, monospace";
+    ctx.font         = "700 8px 'JetBrains Mono', ui-monospace, monospace";
     ctx.textAlign    = "left";
     ctx.textBaseline = "middle";
-    ctx.fillStyle    = "rgba(158, 173, 181, 0.85)";
+    ctx.fillStyle    = "rgba(158, 173, 181, 0.95)";
     ctx.fillText(this.label, x0, 7);
 
-    ctx.font      = "600 12.5px 'JetBrains Mono', ui-monospace, monospace";
+    ctx.font      = "700 12.5px 'JetBrains Mono', ui-monospace, monospace";
     ctx.textAlign = "right";
-    ctx.fillStyle = "rgba(230, 240, 246, 0.95)";
+    ctx.fillStyle = "rgba(230, 240, 246, 0.98)";
     ctx.fillText(`${this.v.toFixed(this.digits)}${this.unit}`, x1, 8);
 
     this.zones.forEach((z) => {
@@ -328,10 +328,10 @@ class TankGauge extends AnimatedGauge {
 
     const pct  = Math.round(this.v * 100);
     const high = fy < y0 + 16;
-    ctx.font         = "600 9.5px 'JetBrains Mono', ui-monospace, monospace";
+    ctx.font         = "700 9.5px 'JetBrains Mono', ui-monospace, monospace";
     ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle    = "rgba(230, 240, 246, 0.9)";
+    ctx.fillStyle    = "rgba(230, 240, 246, 0.97)";
     ctx.fillText(`${pct}%`, x0 + tw / 2, high ? fy + 12 : fy - 9);
   }
 }

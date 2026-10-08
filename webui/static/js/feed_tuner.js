@@ -6,9 +6,9 @@ const FT_DEFAULTS = {
   backbone:            { batch: "4,8,16,32,64", workers: "0,4,8,12,16", prefetch: "2,4,8", timed: 40, warmup: 5, paths: true },
 };
 
-const FT_WORKER_COLORS = ["#1d4fd8", "#0f766e", "#0891b2", "#7c3aed", "#b45309", "#be123c"];
-const FT_GRID = "rgba(20, 25, 30, 0.08)";
-const FT_AXIS = "#7d858b";
+const FT_WORKER_COLORS = ["#6f9bff", "#2dd4bf", "#22d3ee", "#a78bfa", "#f59e0b", "#fb7185"];
+const FT_GRID = "rgba(220, 235, 245, 0.11)";
+const FT_AXIS = "#d6dfe4";
 const FT_CUSTOM = "__custom__";
 
 class FtChart {
@@ -40,7 +40,7 @@ class FtChart {
     ctx.clearRect(0, 0, this.w, this.h);
     ctx.strokeStyle = FT_GRID;
     ctx.fillStyle = FT_AXIS;
-    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.font = '600 10px "JetBrains Mono", monospace';
     ctx.lineWidth = 1;
 
     const rows = 5;
@@ -84,8 +84,8 @@ class FtChart {
   empty(message) {
     this._resize();
     this.ctx.clearRect(0, 0, this.w, this.h);
-    this.ctx.fillStyle = "#9aa196";
-    this.ctx.font = '12px "JetBrains Mono", monospace';
+    this.ctx.fillStyle = "#d6dfe4";
+    this.ctx.font = '600 12px "JetBrains Mono", monospace';
     this.ctx.textAlign = "center";
     this.ctx.fillText(message, this.w / 2, this.h / 2);
     this._renderLegend([]);
@@ -167,13 +167,13 @@ class FtChart {
       const cx = geo.l + slot * (i + 0.5);
       const top = yAt(row.gpu_util_mean);
       const gradient = ctx.createLinearGradient(0, top, 0, geo.t + geo.plotH);
-      gradient.addColorStop(0, "#0f766e");
+      gradient.addColorStop(0, "#2dd4bf");
       gradient.addColorStop(1, "rgba(15, 118, 110, 0.12)");
       ctx.fillStyle = gradient;
       ctx.fillRect(cx - barW / 2, top, barW, geo.t + geo.plotH - top);
     });
 
-    ctx.strokeStyle = "#b45309";
+    ctx.strokeStyle = "#f59e0b";
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     ordered.forEach((row, i) => {
@@ -183,7 +183,7 @@ class FtChart {
       else ctx.lineTo(cx, y);
     });
     ctx.stroke();
-    ctx.fillStyle = "#b45309";
+    ctx.fillStyle = "#f59e0b";
     ordered.forEach((row, i) => {
       const cx = geo.l + slot * (i + 0.5);
       ctx.beginPath();
@@ -192,8 +192,8 @@ class FtChart {
     });
 
     this._renderLegend([
-      { label: "GPU utilization", color: "#0f766e" },
-      { label: "data wait", color: "#b45309" },
+      { label: "GPU utilization", color: "#2dd4bf" },
+      { label: "data wait", color: "#f59e0b" },
     ]);
   }
 }
@@ -237,12 +237,12 @@ class FtGauge {
       ctx.stroke();
     }
 
-    ctx.fillStyle = "#16191b";
+    ctx.fillStyle = "#eef2f5";
     ctx.textAlign = "center";
-    ctx.font = '600 22px "JetBrains Mono", monospace';
+    ctx.font = '700 22px "JetBrains Mono", monospace';
     ctx.fillText(value == null || isNaN(value) ? "–" : `${value.toFixed(0)}`, cx, cy + 4);
-    ctx.fillStyle = "#7d858b";
-    ctx.font = '10px "JetBrains Mono", monospace';
+    ctx.fillStyle = "#d6dfe4";
+    ctx.font = '600 10px "JetBrains Mono", monospace';
     ctx.fillText("%", cx, cy + 18);
   }
 }
@@ -308,9 +308,9 @@ class FeedTuner {
     this.throughputChart = new FtChart(document.getElementById("ft-chart-throughput"), document.getElementById("ft-legend-throughput"));
     this.utilChart = new FtChart(document.getElementById("ft-chart-util"), document.getElementById("ft-legend-util"));
     this.gauges = {
-      util: new FtGauge(document.getElementById("ft-dial-util"), () => "#0f766e"),
-      eff: new FtGauge(document.getElementById("ft-dial-eff"), () => "#1d4fd8"),
-      wait: new FtGauge(document.getElementById("ft-dial-wait"), (v) => (v <= 5 ? "#0f766e" : v <= 40 ? "#b45309" : "#b91c1c")),
+      util: new FtGauge(document.getElementById("ft-dial-util"), () => "#2dd4bf"),
+      eff: new FtGauge(document.getElementById("ft-dial-eff"), () => "#6f9bff"),
+      wait: new FtGauge(document.getElementById("ft-dial-wait"), (v) => (v <= 5 ? "#2dd4bf" : v <= 40 ? "#f59e0b" : "#f87171")),
     };
 
     this.mode = "profile_autoencoder";

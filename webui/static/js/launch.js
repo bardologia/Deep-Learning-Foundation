@@ -156,7 +156,7 @@ class LaunchView extends ConfigForm {
     jepa: LaunchView.JEPA_MEANINGS.profile_only,
   };
 
-  static MODEL_COLORS = { input: "#1d4fd8", model: "#16191b", latent: "#a16207", output: "#0f766e", calc: "#7c3aed" };
+  static MODEL_COLORS = { input: "#6f9bff", model: "#eef2f5", latent: "#fbbf24", output: "#2dd4bf", calc: "#a78bfa" };
 
   static MODEL_TAGS = { input: "input", model: "network", latent: "latent", output: "output", calc: "result" };
 
@@ -529,13 +529,13 @@ class LaunchView extends ConfigForm {
 
     let nodes = "";
     laid.flat().forEach(({ node, cx, cy }) => {
-      const color = LaunchView.MODEL_COLORS[node.kind] || "#16191b";
+      const color = LaunchView.MODEL_COLORS[node.kind] || "#eef2f5";
       nodes += this._glyph(node.glyph, cx, cy, color) + this._caption(node, cx, cy, color, SLOT);
     });
 
     return `<svg class="mflow-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="data flow">` +
       `<defs><marker id="mflow-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">` +
-      `<path d="M0 0L10 5L0 10z" fill="#9aa196"/></marker></defs>` +
+      `<path d="M0 0L10 5L0 10z" fill="#8b9ba8"/></marker></defs>` +
       links + nodes + `</svg>`;
   }
 

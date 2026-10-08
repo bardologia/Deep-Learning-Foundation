@@ -1,9 +1,9 @@
 "use strict";
 
 class SharedCharts {
-  static FAMILY_COLORS = { amp: "#1d4fd8", mu: "#0f766e", sigma: "#a16207" };
+  static FAMILY_COLORS = { amp: "#6f9bff", mu: "#2dd4bf", sigma: "#fbbf24" };
   static FAMILY_LABELS = { amp: "amplitude", mu: "mean height", sigma: "width" };
-  static SERIES_COLORS = { pred: "#1d4fd8", gt: "#16191b", raw: "#9ca3af", perturbed: "#b91c1c" };
+  static SERIES_COLORS = { pred: "#6f9bff", gt: "#eef2f5", raw: "#9ca3af", perturbed: "#f87171" };
 
   static gradientGrid(container, data, selectedChannel) {
     const cellHtml = (family, label, cell, share, head) => {
@@ -156,20 +156,20 @@ class SharedCharts {
     const px  = (x) => pad.l + ((x - x0) / (x1 - x0)) * (W - pad.l - pad.r);
     const py  = (v) => H - pad.b - ((v - lo) / (hi - lo)) * (H - pad.t - pad.b);
 
-    ctx.font = "10px JetBrains Mono, monospace";
+    ctx.font = "600 10px JetBrains Mono, monospace";
 
     for (let tick = 0; tick <= 4; tick += 1) {
       const v = lo + ((hi - lo) * tick) / 4;
       const y = py(v);
 
-      ctx.strokeStyle = "rgba(22, 25, 27, 0.07)";
+      ctx.strokeStyle = "rgba(220, 235, 245, 0.1)";
       ctx.lineWidth   = 1;
       ctx.beginPath();
       ctx.moveTo(pad.l, y);
       ctx.lineTo(W - pad.r, y);
       ctx.stroke();
 
-      ctx.fillStyle = "rgba(125, 133, 139, 0.95)";
+      ctx.fillStyle = "rgba(214, 223, 228, 0.98)";
       ctx.textAlign = "right";
       ctx.fillText(SharedCharts.fmt(v), pad.l - 6, y + 3);
     }
@@ -177,12 +177,12 @@ class SharedCharts {
     const xUnit = opts.xUnit === undefined ? " m" : (opts.xUnit ? ` ${opts.xUnit}` : "");
 
     [[x0, "left"], [(x0 + x1) / 2, "center"], [x1, "right"]].forEach(([x, align]) => {
-      ctx.fillStyle = "rgba(125, 133, 139, 0.95)";
+      ctx.fillStyle = "rgba(214, 223, 228, 0.98)";
       ctx.textAlign = align;
       ctx.fillText(`${SharedCharts.fmt(x)}${xUnit}`, px(x), H - 8);
     });
 
-    ctx.strokeStyle = "rgba(154, 161, 150, 0.8)";
+    ctx.strokeStyle = "rgba(139, 155, 168, 0.9)";
     ctx.lineWidth   = 1;
     ctx.beginPath();
     ctx.moveTo(pad.l, pad.t);
@@ -210,7 +210,7 @@ class SharedCharts {
     });
 
     if (Number.isFinite(opts.marker) && opts.marker >= Math.min(x0, x1) && opts.marker <= Math.max(x0, x1)) {
-      ctx.strokeStyle = "#e11d48";
+      ctx.strokeStyle = "#fb7185";
       ctx.lineWidth   = 1;
       ctx.setLineDash([4, 3]);
       ctx.beginPath();
@@ -233,7 +233,7 @@ class SharedCharts {
       ctx.lineTo(legendX + 10, legendY);
       ctx.stroke();
 
-      ctx.fillStyle = "rgba(63, 71, 76, 0.95)";
+      ctx.fillStyle = "rgba(232, 238, 241, 0.98)";
       ctx.fillText(s.label, legendX + 14, legendY + 3);
       legendX += entryWidths[index];
     });
