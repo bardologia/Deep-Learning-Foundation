@@ -111,6 +111,7 @@ class LrRangeTest:
         min_improvement   : Smallest relative drop below the first rung that counts as a response.
         noise_sigmas      : Standard errors of the measurement the drop must also clear.
         seed              : Seed of the shuffle generator drawing the probe batches.
+        record            : Evidence of the last run, accepted or refused: the settings, the per-rung curve and the statistics the selection rests on; None before the first run.
     """
 
     MIN_RUNGS    = 10
@@ -185,6 +186,7 @@ class LrRangeTest:
         self.min_improvement   = float(min_improvement)
         self.noise_sigmas      = float(noise_sigmas)
         self.seed              = int(seed)
+        self.record            = None
 
     def _multipliers(self) -> list[float]:
         """Returns the geometric ladder of multipliers from ``scale_min`` to ``scale_max``."""
@@ -312,8 +314,26 @@ class LrRangeTest:
 
         return self._measure(probe_batches)
 
-    def _select(self, multipliers: list[float], losses: list[float], spreads: list[float], diverged: bool) -> Optional[dict]:
+    def _log_curve(self, multipliers: list[float], losses: list[float], spreads: list[float], divergence: Optional[float]) -> None:
+        """Logs every completed rung, so the curve behind the selection stays in the preflight log.
+
+        Args:
+            multipliers : Multiplier of each completed rung, in ladder order.
+            losses      : Loss level of each completed rung.
+            spreads     : Spread of the batch losses behind each rung level.
+            divergence  : Multiplier of the rung that ended the ramp, or None when the ladder ran to its end.
+        """
+        ending = f"ramp ended at x{divergence:.4g}" if divergence is not None else "ladder ran to its end"
+        rows   = [{"Rung": index + 1, "Multiplier": f"x{multiplier:.4g}", "Loss": f"{loss:.6g}", "Spread": f"{spread:.6g}"} for index, (multiplier, loss, spread) in enumerate(zip(multipliers, losses, spreads))]
+
+        self.logger.metrics_table(rows, columns=["Rung", "Multiplier", "Loss", "Spread"], title=f"LR range test curve: {len(rows)} completed rung(s), {ending}")
+
+    def _select(self, multipliers: list[float], losses: list[float], spreads: list[float], diverged: bool) -> tuple[Optional[dict], dict]:
         """Picks the multiplier at the loss minimum, or refuses when the ramp measured nothing.
+
+        The statistics the decision rests on are returned and logged whether
+        the pick is accepted or refused, so an accepted multiplier can be
+        checked afterwards against the noise it had to clear.
 
         Args:
             multipliers : Multiplier of each completed rung, in ladder order.
@@ -322,36 +342,64 @@ class LrRangeTest:
             diverged    : Whether the ramp ended on a diverging rung.
 
         Returns:
-            Dict with the chosen and the minimum-loss multipliers, or None when
-            too few rungs completed, the minimum sits at either edge of the
-            searched ladder, or the response did not clear the measurement noise.
+            Tuple of the selection and its evidence. The selection is a dict
+            with the chosen and the minimum-loss multipliers, or None when too
+            few rungs completed, the minimum sits at either edge of the searched
+            ladder, or the response did not clear the measurement noise. The
+            evidence names the outcome and carries the minimum-loss rung, the
+            first and minimum losses, the drop, the relative and noise
+            thresholds and the standard error, None where the decision ended
+            before computing them.
         """
+        evidence = {"outcome": None, "min_loss_rung": None, "first_loss": None, "min_loss": None, "drop": None, "relative_threshold": None, "deviation": None, "threshold": None}
+
         if len(losses) < self.MIN_RUNGS:
             self.logger.subsection(f"LR range test completed only {len(losses)} rungs, fewer than {self.MIN_RUNGS}; keeping the configured learning rate")
-            return None
+            return None, {**evidence, "outcome": "too few rungs"}
 
         best = min(range(len(losses)), key=lambda i: losses[i])
 
+        evidence.update({"min_loss_rung": best + 1, "first_loss": losses[0], "min_loss": losses[best]})
+
         if best == 0:
             self.logger.subsection(f"LR range test found its minimum on the first rung x{multipliers[0]:.4g}: the response only increases, so the useful range lies below lr_scale_min. Keeping the configured learning rate; lower lr_scale_min to search there.")
-            return None
+            return None, {**evidence, "outcome": "minimum on the first rung"}
 
         if best == len(losses) - 1 and not diverged:
             self.logger.subsection(f"LR range test found its minimum on the last rung x{multipliers[best]:.4g} without ever destabilising: the top of the useful range was never bracketed. Keeping the configured learning rate; raise lr_scale_max to search there.")
-            return None
+            return None, {**evidence, "outcome": "minimum on the last rung without divergence"}
 
         drop      = losses[0] - losses[best]
         relative  = self.min_improvement * abs(losses[0])
         deviation = max(spreads[0], spreads[best]) / math.sqrt(self.probe_batches)
         threshold = max(relative, self.noise_sigmas * deviation)
 
+        evidence.update({"drop": drop, "relative_threshold": relative, "deviation": deviation, "threshold": threshold})
+
         if drop < threshold:
             self.logger.subsection(f"LR range test measured a drop of {drop:.6g} from the first rung, below the {threshold:.6g} needed ({self.min_improvement:g} relative, {self.noise_sigmas:g} standard errors of {deviation:.6g}); the ramp shows no response above its own noise. Keeping the configured learning rate.")
-            return None
+            return None, {**evidence, "outcome": "drop below the noise threshold"}
 
         minimum = multipliers[best]
 
-        return {"multiplier": minimum / self.safety_factor, "min_loss_multiplier": minimum}
+        self.logger.subsection(f"LR range test minimum on rung {best + 1} at x{minimum:.4g}: loss {losses[best]:.6g} against {losses[0]:.6g} on the first rung, a drop of {drop:.6g} clearing the {threshold:.6g} needed ({self.min_improvement:g} relative = {relative:.6g}, {self.noise_sigmas:g} standard errors of {deviation:.6g})")
+
+        return {"multiplier": minimum / self.safety_factor, "min_loss_multiplier": minimum}, {**evidence, "outcome": "accepted"}
+
+    def _settings(self) -> dict:
+        """Returns the ladder and selection settings the run used, for the evidence record."""
+        return {
+            "scale_min"         : self.scale_min,
+            "scale_max"         : self.scale_max,
+            "rungs"             : self.rungs,
+            "rung_steps"        : self.rung_steps,
+            "probe_batches"     : self.probe_batches,
+            "divergence_factor" : self.divergence_factor,
+            "safety_factor"     : self.safety_factor,
+            "min_improvement"   : self.min_improvement,
+            "noise_sigmas"      : self.noise_sigmas,
+            "seed"              : self.seed,
+        }
 
     def run(self, batch_size: int) -> Optional[dict]:
         """Walks the ladder from one rewound state and returns the selected multiplier.
@@ -359,12 +407,16 @@ class LrRangeTest:
         Args:
             batch_size : Batch size the learning rate is probed at.
 
+        Every completed rung is logged as one table once the ramp ends, and
+        ``record`` holds the settings, the curve and the selection evidence
+        whether or not the pick is accepted.
+
         Returns:
             Dict with "multiplier", "min_loss_multiplier",
-            "divergence_multiplier", "rungs_run", "diverged", and the per-rung
-            "multipliers", "losses" and "spreads" curves; None when the ramp
-            measured no usable response and the configured learning rate should
-            be kept.
+            "divergence_multiplier", "rungs_run", "diverged", the per-rung
+            "multipliers", "losses" and "spreads" curves and the "evidence" of
+            the selection; None when the ramp measured no usable response and
+            the configured learning rate should be kept.
         """
         train_batches, probe_batches = self._batches(batch_size)
 
@@ -405,16 +457,30 @@ class LrRangeTest:
 
         snapshot.restore()
 
-        selection = self._select(multipliers, losses, spreads, diverged)
-        if selection is None:
-            return None
+        self._log_curve(multipliers, losses, spreads, divergence)
 
-        return {
-            **selection,
+        selection, evidence = self._select(multipliers, losses, spreads, diverged)
+
+        curve = {
             "divergence_multiplier" : divergence,
             "rungs_run"             : len(losses),
             "diverged"              : diverged,
             "multipliers"           : multipliers,
             "losses"                : losses,
             "spreads"               : spreads,
+            "evidence"              : evidence,
         }
+
+        self.record = {
+            "batch_size"          : int(batch_size),
+            "base_lrs"            : base_lrs,
+            "settings"            : self._settings(),
+            "multiplier"          : selection["multiplier"] if selection is not None else None,
+            "min_loss_multiplier" : selection["min_loss_multiplier"] if selection is not None else None,
+            **curve,
+        }
+
+        if selection is None:
+            return None
+
+        return {**selection, **curve}

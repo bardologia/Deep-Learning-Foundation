@@ -7,6 +7,7 @@ propagation.
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -28,6 +29,14 @@ class _Logger:
 
     def kv_table(self, *args, **kwargs):
         """Ignores a key-value table."""
+        pass
+
+    def warning(self, *args, **kwargs):
+        """Ignores a warning."""
+        pass
+
+    def metrics_table(self, *args, **kwargs):
+        """Ignores a metrics table."""
         pass
 
 
@@ -86,7 +95,7 @@ def _context(order, training, dataset=None, trainer=None):
     )
 
 
-def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch):
+def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch, tmp_path):
     """Verifies that the resolved batch size is found first and passed to the tuner."""
     order    = []
     training = _training()
@@ -111,6 +120,7 @@ def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch):
         training_config = training,
         build_context   = lambda: _context(order, training),
         logger          = _Logger(),
+        result_dir      = tmp_path,
         label           = "m",
     ).run()
 
@@ -126,7 +136,7 @@ def test_batch_finder_runs_before_tuner_and_feeds_resolved_batch(monkeypatch):
     assert any(kind == "trial" for kind, _ in order[:tune_index])
 
 
-def test_batch_finder_caps_ceiling_at_dataset_size():
+def test_batch_finder_caps_ceiling_at_dataset_size(tmp_path):
     """Verifies that the search ceiling never exceeds the dataset length."""
     order    = []
     training = _training()
@@ -136,6 +146,7 @@ def test_batch_finder_caps_ceiling_at_dataset_size():
         training_config = training,
         build_context   = lambda: _context(order, training, dataset=list(range(3))),
         logger          = _Logger(),
+        result_dir      = tmp_path,
         label           = "m",
     ).run()
 
@@ -143,7 +154,7 @@ def test_batch_finder_caps_ceiling_at_dataset_size():
     assert [size for kind, size in order if kind == "trial"] == [1, 2]
 
 
-def test_all_flags_off_is_a_noop():
+def test_all_flags_off_is_a_noop(tmp_path):
     """Verifies that the orchestrator runs no trials when every flag is off."""
     order    = []
     training = _training()
@@ -153,6 +164,7 @@ def test_all_flags_off_is_a_noop():
         training_config = training,
         build_context   = lambda: _context(order, training),
         logger          = _Logger(),
+        result_dir      = tmp_path,
     ).run()
 
     assert order == []
@@ -160,7 +172,7 @@ def test_all_flags_off_is_a_noop():
     assert training.num_workers == 0
 
 
-def test_lr_probe_runs_at_the_resolved_batch_and_scales_the_multiplier(monkeypatch):
+def test_lr_probe_runs_at_the_resolved_batch_and_scales_the_multiplier(monkeypatch, tmp_path):
     """Verifies that the LR test sees the resolved batch size and multiplies lr_multiplier."""
     order    = []
     training = _training()
@@ -176,6 +188,7 @@ def test_lr_probe_runs_at_the_resolved_batch_and_scales_the_multiplier(monkeypat
         def run(self, batch_size):
             """Records the probe call and returns a fixed selection."""
             order.append(("lr", batch_size))
+            self.record = {"multiplier": 0.5, "losses": [1.0, 0.5]}
             return {"multiplier": 0.5, "min_loss_multiplier": 5.0, "divergence_multiplier": 20.0}
 
     monkeypatch.setattr(orchestrator_module, "LrRangeTest", _FakeRangeTest)
@@ -187,6 +200,7 @@ def test_lr_probe_runs_at_the_resolved_batch_and_scales_the_multiplier(monkeypat
         training_config = training,
         build_context   = lambda: _context(order, training, trainer=object()),
         logger          = _Logger(),
+        result_dir      = tmp_path,
         label           = "m",
     ).run()
 
@@ -195,8 +209,14 @@ def test_lr_probe_runs_at_the_resolved_batch_and_scales_the_multiplier(monkeypat
     assert order[-1]              == ("lr", 4)
     assert pretrain.find_lr is False
 
+    record = json.loads((tmp_path / PretrainOrchestrator.LR_RECORD).read_text())
 
-def test_lr_probe_keeps_the_multiplier_when_nothing_is_found(monkeypatch):
+    assert record["losses"]                   == [1.0, 0.5]
+    assert record["lr_multiplier_configured"] == 2.0
+    assert record["lr_multiplier_resolved"]   == 1.0
+
+
+def test_lr_probe_keeps_the_multiplier_when_nothing_is_found(monkeypatch, tmp_path):
     """Verifies that a None selection leaves lr_multiplier untouched."""
     order    = []
     training = _training()
@@ -209,6 +229,7 @@ def test_lr_probe_keeps_the_multiplier_when_nothing_is_found(monkeypatch):
 
         def run(self, batch_size):
             """Reports no selection."""
+            self.record = {"multiplier": None, "losses": [1.0, 1.0]}
             return None
 
     monkeypatch.setattr(orchestrator_module, "LrRangeTest", _EmptyRangeTest)
@@ -220,13 +241,19 @@ def test_lr_probe_keeps_the_multiplier_when_nothing_is_found(monkeypatch):
         training_config = training,
         build_context   = lambda: _context(order, training, trainer=object()),
         logger          = _Logger(),
+        result_dir      = tmp_path,
     ).run()
 
     assert training.lr_multiplier == 1.0
     assert pretrain.find_lr is False
 
+    record = json.loads((tmp_path / PretrainOrchestrator.LR_RECORD).read_text())
 
-def test_loader_tuner_without_a_result_still_switches_itself_off(monkeypatch):
+    assert record["multiplier"]               is None
+    assert record["lr_multiplier_configured"] == record["lr_multiplier_resolved"] == 1.0
+
+
+def test_loader_tuner_without_a_result_still_switches_itself_off(monkeypatch, tmp_path):
     """Verifies a sweep that found no configuration leaves the loader settings alone but records that it ran."""
     order    = []
     training = _training()
@@ -250,6 +277,7 @@ def test_loader_tuner_without_a_result_still_switches_itself_off(monkeypatch):
         training_config = training,
         build_context   = lambda: _context(order, training),
         logger          = _Logger(),
+        result_dir      = tmp_path,
     ).run()
 
     assert training.num_workers  == 0
@@ -269,7 +297,7 @@ def test_context_requires_a_trainer():
         )
 
 
-def test_batch_finder_failure_raises_a_domain_error(monkeypatch):
+def test_batch_finder_failure_raises_a_domain_error(monkeypatch, tmp_path):
     """Verifies that a failed batch search is re-raised as a RuntimeError."""
     order    = []
     training = _training()
@@ -292,5 +320,6 @@ def test_batch_finder_failure_raises_a_domain_error(monkeypatch):
             training_config = training,
             build_context   = lambda: _context(order, training),
             logger          = _Logger(),
+            result_dir      = tmp_path,
             label           = "m",
         ).run()
