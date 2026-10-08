@@ -25,10 +25,8 @@ def main() -> None:
 
     entry  = ConfigCli(OnnxExportEntryConfig(), description="Rebuild each selected backbone run's model from its persisted architecture config, load the best checkpoint and export the forward as an ONNX graph with a dynamic batch axis, writing model.onnx and a manifest (opset, input shape, checkpoint provenance, sha256) under the run's export directory").apply()
 
-    logger = Logger(log_dir="logs", name="export_onnx")
-    OnnxRunExporter(entry, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="export_onnx") as logger:
+        OnnxRunExporter(entry, logger).run()
 
 
 if __name__ == "__main__":

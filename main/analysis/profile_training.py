@@ -32,10 +32,8 @@ def main() -> None:
 
     entry = ConfigCli(TrainingProfileEntryConfig(), description="Build the configured family's real (dataset, model, loss) feed and profile full training steps with torch.profiler: warmup steps are observed, active steps recorded, and the run writes a chrome trace for chrome://tracing, a per-operator time table and a machine-readable summary").apply()
 
-    logger = Logger(log_dir="logs", name="profile_training")
-    TrainingProfilePipeline(entry, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="profile_training") as logger:
+        TrainingProfilePipeline(entry, logger).run()
 
 
 if __name__ == "__main__":

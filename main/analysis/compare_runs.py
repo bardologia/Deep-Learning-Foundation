@@ -56,13 +56,12 @@ def main() -> None:
     config = ConfigCli(ComparisonEntryConfig(), description="Standalone benchmark comparison").apply()
     tag    = _resolve_run_tag(config)
 
-    logger = Logger(log_dir=str(Path(config.paths.log_base_dir) / tag / "pipeline"), name="compare_runs")
+    with Logger(log_dir=str(Path(config.paths.log_base_dir) / tag / "pipeline"), name="compare_runs") as logger:
+        stage   = ComparisonStage(config=config, run_tag=tag, logger=logger, reference_model=config.reference_model, embed_images=config.embed_images, inference_split=config.inference_split)
+        out_dir = stage.run()
 
-    stage   = ComparisonStage(config=config, run_tag=tag, logger=logger, reference_model=config.reference_model, embed_images=config.embed_images, inference_split=config.inference_split)
-    out_dir = stage.run()
+        logger.info(f"Comparison written to: {out_dir}")
 
-    logger.info(f"Comparison written to: {out_dir}")
-    logger.close()
 
 if __name__ == "__main__":
     main()

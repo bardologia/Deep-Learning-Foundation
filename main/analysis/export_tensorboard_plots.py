@@ -23,10 +23,8 @@ def main() -> None:
 
     entry  = ConfigCli(TensorboardExportEntryConfig(), description="Scan a runs directory for training runs with tensorboard event logs, select one or more, and export every scalar series as a publication-quality figure inside each run directory; train and validation series of the same metric share one figure, and sibling seed runs of one trial additionally get per-metric seed-overlay figures in the trial directory").apply()
 
-    logger = Logger(log_dir="logs", name="export_tensorboard_plots")
-    TensorboardExportBatch(entry, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="export_tensorboard_plots") as logger:
+        TensorboardExportBatch(entry, logger).run()
 
 
 if __name__ == "__main__":
