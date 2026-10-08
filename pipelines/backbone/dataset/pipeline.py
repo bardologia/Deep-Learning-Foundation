@@ -179,11 +179,11 @@ class DatasetPipeline:
             if stored != fresh:
                 raise ValueError(f"Resuming this run would overwrite {stats_path} with different normalization statistics; the restored checkpoint was trained under the stored ones. Start a fresh run or drop the overrides that changed the fitted statistics.")
 
-            self.logger.info(f"Normalization stats match the resumed run: {stats_path}")
+            self.logger.ok(f"Normalization stats match the resumed run: {stats_path}")
             return
 
         norm_stats.save(meta_directory)
-        self.logger.info(f"Normalization stats saved: {meta_directory}")
+        self.logger.ok(f"Normalization stats saved: {meta_directory}")
 
     def _patch_grids(self, patcher):
         """Returns the GridInfo of one Patcher, or the list of grids of several."""
@@ -251,6 +251,12 @@ class DatasetPipeline:
         })
 
         datasets = {"train": train_ds, "val": val_ds, "test": test_ds}
+
+        self.logger.section("[Dataset Splits Summary]")
+        self.logger.kv_table({
+            "Input Channels" : train_ds.input_channels,
+            "Metadata Dir"   : str(self.training_run_directory / "meta"),
+        })
 
         return train_loader, val_loader, test_loader, datasets
 
