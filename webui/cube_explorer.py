@@ -1276,13 +1276,13 @@ class CubeExplorer:
         if resolved is None:
             return None
 
-        data, primary = resolved
+        data, primary, clim = resolved
 
         if not vmax > vmin:
             vmin, vmax = self._metric_range(data)
         alpha = float(np.clip(alpha, 0.0, 1.0))
 
-        p_lo, p_hi = np.percentile(primary, [1.0, 99.0])
+        p_lo, p_hi = clim
         base       = (np.clip((primary - p_lo) / max(p_hi - p_lo, 1e-12), 0.0, 1.0))[..., None].repeat(3, axis=2)
 
         norm    = np.clip((data - vmin) / max(vmax - vmin, 1e-12), 0.0, 1.0)
@@ -1310,23 +1310,25 @@ class CubeExplorer:
         if resolved is None:
             return {"ok": False, "error": f"unknown metric map: {key}"}
 
-        data, _ = resolved
+        data, _primary, _clim = resolved
         row = int(np.clip(row, 0, data.shape[0] - 1))
         col = int(np.clip(col, 0, data.shape[1] - 1))
 
         value = float(data[row, col])
         return {"ok": True, "row": row, "col": col, "key": key, "value": value if np.isfinite(value) else None}
 
-    def _metric_state(self, cube_id: str, key: str) -> tuple[np.ndarray, np.ndarray] | None:
+    def _metric_state(self, cube_id: str, key: str) -> tuple[np.ndarray, np.ndarray, tuple[float, float]] | None:
+        """Returns the metric map, the primary amplitude map and its cached colour limits."""
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:
                 return None
             data    = self.loaded["metric_maps"].get(key)
             primary = self.loaded["primary"]
+            clim    = self.loaded["primary_clim"]
 
         if data is None:
             return None
-        return data, primary
+        return data, primary, clim
 
     SELECTIVE_KEYS   = ("pixel_mse", "pixel_mae", "pixel_r2", "pixel_cos", "pixel_peak")
     HIGH_IS_CONFIDENT = ("pixel_r2", "pixel_cos", "label_r2")
@@ -1346,7 +1348,7 @@ class CubeExplorer:
         if resolved is None:
             return {"ok": False, "error": f"unknown confidence layer: {key}"}
 
-        confidence, _primary = resolved
+        confidence, _primary, _clim = resolved
 
         with self.lock:
             if self.loaded is None or self.loaded["id"] != cube_id:

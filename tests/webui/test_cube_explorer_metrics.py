@@ -1,7 +1,11 @@
+"""Tests for the cube explorer's metric layers: overlays, pixel readouts, colour bars and selective scoring."""
+
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from cube_explorer import CubeExplorer
@@ -35,6 +39,22 @@ def test_metric_overlay_png(tmp_path):
 
     degenerate = explorer.metric_overlay_png(cube_id, "pixel_r2", vmin=2.0, vmax=2.0, keep_min=float("-inf"), keep_max=float("inf"), alpha=0.5)
     assert degenerate and degenerate[:4] == b"\x89PNG"
+
+
+def test_metric_overlay_greys_the_primary_with_the_cached_limits(tmp_path):
+    """The overlay's grey base uses the primary colour limits cached at load, not percentiles recomputed per request."""
+    explorer, cube_id = _loaded_explorer(tmp_path)
+
+    primary = explorer.loaded["primary"]
+    lo, hi  = float(np.median(primary)), float(np.median(primary)) + 1.0
+    explorer.loaded["primary_clim"] = (lo, hi)
+
+    png      = explorer.metric_overlay_png(cube_id, "pixel_r2", vmin=0.0, vmax=1.0, keep_min=float("-inf"), keep_max=float("inf"), alpha=0.0)
+    grey     = plt.imread(io.BytesIO(png))[..., 0]
+    expected = np.clip((primary - lo) / (hi - lo), 0.0, 1.0)
+
+    assert grey.shape == primary.shape
+    assert np.allclose(grey, expected, atol=1.0 / 255.0 + 1e-6)
 
 
 def test_metric_overlay_rejects_unknown_key(tmp_path):
