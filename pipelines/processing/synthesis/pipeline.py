@@ -8,7 +8,9 @@ already holding a finished dataset and records an abort in its log.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
+from typing  import Any, Callable
 
 import numpy as np
 
@@ -27,11 +29,12 @@ class SyntheticDatasetPipeline:
     """Runs the four generation stages and writes the dataset.
 
     Attributes:
-        config : Synthesis configuration describing the scene and the output directory.
-        logger : Logger for the stage report.
-        z_axis : Z axis the profiles are sampled on, in metres.
-        noise  : White-noise sampler shared by the cube and the channels.
-        writer : Writer of the dataset files.
+        config        : Synthesis configuration describing the scene and the output directory.
+        logger        : Logger for the stage report.
+        z_axis        : Z axis the profiles are sampled on, in metres.
+        noise         : White-noise sampler shared by the cube and the channels.
+        writer        : Writer of the dataset files.
+        stage_seconds : Wall-clock seconds of every stage that has run, keyed by its label.
     """
 
     def __init__(self, config: SynthesisConfig, logger: Logger) -> None:
@@ -43,11 +46,12 @@ class SyntheticDatasetPipeline:
         """
         config.validate()
 
-        self.config = config
-        self.logger = logger
-        self.z_axis = ZAxis.build(config)
-        self.noise  = WhiteNoiseSampler(config.seed + 7919)
-        self.writer = DatasetWriter(config, logger=logger)
+        self.config        = config
+        self.logger        = logger
+        self.z_axis        = ZAxis.build(config)
+        self.noise         = WhiteNoiseSampler(config.seed + 7919)
+        self.writer        = DatasetWriter(config, logger=logger)
+        self.stage_seconds : dict[str, float] = {}
 
         self.logger.section("[Synthetic Dataset Pipeline Initialized]")
         self.logger.kv_table({
@@ -61,6 +65,24 @@ class SyntheticDatasetPipeline:
             "Channel Labels"   : ", ".join(config.channel_labels),
             "Seed"             : config.seed,
         }, title="Synthesis")
+
+    def _timed_stage(self, label: str, stage: Callable[[], Any]) -> Any:
+        """Runs one stage under the logger's timer and records its wall-clock duration for the completion table.
+
+        Args:
+            label : Stage name used in the timer line and as the completion-table key.
+            stage : Callable running the stage with no argument.
+
+        Returns:
+            Whatever the stage returns.
+        """
+        started = time.perf_counter()
+
+        with self.logger.timer(label):
+            result = stage()
+
+        self.stage_seconds[label] = time.perf_counter() - started
+        return result
 
     def _stage_parameters(self) -> tuple:
         """Samples the smooth amplitude, mean and sigma fields and logs the component occupancy.
@@ -151,16 +173,19 @@ class SyntheticDatasetPipeline:
         return {"dataset_json": layout_path, "config_state": state_path, **outputs}
 
     def run(self) -> dict:
-        """Runs every stage and writes the dataset.
+        """Runs every stage under the logger's timer and writes the dataset.
+
+        The completion table lists the duration of every stage under its own
+        name next to the written paths.
 
         Returns:
             Mapping from output name to the written path.
         """
-        amps, mus, sigmas = self._stage_parameters()
+        amps, mus, sigmas = self._timed_stage("Parameter fields", self._stage_parameters)
 
-        cube, primary, secondaries, derived, z = self._stage_scene(amps, mus, sigmas)
+        cube, primary, secondaries, derived, z = self._timed_stage("Profiles and observations", lambda: self._stage_scene(amps, mus, sigmas))
 
-        parameters, diagnostics = self._stage_parameter_run(cube, amps, mus, sigmas)
+        parameters, diagnostics = self._timed_stage("Parameter run scoring", lambda: self._stage_parameter_run(cube, amps, mus, sigmas))
 
         arrays = {
             "primary"     : primary,
@@ -170,10 +195,13 @@ class SyntheticDatasetPipeline:
             "cube_full"   : cube,
         }
 
-        outputs = self._stage_write(arrays, parameters, diagnostics)
+        outputs = self._timed_stage("Dataset writing", lambda: self._stage_write(arrays, parameters, diagnostics))
 
         self.logger.section("[Synthetic Dataset Complete]")
-        self.logger.kv_table({name: str(path) for name, path in outputs.items()}, title="Outputs")
+        self.logger.kv_table({
+            **{name: str(path) for name, path in outputs.items()},
+            **{f"{label} [s]": f"{seconds:.1f}" for label, seconds in self.stage_seconds.items()},
+        }, title="Outputs")
 
         return outputs
 
