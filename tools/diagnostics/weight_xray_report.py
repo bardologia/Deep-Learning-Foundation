@@ -126,10 +126,14 @@ class WeightXrayReport:
         """Returns the provenance entries rendered in the report header, from the checkpoint entry to the library versions."""
         checkpoint = provenance["checkpoint"]
 
+        architecture = provenance["architecture"]
+        unit_axis    = f"{architecture} (transposed convolutions read on dim 1)" if architecture is not None else "unavailable (every weight read on dim 0)"
+
         return {
             "Checkpoint entry"             : checkpoint["key"],
             "Epoch (stored, 0-based)"      : checkpoint["epoch"],
             "Best epoch (stored, 0-based)" : checkpoint["best_epoch"],
+            "Module types from"            : unit_axis,
             "Created"                      : provenance["created"],
             "Git commit"                   : provenance["git_commit"],
             "Host"                         : provenance["host"],

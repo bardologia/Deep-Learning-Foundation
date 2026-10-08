@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from configuration.diagnostics              import WeightXrayConfig
-from tools.diagnostics.weight_xray_analysis import IssueDetector, WeightAnalyzer
+from tools.diagnostics.weight_xray_analysis import IssueDetector, ModuleTypes, WeightAnalyzer
 from tools.diagnostics.weight_xray_plots    import WeightXrayPlots
 
 
@@ -32,7 +32,7 @@ def state_dict():
 def test_xray_plots_render_series_histogram_and_flagged_layers(tmp_path, state_dict):
     """Rendering writes the layer metric series, the pooled histogram and per-layer histograms to disk."""
     config  = WeightXrayConfig(output_dir=tmp_path)
-    reports = WeightAnalyzer(config).analyze(state_dict)
+    reports = WeightAnalyzer(config, ModuleTypes.unavailable()).analyze(state_dict)
     reports = IssueDetector(config.thresholds).run(reports, state_dict)
 
     paths = WeightXrayPlots(config).render(reports, state_dict)
@@ -70,7 +70,7 @@ def test_global_sample_respects_the_budget_and_covers_every_tensor(tmp_path):
     }
 
     config  = WeightXrayConfig(output_dir=tmp_path, histogram_sample_max=100)
-    reports = WeightAnalyzer(config).analyze(state)
+    reports = WeightAnalyzer(config, ModuleTypes.unavailable()).analyze(state)
     pooled  = WeightXrayPlots(config)._global_sample(reports, state)
 
     assert pooled.size <= 100

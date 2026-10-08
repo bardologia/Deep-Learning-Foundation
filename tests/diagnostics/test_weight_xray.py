@@ -1,8 +1,10 @@
-"""Tests for the weight x-ray orchestration: checkpoint resolution, provenance and the batch.
+"""Tests for the weight x-ray orchestration: checkpoint resolution, module types, provenance and the batch.
 
 Covers which checkpoint entry the tensors come from and the refusal to guess
-between unconfigured entries, the provenance block and unchecked-check warning
-of one x-ray, and the numbered sections and closing summary of a batch.
+between unconfigured entries, the module types rebuilt from a persisted
+architecture so transposed convolutions are read on dim 1, the provenance block
+and unchecked-check warning of one x-ray, and the numbered sections and closing
+summary of a batch.
 """
 
 from __future__ import annotations
@@ -13,8 +15,10 @@ import numpy as np
 import pytest
 import torch
 
-from configuration.diagnostics    import WeightXrayConfig, WeightXrayEntryConfig
-from tools.diagnostics.weight_xray import StateDictResolver, WeightXray, WeightXrayBatch
+from configuration.diagnostics                  import WeightXrayConfig, WeightXrayEntryConfig
+from models                                     import BACKBONE_CONFIG_REGISTRY, get_backbone
+from pipelines.shared.config.config_persistence import BackboneModelConfigIO
+from tools.diagnostics.weight_xray               import ModuleTypeResolver, StateDictResolver, WeightXray, WeightXrayBatch
 
 from tests.conftest import RecordingLogger
 
@@ -37,6 +41,31 @@ def _write_run(root, name: str, wide_units: int = 4):
     payload = {"epoch": 3, "best_epoch": 2, "best_val_loss": 0.1, "params": _state_dict(wide_units), "z_axis": np.linspace(-20.0, 80.0, 8)}
     torch.save(payload, run_dir / "best_model.pt")
     return run_dir
+
+
+def _write_unet_run(root, name: str):
+    """Writes a run directory with a persisted two-level U-Net config and its checkpoint, as training does.
+
+    Returns:
+        Pair of the run directory and the model the checkpoint was taken from.
+    """
+    run_dir  = root / name
+    meta_dir = run_dir / "meta"
+    meta_dir.mkdir(parents=True)
+
+    config                   = BACKBONE_CONFIG_REGISTRY["unet"]()
+    config.in_channels       = 2
+    config.out_channels      = 3
+    config.features          = [4, 8]
+    config.bottleneck_factor = 1
+
+    BackboneModelConfigIO.save(config, "unet", meta_dir)
+
+    torch.manual_seed(0)
+    model, _ = get_backbone("unet", config=config)
+    torch.save({"epoch": 0, "best_epoch": 0, "params": model.state_dict(), "z_axis": np.linspace(-20.0, 80.0, 8)}, run_dir / "best_model.pt")
+
+    return run_dir, model
 
 
 def _messages(logger: RecordingLogger, level: str) -> list[str]:
@@ -119,7 +148,7 @@ def test_xray_warns_about_the_tensors_a_limit_left_unchecked(tmp_path):
     WeightXray(config, logger).run()
     markdown = config.report_markdown_path.read_text()
 
-    warnings = _messages(logger, "warning")
+    warnings = [message for message in _messages(logger, "warning") if "check skipped" in message]
     assert len(warnings) == 1
     assert "duplicates check skipped for 1 of 3 tensors" in warnings[0]
     assert "encoder.wide.weight (8 output units > duplicate_max_units 4)" in warnings[0]
@@ -127,6 +156,52 @@ def test_xray_warns_about_the_tensors_a_limit_left_unchecked(tmp_path):
     assert "skipped" in markdown
     assert "Thresholds and limits" in markdown
     assert "duplicate_max_units" in markdown
+
+
+def test_resolver_finds_the_transposed_convolutions_of_a_persisted_unet(tmp_path):
+    """The rebuilt U-Net names every checkpoint tensor's module and its transposed-convolution weights."""
+    run_dir, model = _write_unet_run(tmp_path, "unet_run")
+
+    types    = ModuleTypeResolver(run_dir / "best_model.pt").resolve()
+    expected = {f"{name}.weight" for name, module in model.named_modules() if isinstance(module, torch.nn.ConvTranspose2d)}
+
+    assert types.architecture == "unet"
+    assert expected
+    assert types.transposed == expected
+    assert set(types.by_key) == set(model.state_dict())
+
+
+def test_xray_reads_transposed_weights_on_dim_1_and_records_the_architecture(tmp_path):
+    """With a persisted architecture the upsampler weights report dim-1 output units and the JSON names the architecture."""
+    run_dir, _model = _write_unet_run(tmp_path, "unet_run")
+    config          = WeightXrayConfig(checkpoint_path=run_dir, output_dir=run_dir / "weight_xray", make_plots=False)
+    logger          = RecordingLogger()
+
+    WeightXray(config, logger).run()
+    payload = json.loads(config.report_json_path.read_text())
+
+    transposed = [tensor for tensor in payload["tensors"] if tensor["module_type"] == "ConvTranspose2d" and tensor["role"] == "weight"]
+    assert transposed
+    for tensor in transposed:
+        assert tensor["unit_axis"] == 1
+        assert tensor["out_units"] == tensor["shape"][1]
+
+    assert payload["provenance"]["architecture"] == "unet"
+    assert any("transposed-convolution weights read their output units on dim 1" in message for message in _messages(logger, "ok"))
+
+
+def test_xray_without_a_persisted_architecture_warns_and_reads_dim_0(tmp_path):
+    """A bare run directory without model_config.json is x-rayed on dim 0 with a warning and no architecture recorded."""
+    run_dir = _write_run(tmp_path, "run_a")
+    config  = WeightXrayConfig(checkpoint_path=run_dir, output_dir=run_dir / "weight_xray", make_plots=False)
+    logger  = RecordingLogger()
+
+    WeightXray(config, logger).run()
+    payload = json.loads(config.report_json_path.read_text())
+
+    assert any(BackboneModelConfigIO.FILENAME in message and "dim 0" in message for message in _messages(logger, "warning"))
+    assert payload["provenance"]["architecture"] is None
+    assert all(tensor["unit_axis"] == 0 for tensor in payload["tensors"])
 
 
 def test_batch_logs_its_configuration_numbers_the_runs_and_closes_with_a_summary(tmp_path):
