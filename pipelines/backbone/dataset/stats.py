@@ -48,6 +48,24 @@ class Stats:
 
         return FileIO.save_json(self.payload(), out_path, indent=4)
 
+    @staticmethod
+    def clamp_rows(clamp: OutputClampConfig) -> dict:
+        """Returns the key-value rows describing an effective output clamp.
+
+        Args:
+            clamp : Output clamp configuration of a run.
+
+        Returns:
+            Rows naming the clamped range or "disabled", the curve and parameter
+            leak slopes and the amplitude ceiling.
+        """
+        return {
+            "Output clamp" : f"{clamp.floor} to {clamp.ceil}" if clamp.enabled else "disabled",
+            "Clamp leak"   : clamp.leaky_slope,
+            "Param leak"   : clamp.param_leaky_slope,
+            "Amp max"      : clamp.amp_max,
+        }
+
     @classmethod
     def load(cls, directory: Path, logger: Logger) -> "Stats":
         """Reads the statistics of a run back and reports them.
@@ -82,10 +100,7 @@ class Stats:
             "Stats path"      : path,
             "Input channels"  : input_stats.n_channels,
             "Output channels" : output_stats.n_channels,
-            "Output clamp"    : f"{clamp.floor} to {clamp.ceil}" if clamp.enabled else "disabled",
-            "Clamp leak"      : clamp.leaky_slope,
-            "Param leak"      : clamp.param_leaky_slope,
-            "Amp max"         : clamp.amp_max,
+            **cls.clamp_rows(clamp),
         })
 
         return cls(input_stats = input_stats, output_stats = output_stats, clamp = clamp)
