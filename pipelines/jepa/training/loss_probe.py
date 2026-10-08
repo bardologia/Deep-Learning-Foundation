@@ -86,7 +86,7 @@ class JepaEmbeddingLossProbe(LossScaleProbe):
         Returns:
             An EmbeddingLoss with every probed term at unit weight.
         """
-        return EmbeddingLoss(self.autoencoder, self.target_provider, self.loss_cfg, z_axis, self.norm_stats, self.ppg, self.profile_normalizer)
+        return EmbeddingLoss(self.autoencoder, self.target_provider, self.loss_cfg, z_axis, self.norm_stats, self.ppg, self.profile_normalizer, self.logger)
 
     @staticmethod
     def _criterion_result(criterion, prediction, targets) -> dict:

@@ -205,7 +205,7 @@ class Trainer(BaseTrainer):
 
         if self.has_profile:
             target_provider = TargetProvider(self.config.target_provider)
-            return EmbeddingLoss(self.model.profile_autoencoder, target_provider, stage, self.z_axis, self.norm_stats, self.gaussian_cfg.params_per_gaussian, self.profile_normalizer)
+            return EmbeddingLoss(self.model.profile_autoencoder, target_provider, stage, self.z_axis, self.norm_stats, self.gaussian_cfg.params_per_gaussian, self.profile_normalizer, self.logger)
 
         return ParameterLoss(self.z_axis, self.logger, self.tracker, self.gaussian_cfg, stage, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses)
 

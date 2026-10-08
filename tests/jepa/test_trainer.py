@@ -19,6 +19,7 @@ from pipelines.jepa.training.loss                        import Loss as Embeddin
 from pipelines.jepa.training.trainer                     import JepaModule, Trainer
 from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer, ProfileStats
 
+from tests.conftest      import SilentLogger
 from tests.jepa.conftest import EMBEDDING_DIM, IdentityNormStats, N_GAUSSIANS, SPATIAL, make_autoencoder
 
 
@@ -143,7 +144,7 @@ def make_trainer_shim(target_kind="stopgrad", trainable=True):
     emb_cfg            = EmbeddingLossConfig(use_embedding_mse=True, weight_embedding_mse=1.0, use_curve_recon=False)
 
     provider  = TargetProvider(target_kind)
-    criterion = EmbeddingLoss(module.profile_autoencoder, provider, emb_cfg, z_axis, norm_stats, 3, profile_normalizer)
+    criterion = EmbeddingLoss(module.profile_autoencoder, provider, emb_cfg, z_axis, norm_stats, 3, profile_normalizer, SilentLogger())
 
     trainer                = Trainer.__new__(Trainer)
     trainer.model          = module
