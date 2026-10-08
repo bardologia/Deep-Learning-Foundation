@@ -17,6 +17,14 @@ from tools.diagnostics.tensorboard_export import CurveGroup, CurveLabeler, Scala
 from tests.conftest import RecordingLogger
 
 
+class _TrackingLogger(RecordingLogger):
+    """Recording logger with a per-level message filter."""
+
+    def of(self, level: str) -> list:
+        """Returns the recorded messages of one level."""
+        return [message for recorded, message in self.messages if recorded == level]
+
+
 def _series(tags):
     """Returns a scalar series mapping each tag to three steps and values in [0, 1]."""
     steps = np.arange(3, dtype=np.int64)
@@ -158,13 +166,18 @@ def test_export_writes_plots_into_the_run_directory(run_directory):
 
 
 def test_batch_exports_filtered_runs(run_directory, tmp_path):
-    """The batch export processes only the runs matched by the filter."""
+    """The batch export processes only the runs matched by the filter and closes with a summary naming no overlay."""
     entry   = TensorboardExportEntryConfig(runs_dir=tmp_path, run_filter=["run_demo"])
-    results = TensorboardExportBatch(entry, RecordingLogger()).run()
+    logger  = _TrackingLogger()
+    results = TensorboardExportBatch(entry, logger).run()
 
     assert len(results) == 1
     assert results[0]["run_directory"] == str(run_directory)
     assert (run_directory / "tensorboard_plots" / "loss.png").is_file()
+
+    assert ("metrics_table", "Tensorboard export summary") in logger.messages
+    assert ("metrics_table", "Seed overlay summary")   not in logger.messages
+    assert logger.of("ok")[-1] == "Exported 1 run(s) (2 plots); 0 multi-seed trial(s) (0 overlay plots)"
 
 
 def _seed_run(root, trial, seed, tags=("loss/train", "loss/val")):
@@ -215,6 +228,21 @@ def test_batch_writes_seed_overlays_into_the_trial_directory(tmp_path):
     assert results[-1]["n_seeds"] == 2
     assert (tmp_path / "trial_a" / "seed0" / "tensorboard_plots" / "loss.png").is_file()
     assert (tmp_path / "trial_a" / "tensorboard_plots" / "loss.png").is_file()
+
+
+def test_batch_numbers_each_run_and_closes_with_run_and_overlay_totals(tmp_path):
+    """Each run opens a numbered section named by its path below the runs root, and the batch ends with both summary tables and the totals."""
+    for seed in (0, 1):
+        _seed_run(tmp_path, "trial_a", seed)
+
+    entry  = TensorboardExportEntryConfig(runs_dir=tmp_path, run_filter=["trial_a"])
+    logger = _TrackingLogger()
+    TensorboardExportBatch(entry, logger).run()
+
+    assert logger.of("section") == ["Tensorboard plot export [1/2] trial_a/seed0", "Tensorboard plot export [2/2] trial_a/seed1"]
+    assert ("metrics_table", "Tensorboard export summary") in logger.messages
+    assert ("metrics_table", "Seed overlay summary")       in logger.messages
+    assert logger.of("ok")[-1] == "Exported 2 run(s) (2 plots); 1 multi-seed trial(s) (1 overlay plots)"
 
 
 def test_trial_name_filter_expands_to_the_seed_runs(tmp_path):
