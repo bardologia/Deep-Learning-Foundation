@@ -349,8 +349,15 @@ class ActivationRecorder:
         self._handles = []
 
     def stats(self) -> dict[str, dict]:
-        """Returns the finalised statistics of every layer that fired, keyed by module name and call site."""
-        return {name: layer_stats.finalize() for name, layer_stats in self._stats.items() if layer_stats.n_elements > 0}
+        """Returns the finalised statistics of every call site that fired, keyed by module name and call site.
+
+        Raises:
+            ValueError : If no hooked module produced a tensor, which means the loader yielded no batch or every module output was non-tensor.
+        """
+        fired = {name: layer_stats.finalize() for name, layer_stats in self._stats.items() if layer_stats.n_elements > 0}
+        if not fired:
+            raise ValueError(f"No leaf module of {type(self.model).__name__} produced a tensor during capture; the loader yielded no batch or every module output was non-tensor")
+        return fired
 
     @classmethod
     def module_of(cls, key: str) -> str:
@@ -360,6 +367,15 @@ class ActivationRecorder:
     def reused_modules(self) -> dict[str, int]:
         """Returns the leaf modules that fired more than once in a forward pass, with the most calls seen in one pass."""
         return {name: calls for name, calls in self._call_sites.items() if calls > 1}
+
+    def silent_layers(self) -> dict[str, str]:
+        """Returns the hooked leaf modules that never produced a tensor, mapped to their module type.
+
+        A leaf the eval forward never runs, or whose output holds no tensor,
+        has no statistics row; the caller reports these so an unwired branch
+        is not mistaken for a clean one.
+        """
+        return {name: layer_stats.module_type for name, layer_stats in self._stats.items() if layer_stats.n_elements == 0}
 
     def stored(self) -> dict[str, torch.Tensor]:
         """Returns the retained CPU output tensors, keyed by module name."""
