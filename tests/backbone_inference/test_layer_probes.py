@@ -8,11 +8,16 @@ controls.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 import torch
 
-from pipelines.backbone.inference.analysis.layer_probes import FeatureGeometry, FeatureSampler, LayerProbeCore, RidgeProbe
+from configuration.diagnostics                          import LayerProbeConfig
+from pipelines.backbone.inference.analysis.layer_probes import FeatureGeometry, FeatureSampler, LayerProbeCore, LayerProbeRun, RidgeProbe
+
+from tests.conftest import RecordingLogger
 
 
 H, W = 16, 12
@@ -208,6 +213,39 @@ def test_probe_core_drops_channels_last_activations():
     results = _core(_ChannelsLastNet(), ["spatial", "channel_last"]).collect(_batches())
 
     assert set(results["layers"]) == {"spatial"}
+    assert results["dropped_layers"] == {"channel_last": f"output of shape (2, {H}, {W}, 2) is not a feature map on the 2x{H}x{W} input grid"}
+
+
+def test_probe_core_names_a_layer_that_never_fires():
+    """A hooked module the forward pass never calls is dropped with its reason instead of vanishing."""
+    class _IdleNet(torch.nn.Module):
+        """Network with one used identity layer and one that is never called."""
+        def __init__(self) -> None:
+            """Builds the used and the idle identity layers."""
+            super().__init__()
+            self.used = torch.nn.Identity()
+            self.idle = torch.nn.Identity()
+
+        def forward(self, x):
+            """Returns x through the used layer only."""
+            return self.used(x)
+
+    results = _core(_IdleNet(), ["used", "idle"]).collect(_batches(1))
+
+    assert set(results["layers"]) == {"used"}
+    assert results["dropped_layers"] == {"idle": "produced no tensor output"}
+
+
+def test_layer_selection_logs_the_thinned_count(tmp_path):
+    """Thinning to max_layers is announced with the selected and total leaf counts."""
+    logger = RecordingLogger()
+    net    = torch.nn.Sequential(*[torch.nn.Identity() for _ in range(5)])
+    run    = SimpleNamespace(model=SimpleNamespace(module=net))
+
+    layers = LayerProbeRun(tmp_path, LayerProbeConfig(max_layers=3), logger)._select_layers(run)
+
+    assert layers == ["0", "2", "4"]
+    assert ("info", f"{tmp_path.name}: probing 3 of 5 leaf layers (max_layers=3)") in logger.messages
 
 
 def test_probe_core_seed_changes_the_sampled_pixels():

@@ -175,6 +175,23 @@ class FeatureSampler:
 
         return H % h == 0 and W % w == 0 and H // h == W // w
 
+    @classmethod
+    def drop_reason(cls, stored: torch.Tensor | None, B: int, H: int, W: int) -> str | None:
+        """Returns why a recorded activation cannot be sampled, or None when it is a feature map on the input grid.
+
+        Args:
+            stored : Recorded activation tensor, or None when the module produced no tensor output.
+            B      : Batch size of the forward pass.
+            H      : Input patch height in pixels.
+            W      : Input patch width in pixels.
+        """
+        if stored is None:
+            return "produced no tensor output"
+        if not cls.is_feature_map(stored, B, H, W):
+            return f"output of shape {tuple(stored.shape)} is not a feature map on the {B}x{H}x{W} input grid"
+
+        return None
+
     def features_at(self, stored: torch.Tensor, b: np.ndarray, i: np.ndarray, j: np.ndarray, B: int, H: int, W: int) -> np.ndarray:
         """Reads the feature vector of each sampled pixel off an activation map.
 
@@ -349,15 +366,17 @@ class LayerProbeCore:
         Returns:
             Dictionary with "layers", mapping each surviving layer to its channel count,
             effective dimensionality and per-target scores, the same block for the
-            "input_baseline", and the "shuffled_controls" naming the best layer and its
-            permuted-target score per target.
+            "input_baseline", the "shuffled_controls" naming the best layer and its
+            permuted-target score per target, and the "dropped_layers" mapping each
+            dropped layer to the reason it could not be probed.
 
         Raises:
             ValueError : If no probed layer produced a usable feature map.
         """
-        store: dict[str, list] = {layer: [] for layer in self.layers}
-        input_chunks           = []
-        target_chunks          = {target: [] for target, _label in self.TARGETS}
+        store: dict[str, list]  = {layer: [] for layer in self.layers}
+        dropped: dict[str, str] = {}
+        input_chunks            = []
+        target_chunks           = {target: [] for target, _label in self.TARGETS}
 
         recorder = ActivationRecorder(self.model)
         recorder.attach_store(self.layers)
@@ -379,12 +398,17 @@ class LayerProbeCore:
             input_chunks.append(self.sampler.features_at(images.cpu(), b, i, j, B, H, W))
 
             for layer in self.layers:
-                tensor = stored.get(layer)
-                if tensor is None or not self.sampler.is_feature_map(tensor, B, H, W):
-                    store.pop(layer, None)
+                if layer in dropped:
                     continue
-                if layer in store:
-                    store[layer].append(self.sampler.features_at(tensor, b, i, j, B, H, W))
+
+                tensor = stored.get(layer)
+                reason = FeatureSampler.drop_reason(tensor, B, H, W)
+                if reason is not None:
+                    dropped[layer] = reason
+                    store.pop(layer)
+                    continue
+
+                store[layer].append(self.sampler.features_at(tensor, b, i, j, B, H, W))
 
         recorder.detach()
 
@@ -424,7 +448,7 @@ class LayerProbeCore:
 
             controls[target] = {"layer": best, "score": self.probe.score(X_best[usable], shuffled)["mean"]}
 
-        return {"layers": layers, "input_baseline": baseline, "shuffled_controls": controls}
+        return {"layers": layers, "input_baseline": baseline, "shuffled_controls": controls, "dropped_layers": dropped}
 
 
 class LayerProbePlots(PlotBase):
@@ -530,10 +554,14 @@ class LayerProbeRun(AnalysisRun):
         names = ActivationRecorder(run.model.module).leaf_names()
 
         if len(names) <= self.config.max_layers:
-            return names
+            selected = names
+        else:
+            keep     = np.linspace(0, len(names) - 1, self.config.max_layers).astype(int)
+            selected = [names[index] for index in sorted(set(keep))]
 
-        keep = np.linspace(0, len(names) - 1, self.config.max_layers).astype(int)
-        return [names[index] for index in sorted(set(keep))]
+        self.logger.info(f"{self.run_dir.name}: probing {len(selected)} of {len(names)} leaf layers (max_layers={self.config.max_layers})")
+
+        return selected
 
     def _batches(self, run) -> list[tuple[torch.Tensor, np.ndarray]]:
         """Materializes the probe batches with their targets denormalized to physical units.
@@ -594,6 +622,13 @@ class LayerProbeRun(AnalysisRun):
             table.add_row(*row)
         doc.table(table)
 
+        if results["dropped_layers"]:
+            doc.heading("Dropped layers", level=2)
+            dropped_table = MarkdownTable(("Layer", "Reason"))
+            for layer, reason in results["dropped_layers"].items():
+                dropped_table.add_row(f"`{layer}`", reason)
+            doc.table(dropped_table)
+
         doc.heading("Baselines and controls", level=2)
         baseline = results["input_baseline"]
         control_table = MarkdownTable(("Target", "Input-pixel R²", "Shuffled control", "Control layer"))
@@ -632,7 +667,11 @@ class LayerProbeRun(AnalysisRun):
         )
 
         results = core.collect(self._batches(run))
+        probed  = len(layers)
         layers  = [layer for layer in layers if layer in results["layers"]]
+
+        if results["dropped_layers"]:
+            self.logger.warning(f"{self.run_dir.name}: {len(results['dropped_layers'])}/{probed} probed layers dropped: " + "; ".join(f"{layer} ({reason})" for layer, reason in results["dropped_layers"].items()))
 
         plots   = LayerProbePlots()
         figures = {}

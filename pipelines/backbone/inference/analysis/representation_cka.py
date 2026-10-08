@@ -406,15 +406,13 @@ class CkaComparison:
                     continue
 
                 tensor = stored.get(layer)
-                if tensor is None:
-                    dropped[layer] = "produced no tensor output"
-                elif not sampler.is_feature_map(tensor, B, H, W):
-                    dropped[layer] = f"output of shape {tuple(tensor.shape)} is not a feature map on the {B}x{H}x{W} input grid"
-                else:
-                    chunks[layer].append(sampler.features_at(tensor, b, i, j, B, H, W))
+                reason = FeatureSampler.drop_reason(tensor, B, H, W)
+                if reason is not None:
+                    dropped[layer] = reason
+                    chunks.pop(layer)
                     continue
 
-                chunks.pop(layer)
+                chunks[layer].append(sampler.features_at(tensor, b, i, j, B, H, W))
 
         recorder.detach()
 
