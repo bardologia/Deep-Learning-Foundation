@@ -33,8 +33,9 @@ it binds the port, which is why `run.sh` starts from the interpreter the profile
 
 The frontend loads MathJax 3.2.2 (tex-svg), highlight.js 11.9.0, GSAP 3.12.5 and xterm.js
 5.5.0 with its fit addon from a CDN, so equation typesetting, syntax highlighting,
-animation and the terminal view need a network connection. `marked` is vendored under
-`static/vendor/`. Everything degrades to plain text offline.
+animation and the terminal view need a network connection. `marked`, the thinking-orbs
+engine and the hairline kernel with its stock figures are vendored under `static/vendor/`.
+Everything degrades to plain text offline.
 
 ## Tabs
 
@@ -43,7 +44,7 @@ talking to one group of JSON endpoints.
 
 | Tab | Route | Backed by | What it does |
 |---|---|---|---|
-| Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/notify/*` | Live host and GPU telemetry, per-user memory attribution, running-job tiles, the GPU guard history, the charity-mode schedule, the neighbour-impact alarm and the ntfy settings. |
+| Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (NUKE under the watchdog card), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. |
 | Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 15 animated step-by-step derivations from dataset synthesis and parameter extraction through training, inference, benchmarking and tuning. |
 | Pipelines | `#/pipelines` | `/api/pipelines` | The 15 pipelines as staged flows; each maps to the entry point that runs it. |
 | Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 13 folders and 29 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
@@ -169,14 +170,117 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 `training_curves.py`, `cube_explorer.py` which also carries the slice collector,
 `fit_lab.py`, `model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
 
-**Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`
-and 50 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
-tab (`home`, `equations`, `flow_view` with `flow_sketches`, `pipelines`, `repomap`,
-`models`, `scripts`, `launch` with `launch_widgets` and `launch_pickers`, `ablation`,
-`saved_runs`, `templates`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube_view`,
-`slice_collector`, `fit_lab`, `microscope`, `triage`, `autopsy`, `feed_tuner`); the rest
-are shared helpers, `run_strip` for the run picker the cube, slices, microscope, triage
-and autopsy tabs share, `figure_export` and `figure_saver` for the figure saver, and
-`radar`, `diagram`, `gauges`, `process_anim` and `training_anim` for drawing and
-animation, `thinking_orb` for the loading indicator, and `hairline_figure` with
-`hairline_project` for the hairline figures.
+**Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
+`static/vendor/thinking-orbs-engine.js`, `static/vendor/hairline-kernel.js`,
+`static/vendor/hairline-figures.js` and 50 modules under `static/js/`. `app.js` and
+`router.js` wire the views; one module per tab (`home`, `equations`, `flow_view` with
+`flow_sketches`, `pipelines`, `repomap`, `models`, `scripts`, `launch` with its widget
+modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
+`experiment_builder`, `config_form`) and `launch_pickers`, `ablation`, `saved_runs`,
+`templates`, `sequences`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`,
+`cube_view`, `slice_collector`, `fit_lab`, `microscope`, `survey`, `triage`, `autopsy`,
+`feed_tuner`); the rest are shared helpers (`api`, `mathjax`, `shared_charts`,
+`results_sources`, `run_strip`, `canvas_base`, `figure_export`, `figure_saver`, `diagram`,
+`gauges`, `process_anim`, `training_anim`, `thinking_orb`, `hairline_figure` with
+`hairline_project`).
+
+The console wears one dark monitor theme: the root tokens give a near-black page, dark
+translucent glass surfaces with near-white ink and light blue and teal accents, text on
+an accent fill uses `--on-accent`, every border, ring and divider is 2 px, and the body
+text runs at weight 600. Panels carry alpha so the backdrop shows through them; sticky
+bars, table headers, drawers, popovers and the figure saver use a frosted blur instead,
+because content scrolls or opens beneath them. The terminals run on a transparent theme
+with a bright ANSI palette at a 7:1 minimum contrast. Charts and diagrams draw the light
+colour of each series, and an exported figure takes the dark page as its backdrop.
+
+`thinking_orb` defines the `<thinking-orb>` loading indicator over the vendored
+thinking-orbs engine (Jakub Antalik, MIT); a dark surface opts into light ink by setting
+`--orb-theme: dark`, which the root does. Every wait on the backend shows one: empty
+containers before their first render, picker and hint notes, progress cards, the probe
+and fit computations, and the running markers on console jobs, sequence blocks and
+TensorBoard pills, each in the state that matches the wait (searching for scans, solving
+for fits, and so on). The nav status listens while the backend is live and connects
+while it is down, the orb beside the logo cycles through all nine states with a `cycle`
+attribute, and `BackdropOrb` draws a viewport-sized orb on a fixed canvas behind every
+page that holds each of the seven sphere-like states for 14 s and crossfades to the next
+over 2.4 s at 30 fps (the working and shaping states stay on the small orbs).
+
+`hairline_figure` defines `<hairline-figure name>`, an isometric line drawing that
+answers the pointer, over the vendored hairline kernel (Lucas Marques, MIT). It marks
+itself `data-nofig` so the figure saver skips it, and shows no caption. A figure that
+draws live data takes it through the element's `state` property: the element hands the
+object to the figure's `setState`, re-applies it after a remount, forgets it when `name`
+changes, and throws when the figure has no `setState`. The data sets what stays visible
+under any pointer (counts, lights, speeds); the pointer still picks. While a figure is
+on screen and the pointer is elsewhere, `HairlineAutopilot` moves a synthetic pointer
+across it in a 3.2 s rhythm: it glides for half the cycle and drifts slowly for the other
+half, so a picked part holds long enough to read and every figure keeps moving; a real
+pointer takes over, the sweep resumes 2.2 s after it leaves, and nothing sweeps under
+reduced motion. A figure with `autopilot="off"` gets no sweep of its own: the Home mast
+sets it on the two figures flanking the server name, and `MastFigures` drives the pair
+from one autopilot on the mast, so both answer the same pointer; any header with the
+`mast--flanked` class gets the same treatment.
+
+The stock `drawer`, `terminal` (turned to face right), `plug`, `riffle`, `loupe`, `sieve`,
+`elevator`, `slow`, `cabinet`, `router`, `patch` and `phosphor` come from the package;
+`hairline_project` draws the project's own on a shared `HairlineFigureBase`: `voxels`,
+`folds`, `ablation`, `slices`, `slots`, `gpus`, `guard`, `backbone` (the backbone zoo as a
+bench of swappable cartridges), `repo` (folder sizes as a static snapshot), `landscape`,
+`surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
+`balance`, `profileae`, `imageae`, `embed`, `podium`, `tiles`, `transect`, `film`, `tray`,
+`jepa`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
+`watchdog`, `notify`, `calendar` and `hourglass`. Nine of them take `state`: `gpus`
+(`{devices: [{holder, util}]}`), `balance` (`{mine, others, alarm}`), `guard` (`{gpus,
+invaded, critical}`), `scheduler` (`{jobs: [{id, running, position, of}]}`), `feed`
+(`{workers, prefetch, wait, util, feed}`), `watchdog` (`{armed, gauges: [{level, limit,
+alert}]}`, four gauges for CPU, load, RAM and disk), `notify` (`{armed}`), `calendar`
+(`{days: [{slots: [{mine, others}]}]}`, six 4-hour slots a day, shares averaged over the
+GPUs) and `hourglass` (`{wait_s}`); `gpus`, `balance`, `feed`, `watchdog`, `notify`,
+`calendar` and `hourglass` draw their static scene when no state is given.
+
+Every page shows at least one figure, and the element remounts when its `name` changes,
+so a page can swap it with what is on screen: Architectures by zoo tab and Model by its
+reference/walkthrough toggle (`data-figure` on each button), the leaderboard through
+`LeaderboardView.FIGURES` (runs `podium`, trials `folds`, curves `landscape`, diff
+`balance`), Results through `ResultsView.FIGURES` (folder `tray`, all plots `film`,
+compare `tiles`) and Launch through `LaunchView.FIGURES`, a pattern table over script
+keys (for example `infer_*` `shelf`, `generate_dataset` `slots`, `extract_params`
+`threshold`, `tune` `dial`, `tune_dataloader` `sampler`, `measure_receptive_field`
+`field`; a generic `train_*` script and an unmatched key show `surface`). Standard pages
+carry the figure in a `page__head--figure` header, Launch puts it at the end of its top
+bar, and Configuration (`sampler`) and TensorBoard (`landscape`) at the end of their row
+headers. The cube explorer hides its header while a cube is open, figure included. The
+console shows `terminal` under the job list and `surface` in the main pane while no job
+is open, and `HairlineFigure.empty` shows `plug` on a failed load.
+
+Home flanks the centred server name in the deck mast with `landscape` on the left and
+`surface` on the right, and carries figures in the middle of its board, each seated in a
+card or in a bordered tile of the grid. The three control cards end in a figure above
+their buttons: `watchdog` is a camera used as a searchlight, sweeping its beam around
+four targets for CPU, load, RAM and disk (each taller the nearer its reading is to the
+alert limit); on a target with an active alert the beam stops for 2.6 s, solid and
+bright, then sweeps on, and the camera droops while the watchdog is offline. It runs
+with `autopilot="off"`, since the sweep is its own motion; `notify` sends an envelope
+from the server into a docked phone while notifications are on and goes quiet when they
+are off; the GPU week card shows `hourglass`, its `wait_s` set to the time left until the
+schedule next switches pools, which `GpuWeekPanel` reads from the 168 hourly phases (from
+Monday 00:00) and the current hour that `/api/system` reports under `gpu_schedule.week`
+and `gpu_schedule.week_hour`, so the sand runs slower the further off the next switch is.
+The CUDA devices grid fills the empty cell of an odd GPU count with a `gpus` shelf of the
+real devices; the memory card is a two by two grid, the disk readings beside `riffle`
+above the memory rule and the RAM and swap bars over the memory plot beside the
+`cabinet` rack below it; the GPU activity card puts `patch` at its top and lets the lanes
+fill the rest (30 to 80 px per GPU, the panel taking any slack); the neighbour impact
+card weighs your stall share against everyone else's on `balance`; the full-width host
+history puts `phosphor` (with `autopilot="off"`, so its own frame loop plays) against
+its left edge and `router` against its right, the two plots between them; the jobs card
+shows `scheduler` fed from the live job list (running jobs in the rack, queued and
+scheduled ones on the steps); the GPU guard card shows `guard`, whose barrier lifts
+during an intrusion; `terminal` is a tile to the left of the server internals; and the
+heatmap card carries `calendar` on its right, a desk calendar of the same days whose
+pages carry each day's six 4-hour slots as bars (autopilot off: it turns one page every
+2.6 s and rests 6 s on today). Feed Tuner shows `feed` under its results table: the
+candidate being measured during a sweep, the adopted configuration after it. Tile and
+filler figures sit in an absolutely positioned `.fig-fill` box with `container-type:
+size` and take `min(100cqw, 125cqh)` as their width, so they keep the 5:4 box the
+kernel's pointer mapping assumes and never add height to their row.
