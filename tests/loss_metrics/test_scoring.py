@@ -12,7 +12,7 @@ import math
 import numpy as np
 import pytest
 
-from tools.metrics.scoring import FiniteScalar, MetricOrientation, R2, RelativeImprovement, SeedAggregation
+from tools.metrics.scoring import FiniteScalar, MetricOrientation, R2, RankCorrelation, RelativeImprovement, SeedAggregation
 
 
 def test_finite_scalar_accepts_floats_and_ints():
@@ -206,31 +206,61 @@ def test_r2_on_scene_cube_self_is_one(cube_full):
     assert np.allclose(out, 1.0, atol=1e-5)
 
 
-@pytest.mark.dataset
-def test_relative_improvement_on_extraction_meta(param_extraction_meta):
-    leaf = _first_numeric(param_extraction_meta)
-    if leaf is None:
-        pytest.skip("no numeric scalar found in the parameter run metadata")
-    frac = RelativeImprovement.fraction(leaf, leaf * 0.9, higher_is_better=False)
-    assert math.isclose(abs(frac), 0.1, rel_tol=1e-6)
+def test_rank_correlation_averages_tied_ranks():
+    """Verifies ranking averages tied entries and flattens multidimensional input."""
+    assert RankCorrelation.ranks(np.array([1.0, 1.0, 2.0])).tolist() == [0.5, 0.5, 2.0]
+    assert RankCorrelation.ranks(np.array([[3.0, 1.0], [1.0, 7.0]])).tolist() == [2.0, 0.5, 0.5, 3.0]
 
 
-def _first_numeric(obj):
-    if isinstance(obj, bool):
-        return None
-    if isinstance(obj, (int, float)) and math.isfinite(float(obj)) and obj != 0.0:
-        return float(obj)
-    if isinstance(obj, dict):
-        for v in obj.values():
-            r = _first_numeric(v)
-            if r is not None:
-                return r
-    if isinstance(obj, list):
-        for v in obj:
-            r = _first_numeric(v)
-            if r is not None:
-                return r
-    return None
+def test_rank_correlation_is_unaffected_by_tie_order():
+    """Verifies permuting values inside a tie group leaves Spearman correlation unchanged."""
+    values = np.array([0.0, 0.0, 0.0, 1.0, 2.0])
+    errors = np.array([5.0, 4.0, 3.0, 2.0, 1.0])
+
+    shuffled        = np.array([0.0, 0.0, 0.0, 1.0, 2.0])
+    reversed_errors = np.array([3.0, 4.0, 5.0, 2.0, 1.0])
+
+    assert RankCorrelation.spearman(values, errors) == pytest.approx(RankCorrelation.spearman(shuffled, reversed_errors))
+
+
+def test_rank_correlation_of_monotone_and_inverted_vectors():
+    """Verifies Spearman correlation is one against itself and minus one against its negation."""
+    a = np.array([0.1, 0.4, 0.2, 0.9])
+
+    assert RankCorrelation.spearman(a,  a) == pytest.approx(1.0)
+    assert RankCorrelation.spearman(a, -a) == pytest.approx(-1.0)
+
+
+def test_rank_correlation_ignores_non_finite_pairs():
+    """Verifies pairs containing a non-finite entry are dropped before correlating."""
+    a = np.array([1.0, 2.0, 3.0, np.nan])
+    b = np.array([1.0, 2.0, 3.0, 10.0])
+
+    assert RankCorrelation.spearman(a, b) == pytest.approx(1.0)
+
+
+def test_rank_correlation_is_nan_without_variance():
+    """Verifies constant input or too few surviving pairs give NaN."""
+    constant = np.zeros(5)
+
+    assert math.isnan(RankCorrelation.spearman(constant, np.arange(5.0)))
+    assert math.isnan(RankCorrelation.spearman(np.array([1.0, np.nan, np.nan, 4.0, 5.0]), np.array([1.0, 2.0, 3.0, np.nan, np.nan])))
+
+
+def test_rank_correlation_rejects_unmatched_or_tiny_vectors():
+    """Verifies unequal lengths and two-element vectors raise a matched-vectors error."""
+    with pytest.raises(ValueError, match="matched vectors"):
+        RankCorrelation.spearman(np.arange(4.0), np.arange(5.0))
+
+    with pytest.raises(ValueError, match="matched vectors"):
+        RankCorrelation.spearman(np.array([1.0, 2.0]), np.array([1.0, 2.0]))
+
+
+def test_relative_improvement_scales_with_the_baseline_magnitude():
+    """Verifies a ten percent gain reports identically across baselines spanning nine orders of magnitude."""
+    for baseline in (1e-6, 0.375, 12.5, 4.2e3):
+        assert math.isclose(RelativeImprovement.fraction(baseline, baseline * 0.9, higher_is_better=False), 0.1, rel_tol=1e-9)
+        assert RelativeImprovement.percent(baseline, baseline * 0.9, higher_is_better=False) == "+10.0%"
 
 
 def test_seed_aggregation_counts_contributors_and_names_the_shortfall():
