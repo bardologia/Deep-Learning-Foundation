@@ -44,6 +44,10 @@ class CubeSweep {
     this.stop();
   }
 
+  holds(bitmap) {
+    return this.panels.some((panel) => panel.bitmap === bitmap);
+  }
+
   applyVisibility() {
     this.panels.forEach((panel) => {
       panel.root.hidden = !this.host.visible.has(panel.source);
@@ -1432,9 +1436,7 @@ class CubeView {
     this.locked = null;
     this.mode = "map";
     this.panels.forEach((panel) => {
-      panel.bitmap = null;
-      panel.key = null;
-      panel.drawnSpace = null;
+      this._releasePanel(panel);
       panel.marker = 0;
       panel.queued = null;
       panel.fetching = false;
@@ -1645,11 +1647,7 @@ class CubeView {
       if (meta.sources.includes(source)) this.visible.add(source);
     });
 
-    this.panels.forEach((panel) => {
-      panel.bitmap = null;
-      panel.key = null;
-      panel.drawnSpace = null;
-    });
+    this.panels.forEach((panel) => this._releasePanel(panel));
 
     this._renderSourceToggles();
     this._applyVisibility();
@@ -1668,11 +1666,7 @@ class CubeView {
 
     if (!this.meta) return;
 
-    this.panels.forEach((panel) => {
-      panel.bitmap = null;
-      panel.key = null;
-      panel.drawnSpace = null;
-    });
+    this.panels.forEach((panel) => this._releasePanel(panel));
 
     const sweep = this._sweepFor(this.view);
     if (sweep) sweep.syncSpace();
@@ -1760,17 +1754,31 @@ class CubeView {
     }
   }
 
+  _releasePanel(panel) {
+    if (panel.bitmap && panel.bitmap.close) panel.bitmap.close();
+    panel.bitmap = null;
+    panel.key = null;
+    panel.drawnSpace = null;
+  }
+
   _trimBitmapCache() {
     while (this.bitmapBytes > CubeView.SWEEP_CACHE_BYTES && this.bitmapCache.size > 1) {
       const oldest = this.bitmapCache.keys().next().value;
       this.bitmapBytes -= this.bitmapCache.get(oldest).bytes;
+      this._dropBitmap(this.bitmapCache.get(oldest));
       this.bitmapCache.delete(oldest);
     }
   }
 
   _clearBitmapCache() {
+    this.bitmapCache.forEach((entry) => this._dropBitmap(entry));
     this.bitmapCache.clear();
     this.bitmapBytes = 0;
+  }
+
+  async _dropBitmap(entry) {
+    const bitmap = await entry.promise;
+    if (bitmap && bitmap.close && !this.sweeps.some((sweep) => sweep.holds(bitmap))) bitmap.close();
   }
 
   _setProfMode(mode) {
@@ -2092,7 +2100,10 @@ class CubeView {
       const res = await fetch(url);
       if (!res.ok) return;
 
-      panel.bitmap = await createImageBitmap(await res.blob());
+      const bitmap = await createImageBitmap(await res.blob());
+      if (panel.bitmap && panel.bitmap.close) panel.bitmap.close();
+
+      panel.bitmap = bitmap;
       panel.key = job.key;
       panel.drawnSpace = space;
       this._paintSlice(panel);
