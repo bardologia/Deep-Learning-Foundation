@@ -23,6 +23,8 @@ from tools.data.io                                      import FileIO
 from tools.diagnostics.activation_recorder              import ActivationRecorder
 from tools.reporting.markdown                           import MarkdownDoc, MarkdownTable
 from tools.reporting.plotting                           import PlotBase
+from tools.runtime.config_cli                           import ConfigCli
+from tools.runtime.git_state                            import GitState
 from tools.runtime.run_selector                         import RunSelector
 from tools.runtime.run_tag                              import RunTag
 
@@ -354,18 +356,22 @@ class CkaComparison:
         keep = np.linspace(0, len(names) - 1, self.config.max_layers).astype(int)
         return [names[index] for index in sorted(set(keep))]
 
-    def _collect(self, run, name: str) -> dict[str, np.ndarray]:
+    def _collect(self, run, name: str) -> tuple[dict[str, np.ndarray], dict]:
         """Records layer activations at the sampled pixels of one run.
 
         Layers that do not emit a (batch, channels, height, width) feature map on
-        the input grid are dropped; the usable layer and sample counts are logged.
+        the input grid are dropped with their reason; the usable layer and sample
+        counts are logged and the dropped layers named in one warning.
 
         Args:
             run  : Loaded run providing the model and loader.
-            name : Run label used in the log line.
+            name : Run label used in the log lines.
 
         Returns:
-            Mapping from layer name to features of shape (samples, channels).
+            A pair of the mapping from layer name to features of shape (samples,
+            channels), in matrix order, and the layer record holding the compared
+            "layers", the "dropped" layers with their reason, the "n_leaf_layers"
+            the probed layers were thinned from and the "n_samples" per matrix.
 
         Raises:
             ValueError : If no layer produced a usable feature map.
@@ -373,9 +379,11 @@ class CkaComparison:
         layers   = self._probe_layers(run)
         sampler  = FeatureSampler(self.config.samples_per_batch, seed=self.config.sample_seed)
         recorder = ActivationRecorder(run.model.module)
+        n_leaves = len(recorder.leaf_names())
         recorder.attach_store(layers)
 
         chunks: dict[str, list] = {layer: [] for layer in layers}
+        dropped: dict[str, str] = {}
 
         for index, batch in enumerate(run.loader):
             if index >= self.config.max_batches:
@@ -390,12 +398,19 @@ class CkaComparison:
             b, i, j    = sampler.sample_coords(B, H, W)
 
             for layer in layers:
-                tensor = stored.get(layer)
-                if tensor is None or not sampler.is_feature_map(tensor, B, H, W):
-                    chunks.pop(layer, None)
+                if layer in dropped:
                     continue
-                if layer in chunks:
+
+                tensor = stored.get(layer)
+                if tensor is None:
+                    dropped[layer] = "produced no tensor output"
+                elif not sampler.is_feature_map(tensor, B, H, W):
+                    dropped[layer] = f"output of shape {tuple(tensor.shape)} is not a feature map on the {B}x{H}x{W} input grid"
+                else:
                     chunks[layer].append(sampler.features_at(tensor, b, i, j, B, H, W))
+                    continue
+
+                chunks.pop(layer)
 
         recorder.detach()
 
@@ -405,15 +420,20 @@ class CkaComparison:
         features  = {layer: np.concatenate(parts, axis=0) for layer, parts in chunks.items()}
         n_samples = next(iter(features.values())).shape[0]
 
-        self.logger.info(f"{name}: {len(features)} of {len(layers)} probed layers usable, {n_samples} sampled pixels")
+        self.logger.info(f"{name}: {len(features)} of {len(layers)} probed layers usable (thinned from {n_leaves} leaf layers), {n_samples} sampled pixels")
+        if dropped:
+            self.logger.warning(f"{name}: {len(dropped)} probed layer(s) dropped from the comparison: " + "; ".join(f"{layer} ({reason})" for layer, reason in dropped.items()))
 
-        return features
+        record = {"layers": list(features), "dropped": dropped, "n_leaf_layers": n_leaves, "n_samples": int(n_samples)}
 
-    def _write_report(self, names: list[str], summary: np.ndarray, pairs: dict, figures: dict[str, Path]) -> Path:
-        """Writes the markdown CKA report with the alignment matrix and pair diagnostics.
+        return features, record
+
+    def _write_report(self, names: list[str], records: dict[str, dict], summary: np.ndarray, pairs: dict, figures: dict[str, Path]) -> Path:
+        """Writes the markdown CKA report with the alignment matrix, pair diagnostics and compared layers.
 
         Args:
             names   : Run labels in matrix order.
+            records : Layer record of each run, keyed by run label.
             summary : Mean best-match CKA of shape (n_runs, n_runs).
             pairs   : Per-pair alignment score and divergence depths, keyed by run-name pair.
             figures : Mapping from figure name to its written path.
@@ -443,6 +463,15 @@ class CkaComparison:
             pair_table.add_row(f"`{name_a}` vs `{name_b}`", f"{entry['score']:.3f}", forward, backward)
         doc.table(pair_table)
 
+        doc.heading("Compared layers", level=2)
+        doc.paragraph("Matrix rows and columns follow each run's compared layers in forward order; the matrices themselves are saved in cka_matrices.npz.")
+        layer_table = MarkdownTable(("Run", "Checkpoint epoch", "Samples", "Compared layers (matrix order)", "Dropped"))
+        for name in names:
+            record  = records[name]
+            dropped = "; ".join(f"`{layer}` ({reason})" for layer, reason in record["dropped"].items()) if record["dropped"] else "none"
+            layer_table.add_row(f"`{name}`", str(record["checkpoint"]["epoch"]), str(record["n_samples"]), ", ".join(f"{index}: `{layer}`" for index, layer in enumerate(record["layers"])), dropped)
+        doc.table(layer_table)
+
         doc.heading("Figures", level=2)
         for name, path in figures.items():
             doc.image(name, str(path.relative_to(self.output_dir)))
@@ -453,8 +482,9 @@ class CkaComparison:
         """Collects features, computes all CKA matrices and writes figures, JSON and report.
 
         Returns:
-            The payload holding run labels, split, alignment matrix, pair scores
-            and divergence depths.
+            The payload holding run labels, split, commit, each run's compared and
+            dropped layers with its checkpoint, the matrix file keys, alignment
+            matrix, pair scores and divergence depths.
         """
         FileIO.ensure_dirs(self.output_dir)
         PlotBase.use_style(self.config.figure_style)
@@ -462,8 +492,11 @@ class CkaComparison:
         run_dirs = self._select_runs()
         names    = ["/".join(run_dir.relative_to(self.config.runs_dir).parts) if run_dir.is_relative_to(self.config.runs_dir) else run_dir.name for run_dir in run_dirs]
 
+        ConfigCli.save_resolved(self.config, self.output_dir / "cka_config.json")
+
         grids    = []
         features = []
+        records  = {}
         for index, (run_dir, name) in enumerate(zip(run_dirs, names), start=1):
             with self.logger.timer(f"CKA features [{index}/{len(run_dirs)}] {name}"):
                 run = self._load(run_dir)
@@ -471,13 +504,16 @@ class CkaComparison:
                 grids.append(self._sample_grid(run))
                 self._validate_alignment(grids)
 
-                features.append(self._collect(run, name))
+                run_features, record = self._collect(run, name)
+                features.append(run_features)
+                records[name] = {**record, "checkpoint": {"name": self.config.checkpoint_name, **run.checkpoint_meta}}
                 del run
 
-        plots   = CkaPlots()
-        figures = {}
-        summary = np.eye(len(names))
-        pairs   = {}
+        plots    = CkaPlots()
+        figures  = {}
+        matrices = {}
+        summary  = np.eye(len(names))
+        pairs    = {}
 
         run_pairs = list(combinations(range(len(names)), 2))
         self.logger.info(f"{len(names)} runs -> {len(names)} self matrices and {len(run_pairs)} pair matrices")
@@ -486,13 +522,15 @@ class CkaComparison:
             task = progress.add_task("[section]CKA matrices[/section]", total=len(names) + len(run_pairs))
 
             for i, name in enumerate(names):
-                safe = name.replace("/", "_")
-                figures[f"self_{safe}"] = plots.self_heatmap(CkaComputation.cross_matrix(features[i], features[i]), name, self.output_dir / "self" / f"{i}.png")
+                safe                    = name.replace("/", "_")
+                matrices[f"self_{i}"]   = CkaComputation.cross_matrix(features[i], features[i])
+                figures[f"self_{safe}"] = plots.self_heatmap(matrices[f"self_{i}"], name, self.output_dir / "self" / f"{i}.png")
                 progress.advance(task)
 
             for (i, j) in run_pairs:
-                matrix            = CkaComputation.cross_matrix(features[i], features[j])
-                score             = CkaComputation.alignment_score(matrix)
+                matrix                    = CkaComputation.cross_matrix(features[i], features[j])
+                matrices[f"pair_{i}_{j}"] = matrix
+                score                     = CkaComputation.alignment_score(matrix)
                 forward, backward = CkaComputation.best_match_profiles(matrix)
 
                 summary[i, j] = summary[j, i] = score
@@ -508,16 +546,21 @@ class CkaComparison:
 
         figures["alignment"] = plots.summary_heatmap(summary, names, self.output_dir / "alignment.png")
 
+        np.savez_compressed(self.output_dir / "cka_matrices.npz", **matrices)
+
         payload = {
             "runs"        : names,
             "split"       : self.config.split,
+            "git_commit"  : GitState.commit(),
+            "run_layers"  : records,
+            "matrices"    : {"file": "cka_matrices.npz", "self": {name: f"self_{i}" for i, name in enumerate(names)}, "pairs": {f"{names[i]}|{names[j]}": f"pair_{i}_{j}" for (i, j) in run_pairs}},
             "alignment"   : summary.tolist(),
             "pair_scores" : {f"{name_a}|{name_b}": entry["score"] for (name_a, name_b), entry in pairs.items()},
             "divergence"  : {f"{name_a}|{name_b}": {"forward": entry["divergence_forward"], "backward": entry["divergence_backward"]} for (name_a, name_b), entry in pairs.items()},
         }
         FileIO.save_json(payload, self.output_dir / "cka.json")
 
-        report_path = self._write_report(names, summary, pairs, figures)
+        report_path = self._write_report(names, records, summary, pairs, figures)
         self.logger.ok(f"CKA over {len(names)} runs -> {report_path}")
 
         return payload
