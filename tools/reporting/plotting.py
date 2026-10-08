@@ -1,6 +1,6 @@
 """Shared matplotlib base class for the project's publication-quality figures.
 
-Fixes the serif rcParams, the report and paper style variants, colour-limit
+Fixes the serif rcParams, the report, paper and slide style variants, colour-limit
 conventions and the subsampling and panel helpers that every plotting module in
 the project inherits.
 """
@@ -28,12 +28,14 @@ class PlotBase:
         PHASE_LABELS  : LaTeX labels matching PHASE_TICKS.
         FULL_WIDTH    : Full text-column figure width in inches.
         HALF_WIDTH    : Half text-column figure width in inches.
-        OKABE_ITO     : Colour-blind-safe categorical palette used in paper style.
-        SCIENTIFIC_RC : rcParams shared by both styles.
+        OKABE_ITO     : Colour-blind-safe categorical palette used in the paper and slide styles.
+        SCIENTIFIC_RC : rcParams shared by every style.
         REPORT_RC     : Larger-type rcParams for screen reports.
         PAPER_RC      : Smaller-type rcParams for camera-ready figures.
+        SLIDE_RC      : Paper-style rcParams for figures drawn at the exact size they print on a slide, saved without trimming.
         STYLE_RC      : Style name to rcParams mapping.
-        PAPER_DPI     : Raster resolution used in paper style.
+        PRINT_STYLES  : Styles that save at PAPER_DPI and write figures holding no image as vector PDF.
+        PAPER_DPI     : Raster resolution used in the paper and slide styles.
         style         : Active style name, shared across all subclasses.
         fig_dpi       : Display resolution used in report style.
         save_dpi      : Save resolution used in report style.
@@ -49,7 +51,7 @@ class PlotBase:
 
     SCIENTIFIC_RC: dict = {
         "font.family"         : "serif",
-        "font.serif"          : ["Times New Roman", "DejaVu Serif"],
+        "font.serif"          : ["Times New Roman", "STIXGeneral", "DejaVu Serif"],
         "axes.linewidth"      : 0.8,
         "xtick.direction"     : "in",
         "ytick.direction"     : "in",
@@ -87,7 +89,38 @@ class PlotBase:
         "lines.markersize" : 4.0,
     }
 
-    STYLE_RC = {"report": REPORT_RC, "paper": PAPER_RC}
+    SLIDE_RC: dict = {
+        "font.size"                       : 7,
+        "axes.titlesize"                  : 7,
+        "axes.labelsize"                  : 7,
+        "xtick.labelsize"                 : 6,
+        "ytick.labelsize"                 : 6,
+        "legend.fontsize"                 : 6,
+        "mathtext.fontset"                : "stix",
+        "axes.linewidth"                  : 0.6,
+        "xtick.major.width"               : 0.6,
+        "ytick.major.width"               : 0.6,
+        "xtick.minor.width"               : 0.4,
+        "ytick.minor.width"               : 0.4,
+        "xtick.major.size"                : 2.5,
+        "ytick.major.size"                : 2.5,
+        "xtick.minor.size"                : 1.5,
+        "ytick.minor.size"                : 1.5,
+        "xtick.major.pad"                 : 2.0,
+        "ytick.major.pad"                 : 2.0,
+        "axes.labelpad"                   : 2.0,
+        "lines.linewidth"                 : 0.9,
+        "lines.markersize"                : 2.5,
+        "legend.handlelength"             : 1.6,
+        "figure.constrained_layout.use"   : True,
+        "figure.constrained_layout.w_pad" : 0.02,
+        "figure.constrained_layout.h_pad" : 0.02,
+        "savefig.bbox"                    : "standard",
+    }
+
+    STYLE_RC = {"report": REPORT_RC, "paper": PAPER_RC, "slide": SLIDE_RC}
+
+    PRINT_STYLES = ("paper", "slide")
 
     PAPER_DPI: int = 300
 
@@ -101,7 +134,7 @@ class PlotBase:
         """Selects the figure style used by every plotter.
 
         Args:
-            style : Either 'report' or 'paper'.
+            style : One of 'report', 'paper' or 'slide'.
 
         Raises:
             ValueError : If the style name is not registered.
@@ -116,11 +149,19 @@ class PlotBase:
         return (width, width * aspect)
 
     def _apply_style(self) -> None:
-        """Installs the scientific rcParams plus the active style's overrides."""
+        """Installs the scientific rcParams plus the active style's overrides.
+
+        Every key any style sets returns to the matplotlib default first, so a
+        setting only the slide style makes, such as its constrained layout or its
+        thinner ticks, does not survive a switch back to another style.
+        """
+        styled = {key for rc in self.STYLE_RC.values() for key in rc}
+
+        plt.rcParams.update({key: plt.rcParamsDefault[key] for key in styled})
         plt.rcParams.update(self.SCIENTIFIC_RC)
         plt.rcParams.update(self.STYLE_RC[PlotBase.style])
 
-        if PlotBase.style == "paper":
+        if PlotBase.style in self.PRINT_STYLES:
             plt.rcParams["axes.prop_cycle"] = plt.cycler(color=self.OKABE_ITO)
             plt.rcParams["figure.dpi"]      = self.PAPER_DPI
             plt.rcParams["savefig.dpi"]     = self.PAPER_DPI
@@ -133,8 +174,8 @@ class PlotBase:
     def _save(fig: plt.Figure, path: Path) -> Path:
         """Saves and closes a figure, returning the path actually written.
 
-        In paper style a raster target holding no images is redirected to PDF so
-        vector content stays vector.
+        In the paper and slide styles a raster target holding no images is
+        redirected to PDF so vector content stays vector.
 
         Args:
             fig  : Figure to write and close.
@@ -143,7 +184,7 @@ class PlotBase:
         Returns:
             The path the figure was written to.
         """
-        if PlotBase.style == "paper" and path.suffix == ".png" and not any(ax.images for ax in fig.axes):
+        if PlotBase.style in PlotBase.PRINT_STYLES and path.suffix == ".png" and not any(ax.images for ax in fig.axes):
             path = path.with_suffix(".pdf")
 
         path.parent.mkdir(parents=True, exist_ok=True)

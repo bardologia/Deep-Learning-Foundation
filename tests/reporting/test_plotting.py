@@ -1,7 +1,8 @@
 """Tests covering the shared PlotBase figure helpers.
 
 Covers style application, figure saving, colour limits, normalisation and
-subsampling helpers, the image-figure builder, and the paper/report styles.
+subsampling helpers, the image-figure builder, and the paper, slide and report
+styles.
 """
 
 from __future__ import annotations
@@ -530,6 +531,57 @@ def test_report_style_restores_after_paper(plotter):
     assert plt.rcParams["mathtext.fontset"] == "dejavuserif"
     assert plt.rcParams["figure.dpi"]       == plotter.fig_dpi
     assert plt.rcParams["axes.prop_cycle"]  == plt.rcParamsDefault["axes.prop_cycle"]
+
+
+@pytest.fixture
+def slide_style():
+    """Switches PlotBase to the slide style for the test and restores the report style afterwards."""
+    PlotBase.use_style("slide")
+    yield
+    PlotBase.use_style("report")
+
+
+def test_serif_fonts_fall_back_to_stix_before_dejavu(plotter):
+    """Verifies the serif family lists STIX between Times New Roman and DejaVu Serif."""
+    plotter._apply_style()
+    assert plt.rcParams["font.serif"][:3] == ["Times New Roman", "STIXGeneral", "DejaVu Serif"]
+
+
+def test_slide_style_draws_print_sized_figures_without_trimming(plotter, slide_style):
+    """Verifies the slide style sets its small type, constrained layout, the untrimmed 'standard' bbox matplotlib stores as None, and the print DPI and palette."""
+    plotter._apply_style()
+
+    assert plt.rcParams["font.size"]                     == 7
+    assert plt.rcParams["xtick.labelsize"]               == 6
+    assert plt.rcParams["mathtext.fontset"]              == "stix"
+    assert plt.rcParams["figure.constrained_layout.use"] is True
+    assert plt.rcParams["savefig.bbox"]                  is None
+    assert plt.rcParams["savefig.dpi"]                   == PlotBase.PAPER_DPI
+
+    assert plt.rcParams["axes.prop_cycle"].by_key()["color"] == PlotBase.OKABE_ITO
+
+
+def test_slide_save_upgrades_line_plot_to_pdf(plotter, slide_style, tmp_path):
+    """Verifies the slide style saves a line plot as vector PDF instead of PNG."""
+    fig = plt.figure()
+    fig.add_subplot(111).plot([0, 1], [0, 1])
+    out = plotter._save(fig, tmp_path / "line.png")
+
+    assert out == tmp_path / "line.pdf"
+    assert out.read_bytes()[:5] == b"%PDF-"
+
+
+def test_report_style_drops_the_slide_only_settings(plotter):
+    """Verifies switching from the slide style back to the report style restores the layout, trimming and tick geometry."""
+    PlotBase.use_style("slide")
+    plotter._apply_style()
+    PlotBase.use_style("report")
+    plotter._apply_style()
+
+    assert plt.rcParams["figure.constrained_layout.use"] is False
+    assert plt.rcParams["savefig.bbox"]                  == "tight"
+    assert plt.rcParams["xtick.major.width"]             == plt.rcParamsDefault["xtick.major.width"]
+    assert plt.rcParams["axes.labelpad"]                 == plt.rcParamsDefault["axes.labelpad"]
 
 
 def test_figsize_full_width():
