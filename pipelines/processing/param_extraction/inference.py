@@ -240,15 +240,17 @@ class ParamInferenceSession:
     def execute(self) -> dict[str, Path]:
         """Creates the session logger and runs the parameter inference pipeline.
 
+        The run's own log closes with the exception, its traceback and an
+        ABORTED banner when a stage raises, so the cause stays beside the run.
+
         Returns:
             The result dictionary returned by ``ParamRunInferencePipeline.run``.
         """
         log_dir = self.run_dir / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        logger = Logger(log_dir=str(log_dir), name="param_extraction_inference", level="INFO")
-
-        return ParamRunInferencePipeline(self.run_dir, logger=logger, make_plots=self.make_plots).run()
+        with Logger(log_dir=str(log_dir), name="param_extraction_inference", level="INFO") as logger:
+            return ParamRunInferencePipeline(self.run_dir, logger=logger, make_plots=self.make_plots).run()
 
 
 def run_param_inference_session(session: ParamInferenceSession) -> dict[str, Path]:

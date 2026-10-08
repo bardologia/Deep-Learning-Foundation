@@ -11,6 +11,7 @@ from pathlib import Path
 from typing  import Dict, Tuple
 
 import numpy as np
+from rich.markup import escape
 
 from configuration.param_extraction                import ExtractionConfig
 from pipelines.processing.param_extraction.io      import ExtractionMetadataManager, ParameterIO, ParameterRunDirectory
@@ -241,25 +242,39 @@ class ParamExtractionPipeline:
     def run(self) -> Dict[tuple, dict]:
         """Fits and saves every permutation in the group.
 
+        An exception ends the group log with the error, naming the dataset, the
+        k_max and how many permutations were saved, and an owned logger closes
+        with the ABORTED banner and the traceback in place of END.
+
         Returns:
             Mapping from (mode, lambda) to that permutation's saved-artifact paths.
+
+        Raises:
+            BaseException : Whatever the extraction or a save raised, re-raised after the log recorded it.
         """
-        self.logger.section("[Param Extraction Pipeline Execution]")
-
-        results = self._stage_extract()
-
         saved = {}
-        for key, (parameters_array, diagnostics) in results.items():
-            config     = self.group.configs[key]
-            self.logger.section(f"[Saving] {config.output_subdir_name}")
-            saved[key] = self._stage_save(config, parameters_array, diagnostics)
+        error = None
 
-        del results
-        gc.collect()
+        try:
+            self.logger.section("[Param Extraction Pipeline Execution]")
 
-        self.logger.section("[Param Extraction Completed]")
+            results = self._stage_extract()
 
-        if self.owns_logger:
-            self.logger.close()
+            for key, (parameters_array, diagnostics) in results.items():
+                config     = self.group.configs[key]
+                self.logger.section(f"[Saving] {config.output_subdir_name}")
+                saved[key] = self._stage_save(config, parameters_array, diagnostics)
 
-        return saved
+            del results
+            gc.collect()
+
+            self.logger.section("[Param Extraction Completed]")
+
+            return saved
+        except BaseException as exc:
+            error = exc
+            self.logger.error(f"[Group Aborted] {self.group.processed_data_path.name} :: k{self.group.k_max} failed with {len(saved)} of {len(self.group.configs)} permutations saved: {type(exc).__name__}: {escape(str(exc))}")
+            raise
+        finally:
+            if self.owns_logger:
+                self.logger.close(error)
