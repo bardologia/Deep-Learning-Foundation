@@ -1224,8 +1224,28 @@ def test_r2_statistics_ignore_never_fitted_pixels(logger, tmp_path):
     assert summary["n_pixels"] == float(n_rows * n_cols)
     assert summary["r2_mean"] == pytest.approx(float(r2_map[0, 0]), abs=1e-6)
     assert summary["r2_neg_frac"] == 0.0
+    assert summary["r2_undefined_count"] == 0.0
     assert summary["sigma_at_lower_frac"] == 0.0
     assert summary["mu_at_bound_frac"]    == 0.0
+
+
+def test_r2_undefined_count_covers_only_fitted_pixels_with_a_constant_reference(logger):
+    """Verifies the summary counts fitted pixels whose R2 is undefined and leaves never-fitted pixels out of the count and the moments."""
+    calc = FittingMetricsCalculator(
+        n_gaussians      = K_MAX,
+        logger           = logger,
+        threshold_factor = THRESHOLD_FACTOR,
+        truncation_index = TRUNCATION_INDEX,
+        amp_threshold    = ACTIVITY_THRESH,
+    )
+
+    activity_map = np.array([[1, 1], [2, 0]], dtype=np.int32)
+    r2_map       = np.array([[0.5, np.nan], [0.7, np.nan]], dtype=np.float32)
+
+    summary = calc._compute_global_summary(r2_map, activity_map)
+
+    assert summary["r2_undefined_count"] == 1.0
+    assert summary["r2_mean"] == pytest.approx(0.6, abs=1e-6)
 
 
 def test_fit_bound_census_counts_active_slots_on_the_clamp_bounds():
