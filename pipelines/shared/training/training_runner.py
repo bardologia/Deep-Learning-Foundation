@@ -78,7 +78,7 @@ class SingleTrainRunner:
 
     def _build_unit_resume(self) -> UnitResume:
         """Builds and stores the resume policy for the resolved run directory."""
-        self.unit_resume = UnitResume(self.run_directory, enabled=self.config.resume, trainer_resume=self.config.training.resume)
+        self.unit_resume = UnitResume(self.run_directory, enabled=self.config.resume, trainer_resume=self.config.training.resume, config=self.config)
         return self.unit_resume
 
     @property

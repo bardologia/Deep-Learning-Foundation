@@ -50,12 +50,19 @@ class PretrainOrchestrator:
     """Runs the enabled pre-training probes and writes their results into the training config.
 
     Attributes:
-        pretrain : Pre-training configuration selecting and parameterising the probes.
-        training : Training configuration whose batch size and loader fields the probes override for this run.
-        build    : Factory returning a fresh probe context per probe.
-        logger   : Logger for the probe sections and resolved values.
-        label    : Model label reported by the batch-size finder, or None.
+        TUNED_LEAVES : Entry-config probe flag to the flattened leaves that probe rewrites once it ran, the flag itself included.
+        pretrain     : Pre-training configuration selecting and parameterising the probes.
+        training     : Training configuration whose batch size and loader fields the probes override for this run.
+        build        : Factory returning a fresh probe context per probe.
+        logger       : Logger for the probe sections and resolved values.
+        label        : Model label reported by the batch-size finder, or None.
     """
+
+    TUNED_LEAVES = {
+        "pretrain.find_batch_size" : ("pretrain.find_batch_size", "training.batch_size"),
+        "pretrain.tune_loader"     : ("pretrain.tune_loader", "training.num_workers", "training.prefetch_factor"),
+        "pretrain.find_lr"         : ("pretrain.find_lr", "training.lr_multiplier"),
+    }
 
     def __init__(self, pretrain_config, training_config, build_context: Callable[[], PretrainContext], logger: Logger, label: Optional[str] = None) -> None:
         """Stores the configurations, the context factory and the logger.
@@ -72,6 +79,28 @@ class PretrainOrchestrator:
         self.build    = build_context
         self.logger   = logger
         self.label    = label
+
+    @classmethod
+    def tuned_leaves(cls, mapping: dict) -> set:
+        """Returns the flattened entry-config leaves the probes enabled in a launch rewrite.
+
+        A recording of a finished run legitimately differs from the launch
+        configuration on these leaves: the probe wrote the value and switched
+        its own flag off.
+
+        Args:
+            mapping : Flattened entry configuration, dotted leaf path to value, as ConfigCli.to_mapping returns it.
+
+        Returns:
+            The rewritten leaves of every probe whose flag is set in the mapping.
+        """
+        leaves = set()
+
+        for flag, rewritten in cls.TUNED_LEAVES.items():
+            if flag in mapping and mapping[flag]:
+                leaves.update(rewritten)
+
+        return leaves
 
     def _enabled(self) -> bool:
         """Returns whether any probe is switched on."""

@@ -9,9 +9,47 @@ from pathlib import Path
 
 import pytest
 
-from pipelines.shared.training.training_runner import EntryConfigTrainRunner
-from pipelines.shared.training.unit_resume     import UnitResume
-from tools.runtime.completion                  import CompletionMarker
+from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
+from pipelines.shared.training.training_runner     import EntryConfigTrainRunner
+from pipelines.shared.training.unit_resume         import UnitResume
+from tools.data.io                                 import FileIO
+from tools.runtime.completion                      import CompletionMarker
+from tools.runtime.config_cli                      import ConfigCli
+from tools.runtime.git_state                       import GitState
+
+
+@dataclass
+class _TrainingStub:
+    """Training settings stub with resume disabled and a preflight-tuned batch size."""
+
+    resume     : bool = False
+    batch_size : int  = 8
+
+
+@dataclass
+class _PretrainStub:
+    """Preflight settings stub with every probe disabled."""
+
+    find_batch_size : bool = False
+    tune_loader     : bool = False
+    find_lr         : bool = False
+
+
+@dataclass
+class _EntryStub:
+    """Entry config stub carrying the fields the train runner and the reuse check touch."""
+
+    run_name    : str           = "unit"
+    resume      : bool          = True
+    resume_from : str           = ""
+    logdir      : Path          = Path("")
+    training    : _TrainingStub = field(default_factory=_TrainingStub)
+    pretrain    : _PretrainStub = field(default_factory=_PretrainStub)
+
+
+def _entry_config(tmp_path: Path, resume: bool = True, resume_from: str = "") -> _EntryStub:
+    """Returns an entry config stub named unit with the given resume settings."""
+    return _EntryStub(resume=resume, resume_from=resume_from, logdir=tmp_path)
 
 
 def mark_complete(directory: Path) -> None:
@@ -26,9 +64,22 @@ def mark_inference_complete(directory: Path, split: str) -> None:
     CompletionMarker.stamp(directory, {"stage": "inference", "split": split})
 
 
-def unit(tmp_path: Path, enabled: bool = True, trainer_resume: bool = False) -> UnitResume:
-    """Returns a UnitResume over tmp_path/run with the given enable and trainer-resume flags."""
-    return UnitResume(tmp_path / "run", enabled=enabled, trainer_resume=trainer_resume)
+def unit(tmp_path: Path, enabled: bool = True, trainer_resume: bool = False, config: _EntryStub | None = None) -> UnitResume:
+    """Returns a UnitResume over tmp_path/run with the given flags and launch config, a default stub when none is given."""
+    return UnitResume(tmp_path / "run", enabled=enabled, trainer_resume=trainer_resume, config=config or _entry_config(tmp_path))
+
+
+def record(run_directory: Path, config: _EntryStub, commit: str | None) -> None:
+    """Writes the resolved entry config and, when a commit is given, the provenance record of a run."""
+    ConfigCli.save_resolved(config, ResolvedEntryConfigWriter.path_for(run_directory))
+
+    if commit is not None:
+        FileIO.save_json({"git_commit": commit}, ResolvedEntryConfigWriter.provenance_path_for(run_directory))
+
+
+def resume_log(run_directory: Path) -> str:
+    """Returns the text of the unit resume log written into a run directory."""
+    return (run_directory / "logs" / "unit_resume.log").read_text(encoding="utf-8")
 
 
 def test_fresh_directory_trains(tmp_path):
@@ -83,6 +134,84 @@ def test_trainer_resume_still_skips_completed_run(tmp_path):
     mark_complete(resume.run_directory)
 
     assert resume.skip_training()
+
+
+def test_skip_training_requires_the_launch_config(tmp_path):
+    """A unit built without the entry configuration refuses to decide about training, since it could not check a reused run."""
+    with pytest.raises(ValueError, match="pass config="):
+        UnitResume(tmp_path / "run", enabled=True).skip_training()
+
+
+def test_reuse_is_a_warning_naming_the_changed_leaves_and_the_commit(tmp_path):
+    """Reusing a run trained under other settings and other code warns, listing each differing leaf and both commits."""
+    resume = unit(tmp_path)
+    mark_complete(resume.run_directory)
+    record(resume.run_directory, _EntryStub(logdir=tmp_path, training=_TrainingStub(batch_size=16)), commit="deadbeef0000")
+
+    assert resume.skip_training()
+
+    written = resume_log(resume.run_directory)
+
+    assert "[WARNING]" in written
+    assert "completed training reused" in written
+    assert "training.batch_size" in written and "16" in written
+    assert "different configuration on 1 leaf(s)" in written
+    assert "deadbeef0000" in written and GitState.commit() in written
+
+
+def test_reuse_of_a_matching_run_reports_the_match(tmp_path):
+    """A reused run recorded under this launch's settings and commit is reported as matching, launch and unit fields aside."""
+    resume   = unit(tmp_path)
+    recorded = _EntryStub(logdir=tmp_path / "elsewhere", run_name="other", resume_from="/pasted", resume=False)
+    mark_complete(resume.run_directory)
+    record(resume.run_directory, recorded, commit=GitState.commit())
+
+    assert resume.skip_training()
+
+    written = resume_log(resume.run_directory)
+
+    assert "recorded the configuration of this launch" in written
+    assert "Reused run vs this launch" not in written
+    assert "was produced at commit" not in written
+
+
+def test_reuse_ignores_the_leaves_an_enabled_probe_rewrites(tmp_path):
+    """With the batch-size probe on, the probed batch size and the switched-off flag of the recording are not differences."""
+    launch          = _entry_config(tmp_path)
+    launch.pretrain = _PretrainStub(find_batch_size=True)
+    resume          = unit(tmp_path, config=launch)
+
+    mark_complete(resume.run_directory)
+    record(resume.run_directory, _EntryStub(logdir=tmp_path, training=_TrainingStub(batch_size=128)), commit=GitState.commit())
+
+    assert resume.skip_training()
+    assert "Reused run vs this launch" not in resume_log(resume.run_directory)
+
+
+def test_reuse_without_a_recording_warns_that_nothing_can_be_compared(tmp_path):
+    """A reused run that predates recordings warns that its configuration and commit are unknown."""
+    resume = unit(tmp_path)
+    mark_complete(resume.run_directory)
+
+    assert resume.skip_training()
+
+    written = resume_log(resume.run_directory)
+
+    assert "recorded no docs/resolved_entry_config.json" in written
+    assert "unknown (no docs/provenance.json recorded)" in written
+
+
+def test_disabled_resume_warns_about_the_existing_directory(tmp_path):
+    """With resume off, training into a directory that already holds a run is reported at WARNING."""
+    resume = unit(tmp_path, enabled=False)
+    mark_complete(resume.run_directory)
+
+    assert not resume.skip_training()
+
+    written = resume_log(resume.run_directory)
+
+    assert "[WARNING]" in written
+    assert "resume disabled, a fresh run is written into the existing directory" in written
 
 
 def test_no_inference_directory_runs_inference(tmp_path):
@@ -210,30 +339,6 @@ class _StubRunner(EntryConfigTrainRunner):
     def _pretrain_preflight(self) -> None:
         """Stands in for the preflight by writing its probed batch size into the config."""
         self.config.training.batch_size = 128
-
-
-@dataclass
-class _TrainingStub:
-    """Training settings stub with resume disabled and a preflight-tuned batch size."""
-
-    resume     : bool = False
-    batch_size : int  = 8
-
-
-@dataclass
-class _EntryStub:
-    """Entry config stub carrying the fields the train runner touches."""
-
-    run_name    : str           = "unit"
-    resume      : bool          = True
-    resume_from : str           = ""
-    logdir      : Path          = Path("")
-    training    : _TrainingStub = field(default_factory=_TrainingStub)
-
-
-def _entry_config(tmp_path: Path, resume: bool = True, resume_from: str = "") -> _EntryStub:
-    """Returns an entry config stub named unit with the given resume settings."""
-    return _EntryStub(resume=resume, resume_from=resume_from, logdir=tmp_path)
 
 
 def test_runner_trains_when_unit_is_fresh(tmp_path):
