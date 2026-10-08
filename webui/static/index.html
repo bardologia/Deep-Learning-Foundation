@@ -354,6 +354,7 @@
         <button type="button" class="cube-mode" data-view="metrics">Metric maps</button>
         <button type="button" class="cube-mode" data-view="transect">Transect</button>
         <button type="button" class="cube-mode" data-view="cloud">Point cloud</button>
+        <button type="button" class="cube-mode" data-view="figures" title="Browse the figures and animations inference already rendered for this stamp">Figures</button>
         <select id="cube-cmap" class="cube-mselect cube-modes__cmap" aria-label="Cube colormap">
           <option value="jet" selected>jet</option>
           <option value="viridis">viridis</option>
@@ -751,6 +752,10 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="cube-view" data-view="figures" hidden>
+        <div class="cube-figures" id="cube-figures"></div>
       </div>
 
       <div class="cube-view" data-view="metrics" hidden>

@@ -1503,6 +1503,56 @@ class CubeCloud {
   }
 }
 
+class CubeFigures {
+  constructor(refs, host) {
+    this.host = host;
+    this.root = refs.root;
+    this.loadedFor = null;
+  }
+
+  configure() {
+    this.loadedFor = null;
+    this.root.innerHTML = ThinkingOrb.panel("composing", "Loading figures…");
+  }
+
+  async render() {
+    if (this.loadedFor === this.host.selectedId) return;
+
+    const cubeId = this.host.selectedId;
+    const data   = await Api.get(`/api/cubes/figures?id=${encodeURIComponent(cubeId)}`);
+    if (cubeId !== this.host.selectedId) return;
+
+    this.loadedFor = cubeId;
+
+    if (!data || !data.ok) {
+      this.root.innerHTML = `<p class="cube-hint">${SharedCharts.esc((data && data.error) || "Figure listing failed.")}</p>`;
+      return;
+    }
+    if (!data.groups.length) {
+      this.root.innerHTML = `<p class="cube-hint">This stamp holds no saved figures.</p>`;
+      return;
+    }
+
+    const total = data.groups.reduce((sum, group) => sum + group.files.length, 0);
+    let html    = `<p class="cube-hint">${total.toLocaleString()} saved figures in ${data.groups.length} folders · click a thumbnail to open it full size.</p>`;
+
+    data.groups.forEach((group, index) => {
+      const items = group.files.map((file) => {
+        const rel = `${group.dir}/${file}`;
+        const url = `/api/cubes/figure?id=${encodeURIComponent(cubeId)}&rel=${encodeURIComponent(rel)}`;
+        return `<a class="cube-fig" href="${url}" target="_blank" rel="noopener" title="${SharedCharts.esc(rel)}">` +
+          `<img src="${url}" loading="lazy" alt="${SharedCharts.esc(file)}" /><span>${SharedCharts.esc(file)}</span></a>`;
+      }).join("");
+
+      html += `<details class="cube-figgroup"${index === 0 ? " open" : ""}>` +
+        `<summary>${SharedCharts.esc(group.dir)} <em>${group.files.length}</em></summary>` +
+        `<div class="cube-figgrid">${items}</div></details>`;
+    });
+
+    this.root.innerHTML = html;
+  }
+}
+
 class CubeView {
   static LABELS = { pred: "pred", predb: "pred B", diff: "A − B", gt: "gt", full: "reference" };
   static HOLD_SAVE_MS = 4000;
@@ -1591,6 +1641,7 @@ class CubeView {
     this.metrics  = refs.metrics ? new CubeMetrics(refs.metrics, this) : null;
     this.transect = refs.transect ? new CubeTransect(refs.transect, this) : null;
     this.cloud    = refs.cloud ? new CubeCloud(refs.cloud, this) : null;
+    this.figures  = new CubeFigures(refs.figures, this);
 
     this.mapWrap = this.topdown.closest(".cube-map__wrap");
 
@@ -1895,6 +1946,9 @@ class CubeView {
       if (!this.cloud.available && this.view === "cloud") this._setView("explorer");
     }
 
+    this.figures.configure();
+    if (this.view === "figures") this.figures.render();
+
     this._follow({ row: Math.floor(meta.n_rows / 2), col: Math.floor(meta.n_cols / 2), fx: 0.5, fy: 0.5 }, true);
     this._consumeFocus();
 
@@ -1996,7 +2050,7 @@ class CubeView {
   }
 
   _setView(view) {
-    if (!["explorer", "z", "row", "col", "params", "metrics", "transect", "cloud"].includes(view) || view === this.view) return;
+    if (!["explorer", "z", "row", "col", "params", "metrics", "transect", "cloud", "figures"].includes(view) || view === this.view) return;
 
     this._stopSweeps();
     this.view = view;
@@ -2018,6 +2072,10 @@ class CubeView {
     }
     if (view === "cloud" && this.cloud && this.meta) {
       this.cloud.render();
+      return;
+    }
+    if (view === "figures" && this.meta) {
+      this.figures.render();
       return;
     }
 
