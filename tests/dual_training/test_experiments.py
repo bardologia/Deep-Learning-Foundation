@@ -509,12 +509,13 @@ def test_dual_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
             ran["single_ran"] = True
 
     class FakeFanout:
-        """Seed fan-out scheduler stub recording the entry script, runner factory and inference flag."""
+        """Seed fan-out scheduler stub recording the entry script, runner factory and inference flags."""
         @classmethod
-        def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False):
+        def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False, infer_after=False):
             """Records the fan-out arguments and returns a stub instance."""
-            ran["for_runner"] = (entry_script, runner_factory)
+            ran["for_runner"]   = (entry_script, runner_factory)
             ran["infer_at_end"] = infer_at_end
+            ran["infer_after"]  = infer_after
             return cls()
         def run(self):
             """Records that the fan-out executed."""
@@ -538,6 +539,7 @@ def test_dual_launcher_fans_multi_seed_runs_across_the_pool(monkeypatch):
 
     assert ran.get("fanout_ran") is True
     assert ran["for_runner"]     == (entry, FakeSingleRunner)
+    assert ran["infer_after"]    == DualEntryConfig().infer_after
     assert "single_ran" not in ran
 
 

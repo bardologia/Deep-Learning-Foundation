@@ -165,6 +165,41 @@ def test_resumed_sweep_without_pending_inference_launches_nothing(tmp_path):
     assert scheduler._stage.submitted == []
 
 
+def test_resumed_inline_inference_sweep_infers_over_the_reused_units_missing_it(tmp_path):
+    """With infer_after, a resumed sweep launches inference-only jobs for the reused units whose inline inference never finished."""
+    root  = tmp_path / "ema"
+    names = [name for name, _ in _scheduler(tmp_path).planned_units()]
+
+    for name in names:
+        _complete_run(root, name, inference=(name != names[0]))
+
+    scheduler        = _scheduler(tmp_path, resume_from=root, infer_after="true")
+    scheduler._stage = FakeStage()
+
+    scheduler.run()
+
+    assert scheduler.unit_inference   is True
+    assert scheduler.inference_split  == "test"
+    assert scheduler._stage.submitted == [[names[0]]]
+
+    written = (scheduler.log_dir / "train_scheduler.log").read_text()
+
+    assert f"1 unit(s) lack 'test' inference -> queued: {names[0]}" in written
+    assert "Trainer resume" in written and "per unit: continues from last.pt where it exists" in written
+
+
+def test_sweep_without_inference_reports_no_split(tmp_path):
+    """A sweep with neither inference switch runs no inference pass and says so in its configuration table."""
+    scheduler        = _scheduler(tmp_path)
+    scheduler._stage = FakeStage()
+
+    scheduler.run()
+
+    assert scheduler.inference_split is None
+    assert len(scheduler._stage.submitted) == 1
+    assert "Inference split" in (scheduler.log_dir / "train_scheduler.log").read_text()
+
+
 def test_inference_is_pending_when_the_stamp_records_another_split(tmp_path):
     """An inference stamp scored on another split does not count as the configured split's output."""
     root  = tmp_path / "ema"

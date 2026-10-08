@@ -61,7 +61,8 @@ class SeedSweepLauncher:
         config = ResumeLauncher.configure(type(self.entry_config), config, cli.overrides, trial_sweep=False, unit="--trial" in tokens)
 
         infer_at_end = self.supports_infer_at_end and config.infer_at_end
-        if infer_at_end and config.infer_after:
+        infer_after  = self.supports_infer_at_end and config.infer_after
+        if infer_at_end and infer_after:
             raise SystemExit("infer_after and infer_at_end are mutually exclusive; infer_after runs inference inside each training job, infer_at_end batches inference after every training finishes")
 
         base_label = getattr(config, self.base_attr) if self.base_attr else None
@@ -73,7 +74,7 @@ class SeedSweepLauncher:
             return
 
         DdpDispatch.reject_seed_sweep(config, seeds)
-        SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, self.runner_class, base_label=base_label, infer_at_end=infer_at_end).run()
+        SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, self.runner_class, base_label=base_label, infer_at_end=infer_at_end, infer_after=infer_after).run()
 
 
 class SeedSweepClusterScheduler:

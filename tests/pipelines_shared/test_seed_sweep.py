@@ -20,6 +20,7 @@ class _Config:
 
     Attributes:
         run_name        : Explicit run name, or None to stamp one.
+        resume          : Whether completed seed runs are reused.
         resume_from     : Pasted run or sweep directory to resume from.
         seed            : Base seed used when no seed list is given.
         seeds           : Seeds the sweep fans out over.
@@ -27,9 +28,12 @@ class _Config:
         gpus            : GPU ids the scheduler may use.
         gpus_file       : Path to a live GPU pool file.
         poll_interval_s : Scheduler polling period in seconds.
+        infer_after     : Whether each seed job infers inline after training.
         training        : Nested training settings holding the resume flag.
+        inference       : Nested inference settings holding the scored split.
     """
     run_name        : str | None = None
+    resume          : bool       = True
     resume_from     : str        = ""
     seed            : int        = 0
     seeds           : list[int]  = field(default_factory=list)
@@ -37,7 +41,28 @@ class _Config:
     gpus            : list[int]  = field(default_factory=lambda: [0, 1])
     gpus_file       : str        = ""
     poll_interval_s : float      = 5.0
+    infer_after     : bool       = False
     training        : SimpleNamespace = field(default_factory=lambda: SimpleNamespace(resume=False))
+    inference       : SimpleNamespace = field(default_factory=lambda: SimpleNamespace(split="test"))
+
+
+def _done(jobs: list) -> list[dict]:
+    """Returns a DONE result record per queued job."""
+    return [{"name": job.name, "gpu": 0, "status": "DONE", "returncode": 0, "duration_s": 60.0, "log_file": str(job.log_path)} for job in jobs]
+
+
+def _complete_seed(base: Path, seed: int, inference: bool = False, split: str = "test") -> Path:
+    """Creates a completed seed run under the sweep base, optionally carrying a completed inference stamp for the split."""
+    run = base / f"seed{seed}"
+    run.mkdir(parents=True, exist_ok=True)
+    CompletionMarker.stamp(run, {})
+
+    if inference:
+        stamp = run / "inference" / "20260101_000000"
+        stamp.mkdir(parents=True)
+        CompletionMarker.stamp(stamp, {"split": split})
+
+    return run
 
 
 def _factory(record):
@@ -351,6 +376,77 @@ def test_batched_fanout_skips_inference_for_failed_seeds(tmp_path):
     assert [job.name for job in queues[1]] == ["exp/seed3"]
 
 
+def test_resumed_batched_sweep_infers_over_the_complete_seeds_missing_inference(tmp_path):
+    """A resumed infer_at_end sweep whose seeds all finished training still queues inference for the seeds without a stamp, and trains nothing."""
+    base = tmp_path / "label_exp"
+    _complete_seed(base, 0, inference=True)
+    _complete_seed(base, 1, inference=False)
+
+    config    = _Config(resume_from=str(base), seeds=[0, 1], logdir=Path("/elsewhere"))
+    scheduler = SeedFanoutScheduler.for_runner(config, {}, Path("/entry/train.py"), _factory([]), infer_at_end=True)
+    queues    = []
+
+    def fake_queue(jobs):
+        """Records the queued jobs and reports every one of them as done."""
+        queues.append(jobs)
+        return _done(jobs)
+
+    scheduler.stage._run_queue = fake_queue
+    scheduler.run()
+
+    assert [[job.name for job in jobs] for jobs in queues] == [["label_exp/seed1"]]
+    assert queues[0][0].command[queues[0][0].command.index("--infer_after") + 1] == "true"
+    assert scheduler.infer_results_path.is_file()
+
+    written = (scheduler.log_dir / "seed_sweep.log").read_text()
+
+    assert "no training job launched" in written
+    assert "1 seed(s) lack 'test' inference -> queued: label_exp/seed1" in written
+
+
+def test_resumed_inline_inference_sweep_infers_over_the_reused_seeds_missing_it(tmp_path):
+    """With infer_after, a resumed sweep launches inference-only jobs for the reused seeds whose inline inference never finished, alongside the seeds it trains."""
+    base = tmp_path / "label_exp"
+    _complete_seed(base, 0, inference=False)
+    _complete_seed(base, 1, inference=True)
+
+    config    = _Config(resume_from=str(base), seeds=[0, 1, 2], logdir=Path("/elsewhere"), infer_after=True)
+    scheduler = SeedFanoutScheduler.for_runner(config, {}, Path("/entry/train.py"), _factory([]), infer_after=True)
+    queues    = []
+
+    def fake_queue(jobs):
+        """Records the queued jobs, stamps inference for the trained seed as its inline pass would, and reports every job done."""
+        queues.append(jobs)
+        if len(queues) == 1:
+            _complete_seed(base, 2, inference=True)
+        return _done(jobs)
+
+    scheduler.stage._run_queue = fake_queue
+    scheduler.run()
+
+    assert [[job.name for job in jobs] for jobs in queues] == [["label_exp/seed2"], ["label_exp/seed0"]]
+    assert "--infer_after" not in queues[0][0].command
+    assert scheduler.inference_split == "test"
+
+
+def test_sweep_without_inference_never_runs_an_inference_pass(tmp_path):
+    """A sweep that neither batches nor inlines inference reports no split and submits only the training wave."""
+    scheduler = _scheduler(tmp_path)
+    queues    = []
+
+    def fake_queue(jobs):
+        """Records the queued jobs and reports every one of them as done."""
+        queues.append(jobs)
+        return _done(jobs)
+
+    scheduler.stage._run_queue = fake_queue
+    scheduler.run()
+
+    assert scheduler.inference_split is None
+    assert len(queues) == 1
+    assert "none (the sweep infers nothing)" in (scheduler.log_dir / "seed_sweep.log").read_text()
+
+
 def test_run_raises_when_a_seed_fails(tmp_path):
     """A failing seed makes the sweep exit with a message counting the failures."""
     scheduler = _scheduler(tmp_path)
@@ -404,9 +500,9 @@ class _FakeScheduler:
     captured = {}
 
     @classmethod
-    def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False):
-        """Records the infer_at_end flag and returns an inert scheduler."""
-        cls.captured = {"infer_at_end": infer_at_end}
+    def for_runner(cls, config, cli_overrides, entry_script, runner_factory, base_label=None, infer_at_end=False, infer_after=False):
+        """Records the inference flags and returns an inert scheduler."""
+        cls.captured = {"infer_at_end": infer_at_end, "infer_after": infer_after}
         return cls()
 
     def run(self):
@@ -431,13 +527,22 @@ def test_launcher_forwards_infer_at_end_to_the_fanout(monkeypatch):
 
     _launcher(True).run(argv=["--infer_at_end", "True"])
 
-    assert _FakeScheduler.captured == {"infer_at_end": True}
+    assert _FakeScheduler.captured == {"infer_at_end": True, "infer_after": False}
+
+
+def test_launcher_forwards_infer_after_to_the_fanout(monkeypatch):
+    """A supporting launcher tells the fan-out that every seed job infers inline, so a resume can re-infer reused seeds."""
+    monkeypatch.setattr(launcher_mod, "SeedFanoutScheduler", _FakeScheduler)
+
+    _launcher(True).run(argv=["--infer_after", "True"])
+
+    assert _FakeScheduler.captured == {"infer_at_end": False, "infer_after": True}
 
 
 def test_launcher_without_support_never_batches_inference(monkeypatch):
-    """A launcher without batching support forwards infer_at_end as false."""
+    """A launcher without batching support forwards both inference flags as false."""
     monkeypatch.setattr(launcher_mod, "SeedFanoutScheduler", _FakeScheduler)
 
     _launcher(False).run(argv=["--infer_at_end", "True"])
 
-    assert _FakeScheduler.captured == {"infer_at_end": False}
+    assert _FakeScheduler.captured == {"infer_at_end": False, "infer_after": False}

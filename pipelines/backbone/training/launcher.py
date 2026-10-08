@@ -225,6 +225,11 @@ class TrainScheduler(TrialSweepScheduler):
         """Whether inference runs as a separate stage after all training units."""
         return self.config.infer_at_end
 
+    @property
+    def unit_inference(self) -> bool:
+        """Whether every training unit runs its own inference after training."""
+        return self.config.infer_after
+
     def _inference_rows(self) -> dict:
         """Returns the per-unit and batched inference flags for the configuration table."""
         return {
@@ -412,7 +417,7 @@ class BackboneTrainingLauncher:
             else:
                 DdpDispatch.reject_seed_sweep(config, seeds)
                 TrainScheduler.reject_probe_exit(config, f"{len(seeds)}-seed fan-out")
-                SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, SingleTrainRunner, infer_at_end=config.infer_at_end).run()
+                SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, SingleTrainRunner, infer_at_end=config.infer_at_end, infer_after=config.infer_after).run()
             return
 
         TrainScheduler(config=config, cli_overrides=cli.overrides, entry_script=self.entry_script).run()
