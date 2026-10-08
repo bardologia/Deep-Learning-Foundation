@@ -603,7 +603,7 @@ class CkaComparison:
                 matrix                    = CkaComputation.cross_matrix(features[i], features[j])
                 matrices[f"pair_{i}_{j}"] = matrix
                 score                     = CkaComputation.alignment_score(matrix)
-                forward, backward = CkaComputation.best_match_profiles(matrix)
+                forward, backward         = CkaComputation.best_match_profiles(matrix)
 
                 summary[i, j] = summary[j, i] = score
                 pairs[(names[i], names[j])]   = {
@@ -633,6 +633,17 @@ class CkaComparison:
         FileIO.save_json(payload, self.output_dir / "cka.json")
 
         report_path = self._write_report(names, records, summary, pairs, figures)
-        self.logger.ok(f"CKA over {len(names)} runs -> {report_path}")
+
+        rows = []
+        for (name_a, name_b), entry in pairs.items():
+            rows.append({
+                "Pair"          : f"{name_a} vs {name_b}",
+                "Alignment"     : f"{entry['score']:.3f}",
+                "Divergence ->" : f"{entry['divergence_forward']:.2f}" if entry["divergence_forward"] is not None else "never",
+                "Divergence <-" : f"{entry['divergence_backward']:.2f}" if entry["divergence_backward"] is not None else "never",
+            })
+        self.logger.metrics_table(rows, columns=["Pair", "Alignment", "Divergence ->", "Divergence <-"], title="CKA: pair summary")
+
+        self.logger.ok(f"CKA over {len(names)} runs and {len(pairs)} pairs -> {report_path}")
 
         return payload

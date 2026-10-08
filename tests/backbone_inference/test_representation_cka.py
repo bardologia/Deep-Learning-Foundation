@@ -183,6 +183,8 @@ def test_comparison_announces_and_tracks_its_matrices(tmp_path, test_data_dir, p
     assert any("probed layers usable (thinned from" in message and "64 sampled pixels" in message for message in infos)
     assert logger.totals == [3] and logger.advances == 3
     assert logger.timers == ["CKA features [1/2] a/run_unet_e2e", "CKA features [2/2] b/run_unet_e2e", "CKA matrices (3)"]
+    assert logger.tables[0] == "Configuration"
+    assert ("metrics_table", "CKA: pair summary") in logger.messages
 
 
 @pytest.mark.dataset
