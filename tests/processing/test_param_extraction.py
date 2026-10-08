@@ -476,6 +476,40 @@ def test_trial_collector_names_the_runs_discovery_skips(tmp_path):
     assert any("Discovered 1 fitted runs; skipped 1 injected and 1 without parameters.npy" in message for level, message in logger.messages)
 
 
+def test_inference_writes_the_summary_last_and_drops_a_stale_one(tmp_path, monkeypatch):
+    """Verifies a failing figure stage leaves no summary behind, and a finished analysis writes it."""
+    from tests.conftest import RecordingLogger
+
+    run_dir = tmp_path / "params" / "params_run"
+    run_dir.mkdir(parents=True)
+    (run_dir / "fit_metrics_summary.json").write_text("{}", encoding="utf-8")
+
+    metrics_dict = {"global_summary": {"n_fitted": 1.0}, "per_k_summary": {}, "snr_summary": {}}
+
+    monkeypatch.setattr(ParamRunInferencePipeline, "_load",    lambda self: ({}, None, None, None))
+    monkeypatch.setattr(ParamRunInferencePipeline, "_metrics", lambda self, parameters, meta, diagnostics, cube_path: metrics_dict)
+
+    def failing_plots(self, parameters, meta, metrics_dict, cube_path):
+        """Raises in place of rendering the figures."""
+        raise RuntimeError("figure stage failed")
+
+    monkeypatch.setattr(ParamRunInferencePipeline, "_plots", failing_plots)
+
+    with pytest.raises(RuntimeError, match="figure stage failed"):
+        ParamRunInferencePipeline(run_dir, logger=RecordingLogger()).run()
+
+    assert not (run_dir / "fit_metrics_summary.json").exists()
+
+    monkeypatch.setattr(ParamRunInferencePipeline, "_plots", lambda self, parameters, meta, metrics_dict, cube_path: {})
+
+    ParamRunInferencePipeline(run_dir, logger=RecordingLogger(), make_plots=False).run()
+
+    summary = json.loads((run_dir / "fit_metrics_summary.json").read_text(encoding="utf-8"))
+
+    assert summary["global_summary"] == {"n_fitted": 1.0}
+    assert summary["git_commit"]
+
+
 def test_inference_session_records_an_abort_in_the_run_log(tmp_path, monkeypatch):
     """Verifies a failing inference stage ends the run's own log with the error and an ABORTED banner."""
     from pipelines.processing.param_extraction import inference as inference_module
