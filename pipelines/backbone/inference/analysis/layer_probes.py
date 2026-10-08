@@ -29,7 +29,10 @@ class RidgeProbe:
         ridge_lambda : Ridge penalty, scaled by the number of training samples.
         n_folds      : Number of cross-validation folds.
         seed         : Seed of the fold permutation.
+        MIN_SAMPLES  : Fewest samples a probe is fitted on.
     """
+
+    MIN_SAMPLES = 20
 
     def __init__(self, ridge_lambda: float = 1.0, n_folds: int = 4, seed: int = 0) -> None:
         """Stores the probe hyper-parameters.
@@ -61,7 +64,7 @@ class RidgeProbe:
             test  : Sample indices of the held-out part.
 
         Returns:
-            The held-out R², or 0.0 when the held-out target has no variance.
+            The held-out R², or NaN when the held-out target has no variance and R² is undefined.
         """
         mean = X[train].mean(axis=0)
         std  = X[train].std(axis=0) + 1e-8
@@ -78,40 +81,60 @@ class RidgeProbe:
         ss_total = float(((y[test] - y[test].mean()) ** 2).sum())
 
         if ss_total <= 0.0:
-            return 0.0
+            return float("nan")
 
         return 1.0 - ss_res / ss_total
 
+    def _folds(self, n_samples: int) -> list[np.ndarray]:
+        """Returns the held-out sample indices of each fold, drawn from the seeded permutation."""
+        order = np.random.default_rng(self.seed).permutation(n_samples)
+        return np.array_split(order, self.n_folds)
+
+    def degenerate_folds(self, targets: np.ndarray) -> int:
+        """Returns how many held-out folds of a target vector carry no variance, leaving R² undefined there.
+
+        Args:
+            targets : Target vector of shape (samples,).
+        """
+        y = np.asarray(targets, dtype=np.float64)
+        return sum(1 for test in self._folds(y.size) if float(((y[test] - y[test].mean()) ** 2).sum()) <= 0.0)
+
     def score(self, features: np.ndarray, targets: np.ndarray) -> dict[str, float]:
         """Cross-validates the ridge readout over the configured folds.
+
+        Folds whose held-out target has no variance leave R² undefined and are
+        excluded from the mean and spread; their count is returned.
 
         Args:
             features : Feature matrix of shape (samples, features).
             targets  : Target vector of shape (samples,).
 
         Returns:
-            Dictionary with the "mean" and "std" held-out R² across folds.
+            Dictionary with the "mean" and "std" held-out R² across the defined folds and the number of "degenerate_folds" left out.
 
         Raises:
-            ValueError : If the shapes do not line up or fewer than 20 samples are given.
+            ValueError : If the shapes do not line up, fewer than MIN_SAMPLES samples are given, or the held-out target has no variance in any fold.
         """
         X = np.asarray(features, dtype=np.float64)
         y = np.asarray(targets, dtype=np.float64)
 
         if X.ndim != 2 or y.ndim != 1 or X.shape[0] != y.size:
             raise ValueError(f"Probe needs X (n, d) and y (n,), got {X.shape} and {y.shape}")
-        if X.shape[0] < 20:
-            raise ValueError(f"Probe needs at least 20 samples, got {X.shape[0]}")
+        if X.shape[0] < self.MIN_SAMPLES:
+            raise ValueError(f"Probe needs at least {self.MIN_SAMPLES} samples, got {X.shape[0]}")
 
-        order = np.random.default_rng(self.seed).permutation(X.shape[0])
-        folds = np.array_split(order, self.n_folds)
+        folds = self._folds(X.shape[0])
 
         scores = []
         for f, test in enumerate(folds):
             train = np.concatenate([fold for g, fold in enumerate(folds) if g != f])
             scores.append(self._fold_score(X, y, train, test))
 
-        return {"mean": float(np.mean(scores)), "std": float(np.std(scores))}
+        defined = np.array([score for score in scores if np.isfinite(score)])
+        if defined.size == 0:
+            raise ValueError(f"The held-out target has no variance in any of the {self.n_folds} folds; R² is undefined")
+
+        return {"mean": float(defined.mean()), "std": float(defined.std()), "degenerate_folds": len(scores) - int(defined.size)}
 
 
 class FeatureSampler:
@@ -333,23 +356,57 @@ class LayerProbeCore:
             "second_presence" : (counts >= 2).astype(np.float64),
         }
 
-    def _score_targets(self, features: np.ndarray, targets: dict[str, np.ndarray]) -> dict[str, dict | None]:
-        """Scores every target from one feature matrix, skipping the undersampled ones.
+    def _target_notes(self, targets: dict[str, np.ndarray]) -> tuple[dict[str, str], set[str]]:
+        """Explains the targets that cannot be scored, or are scored on only part of the folds.
+
+        A target with fewer than MIN_SAMPLES finite samples, or whose held-out values
+        are constant in every fold, has no defined R² and is left unscored; one that is
+        constant in some folds is averaged over the others. The folds depend only on
+        the target, so the notes hold for every layer alike.
+
+        Args:
+            targets : Target vectors of shape (samples,) keyed by target name.
+
+        Returns:
+            A pair of the note per affected target and the set of targets left unscored.
+        """
+        notes    = {}
+        unscored = set()
+
+        for target, _label in self.TARGETS:
+            usable = targets[target][np.isfinite(targets[target])]
+
+            if usable.size < RidgeProbe.MIN_SAMPLES:
+                notes[target] = f"{usable.size} finite samples < {RidgeProbe.MIN_SAMPLES}; not scored"
+                unscored.add(target)
+                continue
+
+            degenerate = self.probe.degenerate_folds(usable)
+            if degenerate == self.probe.n_folds:
+                notes[target] = f"zero variance in {degenerate}/{self.probe.n_folds} held-out folds; R² undefined, not scored"
+                unscored.add(target)
+            elif degenerate > 0:
+                notes[target] = f"zero variance in {degenerate}/{self.probe.n_folds} held-out folds; R² averaged over the other folds"
+
+        return notes, unscored
+
+    def _score_targets(self, features: np.ndarray, targets: dict[str, np.ndarray], unscored: set[str]) -> dict[str, dict | None]:
+        """Scores every target from one feature matrix, skipping the ones without a defined R².
 
         Args:
             features : Feature matrix of shape (samples, features).
             targets  : Target vectors of shape (samples,) keyed by target name.
+            unscored : Targets left unscored, as explained by the target notes.
 
         Returns:
-            The probe score of each target, or None when fewer than 20 samples carry a
-            finite value for it.
+            The probe score of each target, or None for an unscored target.
         """
         scores = {}
         for target, _label in self.TARGETS:
             y      = targets[target]
             usable = np.isfinite(y)
 
-            scores[target] = self.probe.score(features[usable], y[usable]) if usable.sum() >= 20 else None
+            scores[target] = None if target in unscored else self.probe.score(features[usable], y[usable])
 
         return scores
 
@@ -367,8 +424,9 @@ class LayerProbeCore:
             Dictionary with "layers", mapping each surviving layer to its channel count,
             effective dimensionality and per-target scores, the same block for the
             "input_baseline", the "shuffled_controls" naming the best layer and its
-            permuted-target score per target, and the "dropped_layers" mapping each
-            dropped layer to the reason it could not be probed.
+            permuted-target score per target, the "dropped_layers" mapping each
+            dropped layer to the reason it could not be probed, and the "target_notes"
+            explaining every target scored on part of the folds or not at all.
 
         Raises:
             ValueError : If no probed layer produced a usable feature map.
@@ -415,7 +473,8 @@ class LayerProbeCore:
         if not store:
             raise ValueError("No probed layer produced a (B, C, H, W) feature map on the input grid; nothing to probe")
 
-        targets = {target: np.concatenate(chunks) for target, chunks in target_chunks.items()}
+        targets         = {target: np.concatenate(chunks) for target, chunks in target_chunks.items()}
+        notes, unscored = self._target_notes(targets)
 
         layers = {}
         for layer, chunks in store.items():
@@ -423,14 +482,14 @@ class LayerProbeCore:
             layers[layer] = {
                 "n_channels"    : int(X.shape[1]),
                 "effective_dim" : FeatureGeometry.participation_ratio(X),
-                "scores"        : self._score_targets(X, targets),
+                "scores"        : self._score_targets(X, targets, unscored),
             }
 
         X_input  = np.concatenate(input_chunks, axis=0)
         baseline = {
             "n_channels"    : int(X_input.shape[1]),
             "effective_dim" : FeatureGeometry.participation_ratio(X_input),
-            "scores"        : self._score_targets(X_input, targets),
+            "scores"        : self._score_targets(X_input, targets, unscored),
         }
 
         controls = {}
@@ -448,7 +507,7 @@ class LayerProbeCore:
 
             controls[target] = {"layer": best, "score": self.probe.score(X_best[usable], shuffled)["mean"]}
 
-        return {"layers": layers, "input_baseline": baseline, "shuffled_controls": controls, "dropped_layers": dropped}
+        return {"layers": layers, "input_baseline": baseline, "shuffled_controls": controls, "dropped_layers": dropped, "target_notes": notes}
 
 
 class LayerProbePlots(PlotBase):
@@ -622,6 +681,14 @@ class LayerProbeRun(AnalysisRun):
             table.add_row(*row)
         doc.table(table)
 
+        if results["target_notes"]:
+            doc.heading("Target notes", level=2)
+            notes_table = MarkdownTable(("Target", "Note"))
+            for target, label in LayerProbeCore.TARGETS:
+                if target in results["target_notes"]:
+                    notes_table.add_row(label, results["target_notes"][target])
+            doc.table(notes_table)
+
         if results["dropped_layers"]:
             doc.heading("Dropped layers", level=2)
             dropped_table = MarkdownTable(("Layer", "Reason"))
@@ -672,6 +739,8 @@ class LayerProbeRun(AnalysisRun):
 
         if results["dropped_layers"]:
             self.logger.warning(f"{self.run_dir.name}: {len(results['dropped_layers'])}/{probed} probed layers dropped: " + "; ".join(f"{layer} ({reason})" for layer, reason in results["dropped_layers"].items()))
+        for target, note in results["target_notes"].items():
+            self.logger.warning(f"{self.run_dir.name}: probe target {target}: {note}")
 
         plots   = LayerProbePlots()
         figures = {}
@@ -690,9 +759,15 @@ class LayerProbeRun(AnalysisRun):
         report_path = self._write_report(run, layers, results, figures)
 
         count_scores = {layer: results["layers"][layer]["scores"]["count"] for layer in layers}
-        best         = max((layer for layer in layers if count_scores[layer] is not None), key=lambda layer: count_scores[layer]["mean"])
+        scored       = [layer for layer in layers if count_scores[layer] is not None]
 
-        return AnalysisOutcome(payload, f"K most decodable at '{best}' (R² {count_scores[best]['mean']:.3f})", report_path)
+        if scored:
+            best     = max(scored, key=lambda layer: count_scores[layer]["mean"])
+            headline = f"K most decodable at '{best}' (R² {count_scores[best]['mean']:.3f})"
+        else:
+            headline = f"K not scored: {results['target_notes']['count']}"
+
+        return AnalysisOutcome(payload, headline, report_path)
 
 
 class LayerProbeBatch(RunBatch):
