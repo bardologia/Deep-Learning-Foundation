@@ -27,7 +27,7 @@ def _default_image_ae_loss():
 
 @dataclass
 class TuningConfig:
-    """Search budget, search space, seeding and pruning behaviour of one Optuna study.
+    """Search budget, search space, seeding, pruning and stop rules of one Optuna study.
 
     Attributes:
         n_trials                : Number of trials the study runs.
@@ -40,6 +40,9 @@ class TuningConfig:
         search_arch             : Whether the study samples the architecture fields of the model configuration.
         search_batch            : Whether the study samples the training batch size from ``batch_sizes``; the trial applies the linear learning-rate scaling the training entries apply, so a tuned rate stays quoted at the reference batch.
         batch_sizes             : Batch sizes the study may pick when ``search_batch`` is on.
+        plateau_patience        : Finished trials without the best value improving before the study stops; zero runs the trial target out.
+        plateau_min_delta       : Smallest improvement of the best value, relative to the value at the last improvement, that counts as progress for the plateau rule.
+        time_budget_h           : Hours after which a worker starts no further trial; zero sets no budget.
         emit_trial_docs         : Whether a markdown report is written per trial.
         emit_study_plots        : Whether study-level plots are rendered at the end.
     """
@@ -59,6 +62,10 @@ class TuningConfig:
     search_batch : bool = False
 
     batch_sizes : list[int] = field(default_factory=lambda: [64, 128, 256, 512, 1024])
+
+    plateau_patience  : int   = 0
+    plateau_min_delta : float = 0.0
+    time_budget_h     : float = 0.0
 
     emit_trial_docs  : bool = False
     emit_study_plots : bool = False

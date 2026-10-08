@@ -1,9 +1,10 @@
-"""Tests for parameter sampling, search-space selection, best-config persistence and the Tuner.
+"""Tests for parameter sampling, search-space selection, stop rules, best-config persistence and the Tuner.
 
 Covers float, categorical and indexed categorical sampling and decoding, the
 rejection of an unknown dimension type, the search groups a study may switch
-on, convergence on a synthetic objective, best-config writing and the trial
-configs the backbone Tuner materializes.
+on, the trial target, plateau and time-budget stop rules, convergence on a
+synthetic objective, best-config writing and the trial configs the backbone
+Tuner materializes.
 """
 
 from __future__ import annotations
@@ -16,7 +17,9 @@ import pytest
 
 import pipelines.tuning.trial as trial_mod
 
-from pipelines.tuning.tuners              import ParamSampler, BestConfigWriter, SearchSpace, Tuner
+from optuna.trial import TrialState
+
+from pipelines.tuning.tuners              import ParamSampler, BestConfigWriter, SearchSpace, StudyPlateauStop, StudyStopRules, StudyTargetStop, Tuner
 from pipelines.backbone.training.pipeline import TrainingPipeline
 from configuration.architectures.backbone import UNetConfig
 from configuration.training.general.run   import TrainingQueueConfig
@@ -177,6 +180,101 @@ def test_search_space_refuses_nothing_to_search_and_empty_groups(tune_cfg):
         SearchSpace.of(ArchOnly, tune_cfg)
 
     assert SearchSpace.arch_only(ArchOnly) == ArchOnly.tunable_arch_params()
+
+
+def _study_with_values(values):
+    """Returns a minimising study holding one finished trial per value, pruned where the value is None."""
+    study = optuna.create_study(direction="minimize")
+
+    for value in values:
+        if value is None:
+            study.add_trial(optuna.trial.create_trial(state=TrialState.PRUNED, params={}, distributions={}))
+        else:
+            study.add_trial(optuna.trial.create_trial(value=value, state=TrialState.COMPLETE, params={}, distributions={}))
+
+    return study
+
+
+def test_plateau_stop_counts_finished_trials_since_the_last_counted_improvement(fake_logger):
+    """Pruned trials count towards the patience, and a gain below the margin does not reset it."""
+    rule = StudyPlateauStop(patience=3, min_delta=0.05, logger=fake_logger)
+
+    assert rule.stalled(_study_with_values([1.0, 0.9, 0.95, None, 0.92])) == 3
+    assert rule.stalled(_study_with_values([1.0, 0.9, 0.95, None, 0.80])) == 0
+    assert rule.stalled(_study_with_values([None, None, 1.0]))            == 0
+    assert rule.stalled(_study_with_values([]))                            == 0
+
+
+def test_plateau_stop_ends_a_study_after_the_patience_without_progress(fake_logger):
+    """A constant objective stops the study after the first trial plus the patience, and the rule says so with the anchor and reference."""
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.RandomSampler(seed=0))
+    rule  = StudyPlateauStop(patience=4, min_delta=0.0, logger=fake_logger)
+
+    study.optimize(lambda trial: 1.0 + 0.0 * trial.suggest_float("x", 0.0, 1.0), n_trials=50, callbacks=[rule])
+
+    assert len(study.trials) == 5
+    assert rule.fired is True
+    assert fake_logger.infos == ["Study stop: plateau, 4 finished trials since trial 0 without a 0.0% improvement on 1"]
+
+
+def test_plateau_stop_keeps_running_while_the_best_keeps_improving(fake_logger):
+    """An objective improving beyond the margin on every trial never trips the rule."""
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.RandomSampler(seed=0))
+    rule  = StudyPlateauStop(patience=3, min_delta=0.01, logger=fake_logger)
+
+    study.optimize(lambda trial: 1.0 / (len(study.trials) + 0.0 * trial.suggest_float("x", 0.0, 1.0)), n_trials=20, callbacks=[rule])
+
+    assert len(study.trials) == 20
+    assert rule.fired is False
+    assert fake_logger.infos == []
+
+
+def test_target_stop_logs_the_stop_once_the_completed_count_reaches_the_target(fake_logger):
+    """The target rule stops the worker at the completed count, says so, and reports the target as reached from then on."""
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.RandomSampler(seed=0))
+    rule  = StudyTargetStop(target=3, logger=fake_logger)
+
+    assert rule.reached(study) is False
+
+    study.optimize(lambda trial: trial.suggest_float("x", 0.0, 1.0), n_trials=10, callbacks=[rule])
+
+    assert len(study.trials) == 3
+    assert rule.fired is True
+    assert rule.reached(study) is True
+    assert fake_logger.infos == ["Study stop: target reached, 3 complete + 0 pruned = 3 of target 3"]
+
+
+def test_target_stop_counts_pruned_trials_as_the_scheduler_does_but_not_failed_ones(fake_logger):
+    """A study of one completed, one pruned and one failed trial has reached a target of two and not one of three."""
+    study = _study_with_values([0.5, None])
+    study.add_trial(optuna.trial.create_trial(state=TrialState.FAIL))
+
+    assert StudyTargetStop(target=2, logger=fake_logger).reached(study) is True
+    assert StudyTargetStop(target=3, logger=fake_logger).reached(study) is False
+
+
+def test_stop_rules_follow_the_tuning_settings(tune_cfg, fake_logger):
+    """The target stop is always on, the plateau stop and the timeout follow their settings."""
+    rules = StudyStopRules(tune_cfg, fake_logger)
+
+    assert [type(rule) for rule in rules.callbacks()] == [StudyTargetStop]
+    assert rules.timeout_s() is None
+    assert rules.describe()["Plateau patience"] == "off"
+    assert rules.describe()["Time budget"]      == "none"
+
+    tune_cfg.plateau_patience  = 200
+    tune_cfg.plateau_min_delta = 0.01
+    tune_cfg.time_budget_h     = 1.5
+
+    rules     = StudyStopRules(tune_cfg, fake_logger)
+    callbacks = rules.callbacks()
+
+    assert [type(rule) for rule in callbacks] == [StudyTargetStop, StudyPlateauStop]
+    assert callbacks[1].patience  == 200
+    assert callbacks[1].min_delta == 0.01
+    assert rules.timeout_s()      == 5400.0
+    assert rules.describe()["Plateau patience"] == 200
+    assert rules.describe()["Time budget"]      == "1.5 h"
 
 
 def test_study_minimizes_synthetic_quadratic_to_known_optimum():

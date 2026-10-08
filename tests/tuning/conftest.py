@@ -66,7 +66,7 @@ class FakeLogger:
 class TuneCfg:
     """Minimal tuning settings object accepted by the tuners."""
     def __init__(self, n_epochs=2, early_stop_patience=2, base_seed=42) -> None:
-        """Stores the epoch budget, patience and seed alongside fixed pruner and search-space settings."""
+        """Stores the epoch budget, patience and seed alongside fixed pruner, search-space and stop-rule settings."""
         self.n_epochs                = n_epochs
         self.early_stop_patience     = early_stop_patience
         self.base_seed               = base_seed
@@ -77,6 +77,9 @@ class TuneCfg:
         self.search_arch             = True
         self.search_batch            = False
         self.batch_sizes             = [64, 128, 256, 512, 1024]
+        self.plateau_patience        = 0
+        self.plateau_min_delta       = 0.0
+        self.time_budget_h           = 0.0
         self.emit_trial_docs         = False
         self.emit_study_plots        = False
 

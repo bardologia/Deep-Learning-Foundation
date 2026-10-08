@@ -2,7 +2,8 @@
 
 One study per model key is kept in a shared SQLite storage; trials are executed
 by worker subprocesses fanned out across the GPU pool. The scheduler tops each
-study up to its trial target, writes the best configuration and the study
+study up to its trial target, which the plateau rule and the time budget of the
+tuning settings may cut short, writes the best configuration and the study
 plots, and refuses to resume a run whose study-defining settings changed.
 """
 
@@ -19,7 +20,7 @@ from models                               import BACKBONE_HEADS, config_registry
 from pipelines.shared.model.model_builder import ModelBuilder
 from pipelines.tuning.plots               import StudyPlotter
 from pipelines.tuning.storage             import TuningStorage
-from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace
+from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace, StudyTargetStop
 from tools.data.io                        import FileIO
 from tools.orchestration.gpu_queue        import GpuJob, GpuPoolFile, GpuQueue
 from tools.monitoring.logger              import Logger
@@ -48,7 +49,7 @@ class TuningScheduler:
 
     SUPPORTED_TYPES = ("backbone", "image_autoencoder", "jepa", "profile_autoencoder")
     STUDY_KEYS      = ("training_type", "heads", "skip_models", "tuning", "curriculum", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
-    MUTABLE_KEYS    = ("tuning.n_trials",)
+    MUTABLE_KEYS    = ("tuning.n_trials", "tuning.plateau_patience", "tuning.plateau_min_delta", "tuning.time_budget_h")
     STAGES          = ("full", "prepare", "compare")
 
     def __init__(self, tag: str, config, entry_script: Path, resumed=None) -> None:
@@ -284,10 +285,6 @@ class TuningScheduler:
 
         return self._count_state(study, TrialState.FAIL) - before
 
-    def _count_done(self, study: optuna.Study) -> int:
-        """Returns the number of trials that completed or were pruned."""
-        return len(study.get_trials(deepcopy=False, states=(TrialState.COMPLETE, TrialState.PRUNED)))
-
     def _count_state(self, study: optuna.Study, state: TrialState) -> int:
         """Returns the number of trials in the given state."""
         return len(study.get_trials(deepcopy=False, states=(state,)))
@@ -355,17 +352,17 @@ class TuningScheduler:
         Returns:
             Whether every dispatched worker finished.
         """
-        done      = self._count_done(study)
-        remaining = max(0, tune_cfg.n_trials - done)
-        n_workers = self.worker_count()
+        counted   = StudyTargetStop.describe(study, tune_cfg.n_trials)
+        remaining = max(0, tune_cfg.n_trials - StudyTargetStop.counted(study))
+        shares    = self._distribute_trials(remaining, self.worker_count())
 
         if remaining == 0:
-            self.logger.subsection(f"Target reached, {done}/{tune_cfg.n_trials} trials already complete")
+            self.logger.subsection(f"Target reached: {counted}; no worker dispatched")
             return True
 
-        self.logger.subsection(f"{done}/{tune_cfg.n_trials} trials done, running {remaining} across {n_workers} worker(s)")
+        self.logger.subsection(f"{counted}; running {remaining} across {sum(1 for share in shares if share > 0)} worker(s)")
 
-        return self._dispatch_workers(model_name, self._distribute_trials(remaining, n_workers))
+        return self._dispatch_workers(model_name, shares)
 
     def _report_model(self, study: optuna.Study, model_name: str, tune_cfg: TuningConfig, ok: bool) -> None:
         """Writes one model's best configuration, plots and summary record.
@@ -464,15 +461,17 @@ class TuningScheduler:
 
         self.logger.section("Hyperparameter Tuning")
         self.logger.kv_table({
-            "Run tag"       : self.tag,
-            "Stage"         : self.config.stage,
-            "Mode"          : "resume" if resume else "new",
-            "Models"        : len(models_to_run),
-            "GPUs"          : self.config.gpus,
-            "Trial target"  : tune_cfg.n_trials,
-            "Search groups" : SearchSpace.describe(tune_cfg),
-            "Storage"       : self.storage_url,
-            "Log dir"       : str(self.run_dir),
+            "Run tag"          : self.tag,
+            "Stage"            : self.config.stage,
+            "Mode"             : "resume" if resume else "new",
+            "Models"           : len(models_to_run),
+            "GPUs"             : self.config.gpus,
+            "Trial target"     : tune_cfg.n_trials,
+            "Search groups"    : SearchSpace.describe(tune_cfg),
+            "Plateau patience" : tune_cfg.plateau_patience or "off",
+            "Time budget"      : f"{tune_cfg.time_budget_h} h" if tune_cfg.time_budget_h else "none",
+            "Storage"          : self.storage_url,
+            "Log dir"          : str(self.run_dir),
         }, title="Configuration")
 
         if self.resumed is not None:

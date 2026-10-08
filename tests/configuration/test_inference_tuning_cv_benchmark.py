@@ -150,6 +150,14 @@ def test_tuning_config_searches_the_model_groups_by_default():
     assert cfg.batch_sizes  == [64, 128, 256, 512, 1024]
 
 
+def test_tuning_config_stop_rules_default_off():
+    """Verifies the tuning defaults run the trial target out with no plateau rule or time budget."""
+    cfg = TuningConfig()
+    assert cfg.plateau_patience  == 0
+    assert cfg.plateau_min_delta == 0.0
+    assert cfg.time_budget_h     == 0.0
+
+
 def test_training_queue_lr_scale_follows_the_batch_rule():
     """The scale is the batch over the reference batch times the multiplier when scaling is on, the multiplier alone when off."""
     cfg = TrainingQueueConfig(batch_size=256, lr_reference_batch_size=256, lr_multiplier=2.0)
