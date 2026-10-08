@@ -977,7 +977,6 @@ class ReportMailer:
         self.logger.ok(f"Sent '{subject}' to {self.entry_config.recipient} with {len(attachments)} attachment(s) in {time.monotonic() - start:.1f} s")
 
 
-
 class MailTarget:
     """One kind of source the mailer gathers and sends bundles for.
 
@@ -1168,6 +1167,19 @@ class ReportMailBatch:
         self.mailer       = ReportMailer(entry_config, logger)
         self.target       = self.TARGETS[entry_config.target](entry_config, logger)
 
+    def _log_settings(self) -> None:
+        """Logs the effective settings of the run: the target with its root and filter, the staging, the SMTP endpoint, the addresses and the dry-run flag."""
+        self.logger.kv_table({
+            "Target"            : self.entry_config.target,
+            **self.target.settings(),
+            "Staging dir"       : str(self.entry_config.staging_dir),
+            "Max attachment MB" : self.entry_config.max_attachment_mb,
+            "SMTP"              : f"{self.entry_config.smtp_host}:{self.entry_config.smtp_port}, timeout {self.entry_config.smtp_timeout_s:g} s",
+            "Sender"            : self.entry_config.sender,
+            "Recipient"         : self.entry_config.recipient,
+            "Dry run"           : self.entry_config.dry_run,
+        }, title="Configuration")
+
     def _subject(self, label: str, index: int, total: int) -> str:
         """Returns the subject of one message, numbered only when the bundle is split.
 
@@ -1235,19 +1247,6 @@ class ReportMailBatch:
             "staged_paths"  : [path for group in groups for path in group],
             "subjects"      : subjects,
         }
-
-    def _log_settings(self) -> None:
-        """Logs the effective settings of the run: the target with its root and filter, the staging, the SMTP endpoint, the addresses and the dry-run flag."""
-        self.logger.kv_table({
-            "Target"            : self.entry_config.target,
-            **self.target.settings(),
-            "Staging dir"       : str(self.entry_config.staging_dir),
-            "Max attachment MB" : self.entry_config.max_attachment_mb,
-            "SMTP"              : f"{self.entry_config.smtp_host}:{self.entry_config.smtp_port}, timeout {self.entry_config.smtp_timeout_s:g} s",
-            "Sender"            : self.entry_config.sender,
-            "Recipient"         : self.entry_config.recipient,
-            "Dry run"           : self.entry_config.dry_run,
-        }, title="Configuration")
 
     def _write_record(self, results: list[dict], started_at: str) -> Path:
         """Writes the run's mailing record, one summary per source, next to the staged files.
