@@ -31,9 +31,19 @@ from tools.runtime.run_tag                              import RunTag
 
 
 class CkaComputation:
-    """Debiased linear CKA between sampled feature matrices."""
+    """Debiased linear CKA between sampled feature matrices.
+
+    A layer whose self-HSIC is non-positive or negligible against its squared mean
+    feature energy carries no usable variance; its CKA against any layer, itself
+    included, is undefined and set to NaN rather than to a fake zero.
+
+    Attributes:
+        DIVERGENCE_THRESHOLD : Best-match CKA below which a layer counts as diverged.
+        DEGENERATE_TOLERANCE : Self-HSIC, relative to the squared mean feature energy, at or below which a layer is degenerate.
+    """
 
     DIVERGENCE_THRESHOLD = 0.5
+    DEGENERATE_TOLERANCE = 1e-10
 
     @staticmethod
     def _unbiased_hsic(X: np.ndarray, Y: np.ndarray) -> float:
@@ -81,16 +91,41 @@ class CkaComputation:
 
     @staticmethod
     def _normalized(hsic_xy: float, hsic_xx: float, hsic_yy: float) -> float:
-        """Returns the CKA value from cross and self HSIC terms, zero for degenerate inputs."""
-        if hsic_xx <= 0.0 or hsic_yy <= 0.0:
-            return 0.0
-
+        """Returns the CKA value from cross and positive self HSIC terms, clipped at zero."""
         return max(0.0, hsic_xy / np.sqrt(hsic_xx * hsic_yy))
 
     @classmethod
     def _self_hsic(cls, layers: dict[str, np.ndarray]) -> dict[str, float]:
         """Returns the self-HSIC of every layer's feature matrix, keyed by layer name."""
         return {name: cls._unbiased_hsic(np.asarray(features, dtype=np.float64), np.asarray(features, dtype=np.float64)) for name, features in layers.items()}
+
+    @classmethod
+    def _degenerate(cls, layers: dict[str, np.ndarray], self_hsic: dict[str, float]) -> set[str]:
+        """Returns the layers whose self-HSIC is negligible against their squared mean feature energy."""
+        degenerate = set()
+        for name, features in layers.items():
+            X      = np.asarray(features, dtype=np.float64)
+            energy = float((X * X).sum() / X.shape[0])
+
+            if self_hsic[name] <= cls.DEGENERATE_TOLERANCE * energy ** 2:
+                degenerate.add(name)
+
+        return degenerate
+
+    @classmethod
+    def degenerate_layers(cls, layers: dict[str, np.ndarray]) -> dict[str, float]:
+        """Returns the self-HSIC of every degenerate layer, whose CKA is undefined.
+
+        Args:
+            layers : Layer name to feature matrix of shape (samples, features).
+
+        Returns:
+            Self-HSIC keyed by the name of each degenerate layer, in layer order.
+        """
+        self_hsic  = cls._self_hsic(layers)
+        degenerate = cls._degenerate(layers, self_hsic)
+
+        return {name: self_hsic[name] for name in layers if name in degenerate}
 
     @classmethod
     def cross_matrix(cls, layers_a: dict[str, np.ndarray], layers_b: dict[str, np.ndarray]) -> np.ndarray:
@@ -101,7 +136,8 @@ class CkaComputation:
             layers_b : Same for the second run; passing the identical object triggers the symmetric fast path.
 
         Returns:
-            CKA values of shape (len(layers_a), len(layers_b)), in layer order.
+            CKA values of shape (len(layers_a), len(layers_b)), in layer order, NaN in
+            the rows and columns of degenerate layers.
         """
         names_a   = list(layers_a)
         names_b   = list(layers_b)
@@ -109,6 +145,8 @@ class CkaComputation:
 
         self_a = cls._self_hsic(layers_a)
         self_b = self_a if symmetric else cls._self_hsic(layers_b)
+        dead_a = cls._degenerate(layers_a, self_a)
+        dead_b = dead_a if symmetric else cls._degenerate(layers_b, self_b)
 
         matrix = np.zeros((len(names_a), len(names_b)))
         for i, name_a in enumerate(names_a):
@@ -117,19 +155,22 @@ class CkaComputation:
                     matrix[i, j] = matrix[j, i]
                     continue
 
-                X, Y         = cls._validated(layers_a[name_a], layers_b[name_b])
+                X, Y = cls._validated(layers_a[name_a], layers_b[name_b])
+
+                if name_a in dead_a or name_b in dead_b:
+                    matrix[i, j] = np.nan
+                    continue
+
                 matrix[i, j] = cls._normalized(cls._unbiased_hsic(X, Y), self_a[name_a], self_b[name_b])
 
         return matrix
 
     @staticmethod
-    def alignment_score(matrix: np.ndarray) -> float:
-        """Returns the mean best-match CKA of a cross-layer matrix, symmetrised over both directions."""
-        return float((matrix.max(axis=1).mean() + matrix.max(axis=0).mean()) / 2.0)
-
-    @staticmethod
     def best_match_profiles(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Returns the per-layer best-match CKA in each direction of a cross-layer matrix.
+
+        Undefined (NaN) entries are ignored; a layer whose row or column is undefined
+        throughout, a degenerate layer, gets a NaN best match.
 
         Args:
             matrix : CKA values of shape (n_layers_a, n_layers_b).
@@ -138,14 +179,34 @@ class CkaComputation:
             A tuple of the forward profile, shape (n_layers_a,), and the backward
             profile, shape (n_layers_b,).
         """
-        return matrix.max(axis=1), matrix.max(axis=0)
+        forward  = np.array([np.nanmax(row) if np.isfinite(row).any() else np.nan for row in matrix])
+        backward = np.array([np.nanmax(column) if np.isfinite(column).any() else np.nan for column in matrix.T])
+
+        return forward, backward
+
+    @classmethod
+    def alignment_score(cls, matrix: np.ndarray) -> float:
+        """Returns the mean best-match CKA of a cross-layer matrix, symmetrised over both directions and over the defined layers.
+
+        Args:
+            matrix : CKA values of shape (n_layers_a, n_layers_b), NaN where undefined.
+
+        Raises:
+            ValueError : If one side holds no layer with a defined best match.
+        """
+        forward, backward = cls.best_match_profiles(matrix)
+
+        if not np.isfinite(forward).any() or not np.isfinite(backward).any():
+            raise ValueError("Every layer of one side of the CKA matrix is degenerate; the alignment is undefined")
+
+        return float((np.nanmean(forward) + np.nanmean(backward)) / 2.0)
 
     @classmethod
     def divergence_depth(cls, profile: np.ndarray) -> float | None:
         """Returns the relative depth at which a best-match profile first drops below threshold.
 
         Args:
-            profile : Best-match CKA per layer in forward order, shape (n_layers,).
+            profile : Best-match CKA per layer in forward order, shape (n_layers,); NaN for a degenerate layer, which never counts as diverged.
 
         Returns:
             The relative depth in [0, 1] of the first layer below the divergence
@@ -374,8 +435,9 @@ class CkaComparison:
         Returns:
             A pair of the mapping from layer name to features of shape (samples,
             channels), in matrix order, and the layer record holding the compared
-            "layers", the "dropped" layers with their reason, the "n_leaf_layers"
-            the probed layers were thinned from and the "n_samples" per matrix.
+            "layers", the "dropped" layers with their reason, the "degenerate"
+            layers with their self-HSIC, the "n_leaf_layers" the probed layers were
+            thinned from and the "n_samples" per matrix.
 
         Raises:
             ValueError : If no layer produced a usable feature map.
@@ -426,7 +488,11 @@ class CkaComparison:
         if dropped:
             self.logger.warning(f"{name}: {len(dropped)} probed layer(s) dropped from the comparison: " + "; ".join(f"{layer} ({reason})" for layer, reason in dropped.items()))
 
-        record = {"layers": list(features), "dropped": dropped, "n_leaf_layers": n_leaves, "n_samples": int(n_samples)}
+        degenerate = CkaComputation.degenerate_layers(features)
+        if degenerate:
+            self.logger.warning(f"{name}: {len(degenerate)} layer(s) with degenerate features, CKA undefined (NaN) against every layer: " + ", ".join(f"{layer} (self-HSIC {value:.3g})" for layer, value in degenerate.items()))
+
+        record = {"layers": list(features), "dropped": dropped, "degenerate": degenerate, "n_leaf_layers": n_leaves, "n_samples": int(n_samples)}
 
         return features, record
 
@@ -467,11 +533,12 @@ class CkaComparison:
 
         doc.heading("Compared layers", level=2)
         doc.paragraph("Matrix rows and columns follow each run's compared layers in forward order; the matrices themselves are saved in cka_matrices.npz.")
-        layer_table = MarkdownTable(("Run", "Checkpoint epoch", "Samples", "Compared layers (matrix order)", "Dropped"))
+        layer_table = MarkdownTable(("Run", "Checkpoint epoch", "Samples", "Compared layers (matrix order)", "Dropped", "Degenerate (CKA undefined)"))
         for name in names:
-            record  = records[name]
-            dropped = "; ".join(f"`{layer}` ({reason})" for layer, reason in record["dropped"].items()) if record["dropped"] else "none"
-            layer_table.add_row(f"`{name}`", str(record["checkpoint"]["epoch"]), str(record["n_samples"]), ", ".join(f"{index}: `{layer}`" for index, layer in enumerate(record["layers"])), dropped)
+            record     = records[name]
+            dropped    = "; ".join(f"`{layer}` ({reason})" for layer, reason in record["dropped"].items()) if record["dropped"] else "none"
+            degenerate = ", ".join(f"`{layer}`" for layer in record["degenerate"]) if record["degenerate"] else "none"
+            layer_table.add_row(f"`{name}`", str(record["checkpoint"]["epoch"]), str(record["n_samples"]), ", ".join(f"{index}: `{layer}`" for index, layer in enumerate(record["layers"])), dropped, degenerate)
         doc.table(layer_table)
 
         doc.heading("Figures", level=2)
