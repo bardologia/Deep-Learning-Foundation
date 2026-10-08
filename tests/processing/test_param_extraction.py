@@ -554,6 +554,27 @@ def test_truncation_beyond_the_z_axis_is_reported(tmp_path):
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_memory_budget_warns_and_names_a_col_batch_that_fits(monkeypatch):
+    """Verifies the host-RAM estimate warns near the available RAM and names the largest col batch within budget."""
+    import types
+
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.sigma             import extractor as extractor_module
+    from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
+
+    def warnings_with(available_bytes):
+        """Returns the warnings the budget logs for a 150 x 1000 x 500 cube fitted at k_max 5 with the given available RAM."""
+        monkeypatch.setattr(extractor_module.psutil, "virtual_memory", lambda: types.SimpleNamespace(available=available_bytes))
+        logger    = RecordingLogger()
+        extractor = extractor_module.SigmaFittingExtractor(logger=logger, modes=["sigma"], lambda_values=[LAMBDA_K], k_max=5, col_batch_size=100, peak_initialiser=PeakInitialiser(n_workers=1))
+        extractor._log_memory_budget(150, 1000, 500)
+        return [message for level, message in logger.messages if level == "warning"]
+
+    assert warnings_with(10e9) == []
+    assert any("col_batch_size of at most 96" in message for message in warnings_with(0.5e9))
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_kernel_backend_label_names_the_real_platform_and_the_entry_refuses_cpu(monkeypatch):
     """Verifies the backend label reports the device platform JAX fell back to, and that a GPU-requiring selection refuses it."""
     from pipelines.processing.param_extraction.sigma import selection as selection_module

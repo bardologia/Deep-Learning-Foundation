@@ -16,6 +16,7 @@ from time               import perf_counter
 from typing             import Dict, Optional, Tuple
 
 import numpy as np
+import psutil
 
 import jax
 import jax.numpy as jnp
@@ -173,9 +174,13 @@ class SigmaFittingExtractor:
         devices       : JAX devices the fit runs on.
         outcome       : Record of the last run's fitted pixels, truncation, backend and duration; None before run().
         bound_shares  : Per (mode, lambda_k) shares of the selected active slots whose sigma or mean ended on a clamp bound, from the last run; empty before run().
+        BATCH_COPIES      : Col-batch-sized float32 arrays held at the peak of the load and fit overlap: the current batch's raw, normalised and active-row profiles and the three arrays of the batch loading ahead.
+        RAM_WARN_FRACTION : Share of the available host RAM above which the estimated footprint warns.
     """
 
     MAX_PENDING_SCORINGS = 2
+    BATCH_COPIES         = 6
+    RAM_WARN_FRACTION    = 0.8
 
     def __init__(
         self,
@@ -379,6 +384,47 @@ class SigmaFittingExtractor:
         self._kernel(dummy_a, dummy_m, dummy_s, z_ax_j, dummy_p, amp_mask, mu_mask, sigma_mask, mu_lower_j, mu_upper_j, sigma_lower_j, sigma_upper_j, self.adam_steps, self.adam_lr, self.adam_b1, self.adam_b2)
 
         self.logger.subsection(f"Kernel compiled (K={K}, batch={B}, n_steps={self.adam_steps})")
+
+    def _log_memory_budget(self, H: int, n_row: int, n_col: int) -> None:
+        """Logs the estimated host-RAM footprint of the fit against the available RAM and warns when it comes close.
+
+        The output maps of every (mode, lambda) permutation take 20 * k_max + 2
+        bytes per pixel (parameters, per-K MSE and penalised MSE in float32,
+        the best-K map in int16) for the whole fit, and the col batches hold
+        BATCH_COPIES arrays of col_batch_size x n_row x H float32 at the peak
+        of the load-ahead overlap. The peak-initialiser workers' copies are not
+        counted.
+
+        Args:
+            H     : Number of z bins.
+            n_row : Number of rows.
+            n_col : Number of cols.
+        """
+        n_permutations = len(self.modes) * len(self.lambda_values)
+        maps_gb        = n_permutations * n_row * n_col * (20 * self.k_max + 2) / 1e9
+        batch_gb       = self.BATCH_COPIES * min(self.col_batch_size, n_col) * n_row * H * 4 / 1e9
+        available_gb   = psutil.virtual_memory().available / 1e9
+        budget_gb      = self.RAM_WARN_FRACTION * available_gb
+
+        self.logger.section("[Host Memory Budget]")
+        self.logger.kv_table({
+            "Output maps"        : f"{maps_gb:.2f} GB ({n_permutations} permutations x {n_row} x {n_col} pixels x {20 * self.k_max + 2} B)",
+            "Col batches"        : f"{batch_gb:.2f} GB ({self.BATCH_COPIES} arrays of {min(self.col_batch_size, n_col)} x {n_row} x {H} float32, load-ahead included)",
+            "Estimated total"    : f"{maps_gb + batch_gb:.2f} GB",
+            "Available host RAM" : f"{available_gb:.2f} GB",
+        })
+
+        if maps_gb + batch_gb <= budget_gb:
+            return
+
+        per_col_gb    = self.BATCH_COPIES * n_row * H * 4 / 1e9
+        fitting_batch = int((budget_gb - maps_gb) / per_col_gb)
+
+        if fitting_batch < 1:
+            self.logger.warning(f"Estimated host-RAM footprint {maps_gb + batch_gb:.1f} GB exceeds {self.RAM_WARN_FRACTION:.0%} of the {available_gb:.1f} GB available, and the {maps_gb:.1f} GB of output maps alone leave no room for a col batch; fit fewer modes or lambdas per launch or a smaller crop, or the run may be OOM-killed with no error in its logs")
+            return
+
+        self.logger.warning(f"Estimated host-RAM footprint {maps_gb + batch_gb:.1f} GB exceeds {self.RAM_WARN_FRACTION:.0%} of the {available_gb:.1f} GB available; a col_batch_size of at most {fitting_batch} fits that budget, or the run may be OOM-killed with no error in its logs")
 
     def _load_batch(
         self,
@@ -761,7 +807,7 @@ class SigmaFittingExtractor:
                         del profiles_flat, profiles_norm, safe_scale, active, batch
                         gc.collect()
 
-                        self.logger.subsection(f"{batch_tag} dispatched — cols {r_start}-{r_end} of {n_col}, {fit_progress.done:,}/{fit_progress.total:,} kernel calls, {perf_counter() - fit_progress.started:.1f}s elapsed")
+                        self.logger.subsection(f"{batch_tag} dispatched — cols {r_start}-{r_end} of {n_col}, {fit_progress.done:,}/{fit_progress.total:,} kernel calls, {perf_counter() - fit_progress.started:.1f}s elapsed, process RSS {psutil.Process().memory_info().rss / 1e9:.2f} GB")
 
                         r = r_end
 
@@ -807,6 +853,7 @@ class SigmaFittingExtractor:
         ) = self._prepare_data(cube_path, z_range)
 
         self._warmup_kernel(z_ax_j, H, sigma_lower_j, sigma_upper_j, mu_lower_j, mu_upper_j)
+        self._log_memory_budget(H, n_row, n_col)
 
         census  = FitBoundCensus(z_axis, self.activity_threshold)
         outputs = {}
