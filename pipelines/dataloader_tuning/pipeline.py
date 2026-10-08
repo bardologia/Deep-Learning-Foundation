@@ -221,40 +221,68 @@ class DataLoaderTuningPipeline:
         return DataLoaderSweep(benchmark, specs, on_result=_on_result).run()
 
     def _refine_specs(self, recommendation: dict) -> list[LoaderSpec]:
-        """Returns the prefetch-factor by pinning grid around the recommended point."""
-        batch_size  = recommendation["batch_size"]
-        num_workers = max(1, recommendation["num_workers"])
-
+        """Returns the prefetch-factor by pinning grid at the recommended batch size and worker count."""
         return [
-            LoaderSpec(batch_size=batch_size, num_workers=num_workers, prefetch_factor=prefetch, pin_memory=pin_memory, persistent_workers=True)
+            LoaderSpec(batch_size=recommendation["batch_size"], num_workers=recommendation["num_workers"], prefetch_factor=prefetch, pin_memory=pin_memory, persistent_workers=True)
             for prefetch in self.config.prefetch_factors
             for pin_memory in (True, False)
         ]
 
-    def _final_config(self, recommendation: dict, refine_report) -> dict:
-        """Merges the main recommendation with the refinement winner.
+    def _refine(self, benchmark, recommendation: dict) -> tuple[list[dict], SweepReport | None]:
+        """Runs the refinement sweep around the recommended point, unless it is off or the point has no loader workers.
 
         Args:
-            recommendation : Best batch size and worker count from the main sweep.
+            benchmark      : GPU feed benchmark to run.
+            recommendation : Best point of the main sweep.
+
+        Returns:
+            The refinement records and their report; an empty list and None when the refinement did not run.
+        """
+        if not self.config.refine:
+            return [], None
+
+        if recommendation["num_workers"] == 0:
+            self.logger.warning("Refinement skipped: the main sweep recommends 0 loader workers, and the refinement varies the per-worker prefetch factor, which a 0-worker loader has none of; pin_memory stays as the main sweep measured it")
+            return [], None
+
+        results = self._run_sweep(benchmark, self._refine_specs(recommendation), phase="refine")
+
+        return results, SweepReport(results, wait_threshold=self.config.data_wait_target)
+
+    def _final_config(self, recommendation: dict, refine_report) -> dict:
+        """Merges the main recommendation with the refinement winner, saying where prefetch and pinning came from.
+
+        Args:
+            recommendation : Best point of the main sweep, with its batch size, worker count and throughput.
             refine_report  : Report of the refinement phase, or None when skipped.
 
         Returns:
             The loader configuration to adopt, including prefetch factor and
-            pinning taken from the fastest refinement measurement when present.
+            pinning taken from the fastest refinement measurement when present;
+            a 0-worker loader has no prefetch factor and no persistent workers.
         """
-        final = {
+        workers = recommendation["num_workers"]
+        final   = {
             "batch_size"         : recommendation["batch_size"],
-            "num_workers"        : recommendation["num_workers"],
-            "prefetch_factor"    : self.config.reference_prefetch,
+            "num_workers"        : workers,
+            "prefetch_factor"    : self.config.reference_prefetch if workers > 0 else 0,
             "pin_memory"         : True,
-            "persistent_workers" : True,
+            "persistent_workers" : workers > 0,
             "cpu_bound"          : recommendation["cpu_bound"],
         }
 
-        if refine_report is not None and not refine_report.ok_frame.empty:
-            best = refine_report.ok_frame.sort_values("end_to_end_samples_per_s", ascending=False).iloc[0]
-            final["prefetch_factor"] = int(best["prefetch_factor"])
-            final["pin_memory"]      = bool(best["pin_memory"])
+        if refine_report is None:
+            return final
+
+        if refine_report.ok_frame.empty:
+            self.logger.warning(f"No refinement spec succeeded; keeping prefetch {final['prefetch_factor']} and pin_memory True as the main sweep measured them")
+            return final
+
+        best = refine_report.ok_frame.sort_values("end_to_end_samples_per_s", ascending=False).iloc[0]
+        final["prefetch_factor"] = int(best["prefetch_factor"])
+        final["pin_memory"]      = bool(best["pin_memory"])
+
+        self.logger.info(f"Refinement winner prefetch {final['prefetch_factor']}, pin_memory {final['pin_memory']}: {best['end_to_end_samples_per_s']:.0f} samp/s against {recommendation['end_to_end_samples_per_s']:.0f} samp/s at the reference prefetch {self.config.reference_prefetch} with pinning")
 
         return final
 
@@ -341,11 +369,7 @@ class DataLoaderTuningPipeline:
 
             self._write(target, device, main_results, [], recommendation, None, "partial")
 
-            refine_results = []
-            refine_report  = None
-            if self.config.refine:
-                refine_results = self._run_sweep(benchmark, self._refine_specs(recommendation), phase="refine")
-                refine_report  = SweepReport(refine_results, wait_threshold=self.config.data_wait_target)
+            refine_results, refine_report = self._refine(benchmark, recommendation)
 
             final = self._final_config(recommendation, refine_report)
 

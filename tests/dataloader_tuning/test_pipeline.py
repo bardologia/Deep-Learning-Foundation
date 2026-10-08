@@ -180,14 +180,38 @@ def test_refine_specs_sweeps_prefetch_and_pin(tmp_path):
     assert all(spec.batch_size == 512 for spec in specs)
 
 
-def test_refine_specs_forces_at_least_one_worker(tmp_path):
-    """Refinement raises a zero-worker recommendation to a single worker."""
+def test_refinement_is_skipped_with_a_warning_for_a_zero_worker_recommendation(tmp_path):
+    """A 0-worker pick has no prefetch to refine, so the refinement is skipped with a warning instead of measuring a 1-worker loader the grid never held."""
     config   = _config(tmp_path, prefetch_factors=[2])
     pipeline = DataLoaderTuningPipeline(config)
+    warnings = []
+    pipeline.logger.warning = warnings.append
 
-    specs = pipeline._refine_specs({"batch_size": 256, "num_workers": 0})
+    assert pipeline._refine(object(), {"batch_size": 256, "num_workers": 0}) == ([], None)
+    assert warnings and warnings[0].startswith("Refinement skipped: the main sweep recommends 0 loader workers")
 
-    assert all(spec.num_workers == 1 for spec in specs)
+
+def test_final_config_of_a_zero_worker_loader_has_no_prefetch_or_persistent_workers(tmp_path):
+    """The final configuration of a 0-worker pick reports prefetch 0 and no persistent workers, which a DataLoader without workers requires."""
+    pipeline = DataLoaderTuningPipeline(_config(tmp_path, reference_prefetch=4))
+
+    final = pipeline._final_config({"batch_size": 256, "num_workers": 0, "cpu_bound": False}, refine_report=None)
+
+    assert final["prefetch_factor"]    == 0
+    assert final["persistent_workers"] is False
+
+
+def test_final_config_warns_when_no_refinement_spec_succeeded(tmp_path):
+    """A refinement in which every spec ran out of memory keeps the main sweep's prefetch and pinning and says so."""
+    pipeline = DataLoaderTuningPipeline(_config(tmp_path, reference_prefetch=4))
+    warnings = []
+    pipeline.logger.warning = warnings.append
+    report   = SweepReport([{"status": "oom", "batch_size": 512, "num_workers": 4, "prefetch_factor": 8, "pin_memory": True, "persistent_workers": True}])
+
+    final = pipeline._final_config({"batch_size": 512, "num_workers": 4, "cpu_bound": False, "end_to_end_samples_per_s": 3000.0}, report)
+
+    assert final["prefetch_factor"] == 4
+    assert warnings == ["No refinement spec succeeded; keeping prefetch 4 and pin_memory True as the main sweep measured them"]
 
 
 def test_final_config_uses_recommendation_defaults(tmp_path):
@@ -215,7 +239,7 @@ def test_final_config_overrides_from_refine_report(tmp_path):
     ]
     refine_report = SweepReport(refine_records, wait_threshold=0.05)
 
-    recommendation = {"batch_size": 512, "num_workers": 4, "cpu_bound": False}
+    recommendation = {"batch_size": 512, "num_workers": 4, "cpu_bound": False, "end_to_end_samples_per_s": 4000.0}
     final          = pipeline._final_config(recommendation, refine_report)
 
     assert final["prefetch_factor"] == 8
