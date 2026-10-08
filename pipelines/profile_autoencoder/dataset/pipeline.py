@@ -129,7 +129,7 @@ class ProfileDatasetPipeline:
             return
 
         stats.save(meta_directory)
-        self.logger.info(f"Profile normalization stats saved: {meta_directory}")
+        self.logger.ok(f"Profile normalization stats saved: {meta_directory}")
 
     def _fit_normalizer(self, train_ds: ProfileDataset) -> ProfileNormalizer:
         """Fits the normalisation statistics on the training split and persists them.
@@ -182,5 +182,12 @@ class ProfileDatasetPipeline:
         )
 
         datasets = {"train": train_ds, "val": val_ds, "test": test_ds}
+
+        self.logger.kv_table({
+            "Train Samples" : len(train_ds),
+            "Val Samples"   : len(val_ds),
+            "Test Samples"  : len(test_ds),
+            "Axis Length"   : z_len,
+        })
 
         return (train_loader, val_loader, test_loader), datasets, z_axis, z_len, normalizer
