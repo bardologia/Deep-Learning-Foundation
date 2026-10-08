@@ -776,6 +776,23 @@ def test_metrics_stage_warns_about_gt_empty_pixels(tmp_path, monkeypatch):
             assert warnings[0].startswith("3 of 20 pixels (15.00%) have an empty GT profile")
 
 
+def test_label_quality_stage_opens_its_own_section(tmp_path, monkeypatch):
+    """The label-quality stage opens its own section before scoring, so its time is not filed under the previous step."""
+    config = InferenceConfig(run_directory=tmp_path, output_subdir="labels", device="cpu", cpu_workers=1, save_cubes=False)
+    meta   = InferenceMetadata(config)
+    meta.create_dirs()
+
+    monkeypatch.setattr(Metrics, "label_quality", lambda self, full_curves: (np.ones((2, 2)), {"label_r2_mean": 0.9, "label_r2_frac_below_half": 0.1}))
+
+    run    = SimpleNamespace(n_gaussians=N_GAUSSIANS, activity_threshold=1e-4, full_curves=None)
+    result = SimpleNamespace()
+    logger = RecordingLogger()
+
+    InferencePipeline(config)._evaluate_label_quality(config, meta, run, result, _x_axis(), {}, logger)
+
+    assert logger.messages[0] == ("section", "[Inference: Label Quality]")
+
+
 def test_gt_empty_split_raises():
     """A split whose every GT profile is empty has nothing to score and raises."""
     gt = np.zeros((N_Z, 3, 3), dtype=np.float32)
