@@ -34,7 +34,7 @@ class SweepReport:
         self.frame          = pd.DataFrame(results)
         self.ok_frame       = self.frame[self.frame["status"] == "ok"].copy()
 
-    def _saturated(self):
+    def saturated(self):
         """Returns the successful runs that saturate the GPU by wait fraction or feed ratio."""
         if self.ok_frame.empty:
             return self.ok_frame
@@ -51,7 +51,7 @@ class SweepReport:
         if self.ok_frame.empty:
             return {"found": False, "reason": "no successful configurations"}
 
-        saturated = self._saturated()
+        saturated = self.saturated()
         cpu_bound = saturated.empty
 
         pool = self.ok_frame if cpu_bound else saturated
