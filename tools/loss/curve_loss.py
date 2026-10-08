@@ -150,6 +150,34 @@ class MomentLoss:
         return (values * mask).sum() / mask.sum().clamp(min=1.0)
 
     @staticmethod
+    def valid_mask(target: torch.Tensor, dx: float, floor: float) -> torch.Tensor:
+        """Returns the per-pixel mask the total-power and moment terms average over.
+
+        Args:
+            target : Target profiles of shape (batch, profile_length, rows, cols).
+            dx     : The z sample spacing, in z-axis units.
+            floor  : Integrated target power a pixel must exceed to enter either term.
+
+        Returns:
+            Float tensor of shape (batch, rows, cols), 1.0 where the integrated target power exceeds the floor.
+        """
+        return ((target.sum(dim=1) * dx) > floor).to(target.dtype)
+
+    @staticmethod
+    def valid_fraction(target: torch.Tensor, dx: float, floor: float) -> torch.Tensor:
+        """Returns the share of pixels above the floor, the population the total-power and moment terms average over.
+
+        Args:
+            target : Target profiles of shape (batch, profile_length, rows, cols).
+            dx     : The z sample spacing, in z-axis units.
+            floor  : Integrated target power a pixel must exceed to enter either term.
+
+        Returns:
+            Scalar in [0, 1]; 0.0 means both terms returned 0.0 for the batch through the empty mask.
+        """
+        return MomentLoss.valid_mask(target, dx, floor).mean()
+
+    @staticmethod
     def moment_sums(curves: torch.Tensor, z_axis: torch.Tensor, dx: float) -> tuple:
         """Returns the zeroth, first and second raw moments of each profile.
 
