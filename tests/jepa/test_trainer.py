@@ -145,14 +145,16 @@ def make_trainer_shim(target_kind="stopgrad", trainable=True):
     provider  = TargetProvider(target_kind)
     criterion = EmbeddingLoss(module.profile_autoencoder, provider, emb_cfg, z_axis, norm_stats, 3, profile_normalizer)
 
-    trainer              = Trainer.__new__(Trainer)
-    trainer.model        = module
-    trainer.device       = torch.device("cpu")
-    trainer.has_profile  = True
-    trainer.has_image    = False
-    trainer.profile_mode = mode
-    trainer.criterion    = criterion
-    trainer.masking      = JepaMaskingConfig()
+    trainer                = Trainer.__new__(Trainer)
+    trainer.model          = module
+    trainer.device         = torch.device("cpu")
+    trainer.has_profile    = True
+    trainer.has_image      = False
+    trainer.profile_mode   = mode
+    trainer.criterion      = criterion
+    trainer.masking        = JepaMaskingConfig()
+    trainer.masked_batches = 0
+    trainer.train_batches  = 0
     return trainer
 
 
