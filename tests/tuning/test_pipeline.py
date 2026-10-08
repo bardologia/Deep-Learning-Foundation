@@ -656,6 +656,31 @@ def test_prepare_stage_opens_the_study_without_dispatching_or_reporting(tmp_path
     assert orch.db_path.exists()
 
 
+def test_a_skip_entry_that_matches_no_model_is_refused(tmp_path):
+    """A skip_models entry naming neither a registry key nor a model key is a typo that would leave its model in the run, so the launch stops."""
+    orch = _orchestrator(tmp_path)
+    orch.config.heads       = ["conv"]
+    orch.config.skip_models = ["resnet", "unet"]
+
+    with pytest.raises(SystemExit, match=r"skip_models entries match no model of training_type 'backbone': \['resnet'\]"):
+        orch.selected_models()
+
+    orch.config.skip_models = ["unet"]
+    assert "unet" not in orch.selected_models()
+
+
+def test_configuration_table_names_the_selected_and_skipped_models(tmp_path):
+    """The configuration rows spell out every selected model key and the skip list instead of a bare count."""
+    orch = _orchestrator(tmp_path)
+    orch.config.skip_models = ["unet"]
+
+    rows = orch._configuration(["resunet", "unet-set_pred"], resume=True)
+
+    assert rows["Models"]  == "2: resunet, unet-set_pred"
+    assert rows["Skipped"] == "unet"
+    assert rows["Mode"]    == "resume"
+
+
 def test_compare_stage_reports_without_dispatching(tmp_path, monkeypatch):
     """The compare stage writes the reports of a study the workers filled without running more trials."""
     orch = _orchestrator(tmp_path, n_trials=2)
