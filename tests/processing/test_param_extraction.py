@@ -203,6 +203,79 @@ def test_plan_resolver_allows_fixed_suffix_across_datasets():
     assert len({group.shared.output_directory for group in groups}) == 3
 
 
+def test_plan_resolver_rejects_repeated_sweep_values():
+    """Verifies a repeated k, lambda, mode or dataset is refused instead of refitting and overwriting one run."""
+    for kwargs in ({"fit_k_values": [5, 5]}, {"fit_lambda_values": [1e-2, 0.01]}, {"fit_modes": ["sigma", "sigma"]}):
+        with pytest.raises(ValueError, match="repeats a value"):
+            ExtractionPlanResolver(ExtractParamsEntryConfig(**kwargs), [Path("/data/a")]).resolve()
+
+    with pytest.raises(ValueError, match="queues a dataset twice"):
+        ExtractionPlanResolver(ExtractParamsEntryConfig(), [Path("/data/a"), Path("/data/a")]).resolve()
+
+
+def test_plan_resolver_rejects_modes_colliding_on_one_run_name():
+    """Verifies two modes naming the same free parameters in another order are refused as one run directory."""
+    entry = ExtractParamsEntryConfig(fit_k_values=[5], fit_lambda_values=[1e-2], fit_modes=["sigma_amp", "amp_sigma"])
+
+    with pytest.raises(ValueError, match="collide on one run directory"):
+        ExtractionPlanResolver(entry, [Path("/data/a")]).resolve()
+
+
+def test_plan_resolver_refuses_an_existing_run_unless_overwriting(tmp_path):
+    """Verifies a permutation landing on an existing run raises before fitting and names that run, unless overwrite is set."""
+    entry   = ExtractParamsEntryConfig(fit_k_values=[5], fit_lambda_values=[1e-2], fit_modes=["sigma"])
+    run_dir = tmp_path / "params" / "params_k5_lam0.01_sig4_sigma"
+    run_dir.mkdir(parents=True)
+    (run_dir / "param_extraction_meta.json").write_text(json.dumps({"timestamp": "2026-06-12T18:33:45"}), encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="fitted 2026-06-12T18:33:45"):
+        ExtractionPlanResolver(entry, [tmp_path]).resolve()
+
+    entry.overwrite = True
+
+    assert len(ExtractionPlanResolver(entry, [tmp_path]).resolve()) == 1
+
+
+def _dataset_stub(root):
+    """Writes the cube and config state a ParamExtractionPipeline needs under a dataset root."""
+    (root / "data").mkdir(parents=True)
+    (root / "meta").mkdir(parents=True)
+    np.save(root / "data" / "cube_full.npy", np.zeros((2, 2, 4), dtype=np.float32))
+    (root / "meta" / "config_state.json").write_text(json.dumps({"cube_config": {"z_range": [-20.0, 80.0]}}), encoding="utf-8")
+
+
+def test_stage_save_replaces_an_existing_run_only_when_overwriting(tmp_path, monkeypatch):
+    """Verifies saving over an existing run raises without overwrite, and with it deletes the stale files and names the differing settings."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction import pipeline as pipeline_module
+
+    _dataset_stub(tmp_path)
+    monkeypatch.setattr(pipeline_module, "ParameterExtractor", lambda **kwargs: None)
+
+    entry  = ExtractParamsEntryConfig(fit_k_values=[3], fit_lambda_values=[1e-2], fit_modes=["sigma"], adam_steps=500, overwrite=True)
+    group  = ExtractionPlanResolver(entry, [tmp_path]).resolve()[0]
+    config = group.configs[("sigma", 1e-2)]
+
+    config.output_directory.mkdir(parents=True)
+    (config.output_directory / "param_extraction_meta.json").write_text(json.dumps({"timestamp": "2026-06-12T18:33:45", "adam_steps": 3000}), encoding="utf-8")
+    (config.output_directory / "fit_metrics_summary.json").write_text("{}", encoding="utf-8")
+
+    parameters  = np.zeros((9, 2, 4), dtype=np.float32)
+    diagnostics = {"best_k_map": np.zeros((2, 4), dtype=np.int16)}
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        pipeline_module.ParamExtractionPipeline(group, logger=RecordingLogger())._stage_save(config, parameters, diagnostics)
+
+    logger = RecordingLogger()
+    pipeline_module.ParamExtractionPipeline(group, logger=logger, overwrite=True)._stage_save(config, parameters, diagnostics)
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert not (config.output_directory / "fit_metrics_summary.json").exists()
+    assert (config.output_directory / "parameters.npy").is_file()
+    assert any("adam_steps 3000 -> 500" in message for message in warnings)
+
+
 def test_sigma_guess_matches_the_initialiser_sigmas():
     """Verifies the standalone sigma guess equals the sigmas the peak initialiser emits and stays below the height step."""
     from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
@@ -896,6 +969,10 @@ def test_stage_save_persists_the_entry_config(tmp_path, monkeypatch):
         def __init__(self, config, logger=None):
             """Ignores the permutation configuration and logger."""
             pass
+
+        def settings(self):
+            """Returns no fit settings to compare a replacement against."""
+            return {}
 
         def save_run_metadata(self, npy_path, diag_path, cube_path, z_range):
             """Returns the parameter path as the metadata location."""

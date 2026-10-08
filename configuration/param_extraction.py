@@ -273,6 +273,7 @@ class ExtractParamsEntryConfig:
         output_prefix          : Leading token of each parameter run directory name.
         output_suffix          : Explicit suffix, or None to derive one per combination.
         z_range                : Z axis extent in metres, or None to read it per dataset.
+        overwrite              : Whether an existing parameter run under a permutation's directory name is deleted and refitted; off, the sweep is refused before any fitting.
         fit_k_values           : Maximum component counts swept.
         fit_lambda_values      : Component-count penalty weights swept.
         fit_modes              : Fit modes swept, each naming the free components.
@@ -295,6 +296,7 @@ class ExtractParamsEntryConfig:
     output_prefix : str          = "params"
     output_suffix : str | None   = None
     z_range       : tuple | None = None
+    overwrite     : bool         = False
 
     fit_k_values           : list  = field(default_factory=lambda: [5])
     fit_lambda_values      : list  = field(default_factory=lambda: [1e-2])

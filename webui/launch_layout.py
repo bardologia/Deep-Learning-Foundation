@@ -679,7 +679,7 @@ class LaunchLayout:
                             "dataset_base_path",
                             {"path": "dataset_filter", "widget": PICK_DATASETS},
                         ]},
-                        {"title": "Output", "fields": ["output_prefix", "output_suffix", "z_range"]},
+                        {"title": "Output", "fields": ["output_prefix", "output_suffix", "z_range", "overwrite"]},
                         {"title": "Fit sweep", "fields": [
                             {"path": "fit_k_values", "widget": MULTI_K},
                             {"path": "fit_lambda_values", "widget": MULTI_LAMBDA},
