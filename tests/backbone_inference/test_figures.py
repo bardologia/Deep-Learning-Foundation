@@ -1,14 +1,16 @@
 """Tests for the figure and animation layer of backbone inference.
 
-Covers `Animator` argument validation and GIF writing, and the set of figure groups
+Covers `Animator` argument validation and GIF writing, the set of figure groups
 `FigureComposer` emits for plain runs, reduced-baseline comparisons, JEPA embedding
-maps and runs whose parameters were refitted from the curves.
+maps and runs whose parameters were refitted from the curves, and the composer
+drawing the slices of the index dict `InferencePipeline` builds.
 """
 
 from __future__ import annotations
 
 import contextlib
 import types
+from pathlib import Path
 
 import matplotlib
 
@@ -23,6 +25,7 @@ from pipelines.backbone.inference                    import animation
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.backbone.inference.metrics            import Metrics, Result
 from pipelines.backbone.inference.figures            import Animator, FigureComposer
+from pipelines.backbone.inference.pipeline           import InferencePipeline
 from pipelines.backbone.inference.plots              import Plotter
 
 from tests.conftest import RecordingLogger, SilentLogger
@@ -112,12 +115,27 @@ def _curves(params, z_axis):
     return curve.astype(np.float32)
 
 
+def _slice_indices(n_col_slices: int = 2, n_row_slices: int = 2, n_z_slices: int = 2) -> dict:
+    """Returns the slice-index dict InferencePipeline builds for the test cube of shape (N_Z, H, W).
+
+    Args:
+        n_col_slices : Number of col slices plotted.
+        n_row_slices : Number of row slices plotted.
+        n_z_slices   : Number of z slices plotted.
+
+    Returns:
+        The pipeline's mapping of plotted and full index arrays per axis.
+    """
+    cfg = InferenceConfig(run_directory=Path("run"), device="cpu", n_col_slices=n_col_slices, n_row_slices=n_row_slices, n_z_slices=n_z_slices)
+
+    return InferencePipeline(cfg)._compute_slice_indices(cfg, N_Z, H, W)
+
+
 def _result_and_metrics():
     """Builds a slightly noisy prediction together with its metrics and slice indices.
 
     Returns:
-        Tuple of the Result, the global metrics dict, the index dict consumed by the
-        composer and the z axis in metres.
+        Tuple of the Result, the global metrics dict, the index dict InferencePipeline builds for the composer and the z axis in metres.
     """
     z_axis = _x_axis()
     params = _params()
@@ -140,14 +158,7 @@ def _result_and_metrics():
         params_gt          = params.copy(),
     )
 
-    indices = {
-        "slice_z_idx"   : np.array([2, 6]),
-        "slice_col_idx" : np.array([2, 5]),
-        "slice_row_idx" : np.array([2, 5]),
-        "all_z_idx"     : np.arange(N_Z),
-        "all_col_idx"   : np.arange(W),
-        "all_row_idx"   : np.arange(H),
-    }
+    indices = _slice_indices()
 
     gm = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).compute(
         z_indices   = indices["all_z_idx"],
@@ -358,6 +369,26 @@ def test_figure_composer_tracks_each_slice_set_on_the_logger_bar(tmp_path):
     composer._compose_slices(res, _run_stub(), gm, z_axis, indices, figure_paths)
 
     assert logger.progress.tasks == [("Slice figures (slices)", 6), ("Slice figures (slices_norm)", 6)]
+
+
+@pytest.mark.slow
+def test_figure_composer_draws_the_slices_the_pipeline_indexes(tmp_path):
+    """The index dict InferencePipeline builds feeds the slice figures as is, with one figure stem per plotted col, row and z index."""
+    res, gm, _indices, z_axis = _result_and_metrics()
+    indices                   = _slice_indices(n_col_slices=3, n_row_slices=2, n_z_slices=4)
+    composer, _meta           = _composer(tmp_path)
+    figure_paths              = {}
+
+    composer._compose_slices(res, _run_stub(), gm, z_axis, indices, figure_paths)
+
+    drawn = {family: {path.name.rsplit("_", 1)[0] for path in figure_paths[family]} for family in ("slices_col", "slices_row", "slices_z")}
+
+    assert drawn["slices_col"] == {f"col_{int(i)}"   for i in indices["slice_col_idx"]}
+    assert drawn["slices_row"] == {f"row_{int(i)}"   for i in indices["slice_row_idx"]}
+    assert drawn["slices_z"]   == {f"z_idx_{int(i)}" for i in indices["slice_z_idx"]}
+    assert len(drawn["slices_col"]) == 3
+    assert len(drawn["slices_row"]) == 2
+    assert len(drawn["slices_z"])   == 4
 
 
 @pytest.mark.slow

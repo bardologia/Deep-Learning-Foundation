@@ -221,22 +221,21 @@ class InferencePipeline:
 
         Args:
             cfg    : Inference configuration supplying the per-axis slice counts.
-            n_z : Number of z bins.
-            n_rows   : Number of row samples.
-            n_cols   : Number of range samples.
+            n_z    : Number of z bins.
+            n_rows : Number of row samples.
+            n_cols : Number of column samples.
 
         Returns:
-            Mapping with the plotted subset per axis ("slice_*_idx") and the full index
-            range per axis ("all_*_idx").
+            Mapping with the plotted subset per axis ("slice_z_idx", "slice_col_idx", "slice_row_idx") and the full index range per axis ("all_z_idx", "all_col_idx", "all_row_idx").
         """
 
         return {
-            "slice_elev_idx"  : self._equal_indices(n_z, cfg.n_z_slices),
-            "slice_range_idx" : self._equal_indices(n_cols,   cfg.n_col_slices),
-            "slice_az_idx"    : self._equal_indices(n_rows,   cfg.n_row_slices),
-            "all_z_idx"    : np.arange(n_z),
+            "slice_z_idx"   : self._equal_indices(n_z,    cfg.n_z_slices),
+            "slice_col_idx" : self._equal_indices(n_cols, cfg.n_col_slices),
+            "slice_row_idx" : self._equal_indices(n_rows, cfg.n_row_slices),
+            "all_z_idx"     : np.arange(n_z),
             "all_col_idx"   : np.arange(n_cols),
-            "all_row_idx"      : np.arange(n_rows),
+            "all_row_idx"   : np.arange(n_rows),
         }
 
     def _extract_curve_params(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, logger: Logger) -> None:
