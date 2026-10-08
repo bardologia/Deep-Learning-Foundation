@@ -3607,8 +3607,6 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
   .sc-cell.is-loading .sc-cell__media::after { animation: none; background: var(--surface-2); }
   .cube-progress__fill::after { display: none; }
   .cube-hint.is-loading { animation: none; }
-  .cube-globe__stage.is-loading::before { animation: none; background: rgba(255, 209, 102, 0.55); }
-  .cube-elev__at.is-loading { animation: none; }
 }
 
 @media (max-width: 1040px) {
@@ -4286,10 +4284,6 @@ table.rm-led tbody tr:hover { background: var(--surface-2); }
 .cube-story__list li .btn { margin: 0; }
 .cube-story__name { flex: 1 1 auto; min-width: 160px; color: var(--ink); }
 
-.cube-foldlines { position: absolute; inset: 0; pointer-events: none; }
-.cube-foldline { position: absolute; left: 0; right: 0; border-top: 1.5px dashed rgba(255, 209, 102, 0.9); }
-.cube-foldline span { position: absolute; right: 4px; top: -14px; font: 700 0.58rem/1 var(--mono); color: rgba(255, 209, 102, 0.95); text-shadow: 0 0 3px rgba(0, 0, 0, 0.8); }
-
 #cube-volume-lo, #cube-volume-hi { width: 92px; }
 #cube-timeline-pos { width: 200px; }
 
@@ -4375,18 +4369,6 @@ table.rm-led tbody tr:hover { background: var(--surface-2); }
 .cube-cloud__stage canvas { width: 100%; display: block; cursor: grab; }
 .cube-cloud__stage canvas:active { cursor: grabbing; }
 #cube-cloud-aux-wrap[hidden] { display: none; }
-
-.cube-globe__stage { position: relative; border: 2px solid var(--line); border-radius: var(--r-card); overflow: hidden; background: #10151a; }
-.cube-globe__stage.is-loading::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; z-index: 5; pointer-events: none;
-  background: linear-gradient(100deg, rgba(255, 209, 102, 0.1) 28%, rgba(255, 209, 102, 0.85) 50%, rgba(255, 209, 102, 0.1) 72%);
-  background-size: 200% 100%;
-  animation: cube-shimmer 1.3s linear infinite;
-}
-.cube-elev__at.is-loading { animation: cube-pulse 1.5s ease-in-out infinite; }
-#cube-globe-container { width: 100%; height: max(62vh, calc(100vh - 315px)); }
-.cube-stage.is-globe #cube-globe-container { height: max(70vh, calc(100vh - 175px)); }
-#cube-globe-container .cesium-viewer-bottom { font-size: 10px; }
 
 /* ==== Leaderboard curves ==== */
 .lb-curves { display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 16px; align-items: start; }

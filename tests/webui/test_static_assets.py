@@ -3,7 +3,8 @@
 Checks that every JavaScript module on disk is loaded by index.html exactly once and in
 dependency order, that shared helpers (MathJax bootstrap, HTML escaper, results roots,
 network layer) are each defined in a single module, that launch widget modules hold
-the expected number of classes, and that every input tag declares a valid HTML type.
+the expected number of classes, that every input tag declares a valid HTML type, and
+that every cube view panel has the mode button that opens it.
 """
 
 from __future__ import annotations
@@ -104,6 +105,16 @@ def test_cube_sliders_are_range_inputs():
 
     for control in ("cube-cloud-thr", "cube-metric-thr", "cube-metric-alpha", "cube-selective-cov"):
         assert re.search(rf'<input type="range" id="{control}"', html), control
+
+
+def test_every_cube_view_panel_has_a_mode_button():
+    """Each cube view panel on the page is opened by a mode button, so no panel ships without a way to reach it."""
+    html    = INDEX.read_text()
+    panels  = re.findall(r'<div class="cube-view"[^>]*\bdata-view="([^"]+)"', html)
+    buttons = re.findall(r'<button type="button" class="cube-mode[^"]*" data-view="([^"]+)"', html)
+
+    assert panels
+    assert sorted(panels) == sorted(buttons)
 
 
 def test_launch_widget_modules_hold_one_class_family_each():
