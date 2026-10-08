@@ -157,6 +157,15 @@ def test_gaussian_curve_rejects_bad_channels():
         GaussianCurve.reconstruct(params, x)
 
 
+def test_gaussian_curve_rejects_a_parameter_count_other_than_three():
+    """Verifies torch reconstruction refuses any ppg other than amplitude, mean and sigma."""
+    params = torch.zeros((1, 6, 2, 2))
+    z      = torch.linspace(-1.0, 1.0, 8)
+
+    with pytest.raises(ValueError, match="requires ppg=3"):
+        GaussianCurve.reconstruct(params, z, ppg=2)
+
+
 def test_gaussian_curve_peak_at_mu():
     """Verifies the reconstructed curve peaks at the Gaussian amplitude."""
     params = torch.zeros((1, 3, 1, 1))
