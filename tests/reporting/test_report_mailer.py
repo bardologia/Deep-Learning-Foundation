@@ -753,3 +753,16 @@ def test_same_named_sweeps_under_different_parents_do_not_collide(entry_config, 
     assert second.label == "ws_b/curriculum"
     assert entry_config.to_config(first.label).staging_dir  == entry_config.staging_dir / "ws_a" / "curriculum"
     assert entry_config.to_config(second.label).staging_dir == entry_config.staging_dir / "ws_b" / "curriculum"
+
+
+def test_missing_seed_aggregate_averages_the_split_the_comparison_reads(entry_config, tmp_path):
+    """Verifies a seeded trial scored only on val gets a val seed aggregate when the comparison reads val, instead of failing on the default test split."""
+    trial_dir = tmp_path / "ws" / "exp_val" / "trial_a"
+    for seed, value in (("seed0", 0.4), ("seed1", 0.6)):
+        _write_report(_make_run(trial_dir / seed), "20260101_000000", {"curve_rmse_gt": value, "activity_threshold": 1e-3}, split="val")
+
+    experiment_dir = trial_dir.parent
+    report         = _bundle(entry_config, Experiment(experiment_dir, experiment_dir))._trial_report(trial_dir, "val")
+    record         = json.loads((report.parent / "metrics.json").read_text(encoding="utf-8"))
+
+    assert {entry["split"] for entry in record["seed_inference"].values()} == {"val"}
