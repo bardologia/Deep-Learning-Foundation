@@ -23,10 +23,8 @@ def main() -> None:
 
     entry  = ConfigCli(WeightXrayEntryConfig(), description="Scan a runs directory for model checkpoints, select one or more, and x-ray each for dead weights, uniform layers, rank collapse, and other structural pathologies; results are written inside each run directory").apply()
 
-    logger = Logger(log_dir="logs", name="xray_weights")
-    WeightXrayBatch(entry, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="xray_weights") as logger:
+        WeightXrayBatch(entry, logger).run()
 
 
 if __name__ == "__main__":

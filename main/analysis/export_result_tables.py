@@ -24,10 +24,8 @@ def main() -> None:
 
     entry  = ConfigCli(ResultTableEntryConfig(), description="Scan a runs directory for finished inference stamps and export one table row per run: a CSV with every scalar metric at full precision, plus LaTeX (booktabs) and markdown tables with the selected metric columns at fixed precision, ready for a paper").apply()
 
-    logger = Logger(log_dir="logs", name="export_result_tables")
-    ResultTableExporter(entry, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="export_result_tables") as logger:
+        ResultTableExporter(entry, logger).run()
 
 
 if __name__ == "__main__":
