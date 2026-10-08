@@ -1,8 +1,9 @@
-"""Tests for parameter sampling, best-config persistence and the Tuner.
+"""Tests for parameter sampling, search-space selection, best-config persistence and the Tuner.
 
 Covers float, categorical and indexed categorical sampling and decoding, the
-rejection of an unknown dimension type, convergence on a synthetic objective,
-best-config writing and the trial configs the backbone Tuner materializes.
+rejection of an unknown dimension type, the search groups a study may switch
+on, convergence on a synthetic objective, best-config writing and the trial
+configs the backbone Tuner materializes.
 """
 
 from __future__ import annotations
@@ -15,9 +16,10 @@ import pytest
 
 import pipelines.tuning.trial as trial_mod
 
-from pipelines.tuning.tuners              import ParamSampler, BestConfigWriter, Tuner
+from pipelines.tuning.tuners              import ParamSampler, BestConfigWriter, SearchSpace, Tuner
 from pipelines.backbone.training.pipeline import TrainingPipeline
 from configuration.architectures.backbone import UNetConfig
+from configuration.training.general.run   import TrainingQueueConfig
 
 
 FLOAT_SPACE = {
@@ -130,6 +132,53 @@ def test_sampler_decode_passes_through_plain_params():
     assert decoded == {"activation": "gelu", "dropout": 0.1}
 
 
+def test_search_space_joins_the_switched_on_groups(tune_cfg):
+    """Both model groups by default, one group when the other is off, and the batch size as a categorical when asked."""
+    assert SearchSpace.of(UNetConfig, tune_cfg) == {**UNetConfig.tunable_lr_params(), **UNetConfig.tunable_arch_params()}
+
+    tune_cfg.search_arch = False
+    assert SearchSpace.of(UNetConfig, tune_cfg) == UNetConfig.tunable_lr_params()
+
+    tune_cfg.search_batch = True
+    tune_cfg.batch_sizes  = [128, 256]
+    space = SearchSpace.of(UNetConfig, tune_cfg)
+    assert space["batch_size"] == {"type": "categorical", "choices": [128, 256]}
+    assert SearchSpace.model_params({"encoder_lr": 1e-3, "batch_size": 128}) == {"encoder_lr": 1e-3}
+    assert SearchSpace.describe(tune_cfg) == "lr+batch"
+
+
+def test_search_space_refuses_nothing_to_search_and_empty_groups(tune_cfg):
+    """Every group off, an empty batch list and a class declaring nothing of a switched-on group all fail loudly."""
+    class ArchOnly:
+        """Config stand-in declaring architecture parameters only."""
+        @classmethod
+        def tunable_lr_params(cls):
+            """Declares no learning-rate parameter."""
+            return {}
+
+        @classmethod
+        def tunable_arch_params(cls):
+            """Declares one categorical architecture parameter."""
+            return {"activation": {"type": "categorical", "choices": ["relu", "gelu"]}}
+
+    tune_cfg.search_lr   = False
+    tune_cfg.search_arch = False
+    with pytest.raises(ValueError, match="every search group is off"):
+        SearchSpace.of(UNetConfig, tune_cfg)
+
+    tune_cfg.search_batch = True
+    tune_cfg.batch_sizes  = []
+    with pytest.raises(ValueError, match="batch_sizes is empty"):
+        SearchSpace.of(UNetConfig, tune_cfg)
+
+    tune_cfg.search_lr    = True
+    tune_cfg.search_batch = False
+    with pytest.raises(ValueError, match="declares no learning-rate parameter"):
+        SearchSpace.of(ArchOnly, tune_cfg)
+
+    assert SearchSpace.arch_only(ArchOnly) == ArchOnly.tunable_arch_params()
+
+
 def test_study_minimizes_synthetic_quadratic_to_known_optimum():
     """Verifies that TPE sampling over the sampler finds the synthetic optimum."""
     space   = {"x": {"type": "float", "low": -10.0, "high": 10.0}}
@@ -206,6 +255,7 @@ def test_tuner_space_is_union_of_lr_and_arch_params(fake_logger, tune_cfg, tmp_p
         model_config_cls    = UNetConfig,
         base_trainer_config = None,
         base_dataset_config = None,
+        training            = TrainingQueueConfig(),
         tune_cfg            = tune_cfg,
         log_dir             = str(tmp_path),
         logger              = fake_logger,
@@ -216,6 +266,25 @@ def test_tuner_space_is_union_of_lr_and_arch_params(fake_logger, tune_cfg, tmp_p
     assert tuner.best_writer.path == tmp_path / "best_config.json"
 
 
+def test_tuner_space_follows_the_switched_on_groups(fake_logger, tune_cfg, tmp_path):
+    """With the architecture group off the tuner's space holds the rates alone."""
+    tune_cfg.search_arch = False
+
+    tuner = Tuner(
+        model_name          = "unet",
+        model_config_cls    = UNetConfig,
+        base_trainer_config = None,
+        base_dataset_config = None,
+        training            = TrainingQueueConfig(),
+        tune_cfg            = tune_cfg,
+        log_dir             = str(tmp_path),
+        logger              = fake_logger,
+    )
+
+    assert tuner.space == UNetConfig.tunable_lr_params()
+    assert "activation" not in tuner.space
+
+
 def test_tuner_apply_params_sets_attrs_from_sampled(fake_logger, tune_cfg, tmp_path):
     """Verifies that sampled parameters are assigned onto the model config."""
     tuner = Tuner(
@@ -223,6 +292,7 @@ def test_tuner_apply_params_sets_attrs_from_sampled(fake_logger, tune_cfg, tmp_p
         model_config_cls    = UNetConfig,
         base_trainer_config = None,
         base_dataset_config = None,
+        training            = TrainingQueueConfig(),
         tune_cfg            = tune_cfg,
         log_dir             = str(tmp_path),
         logger              = fake_logger,
@@ -265,6 +335,7 @@ def test_tuner_run_optimizes_with_injected_objective(fake_logger, tune_cfg, tmp_
         model_config_cls    = UNetConfig,
         base_trainer_config = _FakeTrainerConfig(),
         base_dataset_config = _FakeDatasetConfig(),
+        training            = TrainingQueueConfig(),
         tune_cfg            = tune_cfg,
         log_dir             = str(tmp_path),
         logger              = fake_logger,
@@ -276,6 +347,48 @@ def test_tuner_run_optimizes_with_injected_objective(fake_logger, tune_cfg, tmp_
     assert study.best_value < 0.2
     assert (tmp_path / "best_config.json").exists()
     assert any("Tuner" in s for s in fake_logger.sections)
+
+
+def test_tuner_puts_a_sampled_batch_on_the_loader_and_rescales_the_optimizer(fake_logger, tune_cfg, tmp_path, monkeypatch):
+    """A sampled batch size lands on the dataset config and the optimizer scale follows the batch rule, not on the model."""
+    captured = {}
+
+    class CapturePipeline:
+        """Training pipeline stub capturing its keyword arguments."""
+        def __init__(self, *args, **kwargs):
+            """Records the construction keyword arguments."""
+            captured.update(kwargs)
+
+        def run(self):
+            """Returns a fixed validation loss."""
+            return None, None, 0.5
+
+    monkeypatch.setattr(trial_mod, "TrialPipeline", CapturePipeline)
+
+    tune_cfg.search_lr    = False
+    tune_cfg.search_arch  = False
+    tune_cfg.search_batch = True
+    tune_cfg.batch_sizes  = [128]
+
+    tuner = Tuner(
+        model_name          = "unet",
+        model_config_cls    = UNetConfig,
+        base_trainer_config = _FakeTrainerConfig(),
+        base_dataset_config = _FakeDatasetConfig(),
+        training            = TrainingQueueConfig(),
+        tune_cfg            = tune_cfg,
+        log_dir             = str(tmp_path),
+        logger              = fake_logger,
+    )
+
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=0))
+    study.optimize(tuner._objective, n_trials=1)
+
+    assert study.trials[0].params == {"batch_size": 128}
+    assert captured["dataset_config"].batch_size         == 128
+    assert captured["trainer_config"].optimizer.lr_scale == 128 / TrainingQueueConfig().lr_reference_batch_size
+    assert not hasattr(captured["model_config"], "batch_size")
+    assert captured["model_config"].encoder_lr == UNetConfig().encoder_lr
 
 
 def test_tuner_objective_materializes_trial_config(fake_logger, tune_cfg, tmp_path, monkeypatch):
@@ -299,6 +412,7 @@ def test_tuner_objective_materializes_trial_config(fake_logger, tune_cfg, tmp_pa
         model_config_cls    = UNetConfig,
         base_trainer_config = _FakeTrainerConfig(),
         base_dataset_config = _FakeDatasetConfig(),
+        training            = TrainingQueueConfig(),
         tune_cfg            = tune_cfg,
         log_dir             = str(tmp_path),
         logger              = fake_logger,
@@ -353,10 +467,17 @@ class _FakeEarlyStop:
         self.patience = 0
 
 
+class _FakeOptimizer:
+    """Optimizer section stub carrying the learning-rate scale."""
+    def __init__(self):
+        """Initialises the scale to one."""
+        self.lr_scale = 1.0
+
+
 class _FakeTrainerConfig:
     """Trainer config stub with the sections the tuner rewrites per trial."""
     def __init__(self):
-        """Builds the training, scheduler, early stopping, IO, curriculum and gaussian sections."""
+        """Builds the training, scheduler, early stopping, IO, optimizer, curriculum and gaussian sections."""
         from configuration.dataset.gaussian import GaussianConfig
         from configuration.training import LossConfig, LossCurriculumConfig
 
@@ -364,14 +485,16 @@ class _FakeTrainerConfig:
         self.scheduler      = _FakeScheduler()
         self.early_stopping = _FakeEarlyStop()
         self.io             = _FakeIO()
+        self.optimizer      = _FakeOptimizer()
         self.curriculum     = LossCurriculumConfig(complete=LossConfig(use_param_l1=True))
         self.gaussian       = GaussianConfig(n_default_gaussians=3, x_min=-20.0, x_max=80.0, activity_threshold=1e-4)
 
 
 class _FakeDatasetConfig:
-    """Dataset config stub carrying an augmentation section."""
+    """Dataset config stub carrying an augmentation section and a batch size."""
     def __init__(self):
-        """Builds the default augmentation section."""
+        """Builds the default augmentation section and the reference batch."""
         from configuration.dataset import AugmentationConfig
 
         self.augmentation = AugmentationConfig()
+        self.batch_size   = 64

@@ -141,6 +141,15 @@ def test_tuning_config_positive_trials():
     assert cfg.early_stop_patience > 0
 
 
+def test_tuning_config_searches_the_model_groups_by_default():
+    """Verifies the tuning defaults search the learning rates and the architecture and leave the batch size to the training config."""
+    cfg = TuningConfig()
+    assert cfg.search_lr    is True
+    assert cfg.search_arch  is True
+    assert cfg.search_batch is False
+    assert cfg.batch_sizes  == [64, 128, 256, 512, 1024]
+
+
 def test_training_queue_lr_scale_follows_the_batch_rule():
     """The scale is the batch over the reference batch times the multiplier when scaling is on, the multiplier alone when off."""
     cfg = TrainingQueueConfig(batch_size=256, lr_reference_batch_size=256, lr_multiplier=2.0)

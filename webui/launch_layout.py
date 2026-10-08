@@ -1099,6 +1099,7 @@ class LaunchLayout:
                             ]},
                         ]},
                         {"title": "Trials", "fields": ["tuning.n_trials", {"path": "tuning.n_epochs", "widget": NUM_EPOCHS}, {"path": "tuning.base_seed", "widget": NUM_SEED}, {"path": "tuning.early_stop_patience", "widget": NUM_PATIENCE}]},
+                        {"title": "Search groups", "fields": ["tuning.search_lr", "tuning.search_arch", "tuning.search_batch", {"path": "tuning.batch_sizes", "widget": MULTI_INT}]},
                         {"title": "Pruner", "fields": ["tuning.pruner_n_startup_trials", "tuning.pruner_n_warmup_steps"]},
                         {"title": "Outputs", "fields": ["tuning.emit_trial_docs", "tuning.emit_study_plots"]},
                     ]},

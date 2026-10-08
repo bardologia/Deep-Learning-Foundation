@@ -19,7 +19,7 @@ from models                               import BACKBONE_HEADS, config_registry
 from pipelines.shared.model.model_builder import ModelBuilder
 from pipelines.tuning.plots               import StudyPlotter
 from pipelines.tuning.storage             import TuningStorage
-from pipelines.tuning.tuners              import BestConfigWriter
+from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace
 from tools.data.io                        import FileIO
 from tools.orchestration.gpu_queue        import GpuJob, GpuPoolFile, GpuQueue
 from tools.monitoring.logger              import Logger
@@ -148,9 +148,12 @@ class TuningScheduler:
         return [ModelBuilder.model_key(name, head) for name in self._registry() for head in self.config.heads]
 
     def _search_space(self, model_name: str) -> dict:
-        """Returns the model's tunable learning-rate and architecture parameters."""
+        """Returns the model's search space over the switched-on groups; the architecture alone for a JEPA study."""
         config_cls = self._registry()[ModelBuilder.split_key(model_name)[0]]
-        return {**config_cls.tunable_lr_params(), **config_cls.tunable_arch_params()}
+        if self.config.training_type == "jepa":
+            return SearchSpace.arch_only(config_cls)
+
+        return SearchSpace.of(config_cls, self.config.tuning)
 
     def selected_models(self, target_model: str | None = None) -> list[str]:
         """Returns the model keys this run tunes.
@@ -461,14 +464,15 @@ class TuningScheduler:
 
         self.logger.section("Hyperparameter Tuning")
         self.logger.kv_table({
-            "Run tag"      : self.tag,
-            "Stage"        : self.config.stage,
-            "Mode"         : "resume" if resume else "new",
-            "Models"       : len(models_to_run),
-            "GPUs"         : self.config.gpus,
-            "Trial target" : tune_cfg.n_trials,
-            "Storage"      : self.storage_url,
-            "Log dir"      : str(self.run_dir),
+            "Run tag"       : self.tag,
+            "Stage"         : self.config.stage,
+            "Mode"          : "resume" if resume else "new",
+            "Models"        : len(models_to_run),
+            "GPUs"          : self.config.gpus,
+            "Trial target"  : tune_cfg.n_trials,
+            "Search groups" : SearchSpace.describe(tune_cfg),
+            "Storage"       : self.storage_url,
+            "Log dir"       : str(self.run_dir),
         }, title="Configuration")
 
         if self.resumed is not None:

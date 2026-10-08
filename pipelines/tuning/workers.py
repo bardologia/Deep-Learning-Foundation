@@ -170,6 +170,7 @@ class TuningWorker:
             model_config_cls    = BACKBONE_CONFIG_REGISTRY[ModelBuilder.split_key(model_name)[0]],
             base_trainer_config = trainer_cfg,
             base_dataset_config = dataset_cfg,
+            training            = self.config.training,
             tune_cfg            = tune_cfg,
             log_dir             = str(self.run_dir / model_name),
             logger              = logger,

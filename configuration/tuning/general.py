@@ -27,7 +27,7 @@ def _default_image_ae_loss():
 
 @dataclass
 class TuningConfig:
-    """Search budget, seeding and pruning behaviour of one Optuna study.
+    """Search budget, search space, seeding and pruning behaviour of one Optuna study.
 
     Attributes:
         n_trials                : Number of trials the study runs.
@@ -36,6 +36,10 @@ class TuningConfig:
         early_stop_patience     : Validation rounds without improvement inside a trial.
         pruner_n_startup_trials : Trials completed before pruning starts.
         pruner_n_warmup_steps   : Steps a trial is protected from pruning.
+        search_lr               : Whether the study samples the learning rates, weight decays and dropout of the model configuration.
+        search_arch             : Whether the study samples the architecture fields of the model configuration.
+        search_batch            : Whether the study samples the training batch size from ``batch_sizes``; the trial applies the linear learning-rate scaling the training entries apply, so a tuned rate stays quoted at the reference batch.
+        batch_sizes             : Batch sizes the study may pick when ``search_batch`` is on.
         emit_trial_docs         : Whether a markdown report is written per trial.
         emit_study_plots        : Whether study-level plots are rendered at the end.
     """
@@ -49,6 +53,12 @@ class TuningConfig:
 
     pruner_n_startup_trials : int = 8
     pruner_n_warmup_steps   : int = 8
+
+    search_lr    : bool = True
+    search_arch  : bool = True
+    search_batch : bool = False
+
+    batch_sizes : list[int] = field(default_factory=lambda: [64, 128, 256, 512, 1024])
 
     emit_trial_docs  : bool = False
     emit_study_plots : bool = False
