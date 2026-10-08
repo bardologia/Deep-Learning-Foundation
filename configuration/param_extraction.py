@@ -26,7 +26,7 @@ class FitConfig:
         lambda_k           : Penalty weight discouraging additional components.
         prominence_frac    : Peak prominence, as a fraction of the profile range, required to seed a component.
         sigma_init_divisor : Divisor turning a peak's half-width into the initial sigma in metres.
-        activity_threshold : Amplitude below which a fitted component counts as inactive.
+        activity_threshold : Profile peak at or below which a pixel is skipped by the fit and keeps zero parameters; recorded in the run metadata as the amplitude above which a slot counts as active in every later stage.
         fit_sigma          : Whether component widths are free parameters.
         fit_amplitude      : Whether component amplitudes are free parameters.
         fit_mean           : Whether component means are free parameters.
@@ -282,7 +282,7 @@ class ExtractParamsEntryConfig:
         fit_threshold_factor   : Fraction of the profile maximum below which samples are ignored.
         fit_truncation_index   : Z bin above which profiles are truncated.
         fit_prominence_frac    : Peak prominence fraction required to seed a component.
-        fit_activity_threshold : Amplitude below which a fitted component counts as inactive.
+        fit_activity_threshold : Profile peak at or below which a pixel is skipped by the fit, recorded in every trial's metadata as the activity threshold later stages read.
         adam_steps             : Adam iterations per pixel batch.
         adam_lr                : Adam learning rate.
         gpu_device_ids         : GPU device indices available to the extraction workers.

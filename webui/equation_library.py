@@ -33,7 +33,7 @@ class EquationLibrary:
                 {
                     "title" : "Per-pixel normalisation",
                     "tex"   : r"s = \max_h P_h, \qquad \tilde{\gamma}_h = \frac{P_h}{s}",
-                    "note"  : "The profile is normalised by its own maximum so the loss surface is independent of absolute intensity. Pixels whose maximum is below the activity threshold (1e-3) are skipped entirely (their scale is treated as 1).",
+                    "note"  : "The profile is normalised by its own maximum so the loss surface is independent of absolute intensity. Pixels whose maximum is at or below the activity threshold (default 1e-3, recorded in the run metadata) are skipped entirely (their scale is treated as 1).",
                     "vars"  : [
                         {"sym": r"s",                "desc": "per-pixel scale, reapplied to amplitudes at the end"},
                         {"sym": r"P_h",              "desc": "conditioned profile at bin h"},
@@ -185,12 +185,13 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Component ordering by mean z",
-                    "tex"   : r"\kappa_k = \begin{cases} \mu_k & a_k > 10^{-3} \\ +\infty & \text{otherwise} \end{cases}, \qquad \pi = \operatorname{argsort}_k\,\kappa_k",
+                    "tex"   : r"\kappa_k = \begin{cases} \mu_k & a_k > \tau_a \\ +\infty & \text{otherwise} \end{cases}, \qquad \pi = \operatorname{argsort}_k\,\kappa_k",
                     "note"  : "After fitting, active components are sorted by ascending mu and inactive slots pushed last (gaussians.py GaussianSlotSorter.by_mean), giving GT a canonical storage order; the downstream training loss is permutation-invariant, matching predictions to these GT slots by optimal assignment.",
                     "vars"  : [
                         {"sym": r"\kappa_k", "desc": "sort key of slot k"},
                         {"sym": r"\mu_k",    "desc": "mean z of slot k (m)"},
                         {"sym": r"a_k",      "desc": "amplitude of slot k"},
+                        {"sym": r"\tau_a",   "desc": "activity threshold of the run (default 1e-3), recorded in param_extraction_meta.json"},
                         {"sym": r"\pi",      "desc": "resulting slot permutation"},
                     ],
                 },
@@ -235,11 +236,12 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Activity map and count fractions",
-                    "tex"   : r"n^{\mathrm{act}}(a,r) = \sum_{k=1}^{K_{\max}} \mathbf{1}\!\left[a_k \geq 10^{-3}\right], \qquad \mathrm{frac}_j = \frac{\left|\{(a,r) : n^{\mathrm{act}} = j\}\right|}{N}",
+                    "tex"   : r"n^{\mathrm{act}}(a,r) = \sum_{k=1}^{K_{\max}} \mathbf{1}\!\left[a_k > \tau_a\right], \qquad \mathrm{frac}_j = \frac{\left|\{(a,r) : n^{\mathrm{act}} = j\}\right|}{N}",
                     "note"  : "How many components each pixel activates, and the global distribution over counts 0 to K_max (also a fitted-only variant frac_k_fitted normalised by the count of pixels with n_act > 0).",
                     "vars"  : [
                         {"sym": r"n^{\mathrm{act}}(a,r)", "desc": "active component count at pixel (a, r)"},
                         {"sym": r"a_k",                   "desc": "fitted amplitude of slot k"},
+                        {"sym": r"\tau_a",                "desc": "activity threshold of the run (default 1e-3)"},
                         {"sym": r"K_{\max}",              "desc": "k_max = 5"},
                         {"sym": r"\mathrm{frac}_j",       "desc": "fraction of pixels with exactly j active slots"},
                         {"sym": r"N",                     "desc": "total pixel count"},
@@ -247,12 +249,13 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Mu separation maps",
-                    "tex"   : r"\Delta\mu_{k,k+1}(a,r) = \left|\mu_{k+1} - \mu_k\right| \quad \text{where } a_k \geq 10^{-3} \wedge a_{k+1} \geq 10^{-3}",
+                    "tex"   : r"\Delta\mu_{k,k+1}(a,r) = \left|\mu_{k+1} - \mu_k\right| \quad \text{where } a_k > \tau_a \wedge a_{k+1} > \tau_a",
                     "note"  : "Spatial maps of the z gap between adjacent active components, NaN elsewhere; reveals layer-separation structure (only emitted when n_gaussians >= 2).",
                     "vars"  : [
                         {"sym": r"\Delta\mu_{k,k+1}", "desc": "z gap between slots k and k+1 (m)"},
                         {"sym": r"\mu_k, \mu_{k+1}",  "desc": "mean z values of adjacent slots (m)"},
                         {"sym": r"a_k, a_{k+1}",      "desc": "amplitudes; both must be active"},
+                        {"sym": r"\tau_a",            "desc": "activity threshold of the run (default 1e-3)"},
                     ],
                 },
             ],
@@ -451,7 +454,7 @@ class EquationLibrary:
                 {
                     "title" : "Forward normalisation",
                     "tex"   : r"\hat{x}_c = \frac{f(x_c) - \mu_c}{s_c}, \qquad f(x_c) = \log\!\big(1 + x_c\big)\ \text{if log1p, else}\ x_c",
-                    "note"  : "Statistics are fitted on the training split only and applied identically to all splits; log1p inputs are floored at 0 (when re-normalising predictions inside the loss the floor is leaky with clamp_leaky_slope, so amplitude gradients survive below it), and the output amplitude, mu and sigma pools exclude inactive slots (amplitude below 1e-3, stats_computer.py).",
+                    "note"  : "Statistics are fitted on the training split only and applied identically to all splits; log1p inputs are floored at 0 (when re-normalising predictions inside the loss the floor is leaky with clamp_leaky_slope, so amplitude gradients survive below it), and the output amplitude, mu and sigma pools exclude inactive slots (amplitude at or below the label run's activity threshold, stats_computer.py).",
                     "vars"  : [
                         {"sym": r"\hat{x}_c",  "desc": "normalised value of channel c"},
                         {"sym": r"x_c",        "desc": "physical-space value of channel c"},
@@ -595,12 +598,12 @@ class EquationLibrary:
                 {
                     "title" : "GT sort and optimal prediction matching",
                     "tex"   : r"\pi^\star_{h,w} = \operatorname*{argmin}_{\pi \in S_K} \sum_k \mathbf{1}\!\left[a^{\mathrm{GT}}_k > \tau_a\right] \sum_p \left|\hat{\theta}_{\pi(k),p} - \theta^{\mathrm{GT}}_{k,p}\right|, \qquad \hat{\Theta} \leftarrow \hat{\Theta}_{\pi^\star}",
-                    "note"  : "Both modes first sort GT components by mu with inactive GT slots (amp <= tau_a = amp_zero_thr = 1e-4) pushed last. Under param_matching = 'hungarian' - the shipped full-model and curriculum default (AblationCatalog.PARAM_MATCH_FULL) as well as the bare LossConfig default - predictions are permuted to the GT slots per pixel by the optimal assignment minimising the active-weighted L1 cost, found by exhaustive enumeration of all K! permutations (param_loss.py ParamMatcher, K <= MAX_GAUSSIANS = 6), making the loss permutation-invariant in the predicted slot order. Under param_matching = 'sorted_gt' predictions keep their slot order (positional matching), so each predicted slot learns a fixed rank along the height axis.",
+                    "note"  : "Both modes first sort GT components by mu with inactive GT slots (amp <= tau_a, the label run's activity threshold) pushed last. Under param_matching = 'hungarian' - the shipped full-model and curriculum default (AblationCatalog.PARAM_MATCH_FULL) as well as the bare LossConfig default - predictions are permuted to the GT slots per pixel by the optimal assignment minimising the active-weighted L1 cost, found by exhaustive enumeration of all K! permutations (param_loss.py ParamMatcher, K <= MAX_GAUSSIANS = 6), making the loss permutation-invariant in the predicted slot order. Under param_matching = 'sorted_gt' predictions keep their slot order (positional matching), so each predicted slot learns a fixed rank along the height axis.",
                     "vars"  : [
                         {"sym": r"\pi^\star_{h,w}",                    "desc": "optimal pred-to-GT slot permutation at pixel (h, w)"},
                         {"sym": r"S_K",                                "desc": "all K! slot permutations"},
                         {"sym": r"a^{\mathrm{GT}}_k",                  "desc": "GT amplitude of slot k at physical scale"},
-                        {"sym": r"\tau_a",                             "desc": "active-slot threshold, amp_zero_thr = 1e-4"},
+                        {"sym": r"\tau_a",                             "desc": "active-slot threshold, the label run's activity_threshold from param_extraction_meta.json"},
                         {"sym": r"\hat{\theta}, \theta^{\mathrm{GT}}", "desc": "predicted and GT slot parameters"},
                         {"sym": r"\hat{\Theta}_{\pi^\star}",           "desc": "predictions reordered by the optimal permutation"},
                     ],
@@ -613,7 +616,7 @@ class EquationLibrary:
                         {"sym": r"m_{b,k,p}",             "desc": "activity mask for sample b, slot k, parameter p"},
                         {"sym": r"p",                     "desc": "parameter role: a, mu, or sigma"},
                         {"sym": r"a^{\mathrm{GT}}_{b,k}", "desc": "GT amplitude at physical scale"},
-                        {"sym": r"\tau_a",                "desc": "amp_zero_thr = 1e-4"},
+                        {"sym": r"\tau_a",                "desc": "the label run's activity_threshold from param_extraction_meta.json"},
                         {"sym": r"w_p",                   "desc": "param_weights, default (1, 1, 1)"},
                         {"sym": r"\rho_{b,k}",            "desc": "slot-presence scale (see below)"},
                         {"sym": r"\phi_{b,k}",            "desc": "amplitude focal scale (see below)"},
@@ -990,12 +993,13 @@ class EquationLibrary:
                 },
                 {
                     "title" : "GT slot alignment",
-                    "tex"   : r"\kappa_k = \begin{cases} +\infty & a^{\mathrm{GT}}_k < 10^{-4} \\ \mu^{\mathrm{GT}}_k & \text{otherwise} \end{cases}, \qquad \mathrm{GT} \leftarrow \mathrm{take}\!\left(\mathrm{GT},\ \operatorname{argsort}_k \kappa_k\right)",
-                    "note"  : "GT components are mu-sorted with inactive slots pushed last; a slot counts as active under ParamMatcher.is_active, amplitude >= ACTIVE_AMP_THR = 1e-4. Predictions keep their raw slot order (predictor.py _cpu_worker).",
+                    "tex"   : r"\kappa_k = \begin{cases} +\infty & a^{\mathrm{GT}}_k \le \tau_a \\ \mu^{\mathrm{GT}}_k & \text{otherwise} \end{cases}, \qquad \mathrm{GT} \leftarrow \mathrm{take}\!\left(\mathrm{GT},\ \operatorname{argsort}_k \kappa_k\right)",
+                    "note"  : "GT components are mu-sorted with inactive slots pushed last; a slot counts as active under GaussianActivity.is_active, amplitude strictly above the label run's activity threshold. Predictions keep their raw slot order (predictor.py _cpu_worker).",
                     "vars"  : [
                         {"sym": r"\kappa_k",            "desc": "sort key of GT slot k"},
                         {"sym": r"a^{\mathrm{GT}}_k",   "desc": "GT amplitude of slot k (physical scale)"},
                         {"sym": r"\mu^{\mathrm{GT}}_k", "desc": "GT mean z of slot k"},
+                        {"sym": r"\tau_a",              "desc": "the label run's activity_threshold, carried on the loaded run"},
                         {"sym": r"\mathrm{take}",       "desc": "reorder of the GT slots by the argsort"},
                     ],
                 },
@@ -1068,11 +1072,12 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Placeholder masking in the GT cube",
-                    "tex"   : r"\mu^{\mathrm{GT}}_k,\ \sigma^{\mathrm{GT}}_k \leftarrow \mathrm{NaN} \quad \text{where } a^{\mathrm{GT}}_k < 10^{-4}",
-                    "note"  : "After stitching, mu and sigma of GT slots that fail ParamMatcher.is_active (amplitude below ACTIVE_AMP_THR = 1e-4) are set to NaN so downstream statistics skip inactive slots (predictor.py _finalize_results).",
+                    "tex"   : r"\mu^{\mathrm{GT}}_k,\ \sigma^{\mathrm{GT}}_k \leftarrow \mathrm{NaN} \quad \text{where } a^{\mathrm{GT}}_k \le \tau_a",
+                    "note"  : "After stitching, mu and sigma of GT slots that fail GaussianActivity.is_active (amplitude at or below the label run's activity threshold) are set to NaN so downstream statistics skip inactive slots (predictor.py _finalize_results).",
                     "vars"  : [
                         {"sym": r"a^{\mathrm{GT}}_k",                           "desc": "stitched GT amplitude of slot k"},
                         {"sym": r"\mu^{\mathrm{GT}}_k, \sigma^{\mathrm{GT}}_k", "desc": "GT mean and spread of slot k"},
+                        {"sym": r"\tau_a",                                      "desc": "the label run's activity_threshold, carried on the loaded run"},
                     ],
                 },
                 {
@@ -1212,7 +1217,7 @@ class EquationLibrary:
                 {
                     "title" : "Permutation cost and optimal assignment",
                     "tex"   : r"C_{ij} = \left|\hat{\mu}_i - \mu^{\mathrm{GT}}_j\right|, \qquad \pi^*_{a,r} = \operatorname*{arg\,min}_{\pi \in S_K} \sum_k C_{k,\pi(k)}",
-                    "note"  : "Inactive pairs and NaN/posinf entries take a large cost (1e7) so only mutually-active slots (amp >= ParamMatcher.ACTIVE_AMP_THR = 1e-4) match cheaply. The optimum is found by exhaustively enumerating all K! permutations for every K (no Hungarian fallback), in pixel chunks of 250000 (gaussian_matching.py GaussianMatcher).",
+                    "note"  : "Inactive pairs and NaN/posinf entries take a large cost (1e7) so only mutually-active slots (amp strictly above the label run's activity threshold) match cheaply. The optimum is found by exhaustively enumerating all K! permutations for every K (no Hungarian fallback), in pixel chunks of 250000 (gaussian_matching.py GaussianMatcher).",
                     "vars"  : [
                         {"sym": r"C_{ij}",              "desc": "cost of matching predicted slot i to GT slot j"},
                         {"sym": r"\hat{\mu}_i",         "desc": "predicted mean of slot i (raw slot order)"},
@@ -1234,11 +1239,11 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Gaussian active-count accuracy",
-                    "tex"   : r"c^{s}_{a,r} = \sum_{k=1}^{K} \mathbb{1}\!\left[a^{s}_k \ge \tau_a\right], \qquad \mathrm{ExactFrac} = \frac{1}{HW}\sum_{a,r}\mathbb{1}\!\left[c^{\mathrm{pred}}_{a,r} = c^{\mathrm{GT}}_{a,r}\right], \qquad \mathrm{Acc}_{\mathrm{gt}=k} = \Pr\!\left(c^{\mathrm{pred}} = k \mid c^{\mathrm{GT}} = k\right)",
-                    "note"  : "Active Gaussians (amplitude at or above 1e-4) are counted per pixel for prediction and GT; the run reports exact/under/over count fractions, overall and per-slot active fractions (the predicted per-slot fraction uses the GT-aligned assignment), and exact-count accuracy conditioned on the GT active count (count_acc_gt{k}) and also on the predicted count (count_acc_pred{k}) (metrics.py _active_count_stats).",
+                    "tex"   : r"c^{s}_{a,r} = \sum_{k=1}^{K} \mathbb{1}\!\left[a^{s}_k > \tau_a\right], \qquad \mathrm{ExactFrac} = \frac{1}{HW}\sum_{a,r}\mathbb{1}\!\left[c^{\mathrm{pred}}_{a,r} = c^{\mathrm{GT}}_{a,r}\right], \qquad \mathrm{Acc}_{\mathrm{gt}=k} = \Pr\!\left(c^{\mathrm{pred}} = k \mid c^{\mathrm{GT}} = k\right)",
+                    "note"  : "Active Gaussians (amplitude strictly above the label run's activity threshold, recorded in the stamp's metrics.json) are counted per pixel for prediction and GT; the run reports exact/under/over count fractions, overall and per-slot active fractions (the predicted per-slot fraction uses the GT-aligned assignment), and exact-count accuracy conditioned on the GT active count (count_acc_gt{k}) and also on the predicted count (count_acc_pred{k}) (metrics.py _active_count_stats).",
                     "vars"  : [
                         {"sym": r"c^{s}_{a,r}",                  "desc": "per-pixel active-Gaussian count for source s (pred or GT)"},
-                        {"sym": r"\tau_a",                       "desc": "active-amplitude threshold, ParamMatcher.is_active with ACTIVE_AMP_THR = 1e-4"},
+                        {"sym": r"\tau_a",                       "desc": "active-amplitude threshold, the label run's activity_threshold passed to GaussianActivity.is_active"},
                         {"sym": r"\mathrm{ExactFrac}",           "desc": "fraction of pixels whose predicted and GT counts match"},
                         {"sym": r"\mathrm{Acc}_{\mathrm{gt}=k}", "desc": "exact-count accuracy among pixels with k active GT slots"},
                     ],
@@ -1249,7 +1254,7 @@ class EquationLibrary:
                     "note"  : "Predicted slot usage is summarised by a normalised usage entropy; two diagonality scores measure how consistently each predicted slot holds its z-rank position (slot_mu_rank_diag) and matches the same-index GT slot under the optimal assignment (slot_gt_alignment), each the trace fraction of a K×K count matrix (metrics.py _slot_organization_stats, tools/metrics/slot_organization.py).",
                     "vars"  : [
                         {"sym": r"H_{\mathrm{slot}}", "desc": "normalised entropy of predicted slot usage"},
-                        {"sym": r"u_k",               "desc": "fraction of pixels where slot k is active (amp >= 1e-4)"},
+                        {"sym": r"u_k",               "desc": "fraction of pixels where slot k is active (amp above the label run's activity threshold)"},
                         {"sym": r"q_k",               "desc": "usage-normalised weight of slot k"},
                         {"sym": r"\mathbf{N}",        "desc": "K×K count matrix (mu-rank occupancy or pred->GT assignment)"},
                         {"sym": r"D",                 "desc": "diagonal-mass fraction, trace over total"},

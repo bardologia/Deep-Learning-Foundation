@@ -26,7 +26,7 @@ class ParameterExtractor:
     Attributes:
         logger             : Logger for the extraction report.
         k_max              : Largest model order the fitter evaluates.
-        activity_threshold : Amplitude above which a Gaussian slot counts as active.
+        activity_threshold : Profile peak above which a pixel is fitted; the same value is recorded as the slot activity threshold of the run.
     """
 
     def __init__(
@@ -61,7 +61,7 @@ class ParameterExtractor:
             truncation_index     : Z bin above which the profile is truncated.
             prominence_frac      : Minimum peak prominence, as a fraction of the profile peak.
             sigma_init_divisor   : Divisor applied to the initial Gaussian widths.
-            activity_threshold   : Amplitude above which a slot counts as active.
+            activity_threshold   : Profile peak above which a pixel is fitted; the same value is recorded as the slot activity threshold of the run.
             range_batch_size     : Number of range bins loaded per batch.
             adam_steps           : Adam iterations per fit.
             adam_lr              : Adam learning rate.
