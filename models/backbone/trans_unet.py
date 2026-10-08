@@ -31,7 +31,7 @@ class TransUNet(nn.Module, OutputHeadsMixin):
             config : Architecture configuration; defaults to ``TransUNetConfig()``.
 
         Raises:
-            ValueError : If ``cnn_features`` is empty or ``patch_size`` is not positive.
+            ValueError : If ``cnn_features`` is empty, ``patch_size`` is not positive, the CNN stages reduce the image below one pixel, or ``patch_size`` exceeds the bottleneck feature size.
         """
         super().__init__()
         if config is None:
@@ -93,8 +93,14 @@ class TransUNet(nn.Module, OutputHeadsMixin):
         ])
         self.transformer_norm = nn.LayerNorm(bottleneck_channels)
 
-        cnn_downsample          = 2 ** len(cnn_features)
-        self.expected_grid_size = config.image_size // cnn_downsample // config.patch_size
+        cnn_downsample  = 2 ** len(cnn_features)
+        bottleneck_size = config.image_size // cnn_downsample
+        if bottleneck_size < 1:
+            raise ValueError(f"image_size ({config.image_size}) is too small for {len(cnn_features)} CNN downsampling stages (downsample factor {cnn_downsample})")
+        if config.patch_size > bottleneck_size:
+            raise ValueError(f"patch_size ({config.patch_size}) cannot exceed bottleneck feature size ({bottleneck_size} = {config.image_size} // {cnn_downsample})")
+
+        self.expected_grid_size = bottleneck_size // config.patch_size
         num_patches             = self.expected_grid_size ** 2
         self.positional_embedding = nn.Parameter(
             torch.zeros(1, num_patches, bottleneck_channels)
