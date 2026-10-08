@@ -22,10 +22,12 @@ from pathlib import Path
 
 import pytest
 
+from configuration.synthesis                    import SynthesisConfig
 from configuration.training.jepa                import JepaEntryConfig
 from configuration.training.profile_autoencoder import ProfileAeEntryConfig
 from pipelines.jepa.training.launcher           import JepaTrainingLauncher, JepaTrialScheduler
 from pipelines.profile_autoencoder.training.launcher import ProfileAeTrainingLauncher, ProfileAeTrialScheduler
+from pipelines.shared.dataset.dataset_spatial   import Layout
 from tools.runtime.config_cli                   import ConfigCli
 from webui.config_value_render                  import ConfigValueRenderer
 
@@ -65,9 +67,12 @@ SWEEP_OVERRIDES = {
 
 @pytest.fixture(scope="module")
 def dataset(tmp_path_factory):
-    """Returns an empty dataset root for the dataset-path override."""
-    root = tmp_path_factory.mktemp("dataset")
+    """Returns a dataset root whose layout file lists the synthetic channels, for the dataset-path override."""
+    root   = tmp_path_factory.mktemp("dataset")
+    layout = root / Layout.LAYOUT_RELPATH
     (root / "meta").mkdir()
+    layout.parent.mkdir()
+    layout.write_text(json.dumps({"channel_labels": SynthesisConfig().channel_labels}))
 
     return root
 
