@@ -135,17 +135,17 @@ class ReachTrialsConfig:
 
 @dataclass
 class SecondaryTrialsConfig:
-    """Trial settings sweeping which secondary tracks enter the stack.
+    """Trial settings sweeping which secondary channels enter the stack.
 
     Attributes:
         strategy      : Rule choosing the secondaries, e.g. "consecutive".
         n_secondaries : Number of secondary channels the strategy picks per trial, on top of the fixed ones.
         fixed         : Channel labels present in every trial, held out of the swept pool.
-        n_trials      : Number of track subsets drawn.
+        n_trials      : Number of channel subsets drawn.
         mean          : Mean of the sampled baseline distribution in metres, or None when the strategy is deterministic.
         sigma         : Standard deviation of that distribution in metres, or None when the strategy is deterministic.
         block_step    : Step between consecutive blocks of secondaries.
-        spacing       : Track index spacing inside one subset.
+        spacing       : Channel index spacing inside one subset.
         seed          : Seed for the subset draw.
     """
 
@@ -340,7 +340,7 @@ class BackboneEntryConfig:
         presence_trials       : Slot-presence toggle sets swept.
         pair_trials           : Base-plus-auxiliary loss pair sweep settings.
         log_energy_trials     : Log-energy term sweep settings.
-        secondary_trials      : Secondary track selection sweep settings.
+        secondary_trials      : Secondary channel selection sweep settings.
         patch_trials          : Rectangular patch-shape grid sweep settings.
         input_trials          : Input channel selections swept.
         context_trials        : Context ladder rungs swept.

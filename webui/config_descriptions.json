@@ -1010,16 +1010,16 @@
       }
     },
     "training/backbone::SecondaryTrialsConfig": {
-      "summary": "Controls how secondary-track combinations are sampled for the secondary-selection trial sweep",
+      "summary": "Controls how secondary-channel combinations are sampled for the secondary-selection trial sweep",
       "fields": {
-        "strategy": "Secondary-track sampling scheme: uniform, gaussian, consecutive, spaced, or exhaustive (every combination of exactly n_secondaries tracks)",
+        "strategy": "Secondary-channel sampling scheme: uniform, gaussian, consecutive, spaced, or exhaustive (every combination of exactly n_secondaries channels)",
         "n_secondaries": "Number of secondary channels the strategy picks per trial on top of the fixed ones (exact set size for the exhaustive strategy), must be between 1 and the swept candidate count",
         "fixed": "Channel labels pinned into every trial and removed from the swept pool, so one fixed channel with n_secondaries 1 under the exhaustive strategy pairs that channel with each remaining secondary in turn",
-        "n_trials": "Number of distinct secondary-track draws to generate, required (>=1) for uniform and gaussian strategies",
-        "mean": "Mean index of the gaussian strategy's normal draw over the secondary-track list; required (not None) when strategy is gaussian",
-        "sigma": "Standard deviation of the gaussian strategy's normal draw over the secondary-track list; required (not None) when strategy is gaussian",
+        "n_trials": "Number of distinct secondary-channel draws to generate, required (>=1) for uniform and gaussian strategies",
+        "mean": "Mean index of the gaussian strategy's normal draw over the secondary-channel list; required (not None) when strategy is gaussian",
+        "sigma": "Standard deviation of the gaussian strategy's normal draw over the secondary-channel list; required (not None) when strategy is gaussian",
         "block_step": "Step between successive window start indices, used by the consecutive and spaced strategies, must be >= 1",
-        "spacing": "Index gap between selected tracks within one window, used by the spaced strategy only, must be >= 1",
+        "spacing": "Index gap between selected channels within one window, used by the spaced strategy only, must be >= 1",
         "seed": "Random seed for the uniform and gaussian sampling draws, making the trial set reproducible"
       }
     },
@@ -1062,7 +1062,7 @@
         "seeds": "List of seeds for a multi-seed sweep, one full run launched per seed and nested as seed<N> inside the base run directory; defaults to the standard seed set [0, 1], empty falls back to the single seed field",
         "logdir": "Base directory under which this run's output subdirectory and TensorBoard logs are written",
         "model_overrides": "Dict of architecture-config field overrides applied to the selected backbone before instantiation; the special key all_groups_lr fans out to every *_lr field of the chosen architecture (uniform learning rate across parameter groups), with explicit per-group keys applied afterwards",
-        "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-track labels",
+        "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
         "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch, defaults to the standard recipe (param L1 at 1 plus cosine curve at 0.5 in both stages)",
@@ -1082,7 +1082,7 @@
         "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
         "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight, curriculum disabled",
         "log_energy_trials": "LogEnergyTrialsConfig sub-config for the log-energy weight sweep adding the term to the standard loss in both curriculum stages, one run per weight",
-        "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-track selection sweep (strategy, count, sampling seed)",
+        "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-channel selection sweep (strategy, count, sampling seed)",
         "patch_trials": "PatchTrialsConfig sub-config for the rectangular patch-shape grid sweep under a constant pixel budget",
         "input_trials": "Named input-channel presets (use_primary/use_secondaries/use_derived/use_aux) each scoped by a mandatory tracks key: all expands the secondary list to every channel of the dataset, reduced keeps the configured secondary selection; defaults cover the full grid of channel-amplitude-only, derived-phase-only and the combined stack on both scopes, every base variant duplicated as an explicit no-aux (-noaux) and with-aux (-aux) version",
         "context_trials": "Rungs trained one run each, walking the spatial-context ladder at constant depth; every rung is a dict of label, backbone and model overrides (default a pixel_mlp rung of twenty 1x1 layers at width 1277 plus four local_cnn rungs of ten blocks, RF 1/9/29/41 via block_kernels mixes of 3x3 and 1x1, widths 1277/848/502/426, each within 0.5% of the default unet's parameters), and every backbone must exist in the registry",
@@ -1235,11 +1235,11 @@
       }
     },
     "training/general/run::TrainingPathsConfig": {
-      "summary": "Filesystem locations for a training run's dataset, ground-truth parameters, and secondary tracks",
+      "summary": "Filesystem locations for a training run's dataset, ground-truth parameters, and secondary channels",
       "fields": {
         "dataset_path": "root directory of the preprocessed channel-stack dataset (dataset.json, layout, geometry field)",
         "parameters_path": "path to the .npy Gaussian ground-truth parameters produced by parameter extraction",
-        "secondary_labels": "tuple of secondary-channel labels (e.g. CH01) selecting which channels join the primary track; empty/None uses all channels",
+        "secondary_labels": "tuple of secondary-channel labels (e.g. CH01) selecting which channels join the primary channel; empty/None uses all channels",
         "fingerprint_dataset": "whether the run hashes every dataset artifact (sha256) into meta/dataset_fingerprint.json, so the exact data behind a result stays provable after the generator is re-run; costs one linear read of the dataset at run start"
       }
     },
@@ -1407,7 +1407,7 @@
         "ae_model_name": "registry key selecting the image-autoencoder architecture: conv2d_ae, resnet2d_ae, convnext2d_ae, dilated2d_ae, or vit_ae",
         "model_overrides": "dict of architecture-config field overrides applied to the selected autoencoder before instantiation",
         "ae_loss": "ImageAeLossConfig sub-config selecting the image reconstruction loss kind (mse/l1/huber/charbonnier) plus huber_delta and charbonnier_eps",
-        "paths": "TrainingPathsConfig sub-config holding the dataset directory, extracted-parameters file path, and the secondary track labels used to build the run's dataset",
+        "paths": "TrainingPathsConfig sub-config holding the dataset directory, extracted-parameters file path, and the secondary channel labels used to build the run's dataset",
         "training": "TrainingQueueConfig sub-config driving epochs, dataloader batch_size/num_workers/prefetch_factor, scheduler/warmup/gradient-clip/early-stopping/EMA settings, and train/val/test row patch splits; defaulted here to batch_size 512, num_workers 16, prefetch_factor 2",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
         "normalization": "NormalizationConfig sub-config controlling per-channel input/output normalization strategies and output clamping",
@@ -1662,7 +1662,7 @@
         "encoder_wd": "AdamW weight decay of the encoder parameter group",
         "decoder_wd": "AdamW weight decay of the decoder parameter group",
         "ae_loss": "ProfileAeLossConfig sub-config setting the curve reconstruction loss kind and its huber/charbonnier robustness parameters",
-        "paths": "TrainingPathsConfig sub-config holding the preprocessed dataset directory, extracted Gaussian-parameters file, and secondary track labels",
+        "paths": "TrainingPathsConfig sub-config holding the preprocessed dataset directory, extracted Gaussian-parameters file, and secondary channel labels",
         "training": "TrainingQueueConfig sub-config bundling epoch count, dataloader batch size/workers/prefetch, AMP/EMA/resume, and scheduler/warmup/clip settings, defaulting to batch_size=8192, num_workers=14, and prefetch_factor=4 for per-pixel training",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
         "overfit_check": "OverfitCheckConfig sanity gate that memorizes a few examples before full training and aborts if the model cannot overfit them",
@@ -2416,7 +2416,7 @@
         "existence_input": "Channel groups (chan, derived, aux) the existence trunk receives; defaults to the full stack (the standard full-full routing)",
         "params_overrides": "Dict of config-field overrides applied to the parameter trunk's own architecture config class (structural fields forced by the dual model are rejected); trunk widths stay on model_overrides params_features",
         "existence_overrides": "Dict of config-field overrides applied to the existence trunk's own architecture config class (structural fields forced by the dual model are rejected)",
-        "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-track labels",
+        "paths": "TrainingPathsConfig sub-config holding filesystem locations for the dataset, extracted parameters, and secondary-channel labels",
         "training": "TrainingQueueConfig sub-config bundling training-loop and queue settings (epochs, batch size, workers, AMP, EMA, resume, scheduler/warmup/clip knobs)",
         "pretrain": "PretrainConfig sub-config for optional pre-training preflight (batch-size search, dataloader tuning, VRAM budget)",
         "curriculum": "LossCurriculumConfig defining the two-stage warmup/complete loss schedule and its swap epoch; defaults to the physics-loss curriculum with hungarian param matching in both stages, the recommended pairing for the set-prediction existence gate",
@@ -2435,7 +2435,7 @@
         "presence_trials": "Named trials each setting use_active_normalization and presence_balance (both keys required per trial); default is the 2x2 matrix none/A/B/AB, swept with curriculum disabled and every trial repeated across the seeds list",
         "pair_trials": "PairTrialsConfig sub-config for the loss-pair sweep pairing one fixed base component with each candidate second component and weight, curriculum disabled",
         "log_energy_trials": "LogEnergyTrialsConfig sub-config for the log-energy weight sweep adding the term to the standard loss in both curriculum stages, one run per weight",
-        "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-track selection sweep (strategy, count, sampling seed)",
+        "secondary_trials": "SecondaryTrialsConfig sub-config for the secondary-channel selection sweep (strategy, count, sampling seed)",
         "patch_trials": "PatchTrialsConfig sub-config for the rectangular patch-shape grid sweep under a constant pixel budget",
         "input_trials": "Named input-channel presets (use_primary/use_secondaries/use_derived/use_aux) each scoped by a mandatory tracks key: all expands the secondary list to every channel of the dataset, reduced keeps the configured secondary selection; defaults cover the full grid of channel-amplitude-only, derived-phase-only and the combined stack on both scopes, every base variant duplicated as an explicit no-aux (-noaux) and with-aux (-aux) version",
         "context_trials": "Rungs trained one run each, walking the spatial-context ladder at constant depth with the rung architecture and overrides applied to both trunks; every rung is a dict of label, backbone and model overrides (default a pixel_mlp rung of twenty 1x1 layers at width 1277 plus four local_cnn rungs of ten blocks, RF 1/9/29/41 via block_kernels mixes of 3x3 and 1x1, widths 1277/848/502/426), and every backbone must exist in the registry",
@@ -2599,7 +2599,7 @@
       }
     },
     "diagnostics::RobustnessConfig": {
-      "summary": "Entry config that stresses one or more trained backbone runs with controlled input degradation: curve MSE versus noise severity and versus number of dropped tracks, written into each run directory",
+      "summary": "Entry config that stresses one or more trained backbone runs with controlled input degradation: curve MSE versus noise severity and versus number of dropped secondary channels, written into each run directory",
       "fields": {
         "runs_dir": "Root directory scanned recursively for run directories holding the configured checkpoint file; each selected run is stressed in sequence",
         "run_filter": "Run directory names (or names of parent directories whose nested runs are expanded) to stress; empty selects interactively on a TTY and every discovered run otherwise",
@@ -2610,9 +2610,9 @@
         "batch_size": "Batch size of the fixed evaluation batches",
         "max_batches": "Number of batches the curve MSE is averaged over at every severity level",
         "noise_sigmas": "Gaussian noise standard deviations (in normalized input units) the degradation curve samples; include 0.0 for the clean reference",
-        "draws_per_count": "Number of random channel subsets averaged for each dropped-track count",
+        "draws_per_count": "Number of random channel subsets averaged for each dropped-channel count",
         "render_amp_floor": "Amplitude floor below which predicted Gaussians are dropped before rendering the comparison curves, matching the inference render floor",
-        "seed": "Seed of the noise draws and dropped-track subsets",
+        "seed": "Seed of the noise draws and dropped-channel subsets",
         "figure_style": "PlotBase figure style the severity curves are rendered with (report or paper)",
         "noise_draws": "Number of independent noise draws averaged per sigma and channel scope; more draws tighten the error bars at linear cost",
         "gain_factors": "Global input gain factors of the calibration-error sweep; 1.0 is always included as the reference",

@@ -1,4 +1,4 @@
-"""Tests covering ConfigFactory against real preprocessing data: the global crop, secondary-track labels, input representations, split regions, patching, and the inference and trainer configs it derives."""
+"""Tests covering ConfigFactory against real preprocessing data: the global crop, secondary-channel labels, input representations, split regions, patching, and the inference and trainer configs it derives."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def test_global_crop_matches_dataset_json(test_data_dir, params_dir, dataset_jso
 
 @pytest.mark.dataset
 def test_secondary_labels_propagate_as_tuple(test_data_dir, params_dir):
-    """Verifies the configured secondary-track labels are passed through unchanged."""
+    """Verifies the configured secondary-channel labels are passed through unchanged."""
     factory = _factory(test_data_dir, params_dir)
 
     assert factory._secondary_labels() == ("CH01", "CH02", "CH03", "CH04")
