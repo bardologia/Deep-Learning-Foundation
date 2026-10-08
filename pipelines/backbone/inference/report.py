@@ -664,7 +664,7 @@ class Report:
 
         return out
 
-    _METRIC_SKIP_KEYS = ("split", "split_region", "checkpoint_name", "checkpoint_epoch", "code_commit")
+    _METRIC_SKIP_KEYS = ("split", "split_region", "checkpoint_name", "checkpoint_epoch", "code_commit", "region_pass")
 
     _SLOT_ORGANIZATION_KEYS = frozenset({"slot_usage_entropy", "slot_mu_rank_diag", "slot_gt_alignment"})
 

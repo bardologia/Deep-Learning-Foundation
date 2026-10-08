@@ -29,7 +29,7 @@ from pipelines.backbone.inference.failure_modes        import FailureModes
 from pipelines.backbone.inference.presence_calibration import PresenceCalibration
 from pipelines.backbone.inference.report               import Report, ReportPayloadBuilder
 from pipelines.backbone.inference.stratified           import StratifiedErrors
-from pipelines.shared.inference.metadata               import CompletedInference
+from pipelines.shared.inference.metadata               import CompletedInference, RegionPass
 from tools.data.regions                                import CropRegion
 from tools.monitoring.logger                           import Logger
 from tools.reporting.plotting                          import PlotBase
@@ -59,20 +59,23 @@ class InferencePipeline:
     """Runs the full inference, evaluation and reporting sequence for one backbone run.
 
     Attributes:
-        config     : Inference configuration selecting the run, split, device and every optional evaluation.
-        components : Loader, predictor and evaluator classes specialising the pipeline.
+        config      : Inference configuration selecting the run, split, device and every optional evaluation.
+        components  : Loader, predictor and evaluator classes specialising the pipeline.
+        region_pass : Position of this pass inside a split stored as several regions, recorded in the completion marker and metrics.json, or None for a single-pass split.
     """
 
-    def __init__(self, config: InferenceConfig, components: InferenceComponents | None = None) -> None:
-        """Stores the configuration and the component set, defaulting to the backbone components.
+    def __init__(self, config: InferenceConfig, components: InferenceComponents | None = None, region_pass: RegionPass | None = None) -> None:
+        """Stores the configuration, the component set (defaulting to the backbone components) and the region pass.
 
         Args:
-            config     : Inference configuration.
-            components : Component overrides, or None for the plain backbone set.
+            config      : Inference configuration.
+            components  : Component overrides, or None for the plain backbone set.
+            region_pass : Region pass of a split scored region by region, or None when the split is scored in one pass.
         """
 
-        self.config     = config
-        self.components = components if components is not None else InferenceComponents()
+        self.config      = config
+        self.components  = components if components is not None else InferenceComponents()
+        self.region_pass = region_pass
 
     def _setup(self, cfg: InferenceConfig) -> tuple[InferenceMetadata, Logger, Plotter]:
         """Creates the output directories, records the resolved configuration, seeds NumPy and builds the logger and plotters.
@@ -127,6 +130,7 @@ class InferencePipeline:
             "Output Dir"          : meta.output_dir,
             "Split"               : cfg.split,
             "Region override"     : cfg.region_override if cfg.region_override else "none (stored split region)",
+            "Region pass"         : f"region {self.region_pass.index} of {self.region_pass.count} (group {self.region_pass.group})" if self.region_pass is not None else "single pass",
             "Device"              : cfg.device,
             "Checkpoint"          : cfg.checkpoint_name,
             "Render amp floor"    : cfg.render_amp_floor,
@@ -377,6 +381,9 @@ class InferencePipeline:
         global_metrics["checkpoint_name"]    = cfg.checkpoint_name
         global_metrics["checkpoint_epoch"]   = run.checkpoint_meta["epoch"] + 1
         global_metrics["code_commit"]        = GitState.commit()
+
+        if self.region_pass is not None:
+            global_metrics[RegionPass.KEY] = self.region_pass.payload()
 
         if run.core_region is not None:
             global_metrics["core_region"] = list(run.core_region.as_tuple())
@@ -778,12 +785,17 @@ class InferencePipeline:
                 gif_paths      = gif_paths,
             )
 
-            CompletionMarker.stamp(meta.output_dir, {
+            marker = {
                 "stage"                           : "inference",
                 "split"                           : run.split_name,
                 "inference_config"                : meta.config_path.name,
                 CompletedInference.CHECKPOINT_KEY : {"name": cfg.checkpoint_name, **run.checkpoint_meta},
-            })
+            }
+
+            if self.region_pass is not None:
+                marker[RegionPass.KEY] = self.region_pass.payload()
+
+            CompletionMarker.stamp(meta.output_dir, marker)
 
             logger.section("[Inference Pipeline Done]")
             logger.kv_table({
