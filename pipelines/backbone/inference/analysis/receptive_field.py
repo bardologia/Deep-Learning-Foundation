@@ -64,11 +64,12 @@ class ErfComputation:
             A tuple of the gradient maps and the per-probe sigmas. The maps are
             keyed by output family plus "combined", each a (window, window) array
             of mean absolute input gradient, or None for a family the output does
-            not depend on. The sigmas array has shape (valid_probes, 2), holding
-            (rows, cols) Gaussian-equivalent sigmas in pixels.
+            not depend on. The sigmas array has shape (probes, 2), holding
+            (rows, cols) Gaussian-equivalent sigmas in pixels, NaN for a probe
+            whose gradient map is zero.
 
         Raises:
-            ValueError : If the combined gradient map is identically zero.
+            ValueError : If an input gradient is non-finite, naming the probe and family, or if the combined gradient map is identically zero.
         """
         half   = self.window // 2
         device = ModelDevice.of(self.model)
@@ -86,11 +87,13 @@ class ErfComputation:
                 grad         = torch.autograd.grad(target, x, retain_graph=True)[0]
                 contribution = grad.abs().sum(dim=(0, 1)).cpu()
 
+                if not torch.isfinite(contribution).all():
+                    raise ValueError(f"Input gradient of the centre {family} at probe window {p} is non-finite; the checkpoint or the window is degenerate")
+
                 family_totals[family] += contribution
                 probe_map             += contribution
 
-            if float(probe_map.sum()) > 0.0:
-                probe_sigmas.append(self.sigma(probe_map.numpy()))
+            probe_sigmas.append(self.sigma(probe_map.numpy()) if float(probe_map.sum()) > 0.0 else (np.nan, np.nan))
 
         combined = np.zeros((self.window, self.window))
         maps     = {}
@@ -474,11 +477,11 @@ class RunReceptiveField(AnalysisRun):
 
         sigma_spread = measures["probe_sigma_spread"]
         doc.kv_table({
-            "ERF sigma row"     : f"{measures['sigma_row_px']:.2f} px (± {sigma_spread['row_std']:.2f} across probes)",
-            "ERF sigma col"       : f"{measures['sigma_col_px']:.2f} px (± {sigma_spread['col_std']:.2f} across probes)",
-            "Anisotropy σ_row/σ_col"  : f"{measures['anisotropy']:.2f}",
-            "s50 / s90 / s99"       : " / ".join(f"{measures['mass_sides'][key]:.1f} px" for key in ("50", "90", "99")),
-            "Mass in ±2σ box"       : f"{measures['mass_within_2sigma'] * 100.0:.1f}% (Gaussian reference 91.1%)",
+            "ERF sigma row"          : f"{measures['sigma_row_px']:.2f} px (± {sigma_spread['row_std']:.2f} across {sigma_spread['n_valid_probes']} of {sigma_spread['n_probes']} probes)",
+            "ERF sigma col"          : f"{measures['sigma_col_px']:.2f} px (± {sigma_spread['col_std']:.2f} across {sigma_spread['n_valid_probes']} of {sigma_spread['n_probes']} probes)",
+            "Anisotropy σ_row/σ_col" : f"{measures['anisotropy']:.2f}",
+            "s50 / s90 / s99"        : " / ".join(f"{measures['mass_sides'][key]:.1f} px" for key in ("50", "90", "99")),
+            "Mass in ±2σ box"        : f"{measures['mass_within_2sigma'] * 100.0:.1f}% (Gaussian reference 91.1%)",
         })
 
         doc.heading("Per-family ERF", level=2)
@@ -521,13 +524,17 @@ class RunReceptiveField(AnalysisRun):
         erf                = ErfComputation(run.model.module, self.config.window, self.config.mass_windows)
         maps, probe_sigmas = erf.gradient_maps(windows)
         grad               = maps["combined"]
+        valid              = np.isfinite(probe_sigmas[:, 0])
 
-        sigma_row, sigma_col = erf.sigma(grad)
-        masses             = erf.mass_profile(grad)
-        sides, fine        = erf.fine_mass_curve(grad)
-        radii              = {q: erf.side_at_mass(sides, fine, q) for q in (0.50, 0.90, 0.99)}
-        anisotropy         = sigma_row / sigma_col
-        within_2sigma      = erf.mass_within_2sigma(grad, sigma_row, sigma_col)
+        if not valid.all():
+            self.logger.warning(f"{self.run_dir.name}: {int((~valid).sum())}/{len(centers)} ERF probes had a zero gradient and are left out of the spread: " + ", ".join(f"row {row}, col {col}" for (row, col), ok in zip(centers, valid) if not ok))
+
+        sigma_row, sigma_col        = erf.sigma(grad)
+        masses                      = erf.mass_profile(grad)
+        sides, fine                 = erf.fine_mass_curve(grad)
+        radii                       = {q: erf.side_at_mass(sides, fine, q) for q in (0.50, 0.90, 0.99)}
+        anisotropy                  = sigma_row / sigma_col
+        within_2sigma               = erf.mass_within_2sigma(grad, sigma_row, sigma_col)
         row_prof, col_prof, offsets = erf.axis_profiles(grad)
 
         families = {}
@@ -535,20 +542,22 @@ class RunReceptiveField(AnalysisRun):
             if maps[family] is None:
                 families[family] = None
             else:
-                fam_row, fam_col   = erf.sigma(maps[family])
+                fam_row, fam_col = erf.sigma(maps[family])
                 families[family] = {"sigma_row_px": fam_row, "sigma_col_px": fam_col}
 
         measures = {
-            "sigma_row_px"        : sigma_row,
-            "sigma_col_px"        : sigma_col,
+            "sigma_row_px"       : sigma_row,
+            "sigma_col_px"       : sigma_col,
             "anisotropy"         : anisotropy,
             "mass_by_window"     : {str(w): mass for w, mass in sorted(masses.items())},
             "mass_sides"         : {f"{q * 100.0:.0f}": side for q, side in radii.items()},
             "mass_within_2sigma" : within_2sigma,
             "families"           : families,
             "probe_sigma_spread" : {
-                "row_std" : float(probe_sigmas[:, 0].std()),
-                "col_std"     : float(probe_sigmas[:, 1].std()),
+                "row_std"        : float(probe_sigmas[valid, 0].std()),
+                "col_std"        : float(probe_sigmas[valid, 1].std()),
+                "n_valid_probes" : int(valid.sum()),
+                "n_probes"       : len(centers),
             },
         }
 
