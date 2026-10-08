@@ -142,7 +142,7 @@ def test_issue_detector_flags_dead_and_exploding_layers():
 
     reports  = ActivationIssueDetector(config).run(stats)
     by_name  = {report.name: report for report in reports}
-    summary  = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={})
+    summary  = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={})
 
     assert by_name["dead"].severity    == "critical"
     assert by_name["explode"].severity == "warning"
@@ -188,7 +188,7 @@ def test_summary_ranks_worst_layers_by_severity():
     }
 
     reports = ActivationIssueDetector(config).run(stats)
-    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={})
+    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={})
 
     assert summary["worst_layers"][0] == "critical"
     assert "warned" in summary["worst_layers"]
@@ -353,6 +353,54 @@ def test_unshared_modules_are_not_reported_as_reused():
 def test_summary_carries_the_reused_modules():
     """The run summary persists which modules were recorded per call site."""
     reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
-    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={"pool": 4})
+    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={"pool": 4}, silent_layers={})
 
     assert summary["reused_modules"] == {"pool": 4}
+
+
+class _UnwiredNet(torch.nn.Module):
+    """Convolution plus a second convolution that forward never calls, so that leaf stays silent."""
+    def __init__(self) -> None:
+        """Builds the used and the unwired 1x1 convolutions."""
+        super().__init__()
+        self.conv   = torch.nn.Conv2d(2, 4, kernel_size=1)
+        self.unused = torch.nn.Conv2d(4, 4, kernel_size=1)
+
+    def forward(self, x):
+        """Returns the first convolution of x, of shape (batch, 4, H, W), never touching the second."""
+        return self.conv(x)
+
+
+def test_silent_leaf_modules_are_named_and_left_out_of_the_stats():
+    """A hooked leaf the forward never runs is absent from the statistics but named with its type as silent."""
+    model    = _UnwiredNet()
+    recorder = ActivationRecorder(model)
+    recorder.attach_stats()
+
+    with torch.no_grad():
+        model(torch.randn(1, 2, 4, 4))
+
+    recorder.detach()
+
+    assert set(recorder.stats())  == {"conv"}
+    assert recorder.silent_layers() == {"unused": "Conv2d"}
+
+
+def test_stats_raise_when_no_module_fired():
+    """Asking for statistics after a capture without any forward pass raises instead of returning an empty mapping."""
+    recorder = ActivationRecorder(_TinyNet())
+    recorder.attach_stats()
+    recorder.detach()
+
+    with pytest.raises(ValueError, match="produced a tensor"):
+        recorder.stats()
+
+
+def test_summary_counts_hooked_and_silent_layers():
+    """The run summary tells the recorded layers from the hooked ones and names the silent leaves."""
+    reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
+    summary = ActivationXraySummarizer().build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={"unused": "Conv2d"})
+
+    assert summary["layers"]        == 1
+    assert summary["hooked_layers"] == 2
+    assert summary["silent_layers"] == {"unused": "Conv2d"}

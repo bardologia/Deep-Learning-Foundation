@@ -55,6 +55,13 @@ class ActivationXrayRun(AnalysisRun):
             named = ", ".join(f"{name} x{calls}" for name, calls in reused.items())
             self.logger.warning(f"{len(reused)} leaf modules fire more than once per forward and are recorded per call site (name#k): {named}")
 
+    def _log_silent(self, recorder: ActivationRecorder, n_batches: int) -> None:
+        """Warns which hooked leaf modules produced no tensor, since they are absent from every profile, table and the verdict."""
+        silent = recorder.silent_layers()
+        if silent:
+            named = ", ".join(f"{name} ({module_type})" for name, module_type in silent.items())
+            self.logger.warning(f"{len(silent)} hooked leaf modules produced no tensor during {n_batches} batches and are excluded from the x-ray: {named}")
+
     def _render_figures(self, ordered_stats: list[dict], flagged: list) -> dict[str, Path]:
         """Renders the depth profiles and the histograms of the most severely flagged layers.
 
@@ -109,6 +116,8 @@ class ActivationXrayRun(AnalysisRun):
 
         doc.kv_table({
             "Layers"         : summary["layers"],
+            "Hooked layers"  : summary["hooked_layers"],
+            "Silent layers"  : ", ".join(f"{name} ({module_type})" for name, module_type in summary["silent_layers"].items()) if summary["silent_layers"] else "none",
             "Flagged layers" : summary["flagged_layers"],
             "Issues"         : summary["issues"],
             "Critical"       : summary["severity_counts"]["critical"],
@@ -155,13 +164,15 @@ class ActivationXrayRun(AnalysisRun):
 
         run       = self._load_run()
         recorder  = self._record(run)
+        n_batches = min(self.config.max_batches, len(run.loader))
         all_stats = recorder.stats()
         self._log_reuse(recorder)
+        self._log_silent(recorder, n_batches)
 
         detector = ActivationIssueDetector(self.config)
         reports  = detector.run(all_stats)
         reports.sort(key=lambda report: report.stats["first_seen"])
-        summary  = ActivationXraySummarizer().build(reports, self.run_dir, min(self.config.max_batches, len(run.loader)), recorder.reused_modules())
+        summary  = ActivationXraySummarizer().build(reports, self.run_dir, n_batches, recorder.reused_modules(), recorder.silent_layers())
 
         ordered_stats = [report.stats for report in reports]
         flagged       = [report for report in reports if report.severity != "ok"]
