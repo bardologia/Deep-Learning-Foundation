@@ -61,11 +61,12 @@ class DualReachTrialPlanner(ReachTrialPlanner):
     """Reach ladder planner that counts parameters on the assembled dual model.
 
     Attributes:
-        model_name     : Registered dual model name instantiated for the counts.
-        trunk_channels : Input channel index tuples of the params and existence trunks, in that order.
+        model_name      : Registered dual model name instantiated for the counts.
+        trunk_channels  : Input channel index tuples of the params and existence trunks, in that order.
+        trunk_overrides : Entry-level override dicts of the params and existence trunks, in that order; the scheduler forwards them to every unit, so they shape the trunks of every rung that sets no overrides of its own.
     """
 
-    def __init__(self, trials, registry_names: tuple, expected_in_channels: int, out_channels: int, model_name: str, trunk_channels: tuple) -> None:
+    def __init__(self, trials, registry_names: tuple, expected_in_channels: int, out_channels: int, model_name: str, trunk_channels: tuple, trunk_overrides: tuple) -> None:
         """Stores the dual model identity and defers rung validation to the backbone planner.
 
         Args:
@@ -75,9 +76,11 @@ class DualReachTrialPlanner(ReachTrialPlanner):
             out_channels         : Output width the Gaussian heads actually yield.
             model_name           : Registered dual model name.
             trunk_channels       : Channel index tuples for the params and existence trunks.
+            trunk_overrides      : Entry-level override dicts for the params and existence trunks.
         """
-        self.model_name     = model_name
-        self.trunk_channels = tuple(trunk_channels)
+        self.model_name      = model_name
+        self.trunk_channels  = tuple(trunk_channels)
+        self.trunk_overrides = (dict(trunk_overrides[0]), dict(trunk_overrides[1]))
 
         super().__init__(trials, registry_names, "set_pred", expected_in_channels, out_channels)
 
@@ -86,8 +89,24 @@ class DualReachTrialPlanner(ReachTrialPlanner):
         features = rung.get("features")
         return list(features) if features else []
 
+    def _rung_trunk_overrides(self, overrides: dict) -> tuple:
+        """Returns the override dicts the params and existence trunks of a rung's unit are built with.
+
+        `_settings` places a rung's own overrides on both trunks, which replaces
+        the entry-level trunk overrides for that unit; a rung without any keeps
+        the entry-level ones the scheduler forwards to every unit. The counts
+        follow the same rule so they describe the models that are trained.
+
+        Args:
+            overrides : Model overrides of the rung, with `features` already removed.
+        """
+        if overrides:
+            return dict(overrides), dict(overrides)
+
+        return self.trunk_overrides
+
     def _parameters(self, rung: dict) -> int:
-        """Returns the total parameter count of the dual model built from the rung.
+        """Returns the total parameter count of the dual model built from the rung, as training builds it.
 
         Args:
             rung : Reach rung dict with `backbone`, optional `features` and model override keys.
@@ -101,6 +120,8 @@ class DualReachTrialPlanner(ReachTrialPlanner):
         features = self._trunk_features(rung)
         sizing   = ModelBuilder.image_size_override(rung["backbone"], self.trials.patch_size)
 
+        params_overrides, existence_overrides = self._rung_trunk_overrides(overrides)
+
         model, _ = get_dual(
             self.model_name,
             in_channels         = self.trials.in_channels,
@@ -111,8 +132,8 @@ class DualReachTrialPlanner(ReachTrialPlanner):
             existence_channels  = self.trunk_channels[1],
             params_features     = features,
             existence_features  = features,
-            params_overrides    = {**overrides, **sizing},
-            existence_overrides = {**overrides, **sizing},
+            params_overrides    = {**params_overrides, **sizing},
+            existence_overrides = {**existence_overrides, **sizing},
         )
 
         return sum(parameter.numel() for parameter in model.parameters())
@@ -136,6 +157,15 @@ class DualReachTrialPlanner(ReachTrialPlanner):
             settings["existence_overrides"] = dict(overrides)
 
         return settings
+
+    def summary(self) -> dict:
+        """Returns the backbone reach summary plus the entry-level trunk overrides the counts were taken with."""
+        params, existence = self.trunk_overrides
+
+        return {
+            **super().summary(),
+            "Trunk overrides" : f"params {params or 'none'}, existence {existence or 'none'} (a rung with overrides of its own replaces them)",
+        }
 
 
 class DualRoutingTrialPlanner:
@@ -274,6 +304,8 @@ class DualRatioTrialPlanner:
         model_name      : Registered dual model name instantiated for the counts.
         backbones       : Params and existence trunk backbone names, in that order.
         trunk_channels  : Input channel index tuples of the two trunks.
+        trunk_overrides : Entry-level override dicts of the params and existence trunks, in that order, which every variant trains with.
+        patch_size      : Training patch extent in pixels, which sizes a trunk that needs a fixed input size the way training does.
         in_channels     : Input width the dataset yields.
         out_channels    : Output width the Gaussian heads yield.
         shares          : Declared percentage shares per label as `(params, existence)`.
@@ -288,7 +320,7 @@ class DualRatioTrialPlanner:
         "existence" : ("trunk_existence.", "existence_head.", "amp_off"),
     }
 
-    def __init__(self, trials_config, model_overrides: dict, model_name: str, backbones: tuple, trunk_channels: tuple, in_channels: int, out_channels: int) -> None:
+    def __init__(self, trials_config, model_overrides: dict, model_name: str, backbones: tuple, trunk_channels: tuple, trunk_overrides: tuple, patch_size: tuple, in_channels: int, out_channels: int) -> None:
         """Validates the arm ladders and verifies that the realized splits and budgets match.
 
         Args:
@@ -297,6 +329,8 @@ class DualRatioTrialPlanner:
             model_name      : Registered dual model name.
             backbones       : Params and existence trunk backbone names.
             trunk_channels  : Channel index tuples for the params and existence trunks.
+            trunk_overrides : Entry-level override dicts for the params and existence trunks.
+            patch_size      : Training patch extent in pixels as (rows, cols).
             in_channels     : Input width the dataset yields.
             out_channels    : Output width the Gaussian heads yield.
 
@@ -308,6 +342,8 @@ class DualRatioTrialPlanner:
         self.model_name      = model_name
         self.backbones       = tuple(backbones)
         self.trunk_channels  = tuple(trunk_channels)
+        self.trunk_overrides = (dict(trunk_overrides[0]), dict(trunk_overrides[1]))
+        self.patch_size      = tuple(patch_size)
         self.in_channels     = in_channels
         self.out_channels    = out_channels
 
@@ -400,7 +436,11 @@ class DualRatioTrialPlanner:
         return params_share, existence_share
 
     def _parameters(self, spec: dict) -> dict:
-        """Returns the parameter count of each arm of the model built from a variant.
+        """Returns the parameter count of each arm of the model built from a variant, as training builds it.
+
+        The trunks carry the entry-level trunk overrides and the image size a
+        fixed-input backbone needs at the training patch, the two additions
+        training makes on top of the ladders.
 
         Args:
             spec : Variant spec mapping each arm key to its feature ladder.
@@ -411,16 +451,21 @@ class DualRatioTrialPlanner:
         Raises:
             ValueError : If a parameter name matches no arm prefix or more than one.
         """
+        params_sizing    = ModelBuilder.image_size_override(self.backbones[0], self.patch_size)
+        existence_sizing = ModelBuilder.image_size_override(self.backbones[1], self.patch_size)
+
         model, _ = get_dual(
             self.model_name,
-            in_channels        = self.in_channels,
-            out_channels       = self.out_channels,
-            params_backbone    = self.backbones[0],
-            existence_backbone = self.backbones[1],
-            params_channels    = self.trunk_channels[0],
-            existence_channels = self.trunk_channels[1],
-            params_features    = list(spec["params"]),
-            existence_features = list(spec["existence"]),
+            in_channels         = self.in_channels,
+            out_channels        = self.out_channels,
+            params_backbone     = self.backbones[0],
+            existence_backbone  = self.backbones[1],
+            params_channels     = self.trunk_channels[0],
+            existence_channels  = self.trunk_channels[1],
+            params_features     = list(spec["params"]),
+            existence_features  = list(spec["existence"]),
+            params_overrides    = {**self.trunk_overrides[0], **params_sizing},
+            existence_overrides = {**self.trunk_overrides[1], **existence_sizing},
             **self.model_overrides,
         )
 
@@ -471,7 +516,7 @@ class DualRatioTrialPlanner:
         return {"model_overrides": {**self.model_overrides, **features}}
 
     def summary(self) -> dict:
-        """Returns the realized arm budgets, the input stack, the counting width and the run count."""
+        """Returns the realized arm budgets, the input stack, the counting width and patch, the trunk overrides counted and the run count."""
         splits = {}
         for label, counts in self.arm_counts.items():
             total         = sum(counts.values())
@@ -480,7 +525,8 @@ class DualRatioTrialPlanner:
         return {
             "Arm budgets (params / existence)" : splits,
             "Input stack"                      : f"{self.in_channels} channels, params {list(self.trunk_channels[0])}, existence {list(self.trunk_channels[1])}",
-            "Counted at"                       : f"{self.out_channels} output channels",
+            "Counted at"                       : f"{self.out_channels} output channels, patch {self.patch_size}",
+            "Trunk overrides"                  : f"params {self.trunk_overrides[0] or 'none'}, existence {self.trunk_overrides[1] or 'none'}",
             "Total runs"                       : len(self.trials.trials),
         }
 

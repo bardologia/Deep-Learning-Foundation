@@ -42,14 +42,16 @@ def _tiny_ratio_trials(**overrides) -> DualRatioTrialsConfig:
     return DualRatioTrialsConfig(**{**defaults, **overrides})
 
 
-def _ratio_planner(trials_config=None, model_overrides=None, out_channels=RATIO_OUT_CHANNELS):
-    """Returns a ratio trial planner for a nine-channel dual_resunet with the given output width."""
+def _ratio_planner(trials_config=None, model_overrides=None, out_channels=RATIO_OUT_CHANNELS, trunk_overrides=({}, {})):
+    """Returns a ratio trial planner for a nine-channel dual_resunet at a 32x32 patch with the given output width and entry-level trunk overrides."""
     return DualRatioTrialPlanner(
         trials_config or _tiny_ratio_trials(),
         model_overrides or {},
         "dual_resunet",
         ("resunet", "resunet"),
         ((0, 1, 2, 3, 4, 5, 6, 7, 8), (5, 6, 7, 8)),
+        trunk_overrides,
+        (32, 32),
         9,
         out_channels,
     )
@@ -318,6 +320,18 @@ def test_dual_ratio_planner_rejects_an_unresolved_output_width():
     """A zero output width raises ValueError."""
     with pytest.raises(ValueError, match="resolved output width"):
         _ratio_planner(out_channels=0)
+
+
+def test_dual_ratio_planner_counts_the_entry_trunk_overrides():
+    """The arm budgets are counted on trunks built with the entry-level trunk overrides, as training builds them, and the summary names them."""
+    plain  = _ratio_planner()
+    shaped = _ratio_planner(trunk_overrides=({"bottleneck_factor": 4}, {"bottleneck_factor": 4}))
+
+    assert shaped.arm_counts["50-50"]["params"]    > plain.arm_counts["50-50"]["params"]
+    assert shaped.arm_counts["50-50"]["existence"] > plain.arm_counts["50-50"]["existence"]
+    assert shaped.summary()["Trunk overrides"] == "params {'bottleneck_factor': 4}, existence {'bottleneck_factor': 4}"
+    assert plain.summary()["Trunk overrides"]  == "params none, existence none"
+    assert plain.summary()["Counted at"]       == "15 output channels, patch (32, 32)"
 
 
 def test_dual_single_runner_builds_the_model_config_with_trunk_fields():
@@ -684,7 +698,7 @@ def test_dual_reach_planner_counts_whole_dual_models_and_emits_trunk_settings():
     ]
     trials = ReachTrialsConfig(rungs=rungs, match_tolerance=10.0)
 
-    planner = DualReachTrialPlanner(trials, ("local_cnn", "unet"), 9, 6, "dual_resunet", (tuple(range(9)), tuple(range(9))))
+    planner = DualReachTrialPlanner(trials, ("local_cnn", "unet"), 9, 6, "dual_resunet", (tuple(range(9)), tuple(range(9))), ({}, {}))
 
     assert set(planner.parameter_counts) == {"cnn", "unet"}
     assert all(count > 0 for count in planner.parameter_counts.values())
@@ -701,9 +715,28 @@ def test_dual_reach_planner_counts_whole_dual_models_and_emits_trunk_settings():
 def test_dual_reach_default_rungs_hold_the_capacity_match():
     """The default reach rungs pass the capacity match and keep their labels."""
     config  = DualEntryConfig()
-    planner = DualReachTrialPlanner(config.reach_trials, ("local_cnn", "unet"), 9, 6, "dual_resunet", (tuple(range(9)), tuple(range(9))))
+    planner = DualReachTrialPlanner(config.reach_trials, ("local_cnn", "unet"), 9, 6, "dual_resunet", (tuple(range(9)), tuple(range(9))), ({}, {}))
 
     assert set(planner.parameter_counts) == {"cnn33", "unet"}
+
+
+def test_dual_reach_planner_counts_entry_trunk_overrides_unless_the_rung_sets_its_own():
+    """A rung without overrides is counted with the entry-level trunk overrides its unit trains with; a rung with its own is counted with those alone, as its settings replace the entry-level dicts."""
+    rungs = [
+        {"label": "plain",  "backbone": "unet", "features": [8, 16]},
+        {"label": "shaped", "backbone": "unet", "features": [8, 16], "bottleneck_factor": 4},
+    ]
+    trials   = ReachTrialsConfig(rungs=rungs, match_tolerance=10.0)
+    channels = (tuple(range(9)), tuple(range(9)))
+
+    entry_plain  = DualReachTrialPlanner(trials, ("unet",), 9, 6, "dual_resunet", channels, ({}, {}))
+    entry_shaped = DualReachTrialPlanner(trials, ("unet",), 9, 6, "dual_resunet", channels, ({"bottleneck_factor": 4}, {"bottleneck_factor": 4}))
+
+    assert entry_shaped.parameter_counts["plain"]  >  entry_plain.parameter_counts["plain"]
+    assert entry_shaped.parameter_counts["plain"]  == entry_plain.parameter_counts["shaped"]
+    assert entry_shaped.parameter_counts["shaped"] == entry_plain.parameter_counts["shaped"]
+    assert entry_shaped.summary()["Trunk overrides"].startswith("params {'bottleneck_factor': 4}, existence {'bottleneck_factor': 4}")
+    assert entry_plain.summary()["Trunk overrides"].startswith("params none, existence none")
 
 
 def test_dual_ablation_catalog_swaps_the_backbone_only_rungs():
