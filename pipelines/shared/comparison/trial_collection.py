@@ -72,14 +72,20 @@ class SeedRunAggregator:
 
     Attributes:
         CHECKPOINT_KEYS : Checkpoint scalars averaged across seeds.
+        logger          : Logger receiving the representative-seed line of every trial and a warning when its means cover fewer seeds than it holds.
         seed_dispersion : Per-trial dispersion payloads, populated by `aggregate`.
     """
 
     CHECKPOINT_KEYS = ("best_val_loss", "best_epoch", "n_train_epochs")
 
-    def __init__(self) -> None:
-        """Starts with an empty dispersion table."""
-        self.seed_dispersion: dict = {}
+    def __init__(self, logger: Logger) -> None:
+        """Starts with an empty dispersion table.
+
+        Args:
+            logger : Logger for the seed-coverage warnings and the representative-seed lines.
+        """
+        self.logger          = logger
+        self.seed_dispersion = {}
 
     def _group(self, records: list[TrialRecord]) -> list[tuple[str, list[TrialRecord]]]:
         """Groups records by the seed-stripped base name, preserving discovery order."""
@@ -89,6 +95,36 @@ class SeedRunAggregator:
             groups.setdefault(SeedSet.base(record.name), []).append(record)
 
         return list(groups.items())
+
+    def _report_coverage(self, name: str, runs: list[TrialRecord], seed_names: list[str], metric_keys: list[str], contributors: dict[str, int], representative: TrialRecord) -> None:
+        """Names the seed standing for the trial and warns when any metric mean covers fewer seeds than the trial holds.
+
+        Args:
+            name           : Seed-stripped trial name.
+            runs           : Seed runs of the trial.
+            seed_names     : Seed label of every run, aligned with runs.
+            metric_keys    : Metric keys aggregated for the trial.
+            contributors   : Number of seeds carrying a finite value, per metric key.
+            representative : Seed run whose figures and report stand for the trial.
+        """
+        shortfall = SeedAggregation.shortfall([run.metrics for run in runs], metric_keys, seed_names)
+
+        without_inference = [seed for seed, run in zip(seed_names, runs) if not run.has_inference]
+        dropped_keys      = sorted(key for key, absent in shortfall.items() if set(absent) - set(without_inference))
+
+        if without_inference or dropped_keys:
+            parts = []
+            if without_inference:
+                parts.append(f"seeds without inference: {', '.join(without_inference)}")
+            if dropped_keys:
+                parts.append(f"values missing or non-finite for {', '.join(dropped_keys)}")
+
+            used     = sorted(set(contributors.values())) or [0]
+            coverage = f"{used[0]} of {len(runs)}" if len(used) == 1 else f"{used[0]} to {used[-1]} of {len(runs)}"
+
+            self.logger.warning(f"{name}: {'; '.join(parts)}; metric means cover {coverage} seeds")
+
+        self.logger.info(f"{name}: figures and report from {representative.name}")
 
     def _aggregate_group(self, name: str, runs: list[TrialRecord]) -> tuple[TrialRecord, dict]:
         """Averages the seed runs of one trial into a single record.
@@ -101,14 +137,21 @@ class SeedRunAggregator:
             Pair of the aggregated record (metrics and checkpoint scalars are
             seed means, figures and report come from the first seed with an
             inference stamp) and its dispersion payload holding the seed count,
-            the best-val-loss standard deviation, per-metric standard deviations
+            the per-metric count of seeds that entered each mean, the
+            best-val-loss standard deviation, per-metric standard deviations
             and the raw per-seed metric dicts.
         """
         representative = next((run for run in runs if run.has_inference), runs[0])
 
-        metric_keys              = sorted({key for run in runs for key in run.metrics})
-        metric_means, metric_std = SeedAggregation.aggregate([run.metrics for run in runs], metric_keys)
+        seed_names   = [run.name.rsplit("/", 1)[-1] for run in runs]
+        metric_dicts = [run.metrics for run in runs]
+        metric_keys  = sorted({key for metrics in metric_dicts for key in metrics})
+
+        metric_means, metric_std = SeedAggregation.aggregate(metric_dicts, metric_keys)
         ckpt_means, ckpt_std     = SeedAggregation.aggregate([run.checkpoint for run in runs], list(self.CHECKPOINT_KEYS))
+        contributors             = SeedAggregation.contributors(metric_dicts, metric_keys)
+
+        self._report_coverage(name, runs, seed_names, metric_keys, contributors, representative)
 
         durations = [run.training_result.get("duration_s") for run in runs]
         durations = [value for value in durations if isinstance(value, (int, float))]
@@ -122,9 +165,10 @@ class SeedRunAggregator:
 
         dispersion = {
             "n_seeds"           : len(runs),
+            "n_used"            : contributors,
             "best_val_loss_std" : ckpt_std.get("best_val_loss"),
             "metrics"           : metric_std,
-            "seed_metrics"      : {run.name.rsplit("/", 1)[-1]: run.metrics for run in runs},
+            "seed_metrics"      : dict(zip(seed_names, metric_dicts)),
         }
 
         return record, dispersion

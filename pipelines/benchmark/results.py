@@ -34,7 +34,7 @@ class BenchmarkSeedCollector(TrialCollector):
         Returns:
             One record per model unit, with the metrics averaged over its seeds.
         """
-        aggregator = SeedRunAggregator()
+        aggregator = SeedRunAggregator(self.logger)
         self.runs  = super().collect()
         records    = aggregator.aggregate(self.runs)
 

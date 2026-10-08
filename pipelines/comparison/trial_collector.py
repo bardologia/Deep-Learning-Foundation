@@ -126,11 +126,12 @@ class TrialCollector(TrialArtifactReader):
 
             records.append(record)
 
-        aggregator = SeedRunAggregator()
+        aggregator = SeedRunAggregator(self.logger)
         aggregated = aggregator.aggregate(records)
 
         self.seed_dispersion = aggregator.seed_dispersion
         if self.seed_dispersion:
-            self.logger.ok(f"Aggregated {len(records)} seed run(s) into {len(aggregated)} trial(s), metrics reported as seed means")
+            n_seed_runs = sum(entry["n_seeds"] for entry in self.seed_dispersion.values())
+            self.logger.ok(f"Aggregated {n_seed_runs} seed run(s) into {len(self.seed_dispersion)} trial(s), metrics reported as seed means")
 
         return aggregated
