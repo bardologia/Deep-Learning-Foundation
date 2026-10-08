@@ -278,3 +278,24 @@ def test_constant_activations_have_unit_dynamic_range():
 
     assert stats["dynamic_range"] == pytest.approx(1.0)
     assert stats["abs_p50"] == stats["abs_p99"]
+
+
+def test_abs_percentiles_describe_the_non_zero_magnitudes():
+    """A layer that is 60% exact zeros reports the p50 and p99 of its non-zero values, not the zero-bin edge."""
+    values          = torch.zeros(1, 10)
+    values[0, :4]   = 0.5
+    stats           = _record(_PassThrough(), [values])["layer"]
+
+    assert stats["zero_frac"]     == pytest.approx(0.6)
+    assert stats["abs_p50"]       == pytest.approx(0.5)
+    assert stats["abs_p99"]       == pytest.approx(0.5)
+    assert stats["dynamic_range"] == pytest.approx(1.0)
+
+
+def test_all_zero_layer_has_no_dynamic_range():
+    """A layer without any value above 1e-8 reports zero percentiles and no dynamic range."""
+    stats = _record(_PassThrough(), [torch.zeros(1, 8)])["layer"]
+
+    assert stats["abs_p50"]       == 0.0
+    assert stats["abs_p99"]       == 0.0
+    assert stats["dynamic_range"] is None
