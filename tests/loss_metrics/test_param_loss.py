@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import torch
 
-from tools.loss.param_loss import LegacyParamLoss, ParamLoss, ParamMatcher
+from tools.loss.param_loss import ParamLoss, ParamMatcher
 
 
 PARAM_NAMES = ["amp", "mu", "sigma"]
@@ -333,28 +333,6 @@ def test_presence_weights_report_the_clamp_per_slot():
     assert inactive_weight[1].item() == pytest.approx(0.5 / 0.75)
     assert active_weight[2].item()   == pytest.approx(0.5 / ParamLoss.FRAC_CLAMP)
     assert inactive_weight[0].item() == pytest.approx(0.5 / ParamLoss.FRAC_CLAMP)
-
-
-def test_legacy_present_fraction_reads_both_halves_of_the_slot2_gate():
-    """Verifies present_fraction counts a pixel only where the scaled slot-2 amplitude passes the threshold and the scaled width is non-negative."""
-    bounds_min = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    bounds_max = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
-    pred       = torch.zeros(1, 2, 3, 1, 4, dtype=torch.float64)
-
-    pred[0, 1, 0, 0, :] = torch.tensor([0.5, 0.5, 0.5, 0.0], dtype=torch.float64)
-    pred[0, 1, 2, 0, :] = torch.tensor([0.1, 0.1, -0.1, 0.1], dtype=torch.float64)
-
-    share = LegacyParamLoss.present_fraction(pred, bounds_min, bounds_max, 0.25)
-
-    assert share.item() == pytest.approx(0.5)
-    assert LegacyParamLoss.present_fraction(torch.zeros_like(pred), bounds_min, bounds_max, 0.25).item() == 0.0
-
-
-def test_legacy_present_fraction_rejects_non_two_gaussian_predictions():
-    """Verifies present_fraction refuses a prediction whose slot count is not the legacy two."""
-    bounds = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    with pytest.raises(ValueError, match="two-Gaussian legacy gate"):
-        LegacyParamLoss.present_fraction(torch.zeros(1, 3, 3, 1, 2), bounds, tuple(v + 1.0 for v in bounds), 1e-4)
 
 
 def test_presence_scale_default_is_identity():
