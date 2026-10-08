@@ -23,6 +23,7 @@ from pipelines.backbone.inference.metrics            import Metrics, Result
 from tools.data.gaussians                            import GaussianActivity, GaussianReconstructor
 from tools.metrics.scoring                           import R2
 from tools.monitoring.logger                         import Logger
+from tools.runtime.cuda_mask                         import InheritedCudaMask
 
 
 class CubeStitcher:
@@ -279,6 +280,22 @@ class Predictor:
         self.cube_dir         = meta.cube_dir
         self.cpu_workers      = cpu_workers if cpu_workers is not None else min(8, os.cpu_count() or 1)
         self.render_amp_floor = float(render_amp_floor)
+
+    def _device_rows(self) -> dict:
+        """Returns the predict-table rows naming the device the model runs on and, on CUDA, the physical GPU behind it.
+
+        Returns:
+            The backend row read from the wrapped model's device, plus the GPU name, the CUDA_VISIBLE_DEVICES token the process was pinned to and the inherited CUDA mask when the device is a GPU.
+        """
+        device = torch.device(self.run.model.device)
+        rows   = {"Backend": f"PyTorch / {device}"}
+
+        if device.type == "cuda":
+            rows["GPU"]                  = torch.cuda.get_device_name(device)
+            rows["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
+            rows["Inherited CUDA mask"]  = os.environ.get(InheritedCudaMask.STASH_VAR, "unset")
+
+        return rows
 
     def _forward_pass(self) -> Tuple[List[List[int]], List[np.ndarray], List[np.ndarray]]:
         """Runs the model over every batch of the split loader and denormalises the labels.
@@ -579,14 +596,13 @@ class Predictor:
         Returns:
             Result holding the stitched prediction and ground-truth cubes with their metric maps.
         """
-        backend = "cuda" if torch.cuda.is_available() else "cpu"
         self.logger.section("[Inference: Predict]")
         self.logger.kv_table({
-            "Backend":     f"PyTorch / {backend}",
-            "Cube dir":    self.cube_dir,
-            "Window":      self.window_kind,
-            "Cube dtype":  self.cube_dtype,
-            "CPU workers": self.cpu_workers,
+            **self._device_rows(),
+            "Cube dir"    : self.cube_dir,
+            "Window"      : self.window_kind,
+            "Cube dtype"  : self.cube_dtype,
+            "CPU workers" : self.cpu_workers,
         })
 
         all_indices, all_pred_params, all_gt_params = self._forward_pass()
