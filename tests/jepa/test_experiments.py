@@ -8,6 +8,7 @@ constraints the trainer enforces on them.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -258,6 +259,20 @@ def test_scheduler_builds_every_local_mode():
         assert isinstance(scheduler, JepaTrialScheduler)
         assert scheduler.sweep_name == f"sweep_jepa_{mode}"
         assert scheduler.planner().plan()
+
+
+def test_scheduler_builds_the_input_mode_from_the_dataset_channels(tmp_path):
+    """Verifies the JEPA input sweep enumerates every secondary channel the dataset records, not the narrower configured selection."""
+    dataset = tmp_path / "dataset"
+    (dataset / "data").mkdir(parents=True)
+    (dataset / "data" / "dataset.json").write_text(json.dumps({"channel_labels": ["CH00", "CH01", "CH02", "CH03"]}))
+
+    args    = ["--trials_enabled", "true", "--trials_mode", "input", "--seeds", "[0]", "--profile_autoencoder_run", "mlp_ae_a", "--paths.dataset_path", str(dataset), "--paths.secondary_labels", "['CH02']"]
+    planner = JepaTrainingLauncher(entry_script=ENTRY).build_scheduler(args).planner()
+    plans   = dict(planner.plan())
+
+    assert planner.candidates == ["CH01", "CH02", "CH03"]
+    assert plans["in-amp-allsec-noderived-noaux"]["paths.secondary_labels"] == ("CH01", "CH02", "CH03")
 
 
 def test_scheduler_rejects_unknown_mode():

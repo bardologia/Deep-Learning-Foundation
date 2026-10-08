@@ -51,7 +51,10 @@ the rest of the repository works unchanged:
   are there.
 - `channel_labels`, the primary label first and one per secondary after it. Selecting
   secondaries by label (`paths.secondary_labels`) resolves through this list, and
-  `Layout.secondary_indices` raises if it is empty. The console reads the same list
+  `Layout.secondary_indices` raises if it is empty. The input and secondary trial sweeps
+  take their candidates from it through `Layout.secondary_channel_labels`, so
+  `tracks=all` and the sampled subsets reach every secondary the dataset records, not
+  only the configured selection. The console reads the same list
   (`/api/fs/secondaries`, `DatasetBrowser.secondaries` in `webui/dataset_browser.py`) to
   offer the selected dataset's secondaries in the launch pages' picker, so write a label
   for every channel your importer emits.

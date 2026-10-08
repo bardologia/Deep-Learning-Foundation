@@ -1603,7 +1603,7 @@ class ExperimentBuilder {
 
     const note       = document.createElement("p");
     note.className   = "exp-secondary__note";
-    note.textContent = "Each variant toggles which input channels feed the model and scopes its track list: tracks=all expands the secondaries to every track in the baselines table, tracks=reduced keeps the configured selection, and every base variant comes as an explicit no-Aux and with-Aux version. Drop variants to trim the fan-out. Adding variants and channel representations live in code (TrialCatalog.input_trials); use reset variants to restore the default.";
+    note.textContent = "Each variant toggles which input channels feed the model and scopes its channel list: tracks=all expands the secondaries to every channel the dataset records in data/dataset.json, tracks=reduced keeps the configured selection, and every base variant comes as an explicit no-Aux and with-Aux version. Drop variants to trim the fan-out. Adding variants and channel representations live in code (TrialCatalog.input_trials); use reset variants to restore the default.";
 
     const cellHead       = document.createElement("div");
     cellHead.className    = "exp-presence__sub";

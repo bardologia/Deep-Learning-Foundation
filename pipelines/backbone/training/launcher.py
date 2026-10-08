@@ -270,11 +270,11 @@ class TrainScheduler(TrialSweepScheduler):
         if mode == "log_energy":
             return LogEnergyTrialPlanner(self.config.log_energy_trials)
         if mode == "secondary":
-            return SecondaryTrialPlanner.from_labels(self.config.secondary_trials, self.config.paths.secondary_labels)
+            return SecondaryTrialPlanner.from_dataset(self.config.secondary_trials, self.config.paths.dataset_path)
         if mode == "patch":
             return PatchSizeTrialPlanner(self.config.patch_trials, self.config.backbone_name, self.config.backbone_head, self.config.model_overrides, self.config.training)
         if mode == "input":
-            return InputTrialPlanner.from_labels(self.config.input_trials, self.config.paths.secondary_labels)
+            return InputTrialPlanner.from_dataset(self.config.input_trials, self.config.paths.dataset_path)
         if mode == "context":
             return ContextTrialPlanner(self.config.context_trials, tuple(BACKBONE_CONFIG_REGISTRY))
         if mode == "reach":
