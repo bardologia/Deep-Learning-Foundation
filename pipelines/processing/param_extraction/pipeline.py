@@ -210,12 +210,14 @@ class ParamExtractionPipeline:
         self.parameter_io = ParameterIO(logger=self.logger)
 
         self.logger.section("[Param Extraction Pipeline Initialized]")
-        self.logger.subsection(f"Source cube : {self.cube_path}")
-        self.logger.subsection(f"Z range       : {self.z_range}")
-        self.logger.subsection(f"k_max           : {group.k_max}")
-        self.logger.subsection(f"Fit modes       : {group.modes}")
-        self.logger.subsection(f"Lambda values   : {group.lambda_values}")
-        self.logger.subsection(f"Permutations    : {len(group.configs)}")
+        self.logger.kv_table({
+            "Source Cube"   : str(self.cube_path),
+            "Z Range"       : str(self.z_range),
+            "K Max"         : group.k_max,
+            "Fit Modes"     : str(group.modes),
+            "Lambda Values" : str(group.lambda_values),
+            "Permutations"  : len(group.configs),
+        })
 
     def _resource_monitor(self):
         """Returns the resource monitor sampling this group, or a no-op context when none is configured."""
@@ -336,6 +338,10 @@ class ParamExtractionPipeline:
                 gc.collect()
 
                 self.logger.section("[Param Extraction Completed]")
+                self.logger.kv_table({
+                    "Permutations Saved" : len(saved),
+                    "Output Base Dir"    : str(Path(self.shared.processed_data_path) / "params"),
+                })
 
                 return saved
         except BaseException as exc:
