@@ -283,6 +283,26 @@ def test_layer_selection_logs_the_thinned_count(tmp_path):
     assert ("info", f"{tmp_path.name}: probing 3 of 5 leaf layers (max_layers=3)") in logger.messages
 
 
+def test_probe_core_records_the_true_width_of_a_subsampled_layer():
+    """A layer wider than MAX_FEATURES keeps its true width next to the sampled channel count."""
+    class _WideNet(torch.nn.Module):
+        """Network passing a 600-channel tiling of the input through one identity layer."""
+        def __init__(self) -> None:
+            """Builds the wide identity layer."""
+            super().__init__()
+            self.wide = torch.nn.Identity()
+
+        def forward(self, x):
+            """Returns the 300-fold channel tiling of x, shape (batch, 600, H, W)."""
+            return self.wide(x.repeat(1, 300, 1, 1))
+
+    results = _core(_WideNet(), ["wide"], samples=64).collect(_batches(1))
+
+    assert results["layers"]["wide"]["n_channels"] == 600
+    assert results["layers"]["wide"]["n_channels_sampled"] == FeatureSampler.MAX_FEATURES
+    assert results["input_baseline"]["n_channels"] == results["input_baseline"]["n_channels_sampled"] == 2
+
+
 def test_probe_core_seed_changes_the_sampled_pixels():
     """Different seeds sample different pixels and give different probe scores."""
     def score(seed: int) -> float:
