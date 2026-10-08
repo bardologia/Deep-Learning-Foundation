@@ -59,7 +59,7 @@ class ExtractionPlanResolver:
         """Checks the sweep lists, the dataset queue and the output-name collision rule.
 
         Raises:
-            ValueError : If a sweep list is empty, not a sequence or repeats a value, if a dataset is queued twice, or if a fixed ``output_suffix`` is combined with a sweep expanding to several permutations that would collide on it.
+            ValueError : If a sweep list is empty, not a sequence or repeats a value, if a dataset is queued twice, if ``fit_sigma_init_divisor`` is not positive, or if a fixed ``output_suffix`` is combined with a sweep expanding to several permutations that would collide on it.
         """
         for name in ("fit_k_values", "fit_lambda_values", "fit_modes"):
             value = getattr(self.entry_config, name)
@@ -71,6 +71,9 @@ class ExtractionPlanResolver:
         if len(set(self.dataset_dirs)) != len(self.dataset_dirs):
             repeated = sorted({str(path) for path in self.dataset_dirs if self.dataset_dirs.count(path) > 1})
             raise ValueError(f"dataset_filter queues a dataset twice: {', '.join(repeated)}; the second pass would refit and overwrite the first")
+
+        if self.entry_config.fit_sigma_init_divisor <= 0:
+            raise ValueError(f"fit_sigma_init_divisor must be positive, got {self.entry_config.fit_sigma_init_divisor}; it divides the heuristic initial sigma")
 
         permutations = len(self.entry_config.fit_k_values) * len(self.entry_config.fit_lambda_values) * len(self.entry_config.fit_modes)
         if self.entry_config.output_suffix and permutations > 1:

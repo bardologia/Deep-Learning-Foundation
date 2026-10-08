@@ -330,6 +330,10 @@ class SigmaFittingExtractor:
             erasing_divisor = PeakInitialiser.sigma_base(z_axis, self.k_max) / dh
             self.logger.warning(f"sigma_init_divisor {self.sigma_init_divisor} places the initial sigma at {sigma_guess:.4f}, below the fit lower bound {dh:.4f}; the kernel clamps it, so every divisor above {erasing_divisor:.3f} starts this fit from the same sigma and produces identical parameters")
 
+        if sigma_guess > h_span / 2.0:
+            clamping_divisor = PeakInitialiser.sigma_base(z_axis, self.k_max) / (h_span / 2.0)
+            self.logger.warning(f"sigma_init_divisor {self.sigma_init_divisor} places the initial sigma at {sigma_guess:.4f}, above the fit upper bound {h_span / 2.0:.4f}; the kernel clamps it, so every divisor below {clamping_divisor:.3f} starts this fit from the same sigma and produces identical parameters")
+
         self.logger.section("[Data Preparation]")
         self.logger.subsection(f"H            : {H}")
         self.logger.subsection(f"n_row        : {n_row}")
