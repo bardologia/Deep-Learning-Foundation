@@ -295,7 +295,7 @@ class DatasetConfig:
         shuffle_train               : Whether the training split is shuffled.
         pin_memory                  : Whether loader batches are pinned for faster host-to-device copies.
         fingerprint_dataset         : Whether the run hashes the dataset artifacts into meta/dataset_fingerprint.json for provenance.
-        x_axis                      : Z axis samples in metres, of shape (n_z,).
+        z_axis                      : Z axis samples in metres, of shape (n_z,).
         n_gaussians                 : Number of Gaussian components predicted per pixel.
     """
 

@@ -252,14 +252,14 @@ class NormalizationConfig:
     Attributes:
         input_strategy          : Preset name applied to every input slot, or "per_slot".
         output_strategy         : Preset name applied to every output slot, or "per_slot".
-        pass_mag                : Preset override for single-pass magnitude channels.
-        pass_phase              : Preset override for single-pass phase channels.
-        ifg_mag                 : Preset override for derived channel magnitude channels.
-        ifg_phase               : Preset override for derived channel phase channels.
+        chan_mag                : Preset override for the per-channel magnitude slot.
+        channel_phase           : Preset override for the per-channel phase slot.
+        derived_mag             : Preset override for the derived channel magnitude slot.
+        derived_phase           : Preset override for the derived channel phase slot.
         out_amp                 : Preset override for predicted Gaussian amplitudes.
         out_mu                  : Preset override for predicted Gaussian means in metres.
         out_sigma               : Preset override for predicted Gaussian widths in metres.
-        dem                     : Preset override for the auxiliary channel in metres.
+        aux                     : Preset override for the auxiliary channel slot.
         fixed_out_bounds_min    : Per-output-channel lower bounds used by the fixed_bounds preset.
         fixed_out_bounds_max    : Per-output-channel upper bounds used by the fixed_bounds preset.
         clamp_output            : Whether the output clamp is enabled.
