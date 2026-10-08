@@ -109,8 +109,9 @@ class FoldCollector(TrialCollector):
             A tuple (record, stds, coverage) where the record carries seed-mean
             metrics and the figures of a representative seed, stds maps each
             metric to its across-seed standard deviation, and coverage holds
-            ``n_used``, the seeds whose metrics entered the means, and
-            ``missing_seeds``, the labels of the seeds without metrics.
+            ``n_used``, the seeds whose metrics entered the means,
+            ``missing_seeds``, the labels of the seeds without metrics, and
+            ``dropped``, the metrics no seed reported as a finite value.
         """
         views   = [self._split_view(run, split) for run in runs]
         keys    = sorted({key for view in views for key in view.metrics})
@@ -131,7 +132,7 @@ class FoldCollector(TrialCollector):
         if shortfall:
             self.logger.warning(f"{fold_name} {split}: {len(shortfall)} metric(s) non-finite in some seed and averaged over fewer, e.g. {dict(list(shortfall.items())[:3])}")
 
-        coverage = {"n_used": len(scored), "missing_seeds": missing}
+        coverage = {"n_used": len(scored), "missing_seeds": missing, "dropped": dropped}
 
         return replace(representative, name=fold_name, metrics=means), stds, coverage
 
@@ -187,6 +188,7 @@ class FoldCollector(TrialCollector):
 
         base_records         = []
         records_by_split     = {split: [] for split in self.splits}
+        dropped              = {split: set() for split in self.splits}
         self.seed_dispersion = {}
 
         for fold_name, runs in groups:
@@ -199,6 +201,7 @@ class FoldCollector(TrialCollector):
             for split in self.splits:
                 record, stds, coverage = self._fold_split_record(fold_name, runs, split)
                 records_by_split[split].append(record)
+                dropped[split]      |= set(coverage["dropped"])
                 split_stds[split]    = stds
                 n_used[split]        = coverage["n_used"]
                 missing_seeds[split] = coverage["missing_seeds"]
@@ -215,6 +218,12 @@ class FoldCollector(TrialCollector):
         short = [fold for fold, entry in self.seed_dispersion.items() if entry["status"] != "DONE" or any(count < entry["n_seeds"] for count in entry["n_used"].values())]
         if short:
             self.logger.warning(f"{len(short)} of {len(self.seed_dispersion)} folds hold a seed that did not finish or average fewer seeds than they hold: {short}")
+
+        for split in self.splits:
+            kept    = {key for record in records_by_split[split] for key in record.metrics}
+            omitted = sorted(dropped[split] - kept)
+            if omitted:
+                self.logger.warning(f"split {split}: {omitted} non-finite in every fold, omitted from the cross-fold aggregate (cv_aggregate_report.md, cv_summary.json)")
 
         return base_records, records_by_split
 
