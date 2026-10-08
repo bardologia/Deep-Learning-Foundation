@@ -6,7 +6,8 @@ maps every chapter onto a stage by shared words, falling back to the chapter's
 proportional position, and never lets the mapped stage move backwards as the
 animation advances. A click on a chip seeks the first chapter of that stage, or
 of the next stage that owns one, and the chip of the playing chapter lights up
-with every earlier chip marked done.
+with every earlier chip marked done. On the pipelines page only the rows of
+pipelines that own a scene are styled as playable and open the modal on click.
 
 The mapping lives in the browser, so this module runs the real transport under
 node against a stub DOM and a stub animator, over the real stage and chapter
@@ -33,9 +34,9 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node is re
 
 @pytest.fixture(scope="module")
 def chips(tmp_path_factory) -> dict:
-    """Returns the scene keys and, per animated pipeline, its chips, chapter-to-stage map and click outcomes."""
-    payload = tmp_path_factory.mktemp("stage_chips") / "stages.json"
-    payload.write_text(json.dumps({pipeline["key"]: pipeline["stages"] for pipeline in PipelineLibrary().collect()}), encoding="utf-8")
+    """Returns the scene keys, per animated pipeline its chips, chapter-to-stage map and click outcomes, and per pipeline its row state."""
+    payload = tmp_path_factory.mktemp("stage_chips") / "pipelines.json"
+    payload.write_text(json.dumps(PipelineLibrary().collect()), encoding="utf-8")
 
     return _run(payload)
 
@@ -44,10 +45,10 @@ def _run(payload: Path) -> dict:
     """Runs the stage chip harness on a stage payload.
 
     Args:
-        payload : JSON file mapping each pipeline key to its stage names.
+        payload : JSON file holding the list of pipeline descriptors.
 
     Returns:
-        The harness output: ``scenes`` and the per-pipeline ``chips``, ``stageOf`` and ``clicks``.
+        The harness output: ``scenes``, the per-pipeline ``chips``, ``stageOf`` and ``clicks``, and the per-pipeline ``rows``.
     """
     result = subprocess.run(["node", str(HARNESS), str(payload)], capture_output=True, text=True, timeout=60)
 
@@ -90,3 +91,14 @@ def test_most_stages_own_a_chapter(chips):
     """Name matching leaves at most one stage per pipeline without a chapter of its own."""
     for key, outcome in chips["pipelines"].items():
         assert len(outcome["chips"]) - len(set(outcome["stageOf"])) <= 1, key
+
+
+def test_only_animated_pipelines_render_as_playable_rows(chips):
+    """A pipeline row carries the pointer styling and the modal click exactly when its pipeline owns a process scene."""
+    keys = [pipeline["key"] for pipeline in PipelineLibrary().collect()]
+
+    assert sorted(chips["rows"]) == sorted(keys)
+    for key, row in chips["rows"].items():
+        animated = key in chips["scenes"]
+
+        assert row == {"playable": animated, "clickable": animated}, key

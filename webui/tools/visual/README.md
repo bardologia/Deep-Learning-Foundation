@@ -106,15 +106,18 @@ node flow_sketch_catalog.js
 ## Pipeline stage chip harness
 
 `stage_chips.js` loads `process_anim.js` and `pipelines.js` under plain node with a stub
-DOM and a stub animator. It takes a JSON map of pipeline key to stage names, binds the
+DOM and a stub animator. It takes the JSON list of pipeline descriptors, binds the
 process modal's transport to every animated pipeline, clicks each stage chip in turn and
 prints the chapter-to-stage map with the chapter each click sought and the chips it lit.
-`tests/webui/test_pipeline_stage_chips.py` drives it over the `PipelineLibrary` stages and
+It also renders the pipeline rows and reports, per pipeline, whether the row is styled as
+playable and whether a click on it opens the process modal.
+`tests/webui/test_pipeline_stage_chips.py` drives it over the `PipelineLibrary` catalog and
 the `ProcessAnimator` chapters, which is the contract that keeps the lit chip moving
-forward with the animation and a click landing on the chip that was clicked.
+forward with the animation, a click landing on the chip that was clicked, and only the
+rows that own a process scene showing a pointer.
 
 ```
-node stage_chips.js /tmp/stages.json
+node stage_chips.js /tmp/pipelines.json
 ```
 
 ## Cube view harness
