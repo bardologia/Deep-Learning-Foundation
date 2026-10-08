@@ -21,7 +21,7 @@ from pipelines.backbone.inference.predictor          import CubeStitcher, Predic
 from tools.data.regions                              import CropRegion
 from configuration.inference                         import InferenceConfig
 
-from tests.conftest import SilentLogger
+from tests.conftest import RecordingLogger, SilentLogger
 
 
 N_GAUSSIANS = 5
@@ -308,6 +308,25 @@ def test_predictor_gt_curves_match_gt_gaussian(tmp_path):
     centre   = result.gt_curves[:, 8, 8]
 
     assert np.allclose(centre, expected.astype(np.float32), atol=1e-3)
+
+
+def test_predictor_warns_when_a_gt_pixel_has_a_constant_profile(tmp_path):
+    """A pixel whose ground-truth slots are all inactive has an undefined R2, which is counted and warned about instead of averaged."""
+    run = _build_run(n_rows=16, n_cols=16)
+    run.loader[0][1][:, 0, 0, 0] = 0.0
+
+    cfg  = InferenceConfig(run_directory=tmp_path, output_subdir="pred", device="cpu")
+    meta = InferenceMetadata(cfg)
+    meta.create_dirs()
+
+    logger    = RecordingLogger()
+    predictor = Predictor(run=run, logger=logger, window_kind="hann", cube_dtype="float32", save_cubes=False, meta=meta, cpu_workers=1)
+
+    result = predictor.run_inference()
+
+    assert np.isnan(result.pixel_r2[0, 0])
+    assert np.isfinite(np.delete(result.pixel_r2.reshape(-1), 0)).all()
+    assert any(level == "warning" and "1 of 256 pixels have a constant GT profile" in message for level, message in logger.messages)
 
 
 def test_predictor_offsets_from_region(tmp_path):

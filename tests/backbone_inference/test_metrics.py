@@ -167,6 +167,21 @@ def test_curve_pixel_metrics_cosine_orthogonal():
     assert out["cos"][0, 0] == pytest.approx(0.0, abs=1e-6)
 
 
+def test_curve_pixel_metrics_constant_reference_pixel_has_undefined_r2():
+    """A pixel whose reference profile is all zero gets a NaN R2 while its neighbours and the other maps stay finite."""
+    rng  = np.random.default_rng(5)
+    ref  = rng.random((N_Z, 3, 3)).astype(np.float32) + 0.1
+    ref[:, 1, 1] = 0.0
+    pred = ref + 0.05
+
+    out = Metrics.curve_pixel_metrics(pred, ref)
+
+    assert np.isnan(out["r2"][1, 1])
+    assert np.isfinite(np.delete(out["r2"].reshape(-1), 4)).all()
+    assert np.isfinite(out["mse"]).all()
+    assert np.isfinite(out["cos"]).all()
+
+
 def test_unit_area_cubes_are_normalised_once_and_shared():
     """Unit-area cubes are cached per side, are distinct objects, and integrate to one along z."""
     rng    = np.random.default_rng(5)
@@ -239,6 +254,32 @@ def test_basic_stats_and_percentiles_exact():
     assert stats["mean"]   == pytest.approx(50.0)
     assert pcts["p50"]     == pytest.approx(50.0)
     assert pcts["p25"]     == pytest.approx(25.0)
+
+
+def test_pixel_stats_skip_undefined_pixels_and_compute_counts_them():
+    """Per-pixel statistics cover the finite entries only, and compute() reports how many R2 pixels were undefined."""
+    rng = np.random.default_rng(6)
+    gt  = rng.random((N_Z, 3, 3)).astype(np.float32) + 0.1
+    gt[:, 0, 0] = 0.0
+    pred = gt + 0.01 * rng.standard_normal(gt.shape).astype(np.float32)
+
+    result  = _make_result(pred, gt)
+    metrics = Metrics(result, _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).compute(param_space=False)
+    defined = result.pixel_r2[np.isfinite(result.pixel_r2)]
+
+    assert metrics["pixel_r2_gt_undefined_count"] == 1
+    assert metrics["pixel_r2_gt_mean"] == pytest.approx(float(defined.mean()), abs=1e-6)
+    assert metrics["pixel_r2_gt_min"]  == pytest.approx(float(defined.min()),  abs=1e-6)
+    assert np.isfinite(metrics["pixel_r2_gt_p1"])
+
+
+def test_pixel_stats_without_finite_pixels_raise():
+    """A map with no finite entry raises instead of producing NaN statistics."""
+    curves  = np.ones((N_Z, 2, 2), dtype=np.float32)
+    metrics = Metrics(_make_result(curves, curves), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())
+
+    with pytest.raises(ValueError, match="no finite pixel"):
+        metrics._expand_pixel_stats((("pixel_r2_gt", np.full((2, 2), np.nan, dtype=np.float32)),))
 
 
 def test_select_pixels_best_worst_random_disjoint():
@@ -632,6 +673,19 @@ def test_label_quality_noisier_labels_score_lower():
     _map_noisy, stats_noisy = Metrics(_make_result(noisy, noisy), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).label_quality(raw)
 
     assert stats_clean["label_r2_mean"] > stats_noisy["label_r2_mean"]
+
+
+def test_label_quality_counts_pixels_with_a_constant_raw_profile():
+    """A raw cube pixel with a constant profile yields an undefined label R2 that is counted and left out of the mean."""
+    rng = np.random.default_rng(2)
+    raw = rng.uniform(0.5, 2.0, size=(N_Z, 4, 3)).astype(np.float32)
+    raw[:, 0, 0] = 0.0
+
+    r2_map, stats = Metrics(_make_result(raw.copy(), raw), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).label_quality(raw)
+
+    assert np.isnan(r2_map[0, 0])
+    assert stats["label_r2_undefined_count"] == 1
+    assert stats["label_r2_mean"] == pytest.approx(1.0, abs=1e-5)
 
 
 def test_label_quality_shape_mismatch_raises():
