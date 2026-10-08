@@ -103,6 +103,20 @@ walkthrough from failing on a catalogue renamed on one side only.
 node flow_sketch_catalog.js
 ```
 
+## Pipeline stage chip harness
+
+`stage_chips.js` loads `process_anim.js` and `pipelines.js` under plain node with a stub
+DOM and a stub animator. It takes a JSON map of pipeline key to stage names, binds the
+process modal's transport to every animated pipeline, clicks each stage chip in turn and
+prints the chapter-to-stage map with the chapter each click sought and the chips it lit.
+`tests/webui/test_pipeline_stage_chips.py` drives it over the `PipelineLibrary` stages and
+the `ProcessAnimator` chapters, which is the contract that keeps the lit chip moving
+forward with the animation and a click landing on the chip that was clicked.
+
+```
+node stage_chips.js /tmp/stages.json
+```
+
 ## Repo-map diagram harness
 
 `render_diagram.js` renders a single repo-map schema (one folder/diagram from
