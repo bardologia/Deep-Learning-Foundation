@@ -544,9 +544,11 @@ class XraySummarizer:
 
     Attributes:
         CHECKS_WITH_LIMITS : Checks a size limit can skip, counted as unchecked tensors in the summary.
+        VERDICTS           : The verdict phrases from worst to best.
     """
 
     CHECKS_WITH_LIMITS = ("spectral", "duplicates")
+    VERDICTS           = ("critical issues detected", "warnings detected", "minor observations only", "clean")
 
     def build(self, reports: list[LayerReport], checkpoint_path: Path) -> dict:
         """Builds the checkpoint-level summary of a weight x-ray.
@@ -593,9 +595,9 @@ class XraySummarizer:
     def _verdict(self, severity_counts: dict) -> str:
         """Returns the verdict phrase implied by the worst populated severity level."""
         if severity_counts["critical"] > 0:
-            return "critical issues detected"
+            return self.VERDICTS[0]
         if severity_counts["warning"] > 0:
-            return "warnings detected"
+            return self.VERDICTS[1]
         if severity_counts["info"] > 0:
-            return "minor observations only"
-        return "clean"
+            return self.VERDICTS[2]
+        return self.VERDICTS[3]
