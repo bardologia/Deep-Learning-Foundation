@@ -188,6 +188,38 @@ class TrainScheduler(TrialSweepScheduler):
         "ablation"      : "ablation",
     }
 
+    def __init__(self, config, cli_overrides: dict, entry_script: Path) -> None:
+        """Refuses a probe-only sweep, then resolves the sweep like any trial scheduler.
+
+        Args:
+            config        : Resolved backbone entry config naming the trial mode.
+            cli_overrides : Override paths and values parsed from the command line.
+            entry_script  : Path to the training entry script each unit re-invokes.
+
+        Raises:
+            ValueError : If the loss-scale probe is enabled with exit_after, which would end every unit after its probe report with nothing trained while the GPU queue marks it DONE.
+        """
+        self.reject_probe_exit(config, f"{config.trials_mode} trial sweep")
+        super().__init__(config, cli_overrides, entry_script)
+
+    @staticmethod
+    def reject_probe_exit(config, fanout: str) -> None:
+        """Refuses a fan-out whose every unit would stop after the loss-scale probe.
+
+        The probe settings are forwarded to every unit, and a unit that exits
+        cleanly after its report is marked DONE by the GPU queue although no
+        checkpoint, test metrics or complete.json exist behind that status.
+
+        Args:
+            config : Resolved entry config carrying the probe settings and the default seed.
+            fanout : Name of the fan-out quoted in the message.
+
+        Raises:
+            ValueError : If the probe is enabled together with exit_after.
+        """
+        if config.probe.enabled and config.probe.exit_after:
+            raise ValueError(f"probe.enabled with probe.exit_after=True would end every unit of the {fanout} after its probe report with nothing trained, and the GPU queue would still mark each unit DONE; set probe.exit_after=false to train after the probe, or run the probe alone as a single unit with trials_enabled=false and seeds=[{config.seed}]")
+
     @property
     def staged_inference(self) -> bool:
         """Whether inference runs as a separate stage after all training units."""
@@ -322,7 +354,7 @@ class BackboneTrainingLauncher:
             argv : Command-line arguments without the program name; defaults to the process arguments.
 
         Raises:
-            ValueError : If `ddp` is combined with a trial unit, a trial sweep or a multi-seed fan-out, each of which already claims one GPU per unit.
+            ValueError : If `ddp` is combined with a trial unit, a trial sweep or a multi-seed fan-out, each of which already claims one GPU per unit; or if the loss-scale probe is enabled with exit_after in a fan-out, whose units would all exit after their report with nothing trained.
         """
         argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -343,6 +375,7 @@ class BackboneTrainingLauncher:
                     SeedSweepRunner(config, SingleTrainRunner).run()
             else:
                 DdpDispatch.reject_seed_sweep(config, seeds)
+                TrainScheduler.reject_probe_exit(config, f"{len(seeds)}-seed fan-out")
                 SeedFanoutScheduler.for_runner(config, cli.overrides, self.entry_script, SingleTrainRunner, infer_at_end=config.infer_at_end).run()
             return
 
