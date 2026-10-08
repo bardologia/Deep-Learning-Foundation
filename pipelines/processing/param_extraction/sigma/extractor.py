@@ -20,10 +20,11 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from configuration.param_extraction import FitMode
-from tools.data.gaussians           import GaussianActivity
-from tools.data.preprocessing       import ProfilePreprocessor
-from tools.monitoring.logger        import Logger
+from configuration.param_extraction                import FitMode
+from pipelines.processing.param_extraction.metrics import FitBoundCensus
+from tools.data.gaussians                          import GaussianActivity
+from tools.data.preprocessing                      import ProfilePreprocessor
+from tools.monitoring.logger                       import Logger
 
 from .initialiser import PeakInitialiser
 from .selection   import BestKSelector, KernelBackendSelector
@@ -171,6 +172,7 @@ class SigmaFittingExtractor:
         backend       : Kernel backend label naming the device platform and count the fit runs on.
         devices       : JAX devices the fit runs on.
         outcome       : Record of the last run's fitted pixels, truncation, backend and duration; None before run().
+        bound_shares  : Per (mode, lambda_k) shares of the selected active slots whose sigma or mean ended on a clamp bound, from the last run; empty before run().
     """
 
     MAX_PENDING_SCORINGS = 2
@@ -261,11 +263,12 @@ class SigmaFittingExtractor:
             kernel, n_devices, backend, active_devices = KernelBackendSelector().select()
             self._owns_kernel                          = True
 
-        self._kernel    = kernel
-        self._n_devices = n_devices
-        self.backend    = backend
-        self.devices    = list(active_devices)
-        self.outcome    : Optional[ExtractionOutcome] = None
+        self._kernel      = kernel
+        self._n_devices   = n_devices
+        self.backend      = backend
+        self.devices      = list(active_devices)
+        self.outcome      : Optional[ExtractionOutcome] = None
+        self.bound_shares : Dict[tuple, Dict[str, float]] = {}
 
         self.logger.section("[GPU Parameter Extractor]")
         self.logger.subsection(f"JAX active devices : {self.devices}")
@@ -600,8 +603,9 @@ class SigmaFittingExtractor:
         r_end        : int,
         n_row        : int,
         batch_tag    : str,
+        census       : FitBoundCensus,
     ) -> None:
-        """Selects the best K per pixel and writes the batch into the maps.
+        """Selects the best K per pixel, writes the batch into the maps and adds its clamp-bound counts.
 
         Args:
             mode         : Fit mode the results belong to.
@@ -615,6 +619,7 @@ class SigmaFittingExtractor:
             r_end        : Exclusive last col of the batch.
             n_row        : Number of rows.
             batch_tag    : Label used in log sections.
+            census       : Clamp-bound census of the fit, whose counts are summed into each permutation's ``bounds`` entry.
         """
 
         t_score = perf_counter()
@@ -622,7 +627,7 @@ class SigmaFittingExtractor:
         mse_all = self._best_k_selector.score(gpu_results, batch_tag=f"{batch_tag} | mode {mode}")
 
         for lambda_k in self.lambda_values:
-            best_params, mse_act, pen_act, best_idx_act = self._best_k_selector.select(gpu_results, mse_all, scale_all, lambda_k, n_params_out, batch_tag=f"{batch_tag} | mode {mode}")
+            best_params, mse_act, pen_act, best_idx_act, bound_counts = self._best_k_selector.select(gpu_results, mse_all, scale_all, lambda_k, n_params_out, census, batch_tag=f"{batch_tag} | mode {mode}")
 
             output     = np.zeros((n_total, n_params_out),       dtype=np.float32)
             mse_out    = np.full ((n_total, self.k_max), np.nan, dtype=np.float32)
@@ -639,6 +644,8 @@ class SigmaFittingExtractor:
             maps["mse"   ][:, :, r_start:r_end] = mse_out.reshape(r_count, n_row, self.k_max).transpose(2, 1, 0)
             maps["pen"   ][:, :, r_start:r_end] = pen_out.reshape(r_count, n_row, self.k_max).transpose(2, 1, 0)
             maps["best_k"][:,    r_start:r_end] = best_k_out.reshape(r_count, n_row).T
+
+            FitBoundCensus.add(maps["bounds"], bound_counts)
 
         self.logger.subsection(f"{batch_tag} | mode {mode} select+store elapsed : {perf_counter() - t_score:.1f}s")
 
@@ -676,6 +683,7 @@ class SigmaFittingExtractor:
         H             : int,
         n_params_out  : int,
         outputs       : Dict[tuple, dict],
+        census        : FitBoundCensus,
     ) -> int:
         """Streams col batches through load, init, fit and scoring stages.
 
@@ -695,6 +703,7 @@ class SigmaFittingExtractor:
             H             : Number of z bins.
             n_params_out  : Flattened parameter count 3 * k_max.
             outputs       : Destination maps keyed by (mode, lambda_k).
+            census        : Clamp-bound census handed to every scoring job.
 
         Returns:
             Number of active pixels that were fitted.
@@ -747,7 +756,7 @@ class SigmaFittingExtractor:
                                 throttle_wait = perf_counter() - t_throttle
                                 if throttle_wait > 1.0:
                                     self.logger.subsection(f"{batch_tag} | mode {mode} GPU idle on scoring backlog : {throttle_wait:.1f}s")
-                                score_futures.append(score_pool.submit(self._score_and_store, mode, gpu_results, scale_all, active_idx, n_total, n_params_out, outputs, r_start, r_end, n_row, batch_tag))
+                                score_futures.append(score_pool.submit(self._score_and_store, mode, gpu_results, scale_all, active_idx, n_total, n_params_out, outputs, r_start, r_end, n_row, batch_tag, census))
 
                         del profiles_flat, profiles_norm, safe_scale, active, batch
                         gc.collect()
@@ -799,6 +808,7 @@ class SigmaFittingExtractor:
 
         self._warmup_kernel(z_ax_j, H, sigma_lower_j, sigma_upper_j, mu_lower_j, mu_upper_j)
 
+        census  = FitBoundCensus(z_axis, self.activity_threshold)
         outputs = {}
         for mode in self.modes:
             for lambda_k in self.lambda_values:
@@ -807,6 +817,7 @@ class SigmaFittingExtractor:
                     "mse"    : np.full ((self.k_max, n_row, n_col), np.nan,  dtype=np.float32),
                     "pen"    : np.full ((self.k_max, n_row, n_col), np.nan,  dtype=np.float32),
                     "best_k" : np.zeros((n_row, n_col),                      dtype=np.int16),
+                    "bounds" : {"active_slots": 0, "sigma_at_lower": 0, "sigma_at_upper": 0, "mu_at_bound": 0},
                 }
 
         t_fit = perf_counter()
@@ -816,7 +827,7 @@ class SigmaFittingExtractor:
                 cube_mmap, z_axis, z_ax_j,
                 sigma_lower_j, sigma_upper_j,
                 mu_lower_j, mu_upper_j,
-                n_row, n_col, H, n_params_out, outputs,
+                n_row, n_col, H, n_params_out, outputs, census,
             )
         finally:
             if self._owns_initialiser:
@@ -840,6 +851,10 @@ class SigmaFittingExtractor:
         self.logger.subsection(f"Permutations fitted  : {len(outputs)} ({len(self.modes)} modes x {len(self.lambda_values)} lambdas)")
         self.logger.subsection(f"Backend              : {self.backend} on {self.outcome.devices}")
         self.logger.subsection(f"Fit elapsed          : {self.outcome.fit_seconds:.1f}s")
+
+        for (mode, lambda_k), maps in outputs.items():
+            census.report(maps["bounds"], self.logger, f"mode {mode} | lambda_k={lambda_k:g}")
+            self.bound_shares[(mode, lambda_k)] = FitBoundCensus.fractions(maps["bounds"])
 
         results = {}
         for key, maps in outputs.items():

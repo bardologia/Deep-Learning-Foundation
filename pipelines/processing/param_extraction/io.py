@@ -135,16 +135,17 @@ class ExtractionMetadataManager:
 
         Beside the fit settings, the record names the commit the fitter ran
         from and what the fit did: the z bins, the active and total pixels,
-        whether truncation applied, the backend and devices, the duration and
-        the group log, so the run can be judged from its own directory after
-        the shared group log has moved on.
+        whether truncation applied, the backend and devices, the duration,
+        the group log and the shares of active slots whose sigma or mean
+        ended on a clamp bound, so the run can be judged from its own
+        directory after the shared group log has moved on.
 
         Args:
             npy_path         : Path of the saved parameter stack.
             diagnostics_path : Path of the saved fit diagnostics archive.
             cube_path        : Path of the cube the fit was performed on.
             z_range          : Z axis limits as (minimum, maximum), in metres.
-            fit_outcome      : Outcome keys of the fit, as ``ExtractionOutcome.to_metadata`` returns them, plus the pipeline's ``extraction_log``.
+            fit_outcome      : Outcome keys of the fit, as ``ExtractionOutcome.to_metadata`` returns them, plus the pipeline's ``extraction_log`` and the permutation's ``FitBoundCensus.fractions``.
 
         Returns:
             Path of the written metadata JSON.

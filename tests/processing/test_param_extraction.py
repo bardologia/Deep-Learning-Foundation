@@ -319,8 +319,9 @@ def test_pipeline_run_records_the_fit_outcome_and_commit_in_the_metadata(tmp_pat
         """Extractor stand-in returning one fitted permutation and a fixed outcome."""
 
         def __init__(self, **kwargs):
-            """Records a fixed outcome in place of fitting."""
-            self.outcome = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=1.5)
+            """Records a fixed outcome and clamp-bound shares in place of fitting."""
+            self.outcome      = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=1.5)
+            self.bound_shares = {("sigma", 1e-2): {"sigma_at_lower_frac": 0.25, "sigma_at_upper_frac": 0.0, "mu_at_bound_frac": 0.0}}
 
         def run(self, cube_path, z_range):
             """Returns zero parameters for the single permutation."""
@@ -346,6 +347,8 @@ def test_pipeline_run_records_the_fit_outcome_and_commit_in_the_metadata(tmp_pat
     assert meta["fit_seconds"]        == pytest.approx(1.5)
     assert meta["extraction_log"]     == str(tmp_path / "params" / "logs" / "param_extraction_k3.log")
     assert meta["adam_steps"]         == entry.adam_steps
+    assert meta["sigma_at_lower_frac"] == pytest.approx(0.25)
+    assert meta["mu_at_bound_frac"]    == 0.0
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
@@ -358,8 +361,9 @@ def test_pipeline_run_copies_its_part_of_the_group_log_into_the_run(tmp_path, mo
         """Extractor stand-in returning one fitted permutation and a fixed outcome."""
 
         def __init__(self, **kwargs):
-            """Records a fixed outcome in place of fitting."""
-            self.outcome = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=1.5)
+            """Records a fixed outcome and clamp-bound shares in place of fitting."""
+            self.outcome      = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=1.5)
+            self.bound_shares = {("sigma", 1e-2): {"sigma_at_lower_frac": 0.25, "sigma_at_upper_frac": 0.0, "mu_at_bound_frac": 0.0}}
 
         def run(self, cube_path, z_range):
             """Returns zero parameters for the single permutation."""
@@ -397,8 +401,9 @@ def test_pipeline_run_samples_resources_into_the_group_log(tmp_path, monkeypatch
         """Extractor stand-in that holds the fit open long enough for several resource samples."""
 
         def __init__(self, **kwargs):
-            """Records a fixed outcome in place of fitting."""
-            self.outcome = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=0.3)
+            """Records a fixed outcome and clamp-bound shares in place of fitting."""
+            self.outcome      = ExtractionOutcome(n_z_bins=2, total_pixels=8, active_pixels=6, truncation_applied=False, backend="jit (1 cpu device)", devices=["CpuDevice(id=0)"], fit_seconds=0.3)
+            self.bound_shares = {("sigma", 1e-2): {"sigma_at_lower_frac": 0.25, "sigma_at_upper_frac": 0.0, "mu_at_bound_frac": 0.0}}
 
         def run(self, cube_path, z_range):
             """Waits for the sampler, then returns zero parameters for the single permutation."""
@@ -977,6 +982,41 @@ def test_r2_statistics_ignore_never_fitted_pixels(logger, tmp_path):
     assert summary["n_pixels"] == float(n_rows * n_cols)
     assert summary["r2_mean"] == pytest.approx(float(r2_map[0, 0]), abs=1e-6)
     assert summary["r2_neg_frac"] == 0.0
+    assert summary["sigma_at_lower_frac"] == 0.0
+    assert summary["mu_at_bound_frac"]    == 0.0
+
+
+def test_fit_bound_census_counts_active_slots_on_the_clamp_bounds():
+    """Verifies the census counts only active slots on the sigma and mean bounds, and warns above the share limit."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.metrics import FitBoundCensus
+
+    z_axis = np.linspace(Z_RANGE[0], Z_RANGE[1], 101, dtype=np.float32)
+    census = FitBoundCensus(z_axis, ACTIVITY_THRESH)
+
+    params = np.zeros((3 * 2, 1, 4), dtype=np.float32)
+
+    params[0::3, 0, :] = 1.0
+    params[1::3, 0, :] = 30.0
+    params[2::3, 0, :] = 5.0
+
+    params[2, 0, 0] = census.sigma_lower
+    params[5, 0, 1] = census.sigma_upper
+    params[1, 0, 2] = Z_RANGE[1]
+    params[0, 0, 3] = 0.0
+    params[2, 0, 3] = census.sigma_lower
+
+    counts = census.count_stack(params, 2)
+
+    assert census.sigma_lower == pytest.approx(1.0)
+    assert counts == {"active_slots": 7, "sigma_at_lower": 1, "sigma_at_upper": 1, "mu_at_bound": 1}
+    assert FitBoundCensus.fractions(counts)["sigma_at_lower_frac"] == pytest.approx(1 / 7)
+    assert census.count_rows(params.reshape(6, 4).T) == counts
+
+    logger = RecordingLogger()
+    census.report(counts, logger, "run")
+
+    assert sum(1 for level, message in logger.messages if level == "warning") == 3
 
 
 def test_metrics_report_names_the_effective_truncation(tmp_path):
