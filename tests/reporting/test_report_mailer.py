@@ -623,6 +623,21 @@ def test_batch_sends_one_message_per_experiment(entry_config, monkeypatch, fake_
     assert "Report bundle of experiment" in message.get_body(preferencelist=("plain",)).get_content()
 
 
+def test_batch_dry_run_says_nothing_was_sent(entry_config, monkeypatch, fake_smtp):
+    """Verifies a dry run titles its section and closes as a staging that sent nothing, never as a mailing."""
+    monkeypatch.delenv(entry_config.password_env, raising=False)
+    entry_config.dry_run           = True
+    entry_config.experiment_filter = ["exp_beta"]
+    logger                         = RecordingLogger()
+
+    ReportMailBatch(entry_config, logger).run()
+
+    assert ("section", "Staging experiment results for victor@example.com (dry run, nothing is sent)") in logger.messages
+    assert logger.messages[-1] == ("ok", "Dry run: staged 7 file(s) for 1 message(s) across 1 experiment(s); nothing was sent")
+    assert not any(message.startswith("Mailed") for _level, message in logger.messages)
+    assert fake_smtp.instances == []
+
+
 def test_batch_respects_the_experiment_filter(entry_config, monkeypatch, fake_smtp):
     """Verifies the filter restricts the batch to the named experiment."""
     monkeypatch.setenv(entry_config.password_env, "app-password")
