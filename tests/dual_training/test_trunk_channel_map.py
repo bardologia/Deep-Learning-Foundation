@@ -109,7 +109,7 @@ def test_group_label_names_the_selection():
 def test_group_label_rejects_unknown_groups():
     """Labelling an unrecognised group raises ValueError."""
     with pytest.raises(ValueError, match="Unknown input groups"):
-        TrunkChannelMap.group_label(("kz",))
+        TrunkChannelMap.group_label(("bogus",))
 
 
 def test_group_label_rejects_empty_selection():

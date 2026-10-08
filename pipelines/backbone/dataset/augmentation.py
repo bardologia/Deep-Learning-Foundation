@@ -1,8 +1,7 @@
 """Spatial and additive-noise augmentation for backbone training patches.
 
-Augmentation is applied to the train split only, jointly to the input stack, the
-ground-truth parameter maps and the optional per-pixel kz field so their spatial
-alignment is preserved.
+Augmentation is applied to the train split only, jointly to the input stack and the
+ground-truth parameter maps so their spatial alignment is preserved.
 """
 
 from __future__ import annotations
