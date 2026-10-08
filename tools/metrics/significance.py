@@ -69,7 +69,7 @@ class PairedPermutationTest:
             and "p_min", the smallest p-value attainable with that many pairs.
 
         Raises:
-            ValueError : If the samples are not one-dimensional and of equal length, or if fewer than two pairs are given.
+            ValueError : If the samples are not one-dimensional and of equal length, hold fewer than two pairs or carry a non-finite value.
         """
         a = np.asarray(a, dtype=np.float64)
         b = np.asarray(b, dtype=np.float64)
@@ -78,6 +78,8 @@ class PairedPermutationTest:
             raise ValueError(f"Paired test needs two equal-length 1-D samples, got {a.shape} and {b.shape}")
         if a.size < 2:
             raise ValueError(f"Paired test needs at least 2 pairs, got {a.size}")
+        if not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)):
+            raise ValueError("Paired test needs only finite values in both samples")
 
         diffs    = a - b
         observed = diffs.mean()

@@ -80,6 +80,16 @@ def test_single_pair_raises():
         PairedPermutationTest().test([1.0], [2.0])
 
 
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_non_finite_values_raise(bad):
+    """Verifies a NaN or infinite metric in either sample is rejected."""
+    with pytest.raises(ValueError, match="only finite values"):
+        PairedPermutationTest().test([1.0, 2.0, bad], [1.0, 2.0, 3.0])
+
+    with pytest.raises(ValueError, match="only finite values"):
+        PairedPermutationTest().test([1.0, 2.0, 3.0], [1.0, 2.0, bad])
+
+
 def test_holm_adjustment_is_monotone_and_bounded():
     """Verifies Holm adjustment scales each p-value by its step and stays non-decreasing."""
     adjusted = HolmBonferroni.adjust({"a": 0.01, "b": 0.04, "c": 0.5})
