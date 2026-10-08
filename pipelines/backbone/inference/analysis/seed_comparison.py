@@ -532,14 +532,15 @@ class SeedComparisonReport:
             "Per-pixel across-seed standard deviation of the model outputs, written as cubes into every seed's inference cube directory "
             "(they appear as metric-map layers in the cube explorer). Predicted slots are first matched to the shared GT slots per seed, "
             "so the parameter maps compare the same physical component across seeds; a slot contributes where it is matched in at "
-            f"least {SeedDisagreementMaps.MIN_ACTIVE} seeds.\n"
+            f"least {SeedDisagreementMaps.MIN_ACTIVE} seeds. Coverage is the share of region pixels each map's statistics describe.\n"
         )
 
         summary = self.disagreement["summary"]
-        table   = MarkdownTable(("Map", "Mean", "Median", "p95"))
+        table   = MarkdownTable(("Map", "Mean", "Median", "p95", "Coverage"))
         for name in SeedDisagreementMaps.MAP_TITLES:
-            cells = [summary.get(f"{name}_{stat}") for stat in ("mean", "median", "p95")]
-            table.add_row(f"`{name}`", *[self._fmt(cell) if cell is not None else "—" for cell in cells])
+            cells    = [summary[f"{name}_{stat}"] for stat in ("mean", "median", "p95")]
+            coverage = f"{summary[f'{name}_finite_frac'] * 100.0:.1f}% ({summary[f'{name}_finite_n']} px)"
+            table.add_row(f"`{name}`", *[self._fmt(cell) if cell is not None else "—" for cell in cells], coverage)
 
         out.append("\n".join(table.render()))
         out.append("")
