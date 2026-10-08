@@ -45,6 +45,10 @@ def _make_config(tmp_path: Path, n_trials: int = 10):
         early_stop_patience     = 2,
         pruner_n_startup_trials = 0,
         pruner_n_warmup_steps   = 0,
+        search_lr               = True,
+        search_arch             = True,
+        search_batch            = False,
+        batch_sizes             = [64, 128, 256],
         emit_trial_docs         = False,
         emit_study_plots        = False,
     )
@@ -94,6 +98,32 @@ def test_search_space_matches_config_union(tmp_path):
 
     expected = {**UNetConfig.tunable_lr_params(), **UNetConfig.tunable_arch_params()}
     assert space == expected
+
+
+def test_search_space_follows_the_switched_on_groups(tmp_path):
+    """Verifies that the scheduler decodes against the groups the tuning settings switch on, the batch size included."""
+    orch = _orchestrator(tmp_path)
+
+    orch.config.tuning.search_arch = False
+    assert orch._search_space("unet") == UNetConfig.tunable_lr_params()
+
+    orch.config.tuning.search_arch  = True
+    orch.config.tuning.search_lr    = False
+    orch.config.tuning.search_batch = True
+    assert orch._search_space("unet") == {**UNetConfig.tunable_arch_params(), "batch_size": {"type": "categorical", "choices": [64, 128, 256]}}
+
+    orch.config.tuning.search_arch  = False
+    orch.config.tuning.search_batch = False
+    with pytest.raises(ValueError, match="every search group is off"):
+        orch._search_space("unet")
+
+
+def test_a_jepa_study_decodes_against_the_architecture_alone(tmp_path):
+    """The JEPA tuner searches the architecture only, so the scheduler decodes its best trial against that group."""
+    orch = _orchestrator(tmp_path)
+    orch.config.training_type = "jepa"
+
+    assert orch._search_space("unet") == UNetConfig.tunable_arch_params()
 
 
 def test_model_keys_reject_structured_heads_for_profile_coupled_jepa(tmp_path):
@@ -370,6 +400,16 @@ def test_resume_allows_more_trials_and_a_new_gpu_pool(tmp_path):
     orch.config.gpus            = [0]
 
     orch._guard_resumed_config(orch.run_dir / "resolved_config.json")
+
+
+def test_resume_rejects_a_changed_search_group(tmp_path):
+    """The search groups define what the stored trials sampled, so a resume may not change them."""
+    orch = _resumed_scheduler(tmp_path)
+
+    orch.config.tuning.search_arch = False
+
+    with pytest.raises(SystemExit, match="tuning.search_arch"):
+        orch._guard_resumed_config(orch.run_dir / "resolved_config.json")
 
 
 def test_prepare_stage_opens_the_study_without_dispatching_or_reporting(tmp_path, monkeypatch):

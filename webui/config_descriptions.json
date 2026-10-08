@@ -2137,6 +2137,10 @@
         "early_stop_patience": "epochs without validation improvement before a trial's training is halted early",
         "pruner_n_startup_trials": "startup-trial count shared by optuna.pruners.MedianPruner (trials exempt from pruning) and the TPESampler (trials of random search before it switches to TPE)",
         "pruner_n_warmup_steps": "epochs within a trial before MedianPruner is allowed to prune that trial",
+        "search_lr": "Whether the study samples the model configuration's learning rates, weight decays and dropout (its tunable_lr_params). JEPA studies always search the architecture alone, since that entry owns its own learning rates. Defines the study, so it cannot change on resume",
+        "search_arch": "Whether the study samples the model configuration's architecture fields (its tunable_arch_params: feature widths, bottleneck factor, activation, normalization, upsampling and the like). Defines the study, so it cannot change on resume",
+        "search_batch": "Whether the study samples the training batch size from batch_sizes. The trial puts the drawn size on the loader and rescales the optimizer by batch over lr_reference_batch_size as every training entry does, so a tuned rate stays quoted at the reference batch and a downstream run with the same batch reproduces it. The best size is recorded on a training.batch_size decision axis of a sequence block. Defines the study, so it cannot change on resume",
+        "batch_sizes": "Batch sizes the study may pick when search_batch is on; every size must fit the GPU with the largest architecture the study may draw. Defines the study, so it cannot change on resume",
         "emit_trial_docs": "whether to write per-trial training-documentation artifacts to the run directory, backbone tuning only (no effect on autoencoder/JEPA trials)",
         "emit_study_plots": "whether to render Optuna study-level visualization plots after each model's sweep completes"
       }
