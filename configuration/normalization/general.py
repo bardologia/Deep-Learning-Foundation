@@ -391,9 +391,16 @@ class ChannelStats:
 
         Returns:
             The reconstructed ChannelStats, in the stored channel order.
+
+        Raises:
+            ValueError : If any channel scale is non-finite or not strictly positive.
         """
         entries    = payload["channels"]
         strategies = [ChannelStrategy.from_dict(e) for e in entries]
+
+        for e in entries:
+            if not np.isfinite(e["scale"]) or e["scale"] <= 0:
+                raise ValueError(f"Corrupt channel normalization stats for '{e['name']}': scale={e['scale']} must be finite with scale > 0.")
 
         return cls(
             loc        = [e["loc"]   for e in entries],

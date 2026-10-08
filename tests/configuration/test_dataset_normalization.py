@@ -306,6 +306,15 @@ def test_channel_stats_serialization_requires_clampable():
         ChannelStats.from_dict({"channels": [{"name": "c0", "loc": 0.0, "scale": 1.0, "norm_method": "zscore", "apply_log1p": False, "bounds": None}]})
 
 
+@pytest.mark.parametrize("scale", [0.0, -1.0, float("nan"), float("inf")])
+def test_channel_stats_reject_a_corrupt_scale(scale):
+    """Verifies loading channel statistics with a non-finite or non-positive scale raises instead of letting the normalizer zero or blow up the channel."""
+    payload = {"channels": [{"name": "out/amp_0", "loc": 0.0, "scale": scale, "clampable": True, "norm_method": "zscore", "apply_log1p": False, "bounds": None}]}
+
+    with pytest.raises(ValueError, match="Corrupt channel normalization stats"):
+        ChannelStats.from_dict(payload)
+
+
 def test_factory_output_config_honors_out_slot_overrides():
     """Verifies a per-slot normalization override reaches the built output config while the other slots keep their slot defaults."""
     from configuration.benchmark import BenchmarkConfig
