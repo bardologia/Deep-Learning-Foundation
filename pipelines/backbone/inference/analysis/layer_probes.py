@@ -647,21 +647,22 @@ class LayerProbeRun(AnalysisRun):
 
         return batches
 
-    def _write_report(self, run, layers: list[str], results: dict, figures: dict[str, Path]) -> Path:
+    def _write_report(self, run, layers: list[str], results: dict, figures: dict[str, Path], n_batches: int) -> Path:
         """Writes the markdown report of the probes.
 
         Args:
-            run     : Loaded run, used for the backbone name in the title.
-            layers  : Probed layer names in forward order.
-            results : Probe results with their layers, baseline and controls.
-            figures : Figure paths keyed by figure name.
+            run       : Loaded run, used for the backbone name in the title.
+            layers    : Probed layer names in forward order.
+            results   : Probe results with their layers, baseline and controls.
+            figures   : Figure paths keyed by figure name.
+            n_batches : Number of batches the probe data was drawn from.
 
         Returns:
             Path of the written report.
         """
         doc = MarkdownDoc(title=f"Layer-wise linear probes: {run.backbone_name}")
         doc.paragraph(
-            f"Ridge probes (λ={self.config.ridge_lambda}, {self.config.n_folds}-fold cross-validation) on {len(layers)} layers over {self.config.max_batches} '{self.config.split}' batches: "
+            f"Ridge probes (λ={self.config.ridge_lambda}, {self.config.n_folds}-fold cross-validation) on {len(layers)} layers over {n_batches} '{self.config.split}' batches: "
             "held-out R² of a linear readout predicting five GT quantities from each layer's features. Rising curves show where a quantity becomes linearly decodable inside the network. "
             "The input-pixels baseline probes the raw input channels at the same sampled pixels: layers below it destroy linearly available information. "
             "The shuffled-targets control reruns the best layer's probe on permuted targets and should sit near zero; anything higher marks probe leakage. "
@@ -733,7 +734,8 @@ class LayerProbeRun(AnalysisRun):
             seed              = self.config.seed,
         )
 
-        results = core.collect(self._batches(run))
+        batches = self._batches(run)
+        results = core.collect(batches)
         probed  = len(layers)
         layers  = [layer for layer in layers if layer in results["layers"]]
 
@@ -753,10 +755,10 @@ class LayerProbeRun(AnalysisRun):
             )
         figures["effective_dim_by_depth"] = plots.effective_dim_by_depth(layers, results["layers"], results["input_baseline"]["effective_dim"], self.output_dir / "effective_dim_by_depth.png")
 
-        payload = {"backbone": run.backbone_name, "split": self.config.split, "layer_order": layers, **results}
+        payload = {"backbone": run.backbone_name, "split": self.config.split, "n_batches": len(batches), "layer_order": layers, **results}
         FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
-        report_path = self._write_report(run, layers, results, figures)
+        report_path = self._write_report(run, layers, results, figures, len(batches))
 
         count_scores = {layer: results["layers"][layer]["scores"]["count"] for layer in layers}
         scored       = [layer for layer in layers if count_scores[layer] is not None]

@@ -276,10 +276,11 @@ def test_robustness_pass_plans_tracks_and_times_every_stress(tmp_path, test_data
     config  = RobustnessConfig(batch_size=2, max_batches=1, noise_sigmas=[0.0, 0.5], noise_draws=1, gain_factors=[0.5], shift_pixels=[1], draws_per_count=1)
     logger  = StageLogger()
 
-    RobustnessRun(run_dir, config, logger).run()
+    outcome = RobustnessRun(run_dir, config, logger).run()
 
     planned = [message for level, message in logger.messages if level == "info" and "sweeps over" in message]
 
     assert len(planned) == 1
+    assert outcome.payload["n_batches"] == 1
     assert logger.totals == [logger.advances]
     assert [label.split(" (")[0] for label in logger.timers] == ["Robustness: noise", "Robustness: gain", "Robustness: dropout", "Robustness: shift"]

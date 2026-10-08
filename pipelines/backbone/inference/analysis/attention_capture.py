@@ -502,16 +502,19 @@ class AttentionCaptureRun(AnalysisRun):
     SUMMARY_FILENAME = "attention_capture.json"
     REPORT_FILENAME  = "attention_capture.md"
 
-    def _capture(self, run) -> dict:
+    def _capture(self, run) -> tuple[dict, int]:
         """Runs the model over the configured batches with the attention capture attached.
 
         Args:
             run : Loaded run bundling the model and the dataloader.
 
         Returns:
-            The captured gate maps and attention weights, as returned by the capture.
+            A pair of the captured gate maps and attention weights, as returned by the
+            capture, and the number of batches actually run, which the loader's end caps
+            below max_batches.
         """
-        capture = AttentionCapture(run.model.module)
+        capture   = AttentionCapture(run.model.module)
+        n_batches = 0
         capture.attach()
 
         try:
@@ -520,10 +523,11 @@ class AttentionCaptureRun(AnalysisRun):
                     if index >= self.config.max_batches:
                         break
                     run.model(batch[0])
+                    n_batches += 1
         finally:
             capture.detach()
 
-        return capture.records()
+        return capture.records(), n_batches
 
     def _summarize(self, records: dict) -> tuple[dict, list[str]]:
         """Reduces the captured tensors to per-module scalar summaries.
@@ -597,21 +601,22 @@ class AttentionCaptureRun(AnalysisRun):
 
         return figures
 
-    def _write_report(self, run, summary: dict, order: list[str], figures: dict[str, Path]) -> Path:
+    def _write_report(self, run, summary: dict, order: list[str], figures: dict[str, Path], n_batches: int) -> Path:
         """Writes the markdown report of the capture.
 
         Args:
-            run     : Loaded run, used for the backbone name in the title.
-            summary : Per-module summary of the capture.
-            order   : Attention module names in capture order.
-            figures : Figure paths keyed by figure name.
+            run       : Loaded run, used for the backbone name in the title.
+            summary   : Per-module summary of the capture.
+            order     : Attention module names in capture order.
+            figures   : Figure paths keyed by figure name.
+            n_batches : Number of batches the capture actually ran.
 
         Returns:
             Path of the written report.
         """
         doc = MarkdownDoc(title=f"Attention capture: {run.backbone_name}")
         doc.paragraph(
-            f"Attention gates and attention weights captured on {self.config.max_batches} real '{self.config.split}' batches of {self.config.batch_size} patches. "
+            f"Attention gates and attention weights captured on {n_batches} real '{self.config.split}' batches of {self.config.batch_size} patches. "
             "Entropy is normalized by log(tokens): 1 means uniform attention, 0 a single attended token; the p10–p90 spread is taken across queries, heads and batches. "
             "Head redundancy is the mean correlation between the attention maps of different heads (1 = all heads identical). "
             "Attention distance is the attention-weighted mean query-key distance on the token grid, divided by the grid side, next to the uniform-attention reference; "
@@ -651,13 +656,13 @@ class AttentionCaptureRun(AnalysisRun):
             The outcome whose payload is the summary with its "gates" and "attention"
             sections, written to JSON alongside the capture order.
         """
-        records        = self._capture(run)
-        summary, order = self._summarize(records)
+        records, n_batches = self._capture(run)
+        summary, order     = self._summarize(records)
 
         figures = self._render_figures(records, summary, order)
 
-        FileIO.save_json({**summary, "layer_order": order}, self.output_dir / self.SUMMARY_FILENAME)
-        report_path = self._write_report(run, summary, order, figures)
+        FileIO.save_json({**summary, "layer_order": order, "n_batches": n_batches}, self.output_dir / self.SUMMARY_FILENAME)
+        report_path = self._write_report(run, summary, order, figures, n_batches)
 
         return AnalysisOutcome(summary, f"{len(summary['gates'])} gates, {len(summary['attention'])} attention layers", report_path)
 
