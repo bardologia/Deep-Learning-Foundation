@@ -8,6 +8,7 @@ index helper is checked in isolation.
 from __future__ import annotations
 
 import json
+import numbers
 
 import numpy as np
 import pytest
@@ -15,6 +16,7 @@ import pytest
 from configuration.inference               import InferenceConfig
 from pipelines.backbone.inference.pipeline import InferencePipeline
 from pipelines.shared.inference.metadata   import CompletedInference
+from tools.metrics.scoring                 import MetricOrientation
 
 from tests.backbone_inference._helpers import N_GAUSSIANS, N_Z, build_run_directory
 
@@ -49,6 +51,10 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, para
 
     for key in ("curve_mse_gt", "overall_r2_gt", "pixel_mse_gt_mean", "ssim_norm_z_mean", "active_frac_gt", "matched_recall", "pixel_cosine_gt_nonempty_mean", "gt_empty_frac"):
         assert np.isfinite(metrics[key]), key
+
+    for key, value in metrics.items():
+        if isinstance(value, numbers.Real) and not isinstance(value, bool):
+            MetricOrientation.direction(key)
 
     cubes = output_dir / "cubes"
     assert np.load(cubes / "pred_curves.npy").shape == (N_Z, 96, 96)

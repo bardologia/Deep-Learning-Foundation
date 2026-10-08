@@ -248,13 +248,19 @@ class RankCorrelation:
 
 
 class MetricOrientation:
-    """Decides from a metric key whether larger values are better, worse or neither."""
+    """Decides from a metric key whether larger values are better, worse or neither.
 
-    _HIGHER_OVERRIDES = {"relative_mse_reduction", "fraction_pred_beats_reduced"}
-    _HIGHER_PATTERN   = re.compile(r"^improvement_|^phase_agreement_|valid_fraction")
-    _NEUTRAL_PATTERN  = re.compile(r"^(n_pixels|n_z|x_axis_|gt_|pred_)|^matched_(n_pairs|tol)$|^active_count_\w+_mean$|^active_frac_(gt|pred)$|^slot_\d+_active_(gt|pred)_frac$")
+    Every reported key must match one of the declared rules. An undeclared key
+    raises, so a new metric is given an orientation before a report ranks it,
+    instead of being ranked as an error metric by default.
+    """
+
+    _HIGHER_OVERRIDES = {"relative_mse_reduction", "fraction_pred_beats_reduced", "failure_frac_ok", "presence_rank_corr", "slot_gt_alignment", "slot_mu_rank_diag", "slot_usage_entropy"}
+    _HIGHER_PATTERN   = re.compile(r"^improvement_|valid_fraction")
+    _NEUTRAL_PATTERN  = re.compile(r"^(n_|num_|x_axis_|gt_|pred_|embedding_)|_undefined_count$|(^|_)matched_(n_pairs|tol)$|^pixel_\w+_std$|^(seed|patch_height|patch_width|profile_length)$|^active_count_\w+_mean$|^active_frac_(gt|pred)$|^slot_\d+_active_(gt|pred)_frac$|^slot_\d+_(amp|mu|sig)_((active|inactive|global)_)?(gt|pred)_(mean|std)$|^norm_in_ch\d+_(mean|std)$|^strat_|^ssim_\w+_n_(scored|nonfinite)$|^jepa_(decode_amplification|decoder_floor_frac)$|^(clamp_n_active|presence_n_scored|activity_threshold|roughness_ratio|roughness_gt_mean|roughness_pred_mean|checkpoint_epoch)$")
+    _LOWER_PATTERN    = re.compile(r"^(mae|mse|rmse)(_|$)|^relative_l2_|^curve_l1|^label_r2_frac_below_|^z_ce_|^pixel_peak_idx_d_|^count_(over|under)_frac$|^clamp_\w+_frac$|^failure_(frac_\w+|halluc_rate|miss_rate)$|^norm_in(_ch\d+)?_(overflow|nonfinite)_frac$|^norm_in_worst_|^roughness_excess_frac$|(^|_)nmse$")
     _LOWER_TOKENS     = ("distance", "_dist", "error", "_err", "loss", "_mse", "_mae", "_rmse")
-    _HIGHER_TOKENS    = ("r2", "ssim", "psnr", "cosine", "precision", "recall", "f1", "count_acc", "count_exact")
+    _HIGHER_TOKENS    = ("r2", "ssim", "psnr", "cosine", "pearson", "precision", "recall", "f1", "count_acc", "count_exact")
 
     @classmethod
     def direction(cls, key: str) -> str | None:
@@ -264,18 +270,23 @@ class MetricOrientation:
             key : Metric key as it appears in the reported metric mappings.
 
         Returns:
-            The orientation, resolved by explicit override, then neutral
-            pattern, then substring tokens, defaulting to "lower".
+            The orientation, resolved by explicit override, then the neutral
+            pattern, then the lower pattern, then substring tokens.
+
+        Raises:
+            KeyError : If the key matches no declared rule.
         """
         if key in cls._HIGHER_OVERRIDES or cls._HIGHER_PATTERN.search(key):
             return "higher"
         if cls._NEUTRAL_PATTERN.search(key):
             return None
+        if cls._LOWER_PATTERN.search(key):
+            return "lower"
         if any(token in key for token in cls._LOWER_TOKENS):
             return "lower"
         if any(token in key for token in cls._HIGHER_TOKENS):
             return "higher"
-        return "lower"
+        raise KeyError(f"Metric '{key}' has no declared orientation; add it to MetricOrientation before a report ranks it")
 
     @classmethod
     def higher_is_better(cls, key: str) -> bool | None:
