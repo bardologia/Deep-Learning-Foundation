@@ -747,7 +747,7 @@ class EquationLibrary:
                     "vars"  : [
                         {"sym": r"f_{\mathrm{warmup}}(s)", "desc": "LR multiplier at warmup step s"},
                         {"sym": r"s",                      "desc": "current warmup counter, incremented once per optimiser step"},
-                        {"sym": r"S",                      "desc": "warmup_steps = 200"},
+                        {"sym": r"S",                      "desc": "round(warmup_fraction * total optimiser steps), warmup_fraction = 0.03"},
                         {"sym": r"\alpha_0",               "desc": "warmup_start_factor = 0.1 (hardcoded by ConfigFactory)"},
                     ],
                 },

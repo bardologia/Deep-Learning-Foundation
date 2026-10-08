@@ -745,7 +745,7 @@ class FlowSketches {
   },
 
   pae_schedule: {
-    tip: "Effective LR = base x cosine-anneal to 1e-6 over T=100 x linear warmup from 0.1 over 200 steps.",
+    tip: "Effective LR = base x cosine-anneal to 1e-6 over T = training.epochs (60) x linear warmup from 0.1 over warmup_fraction = 0.03 of the total optimizer steps.",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="28" y1="118" x2="216" y2="118"/>
       <line class="skl-axis" x1="28" y1="22" x2="28" y2="118"/>
@@ -866,7 +866,7 @@ class FlowSketches {
   },
 
   iae_schedule: {
-    tip: "The LR ramps up over 200 warmup steps, then follows a cosine decay to eta_min = 1e-6 across T = 100 epochs.",
+    tip: "The LR ramps up over warmup_fraction = 0.03 of the total optimizer steps, then follows a cosine decay to eta_min = 1e-6 across T = training.epochs (60).",
     build(svg) { svg.innerHTML = `
       <line class="skl-axis" x1="28" y1="118" x2="214" y2="118"/>
       <line class="skl-axis" x1="28" y1="22" x2="28" y2="118"/>

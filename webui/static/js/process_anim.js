@@ -2102,7 +2102,7 @@ class ProcessAnimator {
       return win[Math.floor(0.95 * (win.length - 1))];
     });
 
-    const BASE = 1e-3, ETA = 1e-6, E = 100, SPE = 40, WS = 200, S0 = 0.1;
+    const BASE = 1e-3, ETA = 1e-6, E = 100, SPE = 40, WS = Math.round(0.03 * E * SPE), S0 = 0.1;
     const cosF  = (e)  => ETA / BASE + 0.5 * (1 - ETA / BASE) * (1 + Math.cos(Math.PI * Math.min(1, e / E)));
     const warmF = (st) => st >= WS ? 1 : S0 + (1 - S0) * (st / WS);
     const lrAt  = (st) => BASE * cosF(Math.floor(st / SPE)) * warmF(st);
@@ -2923,7 +2923,7 @@ class ProcessAnimator {
       ctx.strokeStyle = "rgba(255,207,107,0.4)"; ctx.setLineDash([4, 4]);
       ctx.beginPath(); ctx.moveTo(xw, pad.t); ctx.lineTo(xw, h - pad.b); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = "rgba(255, 207, 107, 0.95)";
-      ctx.fillText("warmup_steps = 200", pad.l + 8, h - pad.b - 10);
+      ctx.fillText("warmup_fraction = 0.03 of total steps", pad.l + 8, h - pad.b - 10);
     }
 
     if (ts >= 15) {
@@ -2967,13 +2967,13 @@ class ProcessAnimator {
     if (upTo >= d.WS && view <= 1200) {
       ctx.fillStyle = "#7cff9b"; ctx.beginPath(); ctx.arc(pxS(d.WS), pyL(d.lrAt(d.WS)), 4.5, 0, 7); ctx.fill();
       ctx.font = "600 11px 'IBM Plex Mono', monospace";
-      ctx.fillText("factor = 1.0", pxS(d.WS) + 10, pyL(d.lrAt(d.WS)) - 10);
+      ctx.fillText("factor = 1.0", pxS(d.WS) + 10, pyL(d.lrAt(d.WS)) + 18);
     }
 
     let cap;
     if (ts < 2.6) cap = "Learning-rate schedule  ·  effective lr = base_lr x cosine(epoch) x warmup(step)  ·  two multiplicative factors";
-    else if (ts < 5.4) cap = "Warmup ramp  ·  factor = 0.1 + 0.9 * step/200  ·  linear, ticked once per batch  ·  protects the first AdamW updates";
-    else if (ts < 9.0) cap = "At step 200 warmup.is_finished()  ·  the factor locks at 1.0 and the epoch scheduler takes over";
+    else if (ts < 5.4) cap = `Warmup ramp  ·  factor = 0.1 + 0.9 * step/${d.WS}  ·  linear over warmup_fraction = 0.03 of total steps, ticked once per batch  ·  protects the first AdamW updates`;
+    else if (ts < 9.0) cap = `At step ${d.WS} warmup.is_finished()  ·  the factor locks at 1.0 and the epoch scheduler takes over`;
     else if (ts < 15) cap = "Zoom out  ·  cosine annealing: lr = eta_min + (base - eta_min)(1 + cos(pi epoch/100))/2  ·  stepped once per epoch";
     else if (ts < 23.2) {
       if (!this._lrPace) {
@@ -2996,7 +2996,7 @@ class ProcessAnimator {
       ctx.beginPath(); ctx.arc(X, Y, 10 + Math.sin(this.t * 5) * 1.5, 0, 7); ctx.stroke();
       ctx.font = "600 12px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#7cff9b";
       ctx.fillText(`epoch ${ep}  ·  lr ${d.lrAt(st).toExponential(1)}`, Math.min(X + 16, w - pad.r - 190), Math.max(pad.t + 16, Y - 16));
-      const zone = ep < 5 ? "warmup: stabilising the first updates" : ep < 50 ? "high-lr half: big steps, coarse structure" : "low-lr half: small steps, fine detail";
+      const zone = ep * d.SPE < d.WS ? "warmup: stabilising the first updates" : ep < 50 ? "high-lr half: big steps, coarse structure" : "low-lr half: small steps, fine detail";
       cap = `The dot moves at the speed of the lr  ·  epoch ${ep}/100  ·  ${zone}`;
     } else {
       const yE = pyL(d.ETA);
@@ -3009,7 +3009,7 @@ class ProcessAnimator {
 
     if (ts >= 2.8 && ts < 8.4) {
       const fa = this._ease(Math.min(1, (ts - 2.8) / 0.6)) * (1 - this._ease(Math.min(1, Math.max(0, (ts - 7.6) / 0.8))));
-      this._texDraw("\\text{factor}=0.1+0.9\\,\\tfrac{t}{200}", w / 2, pad.t + 4, 15, { align: "center", alpha: fa, color: "rgba(255,207,107,0.95)" });
+      this._texDraw(`\\text{factor}=0.1+0.9\\,\\tfrac{t}{${d.WS}}`, w / 2, pad.t + 4, 15, { align: "center", alpha: fa, color: "rgba(255,207,107,0.95)" });
     }
     if (ts >= 9.2 && ts < 14.8) {
       const ca = this._ease(Math.min(1, (ts - 9.2) / 0.7)) * (1 - this._ease(Math.min(1, Math.max(0, (ts - 13.8) / 0.9))));
