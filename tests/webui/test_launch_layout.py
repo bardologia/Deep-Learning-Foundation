@@ -134,6 +134,19 @@ def test_every_script_layout_builds_against_its_entry_config(key):
     LaunchLayout().build(key, leaves)
 
 
+@pytest.mark.parametrize("key", sorted(ProjectPaths.SCRIPT_DIRS))
+def test_second_valued_fields_render_with_the_seconds_widget(key):
+    """Every GIF duration and resource poll interval renders with the seconds widget, so the None-default duration is a number field and not free text."""
+    entry   = ScriptConfigResolver(ProjectPaths()).entry_config(key)
+    config  = getattr(import_module(entry["module"]), entry["class"])()
+    leaves  = [{"path": path} for path, _value in ConfigCli._leaves(config)]
+    layout  = LaunchLayout().build(key, leaves)
+    seconds = [leaf["path"] for leaf in leaves if leaf["path"].endswith(("gif_duration", "resources.poll_interval_sec"))]
+
+    for path in seconds:
+        assert layout["widgets"][path] == LaunchLayout.NUM_SECONDS, path
+
+
 def test_sweep_loss_choices_match_the_component_catalog():
     """The multi-sweep loss choices match the loss component catalog names."""
     choices = {choice["value"] for choice in LaunchLayout.MULTI_SWEEP_LOSSES["choices"]}
