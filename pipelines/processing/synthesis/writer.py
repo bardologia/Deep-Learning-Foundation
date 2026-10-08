@@ -18,6 +18,7 @@ import numpy as np
 from configuration.synthesis import SynthesisConfig
 from tools.data.io           import FileIO
 from tools.monitoring.logger import Logger
+from tools.runtime.git_state import GitState
 
 
 class DatasetDirectoryGuard:
@@ -140,26 +141,11 @@ class DatasetWriter:
         for name in self.ARTIFACTS:
             self._save_array(name, arrays[name])
 
-    def write_layout(self) -> Path:
-        """Writes data/dataset.json, the layout downstream pipelines read the dataset through and the mark of a finished dataset.
+    def write_state(self, provenance: dict) -> Path:
+        """Writes meta/config_state.json with the crop, the cube z range, the synthesis settings and the run's provenance.
 
-        Returns:
-            Path of the written layout file.
-        """
-        payload = {
-            "global_crop"        : list(self.config.global_crop),
-            "dataset_type"       : self.config.dataset_type,
-            "cube_tag"           : self.config.cube_tag,
-            "parameter_tag"      : self.config.parameter_tag,
-            "max_amplitude_clip" : self.config.max_amplitude_clip,
-            "channel_labels"     : self.config.channel_labels,
-            "artifacts"          : dict(self.ARTIFACTS),
-        }
-
-        return FileIO.save_json(payload, self.config.data_directory / "dataset.json")
-
-    def write_state(self) -> Path:
-        """Writes meta/config_state.json with the crop, the cube z range and the synthesis settings.
+        Args:
+            provenance : Provenance block of the generating process, written under the 'provenance' key.
 
         Returns:
             Path of the written configuration state file.
@@ -177,6 +163,7 @@ class DatasetWriter:
                 "n_z"     : int(self.config.profile_length),
             },
             "synthesis_config" : {key: str(value) if isinstance(value, Path) else value for key, value in dataclasses.asdict(self.config).items()},
+            "provenance"       : provenance,
         }
 
         return FileIO.save_json(payload, self.config.metadata_directory / "config_state.json")
@@ -209,11 +196,12 @@ class DatasetWriter:
         return {"parameters": parameters_path, "diagnostics": diagnostics_path, "metadata": meta_path}
 
     def _parameter_meta(self, parameters_path: Path, diagnostics_path: Path) -> dict:
-        """Returns the parameter run metadata in the form a fitted run records it."""
+        """Returns the parameter run metadata in the form a fitted run records it, carrying the generating commit."""
         config = self.config
 
         return {
             "timestamp"           : datetime.now().isoformat(timespec="seconds"),
+            "git_commit"          : GitState.commit(),
             "source"              : self.SOURCE,
             "processed_data_path" : str(config.output_directory),
             "source_cube"         : str(config.data_directory / self.ARTIFACTS["cube_full"]),
@@ -227,3 +215,25 @@ class DatasetWriter:
             "threshold_factor"    : float(config.threshold_factor),
             "truncation_index"    : int(config.truncation_index),
         }
+
+    def write_layout(self, provenance: dict) -> Path:
+        """Writes data/dataset.json, the layout downstream pipelines read the dataset through and the mark of a finished dataset.
+
+        Args:
+            provenance : Provenance block of the generating process, written under the 'provenance' key.
+
+        Returns:
+            Path of the written layout file.
+        """
+        payload = {
+            "global_crop"        : list(self.config.global_crop),
+            "dataset_type"       : self.config.dataset_type,
+            "cube_tag"           : self.config.cube_tag,
+            "parameter_tag"      : self.config.parameter_tag,
+            "max_amplitude_clip" : self.config.max_amplitude_clip,
+            "channel_labels"     : self.config.channel_labels,
+            "artifacts"          : dict(self.ARTIFACTS),
+            "provenance"         : provenance,
+        }
+
+        return FileIO.save_json(payload, self.config.data_directory / "dataset.json")

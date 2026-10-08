@@ -2,8 +2,9 @@
 
 The pipeline samples smooth parameter fields, evaluates the profiles, cube and
 channels they imply, scores the mixture against the observed cube as a
-parameter run would, and writes the dataset. The session refuses a directory
-already holding a finished dataset and records an abort in its log.
+parameter run would, and writes the dataset with the generating commit. The
+session refuses a directory already holding a finished dataset and records an
+abort in its log.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pipelines.processing.synthesis.writer      import DatasetDirectoryGuard, Da
 from tools.data.gaussians                       import GaussianActivity
 from tools.data.io                              import FileIO
 from tools.monitoring.logger                    import Logger
+from tools.runtime.git_state                    import RunProvenance
 
 
 class SyntheticDatasetPipeline:
@@ -146,7 +148,7 @@ class SyntheticDatasetPipeline:
 
         return parameters, diagnostics
 
-    def _stage_write(self, arrays: dict, parameters: np.ndarray, diagnostics: dict) -> dict:
+    def _stage_write(self, arrays: dict, parameters: np.ndarray, diagnostics: dict, provenance: dict) -> dict:
         """Writes the arrays, the configuration state and the parameter run, then the layout last.
 
         The layout marks a finished dataset for every reader and for the
@@ -157,6 +159,7 @@ class SyntheticDatasetPipeline:
             arrays      : Mapping holding one array per ``DatasetWriter.ARTIFACTS`` key.
             parameters  : Parameter stack of shape (3 * k_max, rows, cols).
             diagnostics : Fit diagnostics arrays of the parameter run.
+            provenance  : Provenance block of this process, recorded in the configuration state and the layout.
 
         Returns:
             Mapping from output name to the written path.
@@ -166,21 +169,32 @@ class SyntheticDatasetPipeline:
         FileIO.ensure_dirs(self.config.data_directory, self.config.metadata_directory)
 
         self.writer.write_arrays(arrays)
-        state_path  = self.writer.write_state()
+        state_path  = self.writer.write_state(provenance)
         outputs     = self.writer.write_parameters(parameters, diagnostics)
-        layout_path = self.writer.write_layout()
+        layout_path = self.writer.write_layout(provenance)
 
         return {"dataset_json": layout_path, "config_state": state_path, **outputs}
 
     def run(self) -> dict:
-        """Runs every stage under the logger's timer and writes the dataset.
+        """Runs every stage under the logger's timer and writes the dataset with this process's provenance.
 
-        The completion table lists the duration of every stage under its own
-        name next to the written paths.
+        The commit, host and library versions are logged first and recorded in
+        the configuration state and the layout, and the completion table lists
+        the duration of every stage under its own name next to the written
+        paths.
 
         Returns:
             Mapping from output name to the written path.
         """
+        provenance = RunProvenance.collect()
+
+        self.logger.kv_table({
+            "Commit" : provenance["git_commit"],
+            "Host"   : provenance["host"],
+            "Python" : provenance["python"],
+            "NumPy"  : provenance["numpy"],
+        }, title="Provenance")
+
         amps, mus, sigmas = self._timed_stage("Parameter fields", self._stage_parameters)
 
         cube, primary, secondaries, derived, z = self._timed_stage("Profiles and observations", lambda: self._stage_scene(amps, mus, sigmas))
@@ -195,7 +209,7 @@ class SyntheticDatasetPipeline:
             "cube_full"   : cube,
         }
 
-        outputs = self._timed_stage("Dataset writing", lambda: self._stage_write(arrays, parameters, diagnostics))
+        outputs = self._timed_stage("Dataset writing", lambda: self._stage_write(arrays, parameters, diagnostics, provenance))
 
         self.logger.section("[Synthetic Dataset Complete]")
         self.logger.kv_table({

@@ -144,6 +144,23 @@ def test_a_different_seed_moves_the_scene(tmp_path, logger_stub):
     assert not np.array_equal(np.load(first.parameters_directory / "parameters.npy"), np.load(second.parameters_directory / "parameters.npy"))
 
 
+def test_generated_dataset_records_the_code_commit(tmp_path, logger_stub):
+    """Verifies the layout, the configuration state and the parameter run each record the commit that generated them."""
+    from tools.runtime.git_state import GitState
+
+    config = _tiny_config(tmp_path)
+    _generate(config, logger_stub)
+
+    layout = json.loads((config.data_directory / "dataset.json").read_text())
+    state  = json.loads((config.metadata_directory / "config_state.json").read_text())
+    meta   = json.loads((config.parameters_directory / "param_extraction_meta.json").read_text())
+
+    assert layout["provenance"]["git_commit"] == GitState.commit()
+    assert state["provenance"]["git_commit"]  == GitState.commit()
+    assert meta["git_commit"]                 == GitState.commit()
+    assert layout["provenance"]["host"]
+
+
 def test_pipeline_times_every_stage(tmp_path, logger_stub):
     """Verifies every generation stage records its wall-clock duration for the completion table."""
     pipeline = SyntheticDatasetPipeline(_tiny_config(tmp_path), logger=logger_stub)
