@@ -2,8 +2,8 @@
 
 Covers the loss-term table, the catalog helpers that build standalone, combined and
 curriculum loss configurations, the forward pass output contract, gradient flow, the
-physical clamp applied before curve reconstruction, occupancy and count diagnostics, the
-geometry-coupled physics terms and the legacy two-Gaussian parameter loss.
+physical clamp applied before curve reconstruction, occupancy and count diagnostics and
+the z-axis validation.
 """
 
 from __future__ import annotations
@@ -462,6 +462,33 @@ def test_param_weights_length_mismatch_raises():
 
     with pytest.raises(ValueError, match="param_weights"):
         loss(pred, gt)
+
+
+def test_dx_is_the_z_axis_spacing():
+    """Verifies the loss bin width equals the spacing of an increasing z axis."""
+    axis = x_axis_tensor()
+    loss = build_loss()
+
+    assert loss.dx == pytest.approx(float(axis[1] - axis[0]))
+
+
+def test_single_sample_z_axis_raises():
+    """Verifies a z axis with fewer than two samples is rejected."""
+    with pytest.raises(ValueError, match="at least 2 sample points"):
+        build_loss(length=1)
+
+
+def test_decreasing_z_axis_raises():
+    """Verifies a decreasing z axis is rejected instead of yielding a negative bin width."""
+    with pytest.raises(ValueError, match="strictly increasing"):
+        Loss(
+            z_axis       = torch.flip(x_axis_tensor(), dims=[0]),
+            logger       = NullLogger(),
+            tracker      = NullTracker(),
+            gaussian_cfg = gaussian_config(2),
+            loss_cfg     = LossConfig(use_param_l1=True, weight_param_l1=1.0),
+            norm_stats   = identity_normalizer(6),
+        )
 
 
 @pytest.mark.dataset

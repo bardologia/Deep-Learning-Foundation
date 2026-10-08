@@ -46,7 +46,17 @@ class Loss:
             log_all_losses : Whether to evaluate disabled terms for monitoring.
             sampler        : Optional parameter histogram sampler observing predictions.
             slot_vitals    : Optional per-slot diagnostics observer.
+
+        Raises:
+            ValueError : If the z axis holds fewer than two samples or does not increase.
         """
+        if z_axis.shape[0] < 2:
+            raise ValueError(f"z_axis must contain at least 2 sample points, got length {z_axis.shape[0]}")
+
+        dx = float(z_axis[1] - z_axis[0])
+        if dx <= 0:
+            raise ValueError(f"z_axis must be strictly increasing, got dx={dx}")
+
         self.z_axis          = z_axis
         self.logger          = logger
         self.tracker         = tracker
@@ -56,7 +66,7 @@ class Loss:
         self.norm_stats      = norm_stats
         self.sampler         = sampler
         self.slot_vitals     = slot_vitals
-        self.dx              = float(z_axis[1] - z_axis[0])
+        self.dx              = dx
         self.log_all_losses  = log_all_losses
         self.loss_generation = 0
 
