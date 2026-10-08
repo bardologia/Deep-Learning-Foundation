@@ -17,7 +17,7 @@ from configuration.cross_validation import CrossValidationConfig
 from pipelines.cross_validation.cv_report import CrossValidationReport
 from pipelines.cross_validation.folds             import FoldFamily, FoldPlanner, FoldRunNaming, FoldTreeSurvey, FoldUnitManifest
 from pipelines.cross_validation.workers           import FoldCollector
-from pipelines.shared.orchestration.unit_manifest import UnitLedger
+from pipelines.shared.orchestration.unit_manifest import UnidentifiedRuns, UnitLedger
 from pipelines.shared.training.seed_sweep         import SeedSet
 from tools.orchestration.gpu_queue import GpuJob
 from tools.orchestration.stages    import ExperimentStage, QueuedInferenceStage, QueuedTrainingStage
@@ -63,6 +63,10 @@ class FoldUnitStage:
             directory = ledger.directory(identity)
             if directory is not None:
                 self.unit_dirs[name] = directory.relative_to(folds_dir).as_posix()
+
+    def _log_unidentified(self) -> None:
+        """Warns, from a queued stage, about the run directories under its stage directory that no planned unit's manifest claims."""
+        UnidentifiedRuns(self.stage_dir, self.unidentified, FoldUnitManifest.KIND, {item: self.unit_dir(item) for item in self.items}).log(self.logger, type(self).__name__)
 
     def _worker_argv(self, action: str, name: str) -> list[str]:
         """Returns the worker argv running one action on one unit.
@@ -111,9 +115,11 @@ class FoldTrainingStage(FoldUnitStage, QueuedTrainingStage):
         """
         items = self._expand(config)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
+        self.unidentified = []
 
         if config.resume:
             self._reconcile(self.stage_dir)
+            self._log_unidentified()
 
     def _config_kv(self) -> dict:
         """Returns the stage configuration summary logged before launching."""
@@ -149,10 +155,12 @@ class FoldInferenceStage(FoldUnitStage, QueuedInferenceStage):
         """
         items = self._expand(config)
         super().__init__(config=config, entry_script=entry_script, run_tag=run_tag, items=items, logger=logger)
-        self.splits = config.inference_splits
+        self.splits       = config.inference_splits
+        self.unidentified = []
 
         if config.resume:
             self._reconcile(self.stage_dir)
+            self._log_unidentified()
 
     def _config_kv(self) -> dict:
         """Returns the stage configuration summary logged before launching."""

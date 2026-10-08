@@ -676,6 +676,19 @@ def test_stage_reports_run_directories_without_a_manifest(tmp_path, test_data_di
 
 
 @pytest.mark.dataset
+def test_fresh_run_stages_report_no_unidentified_directory(tmp_path, test_data_dir):
+    """Verifies a run without resume still exposes an empty unidentified list, which the prepare stage's unit status reads."""
+    config = data_config(tmp_path, test_data_dir, resume=False)
+    logger = make_file_logger(tmp_path, "stages_test")
+
+    train = FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=logger)
+    infer = FoldInferenceStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=logger)
+
+    assert train.unidentified == []
+    assert infer.unidentified == []
+
+
+@pytest.mark.dataset
 def test_status_report_lists_every_unit_with_its_directory_and_state(tmp_path, test_data_dir):
     """Verifies the status report names the matched directory, the training state and the inference state of every unit."""
     from pipelines.cross_validation.folds import FoldUnitManifest
@@ -696,3 +709,24 @@ def test_status_report_lists_every_unit_with_its_directory_and_state(tmp_path, t
     assert first["Inference"] == "val done, test missing"
     assert rows[stage.items[1]]["Directory"] == "(new)"
     assert rows[stage.items[1]]["Training"]  == "new"
+
+
+@pytest.mark.dataset
+def test_resumed_fold_stages_warn_about_run_directories_without_a_manifest(tmp_path, test_data_dir):
+    """The fold training and inference stages warn, while reconciling, about a fold directory that carries no manifest."""
+    from tests.conftest import RecordingLogger
+
+    config = data_config(tmp_path, test_data_dir, resume=True)
+
+    stray = tmp_path / "rt" / "folds" / "stray_fold_9"
+    (stray / "meta").mkdir(parents=True)
+
+    logger = RecordingLogger()
+    FoldTrainingStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=logger)
+    FoldInferenceStage(config=config, entry_script=Path("e.py"), run_tag="rt", logger=logger)
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert any(message.startswith("FoldTrainingStage: 1 run directory(ies)") and "no cross_validation manifest" in message for message in warnings)
+    assert any(message.startswith("FoldInferenceStage: 1 run directory(ies)") for message in warnings)
+    assert warnings.count("stray_fold_9: claimed by no planned unit, ignored by the stage; the comparison still collects it beside the planned units") == 2
