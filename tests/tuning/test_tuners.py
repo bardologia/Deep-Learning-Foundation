@@ -21,6 +21,7 @@ import pipelines.tuning.trial as trial_mod
 
 from optuna.trial import TrialState
 
+from pipelines.tuning.trial               import TrialPruning
 from pipelines.tuning.tuners              import ParamSampler, BestConfigWriter, SearchSpace, StudyPlateauStop, StudyProgress, StudyStopRules, StudyTargetStop, Tuner
 from pipelines.backbone.training.pipeline import TrainingPipeline
 from configuration.architectures.backbone import UNetConfig
@@ -320,6 +321,23 @@ def test_study_progress_snapshot_counts_states_best_stall_and_rate(fake_logger, 
     assert snapshot["stalled"]  == 1
     assert snapshot["plateau_patience"] == 3
     assert snapshot["trials_per_hour"] > 0
+
+
+def test_study_progress_names_the_epoch_a_pruned_trial_was_cut_at(fake_logger, tune_cfg, tmp_path):
+    """The progress line of a pruned trial says at which epoch the pruner cut it."""
+    progress = StudyProgress(tmp_path, {}, StudyStopRules(tune_cfg, fake_logger), fake_logger)
+    study    = optuna.create_study(direction="minimize", pruner=optuna.pruners.ThresholdPruner(upper=1.0))
+
+    def objective(trial):
+        """Reports two good epochs and a third the pruner rejects."""
+        for epoch, val_loss in enumerate((0.9, 0.8, 4.0)):
+            TrialPruning.report(trial, val_loss, epoch, fake_logger)
+        return 0.0
+
+    study.optimize(objective, n_trials=1, callbacks=[progress])
+
+    assert fake_logger.warnings  == ["Trial 0 pruned at epoch 3: val_loss=4 is worse than the median of earlier trials at this step"]
+    assert fake_logger.infos[-1].startswith("Trial 0 PRUNED value=4 at epoch 3 (")
 
 
 def test_study_progress_rate_ignores_the_idle_gap_before_a_resume(fake_logger, tune_cfg, tmp_path):

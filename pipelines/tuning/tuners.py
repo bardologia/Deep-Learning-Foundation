@@ -599,11 +599,14 @@ class StudyProgress:
         }
 
     def _end_note(self, trial) -> str:
-        """Returns why a failed trial ended, else an empty string.
+        """Returns why a trial ended early: the epoch a pruned trial was cut at, the reason a failed one ended, else an empty string.
 
         A failed trial without a recorded reason raised nothing: Optuna
         rejected the value its objective returned, such as a NaN.
         """
+        if trial.state == TrialState.PRUNED and trial.last_step is not None:
+            return f" at epoch {trial.last_step + 1}"
+
         if trial.state != TrialState.FAIL:
             return ""
 
