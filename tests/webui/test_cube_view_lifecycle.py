@@ -25,7 +25,7 @@ undo, an along-line metric strip that never shows an answer for a line that was 
 cleared meanwhile, and named lines remembered per cube footprint. The volume view must ask for a
 readable WebGL2 context, map its clip axes onto the texture axes, drop a volume streamed for a cube
 or comparison that was replaced meanwhile, and render when its view opens or a cube loads into it.
-The point cloud strides its rows by the column count the blob header declares and can colour each
+Every axis sweep must ask for a plane or cut the explorer renders. The point cloud strides its rows by the column count the blob header declares and can colour each
 point by the seed disagreement of its pixel, greying points without one, while the profile line
 names the profiled pixel's seed std. The selective-prediction mask paints only the pixels the
 coverage keeps, and its Play sweep runs the coverage down to 5% and back until the view, the tab or
@@ -39,10 +39,14 @@ import math
 import re
 import shutil
 import subprocess
+from urllib.parse import quote
 
 import pytest
 
-from tests.webui.conftest import WEBUI_ROOT
+from routers.cube_routers import CubeRouter
+from routers.dispatch     import HttpExchange
+
+from tests.webui.conftest import WEBUI_ROOT, FakeHandler, loaded_cube
 
 
 HARNESS  = WEBUI_ROOT / "tools" / "visual" / "cube_view_checks.js"
@@ -787,3 +791,18 @@ def test_uncertainty_and_coverage_controls_are_on_the_page_and_wired():
     assert html.count('id="cube-selective-play"') == 1
     assert re.search(r'selMask\s*: document\.getElementById\("cube-selective-mask"\)', app)
     assert re.search(r'selPlay\s*: document\.getElementById\("cube-selective-play"\)', app)
+
+
+@NEEDS_JS
+def test_every_axis_sweep_asks_for_a_frame_the_explorer_renders(tmp_path):
+    """The z, row and col sweeps request planes and cuts the cube router answers with a PNG; the col sweep used to ask for an axis the explorer refuses."""
+    explorer, cube_id = loaded_cube(tmp_path)
+    router            = CubeRouter(explorer)
+    urls              = _check("sweepUrls")
+
+    assert set(urls) == {"z", "row", "col"}
+    for axis, url in urls.items():
+        handler = FakeHandler("GET", url.replace("id=stamp%2Fa", f"id={quote(cube_id, safe='')}"))
+
+        assert router.handle(HttpExchange.of(handler)), axis
+        assert handler.status == 200, axis
