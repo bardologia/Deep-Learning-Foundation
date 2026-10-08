@@ -3,8 +3,8 @@
 `README.md` gets the template running on its own example task. This file is about
 replacing that task with yours: what the pipelines demand of a dataset, what has to
 change when the target is not a Gaussian mixture, where the normalization decisions live,
-which checks will stop you if you wire something up halfway, and what to touch when you
-rename the project.
+which checks will stop you if you wire something up halfway, what to touch when you
+rename the project, and where the console's figures and palette live.
 
 Read it with the code open. Every claim below names the file it comes from.
 
@@ -45,14 +45,20 @@ the rest of the repository works unchanged:
 - `artifacts`, a map from artifact key to filename. The keys are fixed:
   `primary`, `secondaries`, `derived`, `aux_full`, `cube_full`. `Layout.artifact_path`
   resolves them, and the loaders in `pipelines/backbone/dataset/spatial.py` memory-map the
-  results, so shapes have to agree across files.
+  results, so shapes have to agree across files. The console's cube explorer
+  (`webui/cube_explorer.py`) reads `primary` for its map and refuses a dataset without
+  it; `aux_full` and `cube_full` add the aux overlay and the reference cube when they
+  are there.
 - `channel_labels`, the primary label first and one per secondary after it. Selecting
   secondaries by label (`paths.secondary_labels`) resolves through this list, and
-  `Layout.secondary_indices` raises if it is empty.
+  `Layout.secondary_indices` raises if it is empty. The console reads the same list
+  (`/api/fs/secondaries`, `DatasetBrowser.secondaries` in `webui/dataset_browser.py`) to
+  offer the selected dataset's secondaries in the launch pages' picker, so write a label
+  for every channel your importer emits.
 - `cube_tag`, a free string, logged with the layout.
 
-`dataset_type`, `parameter_tag` and `max_amplitude_clip` are written by the bundled
-generator and read by nothing. They are provenance. Keep or drop them.
+`dataset_type`, `parameter_tag`, `max_amplitude_clip` and `provenance` (the generating
+commit) are written by the bundled generator and read by nothing. Keep or drop them.
 
 `meta/config_state.json` carries the z axis: `cube_config.z_range` (two floats) and
 `cube_config.n_z`. `GaussianConfig.from_dataset` in `configuration/dataset/gaussian.py`
@@ -62,10 +68,20 @@ falls back to it when no range is given on the command line. The same file also 
 
 The parameter run is the supervision. `parameters.npy` is `(3 * k_max, rows, cols)`,
 interleaved as amplitude, mean, width per slot, sorted by mean, with unused slots zeroed.
-`param_extraction_meta.json` sitting beside it is not optional: `GaussianConfig` reads
-`k_max` from it and raises `FileNotFoundError` if it is missing, which is what stops a
-parameter file from being separated from its own description. A dataset can hold several
-parameter runs side by side under `params/`; `paths.parameters_path` picks one.
+`param_extraction_meta.json` sitting beside it is not optional:
+`GaussianConfig.from_dataset` reads `k_max` and `activity_threshold` from it and raises
+`FileNotFoundError` if the file is missing (and `KeyError` if either key is absent),
+which is what stops a parameter file from being separated from its own description. A
+dataset can hold several parameter runs side by side under `params/`;
+`paths.parameters_path` picks one.
+
+`activity_threshold` is the amplitude above which a slot counts as active, and an
+importer has to write it. Every later stage reads it from this file and from nowhere
+else: the loss masks and the slot matcher, the slot diagnostics, the output
+normalization statistics, inference scoring, the profile autoencoder, the seed comparison
+and the console. A slot is active only when its amplitude is strictly above the
+threshold (`GaussianActivity.is_active` in `tools/data/gaussians.py`), so 0.0 means any
+positive amplitude and a slot stored at exactly zero is never active.
 
 The channels themselves are complex because the example task treats magnitude and phase
 as separate input channels. `InputConfig` in `configuration/dataset/general/dataset.py`
@@ -90,11 +106,12 @@ The example target is `k_max` Gaussians per pixel, three numbers each, evaluated
 axis of `n_z` samples. Three things define it: the axis and slot count, the roles that are
 supervised, and the head that emits them.
 
-`GaussianConfig` (`configuration/dataset/gaussian.py`)
-holds `n_default_gaussians`, `x_min`, `x_max` and `params_per_gaussian`. It is built by
-`ConfigFactory.gaussian_config()` from the dataset, never by hand, so the slot count
-follows the parameter run and the axis follows the dataset metadata. Widening the axis or
-changing K is a matter of writing a different parameter run, not of editing code.
+`GaussianConfig` (`configuration/dataset/gaussian.py`) holds `n_default_gaussians`,
+`x_min`, `x_max`, `activity_threshold` and `params_per_gaussian`. It is built by
+`ConfigFactory.gaussian_config()` from the dataset, never by hand, so the slot count and
+the threshold follow the parameter run and the axis follows the dataset metadata.
+Widening the axis or changing K is a matter of writing a different parameter run, not of
+editing code.
 
 Which of the three roles are supervised is `OutputConfig` in
 `configuration/dataset/general/dataset.py`, through `use_amplitude`, `use_mu` and `use_sigma`,
@@ -111,6 +128,8 @@ The head that emits the parameters is chosen with `--backbone_head`, and
 
 - `conv`, a single 1x1 convolution to `out_channels`. It imposes no slot structure and is
   the only head that does not require `out_channels` to divide by `params_per_gaussian`.
+  `prior_bias_init` starts its biases at the training-label prior, which assumes three
+  channels per slot and raises otherwise.
 - `multihead`, three pixel MLPs, one each for amplitude, mean and width, interleaved back
   into slot order. It is written for three parameters per slot.
 - `per_gaussian`, one pixel MLP per slot emitting that slot's parameters.
@@ -119,14 +138,14 @@ The head that emits the parameters is chosen with `--backbone_head`, and
   regressed to zero. This is the default, and the dual model
   (`models/dual/dual_resunet.py`) accepts nothing else.
 
-Slot order is a convention, not a fact, so the loss aligns the two sides
-before comparing them. `ParamMatcher.match` in `tools/loss/param_loss.py` runs on every
-backward pass of the backbone loss, under `curriculum.<stage>.param_matching`:
-`sorted_gt` sorts the ground-truth slots by mean and leaves the prediction alone;
+Slot order is a convention, not a fact, so the loss aligns the two sides before comparing
+them. `ParamMatcher.match` in `tools/loss/param_loss.py` runs on every backward pass of
+the backbone loss, under `curriculum.<stage>.param_matching`: `sorted_gt` sorts the
+ground-truth slots by mean, active slots first, and leaves the prediction alone;
 `hungarian` sorts the ground truth and then assigns predicted slots to it by minimum
-cost. The assignment is exhaustive over all `G!` permutations, which is why
-`ParamMatcher.MAX_GAUSSIANS` is 6 and why the class raises above that. At `K = 1` both
-choices are no-ops.
+cost. `match` takes the activity threshold as a required argument. The assignment is
+exhaustive over all `G!` permutations, which is why `ParamMatcher.MAX_GAUSSIANS` is 6 and
+why the class raises above that. At `K = 1` both choices are no-ops.
 
 If your target is plain dense regression, say one value per pixel or a fixed vector
 with no permutation freedom, the shape of the work is:
@@ -137,7 +156,9 @@ with no permutation freedom, the shape of the work is:
    marked `denorm` (`mse_curve`, `l1_curve`, `huber_curve`, `charbonnier_curve`,
    `cosine_curve`, `total_power_relerr`, `moments`) compare reconstructed curves; the ones
    marked `norm` (`param_l1`, `param_huber`, `param_mse`, `smoothness_tv`) compare
-   parameters. Turn the `use_param_*` flags off in both curriculum stages.
+   parameters. Turn the `use_param_*` flags off in both curriculum stages. `Loss`
+   refuses a stage that enables no term or whose enabled weights sum to zero, so keep at
+   least one curve term on with a positive weight in each.
 3. Replace `Loss` in `pipelines/backbone/training/loss.py`. Turning the flags off is not
    enough on its own: `Loss.__call__` reconstructs curves through `GaussianCurve`, calls
    `_match_params`, and computes `amp_mae`, `mu_mae` and `sigma_mae` on every batch
@@ -175,7 +196,11 @@ range from `fixed_out_bounds_min`/`fixed_out_bounds_max`, one entry per output c
 The fitted statistics land in `meta/normalization_stats.json` in the run directory, as
 `ChannelStats`: a location, a scale, a name, the strategy and a clampable flag per
 channel. Inference reloads them from there, so a run is self-contained. The fitting itself
-is `pipelines/backbone/dataset/stats_computer.py`, over the training split only.
+is `pipelines/backbone/dataset/stats_computer.py`, over the training split only; the
+output statistics pool a slot's values only where its amplitude is above the activity
+threshold. A fit that yields a non-finite location or scale raises, and
+`ChannelStats.from_dict` refuses a zero, negative or non-finite scale when the file is
+loaded.
 
 Adding a slot means three edits: emit its key from `channel_group_keys`, add an entry to
 `_SLOT_STRATEGIES`, and add a field plus a `SLOT_FIELDS` entry if it should be
@@ -268,6 +293,42 @@ points every other machine at a directory it does not have.
 - Fix: write the default relative to the repository root, below the matching
   `ReferenceLayout` root, as a `Path` or a plain string.
 
+### Every metric key has an orientation
+
+`MetricOrientation` in `tools/metrics/scoring.py` decides from a metric key whether a
+larger value is better, worse or neither, and the comparison reports, the leaderboard and
+the A/B autopsy rank by it. A key that matches no declared rule raises `KeyError`
+instead of being ranked as an error by default.
+
+- Fails in: `tests/backbone_inference/test_pipeline_e2e.py::test_inference_pipeline_end_to_end`,
+  which resolves every numeric key the backbone inference writes to `metrics.json`, and
+  the `test_orientation_*` tests in `tests/loss_metrics/test_scoring.py` for the rules
+  themselves.
+- Fix: name the key so an existing rule covers it, or add it to `_HIGHER_OVERRIDES` or
+  to the neutral, lower or higher patterns. Counts, settings and spreads belong in the
+  neutral pattern, so they are reported but never ranked.
+
+The metric code around it takes the run's logger: `Metrics` and `BoundedProcessPool` in
+`pipelines/backbone/inference/metrics.py` both need one. `R2.pixel_map` returns NaN where
+the reference profile is constant, and `R2.undefined_count` counts those pixels; report
+that count next to any mean you take over the map.
+
+### Every figure a page names exists
+
+The line figures and loading orbs of the console are named by string in `index.html` and
+the view modules (the `name` attribute, `data-figure`, `HairlineFigure.html`, the
+`FIGURES` tables, the orb `state`). The names resolve against the vendored stock bundle
+in `webui/static/vendor/hairline-figures.js`, `ProjectFigures.CATALOG` in
+`webui/static/js/hairline_project.js` and `ThinkingOrbElement.STATES` in
+`webui/static/js/thinking_orb.js`, and an unknown name throws only when its page renders.
+
+- Fails in: `tests/webui/test_hairline_figures.py::test_every_named_figure_is_in_a_catalog`
+  for a name nothing draws, `::test_every_catalog_figure_is_shown_somewhere` for a
+  figure no page uses, `::test_stock_and_project_catalogs_do_not_share_a_name`, and
+  `::test_every_named_orb_state_exists` for an orb state the element does not draw.
+- Fix: register the figure in `ProjectFigures.CATALOG`, or remove it from the catalog
+  together with its last use.
+
 ## 5. Add a model
 
 Backbones are registered in `models/backbone/__init__.py`. A new one needs, in order:
@@ -348,6 +409,25 @@ dataclass alone. A new console tab that shows images registers with the figure s
 instead, through a `figureTag()` method and `data-fig` labels, as `webui/README.md`
 describes under "Saving figures".
 
+A per-run analysis builds on `pipelines/backbone/inference/analysis/run_batch.py`.
+Subclass `AnalysisRun`, set `SUMMARY_FILENAME`, and implement `_analyse(run)` returning
+an `AnalysisOutcome(payload, headline, report_path, status)`. The base class loads the
+run, refuses an output directory that resolves to the run itself, warns before it
+replaces an earlier result, and writes `analysis_config.json`, `analysis_provenance.json`
+and the completion marker. Its `RunBatch` subclass takes the entry's
+`ConfigCli.profile_overrides` as its third argument, so the logged configuration table
+tags the values the machine profile set; `main/analysis/probe_layers.py` is the short
+version of such an entry. `StageLogger` in `tests/backbone_inference/_helpers.py`
+records the timers and progress an analysis reports, for tests to assert on.
+
+Two shared settings have one home each. The resource monitor's settings are
+`ResourceConfig` in `configuration/resources.py`, outside the training package, so a
+long-running processing entry can carry a `resources` field without importing torch, as
+`extract_params` does. The batch-size learning-rate rule is
+`TrainingQueueConfig.lr_scale(batch_size)` in `configuration/training/general/run.py`;
+`ConfigFactory` and the batch-size tuner both call it, and a new caller that changes the
+batch size should too.
+
 ## 7. Rename the project
 
 Nothing derives the name at runtime, so it is spelled out in a handful of places:
@@ -371,8 +451,45 @@ Nothing derives the name at runtime, so it is spelled out in a handful of places
   profile written by the installer carries the interpreter `webui/run.sh` starts from.
 - The profile location, `~/.config/ml-template/` and `MLTEMPLATE_MACHINE_PROFILE`:
   `MachineProfile` in `tools/runtime/machine_profile.py`, `install.sh` and `webui/run.sh`.
+  The variable must name an existing file or be empty; a missing file raises
+  `FileNotFoundError` rather than running without a profile.
+- The other `MLTEMPLATE_` variables: `MLTEMPLATE_DETACHED_OUT`, which hands a `--detach`
+  child its output path (`Detacher.OUT_ENV` in `tools/runtime/detacher.py`),
+  `MLTEMPLATE_INHERITED_CUDA_MASK` (`InheritedCudaMask.STASH_VAR` in
+  `tools/runtime/cuda_mask.py`), and `MLTEMPLATE_ENV_NAME` and `MLTEMPLATE_CONDA_ROOT`,
+  which `install.sh` reads and the profile's shell twin writes.
+- The systemd scope the console's keep-alive switch moves the server into,
+  `ml-template-webui-<pid>.scope`: `ServerDetacher.SCOPE_PREFIX` in
+  `webui/process_manager.py`.
 - The browser storage prefix `mlt.` in `webui/static/js/configs.js`
   (`mlt.config.open`, `mlt.config.active`). Changing it resets which config sections a
   returning user had open, which is the point if two consoles share a host.
 - Scratch paths in the visual harness: `webui/tools/visual/refresh.sh`,
   `snap_ui.js`, `snap_repomap.js`, `dump_frames.js` and `package.json`.
+
+## 8. The console's figures and palette
+
+Every console page carries a line figure, and several of the project's own figures draw
+the example task: `slots` (three Gaussian slots), `voxels` (a pixel's profile cut into z
+bins) and `surface` (two Gaussian bumps on a ridgeline surface). They are classes in
+`webui/static/js/hairline_project.js`, registered in `ProjectFigures.CATALOG`; the stock
+figures come from the vendored bundle in `webui/static/vendor/hairline-figures.js`.
+Replace or add catalog entries for your own subject, then point the pages at them:
+
+- `LaunchView.FIGURES` in `webui/static/js/launch.js` maps script keys to figures by
+  pattern, and an unmatched key shows `surface`.
+- `LeaderboardView.FIGURES` in `leaderboard.js` and `ResultsView.FIGURES` in
+  `results.js` pick a figure per view mode.
+- The Home board names its figures in `home.js`, and static pages name theirs in
+  `index.html`.
+
+`RepoCityFigure.SIZES` in `hairline_project.js` is a static snapshot of six top-level
+folder sizes that nothing recomputes; update it by hand when the tree changes. The
+figure gate in section 4 catches a name nothing draws and a figure nothing shows.
+
+The palette is the `:root` block at the top of `webui/static/css/styles.css`: `--bg`
+and `--surface` for the page and its panels, the `--ink*` tokens for text, the
+`--accent*` tokens, `--on-accent` for text on an accent fill, and `--frost` and
+`--frost-panel` for the blurred bars and popovers. Most canvas charts and diagrams set
+their own light series colours in their modules; the cube and slice views read their
+source and cut colours from the `--src-*` and `--cut-*` tokens further down the file.
