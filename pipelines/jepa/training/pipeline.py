@@ -28,6 +28,8 @@ from pipelines.shared.training.training_runner           import EntryConfigTrain
 from pipelines.jepa.training.loss                        import Loss as EmbeddingLoss
 from pipelines.jepa.training.trainer                     import JepaModule, Trainer
 from pipelines.shared.config.config_persistence          import ProfileAutoencoderConfigIO, ImageAutoencoderConfigIO
+from tools.data.io                                       import FileIO
+from tools.runtime.completion                            import CompletionMarker
 from tools.runtime.reproducibility                       import Reproducibility
 from tools.runtime.run_tag                               import RunTag
 
@@ -36,6 +38,7 @@ class TrainingPipeline:
     """Builds and trains a JEPA module from an entry configuration.
 
     Attributes:
+        COUPLED_RECORD_FILENAME  : Name of the meta file recording the imported autoencoder checkpoints.
         entry                    : JEPA entry configuration driving the run.
         factory                  : ConfigFactory deriving trainer and dataset configurations.
         profile_autoencoder_meta : Metadata directory of the imported profile autoencoder run, or None.
@@ -49,7 +52,10 @@ class TrainingPipeline:
         backbone_name            : Registry name of the backbone.
         profile_ae_state         : Cached profile autoencoder state dict, loaded on first use.
         image_ae_state           : Cached image autoencoder state dict, loaded on first use.
+        coupled_autoencoders     : Per-coupling record of the imported checkpoint (epochs, validation loss, commit), keyed by "profile" or "image" once loaded.
     """
+
+    COUPLED_RECORD_FILENAME = "coupled_autoencoders.json"
 
     def __init__(self, entry_config, split_regions=None) -> None:
         """Resolves the imported autoencoder runs and assembles the trainer configuration.
@@ -119,9 +125,10 @@ class TrainingPipeline:
         if split_regions is not None:
             self.dataset_config.split_regions = split_regions
 
-        self.backbone_name    = entry_config.backbone_name
-        self.profile_ae_state = None
-        self.image_ae_state   = None
+        self.backbone_name        = entry_config.backbone_name
+        self.profile_ae_state     = None
+        self.image_ae_state       = None
+        self.coupled_autoencoders = {}
 
         patch                    = self.dataset_config.patch
         patch.size, patch.stride = ModelBuilder.square_patch([self.backbone_name], patch.size, patch.stride)
@@ -236,7 +243,7 @@ class TrainingPipeline:
         if self.image_ae_cfg is not None:
             if self.image_ae_cfg.in_channels != dataset_in_channels:
                 raise ValueError(f"Image autoencoder was trained with in_channels={self.image_ae_cfg.in_channels} but the JEPA dataset produces {dataset_in_channels} input channels; the input representation and secondaries must match the image autoencoder run.")
-            image_autoencoder = self._load_image_autoencoder()
+            image_autoencoder = self._load_image_autoencoder(logger)
             backbone_in       = self.image_ae_cfg.embedding_dim
 
         profile_autoencoder = None
@@ -245,7 +252,7 @@ class TrainingPipeline:
                 raise ValueError(f"Profile autoencoder was trained with profile_length={self.autoencoder_cfg.profile_length} but the JEPA dataset produces curves of length {z_len}; retrain the profile autoencoder on this dataset's z axis before coupling it.")
 
             backbone_out        = self.autoencoder_cfg.embedding_dim
-            profile_autoencoder = self._load_profile_autoencoder(z_axis)
+            profile_autoencoder = self._load_profile_autoencoder(z_axis, logger)
         else:
             backbone_out = self._gaussian_out_channels()
 
@@ -324,11 +331,16 @@ class TrainingPipeline:
                 overrides[k] = v
         return get_backbone(self.backbone_name, config=config, **overrides)
 
-    def _load_profile_autoencoder(self, z_axis):
+    def _load_profile_autoencoder(self, z_axis, logger):
         """Instantiates the profile autoencoder and loads its pretrained weights.
+
+        The checkpoint is read once; on that first load the imported run is
+        checked for completion, and its epoch, validation loss and commit are
+        recorded and logged.
 
         Args:
             z_axis : Z axis in metres of the JEPA dataset, compared against the axis stored in the checkpoint.
+            logger : Logger receiving the coupled-run table on the first load.
 
         Returns:
             The profile autoencoder with the checkpoint state loaded.
@@ -342,7 +354,9 @@ class TrainingPipeline:
             ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
             self._validate_profile_axis(np.asarray(ckpt["z_axis"], dtype=np.float32), np.asarray(z_axis, dtype=np.float32), ckpt_path)
 
-            self.profile_ae_state = ckpt["params"]
+            self.profile_ae_state                = ckpt["params"]
+            self.coupled_autoencoders["profile"] = self._checkpoint_record(ckpt_path, ckpt)
+            self._log_coupled(logger, "profile")
 
         autoencoder.load_state_dict(self.profile_ae_state)
         return autoencoder
@@ -362,22 +376,41 @@ class TrainingPipeline:
         if ae_axis.shape != jepa_axis.shape or not np.allclose(ae_axis, jepa_axis, rtol=1e-5, atol=1e-5):
             raise ValueError(f"Profile autoencoder checkpoint '{ckpt_path}' was trained on z axis [{ae_axis[0]:.3f}, {ae_axis[-1]:.3f}] with {ae_axis.size} bins, but the JEPA dataset produces axis [{jepa_axis[0]:.3f}, {jepa_axis[-1]:.3f}] with {jepa_axis.size} bins; retrain the profile autoencoder on this dataset's z axis before coupling it.")
 
-    def _load_image_autoencoder(self):
-        """Instantiates the image autoencoder and loads its pretrained weights."""
+    def _load_image_autoencoder(self, logger):
+        """Instantiates the image autoencoder and loads its pretrained weights.
+
+        The checkpoint is read once; on that first load the imported run is
+        checked for completion, and its epoch, validation loss and commit are
+        recorded and logged.
+
+        Args:
+            logger : Logger receiving the coupled-run table on the first load.
+
+        Returns:
+            The image autoencoder with the checkpoint state loaded.
+        """
         autoencoder, _ = get_image_autoencoder(self.image_ae_model_name, self.image_ae_cfg)
         ckpt_path      = self.trainer_config.image_autoencoder_checkpoint
 
         if self.image_ae_state is None:
             self.validate_checkpoint(ckpt_path, "image")
 
-            self.image_ae_state = torch.load(ckpt_path, map_location="cpu", weights_only=False)["params"]
+            ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+
+            self.image_ae_state                = ckpt["params"]
+            self.coupled_autoencoders["image"] = self._checkpoint_record(ckpt_path, ckpt)
+            self._log_coupled(logger, "image")
 
         autoencoder.load_state_dict(self.image_ae_state)
         return autoencoder
 
     @staticmethod
     def validate_checkpoint(ckpt_path, label: str) -> None:
-        """Requires the named autoencoder checkpoint file to exist.
+        """Requires the autoencoder checkpoint to exist and its run to have finished.
+
+        A run that is still training, crashed or was aborted already holds a
+        best_model.pt from an early epoch, so the file alone proves nothing; the
+        run's completion marker does.
 
         Args:
             ckpt_path : Path to the expected best_model.pt.
@@ -385,12 +418,69 @@ class TrainingPipeline:
 
         Raises:
             FileNotFoundError : If the checkpoint file is missing.
+            RuntimeError      : If the run directory holding the checkpoint carries no completion marker.
         """
         if not Path(ckpt_path).is_file():
             raise FileNotFoundError(f"{label} autoencoder checkpoint '{ckpt_path}' does not exist; expected 'best_model.pt' under the selected {label} autoencoder run directory.")
 
+        run_directory = Path(ckpt_path).parent
+        if not CompletionMarker.is_complete(run_directory):
+            raise RuntimeError(f"{label} autoencoder run '{run_directory}' has no {CompletionMarker.FILENAME}: the run is still training, crashed or was aborted, so its '{Path(ckpt_path).name}' is a partial checkpoint. Couple a finished run, or wait for this one to complete.")
+
+    @staticmethod
+    def _checkpoint_record(ckpt_path, ckpt: dict) -> dict:
+        """Describes the imported checkpoint by its epochs, validation loss, training length and commit.
+
+        Args:
+            ckpt_path : Path of the loaded checkpoint, inside the autoencoder run directory.
+            ckpt      : Loaded checkpoint payload with epoch, best_epoch and best_val_loss.
+
+        Returns:
+            Mapping with the run directory, checkpoint path, one-based checkpoint
+            and best epochs, best validation loss, completed and total epochs,
+            early-stopping flag and the git commit the autoencoder run was trained
+            from. A run whose completion marker was backfilled records no epoch
+            counts, so those three fields are None and "marker_backfilled" says why.
+        """
+        run_directory = Path(ckpt_path).parent
+        summary       = FileIO.load_json(run_directory / "meta" / "run_summary.json")
+        marker        = CompletionMarker.payload(run_directory)
+        backfilled    = "backfilled" in marker
+
+        return {
+            "run_directory"     : str(run_directory),
+            "checkpoint"        : str(ckpt_path),
+            "epoch"             : int(ckpt["epoch"]) + 1,
+            "best_epoch"        : int(ckpt["best_epoch"]) + 1,
+            "best_val_loss"     : float(ckpt["best_val_loss"]),
+            "epochs_completed"  : None if backfilled else int(marker["epochs_completed"]),
+            "epochs_total"      : None if backfilled else int(marker["epochs_total"]),
+            "early_stopped"     : None if backfilled else bool(marker["early_stopped"]),
+            "marker_backfilled" : backfilled,
+            "git_commit"        : summary["git_commit"],
+        }
+
+    def _log_coupled(self, logger, label: str) -> None:
+        """Prints the coupled-run table of one imported autoencoder.
+
+        Args:
+            logger : Logger receiving the section and table.
+            label  : Coupling key, "profile" or "image".
+        """
+        record = self.coupled_autoencoders[label]
+
+        logger.section(f"[Coupled {label.title()} Autoencoder]")
+        logger.kv_table({
+            "Run directory"    : record["run_directory"],
+            "Checkpoint"       : record["checkpoint"],
+            "Checkpoint epoch" : record["epoch"],
+            "Best epoch"       : f"{record['best_epoch']} (val_loss {record['best_val_loss']:.6g})",
+            "Epochs completed" : "not recorded (backfilled completion marker)" if record["marker_backfilled"] else f"{record['epochs_completed']} of {record['epochs_total']}" + (" (early stopped)" if record["early_stopped"] else ""),
+            "Git commit"       : record["git_commit"],
+        })
+
     def _save_metadata(self, run_meta, backbone_cfg, z_len: int) -> None:
-        """Writes the trainer, backbone, autoencoder and run-summary metadata files.
+        """Writes the trainer, backbone, autoencoder, coupled-run and run-summary metadata files.
 
         Args:
             run_meta     : Training run metadata owning the metadata directory.
@@ -406,6 +496,8 @@ class TrainingPipeline:
             ProfileAutoencoderConfigIO.save(self.autoencoder_cfg, self.ae_model_name, run_meta.metadata_directory)
         if self.image_ae_cfg is not None:
             ImageAutoencoderConfigIO.save(self.image_ae_cfg, self.image_ae_model_name, run_meta.metadata_directory)
+
+        FileIO.save_json(self.coupled_autoencoders, run_meta.metadata_directory / self.COUPLED_RECORD_FILENAME)
 
         run_meta.save_run_summary(self.backbone_name, in_channels=self.backbone_in_channels, out_channels=self.backbone_out_channels, x_axis_length=z_len, n_gaussians=gaussian_cfg.n_default_gaussians, seed=self.entry.seed)
 
