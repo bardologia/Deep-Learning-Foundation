@@ -27,7 +27,7 @@ class ProcessAnimator {
       { t0: 66,  name: "LR schedule",       fn: "_trSched" },
       { t0: 90,  name: "Loss curriculum",   fn: "_trCurr" },
       { t0: 115, name: "Gradient clipping", fn: "_trClip" },
-      { t0: 129, name: "mu-sort matching",  fn: "_trMatch" },
+      { t0: 129, name: "Slot matching",     fn: "_trMatch" },
       { t0: 146, name: "Weight decay",      fn: "_trReg" },
       { t0: 158, name: "Dropout",           fn: "_trDrop" },
       { t0: 170, name: "Early stopping",    fn: "_trStop" },
@@ -378,15 +378,14 @@ class ProcessAnimator {
     }
 
     const S0v = (k) => sigmaGuess(k) / H_SPAN;
-    const LAM = 5e-3;
+    const LAM = 1e-2;
     const mse = (m) => {
       let e = 0;
       for (let i = 0; i <= 80; i++) { const x = i / 80; const d = mix(m, x) - target(x); e += d * d; }
       return e / 81;
     };
     const finalModel = (k) => cands.slice(0, k).map((c) => ({ a: c.a, mu: c.mu, s: c.s }));
-    const meanA = (k) => cands.slice(0, k).reduce((s, c) => s + c.a, 0) / k;
-    const pen = (k) => LAM * k * meanA(k);
+    const pen = (k) => LAM * k;
     const J = (k) => mse(finalModel(k)) + pen(k);
     const bestK = [1, 2, 3, 4, 5].reduce((b, k) => (J(k) < J(b) ? k : b), 1);
 
@@ -406,7 +405,7 @@ class ProcessAnimator {
       const cw = 232, ch = 132, cxp = w - pad.r - cw - 12, cyp = pad.t + 14;
       ctx.fillStyle = "rgba(4,7,10,0.78)"; ctx.fillRect(cxp - 12, cyp - 22, cw + 24, ch + 66);
       ctx.strokeStyle = "rgba(120,200,220,0.28)"; ctx.lineWidth = 1; ctx.strokeRect(cxp - 12, cyp - 22, cw + 24, ch + 66);
-      this._texDraw("J(K)=\\mathrm{MSE}+\\lambda\\sum_k a_k", cxp - 2, cyp - 20, 14, { align: "left", color: "rgba(178,206,200,0.95)" });
+      this._texDraw("J(K)=\\mathrm{MSE}+\\lambda K", cxp - 2, cyp - 20, 14, { align: "left", color: "rgba(178,206,200,0.95)" });
       const jmax = Math.max(...[1, 2, 3, 4, 5].map(J)) * 1.12;
       for (let k = 1; k <= Math.min(done, 5); k++) {
         const bw2 = 30, bx = cxp + (k - 1) * (bw2 + 14) + 4;
@@ -428,7 +427,7 @@ class ProcessAnimator {
       ctx.fillStyle = "rgba(53,230,208,0.75)"; ctx.fillRect(cxp - 2, ly - 10, 11, 11);
       ctx.fillStyle = "rgba(143, 176, 170, 0.98)"; ctx.fillText("mse", cxp + 15, ly);
       ctx.fillStyle = "rgba(255,207,107,0.8)"; ctx.fillRect(cxp + 64, ly - 10, 11, 11);
-      ctx.fillStyle = "rgba(143,176,170,0.95)"; ctx.fillText("λ·Σa", cxp + 81, ly);
+      ctx.fillStyle = "rgba(143, 176, 170, 0.98)"; ctx.fillText("λ·K", cxp + 81, ly);
       ctx.restore();
     };
 
@@ -487,12 +486,12 @@ class ProcessAnimator {
             i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
           }
           ctx.strokeStyle = "rgba(255,107,125,0.85)"; ctx.lineWidth = 1.4; ctx.stroke();
-          ctx.font = "11px 'IBM Plex Mono', monospace";
-          ctx.fillStyle = "rgba(255,207,107,0.85)"; ctx.fillText("5e-2", bx6 + bw6 - 40, thY6 - 5);
-          ctx.fillStyle = "rgba(255,107,125,0.9)"; ctx.fillText("neighbour pixel · max ≤ 5e-2 → skipped", bx6 + 8, by6 - 8);
-          ctx.fillStyle = "rgba(94,114,128,0.95)"; ctx.fillText("output stays all-zero", bx6 + 8, by6 + bh6 + 16);
-          ctx.fillStyle = "#7cff9b"; ctx.font = "12px 'IBM Plex Mono', monospace";
-          ctx.fillText("max > 5e-2 ✓ fitted", pad.l + 10, pad.t + 36);
+          ctx.font = "600 11px 'IBM Plex Mono', monospace";
+          ctx.fillStyle = "rgba(255, 207, 107, 0.95)"; ctx.fillText("1e-3", bx6 + bw6 - 40, thY6 - 5);
+          ctx.fillStyle = "rgba(255, 107, 125, 0.97)"; ctx.fillText("neighbour pixel · max ≤ 1e-3 → skipped", bx6 + 8, by6 - 8);
+          ctx.fillStyle = "rgba(171, 182, 189, 0.98)"; ctx.fillText("output stays all-zero", bx6 + 8, by6 + bh6 + 16);
+          ctx.fillStyle = "#7cff9b"; ctx.font = "600 12px 'IBM Plex Mono', monospace";
+          ctx.fillText("max > 1e-3 ✓ fitted", pad.l + 10, pad.t + 36);
           ctx.restore();
         }
         caption = "Activity gate: a pixel is fitted only if its profile max exceeds activity_threshold (default 1e-3, recorded in the run metadata for every later stage)  ·  inactive pixels keep zeros";
@@ -904,7 +903,7 @@ class ProcessAnimator {
       done = 5; highlight = true;
       model = finalModel(bestK);
       cands.forEach((c, r) => drawPeak(c, r, r < bestK));
-      caption = `Order selection  ·  J(K) = MSE + λ·Σa, λ = 5e-3  →  K* = ${bestK}`;
+      caption = `Order selection  ·  J(K) = MSE + λ·K, λ = 1e-2  →  K* = ${bestK}`;
     } else if (tt < FINAL0) {
       const ts = tt - SORT0;
       const KMAX = 5;
@@ -993,7 +992,7 @@ class ProcessAnimator {
       }
 
       if (ts < SORTSTART) caption = "Fitted parameter sets [a, μ, σ]  ·  stacked in prominence order";
-      else if (ts < 5.8) caption = "Sorting by ascending μ (the highlighted key)  ·  inactive sets (a ≤ 0.05) sort last  ·  each set flies to its slot";
+      else if (ts < 5.8) caption = "Sorting by ascending μ (the highlighted key)  ·  inactive sets (a ≤ activity_threshold) sort last  ·  each set flies to its slot";
       else caption = "Padding to K_max = 5  ·  inactive slots zeroed (a = 0)  ·  final per-pixel array";
     }
 
@@ -1336,9 +1335,9 @@ class ProcessAnimator {
         ctx.beginPath(); ctx.moveTo(cx2, sy); ctx.lineTo(cx2, sy + sh2); ctx.stroke();
         if (p2 >= 1) {
           ctx.fillStyle = "rgba(124,255,155,0.08)"; ctx.fillRect(x85, sy, sx + sw2 - x85, sh2);
-          centerLabel("val 13000–14500", (x70 + x85) / 2, sy - 44, "#ffcf6b", 13);
+          centerLabel("val 13064–14500", (x70 + x85) / 2, sy - 44, "#ffcf6b", 13);
           centerLabel("≈ 10%", (x70 + x85) / 2, sy - 28, "rgba(206,228,222,0.7)", 12);
-          centerLabel("test 14500–16000", (x85 + sx + sw2) / 2, sy - 76, "#7cff9b", 13);
+          centerLabel("test 14564–16000", (x85 + sx + sw2) / 2, sy - 76, "#7cff9b", 13);
           centerLabel("≈ 10%", (x85 + sx + sw2) / 2, sy - 60, "rgba(206,228,222,0.7)", 12);
         }
       }
@@ -1369,20 +1368,20 @@ class ProcessAnimator {
 
       if (tt < 3.6) caption = "The processed artifacts are opened as memory-mapped files  ·  the data stays on disk";
       else if (tt < 6.6) caption = "The scene is split along row  ·  production uses explicit bounds, train row 1000–13000 (≈80%)";
-      else if (tt < 9.6) caption = "val row 13000–14500 (≈10%)  ·  test row 14500–16000 (≈10%)  ·  three disjoint row windows";
+      else if (tt < 9.6) caption = "val row 13064–14500 (≈10%)  ·  test row 14564–16000 (≈10%)  ·  three disjoint row windows, 64 rows apart";
       else if (tt < 12.2) caption = "The global crop is fixed (from dataset.json)  ·  each split maps into its local frame";
       else caption = "Loading the train window  ·  1 primary + 4 secondaries + 4 derived copied into one stacked RAM buffer";
     } else if (tt < A2) {
       const ts = tt - A1;
       const kk = Math.min((w - 380) / 336, (h - 130) / 146);
       const gx = 64, gy = 70;
-      const gw = 336 * kk, gh = 146 * kk, ps = 64 * kk, st = 32 * kk;
+      const gw = 336 * kk, gh = 146 * kk, psW = 64 * kk, psH = 32 * kk, stW = 32 * kk, stH = 16 * kk;
       const padL = 8 * kk, padT = 7 * kk;
       const fx = gx + gw + 48;
 
       field(gx, gy, gw, gh, 0.55, 7);
       ctx.strokeStyle = "rgba(120,200,220,0.5)"; ctx.lineWidth = 1.4; ctx.strokeRect(gx, gy, gw, gh);
-      label("train split   W = 336   H = 146", gx, 38, "rgba(206,228,222,0.95)", 14);
+      label("train split   row 336   col 146", gx, 38, "rgba(206,228,222,0.95)", 14);
 
       const mirrorBands = (alpha) => {
         const nxs = Math.floor(gw / 7), nys = Math.floor(gh / 7);
@@ -1397,53 +1396,53 @@ class ProcessAnimator {
 
       if (ts < 3.6) {
         const gp = this._ease(c01(ts / 1.4));
-        ctx.fillStyle = "rgba(124,255,155,0.10)"; ctx.fillRect(gx, gy, ps * gp, ps * gp);
-        ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 2; ctx.strokeRect(gx, gy, ps * gp, ps * gp);
+        ctx.fillStyle = "rgba(124,255,155,0.10)"; ctx.fillRect(gx, gy, psW * gp, psH * gp);
+        ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 2; ctx.strokeRect(gx, gy, psW * gp, psH * gp);
         if (gp >= 1) {
-          arrow(gx + 4, gy + ps + 18, gx + ps - 4, gy + ps + 18, "#7cff9b");
-          arrow(gx + ps - 4, gy + ps + 18, gx + 4, gy + ps + 18, "#7cff9b");
+          arrow(gx + 4, gy + psH + 18, gx + psW - 4, gy + psH + 18, "#7cff9b");
+          arrow(gx + psW - 4, gy + psH + 18, gx + 4, gy + psH + 18, "#7cff9b");
         }
-        label("patch = 64 x 64 px", fx, 104, "#7cff9b", 14);
+        label("patch = 64 x 32 px (row x col)", fx, 104, "#7cff9b", 14);
         label("the window anchors at", fx, 138, "rgba(206,228,222,0.9)", 14);
         label("the grid origin", fx, 160, "rgba(206,228,222,0.9)", 14);
-        caption = "Patches are 64 x 64 pixels  ·  the first window sits at the grid origin";
+        caption = "Patches are 64 x 32 pixels, row x col  ·  the first window sits at the grid origin";
       } else if (ts < 8.2) {
         const sp = this._ease(c01((ts - 3.6) / 1.6));
-        const x2 = gx + st * sp;
-        ctx.strokeStyle = "rgba(124,255,155,0.8)"; ctx.lineWidth = 1.6; ctx.strokeRect(gx, gy, ps, ps);
-        ctx.fillStyle = "rgba(255,207,107,0.18)"; ctx.fillRect(x2, gy, gx + ps - x2, ps);
-        ctx.strokeStyle = "#35e6d0"; ctx.lineWidth = 2; ctx.strokeRect(x2, gy, ps, ps);
-        arrow(gx + 2, gy + ps + 18, gx + st, gy + ps + 18, "#ffcf6b");
-        label("stride = 32", fx, 104, "#ffcf6b", 14);
+        const x2 = gx + stW * sp;
+        ctx.strokeStyle = "rgba(124,255,155,0.8)"; ctx.lineWidth = 1.6; ctx.strokeRect(gx, gy, psW, psH);
+        ctx.fillStyle = "rgba(255,207,107,0.18)"; ctx.fillRect(x2, gy, gx + psW - x2, psH);
+        ctx.strokeStyle = "#35e6d0"; ctx.lineWidth = 2; ctx.strokeRect(x2, gy, psW, psH);
+        arrow(gx + 2, gy + psH + 18, gx + stW, gy + psH + 18, "#ffcf6b");
+        label("stride = 32 x 16", fx, 104, "#ffcf6b", 14);
         if (sp >= 1) {
-          label("overlap = 64 - 32", fx, 138, "rgba(206,228,222,0.9)", 14);
-          label("        = 32 px (50%)", fx, 160, "rgba(206,228,222,0.9)", 14);
+          label("overlap row = 64 - 32 = 32 px", fx, 138, "rgba(206,228,222,0.9)", 14);
+          label("overlap col = 32 - 16 = 16 px", fx, 160, "rgba(206,228,222,0.9)", 14);
         }
-        caption = "Stride 32  ·  the next window starts half a patch later, so neighbours overlap by 50%";
+        caption = "Stride 32 x 16  ·  the next window starts half a patch later, so neighbours overlap by 50% on each axis";
       } else if (ts < 14.6) {
         const k = Math.min(9, Math.floor((ts - 8.2) / 0.55));
         for (let i = 0; i < k; i++) {
           ctx.strokeStyle = "rgba(124,255,155,0.22)"; ctx.lineWidth = 1.2;
-          ctx.strokeRect(gx + i * st, gy, ps, ps);
+          ctx.strokeRect(gx + i * stW, gy, psW, psH);
         }
-        const xk = gx + k * st;
-        ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 2; ctx.strokeRect(xk, gy, ps, ps);
+        const xk = gx + k * stW;
+        ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 2; ctx.strokeRect(xk, gy, psW, psH);
         label(`window ${k + 1} / 10`, gx, gy + gh + padT + 28, "#7cff9b", 14);
-        const over = xk + ps - (gx + gw);
+        const over = xk + psW - (gx + gw);
         if (over > 0) {
-          ctx.fillStyle = "rgba(255,107,125,0.22)"; ctx.fillRect(gx + gw, gy, over, ps);
-          ctx.strokeStyle = "rgba(255,107,125,0.8)"; ctx.lineWidth = 1.4; ctx.strokeRect(gx + gw, gy, over, ps);
+          ctx.fillStyle = "rgba(255,107,125,0.22)"; ctx.fillRect(gx + gw, gy, over, psH);
+          ctx.strokeStyle = "rgba(255,107,125,0.8)"; ctx.lineWidth = 1.4; ctx.strokeRect(gx + gw, gy, over, psH);
         }
-        this._texDraw("n_h=\\left\\lceil\\frac{336-64}{32}\\right\\rceil+1=10", fx, 96, 15, { color: "rgba(230,247,243,0.95)" });
-        if (ts > 11.7) this._texDraw("n_v=\\left\\lceil\\frac{146-64}{32}\\right\\rceil+1=4", fx, 150, 15, { color: "rgba(230,247,243,0.95)", alpha: c01((ts - 11.7) / 0.5) });
+        this._texDraw("n_{row}=\\left\\lceil\\frac{336-64}{32}\\right\\rceil+1=10", fx, 96, 15, { color: "rgba(230,247,243,0.95)" });
+        if (ts > 11.7) this._texDraw("n_{col}=\\left\\lceil\\frac{146-32}{16}\\right\\rceil+1=9", fx, 150, 15, { color: "rgba(230,247,243,0.95)", alpha: c01((ts - 11.7) / 0.5) });
         if (over > 0) label("last window: +16 px overshoot", fx, 216, "#ff6b7d", 14);
         caption = k < 9 ? "Counting windows along each axis  ·  round up (size - patch) / stride, then add one" : "The last window overshoots the scene edge  ->  the grid is larger than the scene";
       } else if (ts < 24.0) {
         const pp = this._ease(c01((ts - 14.6) / 1.4));
         mirrorBands(0.5 * pp);
         this._texDraw("\\mathrm{pad}=\\bigl(p+(n-1)s\\bigr)-\\mathrm{size}", fx, 96, 15, { color: "#ffcf6b", alpha: pp });
-        this._texDraw("\\mathrm{pad}_h=16\\to 8\\,|\\,8", fx, 132, 14, { color: "#ffcf6b", alpha: pp });
-        this._texDraw("\\mathrm{pad}_v=14\\to 7\\,|\\,7", fx, 158, 14, { color: "#ffcf6b", alpha: pp });
+        this._texDraw("\\mathrm{pad}_{row}=16\\to 8\\,|\\,8", fx, 132, 14, { color: "#ffcf6b", alpha: pp });
+        this._texDraw("\\mathrm{pad}_{col}=14\\to 7\\,|\\,7", fx, 158, 14, { color: "#ffcf6b", alpha: pp });
         label("symmetric padding (mirror)", fx, 198, "#e6f7f3", 14);
         label("edge pixels mirrored outward", fx, 220, "rgba(206,228,222,0.95)", 13);
         const ziP = ts < 22.0 ? this._ease(c01((ts - 16.2) / 0.8)) : 1 - this._ease(c01((ts - 22.0) / 0.8));
@@ -1508,9 +1507,9 @@ class ProcessAnimator {
         }
         if (ts >= 23.0) {
           ctx.strokeStyle = "rgba(124,255,155,0.8)"; ctx.lineWidth = 1.6;
-          ctx.strokeRect(gx - padL, gy - padT, ps, ps);
+          ctx.strokeRect(gx - padL, gy - padT, psW, psH);
           ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 2;
-          ctx.strokeRect(gx - padL + 9 * st, gy - padT, ps, ps);
+          ctx.strokeRect(gx - padL + 9 * stW, gy - padT, psW, psH);
           label("grid recentred: starts half the padding before the scene, ends flush", gx, gy + gh + padT + 28, "rgba(124,255,155,0.85)", 13);
         }
         if (ts < 16.2) caption = "Reflective padding  ·  split evenly between both sides  ·  mirrored real texture, no zeros";
@@ -1518,19 +1517,19 @@ class ProcessAnimator {
         else caption = "The grid is recentred  ·  it starts half the padding before the scene and ends flush";
       } else {
         mirrorBands(0.5);
-        const shown = Math.min(40, Math.floor(((ts - 24.0) / 2.4) * 40) + 1);
+        const shown = Math.min(90, Math.floor(((ts - 24.0) / 2.4) * 90) + 1);
         for (let n = 0; n < shown; n++) {
           const iv = Math.floor(n / 10), ih2 = n % 10;
-          const x = gx - padL + ih2 * st, y = gy - padT + iv * st;
+          const x = gx - padL + ih2 * stW, y = gy - padT + iv * stH;
           ctx.strokeStyle = n === shown - 1 ? "#7cff9b" : "rgba(124,255,155,0.16)";
           ctx.lineWidth = n === shown - 1 ? 2 : 1;
-          ctx.strokeRect(x, y, ps, ps);
+          ctx.strokeRect(x, y, psW, psH);
           ctx.fillStyle = "rgba(124,255,155,0.55)";
-          ctx.beginPath(); ctx.arc(x + ps / 2, y + ps / 2, 1.8, 0, 7); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + psW / 2, y + psH / 2, 1.8, 0, 7); ctx.fill();
         }
         label("total patches", fx, 104, "#e6f7f3", 14);
-        label("= n_v x n_h = 40", fx, 126, "#e6f7f3", 14);
-        label(`placed: ${shown} / 40`, fx, 148, "#7cff9b", 14);
+        label("= n_col x n_row = 90", fx, 126, "#e6f7f3", 14);
+        label(`placed: ${shown} / 90`, fx, 148, "#7cff9b", 14);
         label("coords precomputed once:", fx, 182, "rgba(206,228,222,0.95)", 13);
         label("(row range, col range, padding)", fx, 204, "rgba(206,228,222,0.95)", 13);
         caption = "Every patch coordinate is precomputed once  ·  extracting a patch is just a slice plus optional padding";
@@ -1551,7 +1550,7 @@ class ProcessAnimator {
       const zs = this._lerp(32, bs, zp);
       field(zx, zy, zs, zs, 0.9, 6, (i, j) => [i + 11, j + 4]);
       ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 2; ctx.strokeRect(zx, zy, zs, zs);
-      if (ts >= 2.2) label("complex patch  (9, 64, 64)", px0, py0 - 16, "#7cff9b", 14);
+      if (ts >= 2.2) label("complex patch  (9, 64, 32)", px0, py0 - 16, "#7cff9b", 14);
 
       const cw = 92, chh = 70, step = 50, ggap = 30;
       const cx0 = px0 + bs + 80;
@@ -1622,7 +1621,7 @@ class ProcessAnimator {
         ctx.beginPath(); ctx.moveTo(bx1, byy); ctx.lineTo(bx2, byy); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(bx1, byy - 6); ctx.lineTo(bx1, byy); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(bx2, byy - 6); ctx.lineTo(bx2, byy); ctx.stroke();
-        centerLabel("input tensor [C = 1 + 4 + 4 = 9, 64, 64]  float32", (bx1 + bx2) / 2, byy + 22, "#35e6d0", 14);
+        centerLabel("input tensor [C = 1 + 4 + 4 = 9, 64, 32]  float32", (bx1 + bx2) / 2, byy + 22, "#35e6d0", 14);
         ctx.restore();
       }
 
@@ -1671,7 +1670,7 @@ class ProcessAnimator {
           ctx.beginPath(); ctx.moveTo(gx1, gyy); ctx.lineTo(gx3, gyy); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(gx1, gyy - 6); ctx.lineTo(gx1, gyy); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(gx3, gyy - 6); ctx.lineTo(gx3, gyy); ctx.stroke();
-          centerLabel("gt tensor [3K, 64, 64]  float32  ·  K sets of (a, mu, sigma)", (gx1 + gx3) / 2, gyy + 22, "#7cff9b", 14);
+          centerLabel("gt tensor [3K, 64, 32]  float32  ·  K sets of (a, mu, sigma)", (gx1 + gx3) / 2, gyy + 22, "#7cff9b", 14);
           ctx.restore();
         }
       }
@@ -1681,7 +1680,7 @@ class ProcessAnimator {
       else if (ts < 7.0) caption = "Secondary channels  ·  one magnitude channel each";
       else if (ts < 10.0) caption = "Derived  ·  one phase channel each";
       else if (ts < 12.0) caption = "1 + 4 + 4 = 9 channels written into a single tensor";
-      else caption = "Targets repeat (a, mu, sigma) for each Gaussian  ->  3K layers of 64 x 64";
+      else caption = "Targets repeat (a, mu, sigma) for each Gaussian  ->  3K layers of 64 x 32";
     } else if (tt < A4) {
       const ts = tt - A3;
       const as2 = Math.min(h - 250, 240);
@@ -1765,7 +1764,7 @@ class ProcessAnimator {
         { txt: "flip H · 0.31 < 0.5 ✓", col: "#7cff9b", t0: 1.4 },
         { txt: "flip V · 0.27 < 0.5 ✓", col: "#7cff9b", t0: 5.0 },
         { txt: "rotate 90 · p 0 · demo", col: "rgba(206,228,222,0.9)", t0: 8.6 },
-        { txt: "noise · 0.11 < 0.25 ✓", col: "#ffcf6b", t0: 12.4 },
+        { txt: "noise · p 0 · demo", col: "rgba(206,228,222,0.9)", t0: 12.4 },
       ];
       let gxp = w / 2 - 450;
       gates.forEach((g) => { gxp += chip(g.txt, gxp, 40, g.col, c01((ts - g.t0) / 0.5), 15) + 18; });
@@ -1784,8 +1783,8 @@ class ProcessAnimator {
       else if (ts < 5.0) caption = "Horizontal flip  ·  one draw flips the input and the target together";
       else if (ts < 8.6) caption = "Vertical flip  ·  the same mirror is applied to input and target";
       else if (ts < 12.4) caption = "Rotation by quarter turns on both  ·  disabled in this configuration, shown for illustration";
-      else if (ts < 16.0) caption = "Gaussian noise (std 0.01, normalized units) gates at p = 0.25  ·  it lands AFTER normalization, targets stay exact";
-      else caption = "Augmented pair ready  ·  next it is normalized, then the 0.01 noise is added on the normalized channels";
+      else if (ts < 16.0) caption = "Gaussian noise (std 0.01, normalized units)  ·  off by default (p = 0), shown for illustration  ·  it lands AFTER normalization, targets stay exact";
+      else caption = "Augmented pair ready  ·  next it is normalized, and noise, when enabled, is added on the normalized channels";
     } else if (tt < A5) {
       const ts = tt - A4;
 
@@ -2049,9 +2048,9 @@ class ProcessAnimator {
         ctx.save(); ctx.globalAlpha = doneP;
         centerLabel("one batch · 8 samples drawn (B = 256 in production)", w / 2, bY - 82, "rgba(230,247,243,0.95)", 15);
         centerLabel("patch indices", sxI + 81, bY + 90, "rgba(206,228,222,0.95)", 14);
-        centerLabel("inputs [B, 9, 64, 64]", sxA + 96, bY + 90, "#35e6d0", 14);
+        centerLabel("inputs [B, 9, 64, 32]", sxA + 96, bY + 90, "#35e6d0", 14);
         centerLabel("normalized", sxA + 96, bY + 110, "rgba(206,228,222,0.9)", 12);
-        centerLabel("targets [B, 3K, 64, 64]", sxB + 96, bY + 90, "#7cff9b", 14);
+        centerLabel("targets [B, 3K, 64, 32]", sxB + 96, bY + 90, "#7cff9b", 14);
         centerLabel("normalized", sxB + 96, bY + 110, "rgba(206,228,222,0.9)", 12);
         ctx.restore();
       }
@@ -2075,7 +2074,7 @@ class ProcessAnimator {
 
       if (ts < 2.6) caption = "The dataset stores only indices and grid coordinates  ·  no patch pixels are in memory";
       else if (ts < 5.2) caption = "The training order is reshuffled every epoch";
-      else if (ts < 9.2) caption = "4 persistent workers slice, pad and normalize on the fly (prefetch 8)  ·  each index yields an input and a target";
+      else if (ts < 9.2) caption = "4 persistent workers slice, pad and normalize on the fly (prefetch 2 per worker)  ·  each index yields an input and a target";
       else caption = "One batch consolidated  ·  indices, normalized inputs, normalized targets  ·  the three loaders feed training";
     }
 
@@ -2116,7 +2115,7 @@ class ProcessAnimator {
 
     const trainL = (e) => 0.050 + 0.55 * Math.exp(-e / 5.5) + 0.008 * Math.sin(e * 1.9) + 0.006 * Math.sin(e * 3.7 + 1);
     const valL   = (e) => 0.085 + 0.58 * Math.exp(-e / 5.0) + 0.0035 * Math.pow(Math.max(0, e - 11), 1.45) + 0.006 * Math.sin(e * 1.3 + 2) + 0.004 * Math.sin(e * 2.9);
-    const ES_E = 30;
+    const ES_E = 50, PAT = 30;
     const patAt = [];
     let esBestE = 0, esBestV = Infinity, esStopE = ES_E;
     {
@@ -2126,7 +2125,7 @@ class ProcessAnimator {
         if (v < esBestV - 0.001) { esBestV = v; esBestE = e; pc = 0; }
         else pc++;
         patAt.push(pc);
-        if (pc >= 15 && esStopE === ES_E) esStopE = e;
+        if (pc >= PAT && esStopE === ES_E) esStopE = e;
       }
     }
 
@@ -2138,7 +2137,7 @@ class ProcessAnimator {
       regPts.push({ x, n, y: regG(x) + n });
     }
 
-    this._tr = { target, predRaw, mix, norms, p95, BASE, ETA, E, SPE, WS, cosF, warmF, lrAt, lossAt, trainL, valL, patAt, esBestE, esBestV, esStopE, ES_E, regG, regPts };
+    this._tr = { target, predRaw, mix, norms, p95, BASE, ETA, E, SPE, WS, cosF, warmF, lrAt, lossAt, trainL, valL, patAt, esBestE, esBestV, esStopE, ES_E, PAT, regG, regPts };
     return this._tr;
   }
 
@@ -2691,7 +2690,7 @@ class ProcessAnimator {
     else if (ts < 31.4) this._cap("L_param reads [a, mu, sigma] slot against slot  ·  plain numbers, no reconstruction");
     else if (ts < 32.8) this._cap(`param_l1 = ${(slotL1[0] + slotL1[1] + slotL1[2]).toFixed(2)}  ·  now the curve view: reconstruct the prediction and compare shapes`);
     else if (ts < 35.8) this._cap(`L_mse sweeps the height axis  ·  each (ŷ - y)² joins the running mean  ·  ${upto + 1}/${NSW + 1}`);
-    else this._cap(`Same prediction, two scores: param_l1 = ${(slotL1[0] + slotL1[1] + slotL1[2]).toFixed(2)}, mse = ${mseRun.toFixed(3)}  ·  the curriculum trains on params first`);
+    else this._cap(`Same prediction, two scores: param_l1 = ${(slotL1[0] + slotL1[1] + slotL1[2]).toFixed(2)}, mse = ${mseRun.toFixed(3)}  ·  a curriculum, when enabled, trains on params first`);
   }
 
   _trStep(ts, d) {
@@ -2892,7 +2891,7 @@ class ProcessAnimator {
     else if (ts < 18.0) this._cap("Boundary reached: (batch_idx + 1) % A == 0 (or last batch)  ·  now the real update fires");
     else if (ts < 25.0) this._cap("clip (max_grad_norm = 1.0) -> record norm -> optimizer.step -> zero_grad  ·  a non-finite loss aborts BEFORE the step");
     else if (ts < 28.0) this._cap("Two clocks: warmup steps every mini-batch  ·  the LR scheduler steps once per epoch");
-    else this._cap("That is one step  ·  repeat per batch, then validate every 5 epochs  ·  next: the schedules these clocks drive");
+    else this._cap("That is one step  ·  repeat per batch, then validate every epoch  ·  next: the schedules these clocks drive");
   }
 
   _trSched(ts, d) {
@@ -3209,9 +3208,9 @@ class ProcessAnimator {
         ctx.fillText(tag, bx + panW - 13 - ctx.measureText(tag).width, y + 16);
         ctx.restore();
       });
-      ctx.font = "11px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = swapP < 0.5 ? "rgba(143,176,170,0.75)" : "rgba(124,255,155,0.85)";
-      ctx.fillText("matcher: sort_gt_by_mu", bx, by + 4 + terms.length * rh + 11);
+      ctx.font = "600 11px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = swapP < 0.5 ? "rgba(143, 176, 170, 0.88)" : "rgba(124, 255, 155, 0.93)";
+      ctx.fillText("matcher: hungarian", bx, by + 4 + terms.length * rh + 11);
 
       {
         const a1 = Math.min(1, Math.max(0, (ts - 0.6) / 0.6));
@@ -3343,7 +3342,7 @@ class ProcessAnimator {
       ctx.restore();
     }
 
-    if (ts < 3.8) this._cap("Loss curriculum  ·  phase 1: param_l1 on matched [a, mu, sigma] sets  ·  direct parameter supervision");
+    if (ts < 3.8) this._cap("Loss curriculum (optional, off by default)  ·  phase 1: param_l1 on matched [a, mu, sigma] sets  ·  direct parameter supervision");
     else if (ts < 6.6) this._cap("epoch == swap_epoch  ->  CurriculumController.maybe_swap() fires");
     else if (ts < 9.4) this._cap("criterion.set_curriculum(complete)  ·  param_l1 stays in the formula  ·  mse_curve and cosine_curve join it");
     else if (ts < 10.8) this._cap("Resets cascade  ·  early stopping, lr scheduler, warmup, optimizer moments, checkpoint baseline (new loss scale)");
@@ -3425,8 +3424,8 @@ class ProcessAnimator {
 
     if (prA > 0) {
       ctx.save(); ctx.globalAlpha = prA;
-      ctx.fillStyle = "rgba(143,176,170,0.9)"; ctx.font = "11px 'IBM Plex Mono', monospace";
-      ctx.fillText("model output slots  ·  fixed order", rowX(0), yPr + chh + 18);
+      ctx.fillStyle = "rgba(143, 176, 170, 0.97)"; ctx.font = "600 11px 'IBM Plex Mono', monospace";
+      ctx.fillText("model output slots  ·  after assignment", rowX(0), yPr + chh + 18);
       ctx.restore();
       preds.forEach((p, j) => {
         const lines = [`a  = ${p.a.toFixed(2)}`, `mu = ${p.mu.toFixed(1)} m`, `s  = ${p.s.toFixed(1)} m`];
@@ -3564,12 +3563,12 @@ class ProcessAnimator {
       ctx.restore();
     }
 
-    if (ts < 2.2) this._cap("ParamMatcher  ·  strategy = sort_gt_by_mu  ·  gt gaussians arrive in arbitrary slot order");
+    if (ts < 2.2) this._cap("ParamMatcher  ·  param_matching = hungarian (default)  ·  gt gaussians arrive in arbitrary slot order");
     else if (ts < 4.5) this._cap("sort key = mu where amp > activity threshold (from the label run), else inf  ·  inactive slots sink to the end");
     else if (ts < 7.0) this._cap("torch.argsort + gather along the gaussian axis  ·  gt in mu-ascending order, every pixel, every batch");
-    else if (ts < 9.6) this._cap("Param loss is slot-by-slot  ·  pred slot k is always graded against the k-th lowest component");
+    else if (ts < 9.6) this._cap("hungarian permutes the pred slots to the minimum-L1-cost pairing  ·  sorted_gt keeps pred slot k on the k-th lowest component");
     else if (ts < 13) this._cap("gt amp = 0 gates the slot: mu and sigma drop out of the loss  ·  the a term IS still graded, pulling pred a -> 0");
-    else this._cap("The fixed target order induces ordered predictions  ·  each output channel specialises in one z band");
+    else this._cap("Under sorted_gt each output channel specialises in one z band  ·  hungarian leaves the slot order free");
   }
 
   _trReg(ts, d) {
@@ -3615,7 +3614,7 @@ class ProcessAnimator {
     ctx.font = "600 13px 'IBM Plex Mono', monospace";
     ctx.fillStyle = "rgba(53, 230, 208, 0.98)"; ctx.fillText("train", pad.l + 14, pad.t + 20);
     if (ts >= 1.5) { ctx.fillStyle = "#ffcf6b"; ctx.fillText("val  ·  no regularisation", pad.l + 14, pad.t + 40); }
-    if (ts >= 5.6) { ctx.fillStyle = "#7cff9b"; ctx.fillText("val  ·  weight_decay = 0.1", pad.l + 14, pad.t + 60); }
+    if (ts >= 5.6) { ctx.fillStyle = "#7cff9b"; ctx.fillText("val  ·  weight_decay = 1e-4", pad.l + 14, pad.t + 60); }
 
     if (t2 >= 1 && ts < 5.6) {
       ctx.fillStyle = "#ff6b7d"; ctx.font = "600 13px 'IBM Plex Mono', monospace";
@@ -3771,7 +3770,7 @@ class ProcessAnimator {
       }
     }
 
-    if (ts < 2.0) this._cap("A model-level regulariser (default p = 0.0, off) — shown for completeness, not run by default");
+    if (ts < 2.0) this._cap("A model-level regulariser  ·  the backbone default is p = 0.15, active in every training forward pass");
     else if (ts < 5.0) this._cap("Training forward pass: dropped channels (outlined) output 0  ·  their connections are severed for this pass");
     else if (ts < 7.5) this._cap("A FRESH mask every forward pass  ·  co-adaptation breaks: features must be redundant and robust");
     else if (ts < 10.0) this._cap("Kept channels are scaled by 1/(1-p)  ·  the layer's expected output stays unchanged");
@@ -3821,9 +3820,9 @@ class ProcessAnimator {
 
     const pc = d.patAt[Math.min(eNow, d.ES_E)] || 0;
     if (eNow > d.esBestE && ts < 7.0) {
-      ctx.font = "13px 'IBM Plex Mono', monospace";
-      ctx.fillStyle = pc >= 15 ? "#ff6b7d" : "#ffcf6b";
-      const ptxt = `patience ${Math.min(pc, 15)} / 15`;
+      ctx.font = "600 13px 'IBM Plex Mono', monospace";
+      ctx.fillStyle = pc >= d.PAT ? "#ff6b7d" : "#ffcf6b";
+      const ptxt = `patience ${Math.min(pc, d.PAT)} / ${d.PAT}`;
       ctx.fillText(ptxt, (w - ctx.measureText(ptxt).width) / 2, pad.t + 20);
       ctx.font = "600 11px 'IBM Plex Mono', monospace";
     }
@@ -3866,10 +3865,10 @@ class ProcessAnimator {
       ctx.restore();
     }
 
-    if (ts < 3.0) this._cap("Early stopping  ·  train every epoch  ·  val (and the patience counter) every 5 epochs  ·  any new best resets the counter");
+    if (ts < 3.0) this._cap("Early stopping  ·  train and validate every epoch  ·  the patience counter follows val  ·  any new best resets the counter");
     else if (ts < 4.4) this._cap("Train keeps improving  ·  val follows it down — until it doesn't");
-    else if (ts < 5.5) this._cap(`Past the best epoch every non-improving epoch raises the counter  ·  patience ${Math.min(pc, 15)}/15`);
-    else if (ts < 7.0) this._cap("15 epochs without a new best  ->  EarlyStopping fires and the loop breaks");
+    else if (ts < 5.5) this._cap(`Past the best epoch every non-improving epoch raises the counter  ·  patience ${Math.min(pc, d.PAT)}/${d.PAT}`);
+    else if (ts < 7.0) this._cap(`${d.PAT} epochs without a new best  ->  EarlyStopping fires and the loop breaks`);
     else if (ts < 9.0) this._cap("The dashed tail is what was skipped  ·  train would keep falling while val only climbs — overfitting");
     else this._cap(`restore_best = True  ->  the model rolls back to the epoch-${d.esBestE} checkpoint before anything is saved`);
   }
@@ -3932,17 +3931,16 @@ class ProcessAnimator {
     {
       const q = qs[1], valF = (e) => d.lossAt(e) * 1.16 + 0.018;
       ctx.fillStyle = "#ffcf6b";
-      for (let e = 5; e <= 100; e += 5) {
+      for (let e = 1; e <= 100; e++) {
         if (e > eP) break;
-        ctx.beginPath(); ctx.arc(qx(q, e), qy(q, valF(e), 0.85), 2.6, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(qx(q, e), qy(q, valF(e), 0.85), 1.6, 0, 7); ctx.fill();
       }
-      if (eP >= 100) { ctx.beginPath(); ctx.arc(qx(q, 100), qy(q, valF(100), 0.85), 2.6, 0, 7); ctx.fill(); }
     }
     ctx.font = "600 10px 'IBM Plex Mono', monospace";
     ctx.fillStyle = "rgba(53, 230, 208, 0.97)"; ctx.fillText("train", qs[1].x1 - 84, qs[1].y0 + 18);
     ctx.fillStyle = "#ffcf6b"; ctx.fillText("val", qs[1].x1 - 38, qs[1].y0 + 18);
-    ctx.fillStyle = "#5e7280";
-    ctx.fillText("val + checkpoint + early-stop: every 5 epochs", qs[1].x0 + 12, qs[1].y1 - 8);
+    ctx.fillStyle = "#abb6bd";
+    ctx.fillText("val + checkpoint + early-stop: every epoch", qs[1].x0 + 12, qs[1].y1 - 8);
 
     {
       const q = qs[2];
@@ -3996,7 +3994,7 @@ class ProcessAnimator {
       if (eP < 50) this._cap(`Training replay  ·  epoch ${Math.floor(eP)}/100  ·  param_l1 phase: mu locks in fast, amp & sigma lag behind`);
       else this._cap(`Training replay  ·  epoch ${Math.floor(eP)}/100  ·  complete loss: amp & sigma snap onto the target`);
     }
-    else if (ts < 17.0) this._cap("The ordering rate hits 100% right at the curriculum swap — the sorted targets taught the net its output order");
+    else if (ts < 17.0) this._cap("In this sorted_gt example the ordering rate hits 100% at the curriculum swap  ·  the sorted targets taught the net its output order");
     else this._cap("Best checkpoint ships: model weights + the z axis  ·  next stop: the inference pipeline");
   }
 
@@ -4005,14 +4003,16 @@ class ProcessAnimator {
   _infSetup() {
     if (this._inf) return this._inf;
 
-    const grid = { W: 336, H: 146, ph: 64, pw: 64, st: 32, n_v: 4, n_h: 10, padT: 7, padL: 8, nPatch: 40 };
+    const grid = { W: 336, H: 146, ph: 32, pw: 64, sv: 16, sh: 32, n_v: 9, n_h: 10, padT: 7, padL: 8, nPatch: 90 };
 
     const P = grid.pw;
     const hann1d = new Float32Array(P);
     for (let i = 0; i < P; i++) hann1d[i] = Math.max(1e-3, 0.5 - 0.5 * Math.cos(2 * Math.PI * (i + 0.5) / P));
     const tri1d = new Float32Array(P);
     for (let i = 0; i < P; i++) tri1d[i] = Math.max(1e-3, 1 - Math.abs((i + 0.5) / P * 2 - 1));
-    const hann2d = (i, j) => hann1d[i] * hann1d[j];
+    const hannV = new Float32Array(grid.ph);
+    for (let j = 0; j < grid.ph; j++) hannV[j] = Math.max(1e-3, 0.5 - 0.5 * Math.cos(2 * Math.PI * (j + 0.5) / grid.ph));
+    const hann2d = (i, j) => hann1d[i] * hannV[j];
 
     const target  = [{ a: 0.9, mu: 0.40, s: 0.06 }, { a: 0.55, mu: 0.68, s: 0.05 }, { a: 0.0, mu: 0.16, s: 0.045 }];
     const predRaw = [{ a: 0.78, mu: 0.43, s: 0.075 }, { a: 0.47, mu: 0.64, s: 0.062 }, { a: 0.05, mu: 0.30, s: 0.10 }];
@@ -4030,7 +4030,7 @@ class ProcessAnimator {
     };
 
     const places = [];
-    for (let iv = 0; iv < grid.n_v; iv++) for (let ih = 0; ih < grid.n_h; ih++) places.push({ iv, ih, v0: iv * grid.st, h0: ih * grid.st });
+    for (let iv = 0; iv < grid.n_v; iv++) for (let ih = 0; ih < grid.n_h; ih++) places.push({ iv, ih, v0: iv * grid.sv, h0: ih * grid.sh });
 
     const NZ = 220;
     const scal = { r2: 0.962, rmse: 0.097, psnr: 28.4, mae: 0.061, mse: 0.011, cos: 0.994, peak: 1, mseP: 0.0094, maeP: 0.061, r2P: 0.971, cosP: 0.994, r2map: 0.94, mseMap: 0.011, ssimE: 0.93, ssimR: 0.88, ssimA: 0.90, order: 0.91, epoch: 87, bestE: 72, bestV: 0.0312, applied: 128, batch: 8 };
@@ -4233,7 +4233,7 @@ class ProcessAnimator {
     this._trTag("PREDICT · grid");
     const c01 = d.c01, g = d.grid;
     const kk = Math.min((w * 0.6 - 40) / g.W, (h - 110) / g.H);
-    const gx = 56, gy = 64, gw = g.W * kk, gh = g.H * kk, ps = g.ph * kk, st = g.st * kk;
+    const gx = 56, gy = 64, gw = g.W * kk, gh = g.H * kk, psW = g.pw * kk, psH = g.ph * kk;
     const padL = g.padL * kk, padT = g.padT * kk;
     const fx = gx + gw + 44;
 
@@ -4247,29 +4247,29 @@ class ProcessAnimator {
       const pp = this._ease(c01((ts - 2.5) / 1.4));
       ctx.strokeStyle = `rgba(53,230,208,${0.8 * pp})`; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.4;
       ctx.strokeRect(gx - padL, gy - padT, gw + 2 * padL, gh + 2 * padT); ctx.setLineDash([]);
-      this._infText("reflective pad  v:7|7  h:8|8", gx, gy + gh + 40, "rgba(53,230,208,0.9)", 12);
+      this._infText("reflective pad  row:8|8  col:7|7", gx, gy + gh + 40, "rgba(53,230,208,0.9)", 12);
     }
 
     if (ts >= 6.0) {
-      const k = Math.min(g.nPatch, Math.floor((ts - 6.0) / 0.14) + 1);
+      const k = Math.min(g.nPatch, Math.floor((ts - 6.0) / 0.07) + 1);
       for (let n = 0; n < k; n++) {
         const p = d.places[n];
         const px = gx + p.h0 * kk, py = gy + p.v0 * kk;
-        ctx.fillStyle = "rgba(124,255,155,0.05)"; ctx.fillRect(px, py, ps, ps);
+        ctx.fillStyle = "rgba(124,255,155,0.05)"; ctx.fillRect(px, py, psW, psH);
         ctx.strokeStyle = n === k - 1 ? "#7cff9b" : "rgba(124,255,155,0.28)"; ctx.lineWidth = n === k - 1 ? 2 : 1.1;
-        ctx.strokeRect(px, py, ps, ps);
-        const over = px + ps - (gx + gw);
-        if (over > 0) { ctx.fillStyle = "rgba(255,107,125,0.2)"; ctx.fillRect(gx + gw, py, over, ps); }
+        ctx.strokeRect(px, py, psW, psH);
+        const over = px + psW - (gx + gw);
+        if (over > 0) { ctx.fillStyle = "rgba(255,107,125,0.2)"; ctx.fillRect(gx + gw, py, over, psH); }
       }
-      this._infText(`patch ${k} / 40`, gx, gy - 14, "#7cff9b", 13);
+      this._infText(`patch ${k} / ${g.nPatch}`, gx, gy - 14, "#7cff9b", 13);
     }
 
     const cardA = this._ease(c01((ts - 11.0) / 1.2));
     if (cardA > 0) {
       ctx.save(); ctx.globalAlpha = cardA;
       const rows = [
-        ["split", "test"], ["scene", "336 × 146  (example)"], ["patch", "64 × 64"],
-        ["stride", "32  (50% overlap)"], ["grid", "n_v 4 × n_h 10"], ["patches", "40"], ["batch", "shuffle = False"],
+        ["split", "test"], ["scene", "336 × 146  (example)"], ["patch", "64 × 32  (row × col)"],
+        ["stride", "32 × 16  (50% overlap)"], ["grid", "n_row 10 × n_col 9"], ["patches", "90"], ["batch", "shuffle = False"],
       ];
       ctx.fillStyle = "rgba(7,12,17,0.9)"; ctx.strokeStyle = "rgba(120,200,220,0.3)"; ctx.lineWidth = 1.2;
       ctx.beginPath();
@@ -4286,8 +4286,8 @@ class ProcessAnimator {
 
     if (ts < 2.5) this._cap("The test split is one continuous scene  ·  336 × 146 pixels");
     else if (ts < 6.0) this._cap("Reflective padding rings the scene so edge patches never invent data");
-    else if (ts < 12.0) this._cap("A 64 × 64 window strides by 32  ·  neighbours overlap 50% in both axes");
-    else this._cap("40 overlapping patches  ·  n_v 4 × n_h 10  ·  fed in order, shuffle = False");
+    else if (ts < 12.0) this._cap("A 64 × 32 window strides by 32 × 16  ·  neighbours overlap 50% in both axes");
+    else this._cap("90 overlapping patches  ·  n_row 10 × n_col 9  ·  fed in order, shuffle = False");
   }
 
   _infForward(ts, d) {
@@ -4295,7 +4295,7 @@ class ProcessAnimator {
     this._trTag("PREDICT · GPU");
     const c01 = d.c01, g = d.grid;
     const kk = Math.min((w * 0.32 - 40) / g.W, (h - 130) / g.H);
-    const gx = 48, gy = 70, gw = g.W * kk, gh = g.H * kk, ps = g.ph * kk;
+    const gx = 48, gy = 70, gw = g.W * kk, gh = g.H * kk, psW = g.pw * kk, psH = g.ph * kk;
 
     this._infField(gx, gy, gw, gh, 6, (i, j) => 0.05 + d.tex(i, j) * 0.22, [53, 230, 208], 0.4);
     ctx.strokeStyle = "rgba(120,200,220,0.35)"; ctx.lineWidth = 1.2; ctx.strokeRect(gx, gy, gw, gh);
@@ -4310,8 +4310,8 @@ class ProcessAnimator {
       const ax = gx + p.h0 * kk, ay = gy + p.v0 * kk;
       const tx = netX - 110, ty = netY - 60 + (n % 4) * 30;
       const bx = this._lerp(ax, tx, lift), by = this._lerp(ay, ty, lift);
-      ctx.fillStyle = "rgba(124,255,155,0.12)"; ctx.fillRect(bx, by, ps, ps);
-      ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 1.4; ctx.strokeRect(bx, by, ps, ps);
+      ctx.fillStyle = "rgba(124,255,155,0.12)"; ctx.fillRect(bx, by, psW, psH);
+      ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 1.4; ctx.strokeRect(bx, by, psW, psH);
     }
     this._infText("batch B = 8 patches  (example)", netX - 130, netY + 92, "#7cff9b", 12);
     this._infText("device = cuda", netX - 130, netY + 108, "rgba(143,176,170,0.85)", 12);
@@ -4493,13 +4493,13 @@ class ProcessAnimator {
     if (ts < 10.0) {
       const s = ts - 5.0;
       const kk = 2.4;
-      const ps = g.ph * kk, ox = w / 2 - ps, oy = h / 2 - ps * 0.7;
+      const ps = g.pw * kk, ox = w / 2 - ps, oy = h / 2 - ps * 0.7;
       const block = [[0, 0], [1, 0], [0, 1], [1, 1]];
       const drop = this._ease(c01(s / 2.5));
       block.forEach((b, i) => {
         const pa = this._ease(c01((s - i * 0.3) / 0.6));
         if (pa <= 0) return;
-        const bx = ox + b[0] * g.st * kk, by = oy + b[1] * g.st * kk;
+        const bx = ox + b[0] * g.sh * kk, by = oy + b[1] * g.sh * kk;
         ctx.save(); ctx.globalAlpha = pa;
         this._infTile(d, bx, by, ps, i % 2 ? d.predRaw : d.target, [53, 230, 208], 1);
         ctx.strokeStyle = "rgba(53,230,208,0.5)"; ctx.lineWidth = 1; ctx.strokeRect(bx, by, ps, ps);
@@ -4507,13 +4507,13 @@ class ProcessAnimator {
       });
       if (s >= 2.0) {
         const sa = (0.5 + 0.5 * Math.sin(this.t * 6)) * this._ease(c01((s - 2.0) / 1.0));
-        const mx = ox + g.st * kk, my = oy + g.st * kk;
+        const mx = ox + g.sh * kk, my = oy + g.sh * kk;
         ctx.fillStyle = `rgba(255,107,125,${0.35 * sa})`;
-        ctx.fillRect(mx, oy, g.st * kk, ps + g.st * kk);
-        ctx.fillRect(ox, my, ps + g.st * kk, g.st * kk);
+        ctx.fillRect(mx, oy, g.sh * kk, ps + g.sh * kk);
+        ctx.fillRect(ox, my, ps + g.sh * kk, g.sh * kk);
         ctx.strokeStyle = `rgba(255,107,125,${0.9})`; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(mx, oy); ctx.lineTo(mx, oy + ps + g.st * kk); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(ox, my); ctx.lineTo(ox + ps + g.st * kk, my); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(mx, oy); ctx.lineTo(mx, oy + ps + g.sh * kk); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ox, my); ctx.lineTo(ox + ps + g.sh * kk, my); ctx.stroke();
         this._infText("seams: overlaps double-counted", ox, oy - 12, "#ff6b7d", 13);
       }
       this._infText("window = uniform", ox, oy + ps * 2 + 20, "rgba(143,176,170,0.85)", 12);
@@ -4527,7 +4527,7 @@ class ProcessAnimator {
       const cell = Math.min((w / 2 - 80) / (pw3 + 2 * g.padL), (h - 150) / (ph3 + 2 * g.padT));
       const panW = (pw3 + 2 * g.padL) * cell, panH = (ph3 + 2 * g.padT) * cell;
       const ax = 50, ay = 64, wx = w / 2 + 30, wy = 64;
-      const k = Math.min(g.nPatch, Math.floor(s / 0.22) + 1);
+      const k = Math.min(g.nPatch, Math.floor(s / 0.1) + 1);
 
       const accum = (px2, py2, label, col, rgb, weightOnly) => {
         ctx.fillStyle = "rgba(4,7,10,0.85)"; ctx.fillRect(px2, py2, panW, panH);
@@ -4559,8 +4559,8 @@ class ProcessAnimator {
       this._texDraw("A\\mathrel{+}=p\\cdot w", ax, ay + panH + 14, 16, { color: "#35e6d0" });
       this._texDraw("W\\mathrel{+}=w", wx, wy + panH + 14, 16, { color: "#ffcf6b" });
       ctx.save();
-      ctx.font = "13px 'IBM Plex Mono', monospace";
-      const pcTxt = `patch ${k} / 40`;
+      ctx.font = "600 13px 'IBM Plex Mono', monospace";
+      const pcTxt = `patch ${k} / ${g.nPatch}`;
       this._infText(pcTxt, (ax + panW + wx) / 2 - ctx.measureText(pcTxt).width / 2, ay + panH / 2 + 4, "#7cff9b", 13);
       ctx.restore();
 
@@ -4849,11 +4849,11 @@ class ProcessAnimator {
       for (let e = 0; e <= 30; e++) curve.push(c01(floor + (start - floor) * Math.exp(-k * e) + (rnd(i * 53 + e * 13) - 0.5) * 0.012));
       trials.push({ x, y, loss, lr: x, wd: y, curve, k, floor, start, pruned: false, pruneEpoch: 30 });
     }
-    let bestP1Idx = 8;
-    for (let i = 8; i < N; i++) if (trials[i].loss < trials[bestP1Idx].loss) bestP1Idx = i;
+    let bestIdx = 8;
+    for (let i = 8; i < N; i++) if (trials[i].loss < trials[bestIdx].loss) bestIdx = i;
     const liveIdx = [];
-    for (let i = 0; i < N; i++) if (i !== bestP1Idx) liveIdx.push(i);
-    const heroIdx = [bestP1Idx, liveIdx[10], liveIdx[24], liveIdx[40]];
+    for (let i = 0; i < N; i++) if (i !== bestIdx) liveIdx.push(i);
+    const heroIdx = [bestIdx, liveIdx[10], liveIdx[24], liveIdx[40]];
     const medianAt = (epoch, set) => {
       const vals = set.map((ix) => trials[ix].curve[epoch]).sort((a, b) => a - b);
       return vals[Math.floor(vals.length / 2)];
@@ -4880,18 +4880,14 @@ class ProcessAnimator {
       ["output_head_wd", "[1e-6, 1e-1]", "log", "#ffcf6b"],
       ["dropout", "[0.0, 0.5]", "linear", "rgba(206,228,222,0.9)"],
     ];
-    const p1json = [
-      ["encoder_lr", "3.1e-4"], ["bottleneck_lr", "8.7e-4"], ["decoder_lr", "1.2e-4"],
-      ["output_head_lr", "4.5e-4"], ["encoder_wd", "2.0e-5"], ["dropout", "0.18"],
-    ];
-    const p2dims = [
+    const archDims = [
       ["features", ["[32,64,128,256]", "[64,128,256,512]", "[48,96,192,384]", "[64,128,256,512,1024]"], 1],
       ["bottleneck_factor", ["1", "2", "4"], 1],
       ["activation", ["relu", "leaky_relu", "gelu", "silu"], 2],
       ["normalization", ["batch", "instance", "group"], 0],
       ["upsample_mode", ["convtranspose", "bilinear"], 0],
     ];
-    this._tu = { trials, basin, bestP1Idx, heroIdx, median, lrTicks, wdTicks, dims, p1json, p2dims };
+    this._tu = { trials, basin, bestIdx, heroIdx, median, lrTicks, wdTicks, dims, archDims };
   }
 
   _tuLossColor(loss, alpha) {
@@ -4989,16 +4985,16 @@ class ProcessAnimator {
       ctx.beginPath(); ctx.arc(px(t.x), py(t.y), 3.4, 0, 7);
       ctx.fillStyle = this._tuLossColor(t.loss, 0.8); ctx.fill();
     }
-    const b = tu.trials[tu.bestP1Idx];
+    const b = tu.trials[tu.bestIdx];
     ctx.strokeStyle = "#7cff9b"; ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(px(b.x), py(b.y), 9, 0, 7); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(px(b.x) - 13, py(b.y)); ctx.lineTo(px(b.x) + 13, py(b.y)); ctx.moveTo(px(b.x), py(b.y) - 13); ctx.lineTo(px(b.x), py(b.y) + 13); ctx.stroke();
-    ctx.fillStyle = "#7cff9b"; ctx.fillText("Phase-1 best", px(b.x) + 14, py(b.y) - 12);
+    ctx.fillStyle = "#7cff9b"; ctx.fillText("best trial", px(b.x) + 14, py(b.y) - 12);
     this._tuColorbar(plW - 134, h - 22, 120, 0.9);
     this._texDraw("x^{*}=\\arg\\max_x\\,\\tfrac{l(x)}{g(x)}", pad.l + 6, pad.t + 6, 15, { color: "rgba(124,255,155,0.95)" });
     const bx = plW + 24;
-    ctx.fillStyle = "#e6f7f3"; ctx.font = "14px 'IBM Plex Mono', monospace"; ctx.fillText("Phase 2 · architecture", bx, pad.t + 14);
-    tu.p2dims.slice(0, 3).forEach((d, i) => {
+    ctx.fillStyle = "#e6f7f3"; ctx.font = "600 14px 'IBM Plex Mono', monospace"; ctx.fillText("best trial · architecture", bx, pad.t + 14);
+    tu.archDims.slice(0, 3).forEach((d, i) => {
       const ry = pad.t + 50 + i * 36;
       ctx.fillStyle = "rgba(143, 176, 170, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], bx, ry - 17);
       let cx = bx;
@@ -5008,7 +5004,7 @@ class ProcessAnimator {
     this._tuChip(bx, cy, "best_config.json", "#7cff9b", 1, 13);
     this._tuArrow(bx + 150, cy - 4, bx + 196, cy - 4, "#7cff9b");
     this._tuChip(bx + 200, cy, "Training", "#7cff9b", 1, 13);
-    this._cap("Optuna two-phase search  ·  TPE sampler, MedianPruner  ·  best_config.json → training");
+    this._cap("Optuna joint search  ·  TPE sampler, MedianPruner  ·  best_config.json → training");
   }
 
   _tuPlane(px, py, plW, born, upTo, dim) {
@@ -5043,7 +5039,7 @@ class ProcessAnimator {
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(cx - 12, pad.t - 6, cw + 24, 9 * 26 + 64, 10); else ctx.rect(cx - 12, pad.t - 6, cw + 24, 9 * 26 + 64);
       ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "#e6f7f3"; ctx.font = "14px 'IBM Plex Mono', monospace"; ctx.fillText("search space · Phase 1", cx, pad.t + 12);
+      ctx.fillStyle = "#e6f7f3"; ctx.font = "600 14px 'IBM Plex Mono', monospace"; ctx.fillText("search space · joint", cx, pad.t + 12);
       ctx.strokeStyle = "rgba(120,200,220,0.22)"; ctx.beginPath(); ctx.moveTo(cx - 4, pad.t + 20); ctx.lineTo(cx + cw, pad.t + 20); ctx.stroke();
       ctx.restore();
     }
@@ -5060,7 +5056,7 @@ class ProcessAnimator {
     });
     if (ts >= 6.5) {
       const fa = this._ease((ts - 6.5) / 0.6);
-      this._tuChip(cx, pad.t + 9 * 26 + 50, "9-D space · 8 of 9 in log scale", "#ffcf6b", fa, 12);
+      this._tuChip(cx, pad.t + 9 * 26 + 50, "+ 5 architecture choices · 14-D joint space", "#ffcf6b", fa, 12);
     }
     if (ts >= 8.5) {
       const pa = 0.4 + 0.4 * Math.sin(this.t * 4);
@@ -5072,8 +5068,8 @@ class ProcessAnimator {
       this._texDraw("\\log_{10}\\lambda\\sim\\mathcal{U}(-6,-1)", pad.l + 8, pad.t + 34, 15, { alpha: ea, color: "rgba(255,207,107,0.92)" });
     }
     if (ts < 1.6) this._cap("Hyperparameter search  ·  Optuna study, objective = minimise validation loss");
-    else if (ts < 6.5) this._cap("Phase 1 — learning + regularisation  ·  4 per-group lr, 4 per-group wd, dropout");
-    else if (ts < 8.5) this._cap("Eight of nine dimensions sampled in log scale  ·  projected onto the lr–wd plane");
+    else if (ts < 6.5) this._cap("One joint search  ·  4 per-group lr, 4 per-group wd and dropout, sampled together with the architecture");
+    else if (ts < 8.5) this._cap("Five categorical architecture fields join the nine continuous ones  ·  projected onto the lr–wd plane");
     else this._cap("Each point is one trial  ·  a full training run scored by its best validation loss");
   }
 
@@ -5310,42 +5306,51 @@ class ProcessAnimator {
     const { ctx, w, h } = this;
     const tu = this._tu;
     const pad = { l: 46, r: 16, t: 22, b: 34 };
-    const shrink = ts >= 5 ? this._ease((ts - 5) / 2.0) : 0;
-    const plW = this._lerp(w * 0.52, 150, shrink);
+    const plW = w * 0.52;
     const px = (x) => pad.l + x * (plW - pad.l - pad.r);
-    const py = (y) => pad.t + y * (this._lerp(h - pad.t - pad.b, 60, shrink));
-    this._tuPlane(px, py, plW, 1 - shrink * 0.6);
-    for (let i = 8; i < 56; i++) {
+    const py = (y) => pad.t + y * (h - pad.t - pad.b);
+    const stopAt = 56;
+    const shown = ts < 7 ? stopAt : Math.min(tu.trials.length, stopAt + Math.floor(((ts - 7) / 4) * (tu.trials.length - stopAt)));
+    this._tuPlane(px, py, plW, 1);
+
+    let best = 8;
+    for (let i = 8; i < shown; i++) {
       const t = tu.trials[i];
-      ctx.beginPath(); ctx.arc(px(t.x), py(t.y), 3.2 * (1 - shrink * 0.4), 0, 7); ctx.fillStyle = this._tuLossColor(t.loss, (0.8) * (1 - shrink * 0.5)); ctx.fill();
+      const fresh = i >= stopAt;
+      ctx.beginPath(); ctx.arc(px(t.x), py(t.y), fresh ? 3.6 : 3.2, 0, 7); ctx.fillStyle = this._tuLossColor(t.loss, fresh ? 0.95 : 0.6); ctx.fill();
+      if (t.loss < tu.trials[best].loss) best = i;
     }
-    const b = tu.trials[tu.bestP1Idx];
+    const b = tu.trials[best];
     const halo = 0.5 + 0.5 * Math.sin(this.t * 4);
     ctx.strokeStyle = `rgba(124,255,155,${0.6 + 0.4 * halo})`; ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.arc(px(b.x), py(b.y), 9, 0, 7); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(px(b.x) - 13, py(b.y)); ctx.lineTo(px(b.x) + 13, py(b.y)); ctx.moveTo(px(b.x), py(b.y) - 13); ctx.lineTo(px(b.x), py(b.y) + 13); ctx.stroke();
-    if (ts < 2.5) { ctx.fillStyle = "#7cff9b"; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText("Phase-1 best · trial 73 · val_loss 0.0412 (example)", Math.min(px(b.x) + 14, w - 320), py(b.y) - 12); }
-    if (ts >= 2.5 && ts < 6) {
-      const ja = this._ease((ts - 2.5) / 1.0);
-      this._tuJsonCard(w * 0.5, pad.t + 10, w * 0.46, "phase1_best.json", tu.p1json.map((r) => [r[0], r[1], "rgba(124,255,155,0.9)"]), "#7cff9b", ja);
-    }
-    if (ts >= 5) {
-      const fa = this._ease((ts - 5) / 1.0);
-      this._tuChip(10, 16, "Phase-1 best · FROZEN ⊟", "#ffcf6b", fa, 12);
-    }
-    if (ts >= 7) {
+    ctx.fillStyle = "rgba(206, 228, 222, 0.97)"; ctx.font = "600 12px 'IBM Plex Mono', monospace";
+    ctx.fillText(`optuna.db · ${shown} / ${tu.trials.length} trials  (example)`, pad.l + 8, pad.t + 14);
+
+    if (ts < 7) {
+      const ja = this._ease((ts - 1.5) / 1.0);
+      this._tuJsonCard(w * 0.56, pad.t + 10, w * 0.4, "resume_from", [
+        ["stored trials", `${stopAt} / ${tu.trials.length}`, "rgba(124,255,155,0.9)"],
+        ["stale running", "marked FAIL", "#ffcf6b"],
+        ["study keys", "frozen", "rgba(206,228,222,0.85)"],
+        ["n_trials, stop rules", "may change", "rgba(206,228,222,0.85)"],
+      ], "#7cff9b", ja);
+      if (ts >= 4.5) {
+        const ra = this._ease((ts - 4.5) / 0.8);
+        this._tuChip(w * 0.56, pad.t + 196, `remaining ${tu.trials.length - stopAt}  ->  4 workers · 11 trials each`, "#35e6d0", ra, 12);
+      }
+    } else {
       const ba = this._ease((ts - 7) / 0.8);
       ctx.save(); ctx.globalAlpha = ba;
-      const bx = w * 0.5, by = pad.t + 24;
-      ctx.fillStyle = "#e6f7f3"; ctx.font = "14px 'IBM Plex Mono', monospace"; ctx.fillText("Phase 2 · architecture", bx, by - 4);
-      tu.p2dims.forEach((d, i) => {
+      const bx = w * 0.56, by = pad.t + 24;
+      ctx.fillStyle = "#e6f7f3"; ctx.font = "600 14px 'IBM Plex Mono', monospace"; ctx.fillText("best trial · architecture", bx, by - 4);
+      tu.archDims.forEach((d, i) => {
         const ry = by + 32 + i * 36;
         ctx.fillStyle = "rgba(143, 176, 170, 0.95)"; ctx.font = "600 11px 'IBM Plex Mono', monospace"; ctx.fillText(d[0], bx, ry - 17);
         let cx = bx;
-        const lock = ts >= 11;
         d[1].forEach((c, j) => {
-          const chosen = j === d[2];
-          const col = chosen && (lock || Math.floor(this.t * 3) % d[1].length === j) ? "#7cff9b" : "rgba(143,176,170,0.55)";
+          const col = j === d[2] ? "#7cff9b" : "rgba(143,176,170,0.55)";
           const lbl = c.length > 14 ? c.slice(0, 13) + "…" : c;
           const cw2 = this._tuChip(cx, ry, lbl, col, 0, 11);
           if (cx + cw2 > w - 24) return;
@@ -5354,11 +5359,12 @@ class ProcessAnimator {
       });
       ctx.restore();
     }
-    if (ts < 2.5) this._cap("Phase 1 done  ·  pick the trial with the lowest validation loss");
-    else if (ts < 5) this._cap("Best learning + regularisation params are decoded and saved to phase1_best.json");
-    else if (ts < 7) this._cap("These params are now frozen  ·  Phase 2 holds them fixed and searches architecture");
-    else if (ts < 11) this._cap("Phase 2 — architecture search  ·  5 categorical choices, same TPE + pruner");
-    else this._cap("Phase-2 best architecture found  ·  trial 88 · val_loss 0.0389  (example)");
+
+    if (ts < 1.5) this._cap("A tuning run can stop part way  ·  every finished trial is already stored in optuna.db");
+    else if (ts < 4.5) this._cap("resume_from reloads the recorded config  ·  study-defining keys are frozen, only the trial target and stop rules may change");
+    else if (ts < 7) this._cap("Stale running trials are marked failed  ·  the remaining trials are split across the workers");
+    else if (ts < 11) this._cap("The same study continues  ·  TPE conditions on every stored trial, so nothing is re-run");
+    else this._cap("Each trial samples learning, regularisation and architecture together  ·  one joint search");
   }
 
   _tuExport(ts) {
@@ -5367,15 +5373,14 @@ class ProcessAnimator {
     const merge = this._ease(ts / 3.0);
     const cx = w * 0.30, cy = h * 0.22;
     if (ts < 3) {
-      this._tuChip(this._lerp(20, cx - 60, merge), this._lerp(h * 0.3, cy, merge), "phase1_best", "#ffcf6b", 1 - merge * 0.5, 12);
-      this._tuChip(this._lerp(w - 160, cx + 60, merge), this._lerp(h * 0.6, cy, merge), "phase2_best", "#7cff9b", 1 - merge * 0.5, 12);
+      this._tuChip(this._lerp(20, cx - 60, merge), this._lerp(h * 0.45, cy, merge), "best trial", "#7cff9b", 1 - merge * 0.5, 12);
     }
     const ja = ts >= 1.5 ? this._ease((ts - 1.5) / 1.0) : 0;
     if (ja > 0) {
       this._tuJsonCard(cx - 110, cy, 240, "best_config.json", [
-        ["model", "UNet", "rgba(124,255,155,0.9)"],
-        ["phase1_val_loss", "0.0412", "rgba(143,176,170,0.8)"],
-        ["phase2_val_loss", "0.0389", "rgba(143,176,170,0.8)"],
+        ["model", "unet", "rgba(124,255,155,0.9)"],
+        ["trial", "88  (example)", "rgba(143,176,170,0.8)"],
+        ["val_loss", "0.0389  (example)", "rgba(143,176,170,0.8)"],
         ["params", "{ lr, wd, features… }", "rgba(206,228,222,0.8)"],
       ], "#7cff9b", ja);
     }
@@ -5394,15 +5399,15 @@ class ProcessAnimator {
     }
     if (ts >= 5.5) {
       const sa = this._ease((ts - 5.5) / 1.0);
-      this._tuChip(cx - 110, h - 70, "tuning_results.json · status DONE · p1 0.0412 · p2 0.0389", "#35e6d0", sa, 11);
+      this._tuChip(cx - 110, h - 70, "tuning_results.json · status DONE · completed / pruned / failed · val_loss", "#35e6d0", sa, 11);
     }
     if (ts >= 7) {
       const ra = this._ease((ts - 7) / 0.8);
-      this._tuChip(cx - 110, h - 36, "100 trials × 2 phases × 10 models · pruned trials stop early", "rgba(206,228,222,0.9)", ra, 12);
+      this._tuChip(cx - 110, h - 36, "100 trials per model · pruned trials stop early", "rgba(206,228,222,0.9)", ra, 12);
     }
-    if (ts < 3) this._cap("Phase-1 and Phase-2 bests merge into best_config.json");
+    if (ts < 3) this._cap("The best trial's parameters are decoded into best_config.json");
     else if (ts < 5.5) this._cap("best_config.json is what the Training pipeline consumes  ·  tuned, ready to train");
-    else if (ts < 7) this._cap("A tuning_results.json summary is written per model");
+    else if (ts < 7) this._cap("tuning_results.json records each model's status, trial counts and best validation loss");
     else this._cap("The whole study runs for every model in the registry");
   }
 
