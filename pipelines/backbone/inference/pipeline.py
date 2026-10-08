@@ -1,8 +1,8 @@
 """Orchestrates the end-to-end inference pass over a trained backbone run.
 
 Loads the run, stitches predictions into cubes, then layers on the optional evaluations
-(curve-parameter extraction, embeddings, label
-quality, flip consistency, stratified errors, failure modes, presence calibration and the
+(curve-parameter extraction, embeddings, label quality, the SSIM sweep against the raw
+cube, flip consistency, stratified errors, failure modes, presence calibration and the
 normalization audit), rewriting metrics.json after each so a crashed run keeps whatever
 finished. Figures, animations and the markdown report close the pass.
 """
@@ -449,6 +449,46 @@ class InferencePipeline:
 
         logger.subsection(f"Label quality : mean fit R² = {stats['label_r2_mean']:.4f}, {stats['label_r2_frac_below_half'] * 100.0:.1f}% of labels below R² 0.5")
 
+    def _evaluate_cube_ssim(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, z_axis_np: np.ndarray, global_metrics: dict, indices: dict, logger: Logger) -> None:
+        """Runs the standard SSIM sweep of the prediction against the raw cube.
+
+        Skipped when the configuration disables it, in which case only the status key is
+        recorded. The sweep scores the same slices as the headline SSIM against the
+        labels, in raw intensity and in unit area, with the raw cube as the reference.
+
+        Args:
+            cfg            : Inference configuration deciding whether the sweep runs.
+            meta           : Run metadata resolving the metrics path.
+            run            : Loaded run supplying the raw cube.
+            result         : Inference result supplying the predicted cube.
+            z_axis_np      : Z axis in metres, of shape (n_z,).
+            global_metrics : Metric dictionary, extended in place and rewritten to disk.
+            indices        : Slice-index arrays keyed by axis.
+            logger         : Logger for the section heading, whether skipped or computed, and the result line.
+        """
+
+        if not cfg.compute_cube_ssim:
+            logger.section("[Inference: Cube SSIM skipped]")
+            logger.subsection("compute_cube_ssim is disabled; the standard SSIM against the raw cube is absent from metrics and report.")
+            global_metrics["cube_ssim_status"] = "skipped: compute_cube_ssim disabled"
+            Metrics.write_json(global_metrics, meta.metrics_path)
+            return
+
+        logger.section("[Inference: Cube SSIM]")
+
+        stats = Metrics(result, z_axis_np, run.n_gaussians, cfg.cpu_workers, run.activity_threshold, logger).cube_ssim(
+            run.full_curves,
+            z_indices   = indices["all_z_idx"],
+            col_indices = indices["all_col_idx"],
+            row_indices = indices["all_row_idx"],
+        )
+
+        global_metrics["cube_ssim_status"] = "computed"
+        global_metrics.update(stats)
+        Metrics.write_json(global_metrics, meta.metrics_path)
+
+        logger.subsection(f"Cube SSIM : z {stats['ssim_cube_z_mean']:.4f}, col {stats['ssim_cube_col_mean']:.4f}, row {stats['ssim_cube_row_mean']:.4f} vs the raw cube")
+
     def _evaluate_flip_consistency(self, cfg: InferenceConfig, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
         """Measures flip-equivariance disagreement and its correlation with the supervised error.
 
@@ -747,6 +787,7 @@ class InferencePipeline:
 
             self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics, logger)
             self._evaluate_label_quality(cfg, meta, run, result, z_axis_np, global_metrics, logger)
+            self._evaluate_cube_ssim(cfg, meta, run, result, z_axis_np, global_metrics, indices, logger)
             self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)
             self._stratify_errors(cfg, meta, run, result, global_metrics, logger)
             self._classify_failures(cfg, meta, run, result, global_metrics, logger)

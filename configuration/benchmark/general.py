@@ -117,6 +117,7 @@ class InferenceQueueConfig:
         stitch_window            : Window applied when stitching overlapping patches.
         cube_dtype               : NumPy dtype name used when writing cubes.
         render_amp_floor         : Amplitude below which components are hidden in renders.
+        compute_cube_ssim        : Whether the standard SSIM sweep of the prediction against the raw cube runs, in raw intensity and unit area.
         compute_flip_consistency : Whether flip-equivariance metrics run.
         compute_stratified       : Whether metrics are stratified by scene strata.
         extract_curve_params     : Whether Gaussians are refitted to predicted curves.
@@ -156,6 +157,8 @@ class InferenceQueueConfig:
     stitch_window    : str   = "hann"
     cube_dtype       : str   = "float32"
     render_amp_floor : float = 0.0
+
+    compute_cube_ssim : bool = False
 
     compute_flip_consistency : bool = False
     compute_stratified       : bool = True

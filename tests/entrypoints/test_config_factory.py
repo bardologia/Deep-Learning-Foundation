@@ -145,6 +145,15 @@ def test_inference_config_propagates_inference_fields(bare_factory, tmp_path):
     assert config.gif_axes        == list(inference.gif_axes)
 
 
+def test_inference_config_forwards_the_cube_ssim_switch(bare_factory, tmp_path):
+    """The inference block's compute_cube_ssim reaches the inference config, off by default and on when set."""
+    assert bare_factory.inference_config(tmp_path / "run").compute_cube_ssim is False
+
+    bare_factory.config.inference.compute_cube_ssim = True
+
+    assert bare_factory.inference_config(tmp_path / "run").compute_cube_ssim is True
+
+
 @pytest.mark.dataset
 def test_training_trainer_config_logdir(factory, tmp_path):
     """The trainer config is a BackboneTrainerConfig whose io logdir is the requested directory."""

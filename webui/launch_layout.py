@@ -179,6 +179,7 @@ class LaunchLayout:
 
     INFERENCE_REPORT_GROUPS = [
         {"title": "Artifacts", "fields": ["save_plots", "save_animations", "save_cubes", "stitch_window", "cube_dtype", "render_amp_floor"]},
+        {"title": "Cube SSIM", "fields": ["compute_cube_ssim"]},
         {"title": "Flip consistency", "fields": ["compute_flip_consistency"]},
         {"title": "Stratified errors", "fields": ["compute_stratified"]},
         {"title": "Curve parameter extraction", "fields": [
