@@ -22,7 +22,9 @@ ends it but no later one, and show only the answer for the latest rectangle of t
 Signed delta layers must use the diverging colour bar, and attaching or detaching a comparison
 must refresh the metric view's layers. A transect is a polyline traced click by click, with
 undo, an along-line metric strip that never shows an answer for a line that was shortened or
-cleared meanwhile, and named lines remembered per cube footprint.
+cleared meanwhile, and named lines remembered per cube footprint. The volume view must ask for a
+readable WebGL2 context, map its clip axes onto the texture axes, drop a volume streamed for a cube
+or comparison that was replaced meanwhile, and render when its view opens or a cube loads into it.
 """
 
 from __future__ import annotations
@@ -614,3 +616,81 @@ def test_transect_controls_are_on_the_page_once_and_wired_to_the_cube_view():
     for ref, suffix in refs.items():
         assert html.count(f'id="cube-transect-{suffix}"') == 1, suffix
         assert re.search(rf'{ref}\s*: document\.getElementById\("cube-transect-{suffix}"\)', app), ref
+
+
+@NEEDS_JS
+def test_the_volume_view_keeps_its_drawing_buffer():
+    """The volume asks for a WebGL2 context that preserves its drawing buffer, so the figure saver can capture it."""
+    assert _check("volume")["context"] == {"kind": "webgl2", "opts": {"alpha": True, "antialias": False, "preserveDrawingBuffer": True}}
+
+
+@NEEDS_JS
+def test_volume_falls_back_to_a_loaded_source_and_streams_it_once():
+    """A source the cube lacks falls back to the first loaded one, the volume is fetched once at the capped size and uploaded column-major."""
+    observed = _check("volume")
+
+    assert observed["configured"] == {"source": "pred", "disabled": [False, True, True, False, True], "active": [True, False, False, False, False]}
+    assert observed["request"] == {"id": "cube/a", "source": "pred", "max": "192", "at": "<orb>Streaming volume…</orb>"}
+    assert observed["drawn"]["dims"] == [2, 3, 4] and observed["drawn"]["key"] == "cube/a|pred" and observed["drawn"]["voxels"] == 24
+    assert observed["drawn"]["upload"] == [[4, 3, 2]] and observed["drawn"]["draws"] == 1
+    assert observed["drawn"]["at"].startswith("3 × 4 × 2 voxels (row × col × z) · intensity 0.5 … 2")
+    assert observed["cached"] == {"asked": 0, "draws": 1}
+
+
+@NEEDS_JS
+def test_volume_streamed_for_a_replaced_cube_is_dropped():
+    """A volume landing after another cube was configured is dropped instead of being shown under the new cube."""
+    assert _check("volume")["late"] == {"volume": None, "key": None}
+
+
+@NEEDS_JS
+def test_volume_reports_a_failed_fetch_and_a_missing_webgl2():
+    """A refused volume request names the failure, and a browser without WebGL2 disables the view without fetching."""
+    observed = _check("volume")
+
+    assert observed["failed"] == {"volume": None, "at": "Volume fetch failed."}
+    assert observed["unavailable"] == {"available": False, "at": "WebGL2 is not available in this browser; the volume view is disabled.", "asked": 0}
+
+
+@NEEDS_JS
+def test_volume_clip_axes_cut_the_matching_texture_axis():
+    """Row, col and z clip the texture's second, first and third axis; off leaves the box whole."""
+    assert _check("volume")["clips"] == {"off": [1, 1, 1], "row": [1, 0.25, 1], "col": [0.25, 1, 1], "z": [1, 1, 0.25]}
+
+
+@NEEDS_JS
+def test_volume_refreshes_comparison_sources_without_moving_the_camera():
+    """Attaching a comparison drops the cached volume and enables pred B and A − B while the camera stays where it was."""
+    assert _check("volume")["refreshed"] == {"volume": None, "yaw": 2, "source": "gt", "disabled": [False, False, False, False, True]}
+
+
+@NEEDS_JS
+def test_volume_draws_only_while_its_view_is_shown():
+    """A volume streamed while another view is open is kept but not drawn."""
+    assert _check("volume")["hiddenDraws"] == 0
+
+
+@NEEDS_JS
+def test_cube_view_renders_the_volume_on_load_attach_and_view_switch():
+    """Loading a cube or attaching a comparison with the volume view open re-renders it, and a browser without WebGL2 hides the mode and leaves the view."""
+    views = _check("volume")["views"]
+
+    assert views["loaded"] == {"calls": ["configure", "render"], "hidden": False}
+    assert views["blind"] == {"calls": ["configure"], "hidden": True, "view": "explorer"}
+    assert views["attached"] == ["refresh", "render"]
+    assert views["picked"] == {"calls": ["render"], "view": "volume"}
+
+
+def test_volume_controls_are_on_the_page_once_and_wired_to_the_cube_view():
+    """The Volume mode button and every volume control exist once, carry no foreign source, and app.js hands each to the volume view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    assert html.count('class="cube-mode" data-view="volume"') == 1
+    assert re.findall(r'data-source="(\w+)"', html.split('id="cube-volume-source"')[1].split("</div>")[0]) == ["pred", "predb", "diff", "gt", "full"]
+    assert re.findall(r'<option value="(\w+)"', html.split('id="cube-volume-clip-axis"')[1].split("</select>")[0]) == ["off", "row", "col", "z"]
+
+    refs = {"source": "source", "lo": "lo", "hi": "hi", "opacity": "opacity", "steps": "steps", "clipAxis": "clip-axis", "clipPos": "clip-pos", "at": "at", "canvas": "canvas"}
+    for ref, suffix in refs.items():
+        assert html.count(f'id="cube-volume-{suffix}"') == 1, suffix
+        assert re.search(rf'{ref}\s*: document\.getElementById\("cube-volume-{suffix}"\)', app), ref

@@ -26,7 +26,7 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 152
+ROUTE_COUNT   = 153
 SECTION_COUNT = 41
 
 RESOLUTIONS = [

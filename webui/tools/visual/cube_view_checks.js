@@ -9,7 +9,7 @@ class CubeViewChecks {
     vm.createContext(this.sandbox);
 
     const source = fs.readFileSync(path.join(staticDir, "cube_view.js"), "utf8");
-    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeTransect, CubeCloud, CubeFigures, CubeView };`, this.sandbox, { filename: "cube_view.js" });
+    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeTransect, CubeCloud, CubeVolume, CubeFigures, CubeView };`, this.sandbox, { filename: "cube_view.js" });
     this.classes = this.sandbox.classes;
   }
 
@@ -553,6 +553,173 @@ class CubeViewChecks {
     const refusedSave = toasts.concat(other.toasts).filter((toast) => toast.kind === "warn").map((toast) => toast.text);
 
     return { configured, single, traced, overtaken, drawn, afterUndo, lateAfterUndo, lateAfterClear, picked, attached, unnamed, named, replayed, deleted, otherFootprint, noLayers, refusedSave };
+  }
+
+  _gl(calls) {
+    return new Proxy({}, {
+      get: (target, name) => {
+        if (typeof name === "string" && /^[A-Z0-9_]+$/.test(name)) return name;
+        return (...args) => {
+          calls.push({ name, args });
+          return name === "getShaderParameter" || name === "getProgramParameter" ? true : {};
+        };
+      },
+    });
+  }
+
+  _volumeBlob(dims, diverging, vmin, vmax) {
+    const count  = dims[0] * dims[1] * dims[2];
+    const buffer = new ArrayBuffer(32 + count);
+    new Float32Array(buffer, 0, 8).set([...dims, diverging ? 1 : 0, vmin, vmax, 0, 0]);
+    new Uint8Array(buffer, 32).set(Array.from({ length: count }, (_, i) => i % 256));
+    return buffer;
+  }
+
+  _volume(context) {
+    const { CubeVolume } = this.classes;
+    const asked = [];
+    const calls = [];
+
+    this.sandbox.ThinkingOrb             = { busy: (state, text) => `<orb>${text}</orb>` };
+    this.sandbox.window.addEventListener = () => {};
+    this.sandbox.window.innerHeight      = 800;
+    this.sandbox.fetch                   = (url) => new Promise((resolve) => asked.push({ query: new URLSearchParams(url.split("?")[1]), resolve }));
+
+    const buttons = ["pred", "predb", "diff", "gt", "full"].map((source) => this._element({ dataset: { source } }));
+    buttons.forEach((btn) => {
+      btn.active          = false;
+      btn.classList.toggle = (name, on) => { btn.active = on; };
+    });
+
+    const refs = {};
+    ["lo", "hi", "opacity", "steps", "clipAxis", "clipPos", "at"].forEach((name) => {
+      refs[name] = this._element({ innerHTML: "" });
+    });
+    refs.lo.value       = "35";
+    refs.hi.value       = "90";
+    refs.opacity.value  = "45";
+    refs.steps.value    = "256";
+    refs.clipAxis.value = "off";
+    refs.clipPos.value  = "50";
+
+    refs.source                  = this._element();
+    refs.source.querySelectorAll = () => buttons;
+
+    const options = [];
+    refs.canvas = this._element({ width: 0, height: 0, parentElement: { clientWidth: 640 } });
+    refs.canvas.getContext = (kind, opts) => {
+      options.push({ kind, opts });
+      return context ? this._gl(calls) : null;
+    };
+
+    const host   = { selectedId: "cube/a", meta: { sources: ["pred", "gt"] }, view: "volume", _fmt: (value) => String(value) };
+    const volume = new CubeVolume(refs, host);
+    const answer = async (entry, payload) => {
+      entry.resolve(payload);
+      await this._settle();
+    };
+
+    return { volume, refs, host, asked, calls, buttons, options, answer };
+  }
+
+  async volume() {
+    const { volume, refs, host, asked, calls, buttons, options, answer } = this._volume(true);
+    const blob = (vmin, vmax) => ({ ok: true, arrayBuffer: async () => this._volumeBlob([2, 3, 4], false, vmin, vmax) });
+
+    volume.source = "full";
+    volume.configure(host.meta);
+    const configured = { source: volume.source, disabled: buttons.map((btn) => btn.disabled), active: buttons.map((btn) => btn.active) };
+
+    volume.render();
+    const context = options[0];
+    const request = { id: asked[0].query.get("id"), source: asked[0].query.get("source"), max: asked[0].query.get("max"), at: refs.at.innerHTML };
+    await answer(asked.shift(), blob(0.5, 2));
+    const drawn = {
+      dims       : volume.volume.dims,
+      key        : volume.volumeKey,
+      voxels     : volume.volume.voxels.length,
+      upload     : calls.filter((call) => call.name === "texImage3D").map((call) => call.args.slice(3, 6)),
+      draws      : calls.filter((call) => call.name === "drawArrays").length,
+      at         : refs.at.textContent,
+    };
+
+    calls.splice(0);
+    volume.render();
+    const cached = { asked: asked.length, draws: calls.filter((call) => call.name === "drawArrays").length };
+
+    volume._setSource("gt");
+    const pending = asked.shift();
+    host.selectedId = "cube/b";
+    volume.configure({ sources: ["pred", "gt"] });
+    await answer(pending, blob(9, 10));
+    const late = { volume: volume.volume, key: volume.volumeKey };
+
+    volume.render();
+    await answer(asked.shift(), { ok: false });
+    const failed = { volume: volume.volume, at: refs.at.textContent };
+
+    const clips = {};
+    ["off", "row", "col", "z"].forEach((axis) => {
+      refs.clipAxis.value = axis;
+      refs.clipPos.value  = "25";
+      clips[axis]         = volume._clip().max;
+    });
+
+    volume.render();
+    await answer(asked.shift(), blob(0, 1));
+    volume.yaw = 2.0;
+    volume.refreshSources({ sources: ["pred", "predb", "diff", "gt"] });
+    const refreshed = { volume: volume.volume, yaw: volume.yaw, source: volume.source, disabled: buttons.map((btn) => btn.disabled) };
+
+    host.view = "explorer";
+    calls.splice(0);
+    volume.render();
+    await answer(asked.shift(), blob(0, 1));
+    const hiddenDraws = calls.filter((call) => call.name === "drawArrays").length;
+
+    const blind = this._volume(false);
+    blind.volume.render();
+    const unavailable = { available: blind.volume.available, at: blind.refs.at.textContent, asked: blind.asked.length };
+
+    return { configured, context, request, drawn, cached, late, failed, clips, refreshed, hiddenDraws, unavailable, views: this._volumeViews() };
+  }
+
+  _volumeViews() {
+    const { CubeView } = this.classes;
+    const record       = (available) => {
+      const calls = [];
+      return { calls, available, configure: () => calls.push("configure"), refreshSources: () => calls.push("refresh"), render: () => calls.push("render") };
+    };
+    const button = () => ({ dataset: { view: "volume" }, hidden: false, classList: { toggle: () => {} } });
+
+    const shown      = record(true);
+    const shownBtn   = button();
+    const shownStub  = this._displayStub("volume", { volume: shown, modeBtns: [shownBtn] });
+    shownStub._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4 });
+
+    const blind     = record(false);
+    const blindBtn  = button();
+    const blindStub = this._displayStub("volume", { volume: blind, modeBtns: [blindBtn], viewEls: [] });
+    blindStub._stopSweeps = () => {};
+    blindStub._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4 });
+
+    const attached = record(true);
+    const view     = Object.create(CubeView.prototype);
+    Object.assign(view, { view: "volume", visible: new Set(["pred"]), panels: [], sweeps: [], metrics: null, transect: null, volume: attached, point: null, locked: null });
+    ["_clearBitmapCache", "_renderSourceToggles", "_applyVisibility"].forEach((name) => { view[name] = () => {}; });
+    view._refreshSources({ sources: ["pred", "predb", "diff", "gt"] });
+
+    const picked = record(true);
+    const picker = Object.create(CubeView.prototype);
+    Object.assign(picker, { view: "explorer", meta: { sources: ["pred"] }, modeBtns: [], viewEls: [], sweeps: [], volume: picked });
+    picker._setView("volume");
+
+    return {
+      loaded   : { calls: shown.calls, hidden: shownBtn.hidden },
+      blind    : { calls: blind.calls, hidden: blindBtn.hidden, view: blindStub.view },
+      attached : attached.calls,
+      picked   : { calls: picked.calls, view: picker.view },
+    };
   }
 
   _displayStub(view, extra) {

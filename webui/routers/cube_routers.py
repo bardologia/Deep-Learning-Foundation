@@ -1,8 +1,9 @@
 """API routes of the cube explorer and the multi-run slice collector.
 
 Serves the cube listing, the background load and its status, the rendered
-slices, planes, parameter and metric maps, the point clouds and the saved
-figures of the Cube tab, and the basket rendering and mailing of the Slices tab.
+slices, planes, parameter and metric maps, the point clouds, the quantised
+volumes and the saved figures of the Cube tab, and the basket rendering and
+mailing of the Slices tab.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ class CubeRouter(SubRouter):
         table.add("GET", "/api/cubes/selective",        self.selective)
         table.add("GET", "/api/cubes/region",           self.region)
         table.add("GET", "/api/cubes/points",           self.points)
+        table.add("GET", "/api/cubes/volume",           self.volume)
         table.add("GET", "/api/cubes/aux_grid",         self.aux_grid)
         table.add("GET", "/api/cubes/transect",         self.transect)
         table.add("GET", "/api/cubes/transect_metrics", self.transect_metrics)
@@ -155,6 +157,15 @@ class CubeRouter(SubRouter):
             source     = exchange.text("source", "pred"),
             amp_min    = exchange.number("amp_min", "0.001"),
             max_points = exchange.integer("max", "60000"),
+        )
+        exchange.send_bytes(blob)
+
+    def volume(self, exchange: HttpExchange) -> None:
+        """Answers with the quantised binary volume of one cube source."""
+        blob = self.cubes.volume_bin(
+            cube_id = exchange.text("id"),
+            source  = exchange.text("source", "pred"),
+            max_dim = exchange.integer("max", "192"),
         )
         exchange.send_bytes(blob)
 

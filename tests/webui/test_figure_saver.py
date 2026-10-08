@@ -139,6 +139,12 @@ def test_the_cube_panels_label_every_slice_plane_and_profile():
     assert len(re.findall(r'class="cube-eplane" data-source="\w+" data-fig="\w+ plane \w+"', html))              == 20
 
 
+def test_the_volume_view_keeps_its_drawing_buffer():
+    """The WebGL volume canvas is labelled and keeps its drawing buffer, so it can be captured like any other figure."""
+    assert 'id="cube-volume-canvas" data-fig="volume view"' in INDEX.read_text(encoding="utf-8")
+    assert re.search(r'getContext\("webgl2", \{[^}]*preserveDrawingBuffer: true', (JS_DIR / "cube_view.js").read_text(encoding="utf-8"))
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is needed to execute the frontend ZIP writer")
 def test_the_zip_writer_produces_an_archive_the_standard_library_reads(tmp_path):
     """Running ZipArchive under node yields a valid store-only archive with intact payloads."""
