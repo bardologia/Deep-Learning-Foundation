@@ -92,7 +92,7 @@ def test_pass_records_config_provenance_and_completion(tmp_path):
     assert config["output_subdir"] == "stub" and config["max_batches"] == 8
     assert provenance["checkpoint"] == {"name": "best_model.pt", **CHECKPOINT_META}
     assert provenance["split"] == "test" and provenance["git_commit"]
-    assert marker["stage"] == "stub" and marker["epoch"] == 41 and marker["status"] == "ok"
+    assert marker["stage"] == "stub" and marker["epoch"] == 42 and marker["status"] == "ok"
     assert outcome.replaced is False
     assert ("ok", f"{tmp_path.name}: value 1 -> {output / 'stub.md'}") in logger.messages
     assert not [message for level, message in logger.messages if level == "warning"]
@@ -110,7 +110,7 @@ def test_replacing_a_complete_result_warns_and_clears_its_figures(tmp_path):
     warnings = [message for level, message in logger.messages if level == "warning"]
 
     assert outcome.replaced is True
-    assert len(warnings) == 1 and "complete stub result of checkpoint 'best_model.pt' (epoch 41" in warnings[0]
+    assert len(warnings) == 1 and "complete stub result of checkpoint 'best_model.pt' (epoch 42" in warnings[0]
     assert not stale.exists()
     assert (tmp_path / "stub" / "plots" / "fresh.png").is_file()
 
