@@ -95,13 +95,14 @@
         <i class="deck__tick deck__tick--tr" aria-hidden="true"></i>
         <i class="deck__tick deck__tick--bl" aria-hidden="true"></i>
         <i class="deck__tick deck__tick--br" aria-hidden="true"></i>
-        <header class="deck__mast">
+        <header class="deck__mast mast--flanked" id="home-mast">
+          <hairline-figure name="landscape" class="mast__flank mast__flank--left" autopilot="off" aria-hidden="true"></hairline-figure>
           <div class="status__id">
             <p class="hero__kicker">server observatory &middot; ML template console</p>
             <h1 class="status__host" id="status-host">&hellip;</h1>
             <p class="status__sum" id="status-sum"><span class="orb-busy"><thinking-orb state="connecting" size="20"></thinking-orb><span>connecting to backend&hellip;</span></span></p>
           </div>
-          <canvas id="server-anim" class="status__server" role="img" aria-label="Animated server rack"></canvas>
+          <hairline-figure name="surface" class="mast__flank mast__flank--right" autopilot="off" aria-hidden="true"></hairline-figure>
         </header>
         <div class="status__board" id="status-board"><div class="orb-panel"><thinking-orb state="working" size="64"></thinking-orb><span class="orb-panel__text">reading the machine&hellip;</span></div></div>
       </div>
