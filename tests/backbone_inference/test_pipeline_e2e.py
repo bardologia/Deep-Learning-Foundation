@@ -83,6 +83,45 @@ def test_inference_pipeline_end_to_end(tmp_path, test_data_dir, params_dir, para
 
 @pytest.mark.dataset
 @pytest.mark.slow
+def test_inference_pipeline_scores_the_standard_ssim_against_the_raw_cube(tmp_path, test_data_dir, params_dir):
+    """With the switch on, a full run scores every slice against the raw cube and reports it beside the label SSIM."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+
+    config = InferenceConfig(
+        run_directory     = run_dir,
+        output_subdir     = "cube_ssim",
+        device            = "cpu",
+        split             = "test",
+        num_workers       = 0,
+        cpu_workers       = 2,
+        save_plots        = False,
+        save_animations   = False,
+        save_cubes        = False,
+        compute_cube_ssim = True,
+    )
+
+    report_path = InferencePipeline(config).run()
+    metrics     = json.loads((run_dir / "inference" / "cube_ssim" / "metrics.json").read_text())
+
+    assert metrics["cube_ssim_status"] == "computed"
+
+    for axis, n_slices in (("z", N_Z), ("col", 96), ("row", 96)):
+        for form in ("cube", "cube_norm"):
+            assert np.isfinite(metrics[f"ssim_{form}_{axis}_mean"]), (form, axis)
+            assert f"ssim_{form}_{axis}_{n_slices - 1}" in metrics
+        assert metrics[f"ssim_cube_{axis}_mean"] != pytest.approx(metrics[f"ssim_gt_{axis}_mean"])
+
+    for key, value in metrics.items():
+        if isinstance(value, numbers.Real) and not isinstance(value, bool):
+            MetricOrientation.direction(key)
+
+    report = report_path.read_text()
+    assert "SSIM against the raw cube" in report
+    assert "3.4c SSIM summaries (prediction vs raw cube)" in report
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
 def test_inference_pipeline_with_region_override(tmp_path, test_data_dir, params_dir):
     """A region override widens the inferred area while the stored split region stays the reported core region."""
     run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)

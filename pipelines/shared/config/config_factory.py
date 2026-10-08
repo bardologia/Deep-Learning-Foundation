@@ -170,6 +170,7 @@ class ConfigFactory:
             save_cubes               = inference.save_cubes,
             save_plots               = inference.save_plots,
             save_animations          = inference.save_animations,
+            compute_cube_ssim        = inference.compute_cube_ssim,
             compute_flip_consistency = inference.compute_flip_consistency,
             compute_stratified       = inference.compute_stratified,
             extract_curve_params     = inference.extract_curve_params,
