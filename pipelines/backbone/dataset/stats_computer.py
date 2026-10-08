@@ -162,11 +162,16 @@ class StatsComputer:
         Returns:
             Channel statistics with per-channel loc, scale, names and strategies, all
             input channels marked as not clampable.
+
+        Raises:
+            ValueError : If a group fits a non-finite location or scale, which a NaN or Inf in its sampled pool produces.
         """
         unique_groups    = list(dict.fromkeys(group_keys))
         group_strategies = strategies
 
         group_mean_std: dict[str, tuple[float, float]] = {g: group_strategies[g].fit(np.array([]) if group_strategies[g].data_free else collected[g]) for g in unique_groups}
+
+        StatsComputer._check_finite("Channel groups", group_mean_std, collected)
 
         n          = len(group_keys)
         locs       = [group_mean_std[group_keys[i]][0] for i in range(n)]
@@ -178,14 +183,15 @@ class StatsComputer:
         for c in range(n):
             strat = strategies[c]
             rows.append({
-                "Ch"     : str(c),
-                "Slot"   : group_keys[c],
-                "Method" : strat.norm_method.value,
-                "log1p"  : str(strat.apply_log1p),
-                "loc"    : f"{locs[c]:+.6f}",
-                "scale"  : f"{scales[c]:.6f}",
+                "Ch"      : str(c),
+                "Slot"    : group_keys[c],
+                "Method"  : strat.norm_method.value,
+                "log1p"   : str(strat.apply_log1p),
+                "Samples" : StatsComputer._sample_count(collected, group_keys[c]),
+                "loc"     : f"{locs[c]:+.6f}",
+                "scale"   : f"{scales[c]:.6f}",
             })
-        logger.metrics_table(rows, ["Ch", "Slot", "Method", "log1p", "loc", "scale"])
+        logger.metrics_table(rows, ["Ch", "Slot", "Method", "log1p", "Samples", "loc", "scale"])
 
         degenerate = [group for group, (_loc, scale) in group_mean_std.items() if scale <= 1e-8]
         if degenerate:
@@ -198,6 +204,11 @@ class StatsComputer:
             strategies = strategies,
             clampable  = [False] * n,
         )
+
+    @staticmethod
+    def _sample_count(pools: dict[str, np.ndarray], key: str) -> str:
+        """Returns the pooled sample count of a group as a table cell, or the data-free marker for a group fitted without data."""
+        return f"{pools[key].size:,}" if key in pools else "none (data-free)"
 
     @staticmethod
     def compute_input_stats(
@@ -294,10 +305,15 @@ class StatsComputer:
         Returns:
             Channel statistics named per slot and role, with amplitude and sigma channels
             marked clampable.
+
+        Raises:
+            ValueError : If a role fits a non-finite location or scale, which a NaN or Inf among its active pixels produces.
         """
 
         role_strat : dict[str, ChannelStrategy]     = {key: output_config.strategy_for(key) for key in role_pools}
         role_fit   : dict[str, tuple[float, float]] = {key: strat.fit(role_pools[key]) for key, strat in role_strat.items() if strat.norm_method is not NormMethod.FIXED_BOUNDS}
+
+        StatsComputer._check_finite("Output roles", role_fit, role_pools)
 
         selected        = output_config.selected_indices(n_gaussians)
         _local_to_role  = {0: "out/amp", 1: "out/mu", 2: "out/sigma"}
@@ -331,13 +347,14 @@ class StatsComputer:
                 fitted = role_fit.get(key)
                 rows.append({
                     "Channel"   : key,
+                    "Samples"   : f"{role_pools[key].size:,}",
                     "loc"       : "per-slot bounds" if fitted is None else f"{fitted[0]:.5f}",
                     "scale"     : "per-slot bounds" if fitted is None else f"{fitted[1]:.5f}",
                     "Method"    : strat.norm_method.value,
                     "log1p"     : str(strat.apply_log1p),
                     "clampable" : str(_role_clampable[key]),
                 })
-            logger.metrics_table(rows, ["Channel", "loc", "scale", "Method", "log1p", "clampable"])
+            logger.metrics_table(rows, ["Channel", "Samples", "loc", "scale", "Method", "log1p", "clampable"])
 
             degenerate = [key for key, (_m, s) in role_fit.items() if s <= 1e-8]
             if degenerate:
@@ -382,6 +399,31 @@ class StatsComputer:
         return lo, hi - lo
 
     @staticmethod
+    def _check_finite(label: str, fits: dict[str, tuple[float, float]], pools: dict[str, np.ndarray]) -> None:
+        """Refuses fitted statistics whose location or scale is not finite.
+
+        A NaN or Inf in a sampled pool propagates into the fit and slips past the
+        degenerate-scale check, since NaN compares false against the threshold; the
+        run would then abort at its first step with a non-finite loss that points at
+        the loss rather than at the channel.
+
+        Args:
+            label : Side being checked, quoted in the message.
+            fits  : Fitted (location, scale) per group or role.
+            pools : Pooled sample values of every group or role fitted from data.
+
+        Raises:
+            ValueError : If any location or scale is NaN or infinite, naming the groups and the number of non-finite samples in each pool.
+        """
+        bad = [key for key, (loc, scale) in fits.items() if not (np.isfinite(loc) and np.isfinite(scale))]
+        if not bad:
+            return
+
+        counts = {key: int(np.count_nonzero(~np.isfinite(pools[key]))) for key in bad if key in pools}
+
+        raise ValueError(f"{label} {bad} fit a non-finite location or scale; non-finite samples per pool: {counts}. The train regions hold NaN or Inf in these channels, so no normalization can be fit from them; clean the preprocessing artefacts or exclude the channels.")
+
+    @staticmethod
     def compute_output_stats(
         dataset,
         n_gaussians        : int,
@@ -410,7 +452,12 @@ class StatsComputer:
         mu_pool_vals  : list[np.ndarray] = []
         sig_pool_vals : list[np.ndarray] = []
 
+        active_per_slot = [0] * n_gaussians
+        n_pixels        = 0
+
         for params in regions:
+            n_pixels += int(params[0].size)
+
             for g in range(n_gaussians):
                 a_flat   = params[g * 3 + 0].ravel().astype(np.float64)
                 mu_flat  = params[g * 3 + 1].ravel().astype(np.float64)
@@ -420,6 +467,8 @@ class StatsComputer:
                 amp_pool_vals.append(a_flat[active])
                 mu_pool_vals.append(mu_flat[active])
                 sig_pool_vals.append(sig_flat[active])
+
+                active_per_slot[g] += int(np.count_nonzero(active))
 
         role_pools = {
             "out/amp"   : np.concatenate(amp_pool_vals),
@@ -433,6 +482,9 @@ class StatsComputer:
             output_config = output_config,
             n_gaussians   = n_gaussians,
         )
+
+        if logger is not None:
+            logger.kv_table({f"G{g + 1}": f"{count:,} of {n_pixels:,} pixels active" for g, count in enumerate(active_per_slot)}, title=f"Active pixels per slot (train split, {len(regions)} region(s), amplitude > {activity_threshold:g})")
 
         return Stats(
             input_stats  = None,
