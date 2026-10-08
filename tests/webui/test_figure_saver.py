@@ -85,6 +85,17 @@ def test_the_browser_download_helper_lives_in_one_module():
     assert holders == ["figure_export.js"]
 
 
+def test_the_cube_explorer_delegates_its_downloads():
+    """The cube explorer's PNG and CSV downloads all run through the shared exporter."""
+    text = (JS_DIR / "cube_view.js").read_text(encoding="utf-8")
+
+    for call in ("FigureExport.download(", "FigureExport.saveCanvas(", "FigureExport.saveBitmap("):
+        assert call in text
+
+    assert "canvas.toBlob(" not in text
+    assert "downloadBlob(" not in text
+
+
 def test_every_registered_figure_tab_supplies_a_filename_context():
     """Each route the dock mounts on names a view whose class declares figureTag."""
     classes = _classes()

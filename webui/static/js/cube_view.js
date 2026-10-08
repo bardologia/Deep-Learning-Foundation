@@ -485,6 +485,7 @@ class CubeMetrics {
     this.img.addEventListener("mousemove", (ev) => this._onHover(ev));
     this.img.addEventListener("click", (ev) => this._onClick(ev));
     this.openBtn.addEventListener("click", () => this._openCuts());
+    refs.download.addEventListener("click", () => this._downloadOverlay());
   }
 
   configure(meta) {
@@ -838,6 +839,18 @@ class CubeMetrics {
     this.host._enterSlices(this.picked);
   }
 
+  async _downloadOverlay() {
+    if (!this.layer || !this.img.src) return;
+
+    const res = await fetch(this.img.src).catch(() => null);
+    if (!res || !res.ok) {
+      Toast.show("Overlay download failed.", "error");
+      return;
+    }
+
+    FigureExport.download(`${this.host.fileTag()}_metric_${this.layer.key}.png`, await res.blob());
+  }
+
   _round(value) {
     return Number(Number(value).toPrecision(5));
   }
@@ -849,6 +862,7 @@ class CubeTransect {
     this.atEl = refs.at;
     this.clearBtn = refs.clear;
     this.printBtn = refs.print;
+    this.downloadBtn = refs.download;
     this.map = refs.map;
     this.overlay = refs.overlay;
     this.grid = refs.grid;
@@ -862,6 +876,7 @@ class CubeTransect {
     this.map.addEventListener("click", (ev) => this._onClick(ev));
     this.clearBtn.addEventListener("click", () => this._reset());
     this.printBtn.addEventListener("click", () => this._print());
+    this.downloadBtn.addEventListener("click", () => this._download());
   }
 
   configure() {
@@ -886,13 +901,14 @@ class CubeTransect {
   }
 
   _reset() {
-    this.start             = null;
-    this.end               = null;
-    this.overlay.innerHTML = "";
-    this.grid.hidden       = true;
-    this.clearBtn.hidden   = true;
-    this.printBtn.hidden   = true;
-    this.atEl.textContent  = "Click a start point on the map, then an end point, to cut every cube along that line.";
+    this.start              = null;
+    this.end                = null;
+    this.overlay.innerHTML  = "";
+    this.grid.hidden        = true;
+    this.clearBtn.hidden    = true;
+    this.printBtn.hidden    = true;
+    this.downloadBtn.hidden = true;
+    this.atEl.textContent   = "Click a start point on the map, then an end point, to cut every cube along that line.";
   }
 
   _pointFromEvent(ev) {
@@ -912,21 +928,23 @@ class CubeTransect {
     const point = this._pointFromEvent(ev);
 
     if (!this.start || this.end) {
-      this.start            = point;
-      this.end              = null;
-      this.grid.hidden      = true;
-      this.printBtn.hidden  = true;
-      this.clearBtn.hidden  = false;
-      this.atEl.textContent = `start row = ${point.row} · col = ${point.col} · click the end point`;
+      this.start              = point;
+      this.end                = null;
+      this.grid.hidden        = true;
+      this.printBtn.hidden    = true;
+      this.downloadBtn.hidden = true;
+      this.clearBtn.hidden    = false;
+      this.atEl.textContent   = `start row = ${point.row} · col = ${point.col} · click the end point`;
       this._drawOverlay();
       return;
     }
 
     if (point.row === this.start.row && point.col === this.start.col) return;
 
-    this.end              = point;
-    this.printBtn.hidden  = false;
-    this.atEl.textContent = `transect row ${this.start.row},${this.start.col} to row ${point.row},${point.col}`;
+    this.end                = point;
+    this.printBtn.hidden    = false;
+    this.downloadBtn.hidden = false;
+    this.atEl.textContent   = `transect row ${this.start.row},${this.start.col} to row ${point.row},${point.col}`;
     this._drawOverlay();
     this._fetchAll();
   }
@@ -1006,6 +1024,21 @@ class CubeTransect {
     }
 
     Toast.show(`Saved ${res.files.length} transect figures → ${res.rel}`, "ok");
+  }
+
+  _download() {
+    if (!this.start || !this.end) return;
+
+    const tag = `${this.host.fileTag()}_transect_row${this.start.row}_col${this.start.col}_to_row${this.end.row}_col${this.end.col}`;
+    let count = 0;
+
+    this.panels.forEach((panel) => {
+      if (panel.root.hidden || !panel.canvas.width) return;
+      FigureExport.saveCanvas(panel.canvas, `${tag}_${panel.source}_${this.host.space}.png`);
+      count += 1;
+    });
+
+    if (!count) Toast.show("No rendered transect panel to download.", "warn");
   }
 }
 
@@ -1512,6 +1545,8 @@ class CubeView {
     this.jumpRg        = refs.jumpRg;
     this.jumpGo        = refs.jumpGo;
     this.jumpPrint     = refs.jumpPrint;
+    this.jumpDownload  = refs.jumpDownload;
+    this.jumpCsv       = refs.jumpCsv;
     this.jumpRowRange  = refs.jumpRowRange;
     this.jumpColRange  = refs.jumpColRange;
     this.progress      = refs.progress;
@@ -1596,6 +1631,8 @@ class CubeView {
     if (this.jumpRg) this.jumpRg.addEventListener("change", () => this._setManualCut());
     if (this.jumpGo) this.jumpGo.addEventListener("click", () => this._setManualCut());
     if (this.jumpPrint) this.jumpPrint.addEventListener("click", () => this._printSlices());
+    this.jumpDownload.addEventListener("click", () => this._downloadCuts());
+    this.jumpCsv.addEventListener("click", () => this._downloadProfilesCsv());
   }
 
   leave() {
@@ -1612,9 +1649,14 @@ class CubeView {
     await this.refresh();
   }
 
+  fileTag() {
+    const cube = this.cubes.find((c) => c.id === this.selectedId);
+    const raw  = cube ? `${cube.run}_${cube.stamp}` : "cube";
+    return raw.replace(/[^A-Za-z0-9._-]+/g, "_");
+  }
+
   figureTag() {
-    const cube  = this.cubes.find((c) => c.id === this.selectedId);
-    const parts = [cube ? `${cube.run}_${cube.stamp}` : "cube", this.space];
+    const parts = [this.fileTag(), this.space];
     if (this.point) parts.push(`row${String(this.point.row).padStart(4, "0")}_col${String(this.point.col).padStart(4, "0")}`);
 
     return parts.filter(Boolean).join("_");
@@ -2216,6 +2258,43 @@ class CubeView {
     }
 
     Toast.show(`Saved ${res.files.length} slice figures → ${res.rel}`, "ok");
+  }
+
+  _downloadCuts() {
+    if (!this.meta || !this.point) {
+      Toast.show("Hover or lock a cut first.", "warn");
+      return;
+    }
+
+    const row = String(this.point.row).padStart(4, "0");
+    const col = String(this.point.col).padStart(4, "0");
+    const tag = this.fileTag();
+
+    let count = 0;
+    this.panels.forEach((panel) => {
+      if (panel.root.hidden || !panel.bitmap) return;
+      FigureExport.saveBitmap(panel.bitmap, `${tag}_row${row}_col${col}_${panel.axis}_${panel.source}_${this.space}.png`);
+      count += 1;
+    });
+
+    if (!count) Toast.show("No rendered cut to download.", "warn");
+  }
+
+  _downloadProfilesCsv() {
+    if (!this.profData) {
+      Toast.show("Lock a pixel first so the profiles are loaded.", "warn");
+      return;
+    }
+
+    const row   = String(this.profData.row).padStart(4, "0");
+    const col   = String(this.profData.col).padStart(4, "0");
+    const lines = ["source,z,value"];
+
+    Object.entries(this.profData.sources).forEach(([source, series]) => {
+      series.z_values.forEach((z, i) => lines.push(`${source},${z},${series.values[i]}`));
+    });
+
+    FigureExport.download(`${this.fileTag()}_profiles_row${row}_col${col}.csv`, new Blob([lines.join("\n")], { type: "text/csv" }));
   }
 
   _setManualCut() {

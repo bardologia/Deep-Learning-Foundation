@@ -10,6 +10,8 @@ parameter map's pixel readout must keep the pixel picked last when answers arriv
 order. Class metric layers must swap the colour bar for a named legend and read out class
 names, and the layer histogram must draw one coloured bar per class, shade the colour range,
 mark the keep threshold, and never draw a distribution fetched for another layer or cube.
+The cut, profile and transect downloads must hand the visible panels and the profiles to the
+shared exporter under names carrying the run, stamp and pixel.
 """
 
 from __future__ import annotations
@@ -194,3 +196,55 @@ def test_histogram_never_draws_a_distribution_of_another_layer_or_cube():
 
     assert observed["stale"] == {"fills": 0, "cleared": True}
     assert observed["late"] == {"hist": None, "histKey": None}
+
+
+@NEEDS_JS
+def test_downloads_refuse_until_a_cut_and_profiles_exist():
+    """Without a cut position or loaded profiles the PNG and CSV buttons warn instead of saving."""
+    assert _check("downloads")["refused"] == ["warn", "warn"]
+
+
+@NEEDS_JS
+def test_cut_download_saves_each_visible_rendered_panel():
+    """Only shown panels holding a bitmap are saved, named by run, stamp, padded pixel, axis, source and space."""
+    observed = _check("downloads")
+
+    assert observed["tag"] == "group_run_a_stamp_1"
+    assert observed["cuts"] == [{"via": "bitmap", "name": "group_run_a_stamp_1_row0003_col0012_col_pred_physical.png", "bitmap": "shown"}]
+
+
+@NEEDS_JS
+def test_profile_csv_lists_every_source_sample_at_the_profiled_pixel():
+    """The CSV carries one source, z, value row per sample of every source, named after the profiled pixel."""
+    csv = _check("downloads")["csv"]
+
+    assert csv["name"] == "group_run_a_stamp_1_profiles_row0003_col0004.csv"
+    assert csv["type"] == "text/csv"
+    assert csv["text"].split("\n") == ["source,z,value", "pred,-1,0.25", "pred,0.5,2", "gt,-1,0", "gt,0.5,1"]
+
+
+@NEEDS_JS
+def test_transect_download_saves_each_drawn_panel_named_by_its_end_points():
+    """The transect PNG button saves every drawn panel under the line's end points and skips undrawn ones."""
+    assert _check("downloads")["line"] == [{"via": "canvas", "name": "group_run_a_stamp_1_transect_row1_col2_to_row5_col0_pred_physical.png"}]
+
+
+@NEEDS_JS
+def test_metric_overlay_download_saves_the_shown_overlay_and_reports_a_failed_fetch():
+    """The metric PNG button saves the overlay the map shows under the layer key and toasts an error when it cannot fetch it."""
+    overlay = _check("downloads")["overlay"]
+
+    assert overlay["saved"] == [{"via": "download", "name": "group_run_a_stamp_1_metric_failure_mode.png", "source": "png-bytes"}]
+    assert overlay["toasts"] == ["error"]
+
+
+def test_download_buttons_are_on_the_page_and_wired_to_the_cube_view():
+    """The cuts bar carries PNG and CSV buttons and the transect bar a PNG button, and app.js hands each to the cube view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    for element in ("cube-jump-download", "cube-jump-csv", "cube-transect-download", "cube-metric-download"):
+        assert html.count(f'id="{element}"') == 1, element
+
+    for ref, element in (("jumpDownload", "cube-jump-download"), ("jumpCsv", "cube-jump-csv"), ("download", "cube-transect-download"), ("download", "cube-metric-download")):
+        assert re.search(rf'{ref}\s*: document\.getElementById\("{element}"\)', app), element
