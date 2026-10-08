@@ -8,8 +8,12 @@ import numpy as np
 import pytest
 import torch
 
-from pipelines.backbone.inference.probes          import ProbeWindows
-from pipelines.backbone.inference.analysis.receptive_field import ErfComputation
+from configuration.diagnostics                             import ReceptiveFieldConfig
+from pipelines.backbone.inference.analysis.receptive_field import ErfComputation, RunReceptiveField
+from pipelines.backbone.inference.probes                   import ProbeWindows
+
+from tests.backbone_inference._helpers import build_run_directory
+from tests.conftest                    import RecordingLogger
 
 
 WINDOW = 16
@@ -187,3 +191,41 @@ def test_probe_centers_raise_when_the_region_is_too_small():
     """A window wider than the region raises."""
     with pytest.raises(ValueError):
         ProbeWindows(_region_run(32, 200), window=64).centers(2, 2)
+
+
+def test_zero_gradient_probe_gets_nan_sigmas():
+    """A probe whose window carries no gradient is kept as a NaN row instead of vanishing from the spread."""
+    erf     = ErfComputation(_ConvModel(3), WINDOW, [8])
+    windows = _windows(n_probes=2)
+
+    windows[1] = 0.0
+
+    _, probe_sigmas = erf.gradient_maps(windows)
+
+    assert probe_sigmas.shape == (2, 2)
+    assert np.isfinite(probe_sigmas[0]).all() and np.isnan(probe_sigmas[1]).all()
+
+
+def test_non_finite_gradient_raises_instead_of_reading_no_dependence():
+    """A NaN input gradient raises naming the family rather than being reported as 'no dependence'."""
+    class _NanModel(torch.nn.Module):
+        """Model scaling its input by NaN, so every input gradient is NaN."""
+        def forward(self, x):
+            """Returns NaN-scaled copies of channel 0, shape (batch, 3, H, W)."""
+            return (x[:, :1] * float("nan")).expand(-1, 3, -1, -1)
+
+    with pytest.raises(ValueError, match="centre amp at probe window 0 is non-finite"):
+        ErfComputation(_NanModel(), WINDOW, [8]).gradient_maps(_windows())
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
+def test_erf_pass_records_how_many_probes_entered_the_spread(tmp_path, test_data_dir, params_dir):
+    """An ERF pass on a real run stores the valid and total probe counts next to the sigma spread."""
+    run_dir = build_run_directory(tmp_path, test_data_dir, params_dir)
+    config  = ReceptiveFieldConfig(window=32, n_row_probes=2, n_col_probes=2, mass_windows=[8, 16])
+
+    outcome = RunReceptiveField(run_dir, config, RecordingLogger()).run()
+    spread  = outcome.payload["probe_sigma_spread"]
+
+    assert spread["n_probes"] == 4 and 0 < spread["n_valid_probes"] <= 4
