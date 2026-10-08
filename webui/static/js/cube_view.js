@@ -899,6 +899,7 @@ class CubeTransect {
 class CubeCloud {
   static VIRIDIS = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
   static CURVE_SOURCES = ["full"];
+  static SWEEP_MS = 9000;
   static MISSING = {
     gt      : "This run has no ground-truth parameter cube.",
     full    : "The reference cube is not available for this run.",
@@ -911,18 +912,25 @@ class CubeCloud {
     this.thrEl    = refs.thr;
     this.thrLabel = refs.thrLabel;
     this.thrValEl = refs.thrVal;
-    this.maxEl    = refs.max;
-    this.auxWrap  = refs.auxWrap;
-    this.auxEl    = refs.aux;
-    this.atEl     = refs.at;
-    this.canvas   = refs.canvas;
+    this.maxEl      = refs.max;
+    this.cutAxisEl  = refs.cutAxis;
+    this.cutPosEl   = refs.cutPos;
+    this.cutSweepEl = refs.cutSweep;
+    this.auxWrap    = refs.auxWrap;
+    this.auxEl      = refs.aux;
+    this.atEl       = refs.at;
+    this.canvas     = refs.canvas;
 
     this.source        = "pred";
     this.colorBy       = "mu";
     this.points        = null;
     this.total         = 0;
+    this.muBounds      = null;
     this.auxGrid       = null;
+    this.auxBounds     = null;
     this.debounceTimer = null;
+    this.sweepFrame    = null;
+    this.sweepT0       = null;
 
     this.yaw = 0.7;
     this.pitch = 0.9;
@@ -938,6 +946,9 @@ class CubeCloud {
     this.thrEl.addEventListener("input", () => this._onThreshold());
     this.maxEl.addEventListener("change", () => this._fetch());
     this.auxEl.addEventListener("change", () => this._onAux());
+    this.cutAxisEl.addEventListener("change", () => this._onCutAxis());
+    this.cutPosEl.addEventListener("input", () => this._onCutPos());
+    this.cutSweepEl.addEventListener("change", () => this._onCutSweep());
 
     this.canvas.addEventListener("mousedown", (ev) => { this.dragging = { x: ev.clientX, y: ev.clientY }; });
     window.addEventListener("mousemove", (ev) => this._onDrag(ev));
@@ -951,9 +962,12 @@ class CubeCloud {
     this.available = sources.length > 0;
     if (!sources.includes(this.source)) this.source = sources[0] || "pred";
     this.points         = null;
+    this.muBounds       = null;
     this.auxGrid        = null;
+    this.auxBounds      = null;
     this.auxWrap.hidden = !meta.aux;
     this.auxEl.checked  = false;
+    this._stopSweep();
     this._resetView(false);
     this._syncThresholdLabel();
   }
@@ -972,6 +986,7 @@ class CubeCloud {
     this._syncBtns();
     if (!this.points) this._fetch();
     else this._draw();
+    if (this.cutSweepEl.checked && this.sweepFrame === null) this._startSweep();
   }
 
   _setSource(source) {
@@ -1001,9 +1016,74 @@ class CubeCloud {
 
   async _onAux() {
     if (this.auxEl.checked && !this.auxGrid) {
-      this.auxGrid = await this._fetchBinary(`/api/cubes/aux_grid?id=${encodeURIComponent(this.host.selectedId)}`);
+      this.auxGrid   = await this._fetchBinary(`/api/cubes/aux_grid?id=${encodeURIComponent(this.host.selectedId)}`);
+      this.auxBounds = this.auxGrid ? CubeCloud.valueBounds(this.auxGrid.rows, 0, 1) : null;
     }
     this._draw();
+  }
+
+  _onCutAxis() {
+    if (this.cutAxisEl.value === "off") {
+      this.cutSweepEl.checked = false;
+      this._stopSweep();
+    }
+    this._draw();
+  }
+
+  _onCutPos() {
+    if (!this._cutRaf) {
+      this._cutRaf = requestAnimationFrame(() => {
+        this._cutRaf = null;
+        this._draw();
+      });
+    }
+  }
+
+  _onCutSweep() {
+    if (this.cutSweepEl.checked && this.cutAxisEl.value === "off") this.cutAxisEl.value = "row";
+    if (this.cutSweepEl.checked) this._startSweep();
+    else this._stopSweep();
+  }
+
+  _startSweep() {
+    this._stopSweep();
+    this.sweepFrame = requestAnimationFrame((now) => this._sweepStep(now));
+  }
+
+  _stopSweep() {
+    if (this.sweepFrame !== null) cancelAnimationFrame(this.sweepFrame);
+    this.sweepFrame = null;
+    this.sweepT0    = null;
+  }
+
+  _sweepStep(now) {
+    if (this.host.view !== "cloud" || !this.cutSweepEl.checked || this.cutAxisEl.value === "off") {
+      this._stopSweep();
+      return;
+    }
+
+    if (this.sweepT0 === null) this.sweepT0 = now - (Number(this.cutPosEl.value) / 100) * (CubeCloud.SWEEP_MS / 2);
+    const phase = ((now - this.sweepT0) % CubeCloud.SWEEP_MS) / CubeCloud.SWEEP_MS;
+    const tri   = phase < 0.5 ? phase * 2 : 2 - phase * 2;
+
+    this.cutPosEl.value = String(Math.round(tri * 100));
+    this._draw();
+    this.sweepFrame = requestAnimationFrame((next) => this._sweepStep(next));
+  }
+
+  leave() {
+    this._stopSweep();
+  }
+
+  _cutSpec() {
+    const axis = this.cutAxisEl.value;
+    if (axis === "off" || !this.host.meta || !this.muBounds) return null;
+
+    const meta = this.host.meta;
+    const frac = Number(this.cutPosEl.value) / 100;
+    const lo   = axis === "z" ? this.muBounds[0] : 0;
+    const hi   = axis === "row" ? meta.n_rows : axis === "col" ? meta.n_cols : this.muBounds[1];
+    return { axis, frac, threshold: lo + frac * (hi - lo) };
   }
 
   _ampMin() {
@@ -1061,9 +1141,10 @@ class CubeCloud {
     const data = await this._fetchBinary(url);
     if (!data) return;
 
-    this.points = data.rows;
-    this.total = data.header[1];
-    this.muRange = this._sampleRange(data.rows, 2);
+    this.points   = data.rows;
+    this.total    = data.header[1];
+    this.muRange  = this._sampleRange(data.rows, 2);
+    this.muBounds = CubeCloud.valueBounds(data.rows, 2, 4);
     this._draw();
   }
 
@@ -1077,6 +1158,17 @@ class CubeCloud {
     const lo = values[Math.floor(values.length * 0.02)];
     const hi = values[Math.floor(values.length * 0.98)];
     return hi > lo ? [lo, hi] : [lo, lo + 1];
+  }
+
+  static valueBounds(rows, offset, width) {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = offset; i < rows.length; i += width) {
+      const v = rows[i];
+      if (!Number.isFinite(v)) continue;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    return hi >= lo ? [lo, hi] : null;
   }
 
   _resetView(draw = true) {
@@ -1154,6 +1246,8 @@ class CubeCloud {
     const sinP = Math.sin(this.pitch), cosP = Math.cos(this.pitch);
     const fit = (Math.min(W, H) / (extent * 1.9)) * this.zoom;
 
+    const cut = this._cutSpec();
+
     const plot = (x, y, z, rgb) => {
       const rx = x * cosY - y * sinY;
       const ry = x * sinY + y * cosY;
@@ -1171,7 +1265,9 @@ class CubeCloud {
 
     if (grid) {
       for (let row = 0; row < meta.n_rows; row += 4) {
+        if (cut && cut.axis === "row" && row > cut.threshold) continue;
         for (let col = 0; col < meta.n_cols; col += 4) {
+          if (cut && cut.axis === "col" && col > cut.threshold) continue;
           const g = grid[row * meta.n_cols + col];
           if (!Number.isFinite(g)) continue;
           plot((col - cx) * colStep, (row - cy) * rowStep, (g - zMid) * zScale, [110, 116, 122]);
@@ -1190,7 +1286,13 @@ class CubeCloud {
       [ampLo, ampHi] = meta.intensity[this.source];
     }
 
+    const cutOffset = cut ? { row: 0, col: 1, z: 2 }[cut.axis] : 0;
+    let drawn = 0;
+
     for (let i = 0; i < rows.length; i += 4) {
+      if (cut && rows[i + cutOffset] > cut.threshold) continue;
+      drawn += 1;
+
       const mu = rows[i + 2];
       const amp = rows[i + 3];
 
@@ -1208,10 +1310,50 @@ class CubeCloud {
     }
 
     ctx.putImageData(image, 0, 0);
+    if (cut) {
+      const [gLo, gHi] = grid && this.auxBounds ? this.auxBounds : [0, 0];
+      const zLo = (this.muBounds[0] - zMid + gLo) * zScale;
+      const zHi = (this.muBounds[1] - zMid + gHi) * zScale;
+      this._drawCutPlane(ctx, cut, { meta, cx, cy, rowStep, colStep, zMid, zScale, zLo, zHi, W, H, fit, sinY, cosY, sinP, cosP });
+    }
 
-    const shown = rows.length / 4;
-    const unit = logAmp ? "components" : "voxels";
-    this.atEl.textContent = `${shown.toLocaleString()} of ${Math.round(this.total).toLocaleString()} ${unit} · drag to orbit · wheel to zoom · double-click to reset`;
+    const shown   = cut ? drawn : rows.length / 4;
+    const unit    = logAmp ? "components" : "voxels";
+    const cutNote = cut ? ` · cut ${cut.axis} @ ${Math.round(cut.frac * 100)}%` : "";
+    this.atEl.textContent = `${shown.toLocaleString()} of ${Math.round(this.total).toLocaleString()} ${unit}${cutNote} · drag to orbit · wheel to zoom · double-click to reset`;
+  }
+
+  _drawCutPlane(ctx, cut, g) {
+    const x0 = (0 - g.cx) * g.colStep, x1 = (g.meta.n_cols - g.cx) * g.colStep;
+    const y0 = (0 - g.cy) * g.rowStep, y1 = (g.meta.n_rows - g.cy) * g.rowStep;
+
+    let corners;
+    if (cut.axis === "row") {
+      const y = (cut.threshold - g.cy) * g.rowStep;
+      corners = [[x0, y, g.zLo], [x1, y, g.zLo], [x1, y, g.zHi], [x0, y, g.zHi]];
+    } else if (cut.axis === "col") {
+      const x = (cut.threshold - g.cx) * g.colStep;
+      corners = [[x, y0, g.zLo], [x, y1, g.zLo], [x, y1, g.zHi], [x, y0, g.zHi]];
+    } else {
+      const z = (cut.threshold - g.zMid) * g.zScale;
+      corners = [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]];
+    }
+
+    const pts = corners.map(([x, y, z]) => {
+      const rx = x * g.cosY - y * g.sinY;
+      const ry = x * g.sinY + y * g.cosY;
+      return [g.W / 2 + rx * g.fit, g.H / 2 + (ry * g.cosP - z * g.sinP) * g.fit];
+    });
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    pts.slice(1).forEach(([x, y]) => ctx.lineTo(x, y));
+    ctx.closePath();
+    ctx.fillStyle   = "rgba(255, 209, 102, 0.10)";
+    ctx.strokeStyle = "rgba(255, 209, 102, 0.55)";
+    ctx.lineWidth   = Math.max(1, window.devicePixelRatio || 1);
+    ctx.fill();
+    ctx.stroke();
   }
 }
 
@@ -1336,6 +1478,7 @@ class CubeView {
 
   leave() {
     this._stopSweeps();
+    if (this.cloud) this.cloud.leave();
   }
 
   async enter() {

@@ -582,6 +582,17 @@
                 <option value="150000">150k</option>
               </select>
             </div>
+            <div class="cube-mctl" role="group" aria-label="Section cut">
+              <label for="cube-cloud-cut-axis" title="Slide a cutting plane through the cloud; points beyond the plane are hidden so the interior section is exposed">cut</label>
+              <select id="cube-cloud-cut-axis" class="cube-mselect">
+                <option value="off" selected>off</option>
+                <option value="row">row</option>
+                <option value="col">col</option>
+                <option value="z">z</option>
+              </select>
+              <input type="range" id="cube-cloud-cut-pos" min="0" max="100" value="50" title="Position of the cutting plane along the chosen axis" />
+            </div>
+            <label class="lb-check" title="Animate the cutting plane back and forth through the volume"><input type="checkbox" id="cube-cloud-cut-sweep" /> sweep</label>
             <label class="lb-check" id="cube-cloud-aux-wrap" title="Drape the cloud on the auxiliary field: point height = aux + z"><input type="checkbox" id="cube-cloud-aux" /> Aux drape</label>
             <span class="cube-z__at" id="cube-cloud-at">Drag to orbit &middot; wheel to zoom &middot; double-click to reset.</span>
           </div>

@@ -74,6 +74,146 @@ class CubeViewChecks {
     return { trim, clear, release, replace };
   }
 
+  _element(extra = {}) {
+    const element = { value: "", checked: false, disabled: false, hidden: false, title: "", textContent: "", style: {}, listeners: {}, ...extra };
+    element.addEventListener = (type, handler) => { element.listeners[type] = handler; };
+    element.querySelectorAll = () => [];
+    element.classList        = { toggle: () => {}, add: () => {}, remove: () => {} };
+    return element;
+  }
+
+  _frames() {
+    const frames = { pending: new Map(), cancelled: [], next: 0 };
+
+    this.sandbox.requestAnimationFrame = (handler) => {
+      frames.next += 1;
+      frames.pending.set(frames.next, handler);
+      return frames.next;
+    };
+    this.sandbox.cancelAnimationFrame = (id) => {
+      frames.cancelled.push(id);
+      frames.pending.delete(id);
+    };
+    frames.fire = (now) => {
+      const [id, handler] = [...frames.pending.entries()][0];
+      frames.pending.delete(id);
+      handler(now);
+    };
+    return frames;
+  }
+
+  _cloud() {
+    const { CubeCloud } = this.classes;
+    const fills = { count: 0 };
+
+    const ctx = {
+      createImageData : (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      putImageData    : () => {},
+      beginPath       : () => {},
+      moveTo          : () => {},
+      lineTo          : () => {},
+      closePath       : () => {},
+      fill            : () => { fills.count += 1; },
+      stroke          : () => {},
+    };
+
+    const host = {
+      view       : "cloud",
+      selectedId : "cube",
+      meta       : { n_rows: 10, n_cols: 20, sources: ["pred"], aux: false, params: { sources: ["pred"], threshold: 0.1, ranges: { amp: [0, 1] } } },
+      _fmt       : (value) => String(value),
+    };
+
+    const refs = {
+      source   : this._element(),
+      color    : this._element(),
+      thr      : this._element({ value: "0" }),
+      thrLabel : this._element(),
+      thrVal   : this._element(),
+      max      : this._element({ value: "60000" }),
+      cutAxis  : this._element({ value: "off" }),
+      cutPos   : this._element({ value: "50" }),
+      cutSweep : this._element(),
+      auxWrap  : this._element(),
+      aux      : this._element(),
+      at       : this._element(),
+      canvas   : this._element({ width: 0, height: 0, parentElement: { clientWidth: 400 }, getContext: () => ctx }),
+    };
+
+    const cloud    = new CubeCloud(refs, host);
+    cloud.points   = new Float32Array([0, 0, -5, 1, 5, 5, 5, 1, 9, 19, 15, 1]);
+    cloud.total    = 3;
+    cloud.muRange  = [-5, 15];
+    cloud.muBounds = CubeCloud.valueBounds(cloud.points, 2, 4);
+    return { cloud, refs, host, fills };
+  }
+
+  async cut() {
+    const { CubeCloud, CubeView } = this.classes;
+    Object.assign(this.sandbox.window, { innerHeight: 600, devicePixelRatio: 1, addEventListener: () => {} });
+
+    const frames = this._frames();
+    const bounds = { mixed: CubeCloud.valueBounds(new Float32Array([1, NaN, 3, -2]), 0, 1), empty: CubeCloud.valueBounds(new Float32Array([NaN]), 0, 1) };
+
+    const { cloud, refs, host, fills } = this._cloud();
+    const specs = {};
+    [["off", "50"], ["row", "50"], ["col", "25"], ["z", "50"], ["z", "0"]].forEach(([axis, pos]) => {
+      refs.cutAxis.value = axis;
+      refs.cutPos.value  = pos;
+      specs[`${axis}@${pos}`] = cloud._cutSpec();
+    });
+
+    refs.cutAxis.value = "row";
+    refs.cutPos.value  = "50";
+    cloud.muBounds     = null;
+    const unbounded    = cloud._cutSpec();
+    cloud.muBounds     = CubeCloud.valueBounds(cloud.points, 2, 4);
+
+    cloud._draw();
+    const cutDraw = { text: refs.at.textContent, fills: fills.count };
+
+    refs.cutAxis.value = "off";
+    cloud._draw();
+    const openDraw = { text: refs.at.textContent, fills: fills.count };
+
+    refs.cutSweep.checked = true;
+    refs.cutSweep.listeners.change();
+    const started = { axis: refs.cutAxis.value, running: cloud.sweepFrame !== null };
+
+    const positions = [0, 2250, 6750].map((now) => {
+      frames.fire(now);
+      return refs.cutPos.value;
+    });
+
+    cloud.leave();
+    const left = { running: cloud.sweepFrame !== null, pending: frames.pending.size };
+
+    const view  = Object.create(CubeView.prototype);
+    view.sweeps = [];
+    view.cloud  = cloud;
+    cloud._startSweep();
+    view.leave();
+    const viewLeft = { running: cloud.sweepFrame !== null, pending: frames.pending.size };
+
+    cloud._startSweep();
+    host.view = "explorer";
+    frames.fire(0);
+    const offView = { running: cloud.sweepFrame !== null, pending: frames.pending.size };
+
+    host.view = "cloud";
+    cloud._startSweep();
+    cloud.configure(host.meta);
+    const reconfigured = { running: cloud.sweepFrame !== null, muBounds: cloud.muBounds };
+
+    refs.cutSweep.checked = true;
+    cloud._startSweep();
+    refs.cutAxis.value = "off";
+    refs.cutAxis.listeners.change();
+    const axisOff = { running: cloud.sweepFrame !== null, sweep: refs.cutSweep.checked };
+
+    return { bounds, specs, unbounded, cutDraw, openDraw, started, positions, left, viewLeft, offView, reconfigured, axisOff };
+  }
+
   async run(name) {
     const result = await this[name]();
     process.stdout.write(JSON.stringify(result));

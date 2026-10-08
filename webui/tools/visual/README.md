@@ -123,12 +123,17 @@ node stage_chips.js /tmp/stages.json
 runs one named scenario against the real cube page classes with stubbed `fetch` and
 ImageBitmaps, and prints what it observed as JSON. The `bitmaps` scenario trims, clears
 and releases the slice bitmaps and replaces a cut panel's image, recording which bitmaps
-were closed. `tests/webui/test_cube_view_lifecycle.py` drives it, which is the contract
-that keeps evicted and replaced slices from holding image memory while never closing a
-bitmap a sweep still draws.
+were closed. The `cut` scenario builds a point cloud over a stub canvas and animation
+frame queue, then reads the section-cut thresholds, the readout with and without a cut,
+the sweep positions over one period, and whether the sweep loop is still running after
+each way of leaving it. `tests/webui/test_cube_view_lifecycle.py` drives both, which is
+the contract that keeps evicted and replaced slices from holding image memory while never
+closing a bitmap a sweep still draws, and keeps the cut sweep from running on after the
+cloud is out of sight.
 
 ```
 node cube_view_checks.js bitmaps
+node cube_view_checks.js cut
 ```
 
 ## Repo-map diagram harness
