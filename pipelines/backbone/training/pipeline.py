@@ -272,49 +272,49 @@ class TrainingPipeline:
             base_logdir    = Path(self.trainer_config.io.logdir),
             run_name       = self.run_name,
         )
-        self.logger = self.run_metadata.logger
+        with self.run_metadata:
+            self.logger = self.run_metadata.logger
 
-        if resolved_entry_config is not None:
-            ResolvedEntryConfigWriter.save(resolved_entry_config, self.run_metadata.run_directory, self.logger)
+            if resolved_entry_config is not None:
+                ResolvedEntryConfigWriter.save(resolved_entry_config, self.run_metadata.run_directory, self.logger)
 
-        self.run_metadata.save_dataset_fingerprint(self.dataset_config.preprocessing_run_directory, self.dataset_config.parameters_path, enabled=self.dataset_config.fingerprint_dataset)
+            self.run_metadata.save_dataset_fingerprint(self.dataset_config.preprocessing_run_directory, self.dataset_config.parameters_path, enabled=self.dataset_config.fingerprint_dataset)
 
-        self.logger.section("[PyTorch Training Pipeline Execution]")
-        self.logger.kv_table({
-            "Seed"           : self.seed,
-            "Gaussian slots" : self.trainer_config.gaussian.n_default_gaussians,
-            "Z axis"         : f"[{self.trainer_config.gaussian.x_min:g}, {self.trainer_config.gaussian.x_max:g}] m (sample count set by the dataset profile length)",
-        })
+            self.logger.section("[PyTorch Training Pipeline Execution]")
+            self.logger.kv_table({
+                "Seed"           : self.seed,
+                "Gaussian slots" : self.trainer_config.gaussian.n_default_gaussians,
+                "Z axis"         : f"[{self.trainer_config.gaussian.x_min:g}, {self.trainer_config.gaussian.x_max:g}] m (sample count set by the dataset profile length)",
+            })
 
-        self.dataset_pipeline = self._build_dataset_pipeline(self.run_metadata.run_directory, self.logger)
+            self.dataset_pipeline = self._build_dataset_pipeline(self.run_metadata.run_directory, self.logger)
 
-        gaussian_cfg = self.trainer_config.gaussian
+            gaussian_cfg = self.trainer_config.gaussian
 
-        train_loader, val_loader, test_loader, datasets = self.dataset_pipeline.run()
+            train_loader, val_loader, test_loader, datasets = self.dataset_pipeline.run()
 
-        train_dataset = datasets["train"]
-        in_channels   = train_dataset.input_channels
-        n_gaussians   = gaussian_cfg.n_default_gaussians
-        out_channels  = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, n_gaussians)
-        z_axis        = np.asarray(self.dataset_config.z_axis, dtype=np.float32)
-        x_axis_length = int(z_axis.size)
+            train_dataset = datasets["train"]
+            in_channels   = train_dataset.input_channels
+            n_gaussians   = gaussian_cfg.n_default_gaussians
+            out_channels  = GaussianHead.total_channels(gaussian_cfg.params_per_gaussian, n_gaussians)
+            z_axis        = np.asarray(self.dataset_config.z_axis, dtype=np.float32)
+            x_axis_length = int(z_axis.size)
 
-        model, model_cfg = self._build_model(in_channels=in_channels, out_channels=out_channels)
+            model, model_cfg = self._build_model(in_channels=in_channels, out_channels=out_channels)
 
-        self.run_metadata.save_trainer_config()
-        self.run_metadata.save_model_config(model_cfg, self.backbone_name, config_io=self.MODEL_CONFIG_IO)
+            self.run_metadata.save_trainer_config()
+            self.run_metadata.save_model_config(model_cfg, self.backbone_name, config_io=self.MODEL_CONFIG_IO)
 
-        self.run_metadata.save_run_summary(
-            model_name       = self.backbone_name,
-            in_channels      = in_channels,
-            out_channels     = out_channels,
-            x_axis_length    = x_axis_length,
-            n_gaussians      = n_gaussians,
-            seed             = self.seed,
-        )
-        self.logger.ok(f"Run metadata saved : {self.run_metadata.run_directory}")
+            self.run_metadata.save_run_summary(
+                model_name       = self.backbone_name,
+                in_channels      = in_channels,
+                out_channels     = out_channels,
+                x_axis_length    = x_axis_length,
+                n_gaussians      = n_gaussians,
+                seed             = self.seed,
+            )
+            self.logger.ok(f"Run metadata saved : {self.run_metadata.run_directory}")
 
-        try:
             self._run_overfit_check(train_dataset, in_channels, out_channels, z_axis)
 
             trainer = self._make_trainer(model, model_cfg, z_axis, train_dataset.normalizer, self.run_metadata.run_directory, self.logger, writer=self.run_metadata.writer)
@@ -322,7 +322,5 @@ class TrainingPipeline:
             trainer.maybe_run_loss_probe(train_loader, probe_config)
             results = trainer.train(train_loader, val_loader, test_loader)
             self.run_metadata.save_test_metrics(trainer.test_metrics)
-        finally:
-            self.run_metadata.close()
 
         return results
