@@ -1,9 +1,9 @@
 """Tests for the JEPA training pipeline's validation gates and run bookkeeping.
 
 Covers autoencoder run-directory resolution, the head restriction under profile coupling,
-checkpoint presence checks, the head passed into the overfit gate, z-axis agreement when
-loading a pretrained profile autoencoder, and closing the run metadata when dataset preparation
-fails."""
+checkpoint presence and run-completion checks, the head passed into the overfit gate, z-axis
+agreement and the checkpoint record kept when loading a pretrained profile autoencoder, the
+persistence of that record, and closing the run metadata when dataset preparation fails."""
 
 from __future__ import annotations
 
@@ -15,7 +15,31 @@ import pytest
 
 from pipelines.jepa.training          import pipeline as jepa_pipeline
 from pipelines.jepa.training.pipeline import TrainingPipeline
+from tools.data.io                    import FileIO
+from tools.runtime.completion         import CompletionMarker
 from tests.conftest                   import SilentLogger
+
+
+class _RecordingLogger(SilentLogger):
+    """Silent logger that keeps every kv_table mapping and warning it is handed.
+
+    Attributes:
+        tables   : Mappings passed to kv_table, in call order.
+        warnings : Warning messages, in call order.
+    """
+
+    def __init__(self):
+        """Starts with no recorded tables or warnings."""
+        self.tables   = []
+        self.warnings = []
+
+    def kv_table(self, data, *args, **kwargs):
+        """Records the table mapping."""
+        self.tables.append(dict(data))
+
+    def warning(self, message, *args, **kwargs):
+        """Records the warning message."""
+        self.warnings.append(message)
 
 
 def test_resolve_ae_run_returns_none_when_no_run():
@@ -59,10 +83,20 @@ def test_validate_checkpoint_raises_when_missing(tmp_path):
         TrainingPipeline.validate_checkpoint(tmp_path / "best_model.pt", "profile")
 
 
-def test_validate_checkpoint_passes_when_present(tmp_path):
-    """An existing checkpoint file passes validation."""
+def test_validate_checkpoint_rejects_an_unfinished_run(tmp_path):
+    """A checkpoint whose run directory carries no completion marker is refused as partial."""
     ckpt = tmp_path / "best_model.pt"
     ckpt.write_bytes(b"x")
+
+    with pytest.raises(RuntimeError, match="partial checkpoint"):
+        TrainingPipeline.validate_checkpoint(ckpt, "profile")
+
+
+def test_validate_checkpoint_passes_when_present_and_complete(tmp_path):
+    """An existing checkpoint of a run that stamped its completion marker passes validation."""
+    ckpt = tmp_path / "best_model.pt"
+    ckpt.write_bytes(b"x")
+    CompletionMarker.stamp(tmp_path, {"stage": "training"})
 
     TrainingPipeline.validate_checkpoint(ckpt, "profile")
 
@@ -107,7 +141,12 @@ def test_overfit_gate_backbone_config_carries_entry_head(tmp_path, monkeypatch):
 
 
 def _axis_pipeline(tmp_path):
-    """Returns a pipeline stub with a saved MLP autoencoder checkpoint on a unit z axis."""
+    """Returns a pipeline stub coupled to a finished MLP autoencoder run on a unit z axis.
+
+    The run directory carries the checkpoint with its epoch bookkeeping, the
+    run summary naming the commit, and the completion marker of a nine-epoch
+    run stopped early.
+    """
     import torch
     from types import SimpleNamespace
 
@@ -118,14 +157,17 @@ def _axis_pipeline(tmp_path):
     autoencoder, _  = get_profile_autoencoder("mlp_ae", config)
     checkpoint_path = tmp_path / "best_model.pt"
 
-    torch.save({"params": autoencoder.state_dict(), "z_axis": np.linspace(0.0, 1.0, 8, dtype=np.float32)}, checkpoint_path)
+    torch.save({"params": autoencoder.state_dict(), "z_axis": np.linspace(0.0, 1.0, 8, dtype=np.float32), "epoch": 6, "best_epoch": 6, "best_val_loss": 0.125}, checkpoint_path)
+    FileIO.save_json({"model_name": "profile_ae", "git_commit": "abc1234"}, tmp_path / "meta" / "run_summary.json")
+    CompletionMarker.stamp(tmp_path, {"stage": "training", "epochs_completed": 9, "epochs_total": 20, "early_stopped": True, "best_val_loss": 0.125, "best_epoch": 7})
 
     pipe                 = TrainingPipeline.__new__(TrainingPipeline)
     pipe.ae_model_name   = "mlp_ae"
     pipe.autoencoder_cfg = config
     pipe.trainer_config  = SimpleNamespace(profile_autoencoder_checkpoint=str(checkpoint_path))
 
-    pipe.profile_ae_state = None
+    pipe.profile_ae_state     = None
+    pipe.coupled_autoencoders = {}
 
     return pipe
 
@@ -135,7 +177,7 @@ def test_load_profile_autoencoder_rejects_axis_range_mismatch(tmp_path):
     pipe = _axis_pipeline(tmp_path)
 
     with pytest.raises(ValueError, match="z axis"):
-        pipe._load_profile_autoencoder(np.linspace(0.0, 2.0, 8, dtype=np.float32))
+        pipe._load_profile_autoencoder(np.linspace(0.0, 2.0, 8, dtype=np.float32), SilentLogger())
 
 
 def test_load_profile_autoencoder_rejects_axis_length_mismatch(tmp_path):
@@ -143,15 +185,101 @@ def test_load_profile_autoencoder_rejects_axis_length_mismatch(tmp_path):
     pipe = _axis_pipeline(tmp_path)
 
     with pytest.raises(ValueError, match="z axis"):
-        pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 16, dtype=np.float32))
+        pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 16, dtype=np.float32), SilentLogger())
 
 
 def test_load_profile_autoencoder_accepts_matching_axis(tmp_path):
     """A matching z axis loads the pretrained autoencoder."""
     pipe   = _axis_pipeline(tmp_path)
-    loaded = pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32))
+    loaded = pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32), SilentLogger())
 
     assert loaded is not None
+
+
+def test_load_profile_autoencoder_refuses_an_unfinished_run(tmp_path):
+    """Without the run's completion marker the checkpoint is refused before any weight is read."""
+    pipe = _axis_pipeline(tmp_path)
+    CompletionMarker.clear(tmp_path)
+
+    with pytest.raises(RuntimeError, match="partial checkpoint"):
+        pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32), SilentLogger())
+
+
+def test_load_profile_autoencoder_records_and_logs_the_imported_checkpoint(tmp_path):
+    """The first load records one-based epochs, the best loss, the training length and the commit, and logs them once."""
+    pipe   = _axis_pipeline(tmp_path)
+    logger = _RecordingLogger()
+
+    pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32), logger)
+    pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32), logger)
+
+    record = pipe.coupled_autoencoders["profile"]
+
+    assert record["run_directory"]     == str(tmp_path)
+    assert record["checkpoint"]        == str(tmp_path / "best_model.pt")
+    assert record["epoch"]             == 7
+    assert record["best_epoch"]        == 7
+    assert record["best_val_loss"]     == 0.125
+    assert record["epochs_completed"]  == 9
+    assert record["epochs_total"]      == 20
+    assert record["early_stopped"]     is True
+    assert record["marker_backfilled"] is False
+    assert record["git_commit"]        == "abc1234"
+
+    assert len(logger.tables) == 1
+    assert logger.tables[0]["Checkpoint epoch"] == 7
+    assert logger.tables[0]["Git commit"]       == "abc1234"
+    assert "early stopped" in logger.tables[0]["Epochs completed"]
+    assert logger.warnings == []
+
+
+def test_load_profile_autoencoder_records_a_backfilled_marker_without_epoch_counts(tmp_path):
+    """A run whose completion marker was backfilled loads, records no epoch counts and names the backfilled marker in its table."""
+    pipe   = _axis_pipeline(tmp_path)
+    logger = _RecordingLogger()
+
+    CompletionMarker.clear(tmp_path)
+    CompletionMarker.stamp(tmp_path, {"stage": "training", "backfilled": True})
+
+    pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32), logger)
+
+    record = pipe.coupled_autoencoders["profile"]
+
+    assert record["marker_backfilled"] is True
+    assert record["epochs_completed"]  is None
+    assert record["epochs_total"]      is None
+    assert record["early_stopped"]     is None
+    assert logger.tables[0]["Epochs completed"] == "not recorded (backfilled completion marker)"
+
+
+def test_save_metadata_persists_the_coupled_autoencoder_record(tmp_path):
+    """The run's meta directory receives the imported-checkpoint record next to the other metadata files."""
+    pipe = _axis_pipeline(tmp_path)
+    pipe._load_profile_autoencoder(np.linspace(0.0, 1.0, 8, dtype=np.float32), SilentLogger())
+
+    pipe.trainer_config        = types.SimpleNamespace(gaussian=types.SimpleNamespace(n_default_gaussians=2))
+    pipe.image_ae_cfg          = None
+    pipe.backbone_name         = "resunet"
+    pipe.backbone_in_channels  = 2
+    pipe.backbone_out_channels = 4
+    pipe.entry                 = types.SimpleNamespace(seed=0)
+
+    meta_directory = tmp_path / "jepa_run" / "meta"
+    meta_directory.mkdir(parents=True)
+
+    run_meta = types.SimpleNamespace(
+        metadata_directory  = meta_directory,
+        save_trainer_config = lambda: None,
+        save_model_config   = lambda *a, **k: None,
+        save_run_summary    = lambda *a, **k: None,
+    )
+
+    pipe._save_metadata(run_meta, backbone_cfg=None, z_len=8)
+
+    saved = FileIO.load_json(meta_directory / TrainingPipeline.COUPLED_RECORD_FILENAME)
+
+    assert saved["profile"]["best_epoch"] == 7
+    assert saved["profile"]["git_commit"] == "abc1234"
 
 
 class _RecordingRunMetadata:
