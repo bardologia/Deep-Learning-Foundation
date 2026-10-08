@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from cube_explorer import CubeExplorer
+from cube_explorer        import CubeExplorer
+from routers.cube_routers import CubeRouter
+from routers.dispatch     import HttpExchange
 
-from tests.webui.conftest import N_ROWS, N_Z, N_COLS, load_cube, make_preproc, make_stamp, open_explorer
+from tests.webui.conftest import N_ROWS, N_Z, N_COLS, FakeHandler, load_cube, make_preproc, make_stamp, open_explorer
 
 
 def _make_run(base: Path, preproc: Path, name: str, seed: int, x_min: float = -10.0) -> Path:
@@ -279,3 +282,37 @@ def test_reloading_a_cube_from_memory_drops_its_delta_layers(tmp_path):
     assert status["cube"]["attached"] is None
     assert all(not layer["key"].startswith("delta_") for layer in status["cube"]["metric_maps"])
     assert "delta_pixel_mse" not in explorer.loaded["metric_maps"]
+
+
+def test_attach_reports_a_comparison_stamp_without_metrics(tmp_path):
+    """A comparison stamp missing its metrics.json is refused with the reason instead of raising."""
+    explorer, cube_a, cube_b = _loaded(tmp_path)
+    (Path(cube_b) / "metrics.json").unlink()
+
+    result = explorer.attach_second(cube_a, cube_b)
+
+    assert result["ok"] is False and "metrics.json missing" in result["error"]
+    assert explorer.load_status()["cube"]["sources"] == ["pred", "gt"]
+
+
+def test_attach_reports_an_unreadable_comparison_cube(tmp_path):
+    """A comparison prediction cube that is not a valid npy file is refused with the reason instead of raising."""
+    explorer, cube_a, cube_b = _loaded(tmp_path)
+    (Path(cube_b) / "cubes" / "pred_curves.npy").write_bytes(b"not an npy file")
+
+    result = explorer.attach_second(cube_a, cube_b)
+
+    assert result["ok"] is False and result["error"]
+
+
+def test_attach_route_answers_a_broken_comparison_with_an_error_status(tmp_path):
+    """The /api/cubes/attach route turns a broken comparison stamp into a 400 answer naming the reason."""
+    explorer, cube_a, cube_b = _loaded(tmp_path)
+    (Path(cube_b) / "metrics.json").unlink()
+
+    handler  = FakeHandler("POST", "/api/cubes/attach", json.dumps({"id": cube_a, "other": cube_b}).encode("utf-8"))
+    exchange = HttpExchange.of(handler)
+    exchange.read_body()
+
+    assert CubeRouter(explorer).handle(exchange)
+    assert handler.status == 400 and "metrics.json missing" in handler.payload()["error"]
