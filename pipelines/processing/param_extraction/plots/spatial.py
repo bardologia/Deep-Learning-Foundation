@@ -134,6 +134,85 @@ class SpatialMapPlotter(PlotBase):
 
         return saved
 
+    def plot_activity_map(self, activity_map : np.ndarray, amp_threshold : float, out_dir : Path) -> Path:
+        """Saves the discrete map of active Gaussian slots per pixel.
+
+        Args:
+            activity_map  : Active-slot count of shape (rows, cols).
+            amp_threshold : Amplitude threshold the count was taken at, quoted in the title.
+            out_dir       : Directory the figure is written to.
+
+        Returns:
+            Path of the saved PNG.
+        """
+        self.logger.subsection("Plotting active-Gaussian count colormap")
+
+        return self.plot_discrete_k_map(
+            activity_map,
+            rf"Number of active Gaussians per pixel  ($A_k > {amp_threshold:g}$)",
+            r"active Gaussians $K$",
+            out_dir / "n_gaussians_map.png",
+        )
+
+    def plot_parameter_maps(self, maps_dict : Dict[str, np.ndarray], out_dir : Path) -> Dict[str, Path]:
+        """Saves the masked per-slot amplitude, centroid, spread and separation maps.
+
+        Args:
+            maps_dict : Mapping holding the ``amp_k``, ``mu_k``, ``sigma_k`` and ``mu_sep_k_k+1`` fields of shape (rows, cols).
+            out_dir   : Directory receiving one subdirectory per parameter family.
+
+        Returns:
+            Mapping from map key to the saved PNG path.
+        """
+        saved : Dict[str, Path] = {}
+
+        self.logger.subsection("Plotting amplitude spatial maps")
+        amp_keys   = [f"amp_{k}"   for k in range(self.n_gaussians)]
+        amp_titles = [f"$A_{{{k + 1}}}$  amplitude  (inactive pixels masked)" for k in range(self.n_gaussians)]
+        saved.update(self.plot_spatial_maps(
+            maps_dict, amp_keys, amp_titles,
+            "Gaussian amplitude maps",
+            r"$A_k$",
+            out_dir / "amplitude_maps",
+            cmap="plasma",
+        ))
+
+        self.logger.subsection("Plotting z-centroid (mu) spatial maps")
+        mu_keys   = [f"mu_{k}"    for k in range(self.n_gaussians)]
+        mu_titles = [rf"$\mu_{{{k + 1}}}$  centroid  (inactive pixels masked)" for k in range(self.n_gaussians)]
+        saved.update(self.plot_spatial_maps(
+            maps_dict, mu_keys, mu_titles,
+            r"Gaussian centroid z maps",
+            r"$\mu_k$",
+            out_dir / "mu_maps",
+            cmap="RdYlGn",
+        ))
+
+        self.logger.subsection("Plotting sigma spatial maps")
+        sig_keys   = [f"sigma_{k}" for k in range(self.n_gaussians)]
+        sig_titles = [rf"$\sigma_{{{k + 1}}}$  spread  (inactive pixels masked)" for k in range(self.n_gaussians)]
+        saved.update(self.plot_spatial_maps(
+            maps_dict, sig_keys, sig_titles,
+            r"Gaussian spread maps",
+            r"$\sigma_k$",
+            out_dir / "sigma_maps",
+            cmap="viridis",
+        ))
+
+        if self.n_gaussians >= 2:
+            self.logger.subsection("Plotting μ-separation maps")
+            sep_keys   = [f"mu_sep_{k}_{k + 1}" for k in range(self.n_gaussians - 1)]
+            sep_titles = [rf"$|\mu_{{{k + 2}}} - \mu_{{{k + 1}}}|$   (both active)" for k in range(self.n_gaussians - 1)]
+            saved.update(self.plot_spatial_maps(
+                maps_dict, sep_keys, sep_titles,
+                r"Adjacent centroid separation maps",
+                "separation",
+                out_dir / "mu_separation_maps",
+                cmap="magma",
+            ))
+
+        return saved
+
     def plot_r2_spatial_map(self, r2_map : np.ndarray, out_path : Path) -> Path:
         """Saves the per-pixel fit-quality map, with the colour floor at its 1st percentile.
 

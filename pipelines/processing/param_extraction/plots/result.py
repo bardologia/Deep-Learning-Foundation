@@ -117,13 +117,7 @@ class FittingResultPlotter(PlotBase):
         """
         saved : Dict[str, Path] = {}
 
-        self.logger.subsection("Plotting active-Gaussian count colormap")
-        saved["n_gaussians_map"] = self.spatial_plotter.plot_discrete_k_map(
-            activity_map,
-            rf"Number of active Gaussians per pixel  ($A_k > {self.amp_threshold:g}$)",
-            r"active Gaussians $K$",
-            dirs["colormaps"] / "n_gaussians_map.png",
-        )
+        saved["n_gaussians_map"] = self.spatial_plotter.plot_activity_map(activity_map, self.amp_threshold, dirs["colormaps"])
 
         if "best_k_map" in metrics_dict:
             self.logger.subsection("Plotting selected model-order colormap")
@@ -137,50 +131,7 @@ class FittingResultPlotter(PlotBase):
         self.logger.subsection("Plotting R² spatial map")
         saved["r2_spatial_map"] = self.spatial_plotter.plot_r2_spatial_map(r2_map, dirs["colormaps"] / "r2_map.png")
 
-        self.logger.subsection("Plotting amplitude spatial maps")
-        amp_keys   = [f"amp_{k}"   for k in range(self.n_gaussians)]
-        amp_titles = [f"$A_{{{k + 1}}}$  amplitude  (inactive pixels masked)" for k in range(self.n_gaussians)]
-        saved.update(self.spatial_plotter.plot_spatial_maps(
-            metrics_dict, amp_keys, amp_titles,
-            "Gaussian amplitude maps",
-            r"$A_k$",
-            dirs["colormaps"] / "amplitude_maps",
-            cmap="plasma",
-        ))
-
-        self.logger.subsection("Plotting z-centroid (mu) spatial maps")
-        mu_keys   = [f"mu_{k}"    for k in range(self.n_gaussians)]
-        mu_titles = [rf"$\mu_{{{k + 1}}}$  centroid  (inactive pixels masked)" for k in range(self.n_gaussians)]
-        saved.update(self.spatial_plotter.plot_spatial_maps(
-            metrics_dict, mu_keys, mu_titles,
-            r"Gaussian centroid z maps",
-            r"$\mu_k$",
-            dirs["colormaps"] / "mu_maps",
-            cmap="RdYlGn",
-        ))
-
-        self.logger.subsection("Plotting sigma spatial maps")
-        sig_keys   = [f"sigma_{k}" for k in range(self.n_gaussians)]
-        sig_titles = [rf"$\sigma_{{{k + 1}}}$  spread  (inactive pixels masked)" for k in range(self.n_gaussians)]
-        saved.update(self.spatial_plotter.plot_spatial_maps(
-            metrics_dict, sig_keys, sig_titles,
-            r"Gaussian spread maps",
-            r"$\sigma_k$",
-            dirs["colormaps"] / "sigma_maps",
-            cmap="viridis",
-        ))
-
-        if self.n_gaussians >= 2:
-            self.logger.subsection("Plotting μ-separation maps")
-            sep_keys   = [f"mu_sep_{k}_{k + 1}" for k in range(self.n_gaussians - 1)]
-            sep_titles = [rf"$|\mu_{{{k + 2}}} - \mu_{{{k + 1}}}|$   (both active)" for k in range(self.n_gaussians - 1)]
-            saved.update(self.spatial_plotter.plot_spatial_maps(
-                metrics_dict, sep_keys, sep_titles,
-                r"Adjacent centroid separation maps",
-                "separation",
-                dirs["colormaps"] / "mu_separation_maps",
-                cmap="magma",
-            ))
+        saved.update(self.spatial_plotter.plot_parameter_maps(metrics_dict, dirs["colormaps"]))
 
         return saved
 

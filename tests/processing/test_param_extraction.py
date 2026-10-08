@@ -1051,7 +1051,7 @@ def test_metrics_calculator_runs_on_window(cube_full, parameters, fit_diagnostic
 
 @pytest.mark.dataset
 def test_activity_map_counts_active_components(parameters, logger):
-    """Verifies the activity map counts Gaussians whose amplitude reaches the activity threshold."""
+    """Verifies the activity map counts Gaussians whose amplitude lies above the activity threshold."""
     a0, a1, r0, r1 = 0, 60, 0, 60
     parw           = np.array(parameters[:, a0:a1, r0:r1])
 
@@ -1062,9 +1062,9 @@ def test_activity_map_counts_active_components(parameters, logger):
         truncation_index = TRUNCATION_INDEX,
         amp_threshold    = ACTIVITY_THRESH,
     )
-    activity = calc._compute_activity_map(parw)
+    activity = calc.maps.activity_map(parw)
 
-    expected = (parw[0::3] >= ACTIVITY_THRESH).sum(axis=0)
+    expected = (parw[0::3] > ACTIVITY_THRESH).sum(axis=0)
 
     assert np.array_equal(activity, expected)
 
