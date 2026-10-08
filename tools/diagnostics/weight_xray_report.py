@@ -34,16 +34,19 @@ class WeightXrayReport:
         self.config = config
         self.assets = ReportAssets(config.report_directory, embed_images=config.embed_images)
 
-    def _log_console(self, logger, reports: list, summary: dict) -> None:
+    def _log_console(self, logger, reports: list, summary: dict, provenance: dict) -> None:
         """Prints the summary, severity counts, issue codes and flagged tensors to the console.
 
         Args:
-            logger  : Logger providing the table renderers.
-            reports : Per-tensor reports carrying their issues.
-            summary : Checkpoint-level summary from XraySummarizer.
+            logger     : Logger providing the table renderers.
+            reports    : Per-tensor reports carrying their issues.
+            summary    : Checkpoint-level summary from XraySummarizer.
+            provenance : Report provenance from WeightXray, naming the checkpoint entry and epochs.
         """
         logger.kv_table({
             "Checkpoint"      : summary["checkpoint"],
+            "Entry"           : provenance["checkpoint"]["key"],
+            "Epoch (stored)"  : provenance["checkpoint"]["epoch"],
             "Tensors"         : summary["tensors"],
             "Parameters"      : f"{summary['parameters']:,}",
             "Flagged tensors" : summary["flagged_tensors"],
@@ -119,12 +122,37 @@ class WeightXrayReport:
             )
         return table
 
-    def _build_markdown(self, reports: list, summary: dict, plot_paths: list) -> Path:
+    def _provenance_rows(self, provenance: dict) -> dict:
+        """Returns the provenance entries rendered in the report header, from the checkpoint entry to the library versions."""
+        checkpoint = provenance["checkpoint"]
+
+        return {
+            "Checkpoint entry"             : checkpoint["key"],
+            "Epoch (stored, 0-based)"      : checkpoint["epoch"],
+            "Best epoch (stored, 0-based)" : checkpoint["best_epoch"],
+            "Created"                      : provenance["created"],
+            "Git commit"                   : provenance["git_commit"],
+            "Host"                         : provenance["host"],
+            "Python"                       : provenance["python"],
+            "Torch"                        : provenance["torch"],
+        }
+
+    def _threshold_rows(self, provenance: dict) -> dict:
+        """Returns the decision thresholds and size limits behind every flag, from the effective configuration."""
+        config = provenance["config"]
+        rows   = {key.split(".", 1)[1]: value for key, value in config.items() if key.startswith("thresholds.")}
+
+        rows["svd_max_dim"]         = config["svd_max_dim"]
+        rows["duplicate_max_units"] = config["duplicate_max_units"]
+        return rows
+
+    def _build_markdown(self, reports: list, summary: dict, provenance: dict, plot_paths: list) -> Path:
         """Assembles and saves the markdown report.
 
         Args:
             reports    : Per-tensor reports carrying statistics and issues.
             summary    : Checkpoint-level summary from XraySummarizer.
+            provenance : Report provenance from WeightXray.
             plot_paths : Diagnostic figure paths to embed.
 
         Returns:
@@ -135,6 +163,12 @@ class WeightXrayReport:
         doc.bold_kv("Checkpoint", summary["checkpoint"])
         doc.bold_kv("Verdict", summary["verdict"])
         doc.blank()
+
+        doc.heading("Provenance", level=2)
+        doc.kv_table(self._provenance_rows(provenance), code_keys=False)
+
+        doc.heading("Thresholds and limits", level=2)
+        doc.kv_table(self._threshold_rows(provenance), header=("Setting", "Value"))
 
         doc.heading("Summary", level=2)
         doc.kv_table({
@@ -174,11 +208,12 @@ class WeightXrayReport:
         """Returns the tensors each size-limited check skipped as one phrase, e.g. "spectral 0, duplicates 3"."""
         return ", ".join(f"{check} {count}" for check, count in summary["unchecked"].items())
 
-    def _write_json(self, reports: list, summary: dict) -> Path:
-        """Serialises the summary and every tensor report to JSON and returns the path."""
+    def _write_json(self, reports: list, summary: dict, provenance: dict) -> Path:
+        """Serialises the summary, the provenance and every tensor report to JSON and returns the path."""
         payload = {
-            "summary" : summary,
-            "tensors" : [{**asdict(report), "severity": report.severity} for report in reports],
+            "summary"    : summary,
+            "provenance" : provenance,
+            "tensors"    : [{**asdict(report), "severity": report.severity} for report in reports],
         }
 
         path = self.config.report_json_path
@@ -186,22 +221,23 @@ class WeightXrayReport:
         path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         return path
 
-    def write(self, logger, reports: list, summary: dict, plot_paths: list) -> dict:
+    def write(self, logger, reports: list, summary: dict, provenance: dict, plot_paths: list) -> dict:
         """Emits the console, markdown and JSON reports.
 
         Args:
             logger     : Logger providing the table renderers.
             reports    : Per-tensor reports carrying statistics and issues.
             summary    : Checkpoint-level summary from XraySummarizer.
+            provenance : Report provenance from WeightXray: creation time, checkpoint entry and epochs, configuration, code and host.
             plot_paths : Diagnostic figure paths to embed in the markdown.
 
         Returns:
             Mapping of "report" and "json" to the written file paths.
         """
-        self._log_console(logger, reports, summary)
+        self._log_console(logger, reports, summary, provenance)
 
-        markdown_path = self._build_markdown(reports, summary, plot_paths)
-        json_path     = self._write_json(reports, summary)
+        markdown_path = self._build_markdown(reports, summary, provenance, plot_paths)
+        json_path     = self._write_json(reports, summary, provenance)
 
         outputs = {"report": markdown_path, "json": json_path}
         logger.kv_table({name: str(path) for name, path in outputs.items()}, title="Outputs")
