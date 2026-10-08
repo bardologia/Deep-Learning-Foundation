@@ -288,6 +288,7 @@ class DatasetPicker {
     this.filter.className = "picker__filter";
     this.filter.spellcheck = false;
     this.filter.placeholder = `filter ${mode.noun}...`;
+    this.filter.setAttribute("aria-label", `Filter ${mode.noun}`);
     this.filter.addEventListener("input", () => this._renderItems());
 
     head.appendChild(this.count);

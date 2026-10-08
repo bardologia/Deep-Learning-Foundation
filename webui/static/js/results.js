@@ -497,7 +497,7 @@ class ResultsView {
       `<button type="button" data-view="all" class="${this.view === "all" ? "is-active" : ""}">All plots</button>` +
       `<button type="button" data-view="compare" class="${this.view === "compare" ? "is-active" : ""}">Compare <span id="res-compare-count">${count}</span></button>` +
       `</div>` +
-      `<input type="search" class="res-filter" id="res-filter" placeholder="Filter plots by name" value="${SharedCharts.esc(this.filter)}" spellcheck="false" />` +
+      `<input type="search" class="res-filter" id="res-filter" placeholder="Filter plots by name" aria-label="Filter plots" value="${SharedCharts.esc(this.filter)}" spellcheck="false" />` +
       `<div class="res-sizes" id="res-sizes" role="group" aria-label="Thumbnail size" ${this.view === "compare" ? "hidden" : ""}>` +
       ["s", "m", "l"].map((s) => `<button type="button" data-size="${s}" class="${this.size === s ? "is-active" : ""}">${s.toUpperCase()}</button>`).join("") +
       `</div>` +

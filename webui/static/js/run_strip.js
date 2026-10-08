@@ -15,7 +15,7 @@ class RunStrip {
     this.container.classList.add("run-strip");
     this.container.innerHTML = `
       <div class="run-strip__bar" hidden>
-        <input type="text" class="run-strip__filter" placeholder="filter runs&hellip;" spellcheck="false" autocomplete="off" />
+        <input type="text" class="run-strip__filter" placeholder="filter runs&hellip;" aria-label="Filter runs" spellcheck="false" autocomplete="off" />
         <span class="run-strip__total"></span>
       </div>
       <div class="run-strip__tree"></div>`;

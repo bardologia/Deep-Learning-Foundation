@@ -313,7 +313,7 @@
       <hairline-figure name="tray" class="page__figure" aria-hidden="true"></hairline-figure>
     </div>
     <form class="res-pathbar" id="results-path-form">
-      <input type="text" class="res-pathbar__input" id="results-path-input" placeholder="/absolute/path/to/run/directory" spellcheck="false" autocomplete="off" />
+      <input type="text" class="res-pathbar__input" id="results-path-input" placeholder="/absolute/path/to/run/directory" spellcheck="false" autocomplete="off" aria-label="Run directory path" />
       <button type="submit" class="btn btn--primary">Open</button>
     </form>
     <div class="master master--results">
@@ -1212,13 +1212,13 @@
           <div class="ft-field">
             <span class="ft-field__label">Dataset</span>
             <select class="ft-input ft-select" id="ft-dataset-select" aria-label="Dataset"></select>
-            <input class="ft-input ft-custom" id="ft-dataset-custom" type="text" spellcheck="false" placeholder="absolute path" hidden />
+            <input class="ft-input ft-custom" id="ft-dataset-custom" type="text" spellcheck="false" placeholder="absolute path" hidden aria-label="Custom dataset absolute path" />
             <span class="ft-note" id="ft-dataset-note"></span>
           </div>
           <div class="ft-field">
             <span class="ft-field__label">Parameters</span>
             <select class="ft-input ft-select" id="ft-params-select" aria-label="Parameters"></select>
-            <input class="ft-input ft-custom" id="ft-params-custom" type="text" spellcheck="false" placeholder="absolute path" hidden />
+            <input class="ft-input ft-custom" id="ft-params-custom" type="text" spellcheck="false" placeholder="absolute path" hidden aria-label="Custom parameters absolute path" />
             <span class="ft-note" id="ft-params-note"></span>
           </div>
         </div>
