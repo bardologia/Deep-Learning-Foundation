@@ -127,8 +127,19 @@ class DualTrainingPipeline(TrainingPipeline):
         params_features    = list(model_cfg.params_features)    or "backbone default"
         existence_features = list(model_cfg.existence_features) or "backbone default"
 
-        self.logger.subsection(f"Params Trunk : {model_cfg.params_backbone} | input {'+'.join(model_cfg.params_input)} | channels {list(model_cfg.params_channels)} | features {params_features} | {params_arm:,} params")
-        self.logger.subsection(f"Exist Trunk  : {model_cfg.existence_backbone} | input {'+'.join(model_cfg.existence_input)} | channels {list(model_cfg.existence_channels)} | features {existence_features} | {existence_arm:,} params")
+        self.logger.section("[Dual Trunk Configuration]")
+        self.logger.kv_table({
+            "Params Backbone"   : model_cfg.params_backbone,
+            "Params Input"      : "+".join(model_cfg.params_input),
+            "Params Channels"   : str(list(model_cfg.params_channels)),
+            "Params Features"   : str(params_features),
+            "Params Parameters" : f"{params_arm:,}",
+            "Exist Backbone"    : model_cfg.existence_backbone,
+            "Exist Input"       : "+".join(model_cfg.existence_input),
+            "Exist Channels"    : str(list(model_cfg.existence_channels)),
+            "Exist Features"    : str(existence_features),
+            "Exist Parameters"  : f"{existence_arm:,}",
+        })
         return model, model_cfg
 
     def _architecture_label(self) -> str:
