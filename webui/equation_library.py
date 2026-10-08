@@ -197,14 +197,13 @@ class EquationLibrary:
                 },
                 {
                     "title" : "Fit quality map",
-                    "tex"   : r"R^2(a,r) = 1 - \frac{\sum_{h=1}^{H}\big(\hat{\gamma}(x_h) - \gamma(x_h)\big)^2}{\sum_{h=1}^{H}\big(\gamma(x_h) - \bar{\gamma}\big)^2 + \varepsilon}",
-                    "note"  : "Per-pixel coefficient of determination over the z axis against the thresholded and truncated profile; the reconstruction is built one z slice at a time (GaussianMixture.evaluate_slice) and scored by R2.pixel_map with an epsilon = 1e-12 denominator stabiliser (param_extraction/metrics.py FittingMetricsCalculator, tools/metrics/scoring.py).",
+                    "tex"   : r"R^2(a,r) = 1 - \frac{\sum_{h=1}^{H}\big(\hat{\gamma}(x_h) - \gamma(x_h)\big)^2}{\sum_{h=1}^{H}\big(\gamma(x_h) - \bar{\gamma}\big)^2}",
+                    "note"  : "Per-pixel coefficient of determination over the z axis against the thresholded and truncated profile; the reconstruction is built one z slice at a time (GaussianMixture.evaluate_slice) and scored by R2.pixel_map, which leaves R² undefined (NaN) where the denominator does not exceed R2.EPSILON = 1e-12, i.e. the profile is constant; such fitted pixels are counted as r2_undefined_count and left out of the R² statistics (param_extraction/metrics.py FittingMetricsCalculator, tools/metrics/scoring.py).",
                     "vars"  : [
                         {"sym": r"R^2(a,r)",          "desc": "fit quality at row a, range r"},
                         {"sym": r"\hat{\gamma}(x_h)", "desc": "reconstructed mixture at sample x_h"},
                         {"sym": r"\gamma(x_h)",       "desc": "thresholded/truncated cube magnitude at x_h"},
                         {"sym": r"\bar{\gamma}",      "desc": "per-pixel mean over z"},
-                        {"sym": r"\varepsilon",       "desc": "R2.EPSILON = 1e-12 denominator stabiliser"},
                         {"sym": r"H",                 "desc": "number of z samples"},
                     ],
                 },
@@ -1093,7 +1092,7 @@ class EquationLibrary:
                 {
                     "title" : "Per-pixel R²",
                     "tex"   : r"R^2_{h,w} = 1 - \frac{\sum_n (\hat{y} - y)^2}{\sum_n (y - \bar{y}_{h,w})^2}",
-                    "note"  : "Coefficient of determination of each pixel's z profile computed on the stitched cubes; a 1e-12 stabiliser guards the denominator (tools/metrics/scoring.py R2.pixel_map).",
+                    "note"  : "Coefficient of determination of each pixel's z profile computed on the stitched cubes; undefined (NaN) where the GT profile is constant, i.e. the denominator does not exceed 1e-12, and such pixels are counted as pixel_r2_gt_undefined_count and left out of the pixel_r2_gt statistics (tools/metrics/scoring.py R2.pixel_map).",
                     "vars"  : [
                         {"sym": r"\hat{y}, y",    "desc": "predicted and GT curve values"},
                         {"sym": r"\bar{y}_{h,w}", "desc": "mean GT over z at the pixel"},
