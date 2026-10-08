@@ -4,8 +4,9 @@ Covers float, categorical and indexed categorical sampling and decoding, the
 rejection of an unknown dimension type, the search groups a study may switch
 on, the trial target, plateau and time-budget stop rules and the reason a
 worker's run ended, the per-trial progress record and study snapshot, failing
-trials, convergence on a synthetic objective, best-config writing and the
-trial configs the backbone Tuner materializes.
+trials, the discard of a finished trial's checkpoints, convergence on a
+synthetic objective, best-config writing and the trial configs the backbone
+Tuner materializes.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import inspect
 import json
 from datetime import datetime, timedelta
+from pathlib  import Path
 
 import optuna
 import pytest
@@ -22,7 +24,7 @@ import pipelines.tuning.trial as trial_mod
 from optuna.trial import TrialState
 
 from pipelines.tuning.trial               import TrialPruning
-from pipelines.tuning.tuners              import ParamSampler, BestConfigWriter, SearchSpace, StudyPlateauStop, StudyProgress, StudyStopRules, StudyTargetStop, Tuner
+from pipelines.tuning.tuners              import ParamSampler, BestConfigWriter, SearchSpace, StudyPlateauStop, StudyProgress, StudyStopRules, StudyTargetStop, TrialCheckpoints, Tuner
 from pipelines.backbone.training.pipeline import TrainingPipeline
 from configuration.architectures.backbone import UNetConfig
 from configuration.training.general.run   import TrainingQueueConfig
@@ -486,6 +488,66 @@ def test_a_worker_attaching_to_a_plateaued_study_runs_no_trial(fake_logger, tune
     assert rules.already_met(_study_with_values([1.0, 0.9])) is None
     assert rules.optimize(_study_with_values([1.0, 1.0, None]), _never_called, 3, progress, []) == StudyStopRules.PLATEAU
     assert any("already met its plateau rule" in message for message in fake_logger.warnings)
+
+
+def test_trial_checkpoints_discard_removes_weights_at_any_depth(fake_logger, tmp_path):
+    """Every .pt file under the trial's run directory goes, other files stay, and the freed bytes are returned."""
+    run_dir = tmp_path / "run"
+    (run_dir / "checkpoints").mkdir(parents=True)
+    (run_dir / "best_model.pt").write_bytes(b"x" * 10)
+    (run_dir / "last.pt").write_bytes(b"x" * 20)
+    (run_dir / "checkpoints" / "epoch_0001.pt").write_bytes(b"x" * 5)
+    (run_dir / "complete.json").write_text("{}")
+
+    freed = TrialCheckpoints(keep=False, logger=fake_logger).discard(run_dir, 3)
+
+    assert freed == 35
+    assert sorted(path.name for path in run_dir.rglob("*") if path.is_file()) == ["complete.json"]
+    assert any("Trial 3" in message for message in fake_logger.infos)
+
+
+def test_tuner_discards_the_checkpoints_of_a_pruned_trial(fake_logger, tune_cfg, tmp_path, monkeypatch):
+    """A trial that is pruned out of its training call still has the weights it wrote deleted."""
+    class PrunedPipeline:
+        """Training pipeline stub that writes a checkpoint into its log directory and then reports pruning."""
+        def __init__(self, *args, **kwargs):
+            """Writes one checkpoint file under the trainer's log directory."""
+            self.logdir = Path(kwargs["trainer_config"].io.logdir)
+            (self.logdir / "run").mkdir(parents=True)
+            (self.logdir / "run" / "last.pt").write_bytes(b"x" * 8)
+
+        def run(self):
+            """Raises the pruning signal as the trial trainer does."""
+            raise optuna.TrialPruned()
+
+    monkeypatch.setattr(trial_mod, "TrialPipeline", PrunedPipeline)
+
+    tuner = Tuner(
+        model_name          = "unet",
+        model_config_cls    = UNetConfig,
+        base_trainer_config = _FakeTrainerConfig(),
+        base_dataset_config = _FakeDatasetConfig(),
+        training            = TrainingQueueConfig(),
+        tune_cfg            = tune_cfg,
+        log_dir             = str(tmp_path),
+        logger              = fake_logger,
+    )
+
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=0))
+    study.optimize(tuner._objective, n_trials=1)
+
+    assert study.trials[0].state == optuna.trial.TrialState.PRUNED
+    assert list((tmp_path / "trials" / "trial_0000").rglob("*.pt")) == []
+
+
+def test_trial_checkpoints_keep_leaves_the_files(fake_logger, tmp_path):
+    """With the keep switch on nothing is deleted and nothing is freed."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "best_model.pt").write_bytes(b"x" * 10)
+
+    assert TrialCheckpoints(keep=True, logger=fake_logger).discard(run_dir, 0) == 0
+    assert (run_dir / "best_model.pt").exists()
 
 
 def test_study_minimizes_synthetic_quadratic_to_known_optimum():

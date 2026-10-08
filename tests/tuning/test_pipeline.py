@@ -62,6 +62,7 @@ def _make_config(tmp_path: Path, n_trials: int = 10):
         time_budget_h           = 0.0,
         emit_trial_docs         = False,
         emit_study_plots        = False,
+        keep_trial_checkpoints  = False,
     )
 
     paths = SimpleNamespace(log_base_dir=tmp_path, secondary_labels=None, parameters_path=None)

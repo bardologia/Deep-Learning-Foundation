@@ -45,6 +45,7 @@ class TuningConfig:
         time_budget_h           : Hours after which a worker starts no further trial; zero sets no budget.
         emit_trial_docs         : Whether a markdown report is written per trial.
         emit_study_plots        : Whether study-level plots are rendered at the end.
+        keep_trial_checkpoints  : Whether the checkpoint files of a finished trial stay on disk; off, they are deleted once its objective is read, since nothing loads them again and a long study would otherwise pile up hundreds of gigabytes of weights.
     """
 
     n_trials : int = 100
@@ -67,8 +68,9 @@ class TuningConfig:
     plateau_min_delta : float = 0.0
     time_budget_h     : float = 0.0
 
-    emit_trial_docs  : bool = False
-    emit_study_plots : bool = False
+    emit_trial_docs        : bool = False
+    emit_study_plots       : bool = False
+    keep_trial_checkpoints : bool = False
 
 
 @dataclass
