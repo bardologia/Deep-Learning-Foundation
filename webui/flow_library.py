@@ -402,7 +402,7 @@ class FlowLibrary:
             },
             {
                 "id": "fitstats", "title": "Fit normalisation statistics", "phase": "Normalization",
-                "note": "Statistics are fitted on the train split only, per slot, in float64 over up to 1e6 sampled values. Heavy-tailed magnitude channels (amplitude and derived magnitude, output amplitude and sigma) use the median and IQR of their log1p values (robust-IQR-log1p); Gaussian-like channels (normalised re/im, channel phase, output mu, aux z) use the mean and standard deviation (z-score); derived phase is mapped by a fixed division by pi. Every fitted scale is floored at 1e-8, and output roles are fitted over active pixels only (amplitude > 1e-3).",
+                "note": "Statistics are fitted on the train split only, per slot, in float64 over up to 1e6 sampled values. Heavy-tailed magnitude channels (amplitude and derived magnitude, output amplitude and sigma) use the median and IQR of their log1p values (robust-IQR-log1p); Gaussian-like channels (normalised re/im, channel phase, output mu, aux z) use the mean and standard deviation (z-score); derived phase is mapped by a fixed division by pi. Every fitted scale is floored at 1e-8, and output roles are fitted over active slots only (amplitude above the label run's activity threshold).",
                 "inputs": ["xgeo", "gkeys"], "outputs": ["stats"],
                 "lines": [
                     [{"tex": r"f(x_c) = \log\!\big(1 + \max(x_c,0)\big)\ \ \text{(log1p slots)},\ \ \text{else } x_c"}],
