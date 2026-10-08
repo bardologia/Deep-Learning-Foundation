@@ -194,8 +194,10 @@ class Report:
         return "\n".join(table.render())
 
     _PER_SLICE_PREFIXES = (
-        "ssim_gt_z_",   "ssim_gt_col_",   "ssim_gt_row_",
-        "ssim_norm_z_", "ssim_norm_col_", "ssim_norm_row_",
+        "ssim_gt_z_",        "ssim_gt_col_",        "ssim_gt_row_",
+        "ssim_norm_z_",      "ssim_norm_col_",      "ssim_norm_row_",
+        "ssim_cube_z_",      "ssim_cube_col_",      "ssim_cube_row_",
+        "ssim_cube_norm_z_", "ssim_cube_norm_col_", "ssim_cube_norm_row_",
         "z_mae_gt_",  "z_rmse_gt_",  "z_r2_gt_",  "z_ce_gt_",
     )
 
@@ -358,6 +360,7 @@ class Report:
         out += self._build_slot_organization_headline()
         out += self._build_jepa_headline()
         out += self._build_roughness_headline()
+        out += self._build_cube_ssim_headline()
 
         return out
 
@@ -664,6 +667,40 @@ class Report:
 
         return out
 
+    def _build_cube_ssim_headline(self) -> List[str]:
+        """Builds the subsection with the standard SSIM of the prediction against the raw cube.
+
+        Returns:
+            Markdown lines with the raw-intensity and unit-area tables, empty unless the sweep ran.
+        """
+        gm = self.global_metrics
+        if "ssim_cube_z_mean" not in gm:
+            return []
+
+        out = [f"\n### {self._next_subsection('cube_ssim')} SSIM against the raw cube\n"]
+        out.append(
+            "Prediction versus the raw cube, scored with the same SSIM sweep as the headline table "
+            "against the labels: every slice of each axis, window up to 7, dynamic range taken from "
+            "the raw cube slice.\n"
+        )
+        out.append("**SSIM** (raw intensity, mean over all slices of that axis)\n")
+        out.append(self._three_col_table([
+            ("SSIM z mean",   gm["ssim_cube_z_mean"],   "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM col mean", gm["ssim_cube_col_mean"], "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean", gm["ssim_cube_row_mean"], "n_z\u00d7W cross-sectional planes"),
+        ], header=("Metric", "Pred vs raw cube", "Description")))
+        out.append("")
+
+        out.append("**SSIM** (unit-area normalised pred vs raw cube, mean over all slices of that axis)\n")
+        out.append(self._three_col_table([
+            ("SSIM z mean",   gm["ssim_cube_norm_z_mean"],   "H\u00d7W intensity-at-z-bin planes"),
+            ("SSIM col mean", gm["ssim_cube_norm_col_mean"], "n_z\u00d7H cross-sectional planes"),
+            ("SSIM row mean", gm["ssim_cube_norm_row_mean"], "n_z\u00d7W cross-sectional planes"),
+        ], header=("Metric", "Pred vs raw cube", "Description")))
+        out.append("")
+
+        return out
+
     _METRIC_SKIP_KEYS = ("split", "split_region", "checkpoint_name", "checkpoint_epoch", "code_commit", "region_pass")
 
     _SLOT_ORGANIZATION_KEYS = frozenset({"slot_usage_entropy", "slot_mu_rank_diag", "slot_gt_alignment"})
@@ -684,6 +721,7 @@ class Report:
         ("3.9b Per-slot parameter statistics by activity",       lambda k: k.startswith("slot_") and ("_amp_" in k or "_mu_" in k or "_sig_" in k)),
         ("3.9 Slot occupancy & active count",                    lambda k: k.startswith(("active_frac", "active_count", "count_")) or (k.startswith("slot_") and "_active_" in k)),
         ("3.3 Per-pixel (GT)",                                   lambda k: k.startswith("pixel_")),
+        ("3.4c SSIM summaries (prediction vs raw cube)",         lambda k: k.startswith("ssim_cube")),
         ("3.4b SSIM summaries (normalised)",                     lambda k: k.startswith("ssim_norm")),
         ("3.4 SSIM summaries (denorm)",                          lambda k: k.startswith("ssim_")),
         ("3.2 Curve-level (GT)",                                 lambda k: True),

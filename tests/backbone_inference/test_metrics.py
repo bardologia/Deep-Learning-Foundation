@@ -2,8 +2,9 @@
 
 Covers per-pixel and scalar curve metrics, z-resolved metrics, active-slot
 counting and per-slot parameter populations, Hungarian-matched Gaussian metrics and
-their permutation invariance, label quality against the raw cube, curve roughness,
-and the switches that gate parameter-space and slot-organisation metrics.
+their permutation invariance, label quality and the SSIM sweep against the raw cube,
+curve roughness, and the switches that gate parameter-space and slot-organisation
+metrics.
 """
 
 from __future__ import annotations
@@ -694,19 +695,20 @@ def test_label_quality_counts_pixels_with_a_constant_raw_profile():
 
 
 def _slice_cubes(seed: int = 0):
-    """Builds a prediction and unrelated labels large enough for a 7-pixel SSIM window on every slice.
+    """Builds a prediction, unrelated labels and a noisy raw cube close to the prediction.
 
     Args:
         seed : Seed of the random generator.
 
     Returns:
-        Tuple of prediction and label cubes, each of shape (N_Z, 12, 10).
+        Tuple of prediction, label and raw cubes, each of shape (N_Z, 12, 10) so every slice holds a 7-pixel window.
     """
     rng  = np.random.default_rng(seed)
     pred = rng.uniform(0.5, 2.0, size=(N_Z, 12, 10)).astype(np.float32)
     gt   = rng.uniform(0.5, 2.0, size=(N_Z, 12, 10)).astype(np.float32)
+    raw  = (3.0 * pred + rng.normal(0.0, 0.2, size=pred.shape)).astype(np.float32)
 
-    return pred, gt
+    return pred, gt, raw
 
 
 def _all_indices(cube: np.ndarray) -> dict:
@@ -715,9 +717,74 @@ def _all_indices(cube: np.ndarray) -> dict:
     return dict(z_indices=np.arange(n_z), col_indices=np.arange(n_cols), row_indices=np.arange(n_rows))
 
 
+def test_cube_ssim_scores_the_prediction_against_the_raw_cube():
+    """A raw cube identical to the prediction scores one on every axis in both forms, whatever the labels hold."""
+    pred, gt, _raw = _slice_cubes()
+    metrics        = Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())
+
+    out = metrics.cube_ssim(pred.copy(), **_all_indices(pred))
+
+    for axis in ("z", "col", "row"):
+        assert out[f"ssim_cube_{axis}_mean"]      == pytest.approx(1.0, abs=1e-6)
+        assert out[f"ssim_cube_norm_{axis}_mean"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_cube_ssim_is_the_standard_sweep_with_the_raw_cube_as_reference():
+    """Each per-slice value equals the standard slice SSIM with the dynamic range read off the raw cube slice."""
+    from skimage.metrics import structural_similarity as sk_ssim
+
+    pred, gt, raw = _slice_cubes(seed=1)
+    metrics       = Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())
+
+    out      = metrics.cube_ssim(raw, **_all_indices(pred))
+    standard = metrics._slice_ssim(pred, raw, prefix="cube", **_all_indices(pred))
+
+    for key, value in standard.items():
+        assert out[key] == pytest.approx(value, abs=1e-12)
+
+    ref_slice = raw[:, :, 4].astype(np.float64)
+    expected  = sk_ssim(ref_slice, pred[:, :, 4].astype(np.float64), data_range=float(ref_slice.max() - ref_slice.min()), win_size=7)
+
+    assert out["ssim_cube_col_4"] == pytest.approx(expected, abs=1e-12)
+    assert out["ssim_cube_col_mean"] < 1.0
+
+
+def test_cube_ssim_unit_area_form_ignores_the_raw_cube_scale():
+    """Scaling the raw cube leaves the unit-area scores unchanged while the raw-intensity scores move."""
+    pred, gt, raw = _slice_cubes(seed=2)
+    metrics       = Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())
+
+    base   = metrics.cube_ssim(raw, **_all_indices(pred))
+    scaled = metrics.cube_ssim(10.0 * raw, **_all_indices(pred))
+
+    assert scaled["ssim_cube_norm_z_mean"] == pytest.approx(base["ssim_cube_norm_z_mean"], abs=1e-6)
+    assert abs(scaled["ssim_cube_z_mean"] - base["ssim_cube_z_mean"]) > 1e-3
+
+
+def test_cube_ssim_counts_the_slices_behind_every_axis_mean():
+    """Both forms of the raw-cube sweep record how many slices each axis mean covers and how many were left out."""
+    pred, gt, raw = _slice_cubes(seed=4)
+    metrics       = Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())
+
+    out = metrics.cube_ssim(raw, **_all_indices(pred))
+
+    for form in ("cube", "cube_norm"):
+        for axis, n_slices in (("z", N_Z), ("col", pred.shape[2]), ("row", pred.shape[1])):
+            assert out[f"ssim_{form}_{axis}_n_scored"]    == n_slices
+            assert out[f"ssim_{form}_{axis}_n_nonfinite"] == 0
+
+
+def test_cube_ssim_shape_mismatch_raises():
+    """A raw cube whose shape differs from the prediction raises ValueError."""
+    pred, gt, raw = _slice_cubes()
+
+    with pytest.raises(ValueError, match="disagree in shape"):
+        Metrics(_make_result(pred, gt), _x_axis(), N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger()).cube_ssim(raw[:, :, :5], **_all_indices(pred))
+
+
 def test_slice_ssim_counts_and_warns_about_non_finite_slices():
     """Slices whose reference and prediction are both constant score NaN, are counted per axis, left out of the mean and warned about."""
-    pred, gt = _slice_cubes(seed=3)
+    pred, gt, _raw = _slice_cubes(seed=3)
 
     pred[:, :, :2] = 0.0
     gt[:, :, :2]   = 0.0
