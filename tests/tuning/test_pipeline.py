@@ -8,6 +8,7 @@ training type, GPU pool and resumed configurations.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from types   import SimpleNamespace
 
@@ -22,21 +23,23 @@ from pipelines.tuning.tuners              import ParamSampler, StudyTargetStop
 
 
 class StubLogger:
-    """Logger stub recording (kind, message) pairs.
+    """Logger stub recording (kind, message) pairs and the key-value tables it receives.
 
     Attributes:
         messages : (kind, message) pairs in arrival order.
+        tables   : (title, mapping) pairs of every key-value table.
     """
     def __init__(self):
-        """Initialises the message buffer."""
+        """Initialises the message and table buffers."""
         self.messages = []
+        self.tables   = []
 
     def section(self, t):     self.messages.append(("section", t))
     def subsection(self, t):  self.messages.append(("subsection", t))
     def info(self, t):        self.messages.append(("info", t))
     def warning(self, t):     self.messages.append(("warning", t))
     def error(self, t):       self.messages.append(("error", t))
-    def kv_table(self, *a, **k): pass
+    def kv_table(self, data, title=None, **k): self.tables.append((title, dict(data)))
     def close(self): pass
 
     def of_kind(self, kind: str) -> list:
@@ -392,6 +395,126 @@ def test_worker_rejects_unsupported_training_type(tmp_path):
 
     with pytest.raises(ValueError, match="nonexistent_type"):
         worker._build_tuner("unet", cfg.tuning, StubLogger(), 0)
+
+
+def _worker_tally(trials_run: int, complete: int, failed: int) -> dict:
+    """Returns a worker tally as the tuners hand it back, with no pruned trial."""
+    return {"trials_run": trials_run, "complete": complete, "pruned": 0, "failed": failed, "best_trial": 1 if complete else None, "best_value": 0.25 if complete else None, "stop_reason": "worker_share"}
+
+
+def test_worker_report_ends_the_process_as_failed_when_every_trial_failed(tmp_path):
+    """A worker whose every trial failed logs its tally and exits non-zero instead of DONE, so the queue records the job as failed."""
+    from pipelines.tuning.workers import TuningWorker
+
+    worker = TuningWorker("testtag", _make_config(tmp_path))
+    logger = StubLogger()
+
+    with pytest.raises(SystemExit, match="worker 2 of unet: every one of its 3 trial"):
+        worker._report_worker(logger, _worker_tally(3, 0, 3), "unet", 2)
+
+    assert logger.tables == [("Worker 2 summary", {"Trials run": 3, "Complete": 0, "Pruned": 0, "Failed": 3, "Stop reason": "worker_share", "Best (this worker)": "none"})]
+    assert logger.of_kind("warning") == ["[Worker 2] 3 of 3 trial(s) failed; each failure is named on its trial line above"]
+    assert not any("DONE" in message for message in logger.of_kind("info"))
+
+
+def test_worker_report_warns_on_some_failed_trials_and_ends_done(tmp_path):
+    """A worker with some failed trials warns with their count, reports its best value and still ends DONE."""
+    from pipelines.tuning.workers import TuningWorker
+
+    worker = TuningWorker("testtag", _make_config(tmp_path))
+    logger = StubLogger()
+
+    worker._report_worker(logger, _worker_tally(4, 3, 1), "unet", 0)
+
+    assert logger.tables[0][1]["Best (this worker)"] == "trial 1, value 0.250000"
+    assert logger.of_kind("warning") == ["[Worker 0] 1 of 4 trial(s) failed; each failure is named on its trial line above"]
+    assert logger.of_kind("info")[-1] == "[Worker 0] — unet  DONE"
+
+
+def test_worker_report_ends_done_without_a_warning_when_no_trial_failed(tmp_path):
+    """A worker that ran no trial, attaching to a finished study, ends DONE without a warning or an exit."""
+    from pipelines.tuning.workers import TuningWorker
+
+    worker = TuningWorker("testtag", _make_config(tmp_path))
+    logger = StubLogger()
+
+    worker._report_worker(logger, _worker_tally(0, 0, 0), "unet", 1)
+
+    assert logger.of_kind("warning") == []
+    assert logger.of_kind("info")[-1] == "[Worker 1] — unet  DONE"
+
+
+def test_worker_log_keeps_earlier_launches_and_records_a_crash(tmp_path, monkeypatch):
+    """A relaunched worker appends to the log of the earlier one, and a crash closes the log with the traceback and an ABORTED banner."""
+    from pipelines.tuning.workers import TuningWorker
+
+    class CrashingTuner:
+        """Tuner stub returning a tally on its first run and raising on the second."""
+        def __init__(self):
+            """Starts the run count at zero."""
+            self.runs = 0
+
+        def run(self, study, n_trials):
+            """Returns a clean tally once, then raises a decode error."""
+            self.runs += 1
+            if self.runs == 2:
+                raise KeyError("features__idx")
+            return _worker_tally(0, 0, 0)
+
+    cfg    = _make_config(tmp_path)
+    worker = TuningWorker("testtag", cfg)
+    url    = f"sqlite:///{worker.run_dir / 'optuna.db'}"
+    tuner  = CrashingTuner()
+
+    worker.run_dir.mkdir(parents=True)
+    optuna.create_study(study_name="unet_testtag", storage=TuningStorage.open(url), direction="minimize")
+    monkeypatch.setattr(worker, "_build_tuner", lambda *args: tuner)
+
+    worker.run_worker("unet", 0, 0, 1, "unet_testtag", url)
+    with pytest.raises(KeyError, match="features__idx"):
+        worker.run_worker("unet", 0, 0, 1, "unet_testtag", url)
+
+    text = (worker.run_dir / "unet" / "worker00" / "tune_worker00_unet.log").read_text()
+
+    assert text.count(">>> RUN tune_worker00_unet") == 2
+    assert text.count(">>> END tune_worker00_unet")  == 1
+    assert text.count(">>> ABORTED tune_worker00_unet") == 1
+    assert "[Aborted] KeyError: 'features__idx'" in text
+    assert "Traceback (most recent call last)" in text
+
+
+def test_worker_log_keeps_optunas_failed_trial_warning_with_its_traceback(tmp_path, monkeypatch):
+    """Optuna's own warning for a failed trial, traceback included, lands in the worker's log file and not only on stderr."""
+    from pipelines.tuning.workers import TuningWorker
+
+    class FailingOnceTuner:
+        """Tuner stub whose first trial raises a device error that the study records as failed."""
+        def run(self, study, n_trials):
+            """Runs two trials, the first failing, and returns the tally."""
+            def objective(trial):
+                """Raises on trial 0 and returns a loss otherwise."""
+                if trial.number == 0:
+                    raise RuntimeError("CUDA out of memory in trial zero")
+                return 0.5
+
+            study.optimize(objective, n_trials=2, catch=(RuntimeError,))
+            return {"trials_run": 2, "complete": 1, "pruned": 0, "failed": 1, "best_trial": 1, "best_value": 0.5, "stop_reason": "worker_share"}
+
+    cfg    = _make_config(tmp_path)
+    worker = TuningWorker("testtag", cfg)
+    url    = f"sqlite:///{worker.run_dir / 'optuna.db'}"
+
+    worker.run_dir.mkdir(parents=True)
+    optuna.create_study(study_name="unet_testtag", storage=TuningStorage.open(url), direction="minimize")
+    monkeypatch.setattr(worker, "_build_tuner", lambda *args: FailingOnceTuner())
+
+    worker.run_worker("unet", 0, 0, 2, "unet_testtag", url)
+
+    text = (worker.run_dir / "unet" / "worker00" / "tune_worker00_unet.log").read_text()
+
+    assert "[WARNING] Trial 0 failed with parameters" in text
+    assert "RuntimeError: CUDA out of memory in trial zero" in text
+    assert not any(isinstance(handler, logging.FileHandler) for handler in logging.getLogger("optuna").handlers)
 
 
 def test_image_ae_entry_template_forwards_normalization_and_augmentation(tmp_path):
