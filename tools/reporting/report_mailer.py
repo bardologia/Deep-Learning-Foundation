@@ -1183,10 +1183,20 @@ class ReportMailBatch:
         Returns:
             One mailing summary per source, in selection order.
         """
-        self.logger.section(f"Mailing {self.target.NOUN} results to {self.entry_config.recipient}")
+        if self.entry_config.dry_run:
+            self.logger.section(f"Staging {self.target.NOUN} results for {self.entry_config.recipient} (dry run, nothing is sent)")
+        else:
+            self.logger.section(f"Mailing {self.target.NOUN} results to {self.entry_config.recipient}")
 
         source_dirs = self.target.select()
         results     = [self._mail_source(source_dir) for source_dir in source_dirs]
 
-        self.logger.ok(f"Mailed {sum(result['n_attachments'] for result in results)} file(s) in {sum(result['n_messages'] for result in results)} message(s) across {len(results)} {self.target.NOUN}(s)")
+        n_files    = sum(result["n_attachments"] for result in results)
+        n_messages = sum(result["n_messages"] for result in results)
+
+        if self.entry_config.dry_run:
+            self.logger.ok(f"Dry run: staged {n_files} file(s) for {n_messages} message(s) across {len(results)} {self.target.NOUN}(s); nothing was sent")
+        else:
+            self.logger.ok(f"Mailed {n_files} file(s) in {n_messages} message(s) across {len(results)} {self.target.NOUN}(s)")
+
         return results
