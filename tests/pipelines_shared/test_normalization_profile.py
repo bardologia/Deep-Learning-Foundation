@@ -72,7 +72,7 @@ def test_fit_real_profiles_finite_and_roundtrip(parameters, tmp_path):
 
     ds = ProfileDataset(
         param_arrays=params, z_axis=z_axis, n_gaussians=params[0].shape[0] // 3, split_name="train",
-        amp_zero_thr=1e-3, keep_empty_frac=0.05, pixel_subsample=1.0, seed=0, logger=logger,
+        activity_threshold=1e-3, keep_empty_frac=0.05, pixel_subsample=1.0, seed=0, logger=logger,
     )
 
     stats = ProfileStatsComputer.compute(ds, logger, max_samples=500)

@@ -218,18 +218,18 @@ class ProfileAePlots(AePlotsBase):
 
         return paths
 
-    def compose(self, result, z_axis: np.ndarray, mse: np.ndarray, cfg, figures_dir: Path, amp_zero_thr: float, pixel_index: np.ndarray, regions: List[CropRegion]) -> Dict[str, List[Path]]:
+    def compose(self, result, z_axis: np.ndarray, mse: np.ndarray, cfg, figures_dir: Path, activity_threshold: float, pixel_index: np.ndarray, regions: List[CropRegion]) -> Dict[str, List[Path]]:
         """Renders every figure group for one inference run.
 
         Args:
-            result       : Reconstruction result holding curves of shape (n_curves, H) and embeddings of shape (n_curves, embedding_dim).
-            z_axis       : Z axis of shape (H,), in metres.
-            mse          : Per-curve MSE of shape (n_curves,).
-            cfg          : Inference configuration giving curve counts and seeds.
-            figures_dir  : Root figures directory.
-            amp_zero_thr : Amplitude above which a curve counts as active.
-            pixel_index  : Flat pixel index of shape (n_curves,).
-            regions      : Split crop regions in dataset stacking order.
+            result             : Reconstruction result holding curves of shape (n_curves, H) and embeddings of shape (n_curves, embedding_dim).
+            z_axis             : Z axis of shape (H,), in metres.
+            mse                : Per-curve MSE of shape (n_curves,).
+            cfg                : Inference configuration giving curve counts and seeds.
+            figures_dir        : Root figures directory.
+            activity_threshold : Amplitude above which a curve counts as active, as recorded by the parameter run.
+            pixel_index        : Flat pixel index of shape (n_curves,).
+            regions            : Split crop regions in dataset stacking order.
 
         Returns:
             Mapping from figure-group name to the written paths.
@@ -237,7 +237,7 @@ class ProfileAePlots(AePlotsBase):
         gt   = result.gt
         pred = result.pred
 
-        active     = np.flatnonzero(gt.max(axis=1) > amp_zero_thr)
+        active     = np.flatnonzero(gt.max(axis=1) > activity_threshold)
         order      = active[np.argsort(mse[active])]
         rng        = np.random.default_rng(cfg.curve_seed)
 

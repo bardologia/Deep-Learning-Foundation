@@ -33,32 +33,32 @@ class ProfileDataset(Dataset):
 
     def __init__(
         self,
-        param_arrays    : list[np.ndarray],
-        z_axis          : np.ndarray,
-        n_gaussians     : int,
-        split_name      : str,
-        amp_zero_thr    : float,
-        pixel_subsample : float = 1.0,
-        keep_empty_frac : float = 0.05,
-        seed            : int   = 0,
-        normalizer      : Optional[ProfileNormalizer] = None,
-        augmenter       : Optional[ProfileAugmenter]  = None,
-        logger          : Optional[Logger] = None,
+        param_arrays       : list[np.ndarray],
+        z_axis             : np.ndarray,
+        n_gaussians        : int,
+        split_name         : str,
+        activity_threshold : float,
+        pixel_subsample    : float = 1.0,
+        keep_empty_frac    : float = 0.05,
+        seed               : int   = 0,
+        normalizer         : Optional[ProfileNormalizer] = None,
+        augmenter          : Optional[ProfileAugmenter]  = None,
+        logger             : Optional[Logger] = None,
     ) -> None:
         """Stacks the parameter maps and selects the pixels to serve.
 
         Args:
-            param_arrays    : Per-region parameter maps of shape (3 * n_gaussians, row, col), amplitude, mean and sigma interleaved.
-            z_axis          : Z axis of shape (H,), in metres.
-            n_gaussians     : Number of Gaussians per pixel.
-            split_name      : Split name; augmentation only runs for "train".
-            amp_zero_thr    : Amplitude above which a pixel counts as active.
-            pixel_subsample : Fraction of active pixels kept.
-            keep_empty_frac : Fraction of inactive pixels kept.
-            seed            : Seed for subsampling and shuffling.
-            normalizer      : Applied to each curve when given.
-            augmenter       : Applied to training curves when given.
-            logger          : Logger for the dataset summary table.
+            param_arrays       : Per-region parameter maps of shape (3 * n_gaussians, row, col), amplitude, mean and sigma interleaved.
+            z_axis             : Z axis of shape (H,), in metres.
+            n_gaussians        : Number of Gaussians per pixel.
+            split_name         : Split name; augmentation only runs for "train".
+            activity_threshold : Amplitude above which a pixel counts as active, as recorded by the parameter run.
+            pixel_subsample    : Fraction of active pixels kept.
+            keep_empty_frac    : Fraction of inactive pixels kept.
+            seed               : Seed for subsampling and shuffling.
+            normalizer         : Applied to each curve when given.
+            augmenter          : Applied to training curves when given.
+            logger             : Logger for the dataset summary table.
         """
         self.z_axis      = np.asarray(z_axis, dtype=np.float32)
         self.n_gaussians = int(n_gaussians)
@@ -67,7 +67,7 @@ class ProfileDataset(Dataset):
         self.augmenter   = augmenter
 
         self._stack_parameters(param_arrays)
-        self._select_pixels(amp_zero_thr, pixel_subsample, keep_empty_frac, seed)
+        self._select_pixels(activity_threshold, pixel_subsample, keep_empty_frac, seed)
 
         if logger is not None:
             self._log(logger)
@@ -93,26 +93,26 @@ class ProfileDataset(Dataset):
         self.mus  = np.concatenate(mus_list,  axis=0)
         self.sigs = np.concatenate(sigs_list, axis=0)
 
-    def _select_pixels(self, amp_zero_thr: float, pixel_subsample: float, keep_empty_frac: float, seed: int) -> None:
+    def _select_pixels(self, activity_threshold: float, pixel_subsample: float, keep_empty_frac: float, seed: int) -> None:
         """Builds the shuffled index of active and retained empty pixels.
 
         Args:
-            amp_zero_thr    : Amplitude above which a pixel counts as active.
-            pixel_subsample : Fraction of active pixels kept, when below 1.
-            keep_empty_frac : Fraction of inactive pixels kept.
-            seed            : Seed for the subsampling and shuffling generator.
+            activity_threshold : Amplitude above which a pixel counts as active, as recorded by the parameter run.
+            pixel_subsample    : Fraction of active pixels kept, when below 1.
+            keep_empty_frac    : Fraction of inactive pixels kept.
+            seed               : Seed for the subsampling and shuffling generator.
 
         Raises:
-            ValueError : If the split holds no pixel above `amp_zero_thr`.
+            ValueError : If the split holds no pixel above the activity threshold.
         """
-        active = (self.amps > amp_zero_thr).any(axis=1)
+        active = (self.amps > activity_threshold).any(axis=1)
         rng    = np.random.default_rng(seed)
 
         active_idx = np.flatnonzero(active)
         empty_idx  = np.flatnonzero(~active)
 
         if len(active_idx) == 0:
-            raise ValueError(f"Split '{self.split_name}' holds no pixel with an amplitude above amp_zero_thr={amp_zero_thr}; lower the threshold or pick a split region that carries components.")
+            raise ValueError(f"Split '{self.split_name}' holds no pixel with an amplitude above the activity threshold {activity_threshold:g} recorded by the parameter run; pick a split region that carries components or regenerate the labels at a lower threshold.")
 
         if 0.0 < pixel_subsample < 1.0:
             keep       = max(1, int(round(len(active_idx) * pixel_subsample)))

@@ -44,13 +44,13 @@ class ProfileDatasetConfig:
     Attributes:
         preprocessing_run_directory : Directory holding the preprocessed scene.
         split_regions               : Row and column regions defining train, val and test.
+        activity_threshold          : Amplitude above which a Gaussian counts as present, as recorded by the parameter run the labels come from.
         parameters_path             : Directory holding the extracted Gaussian parameters.
         n_gaussians                 : Number of Gaussian components describing one profile.
         x_min                       : Lower bound of the z axis in metres.
         x_max                       : Upper bound of the z axis in metres.
         pixel_subsample             : Fraction of scene pixels kept as profiles.
         keep_empty_frac             : Fraction of empty profiles retained after subsampling.
-        amp_zero_thr                : Amplitude below which a Gaussian counts as absent.
         batch_size                  : Profiles per batch.
         num_workers                 : Data loader worker processes.
         prefetch_factor             : Batches prefetched per worker.
@@ -62,6 +62,7 @@ class ProfileDatasetConfig:
 
     preprocessing_run_directory : Path
     split_regions               : SplitRegions
+    activity_threshold          : float
     parameters_path             : Optional[Path] = None
 
     n_gaussians : int   = 5
@@ -70,7 +71,6 @@ class ProfileDatasetConfig:
 
     pixel_subsample : float = 1.0
     keep_empty_frac : float = 0.05
-    amp_zero_thr    : float = 1e-4
 
     batch_size      : int  = 1024
     num_workers     : int  = 32

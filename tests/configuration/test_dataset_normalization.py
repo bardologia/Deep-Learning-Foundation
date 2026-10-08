@@ -221,7 +221,7 @@ def test_profile_augmentation_defaults():
 
 def test_profile_dataset_config_defaults():
     """Verifies the profile dataset defaults carry positive Gaussian and batch counts, a subsample fraction in (0, 1] and its augmentation config."""
-    cfg = ProfileDatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions())
+    cfg = ProfileDatasetConfig(preprocessing_run_directory="/tmp/run", split_regions=make_split_regions(), activity_threshold=1e-4)
     assert cfg.n_gaussians > 0
     assert cfg.batch_size > 0
     assert 0.0 < cfg.pixel_subsample <= 1.0

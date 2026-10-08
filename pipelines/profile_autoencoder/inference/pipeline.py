@@ -60,7 +60,7 @@ class ProfileAeInferencePipeline(AeInferencePipeline):
 
     def _metrics_object(self, result, run) -> ProfileAeMetrics:
         """Returns the metrics calculator bound to this run's axis and threshold."""
-        return ProfileAeMetrics(result, run.z_axis, run.amp_zero_thr)
+        return ProfileAeMetrics(result, run.z_axis, run.activity_threshold)
 
     def _region_metrics(self, run) -> dict:
         """Returns the split crop regions as plain tuples for the metrics file."""
@@ -91,4 +91,4 @@ class ProfileAeInferencePipeline(AeInferencePipeline):
         """
         plots = ProfileAePlots(fig_dpi=self.config.fig_dpi, save_dpi=self.config.save_dpi)
 
-        return plots.compose(result, np.asarray(run.z_axis, dtype=np.float64), metrics_obj.per_sample_mse(), self.config, meta.figures_dir, run.amp_zero_thr, pixel_index=run.dataset.index, regions=run.split_regions)
+        return plots.compose(result, np.asarray(run.z_axis, dtype=np.float64), metrics_obj.per_sample_mse(), self.config, meta.figures_dir, run.activity_threshold, pixel_index=run.dataset.index, regions=run.split_regions)

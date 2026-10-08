@@ -93,17 +93,17 @@ class ProfileDatasetPipeline:
         param_arrays = self.cropper.load_split(split_name)
 
         return ProfileDataset(
-            param_arrays    = param_arrays,
-            z_axis          = z_axis,
-            n_gaussians     = self.config.n_gaussians,
-            split_name      = split_name,
-            amp_zero_thr    = self.config.amp_zero_thr,
-            pixel_subsample = self.config.pixel_subsample,
-            keep_empty_frac = self.config.keep_empty_frac,
-            seed            = self.seed,
-            normalizer      = normalizer,
-            augmenter       = augmenter,
-            logger          = self.logger,
+            param_arrays       = param_arrays,
+            z_axis             = z_axis,
+            n_gaussians        = self.config.n_gaussians,
+            split_name         = split_name,
+            activity_threshold = self.config.activity_threshold,
+            pixel_subsample    = self.config.pixel_subsample,
+            keep_empty_frac    = self.config.keep_empty_frac,
+            seed               = self.seed,
+            normalizer         = normalizer,
+            augmenter          = augmenter,
+            logger             = self.logger,
         )
 
     def _persist_stats(self, stats: ProfileStats) -> None:

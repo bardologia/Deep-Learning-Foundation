@@ -73,7 +73,7 @@ def _loader(n=8, batch_size=4, seed=0):
 def _profile_config(tmp_path):
     """Returns a profile dataset config whose three splits share one 8x8 crop region."""
     region = CropRegion(0, 8, 0, 8)
-    return ProfileDatasetConfig(preprocessing_run_directory=tmp_path, split_regions=SplitRegions(train=region, val=region, test=region))
+    return ProfileDatasetConfig(preprocessing_run_directory=tmp_path, split_regions=SplitRegions(train=region, val=region, test=region), activity_threshold=1e-4)
 
 
 def test_build_model_sets_profile_length():
@@ -210,33 +210,33 @@ def test_overfit_check_gate_trains_and_reports(tmp_path):
     assert not (run_meta.run_directory / "overfit_check" / "last.pt").exists()
 
 
-def test_dataset_config_forwards_the_entry_thresholds():
-    """The amplitude threshold, stats cap, pixel subsample and empty-curve fraction reach the dataset config."""
-    entry = ProfileAeEntryConfig(amp_zero_thr=5e-3, stats_max_samples=12_345, pixel_subsample=0.25, keep_empty_frac=0.1)
+def test_dataset_config_takes_the_label_threshold_and_the_entry_sampling():
+    """The activity threshold comes from the label run's Gaussian config; the stats cap, pixel subsample and empty-curve fraction come from the entry."""
+    entry = ProfileAeEntryConfig(stats_max_samples=12_345, pixel_subsample=0.25, keep_empty_frac=0.1)
 
     pipe                = profile_pipeline.TrainingPipeline.__new__(profile_pipeline.TrainingPipeline)
     pipe.entry          = entry
     pipe.split_regions  = "split-regions"
-    pipe.trainer_config = types.SimpleNamespace(gaussian=types.SimpleNamespace(n_default_gaussians=5, x_min=0.0, x_max=30.0))
+    pipe.trainer_config = types.SimpleNamespace(gaussian=types.SimpleNamespace(n_default_gaussians=5, x_min=0.0, x_max=30.0, activity_threshold=5e-3))
 
     dataset_config = pipe._build_dataset_config()
 
-    assert dataset_config.amp_zero_thr      == 5e-3
-    assert dataset_config.stats_max_samples == 12_345
-    assert dataset_config.pixel_subsample   == 0.25
-    assert dataset_config.keep_empty_frac   == 0.1
+    assert dataset_config.activity_threshold == 5e-3
+    assert dataset_config.stats_max_samples  == 12_345
+    assert dataset_config.pixel_subsample    == 0.25
+    assert dataset_config.keep_empty_frac    == 0.1
 
 
 def test_dataset_config_attribute_holds_the_profile_dataset_config():
-    """The pipeline's dataset config attribute is a ProfileDatasetConfig carrying the entry thresholds."""
-    entry = ProfileAeEntryConfig(amp_zero_thr=2e-3)
+    """The pipeline's dataset config attribute is a ProfileDatasetConfig carrying the label run's threshold."""
+    entry = ProfileAeEntryConfig()
 
     pipe                = profile_pipeline.TrainingPipeline.__new__(profile_pipeline.TrainingPipeline)
     pipe.entry          = entry
     pipe.split_regions  = "split-regions"
-    pipe.trainer_config = types.SimpleNamespace(gaussian=types.SimpleNamespace(n_default_gaussians=5, x_min=0.0, x_max=30.0))
+    pipe.trainer_config = types.SimpleNamespace(gaussian=types.SimpleNamespace(n_default_gaussians=5, x_min=0.0, x_max=30.0, activity_threshold=2e-3))
 
     pipe.dataset_config = pipe._build_dataset_config()
 
     assert isinstance(pipe.dataset_config, ProfileDatasetConfig)
-    assert pipe.dataset_config.amp_zero_thr == 2e-3
+    assert pipe.dataset_config.activity_threshold == 2e-3

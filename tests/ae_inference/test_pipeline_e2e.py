@@ -145,8 +145,8 @@ def _profile_entry_config(test_data_dir, params_dir, tmp_path) -> ProfileAeEntry
     return entry
 
 
-def test_profile_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_path):
-    """A profile autoencoder run trains, reports finite test metrics, and writes unique in-range pixel indices; an unset inference batch size falls back to the training one."""
+def test_profile_ae_train_then_infer_end_to_end(test_data_dir, params_dir, param_extraction_meta, tmp_path):
+    """A profile autoencoder run trains on the label run's activity threshold, reports finite test metrics, and writes unique in-range pixel indices; an unset inference batch size falls back to the training one."""
     entry = _profile_entry_config(test_data_dir, params_dir, tmp_path)
 
     (_train_losses, _val_losses, best_val_loss), run_directory = ProfileTrainingPipeline(entry).run()
@@ -195,4 +195,5 @@ def test_profile_ae_train_then_infer_end_to_end(test_data_dir, params_dir, tmp_p
     )
     unset_run = ProfileAeRunLoader(run_directory, logger=SilentLogger()).load(config=unset_batch, device="cpu")
 
-    assert unset_run.loader.batch_size == 256
+    assert unset_run.loader.batch_size  == 256
+    assert unset_run.activity_threshold == float(param_extraction_meta["activity_threshold"])
