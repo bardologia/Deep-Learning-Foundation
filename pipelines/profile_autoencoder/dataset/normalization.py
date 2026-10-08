@@ -67,6 +67,7 @@ class ProfileStats:
 
         Raises:
             FileNotFoundError : If the statistics file is absent.
+            ValueError        : If the persisted location is not finite or the scale is not finite and positive.
         """
         path = Path(directory) / cls.FILENAME
         if not path.exists():
@@ -82,7 +83,13 @@ class ProfileStats:
                 "scale"      : payload["scale"],
             })
 
-        return cls(loc = float(payload["loc"]), scale = float(payload["scale"]))
+        loc   = float(payload["loc"])
+        scale = float(payload["scale"])
+
+        if not np.isfinite(loc) or not np.isfinite(scale) or scale <= 0:
+            raise ValueError(f"Corrupt profile normalization stats in '{path}': loc={loc}, scale={scale} must be finite with scale > 0.")
+
+        return cls(loc = loc, scale = scale)
 
 
 class ProfileStatsComputer:
@@ -161,10 +168,19 @@ class ProfileNormalizer:
 
         Args:
             stats : Fitted log1p location and scale.
+
+        Raises:
+            ValueError : If the location or the scale is not finite.
         """
+        loc   = float(stats.loc)
+        scale = float(stats.scale)
+
+        if not np.isfinite(loc) or not np.isfinite(scale):
+            raise ValueError(f"ProfileNormalizer received non-finite stats: loc={loc}, scale={scale}")
+
         self.stats     = stats
-        self.loc       = float(stats.loc)
-        self.scale     = max(float(stats.scale), self.SCALE_FLOOR)
+        self.loc       = loc
+        self.scale     = max(scale, self.SCALE_FLOOR)
         self.inv_scale = 1.0 / self.scale
 
     def normalize(self, curve):
