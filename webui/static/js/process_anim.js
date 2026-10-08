@@ -435,7 +435,7 @@ class ProcessAnimator {
     let model = null, iter = 0, caption = "", done = 0, highlight = false, modelDashed = false;
 
     if (tt < 2.5) {
-      caption = "Input: one z profile from the beamformed cube  ·  |cube| for one row-range pixel";
+      caption = "Input: one z profile from the reference cube  ·  |cube| for one row-col pixel";
     } else if (tt < FITS0) {
       const thrY = py(thrZ);
       const inZoom = (tt >= 13.0 && tt < 15.5) || (tt >= 15.5 && tt < 22.0) || (tt >= 24.5 && tt < 30.9);
@@ -1268,7 +1268,7 @@ class ProcessAnimator {
       ctx.strokeStyle = "rgba(120,200,220,0.45)"; ctx.lineWidth = 1.4;
       ctx.strokeRect(sx, sy, sw2, sh2);
       centerLabel("row ->", sx + sw2 / 2, sy + sh2 + 22);
-      ctx.save(); ctx.translate(sx - 14, sy + sh2 / 2 + 32); ctx.rotate(-Math.PI / 2); label("range ->", 0, 0); ctx.restore();
+      ctx.save(); ctx.translate(sx - 14, sy + sh2 / 2 + 32); ctx.rotate(-Math.PI / 2); label("col ->", 0, 0); ctx.restore();
 
       const ax = sx + sw2 + 40;
       const atW = w - ax - 44;
@@ -4241,7 +4241,7 @@ class ProcessAnimator {
     this._infField(gx, gy, gw * born, gh, 7, (i, j) => 0.05 + d.tex(i, j) * 0.3, [53, 230, 208], 0.9);
     ctx.strokeStyle = "rgba(120,200,220,0.5)"; ctx.lineWidth = 1.4; ctx.strokeRect(gx, gy, gw, gh);
     this._infText("row ->", gx + gw / 2 - 30, gy + gh + 22, "rgba(143,176,170,0.85)", 12);
-    ctx.save(); ctx.translate(gx - 14, gy + gh / 2 + 24); ctx.rotate(-Math.PI / 2); this._infText("range ->", 0, 0, "rgba(143,176,170,0.85)", 12); ctx.restore();
+    ctx.save(); ctx.translate(gx - 14, gy + gh / 2 + 24); ctx.rotate(-Math.PI / 2); this._infText("col ->", 0, 0, "rgba(143,176,170,0.85)", 12); ctx.restore();
 
     if (ts >= 2.5) {
       const pp = this._ease(c01((ts - 2.5) / 1.4));
