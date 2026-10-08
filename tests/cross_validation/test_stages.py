@@ -115,7 +115,7 @@ def build_finished_run(root: Path, run_tag: str, n_folds: int = 3, splits: tuple
                 stamp = stamp_split_inference(unit_dir, split)
                 FileIO.save_json({"curve_rmse_gt": 0.1 * (index + 1), "overall_r2_gt": 0.9 - 0.05 * index}, stamp / "metrics.json")
 
-            results.append({"name": str(unit_dir.relative_to(run_dir / "folds")), "status": "DONE", "duration_s": 60.0})
+            results.append({"name": str(unit_dir.relative_to(run_dir / "folds")), "status": "DONE", "duration_s": 60.0, "log_file": str(unit_dir / "worker.log")})
 
     if with_pipeline:
         FileIO.save_json({"run_tag": run_tag, "stages": {"training": {"status": "completed", "timestamp": "t"}}}, run_dir / "pipeline" / "state.json")

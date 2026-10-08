@@ -14,6 +14,7 @@ import numpy as np
 
 from configuration.cross_validation import CrossValidationConfig
 from pipelines.shared.comparison.trial_collection import TrainingResultsIndex, TrialCollector, TrialRecord
+from pipelines.shared.orchestration.unit_manifest import UnitResultsByRun
 from pipelines.shared.training.unit_resume        import UnitResume
 from pipelines.shared.training.worker_base        import WorkerBase
 from pipelines.cross_validation.folds             import FoldConfigFactory, FoldFamily, FoldNaming, FoldPlanner, FoldRunNaming, FoldUnitManifest
@@ -57,8 +58,13 @@ class FoldCollector(TrialCollector):
         return [(name, run_dir) for name, run_dir in super()._run_dirs() if FoldNaming.is_fold(FoldNaming.base(name))]
 
     def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
-        """Returns the empty completion index and the training-results index of the runs."""
-        return {}, TrainingResultsIndex(self.pipeline_dir, self.logger).build(runs)
+        """Returns the empty size-match record and the training results keyed by the fold run each one ran in.
+
+        A unit a resume matched to a renamed directory keeps its status and
+        duration, since every stored result is matched to its run through the
+        worker log it names.
+        """
+        return {}, UnitResultsByRun(self.training_dir, self.logger).build(TrainingResultsIndex(self.pipeline_dir, self.logger), runs)
 
     def _attach_inference(self, record: TrialRecord) -> None:
         """Notes which configured splits a run has scored, and attaches the first split's inference wherever the family keeps its stamps.

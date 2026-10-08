@@ -185,8 +185,8 @@ def test_seed_collector_aggregates_runs_per_model(tmp_path, logger_stub):
     pipe.mkdir(parents=True)
     _write_json(pipe / "size_match.json", {"unet": {"parameters": 100, "overrides": {}}})
     _write_json(pipe / "training_results.json", [
-        {"name": "unet/seed1", "status": "DONE", "duration_s": 10.0},
-        {"name": "unet/seed2", "status": "DONE", "duration_s": 20.0},
+        {"name": "unet/seed1", "status": "DONE", "duration_s": 10.0, "log_file": str(tmp_path / "training" / "unet" / "seed1" / "worker.log")},
+        {"name": "unet/seed2", "status": "DONE", "duration_s": 20.0, "log_file": str(tmp_path / "training" / "unet" / "seed2" / "worker.log")},
     ])
 
     for seed, rmse in ((1, 2.0), (2, 4.0)):
@@ -529,3 +529,20 @@ def test_seed_collector_keeps_the_per_run_records_beside_the_aggregates(tmp_path
     assert [record.name for record in records]        == ["unet"]
     assert [record.name for record in collector.runs] == ["unet/seed1", "unet/seed2"]
     assert [record.has_inference for record in collector.runs] == [True, False]
+
+
+def test_seed_collector_keeps_the_training_result_of_a_unit_in_a_renamed_directory(tmp_path, recording_logger):
+    """A seed a resume matched to a renamed directory keeps its stored status and duration, so the model stays DONE."""
+    run_dir = _seeded_benchmark_run(tmp_path, {"seed1": {"curve_rmse_gt": 2.0}, "seed2": {"curve_rmse_gt": 4.0}})
+
+    results = FileIO.load_json(run_dir / "pipeline" / "training_results.json")
+    results[1]["name"] = "unet-conv/seed2"
+    FileIO.save_json(results, run_dir / "pipeline" / "training_results.json")
+
+    collector = BenchmarkSeedCollector(run_dir=run_dir, logger=recording_logger, inference_split="test")
+    records   = collector.collect()
+
+    assert records[0].training_result["status"]     == "DONE"
+    assert records[0].training_result["duration_s"] == pytest.approx(10.0)
+    assert {run.name: run.training_result["status"] for run in collector.runs} == {"unet/seed1": "DONE", "unet/seed2": "DONE"}
+    assert ("info", "1 unit result(s) matched to the renamed run directory holding their worker log: ['unet-conv/seed2 -> unet/seed2']") in recording_logger.messages

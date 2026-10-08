@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pipelines.shared.comparison.trial_collection import SeedRunAggregator, TrialCollector
+from pipelines.shared.comparison.trial_collection import SeedRunAggregator, TrainingResultsIndex, TrialCollector
+from pipelines.shared.orchestration.unit_manifest import UnitResultsByRun
 from tools.monitoring.logger                      import Logger
 
 
@@ -27,6 +28,20 @@ class BenchmarkSeedCollector(TrialCollector):
         super().__init__(run_dir=run_dir, logger=logger, inference_split=inference_split)
         self.runs            = []
         self.seed_dispersion = {}
+
+    def _aggregate_sources(self, runs: list[tuple[str, Path]]) -> tuple[dict, dict]:
+        """Returns the pipeline-level size-match record and the training results keyed by the run each one ran in.
+
+        A unit a resume matched to a renamed directory keeps its status and
+        duration, since every stored result is matched to its run through the
+        worker log it names.
+
+        Args:
+            runs : (run name, run directory) pairs used to match the stored results, or to rebuild them from the completion markers when the training results file is absent.
+        """
+        size_match = self._optional_json(self.pipeline_dir / "size_match.json")
+
+        return size_match, UnitResultsByRun(self.training_dir, self.logger).build(TrainingResultsIndex(self.pipeline_dir, self.logger), runs)
 
     def _log_seed_coverage(self) -> None:
         """Records, per seed-swept model, the seeds without metrics, and closes with the models whose means cover fewer seeds than they trained.
