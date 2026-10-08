@@ -7,6 +7,8 @@ single-run and batch exports, and the seed overlay written per trial.
 
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import pytest
 from torch.utils.tensorboard import SummaryWriter
@@ -17,8 +19,46 @@ from tools.diagnostics.tensorboard_export import CurveGroup, CurveLabeler, Scala
 from tests.conftest import RecordingLogger
 
 
+class _RecordingProgress:
+    """Progress-bar stub that records the tasks added to it and the advances they received.
+
+    Attributes:
+        tasks    : Tuples of (description, total) in the order the tasks were added.
+        advanced : Advance count per task index.
+    """
+
+    def __init__(self) -> None:
+        """Starts with no recorded task."""
+        self.tasks    = []
+        self.advanced = []
+
+    def add_task(self, description, total=None, **kwargs):
+        """Records a task and returns its index."""
+        self.tasks.append((description, total))
+        self.advanced.append(0)
+        return len(self.tasks) - 1
+
+    def advance(self, task, advance=1):
+        """Counts an advance of one task."""
+        self.advanced[task] += advance
+
+
 class _TrackingLogger(RecordingLogger):
-    """Recording logger with a per-level message filter."""
+    """Recording logger that also keeps the progress tasks opened through track.
+
+    Attributes:
+        progress : Progress stub shared by every track block.
+    """
+
+    def __init__(self) -> None:
+        """Starts with an empty message log and progress stub."""
+        super().__init__()
+        self.progress = _RecordingProgress()
+
+    @contextlib.contextmanager
+    def track(self, transient: bool = False):
+        """Yields the shared progress stub in place of a live bar."""
+        yield self.progress
 
     def of(self, level: str) -> list:
         """Returns the recorded messages of one level."""
@@ -243,6 +283,20 @@ def test_batch_numbers_each_run_and_closes_with_run_and_overlay_totals(tmp_path)
     assert ("metrics_table", "Tensorboard export summary") in logger.messages
     assert ("metrics_table", "Seed overlay summary")       in logger.messages
     assert logger.of("ok")[-1] == "Exported 2 run(s) (2 plots); 1 multi-seed trial(s) (1 overlay plots)"
+
+
+def test_seed_reads_and_renders_report_progress(tmp_path):
+    """Every seed read logs its series count, and the per-run and overlay renders each advance a bar sized to their figures."""
+    for seed in (0, 1):
+        _seed_run(tmp_path, "trial_a", seed, tags=("loss/train", "loss/val", "lr/encoder"))
+
+    entry  = TensorboardExportEntryConfig(runs_dir=tmp_path, run_filter=["trial_a"])
+    logger = _TrackingLogger()
+    TensorboardExportBatch(entry, logger).run()
+
+    assert logger.of("info")         == ["seed0: 3 scalar series", "seed1: 3 scalar series"]
+    assert logger.progress.tasks    == [("seed0 plots", 2), ("seed1 plots", 2), ("trial_a overlays", 2)]
+    assert logger.progress.advanced == [2, 2, 2]
 
 
 def test_trial_name_filter_expands_to_the_seed_runs(tmp_path):
