@@ -14,6 +14,7 @@ import argparse
 import json
 import re
 import sys
+from collections import Counter
 from dataclasses import fields
 from pathlib     import Path
 
@@ -110,10 +111,23 @@ class RunRenamer:
     references inside sibling bookkeeping files can be patched consistently.
 
     Attributes:
-        roots  : Directories to search for runs; may be run dirs or trees holding them.
-        apply  : When False the plan is only logged, when True the renames are performed.
-        logger : Logger writing to ``logs/`` under the name ``rename_runs``.
+        roots          : Directories to search for runs; may be run dirs or trees holding them.
+        apply          : When False the plan is only logged, when True the renames are performed.
+        logger         : Logger writing to ``logs/`` under the name ``rename_runs``.
+        counts         : Number of runs per outcome and of files patched, over every root processed so far.
+        groups_applied : Run groups whose renames and file patches were performed.
+        OUTCOMES       : Outcome names in the order the totals tables list them.
     """
+
+    RENAMED      = "renamed"
+    PLANNED      = "planned (dry run)"
+    ALREADY      = "already in the new naming"
+    NOT_RUN      = "not a training run"
+    FOREIGN      = "foreign model"
+    MISSING      = "missing metadata"
+    UNRECOGNISED = "unrecognised naming"
+    PATCHED      = "files patched"
+    OUTCOMES     = (RENAMED, PLANNED, ALREADY, NOT_RUN, FOREIGN, MISSING, UNRECOGNISED, PATCHED)
 
     PATCH_FILES    = (Path("meta") / "run_summary.json", Path("docs") / "trainer_config.json", Path("docs") / "resolved_entry_config.json")
     RESULT_FILES   = ("training_results.json", "inference_results.json")
@@ -130,12 +144,14 @@ class RunRenamer:
             roots : Run directories or trees holding them at any depth.
             apply : Whether to perform the renames instead of only printing the plan.
         """
-        self.roots  = [Path(root) for root in roots]
-        self.apply  = apply
-        self.logger = Logger(log_dir="logs", name="rename_runs")
+        self.roots          = [Path(root) for root in roots]
+        self.apply          = apply
+        self.logger         = Logger(log_dir="logs", name="rename_runs")
+        self.counts         = Counter()
+        self.groups_applied = 0
 
     def _process_root(self, root: Path) -> None:
-        """Discovers the runs under one root and processes them group by group.
+        """Discovers the runs under one root, processes them group by group and logs the root's totals.
 
         Args:
             root : Directory to search.
@@ -152,8 +168,12 @@ class RunRenamer:
         if not groups:
             raise FileNotFoundError(f"{root} holds no training runs (*/meta/run_summary.json) and no run collections (*/training, */folds)")
 
+        before = Counter(self.counts)
+
         for parent in sorted(groups):
             self._process_runs(parent, groups[parent])
+
+        self._log_totals(f"Totals for {root}", self.counts - before)
 
     def _discover(self, directory: Path, groups: dict[Path, list[Path]]) -> None:
         """Recursively collects run directories into ``groups``, keyed by their parent.
@@ -209,6 +229,9 @@ class RunRenamer:
 
         self._rename_runs(parent, mapping)
 
+        if self.apply:
+            self.groups_applied += 1
+
     def _mode(self) -> str:
         """Returns the banner label for the current mode, APPLY or DRY RUN."""
         return "APPLY" if self.apply else "DRY RUN"
@@ -240,36 +263,31 @@ class RunRenamer:
         metadata_dir = self._metadata_dir(run_dir)
         summary      = self._read_json(metadata_dir / "meta" / "run_summary.json")
         if summary is None:
-            self.logger.info(f"skip {run_dir.name}: no meta/run_summary.json (not a training run)")
-            return None
+            return self._skip(run_dir.name, self.NOT_RUN, "no meta/run_summary.json (not a training run)", warn=False)
 
         model = summary["model_name"]
         if model in DUAL_CONFIG_REGISTRY:
             return self._plan_dual_run(run_dir, metadata_dir, summary)
 
         if model not in BACKBONE_MODEL_REGISTRY:
-            self.logger.info(f"skip {run_dir.name}: model '{model}' is neither a backbone nor a dual model (autoencoder or foreign run)")
-            return None
+            return self._skip(run_dir.name, self.FOREIGN, f"model '{model}' is neither a backbone nor a dual model (autoencoder or foreign run)", warn=False)
 
         model_config = self._read_json(metadata_dir / "meta" / "model_config.json")
         trainer      = self._read_json(metadata_dir / "docs" / "trainer_config.json")
         dataset      = self._read_json(metadata_dir / "meta" / "dataset_creation_config.json")
         if model_config is None or trainer is None or dataset is None:
-            self.logger.warning(f"skip {run_dir.name}: missing model_config/trainer_config/dataset_creation_config metadata")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "missing model_config/trainer_config/dataset_creation_config metadata", warn=True)
 
         if "embedding_loss" in trainer:
             return self._plan_jepa_run(run_dir, metadata_dir, summary, model_config, trainer, dataset)
 
         payload = self._loss_payload(trainer)
         if payload is None:
-            self.logger.warning(f"skip {run_dir.name}: trainer config has neither a loss curriculum nor a param_loss")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "trainer config has neither a loss curriculum nor a param_loss", warn=True)
 
         matching = self._matching(payload, summary)
         if matching is None:
-            self.logger.warning(f"skip {run_dir.name}: no recognizable matching strategy in trainer config or run summary")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "no recognizable matching strategy in trainer config or run summary", warn=True)
 
         head         = model_config["config"].get("head", "conv")
         loss         = self._loss_config(payload, matching)
@@ -281,8 +299,7 @@ class RunRenamer:
 
         name = run_dir.name
         if name == new_tag or name.startswith(f"{new_tag}_") or name.startswith(f"{new_stem}__"):
-            self.logger.info(f"skip {name}: already in the new naming")
-            return None
+            return self._skip(name, self.ALREADY, "already in the new naming", warn=False)
 
         if "__" in name:
             base, component = name.split("__", 1)
@@ -290,8 +307,7 @@ class RunRenamer:
             if base in old_stems:
                 return f"{new_stem}__{component}"
 
-            self.logger.warning(f"skip {name}: unit prefix '{base}' matches no known naming generation {old_stems}")
-            return None
+            return self._skip(name, self.UNRECOGNISED, f"unit prefix '{base}' matches no known naming generation {old_stems}", warn=True)
 
         old_tags = (LegacyNaming.flagless_tag(model, head, loss, n_gaussians, augmentation), LegacyNaming.presence_tag(model, head, loss, n_gaussians, augmentation), LegacyNaming.underscore_tag(model, head, matching, loss), LegacyNaming.run_prefix(model))
         for old_tag in old_tags:
@@ -301,8 +317,7 @@ class RunRenamer:
             if name.startswith(f"{old_tag}_"):
                 return f"{new_tag}{name[len(old_tag):]}"
 
-        self.logger.warning(f"skip {name}: matches no known naming generation {old_tags}")
-        return None
+        return self._skip(name, self.UNRECOGNISED, f"matches no known naming generation {old_tags}", warn=True)
 
     def _plan_dual_run(self, run_dir: Path, metadata_dir: Path, summary: dict) -> str | None:
         """Rebuilds the name of a dual-trunk run, adding the trunk and input routing tags.
@@ -320,25 +335,21 @@ class RunRenamer:
         trainer      = self._read_json(metadata_dir / "docs" / "trainer_config.json")
         dataset      = self._read_json(metadata_dir / "meta" / "dataset_creation_config.json")
         if model_config is None or trainer is None or dataset is None:
-            self.logger.warning(f"skip {run_dir.name}: missing dual_model_config/trainer_config/dataset_creation_config metadata")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "missing dual_model_config/trainer_config/dataset_creation_config metadata", warn=True)
 
         payload = self._loss_payload(trainer)
         if payload is None:
-            self.logger.warning(f"skip {run_dir.name}: trainer config has neither a loss curriculum nor a param_loss")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "trainer config has neither a loss curriculum nor a param_loss", warn=True)
 
         matching = self._matching(payload, summary)
         if matching is None:
-            self.logger.warning(f"skip {run_dir.name}: no recognizable matching strategy in trainer config or run summary")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "no recognizable matching strategy in trainer config or run summary", warn=True)
 
         config  = model_config["config"]
         head    = config["head"]
         unknown = sorted((set(config["params_input"]) | set(config["existence_input"])) - set(TrunkChannelMap.GROUPS))
         if unknown:
-            self.logger.warning(f"skip {run_dir.name}: trunk inputs use retired channel groups {unknown}; only {list(TrunkChannelMap.GROUPS)} name a routing tag")
-            return None
+            return self._skip(run_dir.name, self.UNRECOGNISED, f"trunk inputs use retired channel groups {unknown}; only {list(TrunkChannelMap.GROUPS)} name a routing tag", warn=True)
 
         trunk_tag    = RunNaming.dual_model_tag(config["params_backbone"], config["existence_backbone"])
         input_tag    = f"{TrunkChannelMap.group_label(tuple(config['params_input']))}.{TrunkChannelMap.group_label(tuple(config['existence_input']))}"
@@ -350,8 +361,7 @@ class RunRenamer:
 
         name = run_dir.name
         if name == new_tag or name.startswith(f"{new_tag}_"):
-            self.logger.info(f"skip {name}: already in the new naming")
-            return None
+            return self._skip(name, self.ALREADY, "already in the new naming", warn=False)
 
         model    = summary["model_name"]
         old_tags = (RunNaming.tag(model, head, loss, n_gaussians, augmentation, extras=(input_tag,)), RunNaming.tag(model, head, loss, n_gaussians, augmentation))
@@ -362,8 +372,7 @@ class RunRenamer:
             if name.startswith(f"{old_tag}_"):
                 return f"{new_tag}{name[len(old_tag):]}"
 
-        self.logger.warning(f"skip {name}: matches no known dual naming generation {old_tags}")
-        return None
+        return self._skip(name, self.UNRECOGNISED, f"matches no known dual naming generation {old_tags}", warn=True)
 
     def _plan_jepa_run(self, run_dir: Path, metadata_dir: Path, summary: dict, model_config: dict, trainer: dict, dataset: dict) -> str | None:
         """Rebuilds the name of a JEPA run, adding the pae_/iae_ autoencoder tags.
@@ -386,28 +395,23 @@ class RunRenamer:
         """
         payload = trainer.get("param_loss")
         if payload is None:
-            self.logger.warning(f"skip {run_dir.name}: JEPA trainer config has no param_loss")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "JEPA trainer config has no param_loss", warn=True)
 
         matching = self._matching(payload, summary)
         if matching is None:
-            self.logger.warning(f"skip {run_dir.name}: no recognizable matching strategy in trainer config or run summary")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "no recognizable matching strategy in trainer config or run summary", warn=True)
 
         profile = self._read_json(metadata_dir / "meta" / RunArtifacts.PROFILE_AE_CONFIG)
         image   = self._read_json(metadata_dir / "meta" / RunArtifacts.IMAGE_AE_CONFIG)
 
         if trainer.get("autoencoder") is not None and profile is None:
-            self.logger.warning(f"skip {run_dir.name}: a profile autoencoder was coupled but meta/profile_autoencoder_config.json is missing; the AE architecture name cannot be recovered")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "a profile autoencoder was coupled but meta/profile_autoencoder_config.json is missing; the AE architecture name cannot be recovered", warn=True)
 
         if trainer.get("image_autoencoder") is not None and image is None:
-            self.logger.warning(f"skip {run_dir.name}: an image autoencoder was coupled but meta/image_autoencoder_config.json is missing; the AE architecture name cannot be recovered")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "an image autoencoder was coupled but meta/image_autoencoder_config.json is missing; the AE architecture name cannot be recovered", warn=True)
 
         if profile is None and image is None:
-            self.logger.warning(f"skip {run_dir.name}: JEPA run persists neither a profile nor an image autoencoder config")
-            return None
+            return self._skip(run_dir.name, self.MISSING, "JEPA run persists neither a profile nor an image autoencoder config", warn=True)
 
         if "masking" not in trainer:
             raise ValueError(f"{run_dir.name}: JEPA trainer config predates the input-masking block, so its run tag cannot be rebuilt. Regenerate the run or drop it before renaming.")
@@ -433,8 +437,7 @@ class RunRenamer:
 
         name = run_dir.name
         if name == new_tag or name.startswith(f"{new_tag}_"):
-            self.logger.info(f"skip {name}: already in the new naming")
-            return None
+            return self._skip(name, self.ALREADY, "already in the new naming", warn=False)
 
         old_tags = (RunNaming.tag(model, head, loss, n_gaussians, augmentation), LegacyNaming.flagless_tag(model, head, loss, n_gaussians, augmentation), LegacyNaming.presence_tag(model, head, loss, n_gaussians, augmentation), LegacyNaming.underscore_tag(model, head, matching, loss), LegacyNaming.run_prefix(model))
         for old_tag in old_tags:
@@ -444,7 +447,26 @@ class RunRenamer:
             if name.startswith(f"{old_tag}_"):
                 return f"{new_tag}{name[len(old_tag):]}"
 
-        self.logger.warning(f"skip {name}: matches no known JEPA naming generation {old_tags}")
+        return self._skip(name, self.UNRECOGNISED, f"matches no known JEPA naming generation {old_tags}", warn=True)
+
+    def _skip(self, name: str, outcome: str, reason: str, warn: bool) -> None:
+        """Logs why a run is left alone, counts it under its outcome and returns None for the planner.
+
+        Args:
+            name    : Directory name of the run.
+            outcome : One of the OUTCOMES the run is counted under.
+            reason  : Why no new name is produced.
+            warn    : Whether the line is a warning (a run current code cannot resolve) rather than information.
+        """
+        message = f"skip {name}: {reason}"
+
+        if warn:
+            self.logger.warning(message)
+        else:
+            self.logger.info(message)
+
+        self.counts[outcome] += 1
+
         return None
 
     def _metadata_dir(self, run_dir: Path) -> Path:
@@ -538,6 +560,7 @@ class RunRenamer:
 
             self.logger.info(f"{old} -> {new}")
             if not self.apply:
+                self.counts[self.PLANNED] += 1
                 continue
 
             for holder in (source, *self._seed_children(source)):
@@ -546,6 +569,7 @@ class RunRenamer:
             self._patch_scheduler_files(source, mapping)
 
             source.rename(parent / new)
+            self.counts[self.RENAMED] += 1
 
     def _patch_scheduler_files(self, holder: Path, mapping: dict[str, str]) -> None:
         """Rewrites the run names inside every scheduler result JSON under ``holder``."""
@@ -573,6 +597,7 @@ class RunRenamer:
         if patched != original:
             path.write_text(patched)
             self.logger.info(f"patched {path}")
+            self.counts[self.PATCHED] += 1
 
     def _boundary_replace(self, text: str, mapping: dict[str, str]) -> str:
         """Replaces each old name in ``text`` at name boundaries, longest name first.
@@ -588,15 +613,35 @@ class RunRenamer:
             text = re.sub(rf"(?<!{self.NAME_CHAR}){re.escape(old)}(?!{self.NAME_CHAR})", new, text)
         return text
 
+    def _log_totals(self, title: str, counts: Counter) -> None:
+        """Logs one row per outcome, zeros included, so the table reads the same for every root.
+
+        Args:
+            title  : Table title naming the root or the whole migration.
+            counts : Outcome counts to show.
+        """
+        self.logger.kv_table({outcome: counts[outcome] for outcome in self.OUTCOMES}, title=title)
+
     def run(self) -> None:
-        """Processes every root in turn and closes the logger."""
-        for root in self.roots:
-            self._process_root(root)
+        """Processes every root in turn, logs the totals and closes the logger, recording an abort when a root fails.
 
-        if not self.apply:
-            self.logger.info("dry run only; re-run with --apply to rename")
+        A collision or a missing root raises after earlier groups may already have
+        been renamed and patched, so the log says how many groups were applied and
+        shows the totals reached before the logger closes with the error.
+        """
+        with self.logger:
+            try:
+                for root in self.roots:
+                    self._process_root(root)
+            except BaseException:
+                self._log_totals("Totals before the abort", self.counts)
+                self.logger.error(f"aborted after {self.groups_applied} group(s) were renamed and had their scheduler and result files patched; the remaining groups are untouched, so rerun with the same roots once the cause is fixed")
+                raise
 
-        self.logger.close()
+            self._log_totals("Totals", self.counts)
+
+            if not self.apply:
+                self.logger.info("dry run only; re-run with --apply to rename")
 
 
 if __name__ == "__main__":
