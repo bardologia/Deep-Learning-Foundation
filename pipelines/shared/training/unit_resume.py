@@ -11,7 +11,8 @@ outputs never look complete.
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
+from datetime import datetime
+from pathlib  import Path
 
 from pipelines.shared.config.resolved_entry_config import ResolvedEntryConfigWriter
 from pipelines.shared.inference.metadata           import CompletedInference
@@ -21,6 +22,7 @@ from tools.monitoring.logger                       import Logger
 from tools.runtime.completion                      import CompletionMarker
 from tools.runtime.config_cli                      import ConfigCli
 from tools.runtime.git_state                       import GitState
+from tools.training.checkpoint                     import TrainerState
 from tools.training.pretraining                    import PretrainOrchestrator
 
 
@@ -120,6 +122,19 @@ class UnitResume:
         if commits is not None:
             logger.warning(f"{name}: the reused run was produced at commit {commits[0]}; this launch runs {commits[1]}")
 
+    def _discarded_contents(self) -> str:
+        """Describes what deleting the unfinished run directory discards: its file count and, when it holds one, the trainer state with its size and last save time."""
+        files = sum(1 for path in self.run_directory.rglob("*") if path.is_file())
+        state = TrainerState.path(self.run_directory)
+
+        if not state.is_file():
+            return f"{files} file(s) and no {TrainerState.FILENAME}, so no completed epoch is lost"
+
+        stat  = state.stat()
+        saved = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+        return f"{files} file(s) including {TrainerState.FILENAME} ({stat.st_size / 1024 ** 2:.1f} MB, last saved {saved}); the epochs it held are retrained, pass training.resume to continue from it instead"
+
     def skip_training(self) -> bool:
         """Returns whether the completed run can be reused instead of retrained.
 
@@ -148,8 +163,9 @@ class UnitResume:
             return False
 
         if self.run_directory.is_dir():
+            discarded = self._discarded_contents()
             shutil.rmtree(self.run_directory)
-            self._logger().info(f"{self.run_directory.name}: unfinished run deleted, restarting from scratch")
+            self._logger().warning(f"{self.run_directory.name}: unfinished run deleted, restarting from scratch; discarded {discarded}")
 
         return False
 
@@ -175,8 +191,9 @@ class UnitResume:
 
         for candidate in sorted(inference_dir.iterdir()):
             if candidate.is_dir() and not CompletionMarker.is_complete(candidate):
+                files = sum(1 for path in candidate.rglob("*") if path.is_file())
                 shutil.rmtree(candidate)
-                self._logger().info(f"{self.run_directory.name}: unfinished inference '{candidate.name}' deleted")
+                self._logger().warning(f"{self.run_directory.name}: unfinished inference '{candidate.name}' deleted ({files} file(s), no completion marker for any split)")
 
         if CompletedInference.stamps(inference_dir, split):
             self._logger().info(f"{self.run_directory.name}: existing '{split}' inference reused")

@@ -99,13 +99,35 @@ def test_completed_directory_skips_training(tmp_path):
 
 
 def test_unfinished_directory_is_deleted_and_retrained(tmp_path):
-    """An unfinished run directory is deleted before retraining."""
+    """An unfinished run directory is deleted before retraining, and the deletion is a warning counting what it discarded."""
     resume = unit(tmp_path)
     resume.run_directory.mkdir(parents=True)
     (resume.run_directory / "best_model.pt").write_text("x")
 
     assert not resume.skip_training()
     assert not (resume.run_directory / "best_model.pt").exists()
+
+    written = resume_log(resume.run_directory)
+
+    assert "[WARNING]" in written
+    assert "unfinished run deleted" in written
+    assert "1 file(s) and no last.pt" in written
+
+
+def test_deleting_a_trainer_state_names_its_size_and_save_time(tmp_path):
+    """Deleting an unfinished run that holds a trainer state reports the state's size and last save, and how to keep it."""
+    resume = unit(tmp_path)
+    resume.run_directory.mkdir(parents=True)
+    (resume.run_directory / "last.pt").write_bytes(b"\0" * (3 * 1024 ** 2))
+    (resume.run_directory / "logs").mkdir()
+    (resume.run_directory / "logs" / "old.log").write_text("x")
+
+    assert not resume.skip_training()
+
+    written = resume_log(resume.run_directory)
+
+    assert "2 file(s) including last.pt (3.0 MB, last saved 20" in written
+    assert "pass training.resume" in written
 
 
 def test_disabled_never_skips_or_deletes(tmp_path):
@@ -273,10 +295,11 @@ def test_every_resume_message_survives_on_disk(tmp_path):
 
     assert resume.skip_inference("val")
 
-    written = (resume.run_directory / "logs" / "unit_resume.log").read_text(encoding="utf-8")
+    written = resume_log(resume.run_directory)
 
-    assert "unfinished inference 'partial' deleted" in written
-    assert "existing 'val' inference reused"        in written
+    assert "[WARNING]" in written
+    assert "unfinished inference 'partial' deleted (0 file(s)" in written
+    assert "existing 'val' inference reused"                   in written
 
 
 def test_disabled_inference_check_is_inert(tmp_path):
