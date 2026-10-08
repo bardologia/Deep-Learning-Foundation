@@ -344,14 +344,19 @@ def test_a_sweep_with_no_working_configuration_records_its_measurements(tmp_path
     assert payload["main"][0]["status"]       == "oom"
 
 
-def test_the_main_sweep_is_on_disk_as_a_partial_result_before_the_refinement(tmp_path, monkeypatch):
-    """The main sweep's measurements are written as a partial result before the refinement starts, so a crash there keeps them."""
+def test_a_crash_during_refinement_leaves_the_main_sweep_as_partial_results(tmp_path, monkeypatch):
+    """The main sweep's measurements are on disk as a partial result before the refinement starts, so a crash there keeps them, and the log closes with the exception."""
     config   = _config(tmp_path, batch_sizes=[256], worker_counts=[2], prefetch_factors=[2], refine=True, save_figures=False)
     pipeline = DataLoaderTuningPipeline(config)
     _replay_sweeps(monkeypatch, [[_ok_record(256, 2, 4, True, 1000.0)], RuntimeError("loader worker hung")])
 
     with pytest.raises(RuntimeError, match="loader worker hung"):
         pipeline.run()
+
+    log = (pipeline.output_dir / "logs" / "dataloader_tuning.log").read_text()
+    assert ">>> ABORTED dataloader_tuning" in log
+    assert "RuntimeError: loader worker hung" in log
+    assert ">>> END dataloader_tuning" not in log
 
     payload = json.loads((pipeline.output_dir / "results.json").read_text())
     assert payload["status"]                       == "partial"

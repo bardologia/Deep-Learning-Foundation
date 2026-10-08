@@ -264,63 +264,66 @@ class DataLoaderTuningPipeline:
     def run(self):
         """Runs the main sweep, the optional refinement, and writes the results.
 
+        The log is closed as a context manager, so an error in the dataset
+        pipeline, the model or a measurement ends dataloader_tuning.log with
+        the exception, its traceback and an ABORTED banner.
+
         Returns:
             The recommended loader configuration.
 
         Raises:
             SystemExit : If no loader configuration completed successfully.
         """
-        target            = self._build_target()
-        benchmark, device = self._build_benchmark(target)
+        with self.logger:
+            target            = self._build_target()
+            benchmark, device = self._build_benchmark(target)
 
-        parameter_count = sum(parameter.numel() for parameter in target.model.parameters())
-        main_specs      = self._main_specs()
+            parameter_count = sum(parameter.numel() for parameter in target.model.parameters())
+            main_specs      = self._main_specs()
 
-        self.events.emit("meta", {
-            "mode"        : self.config.mode,
-            "device"      : str(device),
-            "model_name"  : target.model_name,
-            "parameters"  : int(parameter_count),
-            "sample"      : target.sample_text,
-            "item_source" : target.item_source,
-            "config_hint" : target.config_hint,
-            "n_specs"     : len(main_specs),
-            "wait_target" : self.config.data_wait_target,
-        })
+            self.events.emit("meta", {
+                "mode"        : self.config.mode,
+                "device"      : str(device),
+                "model_name"  : target.model_name,
+                "parameters"  : int(parameter_count),
+                "sample"      : target.sample_text,
+                "item_source" : target.item_source,
+                "config_hint" : target.config_hint,
+                "n_specs"     : len(main_specs),
+                "wait_target" : self.config.data_wait_target,
+            })
 
-        main_results = self._run_sweep(benchmark, main_specs, phase="main")
+            main_results = self._run_sweep(benchmark, main_specs, phase="main")
 
-        report         = SweepReport(main_results, wait_threshold=self.config.data_wait_target)
-        recommendation = report.recommendation
+            report         = SweepReport(main_results, wait_threshold=self.config.data_wait_target)
+            recommendation = report.recommendation
 
-        if not recommendation["found"]:
-            self._write(target, device, main_results, [], recommendation, None, "failed")
-            self.events.emit("recommendation", {"recommendation": recommendation, "final": None})
-            self.logger.error(f"No configuration succeeded: {recommendation['reason']}")
-            self.logger.close()
-            raise SystemExit(f"dataloader tuning found no working configuration: {recommendation['reason']}")
+            if not recommendation["found"]:
+                self._write(target, device, main_results, [], recommendation, None, "failed")
+                self.events.emit("recommendation", {"recommendation": recommendation, "final": None})
+                self.logger.error(f"No configuration succeeded: {recommendation['reason']}")
+                raise SystemExit(f"dataloader tuning found no working configuration: {recommendation['reason']}")
 
-        self._write(target, device, main_results, [], recommendation, None, "partial")
+            self._write(target, device, main_results, [], recommendation, None, "partial")
 
-        refine_results = []
-        refine_report  = None
-        if self.config.refine and recommendation.get("found"):
-            refine_results = self._run_sweep(benchmark, self._refine_specs(recommendation), phase="refine")
-            refine_report  = SweepReport(refine_results, wait_threshold=self.config.data_wait_target)
+            refine_results = []
+            refine_report  = None
+            if self.config.refine:
+                refine_results = self._run_sweep(benchmark, self._refine_specs(recommendation), phase="refine")
+                refine_report  = SweepReport(refine_results, wait_threshold=self.config.data_wait_target)
 
-        final = self._final_config(recommendation, refine_report)
+            final = self._final_config(recommendation, refine_report)
 
-        self.events.emit("recommendation", {"recommendation": recommendation, "final": final})
+            self.events.emit("recommendation", {"recommendation": recommendation, "final": final})
 
-        if self.config.save_figures and not report.ok_frame.empty:
-            report.save_all(self.figure_dir)
+            if self.config.save_figures and not report.ok_frame.empty:
+                report.save_all(self.figure_dir)
 
-        results_path = self._write(target, device, main_results, refine_results, recommendation, final, "complete")
+            results_path = self._write(target, device, main_results, refine_results, recommendation, final, "complete")
 
-        self.logger.section("[Recommended configuration]")
-        self.logger.kv_table({**final, "results": str(results_path)})
+            self.logger.section("[Recommended configuration]")
+            self.logger.kv_table({**final, "results": str(results_path)})
 
-        self.events.emit("done", {"results_path": str(results_path), "figure_dir": str(self.figure_dir)})
-        self.logger.close()
+            self.events.emit("done", {"results_path": str(results_path), "figure_dir": str(self.figure_dir)})
 
-        return final
+            return final
