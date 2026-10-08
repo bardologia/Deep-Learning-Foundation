@@ -18,6 +18,7 @@ from tools.reporting.reporting import MetricSectionGrouper
 from tools.metrics.scoring     import FiniteScalar, SeedAggregation
 from tools.monitoring.logger   import Logger
 from tools.reporting.markdown  import MarkdownTable, ScalarFormatter
+from tools.runtime.git_state   import RunProvenance
 from tools.runtime.run_tag     import RunTag
 
 
@@ -297,14 +298,16 @@ class CrossValidationReport:
 
         Returns:
             Path of the written JSON file, holding per-split metric means,
-            standard deviations, fold counts, per-fold values, and the
-            aggregated best validation loss.
+            standard deviations, fold counts, per-fold values, the
+            aggregated best validation loss, and the provenance of the
+            process that wrote it.
         """
         payload: dict = {
-            "model"   : self.model_name,
-            "n_folds" : self.planner.n_folds,
-            "folds"   : [record.name for record in self.base_records],
-            "splits"  : {},
+            "model"      : self.model_name,
+            "n_folds"    : self.planner.n_folds,
+            "folds"      : [record.name for record in self.base_records],
+            "provenance" : RunProvenance.collect(),
+            "splits"     : {},
         }
 
         n_total = self.planner.n_folds

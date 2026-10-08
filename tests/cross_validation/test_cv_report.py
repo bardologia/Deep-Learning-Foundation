@@ -412,3 +412,14 @@ def test_a_metric_non_finite_in_every_fold_is_named_when_it_is_left_out(tmp_path
     assert "split test: ['overall_r2_gt'] non-finite in every fold, omitted from the aggregate" in warnings
     assert "overall_r2_gt" not in summary["splits"]["test"]
     assert summary["splits"]["test"]["curve_mae_gt"]["n_used"] == N_FOLDS - 1
+
+
+def test_summary_json_names_the_commit_that_wrote_it(tmp_path):
+    """cv_summary.json carries the provenance of the process that wrote it, so a report can be traced to its code version."""
+    from tools.runtime.git_state import GitState
+
+    make_report(tmp_path).write_all()
+
+    summary = json.loads((tmp_path / "reports" / "cv_summary.json").read_text())
+
+    assert summary["provenance"]["git_commit"] == GitState.commit()

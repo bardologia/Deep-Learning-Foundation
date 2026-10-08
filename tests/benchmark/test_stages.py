@@ -25,6 +25,7 @@ from tools.data.io                                import FileIO
 from tools.orchestration                          import QueuedInferenceStage, QueuedTrainingStage
 from configuration.training.general.run           import DEFAULT_PARAMS_RUN
 from configuration.synthesis                      import SynthesisConfig
+from tools.runtime.git_state                      import GitState
 
 
 SCENE_K_TAG = f"K_{SynthesisConfig().k_max}"
@@ -286,6 +287,13 @@ def test_maxbatch_summary_names_the_failure_reason_and_the_worker_log(config, re
     assert ("error", f"FAILED  unet: RuntimeError: dataset split is empty  (see {stage.stage_dir / 'unet' / 'worker.log'})") in recording_logger.messages
 
 
+def test_maxbatch_fail_record_carries_the_provenance_of_the_launch(config, logger_stub):
+    """A FAIL record the stage synthesises for a model whose probe left nothing names the commit of the launch that wrote it."""
+    stage = MaxBatchStage(config=config, entry_script=ENTRY, run_tag="t", models=["unet"], logger=logger_stub)
+
+    assert stage._fail_record("unet", "boom")["provenance"]["git_commit"] == GitState.commit()
+
+
 def test_sizematch_reference_record_is_zero_deviation(config, logger_stub):
     """Verifies the reference model records unit scale, zero deviation and no iterations."""
     stage  = SizeMatchStage(config=config, run_tag="t", models=["unet"], logger=logger_stub)
@@ -318,6 +326,7 @@ def test_sizematch_run_emits_reference_and_matched(monkeypatch, logger_stub, tes
     assert "resunet" in records
     assert records["unet"]["scale"] == 1.0
     assert stage.records_path.exists()
+    assert FileIO.load_json(stage.records_path)["resunet"]["provenance"]["git_commit"] == GitState.commit()
 
 
 def test_sizematch_rejects_a_reference_that_is_not_swept(config, logger_stub):

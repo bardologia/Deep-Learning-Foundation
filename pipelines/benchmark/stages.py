@@ -25,6 +25,7 @@ from pipelines.shared.training.seed_sweep          import SeedSet
 from tools.orchestration                           import ExperimentStage, GpuJob, QueuedInferenceStage, QueuedTrainingStage
 from tools.data.io                                 import FileIO
 from tools.monitoring.logger                       import Logger
+from tools.runtime.git_state                       import RunProvenance
 from tools.runtime.run_tag                         import RunTag
 
 
@@ -346,6 +347,7 @@ class MaxBatchStage(ExperimentStage):
             "lr_rungs_run"             : None,
             "error"                    : error,
             "settings"                 : self.config.max_batch_settings(),
+            "provenance"               : RunProvenance.collect(),
         }
 
     def _load_result(self, model_name: str, job: dict | None) -> dict:
@@ -616,7 +618,7 @@ class SizeMatchStage(ExperimentStage):
         """Matches every non-reference model onto the reference parameter count.
 
         Returns:
-            The match record per model key, reused from cache when valid.
+            The match record per model key, each stamped with the provenance of the launch that matched it, reused from cache when valid.
 
         Raises:
             SystemExit : If the reference is not swept, or a model cannot reach the target within the configured scale bounds.
@@ -657,6 +659,10 @@ class SizeMatchStage(ExperimentStage):
 
             for flag in result.flags:
                 self.logger.warning(f"{model_name}: {flag}")
+
+        provenance = RunProvenance.collect()
+        for record in records.values():
+            record["provenance"] = provenance
 
         self._write_results(records, self.records_path)
         self._write_report(records, target, matcher.out_channels)

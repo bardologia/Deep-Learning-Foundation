@@ -16,6 +16,7 @@ from pipelines.shared.training.seed_sweep    import SeedSet
 from pipelines.shared.training.unit_resume   import UnitResume
 from pipelines.shared.training.worker_base   import WorkerBase
 from tools.data.io                           import FileIO
+from tools.runtime.git_state                 import RunProvenance
 
 
 class BenchmarkWorker(WorkerBase):
@@ -250,7 +251,7 @@ class MaxBatchWorker(BenchmarkWorker):
         raise ValueError(f"Unknown training_type '{training_type}', expected one of ['backbone', 'jepa', 'profile_autoencoder']")
 
     def run(self, model_name: str) -> None:
-        """Probes and records the maximum usable batch size for one model.
+        """Probes and records the maximum usable batch size for one model, stamped with the provenance of the probing process.
 
         Args:
             model_name : Registry key of the model to probe.
@@ -261,7 +262,8 @@ class MaxBatchWorker(BenchmarkWorker):
         stage_dir   = self.run_dir / "max_batch"
         result_path = stage_dir / model_name / "max_batch_result.json"
 
-        result = self._build_probe(model_name, stage_dir / model_name / "probe").run()
+        result               = self._build_probe(model_name, stage_dir / model_name / "probe").run()
+        result["provenance"] = RunProvenance.collect()
 
         FileIO.save_json(result, result_path, indent=2)
 
