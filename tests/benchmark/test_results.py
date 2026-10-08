@@ -21,6 +21,8 @@ from pipelines.shared.comparison.trial_collection  import TrialCollector, TrialR
 from tools.data.io             import FileIO
 from tools.runtime.completion  import CompletionMarker
 
+from tests.conftest import RecordingLogger
+
 
 def _write_json(path: Path, payload) -> None:
     """Writes a JSON payload to path, creating parent directories."""
@@ -37,14 +39,53 @@ def test_trial_record_has_inference_reflects_inference_dir(tmp_path):
     assert record.has_inference is True
 
 
-def test_collector_returns_empty_without_training_dir(tmp_path, logger_stub):
-    """Verifies collection yields no records when the run has no training directory."""
+def test_collector_raises_without_training_dir(tmp_path, logger_stub):
+    """Verifies a run without a training directory aborts instead of yielding an empty comparison."""
     (tmp_path / "pipeline").mkdir(parents=True)
     _write_json(tmp_path / "pipeline" / "training_results.json", [])
 
+    with pytest.raises(FileNotFoundError, match="training"):
+        TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
+
+
+def test_collector_warns_about_unfinished_runs_and_missing_artifacts(tmp_path):
+    """Verifies a run without checkpoint, completion marker, configs or index entry is warned about per gap, with the status line and the summary saying so."""
+    (tmp_path / "pipeline").mkdir(parents=True)
+    _write_json(tmp_path / "pipeline" / "size_match.json", {})
+    _write_json(tmp_path / "pipeline" / "training_results.json", [])
+    (tmp_path / "training" / "unet").mkdir(parents=True)
+
+    logger  = RecordingLogger()
+    records = TrialCollector(run_dir=tmp_path, logger=logger, inference_split="test").collect()
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+    infos    = [message for level, message in logger.messages if level == "info"]
+    oks      = [message for level, message in logger.messages if level == "ok"]
+
+    assert len(records) == 1
+    assert any("no best_model.pt" in message for message in warnings)
+    assert any("no complete.json" in message and "did not finish" in message for message in warnings)
+    assert any("absent from training_results.json" in message for message in warnings)
+    assert any("no docs/trainer_config.json" in message for message in warnings)
+    assert any("no meta/run_summary.json" in message for message in warnings)
+    assert any(message.startswith("unet") and message.endswith("no inference, epochs ?, complete no") for message in infos)
+    assert oks == ["1 run(s) collected: 0 with inference on split 'test', 1 without complete.json, 1 without best_model.pt"]
+
+
+def test_collector_reads_the_checkpoint_at_the_run_root_only(tmp_path, logger_stub):
+    """Verifies a second best_model.pt below pretrain/ is neither read nor an error, the run's own checkpoint standing for it."""
+    (tmp_path / "pipeline").mkdir(parents=True)
+    _write_json(tmp_path / "pipeline" / "size_match.json", {})
+    _write_json(tmp_path / "pipeline" / "training_results.json", [])
+
+    trial_dir = tmp_path / "training" / "unet"
+    (trial_dir / "pretrain" / "context").mkdir(parents=True)
+    torch.save({"epoch": 1, "best_val_loss": 9.0, "best_epoch": 1}, trial_dir / "pretrain" / "context" / "best_model.pt")
+    torch.save({"epoch": 9, "best_val_loss": 0.5, "best_epoch": 7}, trial_dir / "best_model.pt")
+
     records = TrialCollector(run_dir=tmp_path, logger=logger_stub, inference_split="test").collect()
 
-    assert records == []
+    assert records[0].checkpoint["best_val_loss"] == pytest.approx(0.5)
 
 
 def test_collector_parses_parameters_from_model_doc(tmp_path, logger_stub):

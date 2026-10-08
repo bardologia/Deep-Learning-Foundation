@@ -203,25 +203,28 @@ class TrialArtifactReader:
     """Reads checkpoint scalars and inference artifacts of a single trial.
 
     Attributes:
-        logger          : Logger for the per-run warnings.
-        inference_split : Split whose completed inference stamps are attached, or None to skip inference attachment entirely.
+        CHECKPOINT_FILENAME : Best checkpoint the trainer writes at the top of a run directory.
+        logger              : Logger for the per-run warnings.
+        inference_split     : Split whose completed inference stamps are attached, or None to skip inference attachment entirely.
     """
+
+    CHECKPOINT_FILENAME = "best_model.pt"
 
     logger          : Logger
     inference_split : str | None
 
     def _read_checkpoint(self, trial_dir: Path) -> dict:
-        """Returns the best-checkpoint scalars and completed epoch count of a trial.
+        """Returns the best-checkpoint scalars and completed epoch count of a run.
 
         Args:
-            trial_dir : Training directory searched recursively for best_model.pt.
+            trial_dir : Run directory, read at the trainer's own checkpoint path rather than searched, since a run with context pretraining holds a second checkpoint below pretrain/.
 
         Returns:
             Dict of the non-null checkpoint scalars plus "n_train_epochs", or an
-            empty dict when no checkpoint exists.
+            empty dict when the run holds no best checkpoint.
         """
-        checkpoint_path = next(trial_dir.rglob("best_model.pt"), None)
-        if checkpoint_path is None:
+        checkpoint_path = trial_dir / self.CHECKPOINT_FILENAME
+        if not checkpoint_path.is_file():
             return {}
 
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False, mmap=True)
@@ -229,7 +232,9 @@ class TrialArtifactReader:
 
         del checkpoint
 
-        info["n_train_epochs"] = self._epochs_completed(checkpoint_path.parent)
+        self.logger.debug(f"{trial_dir.name}: checkpoint scalars read from {checkpoint_path}")
+
+        info["n_train_epochs"] = self._epochs_completed(trial_dir)
 
         return {key: value for key, value in info.items() if value is not None}
 
@@ -286,6 +291,22 @@ class TrialArtifactReader:
         nested        = f"; stamps under {', '.join(f'{InferenceLayout.DIRNAME}/{family}/' for family in families)} are not read by this comparison" if families else ""
 
         self.logger.warning(f"{record.name}: no completed inference on split '{self.inference_split}' under {inference_dir}{nested}; listed but not ranked")
+
+    def _warn_unfinished(self, record: TrialRecord) -> None:
+        """Warns when a run lacks its best checkpoint or its training completion marker, so it is known to be compared as it stands."""
+        if not (record.run_dir / self.CHECKPOINT_FILENAME).is_file():
+            self.logger.warning(f"{record.name}: no {self.CHECKPOINT_FILENAME} under {record.run_dir}; training saved no best checkpoint, compared without checkpoint scalars")
+
+        if not CompletionMarker.is_complete(record.run_dir):
+            self.logger.warning(f"{record.name}: no {CompletionMarker.FILENAME} under {record.run_dir}; training did not finish (crashed or still running), compared as is")
+
+    def _status(self, record: TrialRecord) -> str:
+        """Returns the one-line status of a collected run: its inference stamp or the lack of one, its epoch count and whether training finished."""
+        inference = f"inference {record.inference_dir.name}" if record.has_inference else "no inference"
+        epochs    = record.checkpoint.get("n_train_epochs", "?")
+        complete  = "yes" if CompletionMarker.is_complete(record.run_dir) else "no"
+
+        return f"{inference}, epochs {epochs}, complete {complete}"
 
 
 class TrainingResultsIndex:
@@ -370,6 +391,27 @@ class TrialCollector(TrialArtifactReader):
             return {}
         return FileIO.load_json(path)
 
+    def _run_json(self, record: TrialRecord, path: Path) -> dict:
+        """Returns one of a run's JSON artifacts, or an empty dict after warning that the run lacks it.
+
+        Args:
+            record : Run the artifact belongs to.
+            path   : Expected location of the artifact inside the run directory.
+        """
+        if not path.is_file():
+            self.logger.warning(f"{record.name}: no {path.relative_to(record.run_dir).as_posix()} under {record.run_dir}; its report cells stay empty")
+            return {}
+
+        return FileIO.load_json(path)
+
+    def _training_result(self, record: TrialRecord, training_results: dict) -> dict:
+        """Returns the run's entry of the training results index, or an empty dict after warning that the index lacks it."""
+        if record.name in training_results:
+            return training_results[record.name]
+
+        self.logger.warning(f"{record.name}: absent from {TrainingResultsIndex.FILENAME}; training status and duration unknown")
+        return {}
+
     def _parse_parameters(self, trial_dir: Path, size_match: dict) -> int | None:
         """Returns the trainable parameter count of a trial.
 
@@ -429,16 +471,26 @@ class TrialCollector(TrialArtifactReader):
 
         return size_match, training_results
 
+    def _summarise(self, records: list[TrialRecord]) -> None:
+        """Logs how many runs were collected, how many carry inference on the split and how many lack a checkpoint or a completion marker."""
+        n_inferred   = sum(1 for record in records if record.has_inference)
+        n_unfinished = sum(1 for record in records if not CompletionMarker.is_complete(record.run_dir))
+        n_no_ckpt    = sum(1 for record in records if not (record.run_dir / self.CHECKPOINT_FILENAME).is_file())
+        inference    = f"{n_inferred} with inference on split '{self.inference_split}'" if self.inference_split is not None else "inference not attached"
+
+        self.logger.ok(f"{len(records)} run(s) collected: {inference}, {n_unfinished} without {CompletionMarker.FILENAME}, {n_no_ckpt} without {self.CHECKPOINT_FILENAME}")
+
     def collect(self) -> list[TrialRecord]:
-        """Reads every trial of the run into a record and logs its inference status.
+        """Reads every trial of the run into a record and logs its status.
 
         Returns:
-            One record per run directory, or an empty list when the run has no
-            training directory.
+            One record per run directory.
+
+        Raises:
+            FileNotFoundError : If the run has no training directory, so a wrong run tag fails instead of yielding an empty comparison.
         """
         if not self.training_dir.is_dir():
-            self.logger.error(f"No training directory found at: {self.training_dir}")
-            return []
+            raise FileNotFoundError(f"No training directory at {self.training_dir}; expected one sub-directory per trial there, check the run tag")
 
         runs = self._run_dirs()
 
@@ -449,17 +501,19 @@ class TrialCollector(TrialArtifactReader):
             record = TrialRecord(name=name, run_dir=trial_dir)
 
             record.size_match      = size_match.get(self._model_of(name), {})
-            record.trainer_config  = self._optional_json(trial_dir / "docs" / "trainer_config.json")
-            record.run_summary     = self._optional_json(trial_dir / "meta" / "run_summary.json")
-            record.training_result = training_results[name] if name in training_results else {}
+            record.trainer_config  = self._run_json(record, trial_dir / "docs" / "trainer_config.json")
+            record.run_summary     = self._run_json(record, trial_dir / "meta" / "run_summary.json")
+            record.training_result = self._training_result(record, training_results)
             record.parameters      = self._parse_parameters(trial_dir, record.size_match)
             record.checkpoint      = self._read_checkpoint(trial_dir)
 
             self._attach_inference(record)
-
-            status = f"inference {record.inference_dir.name}" if record.has_inference else "no inference"
-            self.logger.info(f"{record.name:<22} {status}")
+            self._warn_unfinished(record)
+            self._warn_no_inference(record)
+            self.logger.info(f"{record.name:<22} {self._status(record)}")
 
             records.append(record)
+
+        self._summarise(records)
 
         return records
