@@ -4,7 +4,9 @@ The number of Gaussian slots, the z axis extent and the amplitude threshold
 marking a slot active must match the parameter run the labels come from, so all
 three are read back from the metadata written next to the dataset and next to
 the extracted parameters. The threshold is chosen once, when the parameters are
-extracted or synthesised, and every later stage reads it from here.
+extracted or synthesised, and every later stage reads it from here. Because the
+two metadata files are mixed, the parameter run must live inside the dataset it
+was extracted from.
 """
 
 from __future__ import annotations
@@ -12,6 +14,36 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib     import Path
+
+
+class DatasetParameterPairing:
+    """Guard enforcing that a parameter run lives inside its own dataset."""
+
+    @staticmethod
+    def relative_template(dataset_dir: str | Path, parameters_path: str | Path) -> Path:
+        """Returns the parameter path expressed relative to the dataset root.
+
+        Both paths are resolved before they are compared, so a checkout-relative
+        path, the absolute path the machine profile rebased it onto and a path
+        through a symlinked root all count as the same location.
+
+        Args:
+            dataset_dir     : Root of the processed dataset.
+            parameters_path : Path of the extracted parameter cube.
+
+        Returns:
+            The resolved parameter path relative to the resolved dataset root.
+
+        Raises:
+            ValueError : If the parameter path does not live inside the dataset.
+        """
+        dataset_root = Path(dataset_dir).resolve()
+        parameters   = Path(parameters_path).resolve()
+
+        if not parameters.is_relative_to(dataset_root):
+            raise ValueError(f"parameters_path={parameters_path} must live inside dataset_path={dataset_dir}; a parameter run belongs to the dataset it was extracted from, so override both paths together when switching datasets.")
+
+        return parameters.relative_to(dataset_root)
 
 
 @dataclass
@@ -48,8 +80,11 @@ class GaussianConfig:
             The GaussianConfig matching that parameter run.
 
         Raises:
+            ValueError        : If the parameter path does not live inside the dataset.
             FileNotFoundError : If the parameter run carries no param_extraction_meta.json.
         """
+        DatasetParameterPairing.relative_template(dataset_dir, parameters_path)
+
         meta_dir = Path(dataset_dir) / "meta"
         cfg      = json.loads((meta_dir / "config_state.json").read_text())
         z_range  = cfg["cube_config"]["z_range"]
