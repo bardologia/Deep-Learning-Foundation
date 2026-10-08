@@ -58,17 +58,12 @@ class App {
   }
 
   _initScenes() {
-    const orb    = document.getElementById("backdrop-orb");
-    const radar  = document.getElementById("radar");
-    const server = document.getElementById("server-anim");
+    const orb   = document.getElementById("backdrop-orb");
+    const radar = document.getElementById("radar");
 
     if (orb) this.scenes.push(new window.BackdropOrb(orb));
     if (radar) this.scenes.push(new window.TrainingScene(radar));
-
-    if (server) {
-      window.serverScene = new window.ServerScene(server);
-      this.scenes.push(window.serverScene);
-    }
+    for (const mast of document.querySelectorAll(".mast--flanked")) this.scenes.push(new window.MastFigures(mast));
   }
 
   async _loadProject() {

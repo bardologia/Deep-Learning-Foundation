@@ -170,13 +170,13 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 `fit_lab.py`, `model_probe.py`, `triage_board.py`, `ab_autopsy.py`.
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`
-and 51 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
+and 50 modules under `static/js/`. `app.js` and `router.js` wire the views; one module per
 tab (`home`, `equations`, `flow_view` with `flow_sketches`, `pipelines`, `repomap`,
 `models`, `scripts`, `launch` with `launch_widgets` and `launch_pickers`, `ablation`,
 `saved_runs`, `templates`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`, `cube_view`,
 `slice_collector`, `fit_lab`, `microscope`, `triage`, `autopsy`, `feed_tuner`); the rest
 are shared helpers, `run_strip` for the run picker the cube, slices, microscope, triage
 and autopsy tabs share, `figure_export` and `figure_saver` for the figure saver, and
-`radar`, `diagram`, `gauges`, `process_anim`, `server_anim` and `training_anim` for
-drawing and animation, `thinking_orb` for the loading indicator, and `hairline_figure` with
+`radar`, `diagram`, `gauges`, `process_anim` and `training_anim` for drawing and
+animation, `thinking_orb` for the loading indicator, and `hairline_figure` with
 `hairline_project` for the hairline figures.

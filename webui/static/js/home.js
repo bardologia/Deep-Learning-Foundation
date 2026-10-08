@@ -30,6 +30,8 @@ class GpuWeekPanel {
   constructor() {
     this.state = null;
     this.seeded = false;
+    this.gpuCount = 0;
+    this.figureKey = null;
   }
 
   wire() {
@@ -93,13 +95,14 @@ class GpuWeekPanel {
     }
 
     this.seeded = false;
-    this.render(res);
+    this.render(res, this.gpuCount);
     Toast.show(res.enabled ? `GPU week schedule on — ${res.phase} pool ${res.gpus_now.join(",")} applies now` : "GPU week schedule off", res.enabled ? "ok" : "warn");
   }
 
-  render(state) {
+  render(state, gpuCount) {
     if (!state) return;
     this.state = state;
+    this.gpuCount = gpuCount;
 
     const light = document.getElementById("sb-sch-light");
     const mode = document.getElementById("sb-sch-mode");
@@ -145,6 +148,8 @@ class GpuWeekPanel {
         : `off — night would be ${state.night_window}, weekend ${state.window}`;
     }
 
+    this._renderFigure(state);
+
     if (this.seeded) return;
     this.seeded = true;
 
@@ -162,6 +167,24 @@ class GpuWeekPanel {
     set("sb-sch-endhour", state.end_hour);
     set("sb-sch-nightstart", state.night_start_hour);
     set("sb-sch-nightend", state.night_end_hour);
+  }
+
+  _renderFigure(state) {
+    const figure = document.getElementById("sb-sch-figure");
+    if (!figure) return;
+
+    const left = this._untilSwitch(state.week, state.week_hour);
+    const key  = Math.round(left / 600);
+    if (key === this.figureKey && figure.state) return;
+    this.figureKey = key;
+    figure.state   = { wait_s: left };
+  }
+
+  _untilSwitch(week, hour) {
+    const start = Math.floor(hour);
+    const phase = week[start % week.length];
+    for (let h = start + 1; h <= start + week.length; h++) if (week[h % week.length] !== phase) return (h - hour) * 3600;
+    return week.length * 3600;
   }
 }
 
@@ -276,7 +299,10 @@ class JobsList {
     return (
       `<section class="sboard sboard--jobs" aria-label="Jobs">` +
       `<header class="sboard__cap"><span>jobs</span><span class="sboard__n" id="sb-jobs-n">0</span></header>` +
+      `<div class="jobs__body">` +
       `<ul class="sboard__jobs" id="sb-jobs"><li class="sboard__empty">no runs yet</li></ul>` +
+      `<div class="jobs__figure"><div class="fig-fill">${HairlineFigure.html("scheduler", 'id="sb-jobs-figure" aria-hidden="true"')}</div></div>` +
+      `</div>` +
       `</section>`
     );
   }
@@ -304,6 +330,7 @@ class JobsList {
 
     const running = jobs.filter((j) => j.status === "running").length;
     if (n) n.textContent = running > 0 ? `${running} running` : String(jobs.length);
+    this._syncFigure(jobs);
 
     if (!jobs.length) {
       list.innerHTML = `<li class="sboard__empty">no runs yet</li>`;
@@ -320,10 +347,23 @@ class JobsList {
       return this._row(j, false) + (next ? this._row(next, true) : "");
     }).join("");
   }
+
+  _syncFigure(jobs) {
+    const figure = document.getElementById("sb-jobs-figure");
+    if (!figure) return;
+
+    const running = jobs.filter((j) => j.status === "running");
+    const waiting = jobs.filter((j) => j.status === "queued" || j.status === "scheduled");
+    figure.state = {
+      jobs: running.map((j) => ({ id: j.job_id, running: true, position: null, of: null }))
+        .concat(waiting.map((j, i) => ({ id: j.job_id, running: false, position: i + 1, of: waiting.length }))),
+    };
+  }
 }
 
 class GpuActivityTimeline {
-  static ROW_MIN = 18;
+  static ROW_MIN = 30;
+  static ROW_MAX = 80;
   static ROW_GAP = 8;
   static AXIS_H  = 18;
   static LABEL_W = 46;
@@ -352,8 +392,9 @@ class GpuActivityTimeline {
     if (!this.canvas || !state) return;
 
     const rows = Math.max(1, (state.gpus || []).length);
-    const tall = GpuActivityTimeline.AXIS_H + rows * (GpuActivityTimeline.ROW_MIN + GpuActivityTimeline.ROW_GAP);
-    this.canvas.style.minHeight = `${Math.max(150, tall)}px`;
+    const gaps = GpuActivityTimeline.AXIS_H + (rows - 1) * GpuActivityTimeline.ROW_GAP;
+    this.canvas.parentElement.style.minHeight = `${gaps + rows * GpuActivityTimeline.ROW_MIN}px`;
+    this.canvas.parentElement.style.maxHeight = `${gaps + rows * GpuActivityTimeline.ROW_MAX}px`;
     this.draw();
   }
 
@@ -468,7 +509,7 @@ class GpuActivityTimeline {
     }
 
     const gaps  = (gpus.length - 1) * GpuActivityTimeline.ROW_GAP;
-    const rowH  = Math.max(GpuActivityTimeline.ROW_MIN, (h - GpuActivityTimeline.AXIS_H - gaps) / gpus.length);
+    const rowH  = Math.min(GpuActivityTimeline.ROW_MAX, Math.max(GpuActivityTimeline.ROW_MIN, (h - GpuActivityTimeline.AXIS_H - gaps) / gpus.length));
     const top   = 0;
 
     gpus.forEach((gpu, index) => {
@@ -702,6 +743,25 @@ class GpuHeatmapCalendar {
     });
   }
 
+  figureDays() {
+    const gpus  = this.state.gpus || [];
+    const first = this._days(this.state);
+    const days  = first.map(() => Array.from({ length: GpuHeatmapCalendar.SLOTS }, () => ({ mine: 0, others: 0 })));
+
+    for (const gpu of gpus) {
+      for (const bucket of gpu.buckets || []) {
+        const day = Math.floor((bucket.t - first[0]) / 86400);
+        if (day < 0 || day >= days.length) continue;
+
+        const slot              = Math.min(GpuHeatmapCalendar.SLOTS - 1, Math.floor(new Date(bucket.t * 1000).getHours() / 4));
+        days[day][slot].mine   += bucket.mine / gpus.length;
+        days[day][slot].others += bucket.others / gpus.length;
+      }
+    }
+
+    return days.map((slots) => ({ slots: slots.map((slot) => ({ mine: Math.round(slot.mine * 100) / 100, others: Math.round(slot.others * 100) / 100 })) }));
+  }
+
   _hover(event) {
     if (!this.readout || !this.cells.length) return;
 
@@ -746,15 +806,83 @@ class HostHistoryPanel {
 
     const host = state.host || [];
     TimeStrip.draw(cpuCv, state, [
-      { points: TimeStrip.points(host, "cpu"), color: HostHistoryPanel.COLORS.cpu },
-      { points: TimeStrip.points(host, "ram"), color: HostHistoryPanel.COLORS.ram },
+      { points: TimeStrip.points(host, "cpu"), color: HostHistoryPanel.COLORS.cpu, label: "cpu" },
+      { points: TimeStrip.points(host, "ram"), color: HostHistoryPanel.COLORS.ram, label: "ram" },
     ], { yMax: 100, unit: "%" });
 
-    const netMax = Math.max(0.5, ...host.map((s) => Math.max(s.rx || 0, s.tx || 0)));
+    const netMax = TimeStrip.niceMax(Math.max(0.5, ...host.map((s) => Math.max(s.rx || 0, s.tx || 0))));
     TimeStrip.draw(netCv, state, [
-      { points: TimeStrip.points(host, "rx"), color: HostHistoryPanel.COLORS.rx },
-      { points: TimeStrip.points(host, "tx"), color: HostHistoryPanel.COLORS.tx },
+      { points: TimeStrip.points(host, "rx"), color: HostHistoryPanel.COLORS.rx, label: "in" },
+      { points: TimeStrip.points(host, "tx"), color: HostHistoryPanel.COLORS.tx, label: "out" },
     ], { yMax: netMax, unit: " MB/s" });
+  }
+}
+
+class AlertShelf {
+  static SHOW_MS  = 90000;
+  static EVENT_MS = 600000;
+
+  constructor() {
+    this.seen = new Map();
+    this.keys = [];
+    this.box  = null;
+  }
+
+  wire(box, reopen) {
+    this.box = box;
+    box.addEventListener("click", (event) => {
+      if (event.target.closest(".alert__dismiss")) this.dismiss();
+    });
+    reopen.addEventListener("click", () => this.reopen());
+  }
+
+  render(alerts) {
+    if (!this.box) return;
+    const now   = Date.now();
+    const items = this._items(alerts, now);
+    this.keys   = items.map((item) => item.key);
+    items.forEach((item) => {
+      if (!this.seen.has(item.key)) this.seen.set(item.key, now);
+    });
+
+    const fresh = items.filter((item) => now - this.seen.get(item.key) < AlertShelf.SHOW_MS);
+    if (!fresh.length) {
+      this.box.hidden = true;
+      this.box.innerHTML = "";
+      return;
+    }
+
+    const left   = Math.max(...fresh.map((item) => AlertShelf.SHOW_MS - (now - this.seen.get(item.key))));
+    const active = (alerts.active || []).length;
+    this.box.hidden = false;
+    this.box.innerHTML =
+      `<header class="sboard__cap"><span>alerts</span><span class="alert__head"><span class="sboard__n">${active} active · hides in ${Math.ceil(left / 1000)} s</span><button type="button" class="alert__dismiss" title="Hide now; the watchdog count reopens them">dismiss</button></span></header>` +
+      `<div class="alert__list">${fresh.map((item) => item.html).join("")}</div>`;
+  }
+
+  _items(alerts, now) {
+    const active = (alerts.active || []).map((a) => ({
+      key: `${a.kind}|${a.level}|${a.since}`,
+      html: `<span class="alert alert--${a.level === "danger" ? "danger" : "warn"}">${SharedCharts.esc(a.message)}</span>`,
+    }));
+    const events = (alerts.events || [])
+      .filter((e) => now - new Date(e.time).getTime() < AlertShelf.EVENT_MS)
+      .slice(-3)
+      .map((e) => ({
+        key: `event|${e.time}|${e.kind}`,
+        html: `<span class="alert alert--event"><b>${SharedCharts.esc(e.time.replace("T", " "))}</b> ${SharedCharts.esc(e.message)}</span>`,
+      }));
+    return active.concat(events);
+  }
+
+  dismiss() {
+    this.keys.forEach((key) => this.seen.set(key, 0));
+    this.box.hidden = true;
+  }
+
+  reopen() {
+    const now = Date.now();
+    this.keys.forEach((key) => this.seen.set(key, now));
   }
 }
 
@@ -762,6 +890,7 @@ class StatusBoard {
   static POLL_MS      = 1000;
   static AWAY_EVERY   = 10;
   static SHRINK_TICKS = 10;
+  static MISSING_RETRY_MS = 10000;
 
   constructor(els) {
     this.els = els;
@@ -769,8 +898,6 @@ class StatusBoard {
     this.gpuEls = [];
     this.coreEls = [];
     this.cpuDial = null;
-    this.ramTank = null;
-    this.swapTank = null;
     this.impactMeters = null;
     this.histMax = 144;
     this.gpuCount = 0;
@@ -781,11 +908,14 @@ class StatusBoard {
     this.jobsList = new JobsList();
     this.activity = null;
     this._activityState = null;
+    this._heatState = null;
     this._activityRange = "day";
     this.hostPanel = new HostHistoryPanel();
     this._hhRange = "day";
     this._hostHour = null;
     this.heatmap = null;
+    this.alertShelf = new AlertShelf();
+    this._missingStamp = 0;
   }
 
   start() {
@@ -805,17 +935,29 @@ class StatusBoard {
     setInterval(() => { if (this._showing()) this._pollHostHour(); }, 30000);
     this._pollHeatmap();
     setInterval(() => { if (this._showing()) this._pollHeatmap(); }, 300000);
-    window.addEventListener("resize", () => {
-      if (this.activity) this.activity.draw();
-      if (this.heatmap) this.heatmap.draw();
-      this.hostPanel.draw();
-    });
+    new ResizeObserver(() => this._redrawCharts()).observe(this.els.board);
   }
 
   _tick() {
     if (document.visibilityState !== "visible") return;
     this.ticks += 1;
     if (this._showing() || this.ticks % StatusBoard.AWAY_EVERY === 0) this._poll();
+    if (this._showing()) this._pollMissing();
+  }
+
+  _pollMissing() {
+    const now = Date.now();
+    if (now - this._missingStamp < StatusBoard.MISSING_RETRY_MS) return;
+    this._missingStamp = now;
+    if (!this._activityState) this._pollActivity();
+    if (!this._heatState) this._pollHeatmap();
+    if (!this.hostPanel.state) this._pollHostHistory();
+  }
+
+  _redrawCharts() {
+    if (this.activity) this.activity.draw();
+    if (this.heatmap) this.heatmap.draw();
+    this.hostPanel.draw();
   }
 
   _showing() {
@@ -920,6 +1062,14 @@ class StatusBoard {
     const gpus = (state.gpus || []).length;
     this._txt("sb-heat-n", `${gpus} device${gpus === 1 ? "" : "s"} &middot; 4 h cells`);
     this.heatmap.render(state);
+
+    const figure = document.getElementById("sb-heat-figure");
+    if (!figure) return;
+    const days = this.heatmap.figureDays();
+    const key  = JSON.stringify(days);
+    if (key === this._heatFigureKey && figure.state) return;
+    this._heatFigureKey = key;
+    figure.state        = { days };
   }
 
   async _pollHostHistory() {
@@ -992,13 +1142,11 @@ class StatusBoard {
 
   _disposeGauges() {
     this.gpuEls.forEach((card) => [card.dialU, card.meterT, card.meterP, card.vseg].forEach((gauge) => gauge.dispose()));
-    [this.cpuDial, this.ramTank, this.swapTank].forEach((gauge) => { if (gauge) gauge.dispose(); });
+    if (this.cpuDial) this.cpuDial.dispose();
     Object.values(this.impactMeters || {}).forEach((meter) => meter.dispose());
 
     this.gpuEls = [];
     this.cpuDial = null;
-    this.ramTank = null;
-    this.swapTank = null;
     this.impactMeters = null;
   }
 
@@ -1008,6 +1156,7 @@ class StatusBoard {
     const gpus = sys.gpus || [];
     const cores = (sys.cpu && sys.cpu.cores) || [];
     this.gpuCount = gpus.length;
+    this.gpuIndices = gpus.map((g, i) => (g.index != null ? g.index : i));
 
     const gpuCards = gpus.length
       ? gpus.map((g, i) =>
@@ -1027,6 +1176,7 @@ class StatusBoard {
           `</article>`
         ).join("")
       : `<div class="sboard__empty">${sys.gpus_known ? "no CUDA devices visible to the backend" : "nvidia-smi is not answering, GPU occupancy is unknown"}</div>`;
+    const gpuShelf = gpus.length % 2 === 1 ? `<div class="gcard gcard--shelf">${HairlineFigure.html("gpus", 'class="gcard__figure" id="sb-gpu-shelf" aria-hidden="true"')}</div>` : "";
 
     const coreCells = cores.map((_, i) => `<i class="cpu__cell" data-core="${i}" title="core ${i}"></i>`).join("");
 
@@ -1040,7 +1190,7 @@ class StatusBoard {
       [lim.disk_warn != null ? `&lt;${Math.round(lim.disk_warn)}% free` : "--", "disk warn"],
       [lim.interval != null ? `${Math.round(lim.interval)} s` : "--", "interval"],
       [lim.cooldown != null ? `${Math.round(lim.cooldown)} s` : "--", "kill cooldown"],
-    ].map(([v, k]) => `<div><dt>${v}</dt><dd>${k}</dd></div>`).join("");
+    ].map(([v, k]) => `<div class="ctl__tile"><dt>${k}</dt><dd>${v}</dd></div>`).join("");
 
     this.els.board.innerHTML =
       `<section class="sboard sboard--impactbanner" id="sb-impact-banner" aria-label="Neighbour impact alarm" hidden></section>` +
@@ -1049,56 +1199,55 @@ class StatusBoard {
 
       `<section class="sboard sboard--gpualarm" id="sb-gpu-guard" aria-label="GPU intrusion alarm" hidden></section>` +
 
-      `<div class="sboard__strips">` +
-      `<div class="strips__col">` +
 
-      `<section class="sboard sboard--strip" aria-label="Resource watchdog">` +
-      `<div class="strip__seg">` +
-      `<i class="wd__light" id="sb-wd-light" aria-hidden="true"></i><span class="wd__label">watchdog</span><span class="wd__mode" id="sb-wd-mode">--</span></div>` +
-      `<i class="strip__div" aria-hidden="true"></i>` +
-      `<span class="wd__status" id="sb-wd-status">--</span>` +
-      `<i class="strip__div" aria-hidden="true"></i>` +
-      `<dl class="wd__limits">${limitCells}</dl>` +
-      `<div class="strip__actions">` +
+      `<div class="sboard__strips">` +
+
+      `<div class="ctl__stack">` +
+      `<section class="sboard sboard--ctl" aria-label="Resource watchdog">` +
+      `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-wd-light" aria-hidden="true"></i>watchdog</span><span class="ctl__state"><span class="wd__mode" id="sb-wd-mode">--</span><button type="button" class="wd__status" id="sb-wd-status" title="Show the alerts again">--</button></span></header>` +
+      `<dl class="ctl__tiles">${limitCells}</dl>` +
+      `<div class="ctl__figure"><div class="fig-fill">${HairlineFigure.html("watchdog", 'id="sb-wd-figure" autopilot="off" aria-hidden="true"')}</div></div>` +
+      `<div class="ctl__actions">` +
       `<button type="button" class="impact__arm" id="sb-detach" title="Detach the backend from your terminal AND login session (retroactive nohup + own systemd scope with lingering): monitors and sequences survive SSH logout, session cleanup and stray SIGTERMs; only SIGKILL or the kill front end button stop it">keep-alive: --</button>` +
       `<button type="button" class="impact__arm" id="sb-impact-arm" title="When armed, auto-nukes all your processes if you slow other users too much">auto-nuke: --</button>` +
       `<button type="button" class="impact__arm" id="sb-kill-ui" title="Stop EVERY web console server of this project, this one and any instance left behind by earlier keep-alive launches: running and detached jobs survive and are re-adopted on the next start, but queued launches, watchdogs and TensorBoard viewers die with them">kill front end</button>` +
+      `</div>` +
+      `</section>` +
       `<button type="button" class="wd__nuke" id="sb-nuke" title="Kill every process running under your user">` +
       `<span class="wd__nuke-sym" aria-hidden="true">&#9762;</span><span class="wd__nuke-txt">NUKE</span>` +
       `</button>` +
       `</div>` +
-      `</section>` +
 
-      `<section class="sboard sboard--strip sboard--ntf" aria-label="Job notifications">` +
-      `<div class="strip__seg">` +
-      `<i class="wd__light" id="sb-ntf-light" aria-hidden="true"></i><span class="wd__label">notify</span><span class="wd__mode" id="sb-ntf-mode">--</span></div>` +
-      `<i class="strip__div" aria-hidden="true"></i>` +
-      `<label class="ntf__field"><span class="ntf__key">ntfy topic</span><input class="ntf__input" id="sb-ntf-topic" type="text" placeholder="pick-a-secret-topic" spellcheck="false" autocomplete="off"></label>` +
-      `<label class="ntf__field"><span class="ntf__key">server</span><input class="ntf__input ntf__input--server" id="sb-ntf-server" type="text" spellcheck="false" autocomplete="off"></label>` +
-      `<span class="ntf__hint" title="Install the ntfy app (or open ntfy.sh in a browser) and subscribe to the same topic. Every job notifies when it starts and when it ends — direct launches, queued runs and follow-ups alike. Fan-out experiments additionally push the first ETA, 25/50/75% progress milestones and per-unit failures. Failures arrive high-priority.">push to your phone when a job starts, progresses and ends</span>` +
-      `<div class="strip__actions">` +
+      `<section class="sboard sboard--ctl" aria-label="Job notifications">` +
+      `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-ntf-light" aria-hidden="true"></i>notify</span><span class="ctl__state"><span class="wd__mode" id="sb-ntf-mode">--</span></span></header>` +
+      `<div class="ctl__fields">` +
+      `<label class="ctl__field"><span class="ntf__key">ntfy topic</span><input class="ntf__input" id="sb-ntf-topic" type="text" placeholder="pick-a-secret-topic" spellcheck="false" autocomplete="off"></label>` +
+      `<label class="ctl__field"><span class="ntf__key">server</span><input class="ntf__input" id="sb-ntf-server" type="text" spellcheck="false" autocomplete="off"></label>` +
+      `</div>` +
+      `<p class="ctl__hint" title="Install the ntfy app (or open ntfy.sh in a browser) and subscribe to the same topic. Every job notifies when it starts and when it ends — direct launches, queued runs and follow-ups alike. Fan-out experiments additionally push the first ETA, 25/50/75% progress milestones and per-unit failures. Failures arrive high-priority.">push to your phone when a job starts, progresses and ends</p>` +
+      `<div class="ctl__figure"><div class="fig-fill">${HairlineFigure.html("notify", 'id="sb-ntf-figure" aria-hidden="true"')}</div></div>` +
+      `<div class="ctl__actions">` +
       `<button type="button" class="impact__arm" id="sb-ntf-test" title="Send a test notification to the topic now">test</button>` +
       `<button type="button" class="impact__arm" id="sb-ntf-save" title="Save topic and server">save</button>` +
       `<button type="button" class="impact__arm" id="sb-ntf-toggle" title="Toggle job start/end notifications">notify: --</button>` +
       `</div>` +
       `</section>` +
 
+      `<section class="sboard sboard--ctl" aria-label="GPU week schedule">` +
+      `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-sch-light" aria-hidden="true"></i>gpu week</span><span class="ctl__state"><span class="wd__mode" id="sb-sch-mode">--</span></span></header>` +
+      `<div class="ctl__pools">` +
+      `<label class="ctl__pool"><span class="ntf__key">weekday</span><input class="ntf__input" id="sb-sch-weekday" type="text" placeholder="2,3" spellcheck="false" autocomplete="off"></label>` +
+      `<label class="ctl__pool"><span class="ntf__key">night</span><input class="ntf__input" id="sb-sch-night" type="text" placeholder="0,1,2,3" spellcheck="false" autocomplete="off"></label>` +
+      `<label class="ctl__pool"><span class="ntf__key">weekend</span><input class="ntf__input" id="sb-sch-weekend" type="text" placeholder="0,1,2,3" spellcheck="false" autocomplete="off"></label>` +
       `</div>` +
-      `<div class="strips__col">` +
-
-      `<section class="sboard sboard--strip sboard--sched" aria-label="GPU week schedule">` +
-      `<div class="strip__seg">` +
-      `<i class="wd__light" id="sb-sch-light" aria-hidden="true"></i><span class="wd__label">gpu week</span><span class="wd__mode" id="sb-sch-mode">--</span></div>` +
-      `<i class="strip__div" aria-hidden="true"></i>` +
-      `<label class="ntf__field"><span class="ntf__key">weekday</span><input class="ntf__input ntf__input--gpus" id="sb-sch-weekday" type="text" placeholder="2,3" spellcheck="false" autocomplete="off"></label>` +
-      `<label class="ntf__field"><span class="ntf__key">night</span><input class="ntf__input ntf__input--gpus" id="sb-sch-night" type="text" placeholder="0,1,2,3" spellcheck="false" autocomplete="off"></label>` +
-      `<label class="ntf__field"><span class="ntf__key">weekend</span><input class="ntf__input ntf__input--gpus" id="sb-sch-weekend" type="text" placeholder="0,1,2,3" spellcheck="false" autocomplete="off"></label>` +
-      `<i class="strip__div" aria-hidden="true"></i>` +
-      `<label class="ntf__field"><span class="ntf__key">night from</span><select class="ntf__input ntf__input--hour" id="sb-sch-nightstart">${GpuWeekPanel.hourOptions()}</select><span class="ntf__key">to</span><select class="ntf__input ntf__input--hour" id="sb-sch-nightend">${GpuWeekPanel.hourOptions()}</select></label>` +
-      `<label class="ntf__field"><span class="ntf__key">weekend from</span><select class="ntf__input ntf__input--day" id="sb-sch-startday">${GpuWeekPanel.dayOptions()}</select><select class="ntf__input ntf__input--hour" id="sb-sch-starthour">${GpuWeekPanel.hourOptions()}</select></label>` +
-      `<label class="ntf__field"><span class="ntf__key">to</span><select class="ntf__input ntf__input--day" id="sb-sch-endday">${GpuWeekPanel.dayOptions()}</select><select class="ntf__input ntf__input--hour" id="sb-sch-endhour">${GpuWeekPanel.hourOptions()}</select></label>` +
-      `<span class="ntf__hint" id="sb-sch-hint" title="Running fan-outs are moved onto the pool of the phase they cross into: the weekend window wins, otherwise the night pool applies between the night hours and the weekday pool covers the rest. A GPU another user is computing on is never taken. Only the switch is automatic: a manual resize from a console tile stands until the next switch.">--</span>` +
-      `<div class="strip__actions">` +
+      `<div class="ctl__fields">` +
+      `<div class="ctl__field"><span class="ntf__key">night</span><span class="ctl__span"><select class="ntf__input" id="sb-sch-nightstart" aria-label="night from">${GpuWeekPanel.hourOptions()}</select><span class="ntf__key">to</span><select class="ntf__input" id="sb-sch-nightend" aria-label="night to">${GpuWeekPanel.hourOptions()}</select></span></div>` +
+      `<div class="ctl__field"><span class="ntf__key">weekend from</span><span class="ctl__span"><select class="ntf__input" id="sb-sch-startday" aria-label="weekend from day">${GpuWeekPanel.dayOptions()}</select><select class="ntf__input" id="sb-sch-starthour" aria-label="weekend from hour">${GpuWeekPanel.hourOptions()}</select></span></div>` +
+      `<div class="ctl__field"><span class="ntf__key">weekend to</span><span class="ctl__span"><select class="ntf__input" id="sb-sch-endday" aria-label="weekend to day">${GpuWeekPanel.dayOptions()}</select><select class="ntf__input" id="sb-sch-endhour" aria-label="weekend to hour">${GpuWeekPanel.hourOptions()}</select></span></div>` +
+      `</div>` +
+      `<p class="ctl__hint" id="sb-sch-hint" title="Running fan-outs are moved onto the pool of the phase they cross into: the weekend window wins, otherwise the night pool applies between the night hours and the weekday pool covers the rest. A GPU another user is computing on is never taken. Only the switch is automatic: a manual resize from a console tile stands until the next switch.">--</p>` +
+      `<div class="ctl__figure"><div class="fig-fill">${HairlineFigure.html("hourglass", 'id="sb-sch-figure" aria-hidden="true"')}</div></div>` +
+      `<div class="ctl__actions">` +
       `<button type="button" class="impact__arm" id="sb-sch-greedy" title="Greedy mode: a GPU held by someone else at the switch is re-checked every 10 minutes and picked up once it frees, until the phase pool is whole. Off, the switch takes whatever is free at that moment and nothing changes it afterwards but you.">greedy: --</button>` +
       `<button type="button" class="impact__arm" id="sb-sch-charity" title="Charity mode: when someone's run bounces off your full GPUs (their process joined a GPU you hold and died while no GPU on the machine was free), one of your GPUs is freed for their retry (it opens once the unit in flight finishes) and greedy sleeps for 4 hours so it is not taken back. One GPU per nap, and no job is ever left without a GPU.">charity: --</button>` +
       `<button type="button" class="impact__arm" id="sb-sch-save" title="Save the weekday, night and weekend GPU pools">save</button>` +
@@ -1107,13 +1256,13 @@ class StatusBoard {
       `</section>` +
 
       `</div>` +
-      `</div>` +
+
 
       `<section class="sboard sboard--gpus" aria-label="CUDA devices">` +
       `<div class="sboard__gputop">` +
       `<div class="gpudeck">` +
       `<header class="sboard__cap"><span>cuda devices</span><span class="sboard__n">${gpus.length}</span></header>` +
-      `<div class="sboard__gpugrid">${gpuCards}</div>` +
+      `<div class="sboard__gpugrid">${gpuCards}${gpuShelf}</div>` +
       `</div>` +
 
       `<section class="sboard sboard--cpu" aria-label="Processor">` +
@@ -1135,14 +1284,11 @@ class StatusBoard {
       `</div>` +
       `</section>` +
 
+
       `<section class="sboard sboard--sysres" aria-label="Memory and storage">` +
-      `<header class="sboard__cap"><span>memory</span><span class="sboard__n" id="sb-mem-total"></span></header>` +
-      `<div class="mem__tanks">` +
-      `<div class="mem__tank"><canvas class="gtank" id="sb-ram-tank"></canvas><span class="mem__tlabel">ram</span><span class="mem__tval" id="sb-ram-txt">--</span></div>` +
-      `<div class="mem__tank"><canvas class="gtank" id="sb-swap-tank"></canvas><span class="mem__tlabel">swap</span><span class="mem__tval" id="sb-swap-txt">--</span></div>` +
-      `</div>` +
-      `<canvas class="sboard__graph sboard__graph--mem" id="sb-mem-graph"></canvas>` +
-      `<div class="sysres__rule"><span>storage</span><span class="sboard__n" id="sb-disk-total"></span></div>` +
+      `<header class="sboard__cap"><span>storage</span><span class="sboard__n" id="sb-disk-total"></span></header>` +
+      `<div class="sysres__grid">` +
+      `<div class="sysres__info">` +
       `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-path"></span><span id="sb-disk-txt">--</span></div>` +
       `<div class="bar"><i class="bar__fill" id="sb-disk-bar"></i></div>` +
       `<div class="sboard__metric"><span>free &middot; all users</span><span id="sb-disk-free">--</span></div>` +
@@ -1150,6 +1296,18 @@ class StatusBoard {
       `<div class="bar"><i class="bar__fill bar__fill--user" id="sb-disk-user-bar"></i></div>` +
       `<div class="sboard__metric"><span class="sboard__path" id="sb-disk-repo-path">repo root</span><span id="sb-disk-repo">--</span></div>` +
       `<div class="bar"><i class="bar__fill bar__fill--repo" id="sb-disk-repo-bar"></i></div>` +
+      `</div>` +
+      `<div class="sysres__figure"><div class="fig-fill">${HairlineFigure.html("riffle", 'aria-hidden="true"')}</div></div>` +
+      `<div class="sysres__rule"><span>memory</span><span class="sboard__n" id="sb-mem-total"></span></div>` +
+      `<div class="sysres__info">` +
+      `<div class="sboard__metric"><span>ram</span><span id="sb-ram-txt">--</span></div>` +
+      `<div class="bar"><i class="bar__fill bar__fill--ram" id="sb-ram-bar"></i></div>` +
+      `<div class="sboard__metric"><span>swap</span><span id="sb-swap-txt">--</span></div>` +
+      `<div class="bar"><i class="bar__fill bar__fill--swap" id="sb-swap-bar"></i></div>` +
+      `<canvas class="sboard__graph sboard__graph--mem" id="sb-mem-graph"></canvas>` +
+      `</div>` +
+      `<div class="sysres__figure"><div class="fig-fill">${HairlineFigure.html("cabinet", 'aria-hidden="true"')}</div></div>` +
+      `</div>` +
       `</section>` +
 
       `<section class="sboard sboard--gpuhist" aria-label="GPU activity timeline">` +
@@ -1160,7 +1318,8 @@ class StatusBoard {
       `<button type="button" class="gpuhist__range" data-range="month">month</button>` +
       `</span>` +
       `<span class="sboard__n" id="sb-act-n">--</span></header>` +
-      `<canvas class="gpuhist__canvas" id="sb-act-graph"></canvas>` +
+      `<div class="gpuhist__figure"><div class="fig-fill">${HairlineFigure.html("patch", 'aria-hidden="true"')}</div></div>` +
+      `<div class="gpuhist__plot"><canvas class="gpuhist__canvas" id="sb-act-graph"></canvas></div>` +
       `<div class="gpuhist__foot">` +
       `<span class="gpuhist__legend"><i class="lg lg--mine"></i>you<i class="lg lg--others"></i>others<i class="lg lg--idle"></i>idle</span>` +
       `<span class="gpuhist__read" id="sb-act-read">hover a block</span>` +
@@ -1175,13 +1334,19 @@ class StatusBoard {
       `<div class="impact__cell"><canvas class="gmeter gmeter--impact" id="sb-impact-io-meter"></canvas><span class="impact__share" id="sb-impact-io-share">your share --</span><div class="bar bar--share"><i class="bar__fill bar__fill--share" id="sb-impact-io-share-bar"></i></div></div>` +
       `<div class="impact__cell"><canvas class="gmeter gmeter--impact" id="sb-impact-cpu-meter"></canvas><span class="impact__share" id="sb-impact-cpu-share">your share --</span><div class="bar bar--share"><i class="bar__fill bar__fill--share" id="sb-impact-cpu-share-bar"></i></div></div>` +
       `</div>` +
+      `<div class="impact__foot">` +
       `<dl class="impact__stats">` +
       `<div><dt id="sb-impact-swap">--</dt><dd>swap out</dd></div>` +
       `<div><dt id="sb-impact-iorate">--</dt><dd>disk busy</dd></div>` +
       `<div><dt id="sb-impact-mine">--</dt><dd>your procs</dd></div>` +
       `<div><dt id="sb-impact-top">--</dt><dd>top ram user</dd></div>` +
       `</dl>` +
+      HairlineFigure.html("balance", 'class="impact__figure" id="sb-impact-balance" aria-hidden="true"') +
+      `</div>` +
       `</section>` +
+
+      `<section class="sboard sboard--impactlog" id="sb-impact-log" aria-label="Neighbour impact alarms" hidden></section>` +
+
 
       `<section class="sboard sboard--hosthist" aria-label="Host history">` +
       `<header class="sboard__cap"><span>host history</span>` +
@@ -1193,34 +1358,51 @@ class StatusBoard {
       `</span>` +
       `<span class="sboard__n" id="sb-hh-n">--</span></header>` +
       `<div class="hosthist__grid">` +
-      `<div class="hosthist__cell"><span class="hosthist__cap"><i class="lg lg--util"></i>cpu %<i class="lg lg--vram"></i>ram %</span><canvas class="hosthist__canvas" id="sb-hh-cpu"></canvas></div>` +
-      `<div class="hosthist__cell"><span class="hosthist__cap"><i class="lg lg--rx"></i>net in<i class="lg lg--tx"></i>net out</span><canvas class="hosthist__canvas" id="sb-hh-net"></canvas></div>` +
+      `<div class="hosthist__figure hosthist__figure--left"><div class="fig-fill">${HairlineFigure.html("phosphor", 'autopilot="off" aria-hidden="true"')}</div></div>` +
+      `<div class="hosthist__cell hosthist__cell--cpu"><span class="hosthist__cap"><i class="lg lg--util"></i>cpu %<i class="lg lg--vram"></i>ram %</span><canvas class="hosthist__canvas" id="sb-hh-cpu"></canvas></div>` +
+      `<div class="hosthist__cell hosthist__cell--net"><span class="hosthist__cap"><i class="lg lg--rx"></i>net in<i class="lg lg--tx"></i>net out</span><canvas class="hosthist__canvas" id="sb-hh-net"></canvas></div>` +
+      `<div class="hosthist__figure hosthist__figure--right"><div class="fig-fill">${HairlineFigure.html("router", 'aria-hidden="true"')}</div></div>` +
       `</div>` +
+      `</section>` +
+
+      this.jobsList.markup() +
+
+      `<section class="sboard sboard--gpuguard" id="sb-gpu-guard-panel" aria-label="GPU guard">` +
+      `<header class="sboard__cap"><span>gpu guard</span><span class="ggd__status" id="sb-ggd-status"><i class="ggd__light"></i><span id="sb-ggd-text">--</span></span></header>` +
+      `<div class="ggd__body">` +
+      `<div class="ggd__table">` +
+      `<div class="ghist__meta" id="sb-ggd-meta"></div>` +
+      `<div class="ghist"><div class="ghist__row ghist__row--head"><span>time</span><span>event</span><span>user</span><span>gpu</span><span>mem</span><span>command</span></div><div class="ghist__body" id="sb-ggd-rows"></div></div>` +
+      `</div>` +
+      HairlineFigure.html("guard", 'class="ggd__figure" id="sb-ggd-figure" aria-hidden="true"') +
+      `</div>` +
+      `</section>` +
+
+
+      `<section class="sboard sboard--figure sboard--srvfig" aria-hidden="true"><div class="fig-fill">${HairlineFigure.html("terminal", 'aria-hidden="true"')}</div></section>` +
+
+      `<section class="sboard sboard--srvlog" aria-label="Server internals">` +
+      `<header class="sboard__cap"><span>server internals</span><span class="sboard__n" id="sb-srvlog-n">--</span></header>` +
+      `<div class="srvlog" id="sb-srvlog"><div class="sboard__empty">${ThinkingOrb.busy("listening", "reading the server log…")}</div></div>` +
       `</section>` +
 
       `<section class="sboard sboard--heatcal" aria-label="GPU month heatmap">` +
       `<header class="sboard__cap"><span>gpu heatmap &middot; 30 days</span><span class="sboard__n" id="sb-heat-n">--</span></header>` +
+      `<div class="heatcal__grid">` +
+      `<div class="heatcal__main">` +
       `<canvas class="heatcal__canvas" id="sb-heat-graph"></canvas>` +
       `<div class="gpuhist__foot">` +
       `<span class="gpuhist__legend"><i class="lg lg--mine"></i>you<i class="lg lg--others"></i>others<i class="lg lg--idle"></i>idle</span>` +
       `<span class="gpuhist__read" id="sb-heat-read">hover a cell &middot; rows are 4 h slots, columns are days</span>` +
       `</div>` +
+      `</div>` +
+      `<div class="heatcal__figure"><div class="fig-fill">${HairlineFigure.html("calendar", 'id="sb-heat-figure" autopilot="off" aria-hidden="true"')}</div></div>` +
+      `</div>` +
       `</section>` +
-
-      `<section class="sboard sboard--impactlog" id="sb-impact-log" aria-label="Neighbour impact alarms" hidden></section>` +
-
       this.usersTable.markup() +
-      this.processTable.markup(sys.user) +
-      this.jobsList.markup() +
+      this.processTable.markup(sys.user);
 
-      `<section class="sboard sboard--gpuguard" id="sb-gpu-guard-panel" aria-label="GPU guard"></section>` +
-
-      `<section class="sboard sboard--srvlog" aria-label="Server internals">` +
-      `<header class="sboard__cap"><span>server internals</span><span class="sboard__n" id="sb-srvlog-n">--</span></header>` +
-      `<div class="srvlog" id="sb-srvlog"><div class="sboard__empty">reading the server log&hellip;</div></div>` +
-      `</section>`;
-
-    this.gpuEls = [...this.els.board.querySelectorAll(".gcard")].map((card, i) => ({
+    this.gpuEls = [...this.els.board.querySelectorAll(".gcard[data-gpu]")].map((card, i) => ({
       vramTxt: card.querySelector(".gcard__vram"),
       health: card.querySelector(".gcard__health"),
       temp: card.querySelector(".gcard__temp"),
@@ -1234,8 +1416,6 @@ class StatusBoard {
     }));
 
     this.cpuDial = new window.DialGauge(document.getElementById("sb-cpu-dial"), { big: true, label: "BUSY %", color: "111, 155, 255", majors: 5, minors: 4, zones: [{ from: 75, to: 90, color: "251, 191, 36" }, { from: 90, to: 100, color: "248, 113, 113" }] });
-    this.ramTank = new window.TankGauge(document.getElementById("sb-ram-tank"), { color: "45, 212, 191" });
-    this.swapTank = new window.TankGauge(document.getElementById("sb-swap-tank"), { color: "167, 139, 250" });
 
     this.impactMeters = {
       mem: new window.LinearMeter(document.getElementById("sb-impact-mem-meter"), { label: "MEM STALL %", color: "111, 155, 255", zones: [{ from: 10, to: 25, color: "251, 191, 36" }, { from: 25, to: 100, color: "248, 113, 113" }] }),
@@ -1253,6 +1433,7 @@ class StatusBoard {
     this._renderHeatmap();
     this._pollServerLog();
 
+    this.alertShelf.wire(document.getElementById("sb-alerts"), document.getElementById("sb-wd-status"));
     this._wireNuke();
     this._wireImpactArm();
     this._wireDetach();
@@ -1414,6 +1595,9 @@ class StatusBoard {
       toggle.classList.toggle("is-safe", on);
     }
 
+    const figure = document.getElementById("sb-ntf-figure");
+    if (figure && (!figure.state || figure.state.armed !== on)) figure.state = { armed: on };
+
     if (!this._ntfSeeded) {
       this._ntfSeeded = true;
       const topic = document.getElementById("sb-ntf-topic");
@@ -1449,14 +1633,14 @@ class StatusBoard {
   }
 
   _update(sys) {
-    window.serverScene.feed(sys);
     this._renderWatchdog(sys.alerts || {});
+    this._renderWatchdogFigure(sys.alerts || {}, sys);
     this._renderAlerts(sys.alerts || {});
     this._renderImpact(sys.impact || {});
     this._renderGpuGuard(sys.gpu_guard || {});
     this._renderDetach(sys.server);
     this._renderNotify(sys.notify);
-    if (this.schedule) this.schedule.render(sys.gpu_schedule);
+    if (this.schedule) this.schedule.render(sys.gpu_schedule, (sys.gpus || []).length);
     const cpu = sys.cpu || {};
     const mem = sys.mem || {};
     const disk = sys.disk || {};
@@ -1517,6 +1701,8 @@ class StatusBoard {
       }
     });
 
+    this._renderShelf(gpus);
+
     if (this.cpuDial) this.cpuDial.set(cpu.total || 0);
     const load = cpu.load || [];
     ["sb-load1", "sb-load5", "sb-load15"].forEach((id, i) => {
@@ -1544,11 +1730,11 @@ class StatusBoard {
 
     if (mem.total) {
       const used = mem.total - mem.available;
-      this.ramTank.set(used / mem.total);
+      this._bar("sb-ram-bar", (100 * used) / mem.total);
       this._txt("sb-ram-txt", `<b>${ByteFormat.gb(used)}</b> / ${ByteFormat.gb(mem.total)} GB`);
       this._txt("sb-mem-total", `${ByteFormat.tb(mem.total)}`);
       const swapUsed = (mem.swap_total || 0) - (mem.swap_free || 0);
-      this.swapTank.set(mem.swap_total ? swapUsed / mem.swap_total : 0);
+      this._bar("sb-swap-bar", mem.swap_total ? (100 * swapUsed) / mem.swap_total : 0);
       this._txt("sb-swap-txt", mem.swap_total ? `<b>${ByteFormat.gb(swapUsed)}</b> / ${ByteFormat.gb(mem.swap_total)} GB` : "none");
       this._spark(document.getElementById("sb-mem-graph"), [{ data: hist.ram || [], color: "45, 212, 191", fill: 0.10 }]);
     }
@@ -1576,6 +1762,17 @@ class StatusBoard {
     this.processTable.render(sys.procs || []);
   }
 
+  _renderShelf(gpus) {
+    const shelf = document.getElementById("sb-gpu-shelf");
+    if (!shelf || !gpus.length) return;
+
+    const devices = gpus.map((g) => ({ holder: g.mine ? "mine" : g.others ? "others" : g.stale ? "stale" : "idle", util: Math.round(g.util || 0) }));
+    const key     = JSON.stringify(devices);
+    if (key === this._shelfKey && shelf.state) return;
+    this._shelfKey = key;
+    shelf.state    = { devices };
+  }
+
   _renderWatchdog(alerts) {
     const light = document.getElementById("sb-wd-light");
     const mode = document.getElementById("sb-wd-mode");
@@ -1592,27 +1789,28 @@ class StatusBoard {
     status.classList.toggle("is-alert", active > 0);
   }
 
+  _renderWatchdogFigure(alerts, sys) {
+    const figure = document.getElementById("sb-wd-figure");
+    const lim    = alerts.limits;
+    if (!figure || !lim) return;
+
+    const cpu    = sys.cpu || {};
+    const mem    = sys.mem || {};
+    const disk   = sys.disk || {};
+    const kinds  = new Set((alerts.active || []).map((alert) => alert.kind));
+    const ratio  = cpu.count ? (cpu.load || [0])[0] / cpu.count : 0;
+    const levels = [(cpu.total || 0) / 100, (0.8 * ratio) / lim.load_ratio, mem.total ? 1 - mem.available / mem.total : 0, disk.total ? 1 - disk.free / disk.total : 0];
+    const limits = [lim.cpu_alert / 100, 0.8, lim.ram_warn / 100, 1 - lim.disk_warn / 100];
+    const alert  = [kinds.has("cpu"), kinds.has("load"), kinds.has("ram") || kinds.has("ram_foreign"), kinds.has("disk")];
+    const state  = { armed: !!alerts.armed, gauges: levels.map((level, k) => ({ level: Math.round(level * 100) / 100, limit: limits[k], alert: alert[k] })) };
+    const key    = JSON.stringify(state);
+    if (key === this._watchdogKey && figure.state) return;
+    this._watchdogKey = key;
+    figure.state      = state;
+  }
+
   _renderAlerts(alerts) {
-    const box = document.getElementById("sb-alerts");
-    if (!box) return;
-
-    const active = alerts.active || [];
-    const events = (alerts.events || []).slice(-3);
-    if (!active.length && !events.length) {
-      box.hidden = true;
-      box.innerHTML = "";
-      return;
-    }
-
-    const chips = active.map((a) =>
-      `<span class="alert alert--${a.level === "danger" ? "danger" : "warn"}">${SharedCharts.esc(a.message)}</span>`
-    ).join("");
-    const log = events.map((e) =>
-      `<span class="alert alert--event"><b>${SharedCharts.esc(e.time.replace("T", " "))}</b> ${SharedCharts.esc(e.message)}</span>`
-    ).join("");
-
-    box.hidden = false;
-    box.innerHTML = `<header class="sboard__cap"><span>alerts</span><span class="sboard__n">${active.length} active</span></header><div class="alert__list">${chips}${log}</div>`;
+    this.alertShelf.render(alerts);
   }
 
   _renderImpact(impact) {
@@ -1650,6 +1848,7 @@ class StatusBoard {
     gauge("mem", (psi.mem || {}).some, mem.mine_share);
     gauge("io",  (psi.io  || {}).some, io.mine_share);
     gauge("cpu", (psi.cpu || {}).some, cpu.mine_share);
+    this._renderBalance([[(psi.mem || {}).some, mem.mine_share], [(psi.io || {}).some, io.mine_share], [(psi.cpu || {}).some, cpu.mine_share]], mine.length > 0);
 
     this._txt("sb-impact-swap", `<b>${(swap.out_mbs || 0).toFixed(1)}</b> MB/s`);
     this._txt("sb-impact-iorate", `<b>${(io.util || 0).toFixed(0)}</b> %`);
@@ -1720,6 +1919,24 @@ class StatusBoard {
         this._impactWasFiring = false;
       }
     }
+  }
+
+  _renderBalance(pairs, alarm) {
+    const balance = document.getElementById("sb-impact-balance");
+    if (!balance) return;
+
+    let mine   = 0;
+    let others = 0;
+    for (const [stall, share] of pairs) {
+      const weight = (stall || 0) / 100;
+      mine        += weight * (share || 0);
+      others      += weight * (1 - (share || 0));
+    }
+    const state = { mine: Math.round(mine * 1000) / 1000, others: Math.round(others * 1000) / 1000, alarm };
+    const key   = JSON.stringify(state);
+    if (key === this._balanceKey && balance.state) return;
+    this._balanceKey = key;
+    balance.state    = state;
   }
 
   _renderGpuGuard(guard) {
@@ -1845,11 +2062,26 @@ class StatusBoard {
         }).join("")
       : `<div class="sboard__empty">no infractions on record</div>`;
 
-    panel.innerHTML =
-      `<header class="sboard__cap"><span>gpu guard</span>` +
-      `<span class="ggd__status ${statusCls}"><i class="ggd__light"></i>${statusTxt}</span></header>` +
-      `<div class="ghist__meta"><span>${total} infraction${total === 1 ? "" : "s"} on record</span><span class="ghist__path" title="${SharedCharts.esc(h.log_path || "")}">${SharedCharts.esc(h.log_path || "")}</span></div>` +
-      `<div class="ghist"><div class="ghist__row ghist__row--head"><span>time</span><span>event</span><span>user</span><span>gpu</span><span>mem</span><span>command</span></div><div class="ghist__body">${rows}</div></div>`;
+    const status = document.getElementById("sb-ggd-status");
+    status.className = `ggd__status ${statusCls}`;
+    this._txt("sb-ggd-text", statusTxt);
+    this._txt("sb-ggd-meta", `<span>${total} infraction${total === 1 ? "" : "s"} on record</span><span class="ghist__path" title="${SharedCharts.esc(h.log_path || "")}">${SharedCharts.esc(h.log_path || "")}</span>`);
+    this._txt("sb-ggd-rows", rows);
+    this._renderGuardFigure(active, crit > 0);
+  }
+
+  _renderGuardFigure(active, critical) {
+    const figure = document.getElementById("sb-ggd-figure");
+    if (!figure) return;
+
+    const first   = active[0];
+    const slot    = first ? (this.gpuIndices || []).indexOf(first.gpu_index) : -1;
+    const invaded = first ? Math.max(0, slot) : null;
+    const state   = { gpus: Math.max(1, this.gpuCount), invaded, critical };
+    const key     = JSON.stringify(state);
+    if (key === this._guardFigureKey && figure.state) return;
+    this._guardFigureKey = key;
+    figure.state         = state;
   }
 
   _guardCtx(gpus) {
