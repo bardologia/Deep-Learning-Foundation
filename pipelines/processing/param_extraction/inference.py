@@ -181,15 +181,38 @@ class ParamInferenceTrialCollector:
         self.logger     = logger
 
     def _discover_tags(self) -> list[str]:
-        """Returns the configured tags, or every fitted (non-external) run found below."""
+        """Returns the configured tags, or every fitted run found below, naming each run discovery leaves out.
+
+        An injected run carries no fit diagnostics to score and is listed at
+        info level; a run whose metadata has no parameter stack beside it
+        cannot be scored and is warned about. The counts close the discovery.
+        """
         if self.run_tags:
             return list(self.run_tags)
 
-        return [
-            str(marker.parent.relative_to(self.params_dir))
-            for marker in sorted(self.params_dir.rglob(ParamRunInferencePipeline.META_FILENAME))
-            if (marker.parent / "parameters.npy").exists() and not ParameterRunMeta.is_external(marker.parent)
-        ]
+        tags       = []
+        external   = []
+        incomplete = []
+
+        for marker in sorted(self.params_dir.rglob(ParamRunInferencePipeline.META_FILENAME)):
+            run_dir = marker.parent
+            tag     = str(run_dir.relative_to(self.params_dir))
+
+            if ParameterRunMeta.is_external(run_dir):
+                external.append(tag)
+            elif not (run_dir / ParameterRunMeta.PARAMETERS_FILENAME).is_file():
+                incomplete.append(tag)
+            else:
+                tags.append(tag)
+
+        for tag in external:
+            self.logger.info(f"Skipped {tag}: injected from external files, so it carries no fit diagnostics to score")
+
+        for tag in incomplete:
+            self.logger.warning(f"Skipped {tag}: it holds {ParamRunInferencePipeline.META_FILENAME} but no {ParameterRunMeta.PARAMETERS_FILENAME}, so the run cannot be scored; refit it or delete the directory")
+
+        self.logger.subsection(f"Discovered {len(tags)} fitted runs; skipped {len(external)} injected and {len(incomplete)} without {ParameterRunMeta.PARAMETERS_FILENAME}")
+        return tags
 
     def collect(self) -> list[Path]:
         """Returns the run directories of every requested parameter-extraction trial.
