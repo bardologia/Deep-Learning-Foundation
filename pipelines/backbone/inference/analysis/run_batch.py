@@ -198,14 +198,14 @@ class AnalysisRun:
         """Stamps the completion marker naming the analysis, split, checkpoint and status.
 
         Args:
-            run     : Loaded run whose checkpoint epoch is recorded.
+            run     : Loaded run whose checkpoint epoch is recorded, one-based like the training log.
             outcome : Outcome of the finished analysis.
         """
         CompletionMarker.stamp(self.output_dir, {
             "stage"      : self.stage,
             "split"      : self.config.split,
             "checkpoint" : self.config.checkpoint_name,
-            "epoch"      : run.checkpoint_meta["epoch"],
+            "epoch"      : run.checkpoint_meta["epoch"] + 1,
             "status"     : outcome.status,
         })
 
