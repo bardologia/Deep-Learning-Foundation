@@ -714,77 +714,90 @@ class InferencePipeline:
     def run(self) -> Path:
         """Runs the whole inference pass and stamps the completion marker on success.
 
+        The run logger is closed whether the pass succeeds or raises, so a failed pass
+        still flushes its log.
+
         Returns:
             Path of the written inference report.
         """
 
-        cfg                    = self.config
-        meta, logger, plotter  = self._setup(cfg)
-        CompletionMarker.clear(meta.output_dir)
-        run       = self._load_run(cfg, logger)
-        evaluator = self._build_embedding_evaluator(cfg, run, logger)
-        result    = self._predict(cfg, meta, run, evaluator, logger)
+        cfg                   = self.config
+        meta, logger, plotter = self._setup(cfg)
+        try:
+            CompletionMarker.clear(meta.output_dir)
+            run       = self._load_run(cfg, logger)
+            evaluator = self._build_embedding_evaluator(cfg, run, logger)
+            result    = self._predict(cfg, meta, run, evaluator, logger)
 
-        z_axis_np         = np.asarray(run.z_axis, dtype=np.float64)
-        _N_z, _row, _col = result.pred_curves.shape
+            z_axis_np        = np.asarray(run.z_axis, dtype=np.float64)
+            _N_z, _row, _col = result.pred_curves.shape
 
-        self._extract_curve_params(cfg, meta, run, result, z_axis_np, logger)
+            self._extract_curve_params(cfg, meta, run, result, z_axis_np, logger)
 
-        logger.section("[Inference: Metrics]")
-        indices        = self._compute_slice_indices(cfg, _N_z, _row, _col)
-        global_metrics = self._evaluate_metrics(cfg, result, z_axis_np, run, meta, indices, logger)
-        logger.subsection(f"Global metrics written : {meta.metrics_path}")
+            logger.section("[Inference: Metrics]")
+            indices        = self._compute_slice_indices(cfg, _N_z, _row, _col)
+            global_metrics = self._evaluate_metrics(cfg, result, z_axis_np, run, meta, indices, logger)
+            logger.subsection(f"Global metrics written : {meta.metrics_path}")
 
-        self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics, logger)
-        self._evaluate_label_quality(cfg, meta, run, result, z_axis_np, global_metrics, logger)
-        self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)
-        self._stratify_errors(cfg, meta, run, result, global_metrics, logger)
-        self._classify_failures(cfg, meta, run, result, global_metrics, logger)
-        self._calibrate_presence(meta, run, result, global_metrics, logger)
-        self._audit_normalization(meta, run, result, global_metrics, logger)
+            self._evaluate_embeddings(cfg, meta, evaluator, result, global_metrics, logger)
+            self._evaluate_label_quality(cfg, meta, run, result, z_axis_np, global_metrics, logger)
+            self._evaluate_flip_consistency(cfg, meta, run, result, global_metrics, logger)
+            self._stratify_errors(cfg, meta, run, result, global_metrics, logger)
+            self._classify_failures(cfg, meta, run, result, global_metrics, logger)
+            self._calibrate_presence(meta, run, result, global_metrics, logger)
+            self._audit_normalization(meta, run, result, global_metrics, logger)
 
-        figure_paths = {}
-        gif_paths    = {}
+            figure_paths = {}
+            gif_paths    = {}
 
-        if cfg.save_plots or cfg.save_animations:
-            composer = FigureComposer(plotter=plotter, meta=meta, logger=logger, cfg=cfg)
+            if cfg.save_plots or cfg.save_animations:
+                composer = FigureComposer(plotter=plotter, meta=meta, logger=logger, cfg=cfg)
 
-            if cfg.save_plots:
-                logger.section("[Inference: Plots]")
-                figure_paths = self._compose_figures(composer, result, run, global_metrics, z_axis_np, indices)
+                if cfg.save_plots:
+                    logger.section("[Inference: Plots]")
+                    figure_paths = self._compose_figures(composer, result, run, global_metrics, z_axis_np, indices)
+                else:
+                    logger.section("[Inference: Plots skipped]")
+
+                if cfg.save_animations:
+                    logger.section("[Inference: Animations]")
+                    gif_paths = composer.animate(result, run, z_axis_np)
+                else:
+                    logger.section("[Inference: Animations skipped]")
             else:
-                logger.section("[Inference: Plots skipped]")
+                logger.section("[Inference: Plots and animations skipped]")
 
-            if cfg.save_animations:
-                logger.section("[Inference: Animations]")
-                gif_paths = composer.animate(result, run, z_axis_np)
+            logger.section("[Inference: Report]")
+            report_path = self._build_report(
+                meta           = meta,
+                run            = run,
+                cfg            = cfg,
+                z_axis_np      = z_axis_np,
+                global_metrics = global_metrics,
+                figure_paths   = figure_paths,
+                gif_paths      = gif_paths,
+            )
+
+            CompletionMarker.stamp(meta.output_dir, {
+                "stage"                           : "inference",
+                "split"                           : run.split_name,
+                "inference_config"                : meta.config_path.name,
+                CompletedInference.CHECKPOINT_KEY : {"name": cfg.checkpoint_name, **run.checkpoint_meta},
+            })
+
+            logger.section("[Inference Pipeline Done]")
+            logger.kv_table({
+                "pixel_mse_gt_mean" : global_metrics["pixel_mse_gt_mean"],
+                "pixel_mae_gt_mean" : global_metrics["pixel_mae_gt_mean"],
+                "ssim_gt_z_mean"    : global_metrics["ssim_gt_z_mean"],
+            })
+            logger.subsection(f"Report  : {report_path}")
+            logger.subsection(f"Metrics : {meta.metrics_path}")
+            if cfg.save_cubes:
+                logger.subsection(f"Cubes   : {len(list(result.cube_directory.glob('*.npy')))} .npy files in {result.cube_directory}\n")
             else:
-                logger.section("[Inference: Animations skipped]")
-        else:
-            logger.section("[Inference: Plots and animations skipped]")
+                logger.subsection("Cubes   : not saved (save_cubes=False)\n")
 
-        logger.section("[Inference: Report]")
-        report_path = self._build_report(
-            meta           = meta,
-            run            = run,
-            cfg            = cfg,
-            z_axis_np      = z_axis_np,
-            global_metrics = global_metrics,
-            figure_paths   = figure_paths,
-            gif_paths      = gif_paths,
-        )
-
-        CompletionMarker.stamp(meta.output_dir, {
-            "stage"                           : "inference",
-            "split"                           : run.split_name,
-            "inference_config"                : meta.config_path.name,
-            CompletedInference.CHECKPOINT_KEY : {"name": cfg.checkpoint_name, **run.checkpoint_meta},
-        })
-
-        logger.section("[Inference Pipeline Done]")
-        logger.subsection(f"Report  : {report_path}")
-        logger.subsection(f"Metrics : {meta.metrics_path}")
-        logger.subsection(f"Cubes   : {result.cube_directory}\n")
-        logger.close()
-
-        return report_path
+            return report_path
+        finally:
+            logger.close()
