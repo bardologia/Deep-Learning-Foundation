@@ -1,4 +1,4 @@
-"""Tests for the cube explorer's metric layers: overlays, class legends, histograms, pixel readouts, colour bars and selective scoring."""
+"""Tests for the cube explorer's metric layers: overlays, class legends, histograms, pixel readouts, colour bars, selective scoring and region statistics."""
 
 from __future__ import annotations
 
@@ -214,3 +214,75 @@ def test_class_overlay_paints_each_class_in_its_legend_colour(tmp_path):
         color    = legend[col % 6]["color"]
         expected = [int(color[j:j + 2], 16) / 255.0 for j in (1, 3, 5)]
         assert np.allclose(rgb[:, col], expected, atol=1.0 / 255.0 + 1e-6), col
+
+
+def test_region_metrics(tmp_path):
+    """Region means cover the clipped rectangle, scene means the whole map, and mean profiles cover the curve sources."""
+    explorer, cube_id = _loaded_explorer(tmp_path)
+
+    result = explorer.region_metrics(cube_id, row0=1, row1=3, col0=2, col1=4)
+    assert result["ok"]
+    assert result["n_pixels"] == 9
+    assert (result["row0"], result["row1"], result["col0"], result["col1"]) == (1, 3, 2, 4)
+
+    r2  = np.load(Path(cube_id) / "cubes" / "pixel_r2.npy")
+    row = next(row for row in result["rows"] if row["key"] == "pixel_r2")
+    assert row["region"] == float(np.nanmean(r2[1:4, 2:5]))
+    assert np.isclose(row["scene"], float(np.nanmean(r2)))
+    assert row["label"] == "R2"
+
+    assert set(result["profiles"]) == {"pred", "gt"}
+    pred = result["profiles"]["pred"]
+    assert len(pred["z_values"]) == len(pred["values"]) > 0
+
+    swapped = explorer.region_metrics(cube_id, row0=3, row1=1, col0=4, col1=2)
+    assert swapped["ok"] and swapped["n_pixels"] == 9
+
+    assert explorer.region_metrics("wrong", 0, 1, 0, 1)["ok"] is False
+
+
+def test_region_profiles_average_the_region_on_the_ascending_z_axis(tmp_path):
+    """Each source's region profile is the mean over the rectangle's pixels, ordered by ascending z."""
+    explorer, cube_id = _loaded_explorer(tmp_path)
+
+    result = explorer.region_metrics(cube_id, row0=0, row1=1, col0=0, col1=2)
+    pred   = np.load(Path(cube_id) / "cubes" / "pred_curves.npy")
+    axis   = explorer.loaded["entries"]["pred"]["z_axis"]
+    order  = np.argsort(axis)
+
+    assert result["profiles"]["pred"]["z_values"] == np.asarray(axis)[order].tolist()
+    assert np.allclose(result["profiles"]["pred"]["values"], pred[:, 0:2, 0:3].mean(axis=(1, 2))[order])
+
+
+def test_region_bounds_clip_into_the_cube_and_leave_the_reference_cube_out(tmp_path):
+    """Bounds beyond the cube clip to its edges, and the full reference cube on bin indices gets no region profile."""
+    explorer, cube_id = loaded_cube(tmp_path, with_full=True, with_metrics=True)
+
+    result = explorer.region_metrics(cube_id, row0=-5, row1=99, col0=99, col1=-5)
+    assert (result["row0"], result["row1"], result["col0"], result["col1"]) == (0, N_ROWS - 1, 0, N_COLS - 1)
+    assert result["n_pixels"] == N_ROWS * N_COLS
+    assert "full" in explorer.loaded["entries"] and set(result["profiles"]) == {"pred", "gt"}
+
+    row = next(row for row in result["rows"] if row["key"] == "pixel_r2")
+    assert row["region"] == row["scene"]
+
+
+def test_region_reports_none_for_a_region_without_finite_values(tmp_path):
+    """A region holding only NaN pixels of a layer reports None for its region mean and still the scene mean."""
+    explorer, cube_id = _loaded_explorer(tmp_path)
+
+    row = next(row for row in explorer.region_metrics(cube_id, 0, 0, 0, 0)["rows"] if row["key"] == "pixel_r2")
+    assert row["region"] is None and row["scene"] is not None
+
+
+def test_region_route_answers_through_the_cube_router(tmp_path):
+    """The /api/cubes/region route answers a loaded cube with its statistics and another id with an error status."""
+    explorer, cube_id = _loaded_explorer(tmp_path)
+    router            = CubeRouter(explorer)
+
+    known   = FakeHandler("GET", f"/api/cubes/region?id={quote(cube_id)}&row0=1&row1=2&col0=0&col1=1")
+    unknown = FakeHandler("GET", "/api/cubes/region?id=wrong&row0=0&row1=1&col0=0&col1=1")
+
+    assert router.handle(HttpExchange.of(known)) and router.handle(HttpExchange.of(unknown))
+    assert known.status == 200 and known.payload()["n_pixels"] == 4
+    assert unknown.status == 400

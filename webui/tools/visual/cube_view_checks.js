@@ -244,11 +244,12 @@ class CubeViewChecks {
   _metrics(answer) {
     const { CubeMetrics } = this.classes;
 
-    this.sandbox.SharedCharts = { esc: (text) => String(text) };
-    this.sandbox.Api          = { get: async (url) => answer(new URLSearchParams(url.split("?")[1])) };
+    this.sandbox.SharedCharts           = { esc: (text) => String(text) };
+    this.sandbox.Api                    = { get: async (url) => answer(new URLSearchParams(url.split("?")[1])) };
+    this.sandbox.window.addEventListener = () => {};
 
     const refs = {};
-    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open", "histNote", "download"].forEach((name) => {
+    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open", "histNote", "download", "rect", "regionHint", "regionTab", "regionWrap", "regionProf"].forEach((name) => {
       refs[name] = this._element({ innerHTML: "" });
     });
 
@@ -553,6 +554,91 @@ class CubeViewChecks {
     };
     ops.reset = () => { ops.strokes = []; ops.dots = []; };
     return { ctx, ops };
+  }
+
+  async region() {
+    const asked  = [];
+    const toasts = [];
+    const { metrics, refs, host } = this._metrics((query) => new Promise((resolve) => asked.push({ query, resolve })));
+    const { ctx, ops }            = this._recordingCtx();
+
+    this.sandbox.Toast = { show: (text, kind) => toasts.push({ text, kind }) };
+
+    host.colors.pred = "#a3c0ff";
+    host.colors.gt   = "#34d399";
+    host.setFocus    = () => {};
+    host.focusSeq    = 0;
+
+    metrics.layer  = { key: "pixel_r2", label: "R2", vmin: 0, vmax: 1, classes: null };
+    metrics.layers = [metrics.layer];
+    Object.assign(refs.regionProf, { clientWidth: 240, clientHeight: 92, width: 0, height: 0, getContext: () => ctx });
+    refs.img.getBoundingClientRect = () => ({ left: 0, top: 0, width: 60, height: 40 });
+
+    const bounds  = (entry) => ["row0", "row1", "col0", "col1"].map((key) => Number(entry.query.get(key)));
+    const press   = (x, y, shiftKey) => ({ clientX: x, clientY: y, shiftKey, button: 0, preventDefault: () => { press.prevented += 1; } });
+    press.prevented = 0;
+    const answer  = (row0, row1, col0, col1) => ({
+      ok       : true,
+      row0, row1, col0, col1,
+      n_pixels : (row1 - row0 + 1) * (col1 - col0 + 1),
+      rows     : [{ key: "pixel_r2", label: "R2", region: 0.5, scene: 0.25 }, { key: "label_r2", label: "label R2", region: null, scene: 0.75 }],
+      profiles : { pred: { z_values: [0, 1, 2], values: [0, 2, 1] }, gt: { z_values: [0, 1, 2], values: [1, 1, 0] } },
+    });
+
+    metrics._onRectStart(press(10, 5, true));
+    metrics._onRectMove({ clientX: 45, clientY: 35 });
+    const painted = { hidden: refs.rect.hidden, style: { ...refs.rect.style }, prevented: press.prevented };
+    metrics._onRectEnd();
+    const request = { bounds: bounds(asked[0]), id: asked[0].query.get("id") };
+    asked.shift().resolve(answer(0, 3, 1, 4));
+    await this._settle();
+    const shown = { hint: refs.regionHint.textContent, table: refs.regionTab.innerHTML, wrap: !refs.regionWrap.hidden, strokes: ops.strokes.map((stroke) => stroke.color) };
+
+    metrics._onClick(press(30, 20, false));
+    const swallowed = { picked: metrics.picked, suppress: metrics.suppressClick, asked: asked.length };
+
+    metrics._onRectStart(press(10, 5, true));
+    metrics._onRectEnd();
+    metrics._onClick(press(10, 5, true));
+    const tiny = { rect: refs.rect.hidden, asked: asked.length, picked: metrics.picked };
+
+    metrics._onRectStart(press(0, 0, true));
+    metrics._onRectMove({ clientX: 80, clientY: 50 });
+    metrics._onRectEnd();
+    const clipped = bounds(asked[0]);
+    asked.shift().resolve(answer(0, 3, 0, 5));
+    await this._settle();
+
+    metrics._onRectStart(press(30, 20, false));
+    metrics._onClick(press(30, 20, false));
+    const offMap = { picked: metrics.picked ? [metrics.picked.row, metrics.picked.col] : null };
+    asked.splice(0).forEach((entry) => entry.resolve({ ok: true, value: 0.5 }));
+    await this._settle();
+
+    metrics._fetchRegion(0, 1, 0, 1);
+    metrics._fetchRegion(2, 3, 2, 3);
+    const [first, second] = asked.splice(0);
+    second.resolve(answer(2, 3, 2, 3));
+    await this._settle();
+    first.resolve(answer(0, 1, 0, 1));
+    await this._settle();
+    const late = refs.regionHint.textContent;
+
+    metrics._fetchRegion(0, 1, 0, 1);
+    host.selectedId = "other";
+    asked.shift().resolve(answer(0, 1, 0, 1));
+    await this._settle();
+    const replaced = refs.regionHint.textContent;
+
+    metrics._fetchRegion(0, 1, 0, 1);
+    asked.shift().resolve({ ok: false, error: "cube not loaded" });
+    await this._settle();
+
+    metrics._renderLayerBtns = () => {};
+    metrics.configure({ metric_maps: [metrics.layer] });
+    const reset = { rect: refs.rect.hidden, table: refs.regionTab.innerHTML, wrap: refs.regionWrap.hidden, hint: refs.regionHint.textContent };
+
+    return { painted, request, shown, swallowed, tiny, clipped, offMap, late, replaced, toasts, reset };
   }
 
   async mixture() {

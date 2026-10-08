@@ -480,6 +480,11 @@ class CubeMetrics {
     this.selTabEl = refs.selTab;
     this.histEl = refs.hist;
     this.histNoteEl = refs.histNote;
+    this.rectEl = refs.rect;
+    this.regionHintEl = refs.regionHint;
+    this.regionTabEl = refs.regionTab;
+    this.regionWrapEl = refs.regionWrap;
+    this.regionProfEl = refs.regionProf;
 
     this.layers = [];
     this.layer = null;
@@ -493,6 +498,9 @@ class CubeMetrics {
     this.hoverQueued = null;
     this.hoverFetching = false;
     this.selectiveTimer = null;
+    this.rectDrag = null;
+    this.suppressClick = false;
+    this.regionSeq = 0;
 
     if (this.selCovEl) this.selCovEl.addEventListener("input", () => this._onCoverage());
 
@@ -504,6 +512,9 @@ class CubeMetrics {
     this.alphaEl.addEventListener("input", () => this._onAlpha());
     this.img.addEventListener("mousemove", (ev) => this._onHover(ev));
     this.img.addEventListener("click", (ev) => this._onClick(ev));
+    this.img.addEventListener("mousedown", (ev) => this._onRectStart(ev));
+    window.addEventListener("mousemove", (ev) => this._onRectMove(ev));
+    window.addEventListener("mouseup", () => this._onRectEnd());
     this.openBtn.addEventListener("click", () => this._openCuts());
     refs.download.addEventListener("click", () => this._downloadOverlay());
   }
@@ -518,6 +529,11 @@ class CubeMetrics {
     this.openBtn.hidden = true;
     this.readoutEl.innerHTML = "";
     this.coordsEl.textContent = "Hover the map to read the value under the cursor; click to lock a pixel and read every layer.";
+    this.rectDrag = null;
+    this.rectEl.hidden = true;
+    this.regionTabEl.innerHTML = "";
+    this.regionWrapEl.hidden = true;
+    this.regionHintEl.textContent = "Shift-drag a rectangle on the map to compare it against the scene.";
 
     if (!this.layers.length) {
       this.layer = null;
@@ -833,7 +849,11 @@ class CubeMetrics {
   }
 
   _onClick(ev) {
-    if (!this.layer || !this.host.meta) return;
+    if (this.suppressClick) {
+      this.suppressClick = false;
+      return;
+    }
+    if (!this.layer || !this.host.meta || ev.shiftKey) return;
 
     if (this.picked) {
       this.picked = null;
@@ -879,6 +899,133 @@ class CubeMetrics {
     this.host._setView("explorer");
     this.host._follow(this.picked, true);
     this.host._enterSlices(this.picked);
+  }
+
+  _rectPoint(ev) {
+    const rect = this.img.getBoundingClientRect();
+    return {
+      fx : Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width)),
+      fy : Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height)),
+    };
+  }
+
+  _onRectStart(ev) {
+    this.suppressClick = false;
+    if (!ev.shiftKey || ev.button !== 0 || !this.layer || !this.host.meta) return;
+
+    ev.preventDefault();
+    this.rectDrag = { start: this._rectPoint(ev), end: this._rectPoint(ev) };
+    this._paintRect();
+  }
+
+  _onRectMove(ev) {
+    if (!this.rectDrag) return;
+    this.rectDrag.end = this._rectPoint(ev);
+    this._paintRect();
+  }
+
+  _paintRect() {
+    const { start, end } = this.rectDrag;
+
+    this.rectEl.hidden       = false;
+    this.rectEl.style.left   = `${Math.min(start.fx, end.fx) * 100}%`;
+    this.rectEl.style.top    = `${Math.min(start.fy, end.fy) * 100}%`;
+    this.rectEl.style.width  = `${Math.abs(end.fx - start.fx) * 100}%`;
+    this.rectEl.style.height = `${Math.abs(end.fy - start.fy) * 100}%`;
+  }
+
+  _onRectEnd() {
+    if (!this.rectDrag) return;
+
+    const { start, end } = this.rectDrag;
+    this.rectDrag        = null;
+    this.suppressClick   = true;
+
+    if (Math.abs(end.fx - start.fx) < 0.01 || Math.abs(end.fy - start.fy) < 0.01) {
+      this.rectEl.hidden = true;
+      return;
+    }
+
+    const meta = this.host.meta;
+    const row0 = Math.floor(Math.min(start.fy, end.fy) * meta.n_rows);
+    const row1 = Math.min(meta.n_rows - 1, Math.floor(Math.max(start.fy, end.fy) * meta.n_rows));
+    const col0 = Math.floor(Math.min(start.fx, end.fx) * meta.n_cols);
+    const col1 = Math.min(meta.n_cols - 1, Math.floor(Math.max(start.fx, end.fx) * meta.n_cols));
+
+    this._fetchRegion(row0, row1, col0, col1);
+  }
+
+  async _fetchRegion(row0, row1, col0, col1) {
+    const seq    = ++this.regionSeq;
+    const cubeId = this.host.selectedId;
+    const data   = await Api.get(`/api/cubes/region?id=${encodeURIComponent(cubeId)}&row0=${row0}&row1=${row1}&col0=${col0}&col1=${col1}`);
+    if (seq !== this.regionSeq || cubeId !== this.host.selectedId) return;
+
+    if (!data || !data.ok) {
+      Toast.show((data && data.error) || "Region statistics failed.", "error");
+      return;
+    }
+
+    this.regionHintEl.textContent = `rows ${data.row0}–${data.row1} · cols ${data.col0}–${data.col1} · ${data.n_pixels.toLocaleString()} pixels · shift-drag again to replace`;
+
+    let html = `<table class="cube-metrics cube-metrics--params"><thead><tr><th scope="col">metric</th><th scope="col">region</th><th scope="col">scene</th></tr></thead><tbody>`;
+    data.rows.forEach((row) => {
+      const region = row.region === null ? "–" : this.host._fmt(row.region);
+      const scene  = row.scene === null ? "–" : this.host._fmt(row.scene);
+      html += `<tr><td>${SharedCharts.esc(row.label)}</td><td>${region}</td><td>${scene}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+    this.regionTabEl.innerHTML = html;
+
+    this._drawRegionProfiles(data.profiles);
+  }
+
+  _drawRegionProfiles(profiles) {
+    const sources = Object.keys(profiles);
+    if (!sources.length) {
+      this.regionWrapEl.hidden = true;
+      return;
+    }
+    this.regionWrapEl.hidden = false;
+
+    const canvas  = this.regionProfEl;
+    const dpr     = window.devicePixelRatio || 1;
+    const w       = canvas.clientWidth || 240;
+    const h       = canvas.clientHeight || 92;
+    canvas.width  = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    let zMin = Infinity, zMax = -Infinity, vMax = 0;
+    sources.forEach((source) => {
+      const series = profiles[source];
+      zMin = Math.min(zMin, series.z_values[0]);
+      zMax = Math.max(zMax, series.z_values[series.z_values.length - 1]);
+      vMax = Math.max(vMax, ...series.values);
+    });
+    if (!Number.isFinite(zMin) || !(zMax > zMin)) return;
+    if (!(vMax > 0)) vMax = 1;
+
+    const pad = 4;
+    const xAt = (z) => pad + ((z - zMin) / (zMax - zMin)) * (w - 2 * pad);
+    const yAt = (value) => h - pad - (value / vMax) * (h - 2 * pad);
+
+    sources.forEach((source) => {
+      const series    = profiles[source];
+      ctx.strokeStyle = this.host.colors[source] || "#555";
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath();
+      series.z_values.forEach((z, i) => {
+        const x = xAt(z);
+        const y = yAt(series.values[i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    });
   }
 
   async _downloadOverlay() {
