@@ -218,7 +218,7 @@ def _pipeline_pieces(tmp_path, seed=11):
         InferenceComponents(param_space=False),
     )
 
-    run  = SimpleNamespace(n_gaussians=2, activity_threshold=1e-4, split_name="test", split_region=SimpleNamespace(as_tuple=lambda: (0, 4, 0, 3)), core_region=None, track_baselines=None, track_profiles=None, checkpoint_meta={"epoch": 5, "best_epoch": 5, "best_val_loss": 0.1})
+    run  = SimpleNamespace(n_gaussians=2, activity_threshold=1e-4, split_name="test", split_region=SimpleNamespace(as_tuple=lambda: (0, 4, 0, 3)), core_region=None, checkpoint_meta={"epoch": 5, "best_epoch": 5, "best_val_loss": 0.1})
     meta = SimpleNamespace(cube_dir=tmp_path, metrics_path=tmp_path / "metrics.json")
 
     return pipeline, pipeline.config, meta, run, result, z_axis
