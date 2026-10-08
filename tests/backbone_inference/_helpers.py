@@ -7,6 +7,8 @@ inference pipeline can be exercised against the synthetic test scene.
 
 from __future__ import annotations
 
+import contextlib
+
 import numpy as np
 import torch
 
@@ -21,7 +23,7 @@ from pipelines.shared.config.config_persistence import BackboneModelConfigIO
 from tools.data.io                              import FileIO
 from tools.data.regions                         import CropRegion
 
-from tests.conftest import SilentLogger
+from tests.conftest import RecordingLogger, SilentLogger
 
 
 N_GAUSSIANS      = SynthesisConfig().k_max
@@ -129,3 +131,50 @@ def build_run_directory(tmp_path, test_data_dir, params_dir):
     _persist_model(run_dir, meta_dir, in_channels)
 
     return run_dir
+
+
+class StageLogger(RecordingLogger):
+    """Recording logger that also keeps the timer labels, table titles, progress totals and advances it is handed.
+
+    Attributes:
+        timers   : Labels of the timed blocks, in entry order.
+        tables   : Titles of the key-value tables.
+        totals   : Totals of the progress tasks added.
+        advances : Summed progress advances over every task.
+    """
+
+    def __init__(self) -> None:
+        """Starts with no recorded timers, tables, progress totals or advances."""
+        super().__init__()
+        self.timers   = []
+        self.tables   = []
+        self.totals   = []
+        self.advances = 0
+
+    def kv_table(self, data, title=None, **kwargs):
+        """Records the title of a key-value table."""
+        self.tables.append(title)
+
+    @contextlib.contextmanager
+    def timer(self, label: str):
+        """Records the label of a timed block and yields control."""
+        self.timers.append(label)
+        yield
+
+    @contextlib.contextmanager
+    def track(self, transient: bool = False):
+        """Yields a progress stub whose task totals and advances are recorded."""
+        stage = self
+
+        class _Progress:
+            """Progress stub recording the total of every added task and every advance."""
+            def add_task(self, description, total=None, **kwargs):
+                """Records the task total and returns a fixed task id."""
+                stage.totals.append(total)
+                return 0
+
+            def advance(self, task, advance=1, **kwargs):
+                """Adds the advance to the recorded sum."""
+                stage.advances += advance
+
+        yield _Progress()

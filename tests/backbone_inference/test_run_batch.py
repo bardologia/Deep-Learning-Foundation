@@ -15,11 +15,11 @@ import pytest
 
 from configuration.diagnostics                             import ActivationXrayConfig
 from pipelines.backbone.inference.analysis.activation_xray import ActivationXrayRun
-from pipelines.backbone.inference.analysis.run_batch       import AnalysisOutcome, AnalysisRun
+from pipelines.backbone.inference.analysis.run_batch       import AnalysisOutcome, AnalysisRun, RunBatch
 from tools.data.io                                         import FileIO
 from tools.runtime.completion                              import CompletionMarker
 
-from tests.backbone_inference._helpers import build_run_directory
+from tests.backbone_inference._helpers import StageLogger, build_run_directory
 from tests.conftest                    import RecordingLogger
 
 
@@ -64,6 +64,14 @@ class _StubRun(AnalysisRun):
         report.write_text("# stub", encoding="utf-8")
 
         return AnalysisOutcome({"value": 1}, "value 1", report)
+
+
+class _StubBatch(RunBatch):
+    """Batch driver applying the analysis stub to every selected run."""
+
+    SELECTOR_ACTION = "stub"
+    SECTION_TITLE   = "Stub analysis"
+    RUN_CLASS       = _StubRun
 
 
 def _config() -> ActivationXrayConfig:
@@ -153,3 +161,25 @@ def test_activation_xray_pass_on_a_real_run_is_stamped(tmp_path, test_data_dir, 
     assert provenance["checkpoint"] == {"name": "best_model.pt", "epoch": 1, "best_val_loss": 0.1, "best_epoch": 1}
     assert CompletionMarker.payload(output)["stage"] == "activation_xray"
     assert outcome.report_path == output / "activation_xray.md"
+
+
+def test_batch_counts_runs_times_each_and_closes_with_a_summary(tmp_path):
+    """The batch numbers each run k/N, times it, and ends with a summary table and a tally of replaced results."""
+    runs = tmp_path / "runs"
+    for name in ("first", "second"):
+        (runs / name).mkdir(parents=True)
+        (runs / name / "best_model.pt").write_bytes(b"ckpt")
+    _StubRun(runs / "second", _config(), RecordingLogger()).run()
+
+    logger   = StageLogger()
+    config   = ActivationXrayConfig(runs_dir=runs, run_filter=["first", "second"], output_subdir="stub")
+    outcomes = _StubBatch(config, logger).run()
+
+    subsections = [message for level, message in logger.messages if level == "subsection"]
+    oks         = [message for level, message in logger.messages if level == "ok"]
+
+    assert [outcome.replaced for outcome in outcomes] == [False, True]
+    assert subsections == [f"Run 1/2: {runs / 'first'}", f"Run 2/2: {runs / 'second'}"]
+    assert logger.timers == ["Stub analysis [1/2] first", "Stub analysis [2/2] second"]
+    assert ("metrics_table", "Stub analysis: summary") in logger.messages
+    assert oks[-1].startswith("2/2 run(s) analysed in ") and oks[-1].endswith(", 0 flagged, 1 replaced an earlier result")

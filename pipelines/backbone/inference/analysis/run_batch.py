@@ -11,6 +11,7 @@ written, so an output directory states what produced it and whether it finished.
 from __future__ import annotations
 
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -243,17 +244,71 @@ class RunBatch:
         selector = RunSelector(self.config.runs_dir, self.config.checkpoint_name, self.logger, action=self.SELECTOR_ACTION)
         return selector.resolve(self.config.run_filter)
 
+    def _analyse_run(self, run_dir: Path, index: int, total: int) -> tuple[AnalysisOutcome, float]:
+        """Runs the analysis on one run under a timer that logs its duration on success and on failure.
+
+        Args:
+            run_dir : Run directory to analyse.
+            index   : One-based position of the run in the batch.
+            total   : Number of runs in the batch.
+
+        Returns:
+            A pair of the analysis outcome and its wall-clock duration in seconds.
+        """
+        self.logger.subsection(f"Run {index}/{total}: {run_dir}")
+
+        start = time.perf_counter()
+        with self.logger.timer(f"{self.SECTION_TITLE} [{index}/{total}] {run_dir.name}"):
+            outcome = self.RUN_CLASS(run_dir, self.config, self.logger).run()
+
+        return outcome, time.perf_counter() - start
+
+    def _summarize(self, run_dirs: list[Path], outcomes: list[AnalysisOutcome], durations: list[float]) -> None:
+        """Logs one table row per run with its status, result, duration and report, then the batch tally.
+
+        Args:
+            run_dirs  : Analysed run directories, in batch order.
+            outcomes  : Outcome of each run.
+            durations : Wall-clock duration of each run in seconds.
+        """
+        runs_dir = Path(self.config.runs_dir)
+        rows     = []
+        for run_dir, outcome, duration in zip(run_dirs, outcomes, durations):
+            rows.append({
+                "Run"      : str(run_dir.relative_to(runs_dir)),
+                "Status"   : outcome.status,
+                "Result"   : outcome.headline,
+                "Duration" : f"{duration:.1f}s",
+                "Report"   : str(outcome.report_path),
+            })
+
+        self.logger.metrics_table(rows, columns=["Run", "Status", "Result", "Duration", "Report"], title=f"{self.SECTION_TITLE}: summary")
+
+        flagged  = [row["Run"] for row in rows if row["Status"] != "ok"]
+        replaced = sum(outcome.replaced for outcome in outcomes)
+
+        if flagged:
+            self.logger.warning(f"{len(flagged)}/{len(rows)} run(s) flagged by the {self.SECTION_TITLE.lower()}: {', '.join(flagged)}")
+
+        self.logger.ok(f"{len(rows)}/{len(run_dirs)} run(s) analysed in {sum(durations):.1f}s, {len(flagged)} flagged, {replaced} replaced an earlier result")
+
     def run(self) -> list[AnalysisOutcome]:
-        """Runs the analysis on every selected run.
+        """Runs the analysis on every selected run and closes with the batch summary.
 
         Returns:
             One outcome per run, in selection order.
         """
         self.logger.section(self.SECTION_TITLE)
 
-        outcomes = []
-        for run_dir in self._select_runs():
-            self.logger.subsection(f"Run: {run_dir}")
-            outcomes.append(self.RUN_CLASS(run_dir, self.config, self.logger).run())
+        run_dirs  = self._select_runs()
+        outcomes  = []
+        durations = []
+
+        for index, run_dir in enumerate(run_dirs, start=1):
+            outcome, duration = self._analyse_run(run_dir, index, len(run_dirs))
+            outcomes.append(outcome)
+            durations.append(duration)
+
+        self._summarize(run_dirs, outcomes, durations)
 
         return outcomes
