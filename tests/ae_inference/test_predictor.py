@@ -2,7 +2,8 @@
 
 Covers the shared predictor and result base, the assembly of multi-batch reconstructions in
 loader order, the denormalization of the stored arrays, the capture of reconstruction errors
-in normalized units, and the guards against a loader that does not cover its split.
+in normalized units, the progress bar and footprint line of the split loop, and the guards
+against a loader that does not cover its split.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ import torch
 from pipelines.autoencoder_common.inference.predictor  import AeReconstructionPredictor, AeResult
 from pipelines.image_autoencoder.inference.predictor   import ImageAePredictor, ImageAeResult
 from pipelines.profile_autoencoder.inference.predictor import ProfileAePredictor, ProfileAeResult
+from tests.conftest                                    import SilentLogger
 
 
 class _Scaled:
@@ -45,9 +47,74 @@ class _ProfileModel:
         return x * 0.9, torch.zeros(x.shape[0], 8, 1, 1)
 
 
+class _RecordingProgress:
+    """Progress stub recording the task total and every advance.
+
+    Attributes:
+        total    : Total handed to add_task.
+        advanced : Sum of the advances applied to the task.
+    """
+
+    def __init__(self):
+        """Starts with no task."""
+        self.total    = None
+        self.advanced = 0
+
+    def add_task(self, description, total=None, **kwargs):
+        """Records the task total and returns a task id."""
+        self.total = total
+        return 0
+
+    def update(self, task, advance=0, **kwargs):
+        """Accumulates the advance."""
+        self.advanced += advance
+
+
+class _RecordingLogger(SilentLogger):
+    """Silent logger exposing the progress stub and the info lines the predictor writes.
+
+    Attributes:
+        progress : Progress stub yielded by track.
+        infos    : Info messages, in call order.
+    """
+
+    def __init__(self):
+        """Creates the progress stub and an empty info list."""
+        self.progress = _RecordingProgress()
+        self.infos    = []
+
+    def info(self, message, *args, **kwargs):
+        """Records the info message."""
+        self.infos.append(message)
+
+    def track(self, transient=False):
+        """Yields the recording progress stub."""
+        return _ProgressContext(self.progress)
+
+
+class _ProgressContext:
+    """Context manager handing out a fixed progress stub.
+
+    Attributes:
+        progress : Progress stub returned on entry.
+    """
+
+    def __init__(self, progress):
+        """Stores the stub to yield."""
+        self.progress = progress
+
+    def __enter__(self):
+        """Returns the stub."""
+        return self.progress
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Propagates any exception."""
+        return False
+
+
 def _logger():
-    """Returns a logger stub swallowing the section and table calls the predictors make."""
-    return SimpleNamespace(section=lambda *a, **k: None, kv_table=lambda *a, **k: None)
+    """Returns a logger stub swallowing the section, progress, info and table calls the predictors make."""
+    return SilentLogger()
 
 
 class _Loader(list):
@@ -119,6 +186,25 @@ def test_multi_batch_reconstruction_is_assembled_in_loader_order():
 
     torch.testing.assert_close(torch.from_numpy(res.gt[:2]), first * 4.0)
     torch.testing.assert_close(torch.from_numpy(res.gt[2:]), second * 4.0)
+
+
+def test_split_loop_tracks_one_step_per_batch_and_logs_the_array_footprint():
+    """The progress task spans the loader length, advances once per batch, and the footprint line names the samples, shapes and gigabytes held."""
+    first  = torch.rand(2, 20)
+    second = torch.rand(3, 20)
+    run    = SimpleNamespace(model=_ProfileModel(), normalizer=_Scaled(), loader=_Loader([(first, first), (second, second)], 5))
+    logger = _RecordingLogger()
+
+    ProfileAePredictor(run, "cpu", logger).run_inference()
+
+    assert logger.progress.total    == 2
+    assert logger.progress.advanced == 2
+
+    footprint = [message for message in logger.infos if message.startswith("Result arrays")]
+    assert len(footprint) == 1
+    assert "5 samples x (20,)" in footprint[0]
+    assert "embeddings (8,)"   in footprint[0]
+    assert "GB held in RAM"    in footprint[0]
 
 
 def test_uncovered_split_raises():

@@ -101,12 +101,13 @@ class AeReconstructionPredictor:
     Attributes:
         run        : Loaded run bundle carrying the model, normalizer and split loader.
         device     : Torch device the model runs on.
-        logger     : Logger used for the section header and summary table.
+        logger     : Logger used for the section header, the progress bar, the footprint line and the summary table.
         model      : The trained autoencoder.
         normalizer : Normalizer used to map between physical and normalized units.
     """
 
     SECTION      = "[AE Inference: Reconstruct]"
+    PROGRESS     = "Reconstruct"
     RESULT_CLASS = AeResult
 
     def __init__(self, run, device: str, logger: Logger) -> None:
@@ -132,13 +133,26 @@ class AeReconstructionPredictor:
         raise NotImplementedError
 
     def _allocate(self, reconstruction: BatchReconstruction, n_samples: int):
-        """Returns an empty result sized to the split from the first batch's shapes."""
-        return self.RESULT_CLASS(
+        """Returns an empty result sized to the split from the first batch's shapes, logging the memory it holds.
+
+        Args:
+            reconstruction : First reconstructed batch, whose per-sample shapes size the arrays.
+            n_samples      : Number of samples in the split.
+
+        Returns:
+            The empty result with float32 ground-truth, reconstruction and embedding arrays.
+        """
+        result = self.RESULT_CLASS(
             gt                = np.empty((n_samples, *reconstruction.gt.shape[1:]),   dtype=np.float32),
             pred              = np.empty((n_samples, *reconstruction.pred.shape[1:]), dtype=np.float32),
             embeddings        = np.empty((n_samples, *reconstruction.emb.shape[1:]),  dtype=np.float32),
             normalized_errors = {},
         )
+
+        held_gb = (result.gt.nbytes + result.pred.nbytes + result.embeddings.nbytes) / 1024 ** 3
+        self.logger.info(f"Result arrays : {n_samples:,} samples x {tuple(result.gt.shape[1:])} (gt + pred) + embeddings {tuple(result.embeddings.shape[1:])}, float32, {held_gb:.2f} GB held in RAM")
+
+        return result
 
     def _summary(self, result) -> dict:
         """Returns the log table summarising the split result; implemented by subclasses."""
@@ -161,22 +175,27 @@ class AeReconstructionPredictor:
         result     = None
         filled     = 0
 
-        for batch in self.run.loader:
-            reconstruction = self._reconstruct_batch(self._batch_input(batch))
-            size           = reconstruction.gt.shape[0]
+        with self.logger.track(transient=True) as progress:
+            task = progress.add_task(f"[section]{self.PROGRESS}[/section]", total=len(self.run.loader))
 
-            if result is None:
-                result = self._allocate(reconstruction, n_samples)
+            for batch in self.run.loader:
+                reconstruction = self._reconstruct_batch(self._batch_input(batch))
+                size           = reconstruction.gt.shape[0]
 
-            if filled + size > n_samples:
-                raise ValueError(f"The reconstruction loader yielded more than the {n_samples} samples its dataset holds; the split cannot be assembled into a fixed result array.")
+                if result is None:
+                    result = self._allocate(reconstruction, n_samples)
 
-            result.gt        [filled:filled + size] = reconstruction.gt
-            result.pred      [filled:filled + size] = reconstruction.pred
-            result.embeddings[filled:filled + size] = reconstruction.emb
+                if filled + size > n_samples:
+                    raise ValueError(f"The reconstruction loader yielded more than the {n_samples} samples its dataset holds; the split cannot be assembled into a fixed result array.")
 
-            normalized.update(reconstruction.gt_n, reconstruction.pred_n)
-            filled += size
+                result.gt        [filled:filled + size] = reconstruction.gt
+                result.pred      [filled:filled + size] = reconstruction.pred
+                result.embeddings[filled:filled + size] = reconstruction.emb
+
+                normalized.update(reconstruction.gt_n, reconstruction.pred_n)
+                filled += size
+
+                progress.update(task, advance=1)
 
         if result is None:
             raise ValueError("The reconstruction loader yielded no batches; the reconstruction result is undefined")
