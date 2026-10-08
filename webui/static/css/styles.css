@@ -4905,6 +4905,11 @@ thinking-orb[hidden] { display: none; }
 .seq-block.is-launching .seq-block__state::before, .seq-block.is-running .seq-block__state::before, .seq-block.is-finalizing .seq-block__state::before, .seq-block.is-deciding .seq-block__state::before { display: none; }
 thinking-orb { transition: opacity 0.26s var(--ease); }
 thinking-orb.is-fading { opacity: 0; }
+hairline-figure { --hairline-plate: var(--bg); --hairline-hi: var(--ink); --hairline-edge: var(--line-strong); --hairline-mid: var(--line); --hairline-lo: #2c353e; --hairline-stroke: 1.2; width: 100%; }
+.figure-empty { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.figure-empty > hairline-figure { width: min(100%, 360px); }
+.figure-empty__text { max-width: 560px; }
+.saved-grid > .figure-empty { grid-column: 1 / -1; }
 
 .bg-orb {
   position: fixed;
