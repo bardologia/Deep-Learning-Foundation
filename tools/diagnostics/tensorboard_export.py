@@ -370,9 +370,17 @@ class TensorboardExport:
         return groups
 
     def _render(self, groups: List[CurveGroup]) -> List[Path]:
-        """Renders every group into the run's plots directory and returns the file paths."""
+        """Renders every group into the run's plots directory under a progress bar and returns the file paths."""
         renderer = ScalarCurvePlots()
-        return [renderer.render(group, self.config.plots_directory / f"{group.stem}.png") for group in groups]
+        paths    = []
+
+        with self.logger.track() as progress:
+            task = progress.add_task(f"{Path(self.config.run_directory).name} plots", total=len(groups))
+            for group in groups:
+                paths.append(renderer.render(group, self.config.plots_directory / f"{group.stem}.png"))
+                progress.advance(task)
+
+        return paths
 
     def run(self) -> dict:
         """Reads, groups and renders the run's scalar logs.
@@ -446,9 +454,25 @@ class SeedOverlayExport:
         self.logger       = logger
 
     def _read_seed(self, seed_dir: Path) -> List[CurveGroup]:
-        """Returns the grouped scalar series of one seed run."""
+        """Returns the grouped scalar series of one seed run and logs how many series it held, so a slow event read is pinned to its seed."""
         config = self.entry_config.to_config(seed_dir)
-        return ScalarTagGrouper().group(TensorboardScalarReader(config).read())
+        series = TensorboardScalarReader(config).read()
+
+        self.logger.info(f"{seed_dir.name}: {len(series)} scalar series")
+        return ScalarTagGrouper().group(series)
+
+    def _render(self, merged: List[SeedCurveGroup], plots_directory: Path) -> List[Path]:
+        """Renders one overlay figure per merged tag under a progress bar and returns the file paths."""
+        renderer = SeedOverlayPlots()
+        paths    = []
+
+        with self.logger.track() as progress:
+            task = progress.add_task(f"{self.trial_dir.name} overlays", total=len(merged))
+            for group in merged:
+                paths.append(renderer.render(group, plots_directory / f"{group.stem}.png"))
+                progress.advance(task)
+
+        return paths
 
     def run(self) -> dict:
         """Reads every seed and writes the overlay figures into the trial directory.
@@ -463,8 +487,7 @@ class SeedOverlayExport:
         merged         = SeedScalarMerger().merge(groups_by_seed)
 
         plots_directory = self.trial_dir / self.entry_config.output_subdir
-        renderer        = SeedOverlayPlots()
-        paths           = [renderer.render(group, plots_directory / f"{group.stem}.png") for group in merged]
+        paths           = self._render(merged, plots_directory)
 
         self.logger.ok(f"{self.trial_dir.name}: {len(paths)} seed-overlay plots -> {plots_directory}")
 
