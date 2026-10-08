@@ -94,10 +94,11 @@ class FakeSmtp:
     logins = []
     fail   = False
 
-    def __init__(self, host: str, port: int, **kwargs) -> None:
-        """Records nothing on connection; the host, port and any timeout are accepted as given."""
-        self.host = host
-        self.port = port
+    def __init__(self, host: str, port: int, timeout: float) -> None:
+        """Records nothing on connection; the host, port and timeout are accepted as given."""
+        self.host    = host
+        self.port    = port
+        self.timeout = timeout
 
     def __enter__(self):
         """Returns the connection itself."""

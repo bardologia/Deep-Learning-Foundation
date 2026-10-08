@@ -2392,6 +2392,7 @@
         "sender": "address the messages are sent from, also used as the SMTP login user",
         "smtp_host": "SMTP server the messages are submitted to over SSL, defaults to smtp.gmail.com",
         "smtp_port": "SSL port of the SMTP server, defaults to 465",
+        "smtp_timeout_s": "seconds a blocking SMTP connect, login or upload may stall before the submission fails with a timeout instead of hanging; each message logs its size before the submission and its duration after it, defaults to 300",
         "password_env": "name of the environment variable holding the SMTP password (for Gmail, an app password); the password itself is never stored in the config, and an unset variable aborts a real send",
         "subject_prefix": "prefix of every message subject, followed by a colon and the source label, and by the part number when a bundle is split across several messages",
         "dry_run": "stage and log every message without opening an SMTP connection; needs no password and is the way to preview what would be sent"

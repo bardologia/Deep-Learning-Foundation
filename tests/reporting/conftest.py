@@ -14,10 +14,11 @@ class FakeSmtp:
 
     instances = []
 
-    def __init__(self, host, port):
-        """Records the endpoint and registers the instance."""
+    def __init__(self, host, port, timeout):
+        """Records the endpoint and the timeout and registers the instance."""
         self.host     = host
         self.port     = port
+        self.timeout  = timeout
         self.logins   = []
         self.messages = []
         FakeSmtp.instances.append(self)

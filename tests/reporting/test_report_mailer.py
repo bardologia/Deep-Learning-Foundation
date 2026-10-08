@@ -12,8 +12,9 @@ experiment.
 from __future__ import annotations
 
 import base64
-import os
 import json
+import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +28,7 @@ from tools.runtime.config_cli      import ConfigCli
 
 from tests.conftest                     import RecordingLogger
 from tests.cross_validation.test_stages import build_finished_run
+from tests.reporting.conftest           import FakeSmtp
 
 
 PNG_BYTES = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
@@ -604,6 +606,44 @@ def test_mailer_dry_run_needs_no_password_and_sends_nothing(entry_config, monkey
     assert fake_smtp.instances == []
 
 
+def test_mailer_bounds_the_submission_by_the_timeout_and_logs_its_size_and_duration(entry_config, monkeypatch, fake_smtp, tmp_path):
+    """Verifies the connection gets the configured timeout and the submission is announced with its size and closed with its duration."""
+    monkeypatch.setenv(entry_config.password_env, "app-password")
+    entry_config.smtp_timeout_s = 42.0
+    attachment = tmp_path / "a.md"
+    attachment.write_text("x", encoding="utf-8")
+    logger     = RecordingLogger()
+
+    ReportMailer(entry_config, logger).send("subject", "body", [attachment])
+
+    assert fake_smtp.instances[0].timeout == 42.0
+    assert any(level == "info" and message.startswith("Sending 'subject' via smtp.gmail.com:465: 1 attachment(s), ") and message.endswith("MB encoded, timeout 42 s") for level, message in logger.messages)
+    assert re.fullmatch(r"Sent 'subject' to victor@example\.com with 1 attachment\(s\) in \d+\.\d s", logger.messages[-1][1])
+
+
+class StalledSmtp(FakeSmtp):
+    """SMTP fake whose upload times out, as a stalled connection does once the timeout expires."""
+
+    def send_message(self, message):
+        """Raises the timeout a stalled upload ends in."""
+        raise TimeoutError("timed out")
+
+
+def test_mailer_logs_a_stalled_submission_with_its_duration_and_raises(entry_config, monkeypatch, tmp_path):
+    """Verifies a submission that times out is logged as failed with its duration and the error propagates."""
+    monkeypatch.setattr("tools.reporting.report_mailer.smtplib.SMTP_SSL", StalledSmtp)
+    monkeypatch.setenv(entry_config.password_env, "app-password")
+    attachment = tmp_path / "a.md"
+    attachment.write_text("x", encoding="utf-8")
+    logger     = RecordingLogger()
+
+    with pytest.raises(TimeoutError):
+        ReportMailer(entry_config, logger).send("subject", "body", [attachment])
+
+    assert re.fullmatch(r"SMTP submission of 'subject' failed after \d+\.\d s: TimeoutError: timed out", logger.messages[-1][1])
+    assert logger.messages[-1][0] == "error"
+
+
 def test_batch_sends_one_message_per_experiment(entry_config, monkeypatch, fake_smtp):
     """Verifies the batch mails every experiment of the workspace with its staged files attached and labelled by kind."""
     monkeypatch.setenv(entry_config.password_env, "app-password")
@@ -668,7 +708,7 @@ def test_batch_logs_its_settings_and_writes_a_mailing_record(entry_config, monke
     assert settings["Target"] == "experiments"
     assert settings["Filter"] == "exp_beta"
     assert settings["Staging dir"] == str(entry_config.staging_dir)
-    assert settings["SMTP"] == "smtp.gmail.com:465"
+    assert settings["SMTP"] == "smtp.gmail.com:465, timeout 300 s"
     assert settings["Dry run"] is False
 
     records = sorted(entry_config.staging_dir.glob("mail_experiments_*.json"))

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import smtplib
+import time
 
 from email.message import EmailMessage
 from pathlib       import Path
@@ -936,22 +937,41 @@ class ReportMailer:
     def send(self, subject: str, body: str, attachments: List[Path]) -> None:
         """Assembles and submits one message, or only logs it on a dry run.
 
+        The submission is announced with the message size before the
+        connection opens and timed until it closes, and every blocking SMTP
+        call gives up after the configured timeout, so a stall ends in an
+        error instead of a silent hang.
+
         Args:
             subject     : Message subject line.
             body        : Plain-text message body.
             attachments : Files attached to the message.
+
+        Raises:
+            EnvironmentError : If the password variable is unset, checked before any connection opens.
+            OSError          : If the submission fails, including a connect, login or upload stalled past the timeout, raised as a TimeoutError or as the SMTPServerDisconnected smtplib turns it into; the failure is logged with its duration first.
         """
         message = self._message(subject, body, attachments)
+        size_mb = len(message.as_bytes()) / (1024 * 1024)
 
         if self.entry_config.dry_run:
-            self.logger.info(f"Dry run: not sending '{subject}' with {len(attachments)} attachment(s)")
+            self.logger.info(f"Dry run: not sending '{subject}' with {len(attachments)} attachment(s), {size_mb:.1f} MB encoded")
             return
 
-        with smtplib.SMTP_SSL(self.entry_config.smtp_host, self.entry_config.smtp_port) as smtp:
-            smtp.login(self.entry_config.sender, self._password())
-            smtp.send_message(message)
+        self.logger.info(f"Sending '{subject}' via {self.entry_config.smtp_host}:{self.entry_config.smtp_port}: {len(attachments)} attachment(s), {size_mb:.1f} MB encoded, timeout {self.entry_config.smtp_timeout_s:g} s")
 
-        self.logger.ok(f"Sent '{subject}' to {self.entry_config.recipient} with {len(attachments)} attachment(s)")
+        password = self._password()
+        start    = time.monotonic()
+
+        try:
+            with smtplib.SMTP_SSL(self.entry_config.smtp_host, self.entry_config.smtp_port, timeout=self.entry_config.smtp_timeout_s) as smtp:
+                smtp.login(self.entry_config.sender, password)
+                smtp.send_message(message)
+        except OSError as error:
+            self.logger.error(f"SMTP submission of '{subject}' failed after {time.monotonic() - start:.1f} s: {type(error).__name__}: {error}")
+            raise
+
+        self.logger.ok(f"Sent '{subject}' to {self.entry_config.recipient} with {len(attachments)} attachment(s) in {time.monotonic() - start:.1f} s")
 
 
 
@@ -1220,7 +1240,7 @@ class ReportMailBatch:
             **self.target.settings(),
             "Staging dir"       : str(self.entry_config.staging_dir),
             "Max attachment MB" : self.entry_config.max_attachment_mb,
-            "SMTP"              : f"{self.entry_config.smtp_host}:{self.entry_config.smtp_port}",
+            "SMTP"              : f"{self.entry_config.smtp_host}:{self.entry_config.smtp_port}, timeout {self.entry_config.smtp_timeout_s:g} s",
             "Sender"            : self.entry_config.sender,
             "Recipient"         : self.entry_config.recipient,
             "Dry run"           : self.entry_config.dry_run,
