@@ -26,10 +26,8 @@ def main() -> None:
 
     entry  = ConfigCli(ReportMailEntryConfig(), description="Email gathered results, one message per source: experiments found at or below any path (a sweep of trial runs, a cross-validation run, a benchmark run, a sequence workspace or a runs tree), each mailed with the seed-aggregate report of every trial, the trial-comparison reports, a cross-validation run's cross-fold report and the configuration it ran with, the missing seed aggregates and comparisons written first; training runs, each one mailed whole except for the checkpoints, the reconstructed cubes and the files above the per-file cap; generated datasets (the layout and metadata generate_dataset wrote), or parameter-extraction runs (the extraction outputs plus the analyze_param_extraction metrics and figures), the last three packed into size-capped zip volumes; the SMTP password is read from an environment variable").apply()
 
-    logger = Logger(log_dir="logs", name="mail_experiment_reports")
-    ReportMailBatch(entry, logger).run()
-
-    logger.close()
+    with Logger(log_dir="logs", name="mail_experiment_reports") as logger:
+        ReportMailBatch(entry, logger).run()
 
 
 if __name__ == "__main__":
