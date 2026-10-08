@@ -350,6 +350,7 @@ class App {
       jumpPrint    : document.getElementById("cube-jump-print"),
       jumpDownload : document.getElementById("cube-jump-download"),
       jumpCsv      : document.getElementById("cube-jump-csv"),
+      jumpParams   : document.getElementById("cube-jump-params"),
       jumpRowRange : document.getElementById("cube-jump-row-range"),
       jumpColRange : document.getElementById("cube-jump-col-range"),
       sweeps       : ["z", "row", "col"].map((axis) => {

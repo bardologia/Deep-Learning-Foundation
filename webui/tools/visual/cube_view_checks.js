@@ -405,9 +405,8 @@ class CubeViewChecks {
     return { refused, cuts, csv, line, overlay, tag: view.fileTag() };
   }
 
-  _reloaded(view) {
+  _displayStub(view, extra) {
     const { CubeView } = this.classes;
-    const shown        = [];
 
     this.sandbox.getComputedStyle = () => ({ getPropertyValue: () => "#a3c0ff" });
 
@@ -424,11 +423,122 @@ class CubeViewChecks {
       stage      : this._element(),
       topdown    : this._element(),
       mapWrap    : this._element(),
-      figures    : { configure: () => shown.push("configure"), render: () => shown.push("render") },
+      figures    : { configure: () => {}, render: () => {} },
+      ...extra,
     });
     ["_clearBitmapCache", "_syncSpaceBtns", "_syncProfModeBtns", "_renderSourceToggles", "_applyVisibility", "_initCutBounds", "_follow", "_consumeFocus"].forEach((name) => { stub[name] = () => {}; });
     stub._slowestStage = () => "read";
     stub._sweepFor     = () => null;
+    return stub;
+  }
+
+  _focusView() {
+    const { CubeView } = this.classes;
+    const view         = Object.create(CubeView.prototype);
+
+    Object.assign(view, {
+      meta        : { n_rows: 4, n_cols: 6 },
+      selectedId  : "cube",
+      view        : "params",
+      focus       : null,
+      focusSeq    : 0,
+      cutsAdopted : 0,
+      mode        : "map",
+      locked      : null,
+      sweeps      : [],
+      modeBtns    : [],
+      viewEls     : [],
+      deck        : { dataset: {} },
+      back        : this._element(),
+      slicesAt    : this._element(),
+      followed    : [],
+      profiled    : [],
+    });
+    view._follow        = (point) => view.followed.push([point.row, point.col]);
+    view._queueProfiles = (row, col) => view.profiled.push([row, col]);
+    return view;
+  }
+
+  async focus() {
+    const { CubeParams } = this.classes;
+    const view           = this._focusView();
+
+    view.setFocus(9, -2);
+    const clamped = view.focusPoint();
+
+    const paramRefs = {};
+    ["source", "field", "slot", "at", "cross", "cbar", "min", "max", "coords", "table", "open"].forEach((name) => { paramRefs[name] = this._element({ innerHTML: "" }); });
+    paramRefs.canvas = this._element({ getBoundingClientRect: () => ({ left: 0, top: 0, width: 60, height: 40 }) });
+
+    const params   = new CubeParams(paramRefs, view);
+    params.meta    = { n_slots: 2 };
+    params.fetched = [];
+    ["_syncBtns", "_fetchMap", "_updateLegend"].forEach((name) => { params[name] = () => {}; });
+    params._fetchPixel = (row, col) => params.fetched.push([row, col]);
+
+    params._onClick({ clientX: 35, clientY: 15 });
+    const paramPick = { focus: view.focus, seq: view.focusSeq, adopted: params.adopted, fetched: params.fetched.splice(0) };
+
+    const readouts = [];
+    const { metrics, refs } = this._metrics((query) => {
+      readouts.push([Number(query.get("row")), Number(query.get("col"))]);
+      return { ok: true, row: Number(query.get("row")), col: Number(query.get("col")), value: 0.5 };
+    });
+    metrics.host   = view;
+    metrics.layers = [{ key: "pixel_r2", label: "R2", vmin: 0, vmax: 1, classes: null }];
+    metrics.layer  = metrics.layers[0];
+    ["_refresh", "_fetchHist", "_onCoverage"].forEach((name) => { metrics[name] = () => {}; });
+
+    metrics.render();
+    await this._settle();
+    metrics.render();
+    await this._settle();
+    const adopted = { picked: [metrics.picked.row, metrics.picked.col], coords: refs.coords.textContent, cross: [refs.cross.style.left, refs.cross.style.top], open: !refs.open.hidden, readouts: readouts.splice(0) };
+
+    refs.img.getBoundingClientRect = () => ({ left: 0, top: 0, width: 60, height: 40 });
+    metrics.picked = null;
+    metrics._onClick({ clientX: 55, clientY: 35, shiftKey: false });
+    await this._settle();
+    const metricPick = { focus: view.focus, adopted: metrics.adopted === view.focusSeq, readouts: readouts.splice(0) };
+
+    params.render();
+    const paramAdopt = { picked: [params.picked.row, params.picked.col], fetched: params.fetched.splice(0), cross: !paramRefs.cross.hidden };
+
+    view.params  = params;
+    view.metrics = metrics;
+    view.view    = "metrics";
+    view._setView("explorer");
+    const entered = { followed: view.followed.splice(0), mode: view.mode, locked: view.locked, profiled: view.profiled.splice(0), adopted: view.cutsAdopted === view.focusSeq };
+
+    view._setView("params");
+    view._setView("explorer");
+    const kept = { followed: view.followed.splice(0), fetched: params.fetched.splice(0) };
+
+    view.mode         = "map";
+    view.locked       = null;
+    view.view         = "metrics";
+    view.pendingFocus = { row: 99, col: 2 };
+    view._consumeFocus();
+    const opened = { focus: view.focus, mode: view.mode, followed: view.followed.splice(0), view: view.view };
+
+    metrics.picked = null;
+    view._setView("metrics");
+    await this._settle();
+    const reopened = { picked: [metrics.picked.row, metrics.picked.col], readouts: readouts.splice(0) };
+
+    const jumpParams = this._element({ hidden: true });
+    const display    = this._displayStub("explorer", { jumpParams, params: { configure: () => {} } });
+    display._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4, params: { sources: ["pred"] } });
+    const withParams = !jumpParams.hidden;
+    display._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4, params: null });
+    const button = { withParams, withoutParams: !jumpParams.hidden };
+
+    return { clamped, paramPick, adopted, metricPick, paramAdopt, entered, kept, opened, reopened, button };
+  }
+
+  _reloaded(view) {
+    const shown = [];
+    const stub  = this._displayStub(view, { figures: { configure: () => shown.push("configure"), render: () => shown.push("render") } });
 
     stub._display({ timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4 });
     return shown;
