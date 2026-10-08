@@ -10,12 +10,15 @@ model list again on every open. The editor now keeps each successful reply for
 the page session and retries a failed one on the next open.
 
 Both live in the browser, so this module runs the real editor module under node
-against a stub DOM and a stub router that answers on the next tick.
+against a stub DOM and a stub router that answers on the next tick. A static
+check also resolves every private call the editor makes, since a call to a
+method dropped in a port stopped the whole page from rendering an open sequence.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 
@@ -68,3 +71,13 @@ def test_the_drawer_fetches_a_script_config_and_model_list_once():
     assert drawer["failed"] is True
     assert drawer["configGets"] == 2
     assert drawer["modelGets"] == 2
+
+
+def test_every_private_call_in_the_sequence_editor_resolves():
+    """Each ``this._name(`` call in sequences.js names a method the board, the editor or the ConfigForm base defines."""
+    js      = WEBUI_ROOT / "static" / "js"
+    source  = (js / "sequences.js").read_text()
+    pattern = re.compile(r"^  (?:static )?(?:async )?(_\w+)\(", re.M)
+    defined = set(pattern.findall(source)) | set(pattern.findall((js / "config_form.js").read_text()))
+
+    assert sorted(set(re.findall(r"this\.(_\w+)\(", source)) - defined) == []
