@@ -119,6 +119,33 @@ def test_backbone_pipeline_rectangular_patches_yield_rectangular_batches(test_da
 
 @pytest.mark.dataset
 @pytest.mark.slow
+def test_backbone_pipeline_announces_each_crop_read_by_split_and_region(test_data_dir, params_dir, tmp_path):
+    """Every crop read is announced before it starts and its [Crop Loaded] table names the split, the region index and the coordinates."""
+    config               = _backbone_config(test_data_dir, params_dir)
+    config.split_regions = SplitRegions(
+        train = [CropRegion(1000, 1012, 500, 524), CropRegion(1012, 1024, 500, 524)],
+        val   = CropRegion(1024, 1040, 500, 524),
+        test  = CropRegion(1040, 1056, 500, 524),
+    )
+
+    logger = _logger(tmp_path, "bb_crop_log")
+    DatasetPipeline(config, tmp_path, _activity_threshold(test_data_dir, params_dir), logger=logger, seed=0).run()
+    logger.close()
+
+    text = (tmp_path / "logs" / "bb_crop_log.log").read_text(encoding="utf-8")
+
+    announce = text.index("Loading split 'train' region 2/2: row 1012:1024, col 500:524")
+    loaded   = text.index("[CROP LOADED: TRAIN 2/2]")
+
+    assert "Loading split 'train' region 1/2: row 1000:1012, col 500:524" in text
+    assert announce < loaded
+    assert "Region           : row 1012:1024, col 500:524" in text[loaded:]
+    assert "[CROP LOADED: VAL 1/1]" in text
+    assert "[CROP LOADED: TEST 1/1]" in text
+
+
+@pytest.mark.dataset
+@pytest.mark.slow
 def test_backbone_pipeline_crops_only_the_enabled_input_groups(test_data_dir, params_dir, tmp_path):
     """Disabling the primary and secondary groups loads only the derived channel layers."""
     full    = _backbone_config(test_data_dir, params_dir)

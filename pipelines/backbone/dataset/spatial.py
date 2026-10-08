@@ -7,6 +7,7 @@ GridInfo describes the resulting patch grid and Patcher cuts padded patches from
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 from typing      import Optional, Tuple
 
@@ -191,23 +192,28 @@ class Cropper:
         cube = np.load(str(self.layout.artifact_path("cube_full")), mmap_mode="r", allow_pickle=False)
         return np.ascontiguousarray(np.abs(cube[:, row_slice, col_slice]).astype(np.float32))
 
-    def _log_crop(self, inputs_split: np.ndarray, aux_split: Optional[np.ndarray], parameters_split: np.ndarray, cube_split: Optional[np.ndarray], n_primary: int, n_secondaries: int, n_derived: int) -> None:
-        """Reports the shapes and memory footprint of the loaded crop.
+    def _log_crop(self, region: CropRegion, label: Optional[str], read_seconds: float, inputs_split: np.ndarray, aux_split: Optional[np.ndarray], parameters_split: np.ndarray, cube_split: Optional[np.ndarray], n_primary: int, n_secondaries: int, n_derived: int) -> None:
+        """Reports the region, read time, shapes and memory footprint of the loaded crop.
 
         Args:
+            region           : Crop region that was read, in preprocessing global coordinates.
+            label            : Split and region index quoted in the section title, such as "train 1/2", or None for an unlabelled crop.
+            read_seconds     : Wall time the reads out of the memory-mapped artifacts took, in seconds.
             inputs_split     : Assembled complex stack of the region.
-            aux_split        : Loaded Aux, or None when disabled.
+            aux_split        : Loaded aux field, or None when disabled.
             parameters_split : Loaded ground-truth parameters of the region.
-            cube_split   : Loaded cube magnitude, or None when not requested.
+            cube_split       : Loaded cube magnitude, or None when not requested.
             n_primary        : Number of primary layers in the stack.
             n_secondaries    : Number of secondary layers in the stack.
-            n_derived : Number of derived layers in the stack.
+            n_derived        : Number of derived layers in the stack.
         """
-        self.logger.section("[Crop Loaded]")
+        self.logger.section("[Crop Loaded]" if label is None else f"[Crop Loaded: {label}]")
         self.logger.kv_table({
+            "Region"           : f"row {region.row_start}:{region.row_end}, col {region.col_start}:{region.col_end}",
+            "Read time"        : f"{read_seconds:.1f}s",
             "Primary"          : inputs_split[:n_primary].shape,
             "Secondaries"      : inputs_split[n_primary:n_primary + n_secondaries].shape,
-            "Derived"   : inputs_split[n_primary + n_secondaries:].shape,
+            "Derived"          : inputs_split[n_primary + n_secondaries:].shape,
             "Selection"        : ", ".join(self.secondary_labels) if self.secondary_labels else "all channels",
             "Inputs (stacked)" : f"{inputs_split.shape}  ({inputs_split.nbytes/1e9:.2f} GB)  [{n_primary} primary + {n_secondaries} secondaries + {n_derived} derived]",
             "Aux"              : f"{aux_split.shape}  ({aux_split.nbytes/1e6:.2f} MB)" if aux_split is not None else "not loaded",
@@ -215,12 +221,13 @@ class Cropper:
             "Full cube"        : f"{cube_split.shape}  ({cube_split.nbytes/1e9:.2f} GB)" if cube_split is not None else "not loaded",
         })
 
-    def load_split(self, region: CropRegion, load_cube: bool = False) -> dict[str, np.ndarray]:
+    def load_split(self, region: CropRegion, load_cube: bool = False, label: Optional[str] = None) -> dict[str, np.ndarray]:
         """Loads every array a dataset part needs for one crop region.
 
         Args:
-            region        : Crop region in preprocessing global coordinates.
+            region    : Crop region in preprocessing global coordinates.
             load_cube : Whether to also load the reference cube magnitude.
+            label     : Split and region index quoted in the [Crop Loaded] title, such as "train 1/2", or None for an unlabelled crop.
 
         Returns:
             Dictionary with the complex "inputs" stack, the "aux" (or None), the
@@ -228,12 +235,13 @@ class Cropper:
             "n_secondaries" and "n_derived", and the "secondary_labels".
         """
         row_slice, col_slice = self._to_local_slices(region)
+        start                = time.perf_counter()
 
         inputs_split, n_primary, n_secondaries, n_derived = self._stack_inputs(row_slice, col_slice)
-        parameters_split, aux_split                              = self._load_targets(row_slice, col_slice)
-        cube_split                                           = self._load_cube(row_slice, col_slice) if load_cube else None
+        parameters_split, aux_split                       = self._load_targets(row_slice, col_slice)
+        cube_split                                        = self._load_cube(row_slice, col_slice) if load_cube else None
 
-        self._log_crop(inputs_split, aux_split, parameters_split, cube_split, n_primary, n_secondaries, n_derived)
+        self._log_crop(region, label, time.perf_counter() - start, inputs_split, aux_split, parameters_split, cube_split, n_primary, n_secondaries, n_derived)
 
         return {
             "inputs"           : inputs_split,

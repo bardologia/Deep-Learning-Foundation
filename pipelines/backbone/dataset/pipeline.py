@@ -119,8 +119,12 @@ class DatasetPipeline:
         parts    = []
         patchers = []
 
-        for region in regions:
-            arrays  = self.cropper.load_split(region)
+        for index, region in enumerate(regions, start=1):
+            label = f"{split_name} {index}/{len(regions)}"
+
+            self.logger.subsection(f"Loading split '{split_name}' region {index}/{len(regions)}: row {region.row_start}:{region.row_end}, col {region.col_start}:{region.col_end}")
+
+            arrays  = self.cropper.load_split(region, label=label)
             spatial = (region.row_size, region.col_size)
 
             patcher = Patcher.build(
