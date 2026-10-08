@@ -2,8 +2,8 @@
 
 Covers routing through the backbone and the optional image-autoencoder front end, the rules
 relating coupling mode, target provider, embedding normalisation and the curve reconstruction
-term, the loss step on a tiny batch in both the embedding and parameter regimes including kz
-forwarding, an optimizer step updating the online backbone, and checkpoint round-tripping."""
+term, the loss step on a tiny batch in both the embedding and parameter regimes, an optimizer
+step updating the online backbone, and checkpoint round-tripping."""
 
 from __future__ import annotations
 

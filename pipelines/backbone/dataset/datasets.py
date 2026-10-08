@@ -61,13 +61,12 @@ class PatchDataset(Dataset):
             output_config    : Selection of the ground-truth parameter channels.
             split_name       : Split this dataset belongs to; augmentation runs only for "train".
             n_secondaries    : Number of secondary channels carried by the stack.
-            n_derived : Number of derived channel layers carried by the stack.
+            n_derived        : Number of derived channel layers carried by the stack.
             n_primary        : Number of primary layers carried by the stack.
             normalizer       : Normalizer for inputs and targets; may be attached later.
             n_gaussians      : Number of Gaussian slots the output configuration indexes.
             augmenter        : Augmenter applied to train patches, or None to disable augmentation.
-            dem              : Optional aux field of shape (rows, cols) in metres.
-            kz_field         : Optional per-pixel kz field of shape (channels, rows, cols) in rad/m.
+            aux              : Optional aux field of shape (rows, cols) in metres.
 
         Raises:
             ValueError : If the stack layer count disagrees with the declared composition, if the input configuration requests a group the stack does not carry, or if n_gaussians indexes parameter channels beyond those provided.
@@ -223,9 +222,7 @@ class PatchDataset(Dataset):
 
         Returns:
             A (input_tensor, gt_params) pair of normalized arrays with shapes
-            (input_channels, patch_h, patch_w) and (gt_channels, patch_h, patch_w),
-            extended by a kz patch of shape (tracks, patch_h, patch_w) in rad/m when a
-            per-pixel geometry field is attached.
+            (input_channels, patch_h, patch_w) and (gt_channels, patch_h, patch_w).
         """
         complex_patch = self.grid.extract(self.inputs, idx)
         aux_patch     = self.grid.extract(self.aux, idx) if self.input_config.use_aux else None
