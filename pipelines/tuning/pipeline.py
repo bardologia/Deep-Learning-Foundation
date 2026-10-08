@@ -20,7 +20,7 @@ from models                               import BACKBONE_HEADS, config_registry
 from pipelines.shared.model.model_builder import ModelBuilder
 from pipelines.tuning.plots               import StudyPlotter
 from pipelines.tuning.storage             import TuningStorage
-from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace, StudyTargetStop
+from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace, StudyProgress, StudyTargetStop
 from tools.data.io                        import FileIO
 from tools.orchestration.gpu_queue        import GpuJob, GpuPoolFile, GpuQueue
 from tools.monitoring.logger              import Logger
@@ -45,6 +45,7 @@ class TuningScheduler:
         db_path         : Path of the Optuna SQLite database.
         logger          : Logger of the scheduler, created when scheduling starts.
         results         : Per-model result records collected during the run.
+        prepared        : Model keys whose studies this launch created and whose it loaded, under those two keys.
     """
 
     SUPPORTED_TYPES = ("backbone", "image_autoencoder", "jepa", "profile_autoencoder")
@@ -70,8 +71,9 @@ class TuningScheduler:
         self.summary_path = self.run_dir / "tuning_results.json"
         self.db_path      = self.run_dir / "optuna.db"
 
-        self.logger  = None
-        self.results = []
+        self.logger   = None
+        self.results  = []
+        self.prepared = {"created": [], "loaded": []}
 
         self._quiet_optuna()
 
@@ -276,6 +278,10 @@ class TuningScheduler:
 
         return all(result.status == "DONE" for result in results)
 
+    def _study_exists(self, model_name: str) -> bool:
+        """Returns whether the storage already holds the model's study."""
+        return self._study_name(model_name) in optuna.get_all_study_names(TuningStorage.open(self.storage_url))
+
     def _load_or_create_study(self, model_name: str) -> optuna.Study:
         """Opens the model's minimisation study, creating it if it does not exist."""
         return optuna.create_study(
@@ -341,7 +347,16 @@ class TuningScheduler:
         """
         self.logger.section(f"[{model_name}]")
 
-        study = self._load_or_create_study(model_name)
+        existed = self._study_exists(model_name)
+        study   = self._load_or_create_study(model_name)
+
+        if existed:
+            self.prepared["loaded"].append(model_name)
+            self.logger.warning(f"{model_name}: existing study '{study.study_name}' holds {StudyProgress.phrase(StudyProgress.counts(study), self.config.tuning.n_trials)}; this launch tops it up")
+        else:
+            self.prepared["created"].append(model_name)
+            self.logger.info(f"{model_name}: created study '{study.study_name}' in {self.storage_url}")
+
         stale = self._fail_stale_trials(study)
         if stale > 0:
             self.logger.info(f"Marked {stale} stale running trials as failed")
@@ -438,6 +453,22 @@ class TuningScheduler:
             "Log dir"          : str(self.run_dir),
         }
 
+    def _log_done(self) -> None:
+        """Logs what this launch produced: the studies a prepare stage created or loaded, else the models it tuned and where their records went."""
+        if self.config.stage == "prepare":
+            self.logger.kv_table({
+                "Studies prepared" : len(self.prepared["created"]) + len(self.prepared["loaded"]),
+                "Created"          : ", ".join(self.prepared["created"]) or "none",
+                "Loaded"           : ", ".join(self.prepared["loaded"]) or "none",
+                "Storage"          : self.storage_url,
+            }, title="Done")
+            return
+
+        self.logger.kv_table({
+            "Models tuned" : len(self.results),
+            "Results saved": str(self.summary_path),
+        }, title="Done")
+
     def schedule(self, target_model: str | None = None, resume: bool = False) -> None:
         """Validates the request, then tunes every selected model in turn.
 
@@ -449,9 +480,11 @@ class TuningScheduler:
         The stage decides how much of a run happens here: 'prepare' only opens
         the studies, so trial workers launched separately have something to
         attach to, 'compare' only writes the reports of studies the workers
-        filled, and 'full' runs the trials between the two. The database guards
-        apply to a full run, since the prepare and compare stages of one run
-        deliberately meet the same database.
+        filled, and 'full' runs the trials between the two. A full or prepare
+        launch refuses a database that already exists unless it resumes, since a
+        second launch under the same tag would otherwise add trials under a
+        rewritten definition without a word; the compare stage of a run
+        deliberately meets the database its prepare stage created.
 
         Args:
             target_model : Single model key to tune, or None to tune all models that are not skipped.
@@ -472,11 +505,11 @@ class TuningScheduler:
         if self.config.stage == "compare" and not self.db_path.exists():
             sys.exit(f"ERROR: stage 'compare' found no study database at {self.db_path}; run the prepare stage and the trial workers first")
 
-        if self.config.stage == "full":
-            if resume and not self.db_path.exists():
-                sys.exit(f"ERROR: --resume given but no study found at {self.db_path}")
-            if not resume and self.db_path.exists():
-                sys.exit(f"ERROR: run tag '{self.tag}' already has a study at {self.db_path}; pass --resume to continue it")
+        if self.config.stage == "full" and resume and not self.db_path.exists():
+            sys.exit(f"ERROR: --resume given but no study found at {self.db_path}")
+
+        if self.config.stage in ("full", "prepare") and not resume and self.db_path.exists():
+            sys.exit(f"ERROR: run tag '{self.tag}' already has a study at {self.db_path}; pass --resume, or point resume_from at the run, to top it up under its recorded definition")
 
         tune_cfg      = self.config.tuning
         resolved_path = self.run_dir / "resolved_config.json"
@@ -504,7 +537,4 @@ class TuningScheduler:
                 self._tune_model(model_name, tune_cfg)
 
             self.logger.section("Summary")
-            self.logger.kv_table({
-                "Models tuned" : len(self.results),
-                "Results saved": str(self.summary_path),
-            }, title="Done")
+            self._log_done()
