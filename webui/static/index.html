@@ -791,9 +791,9 @@
             <div class="cube-spaces" id="cube-metric-layer" role="group" aria-label="Metric layer"></div>
             <div class="cube-mctl" role="group" aria-label="Colour range" id="cube-metric-range-wrap">
               <label for="cube-metric-vmin">range</label>
-              <input type="number" id="cube-metric-vmin" class="cube-jump__input cube-jump__input--wide" step="any" />
+              <input type="number" id="cube-metric-vmin" class="cube-jump__input cube-jump__input--wide" step="any" aria-label="Minimum colour range value" />
               <span>&hellip;</span>
-              <input type="number" id="cube-metric-vmax" class="cube-jump__input cube-jump__input--wide" step="any" />
+              <input type="number" id="cube-metric-vmax" class="cube-jump__input cube-jump__input--wide" step="any" aria-label="Maximum colour range value" />
               <button type="button" class="btn btn--mini" id="cube-metric-reset">Reset</button>
             </div>
             <div class="cube-mctl" role="group" aria-label="Keep window">
@@ -803,7 +803,7 @@
                 <option value="below">below</option>
                 <option value="above">above</option>
               </select>
-              <input type="range" id="cube-metric-thr" min="0" max="1000" value="500" disabled />
+              <input type="range" id="cube-metric-thr" min="0" max="1000" value="500" disabled aria-label="Keep window threshold" />
               <span class="cube-mctl__val" id="cube-metric-thr-val"></span>
             </div>
             <div class="cube-mctl" role="group" aria-label="Overlay opacity">
