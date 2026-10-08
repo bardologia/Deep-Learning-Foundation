@@ -6,6 +6,7 @@ decides between the jitted single-device and pmapped multi-device Adam kernels.
 
 from __future__ import annotations
 
+import os
 from typing import Dict, Tuple
 
 import numpy as np
@@ -108,24 +109,48 @@ class BestKSelector:
 
 
 class KernelBackendSelector:
-    """Picks the fitting kernel matching the available JAX devices."""
+    """Picks the fitting kernel matching the available JAX devices.
+
+    Attributes:
+        GPU_PLATFORMS     : JAX platform names that count as a GPU.
+        require_gpu       : Whether a device list without a GPU is refused instead of fitted on CPU.
+        requested_gpu_ids : GPU indices the launch asked for, named in the refusal.
+    """
+
+    GPU_PLATFORMS = ("gpu", "cuda", "rocm")
+
+    def __init__(self, require_gpu: bool = False, requested_gpu_ids: list | None = None) -> None:
+        """Sets whether a CPU-only JAX is refused and which GPU ids the launch requested.
+
+        Args:
+            require_gpu       : Whether to raise when JAX sees no GPU; the entry point sets it because a whole-scene Adam fit on CPU takes days, while tests and in-process callers may fit small crops on CPU.
+            requested_gpu_ids : GPU indices the launch asked for, quoted in the refusal message.
+        """
+        self.require_gpu       = require_gpu
+        self.requested_gpu_ids = list(requested_gpu_ids) if requested_gpu_ids is not None else []
 
     def select(self) -> Tuple[object, int, str, list]:
         """Returns the fitting kernel, device count, backend label and devices.
 
-        GPU devices are preferred over the default device list, and more than
-        one active device selects the pmapped kernel.
-        """
-        gpu_devices    = [d for d in jax.devices() if d.platform in ("gpu", "cuda")]
-        active_devices = gpu_devices if gpu_devices else jax.devices()
+        GPU devices are preferred over the default device list, more than one
+        active device selects the pmapped kernel, and the label names the real
+        platform and device count so a CPU fallback shows in every log line
+        that prints it.
 
-        if len(active_devices) > 1:
-            kernel    = PmapSigmaAdamKernel(active_devices)
-            n_devices = len(active_devices)
-            backend   = f"pmap  ({n_devices} GPUs)"
-        else:
-            kernel    = SigmaAdamKernel()
-            n_devices = 1
-            backend   = "jit  (1 GPU)"
+        Raises:
+            RuntimeError : If require_gpu is set and JAX sees no GPU, naming the devices it does see, the CUDA_VISIBLE_DEVICES mask and the requested GPU ids.
+        """
+        devices        = jax.devices()
+        gpu_devices    = [d for d in devices if d.platform in self.GPU_PLATFORMS]
+        active_devices = gpu_devices if gpu_devices else devices
+
+        if self.require_gpu and not gpu_devices:
+            mask = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
+            raise RuntimeError(f"No GPU is visible to JAX: jax.devices() = {devices}, CUDA_VISIBLE_DEVICES = {mask}, requested gpu_device_ids = {self.requested_gpu_ids}. A whole-scene Adam fit on CPU takes days, so the fallback is refused; install a CUDA-enabled jaxlib or fix the device mask")
+
+        n_devices = len(active_devices)
+        platform  = active_devices[0].platform
+        kernel    = PmapSigmaAdamKernel(active_devices) if n_devices > 1 else SigmaAdamKernel()
+        backend   = f"{'pmap' if n_devices > 1 else 'jit'} ({n_devices} {platform} device{'s' if n_devices > 1 else ''})"
 
         return kernel, n_devices, backend, active_devices

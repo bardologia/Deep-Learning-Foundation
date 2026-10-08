@@ -396,6 +396,33 @@ def test_clamped_sigma_init_divisor_is_reported(tmp_path):
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_kernel_backend_label_names_the_real_platform_and_the_entry_refuses_cpu(monkeypatch):
+    """Verifies the backend label reports the device platform JAX fell back to, and that a GPU-requiring selection refuses it."""
+    from pipelines.processing.param_extraction.sigma import selection as selection_module
+
+    class _CpuDevice:
+        """JAX device stand-in on the CPU platform."""
+
+        platform = "cpu"
+
+        def __repr__(self):
+            """Names the device like JAX does."""
+            return "CpuDevice(id=0)"
+
+    monkeypatch.setattr(selection_module.jax, "devices", lambda: [_CpuDevice()])
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
+
+    _kernel, n_devices, backend, devices = selection_module.KernelBackendSelector().select()
+
+    assert n_devices    == 1
+    assert backend      == "jit (1 cpu device)"
+    assert len(devices) == 1
+
+    with pytest.raises(RuntimeError, match=r"CpuDevice\(id=0\).*CUDA_VISIBLE_DEVICES = 0,1.*gpu_device_ids = \[0, 1\]"):
+        selection_module.KernelBackendSelector(require_gpu=True, requested_gpu_ids=[0, 1]).select()
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_scoring_throttle_reraises_a_failed_future():
     """Verifies the scoring throttle re-raises the exception of a failed background future."""
     from concurrent.futures import ThreadPoolExecutor

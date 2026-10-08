@@ -36,6 +36,8 @@ class SigmaFittingExtractor:
         lambda_values : Model-order penalties applied per extra Gaussian when selecting the best K.
         k_max         : Largest mixture order fitted.
         mode_masks    : Per-mode gradient masks as (amplitude, mean, sigma) scalars.
+        backend       : Kernel backend label naming the device platform and count the fit runs on.
+        devices       : JAX devices the fit runs on.
     """
 
     MAX_PENDING_SCORINGS = 2
@@ -128,9 +130,11 @@ class SigmaFittingExtractor:
 
         self._kernel    = kernel
         self._n_devices = n_devices
+        self.backend    = backend
+        self.devices    = list(active_devices)
 
         self.logger.section("[GPU Parameter Extractor]")
-        self.logger.subsection(f"JAX active devices : {active_devices}")
+        self.logger.subsection(f"JAX active devices : {self.devices}")
         self.logger.subsection(f"Backend            : {backend}")
         self.logger.subsection(f"col_batch_size   : {col_batch_size}")
         self.logger.subsection(f"gpu_pixel_batch    : {gpu_pixel_batch_size}")
