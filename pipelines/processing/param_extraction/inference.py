@@ -23,10 +23,10 @@ class ParamRunInferencePipeline:
     """Scores and plots one fitted parameter-extraction run.
 
     Attributes:
-        run_dir         : Parameter run directory holding the fitted arrays and metadata.
-        logger          : Logger for the stage report.
-        make_plots      : Whether the figure stages run.
-        parameter_io    : Reader for the parameter, diagnostics and metadata files.
+        run_dir      : Parameter run directory holding the fitted arrays and metadata.
+        logger       : Logger for the stage report.
+        make_plots   : Whether the figure stages run.
+        parameter_io : Reader for the parameter, diagnostics and metadata files.
     """
 
     META_FILENAME    = ParameterRunMeta.FILENAME
@@ -36,14 +36,14 @@ class ParamRunInferencePipeline:
         """Configures the inference pipeline for one parameter run directory.
 
         Args:
-            run_dir         : Parameter run directory produced by ``extract_params``.
-            logger          : Logger for the stage report.
-            make_plots      : Whether the figure stages run.
+            run_dir    : Parameter run directory produced by ``extract_params``.
+            logger     : Logger for the stage report.
+            make_plots : Whether the figure stages run.
         """
-        self.run_dir         = Path(run_dir)
-        self.logger          = logger
-        self.make_plots      = make_plots
-        self.parameter_io    = ParameterIO(logger=logger)
+        self.run_dir      = Path(run_dir)
+        self.logger       = logger
+        self.make_plots   = make_plots
+        self.parameter_io = ParameterIO(logger=logger)
 
         self.logger.section("[Param Extraction Inference]")
         self.logger.subsection(f"Run directory : {self.run_dir}")
@@ -80,9 +80,9 @@ class ParamRunInferencePipeline:
 
         Args:
             parameters    : Parameter stack of shape (3 * k_max, row, col).
-            meta          : Run metadata carrying the fit settings and z col.
+            meta          : Run metadata carrying the fit settings and z range.
             diagnostics   : Per-K MSE and model-order selection arrays from the fitter.
-            cube_path : Path of the cube the fit was performed on.
+            cube_path     : Path of the cube the fit was performed on.
 
         Returns:
             Dictionary of metric maps and summary dictionaries.
@@ -104,7 +104,7 @@ class ParamRunInferencePipeline:
             parameters    : Parameter stack of shape (3 * k_max, row, col).
             meta          : Run metadata carrying the fit settings.
             metrics_dict  : Metric maps and summaries from the metrics stage.
-            cube_path : Path of the cube the fit was performed on.
+            cube_path     : Path of the cube the fit was performed on.
 
         Returns:
             Mapping from figure name to the saved PNG path; empty when plotting is off.
