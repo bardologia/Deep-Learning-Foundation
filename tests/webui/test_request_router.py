@@ -26,7 +26,7 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 153
+ROUTE_COUNT   = 154
 SECTION_COUNT = 41
 
 RESOLUTIONS = [
@@ -40,6 +40,7 @@ RESOLUTIONS = [
     ("GET",  "/api/curves",                        CurvesRouter),
     ("GET",  "/api/cubes/plane",                   CubeRouter),
     ("GET",  "/api/cubes/metric_hist",             CubeRouter),
+    ("GET",  "/api/cubes/timeline",                CubeRouter),
     ("GET",  "/api/cubes/figures",                 CubeRouter),
     ("GET",  "/api/cubes/figure",                  CubeRouter),
     ("POST", "/api/cubes/save_slices",             CubeRouter),

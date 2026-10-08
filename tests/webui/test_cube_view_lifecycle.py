@@ -29,7 +29,9 @@ Every axis sweep must ask for a plane or cut the explorer renders. The point clo
 point by the seed disagreement of its pixel, greying points without one, while the profile line
 names the profiled pixel's seed std. The selective-prediction mask paints only the pixels the
 coverage keeps, and its Play sweep runs the coverage down to 5% and back until the view, the tab or
-the mask is left.
+the mask is left. The timeline replays one cut at the shared focus across the run's sibling stamps,
+starting on the current one, never draws a frame or listing that lands late, names a stamp without
+the chosen source, and stops playing when its view or the tab is left.
 """
 
 from __future__ import annotations
@@ -806,3 +808,86 @@ def test_every_axis_sweep_asks_for_a_frame_the_explorer_renders(tmp_path):
 
         assert router.handle(HttpExchange.of(handler)), axis
         assert handler.status == 200, axis
+
+
+@NEEDS_JS
+def test_timeline_opens_on_the_current_stamp_and_replays_the_focused_col_cut():
+    """The first render lists the run's stamps once, starts on the current one, labels its curve MSE and draws its col cut while prefetching the next stamp."""
+    first = _check("timeline")["first"]
+
+    assert first["idx"] == 1 and first["max"] == "2" and first["pos"] == "1"
+    assert first["at"] == "stamp_2 · 2 / 3 · col = 3"
+    assert first["label"] == "stamp_2 · curve MSE 0.125"
+    assert [url["id"] for url in first["urls"]] == ["/runs/a/inference/stamp_3", "/runs/a/inference/stamp_2"]
+    assert first["urls"][1] == {"id": "/runs/a/inference/stamp_2", "source": "pred", "axis": "col", "row": "4", "col": "3", "space": "physical", "cmap": "jet"}
+    assert len(first["drawn"]) == 1 and first["canvas"] == [6, 5]
+    assert first["disabled"] == [False, False, True]
+
+
+@NEEDS_JS
+def test_timeline_reuses_its_listing_and_refuses_a_source_the_cube_lacks():
+    """A second render reuses the stamp list, and a source button the cube lacks changes nothing."""
+    observed = _check("timeline")
+
+    assert observed["cached"] == {"asked": 0, "urls": 2, "drawn": 1}
+    assert observed["refused"] == {"source": "pred", "urls": 0}
+
+
+@NEEDS_JS
+def test_timeline_follows_the_shared_focus_axis_and_scrubber():
+    """The row cut is taken at the shared focus, and scrubbing stops playback and shows the picked stamp."""
+    observed = _check("timeline")
+
+    assert observed["row"]["at"] == "stamp_2 · 2 / 3 · row = 2"
+    assert observed["row"]["url"]["axis"] == "row" and observed["row"]["url"]["row"] == "2" and observed["row"]["url"]["col"] == "3"
+    assert observed["scrubbed"] == {"idx": 0, "playing": False, "label": "stamp_1", "prefetched": ["/runs/a/inference/stamp_2", "/runs/a/inference/stamp_1"], "drawn": 1}
+
+
+@NEEDS_JS
+def test_timeline_names_a_missing_cut_and_draws_only_the_latest_frame():
+    """A stamp without the chosen source clears the canvas and says so, and a frame that lands after a newer one is dropped."""
+    observed = _check("timeline")
+
+    assert observed["missing"] == {"at": "stamp_1 · 1 / 3 · row = 2 · no gt cut for this stamp", "drawn": ["cleared"]}
+    assert observed["stale"] == ["new"]
+
+
+@NEEDS_JS
+def test_timeline_play_advances_and_stops_when_the_view_is_left():
+    """Play steps through the stamps and stops, relabelling the button, once the view changes."""
+    observed = _check("timeline")
+
+    assert observed["started"] == {"playing": True, "label": "Pause"}
+    assert observed["advanced"] is True
+    assert observed["stopped"] == {"playing": False, "label": "Play"}
+
+
+@NEEDS_JS
+def test_timeline_drops_a_late_listing_and_reports_failures_and_single_stamps():
+    """A listing for a cube replaced meanwhile is dropped, an error is shown, and a lone stamp says so and does not play."""
+    observed = _check("timeline")
+
+    assert observed["dropped"] == {"stamps": 0, "loadedFor": None}
+    assert observed["failed"] == "unknown cube id: stamp/c"
+    assert observed["alone"]["at"].endswith("this run holds a single inference stamp; run inference again to grow the timeline")
+    assert observed["alone"]["playing"] is False
+
+
+@NEEDS_JS
+def test_cube_view_renders_the_timeline_on_load_switch_and_recolour_and_leaves_it():
+    """Loading a cube with the timeline open configures and renders it, switching views leaves or renders it, a colormap change redraws it, and leaving the tab stops it."""
+    assert _check("timelineViews") == {"loaded": ["configure", "render"], "left": ["leave"], "opened": ["render"], "recoloured": ["render"], "tab": ["leave"]}
+
+
+def test_timeline_controls_are_on_the_page_once_and_wired_to_the_cube_view():
+    """The Timeline mode button and every timeline control exist once, offer the template sources and axes, and app.js hands each to the timeline."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    assert html.count('class="cube-mode" data-view="timeline"') == 1
+    assert re.findall(r'data-source="(\w+)"', html.split('id="cube-timeline-source"')[1].split("</div>")[0]) == ["pred", "gt", "full"]
+    assert re.findall(r'data-axis="(\w+)"', html.split('id="cube-timeline-axis"')[1].split("</div>")[0]) == ["col", "row"]
+
+    for ref in ("source", "axis", "play", "pos", "at", "canvas", "label"):
+        assert html.count(f'id="cube-timeline-{ref}"') == 1, ref
+        assert re.search(rf'{ref}\s*: document\.getElementById\("cube-timeline-{ref}"\)', app), ref

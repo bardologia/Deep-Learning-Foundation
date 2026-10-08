@@ -2381,6 +2381,181 @@ class CubeVolume {
   }
 }
 
+class CubeTimeline {
+  static FRAME_MS = 650;
+
+  constructor(refs, host) {
+    this.host     = host;
+    this.sourceEl = refs.source;
+    this.axisEl   = refs.axis;
+    this.playBtn  = refs.play;
+    this.posEl    = refs.pos;
+    this.atEl     = refs.at;
+    this.canvas   = refs.canvas;
+    this.labelEl  = refs.label;
+
+    this.stamps    = [];
+    this.idx       = 0;
+    this.source    = "pred";
+    this.axis      = "col";
+    this.token     = 0;
+    this.playing   = false;
+    this.loadedFor = null;
+
+    this.sourceEl.querySelectorAll(".cube-space").forEach((btn) => {
+      btn.addEventListener("click", () => this._setSource(btn.dataset.source));
+    });
+    this.axisEl.querySelectorAll(".cube-space").forEach((btn) => {
+      btn.addEventListener("click", () => this._setAxis(btn.dataset.axis));
+    });
+    this.posEl.addEventListener("input", () => this._onScrub());
+    this.playBtn.addEventListener("click", () => this._togglePlay());
+  }
+
+  configure(meta) {
+    this.stamps    = [];
+    this.loadedFor = null;
+    this.idx       = 0;
+    if (!meta.sources.includes(this.source)) this.source = "pred";
+    this._stopPlay();
+  }
+
+  async render() {
+    this._syncBtns();
+
+    if (this.loadedFor !== this.host.selectedId) {
+      const cubeId = this.host.selectedId;
+      const data   = await Api.get(`/api/cubes/timeline?id=${encodeURIComponent(cubeId)}`);
+      if (cubeId !== this.host.selectedId) return;
+
+      if (!data || !data.ok) {
+        this.atEl.textContent = (data && data.error) || "Timeline unavailable.";
+        return;
+      }
+
+      this.loadedFor   = cubeId;
+      this.stamps      = data.stamps;
+      this.idx         = data.current;
+      this.posEl.max   = String(Math.max(0, this.stamps.length - 1));
+      this.posEl.value = String(this.idx);
+    }
+
+    await this._show();
+  }
+
+  leave() {
+    this._stopPlay();
+  }
+
+  _setSource(source) {
+    if (source === this.source || !this.host.meta.sources.includes(source)) return;
+    this.source = source;
+    this._syncBtns();
+    this._show();
+  }
+
+  _setAxis(axis) {
+    if (axis === this.axis) return;
+    this.axis = axis;
+    this._syncBtns();
+    this._show();
+  }
+
+  _onScrub() {
+    this._stopPlay();
+    this.idx = Number(this.posEl.value);
+    this._show();
+  }
+
+  _syncBtns() {
+    const sources = this.host.meta.sources;
+    this.sourceEl.querySelectorAll(".cube-space").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.source === this.source);
+      btn.disabled = !sources.includes(btn.dataset.source);
+    });
+    this.axisEl.querySelectorAll(".cube-space").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.axis === this.axis);
+    });
+  }
+
+  _position() {
+    const point = this.host.focusPoint();
+    const meta  = this.host.meta;
+    return point ? { row: point.row, col: point.col } : { row: Math.floor(meta.n_rows / 2), col: Math.floor(meta.n_cols / 2) };
+  }
+
+  _url(index) {
+    const stamp        = this.stamps[index];
+    const { row, col } = this._position();
+    return `/api/slices/slice?id=${encodeURIComponent(stamp.id)}&source=${this.source}&axis=${this.axis}` +
+      `&row=${row}&col=${col}&space=${this.host.space}&cmap=${this.host.cmap}`;
+  }
+
+  async _show() {
+    if (!this.stamps.length || this.host.view !== "timeline") return;
+
+    this.token += 1;
+    const token = this.token;
+    this.idx    = Math.min(this.stamps.length - 1, Math.max(0, this.idx));
+
+    const stamp        = this.stamps[this.idx];
+    const { row, col } = this._position();
+    const cut          = this.axis === "col" ? `col = ${col}` : `row = ${row}`;
+    const single       = this.stamps.length < 2 ? " · this run holds a single inference stamp; run inference again to grow the timeline" : "";
+    const at           = `${stamp.stamp} · ${this.idx + 1} / ${this.stamps.length} · ${cut}${single}`;
+
+    this.atEl.textContent    = at;
+    this.labelEl.textContent = stamp.mse === null ? stamp.stamp : `${stamp.stamp} · curve MSE ${this.host._fmt(stamp.mse)}`;
+    this.posEl.value         = String(this.idx);
+
+    if (this.idx + 1 < this.stamps.length) this.host.cacheBitmap(this._url(this.idx + 1));
+
+    const bitmap = await this.host.cacheBitmap(this._url(this.idx));
+    if (token !== this.token) return;
+
+    if (!bitmap) {
+      this.atEl.textContent = `${at} · no ${CubeView.LABELS[this.source]} cut for this stamp`;
+      this.canvas.getContext("2d").clearRect(0, 0, this.canvas.width, this.canvas.height);
+      return;
+    }
+
+    if (this.canvas.width !== bitmap.width || this.canvas.height !== bitmap.height) {
+      this.canvas.width  = bitmap.width;
+      this.canvas.height = bitmap.height;
+    }
+    this.canvas.getContext("2d").drawImage(bitmap, 0, 0);
+  }
+
+  _togglePlay() {
+    if (this.playing) this._stopPlay();
+    else this._startPlay();
+  }
+
+  _startPlay() {
+    if (this.stamps.length < 2) return;
+    this.playing             = true;
+    this.playBtn.textContent = "Pause";
+    this.playBtn.classList.add("is-playing");
+    this._loop();
+  }
+
+  _stopPlay() {
+    this.playing             = false;
+    this.playBtn.textContent = "Play";
+    this.playBtn.classList.remove("is-playing");
+  }
+
+  async _loop() {
+    while (this.playing && this.host.view === "timeline" && this.stamps.length) {
+      await this._show();
+      await new Promise((resolve) => setTimeout(resolve, CubeTimeline.FRAME_MS));
+      if (!this.playing) break;
+      this.idx = (this.idx + 1) % this.stamps.length;
+    }
+    this._stopPlay();
+  }
+}
+
 class CubeFigures {
   constructor(refs, host) {
     this.host = host;
@@ -2529,6 +2704,7 @@ class CubeView {
     this.transect = refs.transect ? new CubeTransect(refs.transect, this) : null;
     this.cloud    = refs.cloud ? new CubeCloud(refs.cloud, this) : null;
     this.volume   = refs.volume ? new CubeVolume(refs.volume, this) : null;
+    this.timeline = new CubeTimeline(refs.timeline, this);
     this.figures  = new CubeFigures(refs.figures, this);
 
     this.mapWrap = this.topdown.closest(".cube-map__wrap");
@@ -2580,6 +2756,7 @@ class CubeView {
     this._stopSweeps();
     if (this.metrics) this.metrics.leave();
     if (this.cloud) this.cloud.leave();
+    this.timeline.leave();
   }
 
   async enter() {
@@ -2850,6 +3027,9 @@ class CubeView {
       if (this.view === "volume") this.volume.render();
     }
 
+    this.timeline.configure(meta);
+    if (this.view === "timeline") this.timeline.render();
+
     this.figures.configure();
     if (this.view === "figures") this.figures.render();
 
@@ -2959,6 +3139,7 @@ class CubeView {
     const sweep = this._sweepFor(this.view);
     if (sweep) sweep.syncSpace();
     if (this.transect) this.transect.syncSpace();
+    if (this.view === "timeline") this.timeline.render();
     if (this.point) this._drawSlices(this.point.row, this.point.col);
   }
 
@@ -2971,13 +3152,15 @@ class CubeView {
     const sweep = this._sweepFor(this.view);
     if (sweep) sweep.syncSpace();
     if (this.transect) this.transect.syncSpace();
+    if (this.view === "timeline") this.timeline.render();
     if (this.point) this._drawSlices(this.point.row, this.point.col);
   }
 
   _setView(view) {
-    if (!["explorer", "z", "row", "col", "params", "metrics", "transect", "cloud", "volume", "figures"].includes(view) || view === this.view) return;
+    if (!["explorer", "z", "row", "col", "params", "metrics", "transect", "cloud", "volume", "timeline", "figures"].includes(view) || view === this.view) return;
 
     this._stopSweeps();
+    if (this.view === "timeline") this.timeline.leave();
     this.view = view;
 
     this.modeBtns.forEach((btn) => btn.classList.toggle("is-active", btn.dataset.view === view));
@@ -3001,6 +3184,10 @@ class CubeView {
     }
     if (view === "volume" && this.volume && this.meta) {
       this.volume.render();
+      return;
+    }
+    if (view === "timeline" && this.meta) {
+      this.timeline.render();
       return;
     }
     if (view === "figures" && this.meta) {
