@@ -128,10 +128,9 @@ class TrialCollector(TrialArtifactReader):
             record            = TrialRecord(name=tag, run_dir=run_dir)
             record.checkpoint = self._read_checkpoint(run_dir)
             self._attach_inference(record)
+            self._warn_unfinished(record)
             self._warn_no_inference(record)
-
-            status = f"inference {record.inference_dir.name}" if record.has_inference else "no inference"
-            self.logger.info(f"{record.name:<36} {status}")
+            self.logger.info(f"{record.name:<36} {self._status(record)}")
 
             records.append(record)
 
