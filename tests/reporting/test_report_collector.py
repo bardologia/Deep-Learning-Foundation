@@ -145,6 +145,24 @@ def test_selector_discovers_runs_by_inference_report(run_directory, tmp_path):
     assert selector.all() == [run_directory]
 
 
+def test_reports_under_a_family_subdirectory_are_found_and_collected(tmp_path):
+    """Verifies a run whose stamps sit under inference/<family>/ is offered by the selector, located and collected like a direct one."""
+    _write_report(tmp_path / "run_profile", "profile_ae/20260101_000000")
+    _write_report(tmp_path / "run_profile", "profile_ae/20260102_000000")
+    _write_report(tmp_path / "run_direct", "20260103_000000")
+
+    selector = ReportRunSelector(tmp_path, "inference", "report.md", RecordingLogger())
+    located  = RunReportLocator(ReportCollectionConfig(run_directory=tmp_path / "run_profile")).locate()
+
+    collector = tmp_path / "collected"
+    entry     = ReportCollectionEntryConfig(runs_dir=tmp_path, run_filter=["run_profile"], collector_dir=collector)
+    ReportCollectionBatch(entry, RecordingLogger()).run()
+
+    assert selector.all() == [tmp_path / "run_direct", tmp_path / "run_profile"]
+    assert [path.parent.name for path in located] == ["20260102_000000"]
+    assert (collector / "run_profile.md").is_file()
+
+
 def test_batch_collects_filtered_runs_into_the_collector(run_directory, tmp_path):
     """Verifies batch collection honours the run filter and writes into the collector directory."""
     collector = tmp_path / "collected"

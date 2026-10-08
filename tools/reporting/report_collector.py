@@ -11,14 +11,19 @@ import re
 from pathlib import Path
 from typing  import List
 
-from configuration.diagnostics  import ReportCollectionConfig, ReportCollectionEntryConfig
-from tools.data.io              import FileIO
-from tools.reporting.reporting  import ReportAssets
-from tools.runtime.run_selector import ReportRunSelector
+from configuration.diagnostics                 import ReportCollectionConfig, ReportCollectionEntryConfig
+from pipelines.shared.inference.run_classifier import InferenceLayout
+from tools.data.io                             import FileIO
+from tools.reporting.reporting                 import ReportAssets
+from tools.runtime.run_selector                import ReportRunSelector
 
 
 class RunReportLocator:
     """Finds the report files inside one run's inference directory.
+
+    The spatial families stamp directly under the inference directory and
+    the profile and image autoencoder families one level deeper, under their
+    family sub-directory, so both layouts are searched.
 
     Attributes:
         config : Collection config naming the run, the inference directory and the report filename.
@@ -27,6 +32,15 @@ class RunReportLocator:
     def __init__(self, config: ReportCollectionConfig) -> None:
         """Initializes the locator with its collection config."""
         self.config = config
+
+    def _report_paths(self, inference_dir: Path) -> List[Path]:
+        """Returns every report under the direct stamps and the family sub-directories, ordered by stamp name."""
+        reports = list(inference_dir.glob(f"*/{self.config.report_filename}"))
+
+        for family in InferenceLayout.SUBDIRS.values():
+            reports += list(inference_dir.glob(f"{family}/*/{self.config.report_filename}"))
+
+        return sorted((path for path in reports if path.is_file()), key=lambda path: path.parent.name)
 
     def locate(self) -> List[Path]:
         """Returns the run's report paths, newest last.
@@ -42,9 +56,9 @@ class RunReportLocator:
         if not inference_dir.is_dir():
             raise FileNotFoundError(f"No '{self.config.inference_dirname}' directory at {inference_dir}; expected a training run directory holding inference outputs")
 
-        reports = sorted(path for path in inference_dir.glob(f"*/{self.config.report_filename}") if path.is_file())
+        reports = self._report_paths(inference_dir)
         if not reports:
-            raise FileNotFoundError(f"No '{self.config.report_filename}' found in any inference output under {inference_dir}")
+            raise FileNotFoundError(f"No '{self.config.report_filename}' found in any inference output under {inference_dir}, neither directly under a stamp nor under a family sub-directory ({', '.join(InferenceLayout.SUBDIRS.values())})")
 
         if self.config.latest_only:
             return [reports[-1]]
