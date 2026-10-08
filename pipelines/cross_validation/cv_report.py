@@ -115,6 +115,13 @@ class CrossValidationReport:
             if missing:
                 raise ValueError(f"Cross-validation aggregate requires metrics for all {n_total} folds on split '{split}'; missing folds: {missing}")
 
+    def _warn_omitted(self) -> None:
+        """Warns, per split, about the metrics no fold holds as a finite value, which the aggregate tables and the summary JSON leave out."""
+        for split, records in self.records_by_split.items():
+            omitted = [key for key in MetricSectionGrouper.scalar_keys(records) if all(FiniteScalar.coerce(record.metrics.get(key)) is None for record in records)]
+            if omitted:
+                self.logger.warning(f"split {split}: {omitted} non-finite in every fold, omitted from the aggregate")
+
     def _format_std(self, std: float | None, n_used: int, scale: float = 1.0) -> str:
         """Formats a standard deviation, blank when fewer than two folds contributed.
 
@@ -354,6 +361,7 @@ class CrossValidationReport:
             ValueError : If any fold is missing training or metric data.
         """
         self._require_all_folds()
+        self._warn_omitted()
 
         FileIO.ensure_dir(self.out_dir)
 

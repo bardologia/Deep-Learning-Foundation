@@ -393,3 +393,22 @@ def test_training_table_carries_the_fold_status_and_seed_count(tmp_path):
     assert "PARTIAL" in swept_lines
     assert "| Status" in plain_lines
     assert "| Seeds" not in plain_lines
+
+
+def test_a_metric_non_finite_in_every_fold_is_named_when_it_is_left_out(tmp_path):
+    """A metric no fold holds as a finite value is left out of the aggregate with a warning naming it and its split; a metric non-finite in some folds only stays in with its count."""
+    from tests.conftest import RecordingLogger
+
+    metrics = {index: {"curve_rmse_gt": float(index + 1), "overall_r2_gt": float("nan"), "curve_mae_gt": float("nan") if index == 0 else 0.1} for index in range(N_FOLDS)}
+    report  = make_report(tmp_path, base_records=make_records(metrics), records_by_split={"test": make_records(metrics)})
+    logger  = RecordingLogger()
+
+    report.logger = logger
+    report.write_all()
+
+    summary  = json.loads((tmp_path / "reports" / "cv_summary.json").read_text())
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert "split test: ['overall_r2_gt'] non-finite in every fold, omitted from the aggregate" in warnings
+    assert "overall_r2_gt" not in summary["splits"]["test"]
+    assert summary["splits"]["test"]["curve_mae_gt"]["n_used"] == N_FOLDS - 1

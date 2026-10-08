@@ -772,8 +772,29 @@ def test_collector_stays_quiet_when_every_seed_contributed(tmp_path):
 
     collector.collect_by_split()
 
-    assert [message for level, message in logger.messages if level == "warning"] == []
+    coverage = [message for level, message in logger.messages if level == "warning" and ("cover" in message or "fewer seeds" in message or "without inference" in message)]
+
+    assert coverage == []
     assert collector.seed_dispersion["fold_0"]["status"] == "DONE"
+
+
+def test_collector_names_a_metric_non_finite_in_every_fold_once_per_split(tmp_path):
+    """A metric that every fold drops as non-finite is named once for its split as omitted from the cross-fold aggregate; one finite in some fold is not."""
+    names     = ["fold_0", "fold_1"]
+    inference = {
+        "fold_0": {"test": {"curve_rmse_gt": 2.0, "overall_r2_gt": float("nan"), "curve_mae_gt": float("nan")}},
+        "fold_1": {"test": {"curve_rmse_gt": 1.0, "overall_r2_gt": float("nan"), "curve_mae_gt": 0.1}},
+    }
+
+    run_dir   = build_run_dir(tmp_path, names, inference)
+    logger    = RecordingLogger()
+    collector = FoldCollector(run_dir=run_dir, splits=["test"], training_type="backbone", logger=logger)
+
+    collector.collect_by_split()
+
+    omitted = [message for level, message in logger.messages if level == "warning" and message.startswith("split test:")]
+
+    assert omitted == ["split test: ['overall_r2_gt'] non-finite in every fold, omitted from the cross-fold aggregate (cv_aggregate_report.md, cv_summary.json)"]
 
 
 @pytest.mark.dataset
