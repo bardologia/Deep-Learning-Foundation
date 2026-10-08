@@ -935,7 +935,7 @@ class SequencesView extends ConfigForm {
   }
 
   _buildGpuAllRow() {
-    if (this._allTarget() !== "local") return null;
+    if (!this.current.blocks.length) return null;
 
     const row     = document.createElement("div");
     row.className = "seq-bar__gpurow";
