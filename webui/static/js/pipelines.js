@@ -196,8 +196,9 @@ class PipelineFlow {
     this.hostEl.innerHTML = "";
 
     this.pipelines.forEach((p, i) => {
-      const row = document.createElement("div");
-      row.className = "flow-row flow-row--play reveal";
+      const hasScene = Boolean(window.ProcessAnimator && window.ProcessAnimator.SCENES[p.key]);
+      const row      = document.createElement("div");
+      row.className             = hasScene ? "flow-row flow-row--play reveal" : "flow-row reveal";
       row.style.transitionDelay = `${i * 0.05}s`;
 
       const lead = document.createElement("div");
@@ -232,7 +233,6 @@ class PipelineFlow {
         stages.appendChild(chip);
       });
 
-      const hasScene = window.ProcessAnimator && window.ProcessAnimator.SCENES[p.key];
       if (hasScene) {
         const play = document.createElement("span");
         play.className = "flow-row__play";

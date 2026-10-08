@@ -9,8 +9,9 @@ class StageChipProbe {
 
   constructor(payloadPath) {
     this.staticDir = path.resolve(__dirname, "..", "..", "static", "js");
-    this.stagesBy  = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
-    this.sandbox   = { window: {}, console, document: { getElementById: () => this.element("div"), createElement: (tag) => this.element(tag) } };
+    this.pipelines = JSON.parse(fs.readFileSync(payloadPath, "utf8"));
+    this.stagesBy  = Object.fromEntries(this.pipelines.map((pipeline) => [pipeline.key, pipeline.stages]));
+    this.sandbox   = { window: { revealScan: () => {} }, console, document: { getElementById: () => this.element("div"), createElement: (tag) => this.element(tag), addEventListener: () => {} } };
     this.sandbox.globalThis = this.sandbox;
   }
 
@@ -20,11 +21,13 @@ class StageChipProbe {
       tag,
       children    : [],
       style       : {},
+      className   : "",
       textContent : "",
       classList   : { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)), add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name) },
       setAttribute       : () => {},
       addEventListener   : (name, handler) => { el[`on${name}`] = handler; },
       appendChild        : (child) => { el.children.push(child); return child; },
+      querySelectorAll   : () => [],
       insertAdjacentHTML : () => { el.children.push(this.element("span")); },
       get firstChild() { return el.children[0]; },
       get innerHTML() { return ""; },
@@ -74,13 +77,25 @@ class StageChipProbe {
     return { chips: transport.chips.map((chip) => chip.textContent), stageOf: transport.stageOf, clicks };
   }
 
+  rows() {
+    const host = this.element("div");
+    const flow = new this.sandbox.window.PipelineFlow(host);
+    flow.pipelines = this.pipelines;
+    flow._render();
+
+    return Object.fromEntries(this.pipelines.map((pipeline, i) => {
+      const row = host.children[i];
+      return [pipeline.key, { playable: row.className.split(" ").includes("flow-row--play"), clickable: typeof row.onclick === "function" }];
+    }));
+  }
+
   orchestrate() {
     const Transport = this.load();
     const scenes    = this.sandbox.window.ProcessAnimator.SCENES;
     const out       = {};
 
     Object.keys(scenes).filter((key) => this.stagesBy[key]).forEach((key) => { out[key] = this.probe(Transport, key, this.stagesBy[key]); });
-    process.stdout.write(JSON.stringify({ scenes: Object.keys(scenes), pipelines: out }));
+    process.stdout.write(JSON.stringify({ scenes: Object.keys(scenes), pipelines: out, rows: this.rows() }));
   }
 }
 
