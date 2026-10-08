@@ -342,3 +342,38 @@ def test_slice_plotter_z_metric_curves(tmp_path):
 
 
 
+
+
+def test_param_plotter_records_why_a_never_active_slot_has_no_scatter(tmp_path):
+    """A GT slot that is never active loses its three scatter figures and the plotter keeps the reason for each."""
+    params    = _params()
+    params[3] = 0.0
+    plotter   = ParamPlotter()
+
+    paths = plotter.plot_param_scatter(
+        params_pred=params + 0.01, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path,
+    )
+    skips = plotter.drain_skips()
+
+    assert len(paths) == 3
+    assert [(skip.family, skip.slot, skip.parameter) for skip in skips] == [("scatter", 2, "a"), ("scatter", 2, "mu"), ("scatter", 2, "sigma")]
+    assert all(skip.reason == f"GT slot never active (0 of {H * W:,} pixels)" for skip in skips)
+    assert plotter.drain_skips() == []
+
+
+def test_param_plotter_records_why_an_unmatched_slot_has_no_error_figures(tmp_path):
+    """A GT slot the prediction never places an active Gaussian on loses its error maps and histograms with the pixel count."""
+    params  = _params()
+    pred    = params.copy()
+    pred[3] = 0.0
+    plotter = ParamPlotter()
+
+    maps  = plotter.plot_param_error_maps(params_pred=pred, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path / "maps", row_offset=0, col_offset=0)
+    hists = plotter.plot_param_error_hists(params_pred=pred, params_gt=params, n_gaussians=N_GAUSSIANS, amp_threshold=1e-4, out_dir=tmp_path / "hists")
+    skips = plotter.drain_skips()
+
+    assert len(maps)  == 3
+    assert len(hists) == 3
+    assert {(skip.family, skip.slot) for skip in skips} == {("error_maps", 2), ("error_hists", 2)}
+    assert any(skip.reason == f"no matched active prediction on {H * W:,} GT-active pixels" for skip in skips if skip.family == "error_maps")
+    assert any(skip.reason == f"no matched finite prediction on {H * W:,} GT-active pixels" for skip in skips if skip.family == "error_hists")

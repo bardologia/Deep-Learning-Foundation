@@ -295,28 +295,110 @@ def test_animator_walk_gif_separate_panels(tmp_path):
 
 @pytest.mark.slow
 def test_figure_composer_compose_creates_files(tmp_path):
-    """Composing a parameter-space run emits every expected figure group as non-empty files."""
+    """Composing a parameter-space run emits every expected figure group as non-empty files and closes with the per-family table and total."""
     res, gm, indices, z_axis = _result_and_metrics()
-    composer, meta = _composer(tmp_path)
-    run            = _run_stub()
+    logger                   = _TrackingLogger()
+    composer, meta           = _composer(tmp_path, logger)
+    run                      = _run_stub()
 
     figure_paths = composer.compose(
         result=res, run=run, global_metrics=gm, z_axis_np=z_axis, indices=indices, param_space=True,
     )
 
-    assert "profiles_best"      in figure_paths
-    assert "pixel_mse_map"      in figure_paths
+    assert "profiles_best"       in figure_paths
+    assert "pixel_mse_map"       in figure_paths
     assert "param_distributions" in figure_paths
-    assert "param_error_hists"  in figure_paths
-    assert "active_count_map"   in figure_paths
-    assert "slices_col"       in figure_paths
-    assert "ssim_col"         in figure_paths
+    assert "param_error_hists"   in figure_paths
+    assert "active_count_map"    in figure_paths
+    assert "slices_col"          in figure_paths
+    assert "ssim_col"            in figure_paths
 
     flat = [p for paths in figure_paths.values() for p in paths]
     assert len(flat) > 0
     for p in flat:
         assert p.is_file()
         assert p.stat().st_size > 0
+
+    assert ("metrics_table", "Figures written") in logger.messages
+    assert logger.of("ok")      == [f"{len(flat)} figures in {len(figure_paths)} families under {meta.figures_dir}"]
+    assert logger.of("warning") == []
+
+
+@pytest.mark.slow
+def test_figure_composer_names_the_pixel_maps_drawn_and_reports_an_empty_separation_profile(tmp_path):
+    """The pixel-map line names every map drawn, the histograms are counted, and an empty miss-by-separation profile is warned about and summarised."""
+    res, _gm, _indices, _z_axis = _result_and_metrics()
+    res.label_r2                = res.pixel_r2.copy()
+    res.miss_by_sep             = []
+    logger                      = _TrackingLogger()
+    composer, meta              = _composer(tmp_path, logger)
+    figure_paths                = {}
+
+    composer._compose_pixel_maps(res, figure_paths)
+    composer._summarize(figure_paths)
+
+    assert f"Pixel maps : mse, r2, peak_error, label_r2 written to {meta.figures_dir / 'pixel_maps'}" in logger.of("subsection")
+    assert f"Metric histograms : 3 figures in {meta.figures_dir / 'histograms'}" in logger.of("subsection")
+    assert "miss_by_separation" not in figure_paths
+    assert logger.of("warning") == ["Miss-by-separation figure skipped: no GT-separation bin of at least 30 pixels with two active GT components"]
+    assert ("metrics_table", "Figures written") in logger.messages
+
+    total = sum(len(paths) for paths in figure_paths.values())
+    assert logger.of("ok") == [f"{total} figures in {len(figure_paths)} families under {meta.figures_dir}; empty or incomplete: miss_by_separation"]
+
+
+@pytest.mark.slow
+def test_figure_composer_tracks_each_slice_set_on_the_logger_bar(tmp_path):
+    """Both slice sets open one progress task each, sized to the col, row and z slices they draw."""
+    res, gm, indices, z_axis = _result_and_metrics()
+    logger                   = _TrackingLogger()
+    composer, _meta          = _composer(tmp_path, logger)
+    figure_paths             = {}
+
+    composer._compose_slices(res, _run_stub(), gm, z_axis, indices, figure_paths)
+
+    assert logger.progress.tasks == [("Slice figures (slices)", 6), ("Slice figures (slices_norm)", 6)]
+
+
+@pytest.mark.slow
+def test_figure_composer_counts_param_figures_against_three_per_slot(tmp_path):
+    """With every GT slot matched, each parameter family reports 3 K of 3 K figures and nothing is skipped."""
+    res, _gm, _indices, _z_axis = _result_and_metrics()
+    logger                      = _TrackingLogger()
+    composer, meta              = _composer(tmp_path, logger)
+    figure_paths                = {}
+
+    composer._compose_param_plots(res, _run_stub(), figure_paths)
+
+    assert logger.of("subsection") == [f"Param plots : distributions 6/6, scatter 6/6, error maps 6/6, error histograms 6/6, active-count maps 2 written to {meta.figures_dir}"]
+    assert logger.of("warning")    == []
+
+
+@pytest.mark.slow
+def test_figure_composer_explains_the_param_figures_a_collapsed_slot_loses(tmp_path):
+    """A GT slot with no matched active prediction loses its scatter, error-map and error-histogram figures under one warning."""
+    res, _gm, _indices, _z_axis = _result_and_metrics()
+    res.params_pred[3]          = 0.0
+    logger                      = _TrackingLogger()
+    composer, _meta             = _composer(tmp_path, logger)
+    figure_paths                = {}
+
+    composer._compose_param_plots(res, _run_stub(), figure_paths)
+
+    assert len(figure_paths["param_distributions"]) == 6
+    assert len(figure_paths["param_scatter"])       == 3
+    assert len(figure_paths["param_error_maps"])    == 3
+    assert len(figure_paths["param_error_hists"])   == 3
+
+    warnings = logger.of("warning")
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Param figures skipped for 9 (family, slot, parameter) triples: ")
+    assert f"scatter g2/a+mu+sigma: no matched active prediction on {H * W:,} GT-active pixels" in warnings[0]
+    assert f"error_hists g2/a+mu+sigma: no matched finite prediction on {H * W:,} GT-active pixels" in warnings[0]
+    assert logger.of("subsection")[0].startswith("Param plots : distributions 6/6, scatter 3/6, error maps 3/6, error histograms 3/6")
+
+    composer._summarize(figure_paths)
+    assert logger.of("ok")[0].endswith("; empty or incomplete: param_error_hists, param_error_maps, param_scatter")
 
 
 

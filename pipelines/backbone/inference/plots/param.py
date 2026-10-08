@@ -7,8 +7,9 @@ Hungarian alignment.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing  import List, Optional
+from dataclasses import dataclass
+from pathlib     import Path
+from typing      import List, Optional
 
 import matplotlib
 
@@ -20,6 +21,23 @@ import numpy                as np
 from pipelines.backbone.inference.plots.base import PlotTools
 from tools.data.gaussians                    import GaussianActivity
 from tools.metrics.gaussian_matching         import GaussianMatcher
+
+
+@dataclass
+class ParamFigureSkip:
+    """One parameter figure that was not drawn, with the reason.
+
+    Attributes:
+        family    : Figure family, one of distributions, scatter, error_maps or error_hists.
+        slot      : One-based GT slot index.
+        parameter : Parameter file name, one of a, mu or sigma.
+        reason    : Why no figure was written.
+    """
+
+    family    : str
+    slot      : int
+    parameter : str
+    reason    : str
 
 
 class SlotAlignment:
@@ -80,15 +98,21 @@ class SlotAlignment:
 class ParamPlotter(PlotTools):
     """Plots matched Gaussian-parameter distributions, scatters, error maps and error histograms.
 
+    Every figure family skips a (slot, parameter) pair that has nothing to
+    draw; each skip is kept with its reason so the caller can say why a
+    g<k>_* file is missing instead of leaving it to be discovered.
+
     Attributes:
         alignment : Cache of the slot-aligned prediction shared by every figure family here.
+        skips     : Figures not drawn since the last drain_skips call.
     """
 
     def __init__(self, *args, **kwargs) -> None:
-        """Builds the plotter with the shared plot style and an empty alignment cache."""
+        """Builds the plotter with the shared plot style, an empty alignment cache and no recorded skip."""
 
         super().__init__(*args, **kwargs)
         self.alignment = SlotAlignment()
+        self.skips     = []
 
     def plot_param_distributions(
         self,
@@ -151,6 +175,7 @@ class ParamPlotter(PlotTools):
                 has_pred = pred.size > 0
                 has_gt   = gt.size > 0
                 if not has_pred and not has_gt:
+                    self._record_skip("distributions", k, fname, "no finite predicted value" if active_mask is None else self._active_skip_reason(active_mask, "finite value"))
                     continue
 
                 combined = np.concatenate([arr for arr in (pred, gt) if arr.size])
@@ -159,6 +184,7 @@ class ParamPlotter(PlotTools):
                 if is_amp:
                     positive  = combined[combined > 0]
                     if positive.size == 0:
+                        self._record_skip("distributions", k, fname, "no positive amplitude among the plotted values")
                         continue
                     lo        = max(float(np.percentile(positive, 0.5)), 1e-6)
                     hi        = float(positive.max()) * 1.02
@@ -171,6 +197,7 @@ class ParamPlotter(PlotTools):
                 gt_in   = gt  [(gt   >= bin_edges[0]) & (gt   <= bin_edges[-1])]
                 pred_in = pred[(pred >= bin_edges[0]) & (pred <= bin_edges[-1])]
                 if gt_in.size == 0 and pred_in.size == 0:
+                    self._record_skip("distributions", k, fname, "no value inside the histogram range")
                     continue
 
                 fig, ax = plt.subplots(figsize=(4.8, 3.4))
@@ -347,6 +374,7 @@ class ParamPlotter(PlotTools):
 
                 gt, pred = self._paired_subsample([gt_all[matched], pred_all[matched]], max_points, seed)
                 if gt.size == 0:
+                    self._record_skip("scatter", k, fname, self._active_skip_reason(is_active, "matched active prediction"))
                     continue
 
                 fig, ax = plt.subplots(figsize=(5.2, 4.4))
@@ -429,6 +457,7 @@ class ParamPlotter(PlotTools):
                 err       = np.where(gt_active, np.abs(aligned[ch] - params_gt[ch]), np.nan).astype(np.float32)
                 valid_err = err[np.isfinite(err)]
                 if valid_err.size == 0:
+                    self._record_skip("error_maps", k, fname, self._active_skip_reason(gt_active, "matched active prediction"))
                     continue
 
                 vmax = float(np.percentile(valid_err, 99.0))
@@ -497,12 +526,14 @@ class ParamPlotter(PlotTools):
 
                 err = (pred_flat - gt_flat)[matched]
                 if err.size == 0:
+                    self._record_skip("error_hists", k, fname, self._active_skip_reason(is_active, "matched finite prediction"))
                     continue
 
                 half      = max(float(np.percentile(np.abs(err), 99.5)), 1e-6)
                 bin_edges = np.linspace(-half, half, bins + 1)
                 err_in    = err[(err >= bin_edges[0]) & (err <= bin_edges[-1])]
                 if err_in.size == 0:
+                    self._record_skip("error_hists", k, fname, "no error inside the histogram range")
                     continue
 
                 bias   = float(np.mean(err))
@@ -526,3 +557,41 @@ class ParamPlotter(PlotTools):
                 paths.append(self._save(fig, out_dir / f"g{k + 1}_{fname}.png"))
 
         return paths
+
+    @staticmethod
+    def _active_skip_reason(is_active: np.ndarray, missing: str) -> str:
+        """Returns why a slot has nothing to draw: the GT slot was never active, or its active pixels lack `missing`.
+
+        Args:
+            is_active : Boolean GT-activity mask over the pixels of one slot.
+            missing   : What the GT-active pixels lack, e.g. "matched active prediction".
+
+        Returns:
+            The reason phrase with the pixel counts.
+        """
+
+        n_active = int(is_active.sum())
+        if n_active == 0:
+            return f"GT slot never active (0 of {is_active.size:,} pixels)"
+
+        return f"no {missing} on {n_active:,} GT-active pixels"
+
+    def _record_skip(self, family: str, slot: int, parameter: str, reason: str) -> None:
+        """Remembers a figure that was not drawn.
+
+        Args:
+            family    : Figure family the figure belongs to.
+            slot      : Zero-based GT slot index, stored one-based as in the file names.
+            parameter : Parameter file name.
+            reason    : Why no figure was written.
+        """
+
+        self.skips.append(ParamFigureSkip(family=family, slot=slot + 1, parameter=parameter, reason=reason))
+
+    def drain_skips(self) -> List[ParamFigureSkip]:
+        """Returns the figures skipped since the last call and forgets them."""
+
+        skips      = self.skips
+        self.skips = []
+
+        return skips
