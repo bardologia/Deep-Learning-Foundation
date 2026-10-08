@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from pipelines.backbone.inference.analysis.input_attribution import ChannelGroups, TrackChannels
-from pipelines.backbone.inference.analysis.run_batch         import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch         import AnalysisOutcome, AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes                     import PredictionCurves
 from tools.data.io                                           import FileIO
 from tools.reporting.markdown                                import MarkdownDoc, MarkdownTable
@@ -477,16 +477,15 @@ class RobustnessRun(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Runs the noise, gain, dropout and shift sweeps and writes their artifacts.
 
-        Returns:
-            The payload holding the backbone name, split and all sweep results.
-        """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
+        Args:
+            run : Loaded run bundling the model, the dataloader and the normalizer.
 
-        run      = self._load_run()
+        Returns:
+            The outcome whose payload holds the backbone name, split and all sweep results.
+        """
         renderer = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
         batches  = self._batches(run, renderer)
         core     = RobustnessCore(run.model, renderer, seed=self.config.seed)
@@ -521,9 +520,8 @@ class RobustnessRun(AnalysisRun):
         report_path = self._write_report(run, results, figures)
 
         suffix = "≥" if tolerance["censored"] else "="
-        self.logger.ok(f"{self.run_dir.name}: clean MSE {clean:.3g}, noise tolerance σ {suffix} {tolerance['sigma']:.2f} -> {report_path}")
 
-        return payload
+        return AnalysisOutcome(payload, f"clean MSE {clean:.3g}, noise tolerance σ {suffix} {tolerance['sigma']:.2f}", report_path)
 
 
 class RobustnessBatch(RunBatch):

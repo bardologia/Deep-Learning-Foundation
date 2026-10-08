@@ -14,7 +14,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import PredictionCurves, ProbeWindows
 from tools.data.io                                   import FileIO
 from tools.reporting.markdown                        import MarkdownDoc
@@ -107,17 +107,16 @@ class TrainingEvolutionRun(AnalysisRun):
 
         return [curves[index, :, cy, cx] for index, (cy, cx) in enumerate(centers_local)]
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Replays every epoch snapshot at the probe pixels and writes GIFs and report.
 
-        Returns:
-            The payload holding the backbone name, split, replayed epochs and the
-            probe pixel coordinates.
-        """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
+        Args:
+            run : Loaded run bundling the model and the dataset.
 
-        run       = self._load_run()
+        Returns:
+            The outcome whose payload holds the backbone name, split, replayed epochs
+            and the probe pixel coordinates.
+        """
         snapshots = self._snapshots()
         renderer  = PredictionCurves(run.n_gaussians, run.z_axis)
 
@@ -168,9 +167,7 @@ class TrainingEvolutionRun(AnalysisRun):
             doc.image(label, path.name)
         report_path = doc.save(self.output_dir / self.REPORT_FILENAME)
 
-        self.logger.ok(f"{self.run_dir.name}: {len(gifs)} evolution GIFs over {len(snapshots)} snapshots -> {report_path}")
-
-        return payload
+        return AnalysisOutcome(payload, f"{len(gifs)} evolution GIFs over {len(snapshots)} snapshots", report_path)
 
 
 class TrainingEvolutionBatch(RunBatch):

@@ -11,7 +11,10 @@ import numpy as np
 import pytest
 import torch
 
-from pipelines.backbone.inference.analysis.loss_landscape import CutDiagnostics, FilterNormalizedDirection, LandscapeEvaluator, LossLandscapePlots
+from configuration.diagnostics                            import LossLandscapeConfig
+from pipelines.backbone.inference.analysis.loss_landscape import CutDiagnostics, FilterNormalizedDirection, LandscapeEvaluator, LossLandscapePlots, LossLandscapeRun
+
+from tests.conftest import SilentLogger
 
 
 class _TinyConv(torch.nn.Module):
@@ -161,3 +164,9 @@ def test_contour_of_a_varying_landscape_is_written(tmp_path):
 
     assert path.is_file()
     assert path.stat().st_size > 0
+
+
+def test_single_direction_is_refused_before_the_run_loads(tmp_path):
+    """One direction leaves no plane for the 2-D grid, so the analysis refuses it at construction."""
+    with pytest.raises(ValueError, match="at least 2 directions"):
+        LossLandscapeRun(tmp_path, LossLandscapeConfig(n_directions=1), SilentLogger())

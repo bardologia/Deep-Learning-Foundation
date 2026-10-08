@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import ModelDevice, PredictionCurves, ProbeWindows
 from tools.data.io                                   import FileIO
 from tools.metrics.scoring                           import RankCorrelation
@@ -623,18 +623,17 @@ class InputAttributionRun(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Attributes this run's predictions to its input channels and tracks.
 
-        Returns:
-            Payload with the backbone name, the split, the channel labels and groups, the
-            per-family gradient attribution, the occlusion deltas per channel and per
-            track, and the gradient-occlusion Spearman correlation.
-        """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
+        Args:
+            run : Loaded run bundling the model, the dataloader and the dataset.
 
-        run               = self._load_run()
+        Returns:
+            The outcome whose payload holds the backbone name, the split, the channel
+            labels and groups, the per-family gradient attribution, the occlusion deltas
+            per channel and per secondary, and the gradient-occlusion Spearman correlation.
+        """
         labels            = ChannelLabeler.build(run)
         groups            = ChannelGroups.build(run)
         groups_by_channel = ChannelGroups.of_channels(groups, run.in_channels)
@@ -666,9 +665,9 @@ class InputAttributionRun(AnalysisRun):
 
         combined = GradientAttribution.combined(importance, "share")
         top      = labels[int(np.nanargmax(combined))]
-        self.logger.ok(f"{self.run_dir.name}: strongest attribution on '{top}'" + (f", grad-occlusion ρ {spearman:.2f}" if spearman is not None else "") + f" -> {report_path}")
+        headline = f"strongest attribution on '{top}'" + (f", grad-occlusion ρ {spearman:.2f}" if spearman is not None else "")
 
-        return payload
+        return AnalysisOutcome(payload, headline, report_path)
 
 
 class InputAttributionBatch(RunBatch):

@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from pipelines.backbone.inference.probes             import ModelDevice
 from tools.data.gaussians                            import GaussianActivity
 from tools.data.io                                   import FileIO
@@ -609,17 +609,16 @@ class LayerProbeRun(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Probes the layers of this run, plots the depth profiles and writes the report.
 
-        Returns:
-            Payload with the backbone name, the split, the surviving layer order and the
-            probe results, baseline and shuffled controls.
-        """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
+        Args:
+            run : Loaded run bundling the model, the dataloader and the dataset normalizer.
 
-        run    = self._load_run()
+        Returns:
+            The outcome whose payload holds the backbone name, the split, the surviving
+            layer order and the probe results, baseline and shuffled controls.
+        """
         layers = self._select_layers(run)
 
         core = LayerProbeCore(
@@ -653,9 +652,8 @@ class LayerProbeRun(AnalysisRun):
 
         count_scores = {layer: results["layers"][layer]["scores"]["count"] for layer in layers}
         best         = max((layer for layer in layers if count_scores[layer] is not None), key=lambda layer: count_scores[layer]["mean"])
-        self.logger.ok(f"{self.run_dir.name}: K most decodable at '{best}' (R² {count_scores[best]['mean']:.3f}) -> {report_path}")
 
-        return payload
+        return AnalysisOutcome(payload, f"K most decodable at '{best}' (R² {count_scores[best]['mean']:.3f})", report_path)
 
 
 class LayerProbeBatch(RunBatch):

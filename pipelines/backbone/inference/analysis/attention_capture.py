@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from models.blocks                                   import AttentionTap
-from pipelines.backbone.inference.analysis.run_batch import AnalysisRun, RunBatch
+from pipelines.backbone.inference.analysis.run_batch import AnalysisOutcome, AnalysisRun, RunBatch
 from tools.data.io                                   import FileIO
 from tools.reporting.markdown                        import MarkdownDoc, MarkdownTable
 from tools.reporting.plotting                        import PlotBase
@@ -641,17 +641,16 @@ class AttentionCaptureRun(AnalysisRun):
 
         return doc.save(self.output_dir / self.REPORT_FILENAME)
 
-    def run(self) -> dict:
+    def _analyse(self, run) -> AnalysisOutcome:
         """Captures the attention of this run, plots it and writes the report.
 
-        Returns:
-            The summary with its "gates" and "attention" sections, as written to JSON
-            alongside the capture order.
-        """
-        FileIO.ensure_dirs(self.output_dir)
-        PlotBase.use_style(self.config.figure_style)
+        Args:
+            run : Loaded run bundling the model and the dataloader.
 
-        run            = self._load_run()
+        Returns:
+            The outcome whose payload is the summary with its "gates" and "attention"
+            sections, written to JSON alongside the capture order.
+        """
         records        = self._capture(run)
         summary, order = self._summarize(records)
 
@@ -660,9 +659,7 @@ class AttentionCaptureRun(AnalysisRun):
         FileIO.save_json({**summary, "layer_order": order}, self.output_dir / self.SUMMARY_FILENAME)
         report_path = self._write_report(run, summary, order, figures)
 
-        self.logger.ok(f"{self.run_dir.name}: {len(summary['gates'])} gates, {len(summary['attention'])} attention layers -> {report_path}")
-
-        return summary
+        return AnalysisOutcome(summary, f"{len(summary['gates'])} gates, {len(summary['attention'])} attention layers", report_path)
 
 
 class AttentionCaptureBatch(RunBatch):
