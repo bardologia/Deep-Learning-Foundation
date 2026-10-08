@@ -138,14 +138,31 @@ class CurveLoss:
 
 
 class MomentLoss:
-    """Moment-matching penalties comparing mass, mean and spread of profile pairs."""
+    """Moment-matching penalties comparing mass, mean and spread of profile pairs.
+
+    Both penalties average only over the pixels whose integrated target power
+    exceeds a floor, and return 0.0 for a batch where no pixel does.
+    """
 
     @staticmethod
     def masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """Returns the mean of values over the pixels the mask selects, 0.0 when the mask selects none."""
         return (values * mask).sum() / mask.sum().clamp(min=1.0)
 
     @staticmethod
     def moment_sums(curves: torch.Tensor, z_axis: torch.Tensor, dx: float) -> tuple:
+        """Returns the zeroth, first and second raw moments of each profile.
+
+        Args:
+            curves : Profiles of shape (batch, profile_length, rows, cols).
+            z_axis : The z sample positions, of shape (profile_length,).
+            dx     : The z sample spacing, in z-axis units.
+
+        Returns:
+            Tuple of three tensors of shape (batch, rows, cols) holding the
+            integrals over z of the profile, of z times the profile, and of z
+            squared times the profile.
+        """
         x = z_axis.reshape(1, -1, 1, 1)
 
         s0 = curves.sum(dim=1) * dx
@@ -156,6 +173,17 @@ class MomentLoss:
 
     @staticmethod
     def total_power(pred: torch.Tensor, target: torch.Tensor, dx: float, floor: float) -> torch.Tensor:
+        """Returns the mean relative error of the integrated profile power.
+
+        Args:
+            pred   : Predicted profiles of shape (batch, profile_length, rows, cols).
+            target : Target profiles of the same shape.
+            dx     : The z sample spacing, in z-axis units.
+            floor  : Integrated target power a pixel must exceed to enter the mean; also the lower bound of the denominator.
+
+        Returns:
+            Scalar mean of |P_pred - P_target| / P_target over the pixels above the floor, 0.0 when none is.
+        """
         p0 = pred.sum(dim=1) * dx
         t0 = target.sum(dim=1) * dx
 
@@ -166,6 +194,22 @@ class MomentLoss:
 
     @staticmethod
     def moments(pred: torch.Tensor, target: torch.Tensor, z_axis: torch.Tensor, dx: float, floor: float, weights: tuple) -> torch.Tensor:
+        """Returns the weighted mismatch of profile mass, centroid and spread.
+
+        The centroid and spread terms are expressed as fractions of the z axis
+        span, so all three terms are dimensionless.
+
+        Args:
+            pred    : Predicted profiles of shape (batch, profile_length, rows, cols).
+            target  : Target profiles of the same shape.
+            z_axis  : The z sample positions, of shape (profile_length,).
+            dx      : The z sample spacing, in z-axis units.
+            floor   : Integrated target power a pixel must exceed to enter the mean; also the lower bound of the integrated-power denominators.
+            weights : Tuple of (mass, mean, spread) weights, normalised by their sum.
+
+        Returns:
+            Scalar mean of the combined moment mismatch over the pixels above the floor, 0.0 when none is.
+        """
         p0, p1, p2 = MomentLoss.moment_sums(pred,   z_axis, dx)
         t0, t1, t2 = MomentLoss.moment_sums(target, z_axis, dx)
 
