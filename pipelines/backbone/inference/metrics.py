@@ -21,9 +21,9 @@ import numpy as np
 from skimage.metrics import structural_similarity as ssim
 from tqdm            import tqdm
 
+from tools.data.gaussians            import GaussianActivity
 from tools.data.io                   import FileIO
 from tools.data.preprocessing        import ProfileNormalizer
-from tools.loss.param_loss           import ParamMatcher
 from tools.metrics.gaussian_matching import GaussianMatcher
 from tools.metrics.slot_organization import SlotOrganization
 from tools.metrics.scoring           import R2
@@ -100,7 +100,7 @@ class Result:
 
         Args:
             n_gaussians   : Gaussian count K.
-            amp_threshold : Physical amplitude at or above which a Gaussian slot counts as active.
+            amp_threshold : Physical amplitude above which a Gaussian slot counts as active.
 
         Returns:
             Per-pixel GT slot index chosen for each predicted slot, of shape (n_pixels, K).
@@ -191,7 +191,7 @@ class Metrics:
         n_gaussians    : Gaussian count K.
         x_step         : Z bin spacing in metres.
         num_workers    : Process count used for the parallel SSIM sweep.
-        active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active.
+        active_amp_thr : Physical amplitude above which a Gaussian slot counts as active.
     """
 
     def __init__(
@@ -209,7 +209,7 @@ class Metrics:
             z_axis         : Z axis in metres, of shape (n_z,).
             n_gaussians    : Gaussian count K.
             cpu_workers    : Requested worker count, capped at the machine's CPU count.
-            active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active, as recorded by the label run.
+            active_amp_thr : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
         """
 
         self.result         = result
@@ -639,9 +639,9 @@ class Metrics:
         pred_count = np.zeros((H, W), dtype=np.int32)
 
         for k in range(n_K):
-            gt_active      = ParamMatcher.is_active(pg     [3 * k], self.active_amp_thr)
-            pred_active    = ParamMatcher.is_active(pp     [3 * k], self.active_amp_thr)
-            aligned_active = ParamMatcher.is_active(aligned[3 * k], self.active_amp_thr)
+            gt_active      = GaussianActivity.is_active(pg     [3 * k], self.active_amp_thr)
+            pred_active    = GaussianActivity.is_active(pp     [3 * k], self.active_amp_thr)
+            aligned_active = GaussianActivity.is_active(aligned[3 * k], self.active_amp_thr)
 
             out[f"slot_{k}_active_gt_frac"]   = float(gt_active.mean())
             out[f"slot_{k}_active_pred_frac"] = float(aligned_active.mean())
@@ -692,7 +692,7 @@ class Metrics:
         for k in range(n_K):
             gt_amp   = pg[3 * k].reshape(-1)
             finite   = np.isfinite(gt_amp)
-            active   = finite & ParamMatcher.is_active(gt_amp, self.active_amp_thr)
+            active   = finite & GaussianActivity.is_active(gt_amp, self.active_amp_thr)
             inactive = finite & ~active
             scopes   = (("active", active), ("inactive", inactive), ("global", finite))
 
@@ -758,8 +758,8 @@ class Metrics:
         mu_gt    = np.stack([pg[3 * k + 1] for k in range(n_K)], axis=0).reshape(n_K, -1)
         sig_gt   = np.stack([pg[3 * k + 2] for k in range(n_K)], axis=0).reshape(n_K, -1)
 
-        act_pred = ParamMatcher.is_active(amp_pred, self.active_amp_thr)
-        act_gt   = ParamMatcher.is_active(amp_gt, self.active_amp_thr)
+        act_pred = GaussianActivity.is_active(amp_pred, self.active_amp_thr)
+        act_gt   = GaussianActivity.is_active(amp_gt, self.active_amp_thr)
         gt_count = act_gt.sum(axis=0).astype(np.int64)
 
         n_buckets        = n_K + 1

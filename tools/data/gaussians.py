@@ -1,9 +1,10 @@
-"""Gaussian-mixture z profiles: evaluation, reconstruction and clamping.
+"""Gaussian-mixture z profiles: evaluation, reconstruction, slot activity and ordering.
 
 The volumetric label of a pixel is a mixture of Gaussians over the z
 axis, each component described by an amplitude, a mean height in metres and a
-width in metres. This module evaluates those mixtures in NumPy and orders the slots; the
-torch-side reconstruction and clamp live in `tools.data.gaussians_torch`.
+width in metres. This module evaluates those mixtures in NumPy, holds the one
+definition of an active slot and orders the slots; the torch-side reconstruction
+and clamp live in `tools.data.gaussians_torch`.
 """
 from __future__ import annotations
 
@@ -163,6 +164,26 @@ class GaussianReconstructor:
         return [GaussianMixture.kernel(float(params[3 * k]), float(params[3 * k + 1]), float(params[3 * k + 2]), z_axis) for k in range(n_gaussians)]
 
 
+class GaussianActivity:
+    """The one definition of when a Gaussian slot counts as active."""
+    @staticmethod
+    def is_active(amplitude, threshold: float):
+        """Returns whether an amplitude lies strictly above the activity threshold.
+
+        Every loss mask, slot sorter, matcher, metric and analysis asks this
+        question here, so a threshold of zero means any positive amplitude and a
+        slot stored at exactly zero is never active.
+
+        Args:
+            amplitude : Physical amplitude as a float, NumPy array or torch tensor of any shape.
+            threshold : Physical amplitude above which a slot counts as active, as recorded by the label run.
+
+        Returns:
+            Boolean of the same kind and shape as amplitude.
+        """
+        return amplitude > threshold
+
+
 class GaussianSlotSorter:
     """Orders the Gaussian slots of a parameter cube."""
     @staticmethod
@@ -172,7 +193,7 @@ class GaussianSlotSorter:
         Args:
             parameters_array   : Parameter cube of shape (3*n_gaussians, rows, cols).
             n_gaussians        : Number of slots held in the cube.
-            activity_threshold : Amplitude below which a slot is treated as inactive.
+            activity_threshold : Amplitude above which a slot counts as active.
 
         Returns:
             The cube with slots reordered, of the same shape as the input.
@@ -183,7 +204,7 @@ class GaussianSlotSorter:
         amps = reshaped[:, 0, :, :]
         mus  = reshaped[:, 1, :, :]
 
-        sort_keys = np.where(amps > activity_threshold, mus, np.inf)
+        sort_keys = np.where(GaussianActivity.is_active(amps, activity_threshold), mus, np.inf)
         order     = np.argsort(sort_keys, axis=0)
         ordered   = np.take_along_axis(reshaped, order[:, np.newaxis, :, :], axis=0)
 

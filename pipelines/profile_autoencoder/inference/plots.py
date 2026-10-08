@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy             as np
 
 from pipelines.autoencoder_common.inference.plots import AePlotsBase
+from tools.data.gaussians                         import GaussianActivity
 from tools.data.regions                           import CropRegion
 
 
@@ -237,7 +238,7 @@ class ProfileAePlots(AePlotsBase):
         gt   = result.gt
         pred = result.pred
 
-        active     = np.flatnonzero(gt.max(axis=1) > activity_threshold)
+        active     = np.flatnonzero(GaussianActivity.is_active(gt.max(axis=1), activity_threshold))
         order      = active[np.argsort(mse[active])]
         rng        = np.random.default_rng(cfg.curve_seed)
 

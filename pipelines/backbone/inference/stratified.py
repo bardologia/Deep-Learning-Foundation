@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from tools.loss.param_loss import ParamMatcher
+from tools.data.gaussians  import GaussianActivity
 from tools.metrics.scoring import RankCorrelation
 
 
@@ -21,7 +21,7 @@ class StratifiedErrors:
         MIN_BIN_COUNT  : Minimum pixels a bin needs before it is reported.
         loaded         : Loaded run supplying the complex stack, the aux channel and the slot count.
         result         : Inference result supplying the ground-truth parameters and the per-pixel MSE map.
-        active_amp_thr : Physical amplitude at or above which a ground-truth Gaussian slot counts as active, read from the loaded run.
+        active_amp_thr : Physical amplitude above which a ground-truth Gaussian slot counts as active, read from the loaded run.
     """
 
     N_BINS        = 12
@@ -39,7 +39,7 @@ class StratifiedErrors:
         n_k    = self.loaded.n_gaussians
         amps   = np.stack([params[3 * k] for k in range(n_k)])
 
-        return ParamMatcher.is_active(amps, self.active_amp_thr).sum(axis=0).astype(np.float64)
+        return GaussianActivity.is_active(amps, self.active_amp_thr).sum(axis=0).astype(np.float64)
 
     def covariates(self) -> dict[str, tuple[np.ndarray, bool]]:
         """Collects every covariate map available for this run.

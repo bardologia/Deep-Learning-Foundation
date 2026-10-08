@@ -11,6 +11,7 @@ from itertools import permutations
 
 import numpy as np
 
+from tools.data.gaussians  import GaussianActivity
 from tools.loss.param_loss import ParamMatcher
 
 
@@ -91,8 +92,8 @@ class GaussianMatcher:
 
         mu_pred  = self._channel(params_pred, n_K, 1)
         mu_gt    = self._channel(params_gt,   n_K, 1)
-        act_pred = self._channel(params_pred, n_K, 0) >= self.amp_threshold
-        act_gt   = self._channel(params_gt,   n_K, 0) >= self.amp_threshold
+        act_pred = GaussianActivity.is_active(self._channel(params_pred, n_K, 0), self.amp_threshold)
+        act_gt   = GaussianActivity.is_active(self._channel(params_gt,   n_K, 0), self.amp_threshold)
 
         perms    = np.asarray(list(permutations(range(n_K))))
         n_pixels = mu_pred.shape[1]
@@ -131,7 +132,7 @@ class GaussianMatcher:
         H, W = params_pred.shape[-2:]
         sel  = self.assignment(params_pred, params_gt, n_K) if assignment is None else assignment
 
-        act_pred = self._channel(params_pred, n_K, 0) >= self.amp_threshold
+        act_pred = GaussianActivity.is_active(self._channel(params_pred, n_K, 0), self.amp_threshold)
         n_pixels = sel.shape[0]
         rows     = np.arange(n_pixels)
         aligned  = np.full((n_K, ppg, n_pixels), np.nan, dtype=np.float32)

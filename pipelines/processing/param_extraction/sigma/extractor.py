@@ -20,6 +20,7 @@ import jax
 import jax.numpy as jnp
 
 from configuration.param_extraction import FitMode
+from tools.data.gaussians           import GaussianActivity
 from tools.data.preprocessing       import ProfilePreprocessor
 from tools.monitoring.logger        import Logger
 
@@ -264,7 +265,7 @@ class SigmaFittingExtractor:
 
         pf     = raw.transpose(2, 1, 0).reshape(r_c * n_row, H)
         pmax   = pf.max(axis=1, keepdims=True)
-        active = pmax[:, 0] > self.activity_threshold
+        active = GaussianActivity.is_active(pmax[:, 0], self.activity_threshold)
         scale  = np.where(active[:, None], pmax, 1.0).astype(np.float32)
         norm   = pf / scale
 

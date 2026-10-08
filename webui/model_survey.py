@@ -331,19 +331,20 @@ class ModelSurvey:
         """
         import torch
 
+        from tools.data.gaussians  import GaussianActivity
         from tools.loss.param_loss import ParamMatcher
 
         run    = self.loaded["run"]
         ph, pw = self.loaded["patch"]
         gt     = run.dataset.gt_parameters
 
-        pred_active = ParamMatcher.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0)
+        pred_active = GaussianActivity.is_active(params[0, 0::3], run.activity_threshold).sum(axis=0)
         acc["pred_active"].append(pred_active.ravel())
 
         gt_tile = None
         if gt is not None:
             gt_tile   = np.asarray(gt[:, top:top + ph, left:left + pw], dtype=np.float32)
-            gt_active = ParamMatcher.is_active(gt_tile[0::3], run.activity_threshold).sum(axis=0)
+            gt_active = GaussianActivity.is_active(gt_tile[0::3], run.activity_threshold).sum(axis=0)
             acc["gt_active"].append(gt_active.ravel())
             acc["count_match"].append((pred_active == gt_active).ravel())
 
@@ -353,7 +354,7 @@ class ModelSurvey:
 
             matched, _, sorted_gt, _ = ParamMatcher.match(pred_t, pred_t, gt_t, gt_t, active_thr=run.activity_threshold, method=ParamMatcher.HUNGARIAN)
 
-            mask  = (sorted_gt[:, :, 0] > run.activity_threshold).float()
+            mask  = GaussianActivity.is_active(sorted_gt[:, :, 0], run.activity_threshold).float()
             error = (matched - sorted_gt).abs()
 
             for offset, family in enumerate(ModelProbe.FAMILIES):
@@ -419,7 +420,7 @@ class ModelSurvey:
             acc    : Accumulator whose per-channel delta, slot-flip and pixel counts are incremented.
             window : Model input of shape (1, channels, patch_height, patch_width).
         """
-        from tools.loss.param_loss import ParamMatcher
+        from tools.data.gaussians import GaussianActivity
 
         run        = self.loaded["run"]
         n_channels = window.shape[1]
@@ -431,9 +432,9 @@ class ModelSurvey:
         params = run.model(batch)
         deltas = self._delta_pass(params)
 
-        base_active = ParamMatcher.is_active(params[0, 0::3], run.activity_threshold)
+        base_active = GaussianActivity.is_active(params[0, 0::3], run.activity_threshold)
         for channel in range(n_channels):
-            variant_active = ParamMatcher.is_active(params[channel + 1, 0::3], run.activity_threshold)
+            variant_active = GaussianActivity.is_active(params[channel + 1, 0::3], run.activity_threshold)
             acc["abl_delta"][channel] += float(deltas[channel + 1].sum())
             acc["abl_flips"][channel] += float((variant_active != base_active).any(axis=0).sum())
         acc["abl_pixels"] += deltas.shape[1] * deltas.shape[2]

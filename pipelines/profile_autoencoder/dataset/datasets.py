@@ -13,7 +13,7 @@ from torch.utils.data import Dataset
 
 from pipelines.profile_autoencoder.dataset.augmentation  import ProfileAugmenter
 from pipelines.profile_autoencoder.dataset.normalization import ProfileNormalizer
-from tools.data.gaussians                                import GaussianMixture
+from tools.data.gaussians                                import GaussianActivity, GaussianMixture
 from tools.monitoring.logger                             import Logger
 
 
@@ -105,7 +105,7 @@ class ProfileDataset(Dataset):
         Raises:
             ValueError : If the split holds no pixel above the activity threshold.
         """
-        active = (self.amps > activity_threshold).any(axis=1)
+        active = GaussianActivity.is_active(self.amps, activity_threshold).any(axis=1)
         rng    = np.random.default_rng(seed)
 
         active_idx = np.flatnonzero(active)

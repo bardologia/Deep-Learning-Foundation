@@ -20,8 +20,7 @@ from pipelines.backbone.dataset.spatial              import GridInfo
 from pipelines.backbone.inference.loader             import Run
 from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
 from pipelines.backbone.inference.metrics            import Metrics, Result
-from tools.data.gaussians                            import GaussianReconstructor
-from tools.loss.param_loss                           import ParamMatcher
+from tools.data.gaussians                            import GaussianActivity, GaussianReconstructor
 from tools.monitoring.logger                         import Logger
 
 
@@ -341,12 +340,12 @@ class Predictor:
 
         Args:
             gauss              : Gaussian parameters of shape (batch, n_gaussians, 3, height, width), with amplitude, mu in metres and sigma along axis 2.
-            activity_threshold : Physical amplitude at or above which a slot counts as active, as recorded by the label run.
+            activity_threshold : Physical amplitude above which a slot counts as active, as recorded by the label run.
 
         Returns:
             Parameter array of the same shape with slots ordered by ascending mu per pixel.
         """
-        sort_key   = np.where(ParamMatcher.is_active(gauss[:, :, 0], activity_threshold), gauss[:, :, 1], np.inf)
+        sort_key   = np.where(GaussianActivity.is_active(gauss[:, :, 0], activity_threshold), gauss[:, :, 1], np.inf)
         sort_idx   = np.argsort(sort_key, axis=1)
         sort_idx_e = sort_idx[:, :, None, :, :].repeat(3, axis=2)
 
@@ -518,7 +517,7 @@ class Predictor:
         n_K = self.run.n_gaussians
         for k in range(n_K):
             a_gt    = params_gt_cube[3 * k]
-            mask_gt = ~ParamMatcher.is_active(a_gt, self.run.activity_threshold)
+            mask_gt = ~GaussianActivity.is_active(a_gt, self.run.activity_threshold)
             params_gt_cube[3 * k + 1][mask_gt] = np.nan
             params_gt_cube[3 * k + 2][mask_gt] = np.nan
 

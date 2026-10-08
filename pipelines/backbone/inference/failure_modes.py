@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from tools.loss.param_loss           import ParamMatcher
+from tools.data.gaussians            import GaussianActivity
 from tools.metrics.gaussian_matching import GaussianMatcher
 
 
@@ -22,7 +22,7 @@ class FailureModes:
         params_gt      : Ground-truth parameters of the same shape.
         n_gaussians    : Number of Gaussian slots per pixel.
         assignment     : Precomputed prediction-to-ground-truth slot assignment, or None to match on demand.
-        active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active.
+        active_amp_thr : Physical amplitude above which a Gaussian slot counts as active.
         shape          : Spatial shape (rows, cols) of the parameter cubes.
     """
 
@@ -42,7 +42,7 @@ class FailureModes:
             params_pred    : Predicted interleaved (amp, mu, sigma) per slot, shape (3 * n_gaussians, rows, cols).
             params_gt      : Ground-truth parameters of the same shape.
             n_gaussians    : Number of Gaussian slots per pixel.
-            active_amp_thr : Physical amplitude at or above which a Gaussian slot counts as active, as recorded by the label run.
+            active_amp_thr : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
             assignment     : Precomputed slot assignment of shape (pixels, n_gaussians), or None to compute it on demand.
         """
         self.params_pred    = np.asarray(params_pred, dtype=np.float64)
@@ -85,8 +85,8 @@ class FailureModes:
         mu_gt    = self._channels(self.params_gt, 1)
         sig_gt   = self._channels(self.params_gt, 2)
 
-        act_pred = ParamMatcher.is_active(amp_pred, self.active_amp_thr)
-        act_gt   = ParamMatcher.is_active(amp_gt, self.active_amp_thr)
+        act_pred = GaussianActivity.is_active(amp_pred, self.active_amp_thr)
+        act_gt   = GaussianActivity.is_active(amp_gt, self.active_amp_thr)
 
         n_pixels     = mu_pred.shape[1]
         rows         = np.arange(n_pixels)

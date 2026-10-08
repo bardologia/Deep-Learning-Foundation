@@ -16,6 +16,7 @@ import numpy as np
 from skimage.metrics import structural_similarity as ssim
 
 from catalog_roots            import CatalogRoots, RunScanner
+from tools.data.gaussians     import GaussianActivity
 from tools.reporting.plotting import PlotBase
 from web_logger               import WebLogger
 
@@ -416,7 +417,7 @@ class CubeExplorer:
                 amp   = float(block[3 * k,     row, col])
                 mu    = float(block[3 * k + 1, row, col])
                 sigma = float(block[3 * k + 2, row, col])
-                slots.append({"amp": amp, "mu": mu, "sigma": sigma, "active": bool(amp >= threshold)})
+                slots.append({"amp": amp, "mu": mu, "sigma": sigma, "active": bool(GaussianActivity.is_active(amp, threshold))})
             sources[source] = slots
 
         return {"ok": True, "row": row, "col": col, "n_slots": n_slots, "threshold": threshold, "sources": sources}
@@ -438,7 +439,7 @@ class CubeExplorer:
 
         if field == "count":
             amps = block[0::3]
-            data = (amps >= threshold).sum(axis=0).astype(np.float32)
+            data = GaussianActivity.is_active(amps, threshold).sum(axis=0).astype(np.float32)
             vmin, vmax = meta["ranges"]["count"]
             return data, vmin, vmax, "viridis"
 
@@ -446,7 +447,7 @@ class CubeExplorer:
         channel = np.asarray(block[3 * slot + self.PARAM_FIELDS[field]], dtype=np.float32)
 
         if field in ("mu", "sigma"):
-            active  = block[3 * slot] >= threshold
+            active  = GaussianActivity.is_active(block[3 * slot], threshold)
             channel = np.where(active, channel, np.nan)
 
         vmin, vmax = meta["ranges"][field]
@@ -459,8 +460,8 @@ class CubeExplorer:
         gt        = params["gt"]
 
         if field == "count":
-            count_pred = (pred[0::3] >= threshold).sum(axis=0).astype(np.float32)
-            count_gt   = (gt[0::3]   >= threshold).sum(axis=0).astype(np.float32)
+            count_pred = GaussianActivity.is_active(pred[0::3], threshold).sum(axis=0).astype(np.float32)
+            count_gt   = GaussianActivity.is_active(gt[0::3],   threshold).sum(axis=0).astype(np.float32)
             vmin, vmax = meta["ranges"]["error_count"]
             return count_pred - count_gt, vmin, vmax, "coolwarm"
 
@@ -469,7 +470,7 @@ class CubeExplorer:
         diff   = np.abs(np.asarray(pred[offset], dtype=np.float32) - np.asarray(gt[offset], dtype=np.float32))
 
         if field in ("mu", "sigma"):
-            active = (pred[3 * slot] >= threshold) & (gt[3 * slot] >= threshold)
+            active = GaussianActivity.is_active(pred[3 * slot], threshold) & GaussianActivity.is_active(gt[3 * slot], threshold)
             diff   = np.where(active, diff, np.nan)
 
         vmin, vmax = meta["ranges"][f"error_{field}"]

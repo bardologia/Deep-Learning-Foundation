@@ -17,6 +17,7 @@ import matplotlib.pyplot    as plt
 import numpy                as np
 
 from pipelines.backbone.inference.plots.base import PlotTools
+from tools.data.gaussians                    import GaussianActivity
 from tools.metrics.slot_organization         import SlotOrganization
 
 
@@ -88,7 +89,7 @@ class SlotOrganizationPlotter(PlotTools):
         """
 
         amp_all = np.stack([params_pred[3 * k] for k in range(n_gaussians)], axis=0).reshape(n_gaussians, -1)
-        active  = amp_all >= amp_threshold
+        active  = GaussianActivity.is_active(amp_all, amp_threshold)
         colors  = plt.get_cmap("viridis")(np.linspace(0.1, 0.9, n_gaussians))
         paths   = []
 

@@ -16,7 +16,7 @@ from scipy.stats import pearsonr, spearmanr
 
 from tools.data.preprocessing import ProfilePreprocessor
 from tools.metrics.scoring    import R2
-from tools.data.gaussians     import GaussianMixture
+from tools.data.gaussians     import GaussianActivity, GaussianMixture
 from tools.monitoring.logger  import Logger
 
 
@@ -332,7 +332,7 @@ class FittingMetricsCalculator:
         """
         active = np.zeros(parameters_array.shape[1:], dtype=np.int32)
         for k in range(self.n_gaussians):
-            active += (parameters_array[3 * k] >= self.amp_threshold).astype(np.int32)
+            active += GaussianActivity.is_active(parameters_array[3 * k], self.amp_threshold).astype(np.int32)
 
         return active
 
@@ -349,7 +349,7 @@ class FittingMetricsCalculator:
         maps: Dict[str, np.ndarray] = {}
         for k in range(self.n_gaussians):
             amp_k  = parameters_array[3 * k    ].astype(np.float32)
-            active = amp_k >= self.amp_threshold
+            active = GaussianActivity.is_active(amp_k, self.amp_threshold)
             maps[f"amp_{k}"]   = np.where(active, amp_k,                                           np.nan).astype(np.float32)
             maps[f"mu_{k}"]    = np.where(active, parameters_array[3 * k + 1].astype(np.float32),  np.nan).astype(np.float32)
             maps[f"sigma_{k}"] = np.where(active, parameters_array[3 * k + 2].astype(np.float32),  np.nan).astype(np.float32)
@@ -375,7 +375,7 @@ class FittingMetricsCalculator:
             a_kp1 = parameters_array[3 * (k + 1)      ]
             m_k   = parameters_array[3 * k         + 1]
             m_kp1 = parameters_array[3 * (k + 1)   + 1]
-            both  = (a_k >= self.amp_threshold) & (a_kp1 >= self.amp_threshold)
+            both  = GaussianActivity.is_active(a_k, self.amp_threshold) & GaussianActivity.is_active(a_kp1, self.amp_threshold)
             maps[f"mu_sep_{k}_{k + 1}"] = np.where(both, np.abs(m_kp1.astype(np.float32) - m_k.astype(np.float32)), np.nan).astype(np.float32)
 
         return maps

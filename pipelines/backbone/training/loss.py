@@ -10,6 +10,7 @@ from __future__ import annotations
 import torch
 
 from pipelines.backbone.training.loss_terms import LOSS_TERMS
+from tools.data.gaussians                   import GaussianActivity
 from tools.data.gaussians_torch             import GaussianClamp, GaussianCurve
 from tools.loss.curve_loss                  import CurveLoss, MomentLoss
 from tools.loss.param_loss                  import ParamLoss, ParamMatcher
@@ -168,7 +169,7 @@ class Loss:
 
         weights = w.reshape(1, 1, -1, 1, 1)
 
-        active     = (gt_phys[:, :, 0:1] > self.gaussian_cfg.activity_threshold).to(pred.dtype)
+        active     = GaussianActivity.is_active(gt_phys[:, :, 0:1], self.gaussian_cfg.activity_threshold).to(pred.dtype)
         param_mask = torch.ones_like(pred)
         param_mask[:, :, 1:] = active.expand_as(pred[:, :, 1:])
 
@@ -203,7 +204,7 @@ class Loss:
 
         diff = (pred_phys - gt_phys).abs()
 
-        active_mask = (gt_phys[:, :, 0] > self.gaussian_cfg.activity_threshold).to(pred_phys.dtype)
+        active_mask = GaussianActivity.is_active(gt_phys[:, :, 0], self.gaussian_cfg.activity_threshold).to(pred_phys.dtype)
         n_active    = active_mask.sum().clamp(min=1.0)
 
         return {

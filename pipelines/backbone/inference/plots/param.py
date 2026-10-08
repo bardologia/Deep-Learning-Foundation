@@ -18,7 +18,7 @@ import matplotlib.pyplot    as plt
 import numpy                as np
 
 from pipelines.backbone.inference.plots.base import PlotTools
-from tools.loss.param_loss                   import ParamMatcher
+from tools.data.gaussians                    import GaussianActivity
 from tools.metrics.gaussian_matching         import GaussianMatcher
 
 
@@ -128,7 +128,7 @@ class ParamPlotter(PlotTools):
             amp_ch = 3 * k
             if matched and amp_ch < params_gt.shape[0]:
                 gt_amp_flat = params_gt[amp_ch].reshape(-1)
-                active_mask = np.isfinite(gt_amp_flat) & ParamMatcher.is_active(gt_amp_flat, amp_threshold)
+                active_mask = np.isfinite(gt_amp_flat) & GaussianActivity.is_active(gt_amp_flat, amp_threshold)
             else:
                 active_mask = None
 
@@ -332,7 +332,7 @@ class ParamPlotter(PlotTools):
 
         for k in range(n_gaussians):
             gt_amp_flat = params_gt[3 * k].reshape(-1)
-            is_active   = np.isfinite(gt_amp_flat) & ParamMatcher.is_active(gt_amp_flat, amp_threshold)
+            is_active   = np.isfinite(gt_amp_flat) & GaussianActivity.is_active(gt_amp_flat, amp_threshold)
 
             for j, (fname, lbl) in enumerate(self.PARAM_LABELS):
                 ch    = 3 * k + j
@@ -417,7 +417,7 @@ class ParamPlotter(PlotTools):
         paths   = []
 
         for k in range(n_gaussians):
-            gt_active = ParamMatcher.is_active(params_gt[3 * k], amp_threshold)
+            gt_active = GaussianActivity.is_active(params_gt[3 * k], amp_threshold)
 
             for j, (fname, _) in enumerate(self.PARAM_LABELS):
                 ch    = 3 * k + j
@@ -482,7 +482,7 @@ class ParamPlotter(PlotTools):
 
         for k in range(n_gaussians):
             gt_amp_flat = params_gt[3 * k].reshape(-1)
-            is_active   = np.isfinite(gt_amp_flat) & ParamMatcher.is_active(gt_amp_flat, amp_threshold)
+            is_active   = np.isfinite(gt_amp_flat) & GaussianActivity.is_active(gt_amp_flat, amp_threshold)
 
             for j, (fname, lbl) in enumerate(self.PARAM_LABELS):
                 ch    = 3 * k + j

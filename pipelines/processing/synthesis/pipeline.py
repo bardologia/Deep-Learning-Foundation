@@ -10,6 +10,7 @@ from pipelines.processing.synthesis.fields      import WhiteNoiseSampler
 from pipelines.processing.synthesis.parameters  import ParameterFieldBuilder
 from pipelines.processing.synthesis.scene       import AuxFieldBuilder, ZAxis, ChannelBuilder, ProfileBuilder, CubeBuilder
 from pipelines.processing.synthesis.writer      import DatasetWriter
+from tools.data.gaussians                       import GaussianActivity
 from tools.data.io                              import FileIO
 from tools.monitoring.logger                    import Logger
 
@@ -41,7 +42,7 @@ class SyntheticDatasetPipeline:
         self.logger.section("[Stage 1] Sampling smooth mixture parameter fields")
 
         amps, mus, sigmas = ParameterFieldBuilder(self.config).build()
-        occupancy         = (amps > self.config.activity_threshold).sum(axis=0)
+        occupancy         = GaussianActivity.is_active(amps, self.config.activity_threshold).sum(axis=0)
 
         self.logger.kv_table({
             f"Pixels with {count} component(s)": f"{int((occupancy == count).sum()):,}" for count in range(self.config.k_max + 1)

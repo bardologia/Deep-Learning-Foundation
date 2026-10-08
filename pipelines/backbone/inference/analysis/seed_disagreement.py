@@ -242,7 +242,7 @@ class SeedDisagreementMaps:
         cube_dirs        : Cube directory inside each seed's inference directory.
         metrics_filename : Metrics filename carrying the split region.
         output_dir       : Group-level directory receiving the artifacts.
-        active_amp_thr   : Physical amplitude at or above which a Gaussian slot counts as active in the GT-matched slot alignment, the threshold every seed's inference was scored with.
+        active_amp_thr   : Physical amplitude above which a Gaussian slot counts as active in the GT-matched slot alignment, the threshold every seed's inference was scored with.
         figures_dir      : Subdirectory receiving the rendered maps.
         logger           : Logger for the written-artifact line.
         seeds            : Seed labels, relative to the group directory.

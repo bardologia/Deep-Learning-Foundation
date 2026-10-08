@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from tools.data.gaussians            import GaussianActivity
 from tools.metrics.gaussian_matching import GaussianMatcher
 
 
@@ -28,7 +29,7 @@ class SlotOrganization:
             Float64 array of shape (n_K,).
         """
         amp = np.stack([params_pred[3 * k] for k in range(n_K)], axis=0).reshape(n_K, -1)
-        return (amp >= amp_threshold).mean(axis=1).astype(np.float64)
+        return GaussianActivity.is_active(amp, amp_threshold).mean(axis=1).astype(np.float64)
 
     @staticmethod
     def usage_entropy(usage_fractions: np.ndarray) -> float:
@@ -68,7 +69,7 @@ class SlotOrganization:
         """
         amp    = np.stack([params_pred[3 * k]     for k in range(n_K)], axis=0).reshape(n_K, -1)
         mu     = np.stack([params_pred[3 * k + 1] for k in range(n_K)], axis=0).reshape(n_K, -1)
-        active = amp >= amp_threshold
+        active = GaussianActivity.is_active(amp, amp_threshold)
 
         mu_masked = np.where(active, mu, np.inf)
         order     = np.argsort(mu_masked, axis=0, kind="stable")
@@ -104,8 +105,8 @@ class SlotOrganization:
 
         amp_pred = np.stack([params_pred[3 * k] for k in range(n_K)], axis=0).reshape(n_K, -1)
         amp_gt   = np.stack([params_gt  [3 * k] for k in range(n_K)], axis=0).reshape(n_K, -1)
-        act_pred = amp_pred >= amp_threshold
-        act_gt   = amp_gt   >= amp_threshold
+        act_pred = GaussianActivity.is_active(amp_pred, amp_threshold)
+        act_gt   = GaussianActivity.is_active(amp_gt,   amp_threshold)
 
         P      = amp_pred.shape[1]
         rows   = np.arange(P)
