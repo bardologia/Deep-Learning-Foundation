@@ -223,8 +223,8 @@ def test_reuse_without_a_recording_warns_that_nothing_can_be_compared(tmp_path):
     assert "unknown (no docs/provenance.json recorded)" in written
 
 
-def test_disabled_resume_warns_about_the_existing_directory(tmp_path):
-    """With resume off, training into a directory that already holds a run is reported at WARNING."""
+def test_disabled_resume_warns_that_a_completed_run_refuses(tmp_path):
+    """With resume off, a directory holding a completed run is reported at WARNING as one training refuses to overwrite."""
     resume = unit(tmp_path, enabled=False)
     mark_complete(resume.run_directory)
 
@@ -233,7 +233,21 @@ def test_disabled_resume_warns_about_the_existing_directory(tmp_path):
     written = resume_log(resume.run_directory)
 
     assert "[WARNING]" in written
-    assert "resume disabled, a fresh run is written into the existing directory" in written
+    assert "holds a completed run, which is never overwritten in place; training refuses to start" in written
+
+
+def test_disabled_resume_warns_that_an_unfinished_attempt_is_deleted(tmp_path):
+    """With resume off, a directory holding an unfinished attempt is reported at WARNING as one deleted when training starts."""
+    resume = unit(tmp_path, enabled=False)
+    resume.run_directory.mkdir(parents=True)
+
+    assert not resume.skip_training()
+
+    written = resume_log(resume.run_directory)
+
+    assert "[WARNING]" in written
+    assert "the unfinished earlier attempt" in written
+    assert "is deleted when training starts" in written
 
 
 def test_no_inference_directory_runs_inference(tmp_path):

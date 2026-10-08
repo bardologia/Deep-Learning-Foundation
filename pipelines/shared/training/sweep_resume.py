@@ -222,14 +222,14 @@ class SweepResumePlan:
 
         Args:
             logger         : Logger of the sweep.
-            unit_resume    : Whether completed units are reused; otherwise every unit is retrained into its existing directory.
+            unit_resume    : Whether completed units are reused; otherwise a completed unit refuses to train over its finished run and fails.
             trainer_resume : Whether unfinished units continue from their trainer state; otherwise they are deleted and restart.
         """
         found = len(self.completed) + len(self.unfinished)
         if found == 0:
             return
 
-        completed  = f"{len(self.completed)} completed unit(s) are reused without training" if unit_resume else f"{len(self.completed)} completed unit(s) are retrained into their existing directories (resume=False)"
+        completed  = f"{len(self.completed)} completed unit(s) are reused without training" if unit_resume else f"{len(self.completed)} completed unit(s) refuse to train over their finished runs and fail (resume=False)"
         unfinished = f"{len(self.unfinished)} unfinished unit(s) continue from {TrainerState.FILENAME} where it exists (training.resume=True)" if trainer_resume else f"{len(self.unfinished)} unfinished unit(s) are deleted and restart from scratch (training.resume=False)"
 
         logger.warning(f"{self.root} already holds runs of {found} planned unit(s) from an earlier launch although resume_from was not given: {completed}; {unfinished}. Pass resume_from={self.root} to resume the sweep explicitly, or another logdir or run_name for a fresh one")

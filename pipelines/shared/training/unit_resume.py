@@ -141,8 +141,9 @@ class UnitResume:
         A completed run is reused after its recording and commit are compared
         with this launch. An unfinished run is left alone when the trainer
         resumes from its checkpoint, and otherwise deleted so training restarts
-        from scratch. With resume disabled an existing directory is trained
-        into as it is, which is reported because the earlier run's files stay.
+        from scratch. With resume disabled an existing directory is reported:
+        the run metadata deletes an unfinished attempt's artifacts when training
+        starts and refuses a completed run.
 
         Raises:
             ValueError : If the unit was built without the entry configuration the reuse check compares.
@@ -152,7 +153,10 @@ class UnitResume:
 
         if not self.enabled:
             if self.run_directory.is_dir():
-                self._logger().warning(f"{self.run_directory.name}: resume disabled, a fresh run is written into the existing directory {self.run_directory}; the earlier run's tensorboard events, snapshots and inference outputs stay beside the new ones")
+                if CompletionMarker.is_complete(self.run_directory):
+                    self._logger().warning(f"{self.run_directory.name}: resume disabled and {self.run_directory} holds a completed run, which is never overwritten in place; training refuses to start")
+                else:
+                    self._logger().warning(f"{self.run_directory.name}: resume disabled, the unfinished earlier attempt in {self.run_directory} is deleted when training starts")
             return False
 
         if CompletionMarker.is_complete(self.run_directory):
