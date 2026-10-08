@@ -291,12 +291,13 @@ class TuningScheduler:
             load_if_exists = True,
         )
 
-    def _fail_stale_trials(self, study: optuna.Study) -> int:
-        """Marks heartbeat-stale running trials as failed and returns how many."""
-        before = self._count_state(study, TrialState.FAIL)
+    def _fail_stale_trials(self, study: optuna.Study) -> list[int]:
+        """Marks heartbeat-stale running trials as failed and returns their numbers."""
+        running = [trial.number for trial in study.get_trials(deepcopy=False, states=(TrialState.RUNNING,))]
         optuna.storages.fail_stale_trials(study)
+        failed  = {trial.number for trial in study.get_trials(deepcopy=False, states=(TrialState.FAIL,))}
 
-        return self._count_state(study, TrialState.FAIL) - before
+        return [number for number in running if number in failed]
 
     def _count_state(self, study: optuna.Study, state: TrialState) -> int:
         """Returns the number of trials in the given state."""
@@ -336,8 +337,28 @@ class TuningScheduler:
             "best_config"     : str(path) if path is not None else None,
         }
 
+    def _warn_running(self, study: optuna.Study, model_name: str) -> None:
+        """Warns about the trials still RUNNING after the stale pass, naming each with its start time.
+
+        A trial whose worker died stops its heartbeat and is failed by the
+        stale pass once the grace period has passed, so a trial that survived
+        it has a recent heartbeat and a worker of another launch may still be
+        running it; the workers fail it themselves once its heartbeat goes
+        stale. The compare stage leaves the report to name them.
+
+        Args:
+            study      : Study whose running trials are named.
+            model_name : Model key named in the warning.
+        """
+        running = study.get_trials(deepcopy=False, states=(TrialState.RUNNING,))
+        if not running or self.config.stage == "compare":
+            return
+
+        listed = ", ".join(f"#{trial.number} (started {trial.datetime_start:%Y-%m-%d %H:%M})" for trial in running)
+        self.logger.warning(f"{model_name}: {len(running)} trial(s) still RUNNING; their heartbeat is recent, so a worker of another launch may still be running them: {listed}")
+
     def _prepare_model(self, model_name: str) -> optuna.Study:
-        """Creates or loads one model's study and clears the trials a killed worker left running.
+        """Creates or loads one model's study, fails the trials dead workers left running and reports the rest.
 
         Args:
             model_name : Model key whose study is opened.
@@ -358,8 +379,10 @@ class TuningScheduler:
             self.logger.info(f"{model_name}: created study '{study.study_name}' in {self.storage_url}")
 
         stale = self._fail_stale_trials(study)
-        if stale > 0:
-            self.logger.info(f"Marked {stale} stale running trials as failed")
+        if stale:
+            self.logger.warning(f"{model_name}: marked {len(stale)} trial(s) whose heartbeat stopped as failed, each left by a worker that died mid-trial: {', '.join(f'#{number}' for number in stale)}")
+
+        self._warn_running(study, model_name)
 
         return study
 
@@ -386,6 +409,22 @@ class TuningScheduler:
 
         return self._dispatch_workers(model_name, shares)
 
+    def _warn_trials(self, study: optuna.Study, model_name: str) -> None:
+        """Warns about the failed trials of a reported study and the trials still running after its workers ended.
+
+        Args:
+            study      : Study whose trials are counted.
+            model_name : Model key named in the warnings.
+        """
+        failed  = self._count_state(study, TrialState.FAIL)
+        running = study.get_trials(deepcopy=False, states=(TrialState.RUNNING,))
+
+        if failed:
+            self.logger.warning(f"{model_name}: {failed} trial(s) failed; each worker log names the error on the trial's line")
+
+        if running:
+            self.logger.warning(f"{model_name}: {len(running)} trial(s) still RUNNING after the workers ended, left by workers that died mid-trial: {', '.join(f'#{trial.number}' for trial in running)}")
+
     def _report_model(self, study: optuna.Study, model_name: str, tune_cfg: TuningConfig, ok: bool) -> None:
         """Writes one model's best configuration, plots and summary record.
 
@@ -397,6 +436,8 @@ class TuningScheduler:
         """
         writer  = BestConfigWriter(model_name, self._search_space(model_name), self.run_dir / model_name / "best_config.json")
         payload = writer.write(study)
+
+        self._warn_trials(study, model_name)
 
         if payload is None:
             self.logger.error(f"No completed trials for {model_name}")

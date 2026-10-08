@@ -248,9 +248,62 @@ def test_running_trial_within_its_grace_period_is_left_alone(tmp_path):
 
     failed = orch._fail_stale_trials(study)
 
-    assert failed == 0
+    assert failed == []
     assert orch._count_state(study, TrialState.FAIL) == 0
     assert orch._count_state(study, TrialState.RUNNING) == 1
+
+
+def test_prepare_model_names_the_stale_trials_it_fails(tmp_path, monkeypatch):
+    """Trials the heartbeat pass fails are named at warning, since each means a worker died mid-trial."""
+    orch  = _orchestrator(tmp_path)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(orch, "_fail_stale_trials", lambda study: [3, 7])
+
+    orch._prepare_model("unet")
+
+    assert "unet: marked 2 trial(s) whose heartbeat stopped as failed, each left by a worker that died mid-trial: #3, #7" in orch.logger.of_kind("warning")
+
+
+def test_prepare_model_names_the_trials_still_running_with_a_recent_heartbeat(tmp_path):
+    """A trial inside its heartbeat grace period survives the stale pass and is named, since another launch may still run it."""
+    orch  = _orchestrator(tmp_path)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    study = orch._load_or_create_study("unet")
+    study.ask()
+
+    orch._prepare_model("unet")
+
+    assert orch._count_state(study, TrialState.RUNNING) == 1
+    assert any(message.startswith("unet: 1 trial(s) still RUNNING; their heartbeat is recent, so a worker of another launch may still be running them: #0 (started ") for message in orch.logger.of_kind("warning"))
+
+
+def test_compare_stage_leaves_running_trials_to_the_report(tmp_path):
+    """The compare stage opens a study without naming its running trials, which the report names once."""
+    orch  = _orchestrator(tmp_path)
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    orch.config.stage = "compare"
+    study = orch._load_or_create_study("unet")
+    study.ask()
+
+    orch._prepare_model("unet")
+
+    assert not any("still RUNNING" in message for message in orch.logger.of_kind("warning"))
+
+
+def test_report_names_the_failed_trials_and_those_left_running_by_dead_workers(tmp_path):
+    """A report counts the failed trials and names a trial still RUNNING, since its worker died mid-trial."""
+    orch  = _orchestrator(tmp_path, n_trials=1)
+    orch.config.tuning.search_arch = False
+    orch.run_dir.mkdir(parents=True, exist_ok=True)
+    study = orch._load_or_create_study("unet")
+    study.add_trial(optuna.trial.create_trial(value=0.5, state=TrialState.COMPLETE, params={"dropout": 0.1}, distributions={"dropout": optuna.distributions.FloatDistribution(0.0, 0.5)}))
+    study.add_trial(optuna.trial.create_trial(state=TrialState.FAIL))
+    study.ask()
+
+    orch._report_model(study, "unet", orch.config.tuning, ok=True)
+
+    assert any("unet: 1 trial(s) failed" in message for message in orch.logger.of_kind("warning"))
+    assert any("unet: 1 trial(s) still RUNNING after the workers ended, left by workers that died mid-trial: #2" in message for message in orch.logger.of_kind("warning"))
 
 
 def test_study_storage_carries_heartbeats(tmp_path):
