@@ -240,8 +240,9 @@ class DdpFanout:
     def _launch(self, rank: int, gpu: int, port: int, handles: list):
         """Starts one rank process pinned to its device.
 
-        Rank zero inherits the console; the other ranks stream into per-rank
-        launch logs. Each rank's environment restores the CUDA mask the parent
+        Rank zero inherits the console; the other ranks append to per-rank
+        launch logs, so a resumed run keeps the earlier launch's record above
+        the new one. Each rank's environment restores the CUDA mask the parent
         inherited before pinning itself, so the rank resolves its --gpu against
         the original device set and stashes its own snapshot.
 
@@ -262,7 +263,7 @@ class DdpFanout:
         if rank == 0:
             return subprocess.Popen(command, env=environment)
 
-        handle = open(self.log_dir / f"rank{rank}.log", "w", encoding="utf-8")
+        handle = open(self.log_dir / f"rank{rank}.log", "a", encoding="utf-8")
         handles.append(handle)
 
         return subprocess.Popen(command, env=environment, stdout=handle, stderr=subprocess.STDOUT)
@@ -416,7 +417,8 @@ class DdpFanout:
         once the directory is confirmed fresh the mirrors' completion markers
         are cleared and the other ranks join it. A rank zero that exits cleanly
         before opening the directory skipped an already-complete run, and no
-        further rank is launched.
+        further rank is launched. The fan-out log closes with an ABORTED banner
+        naming the error when a rank fails or the group is interrupted.
 
         Raises:
             SystemExit : If any rank exited with a non-zero code.
@@ -425,6 +427,7 @@ class DdpFanout:
 
         handles   = []
         processes = []
+        error     = None
 
         try:
             processes.append(self._launch(0, self.gpus[0], port, handles))
@@ -456,13 +459,16 @@ class DdpFanout:
 
             self._await_group(processes)
             self.logger.ok(f"all {len(self.gpus)} ranks finished; run artifacts are in {self.run_dir}")
+        except BaseException as exc:
+            error = exc
+            raise
         finally:
             self._terminate(processes)
             self._publish_progress(processes, force=True)
             for handle in handles:
                 handle.close()
             if self.logger is not None:
-                self.logger.close()
+                self.logger.close(error)
 
 
 class DdpDispatch:

@@ -448,7 +448,7 @@ def test_sweep_without_inference_never_runs_an_inference_pass(tmp_path):
 
 
 def test_run_raises_when_a_seed_fails(tmp_path):
-    """A failing seed makes the sweep exit with a message counting the failures."""
+    """A failing seed makes the sweep exit with a message counting the failures, and the sweep log ends in an ABORTED banner naming it."""
     scheduler = _scheduler(tmp_path)
 
     def fake_queue(jobs):
@@ -459,6 +459,48 @@ def test_run_raises_when_a_seed_fails(tmp_path):
 
     with pytest.raises(SystemExit, match="3 of 3 seed runs failed"):
         scheduler.run()
+
+    written = (scheduler.log_dir / "seed_sweep.log").read_text()
+
+    assert ">>> ABORTED seed_sweep" in written
+    assert "[Aborted] SystemExit: 3 of 3 seed runs failed" in written
+
+
+def test_fresh_launch_into_a_root_holding_seed_runs_warns(tmp_path):
+    """A fresh launch (no resume_from) whose sweep root already holds a completed seed warns about it and still launches every seed."""
+    _complete_seed(tmp_path / "label_exp", 3)
+
+    scheduler = _scheduler(tmp_path)
+    scheduler.stage._run_queue = _done
+    scheduler.run()
+
+    written = (scheduler.log_dir / "seed_sweep.log").read_text()
+
+    assert f"{scheduler.run_dir} already holds runs of 1 planned unit(s)" in written
+    assert "1 completed unit(s) are reused without training" in written
+
+
+def test_results_file_of_an_earlier_launch_is_merged_not_replaced(tmp_path):
+    """A resumed sweep's results JSON keeps the entries of the seeds it did not rerun and replaces the ones it did."""
+    import json
+
+    base = tmp_path / "label_exp"
+    _complete_seed(base, 0)
+    (base / "seed1").mkdir(parents=True)
+
+    config    = _Config(resume_from=str(base), seeds=[0, 1], logdir=Path("/elsewhere"))
+    scheduler = SeedFanoutScheduler.for_runner(config, {}, Path("/entry/train.py"), _factory([]))
+
+    json.dump([{"name": "label_exp/seed0", "status": "DONE", "duration_s": 60.0}, {"name": "label_exp/seed1", "status": "FAILED", "duration_s": 5.0}], open(scheduler.results_path, "w"))
+
+    scheduler.stage._run_queue = _done
+    scheduler.run()
+
+    results = json.loads(scheduler.results_path.read_text())
+
+    assert [record["name"] for record in results] == ["label_exp/seed0", "label_exp/seed1"]
+    assert [record["status"] for record in results] == ["DONE", "DONE"]
+    assert "seed_sweep_results.json already holds 2 entry(ies)" in (scheduler.log_dir / "seed_sweep.log").read_text()
 
 
 @dataclass

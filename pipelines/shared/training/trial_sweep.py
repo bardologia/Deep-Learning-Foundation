@@ -14,7 +14,7 @@ from pathlib import Path
 from pipelines.shared.inference.metadata       import CompletedInference
 from pipelines.shared.training.ddp_fanout      import DdpDispatch
 from pipelines.shared.training.seed_sweep      import SeedSet
-from pipelines.shared.training.sweep_resume    import SweepResumePlan, SweepResumeRoot
+from pipelines.shared.training.sweep_resume    import SweepResults, SweepResumePlan, SweepResumeRoot
 from tools.orchestration                       import ExperimentStage, GpuJob
 from tools.monitoring.logger                   import Logger
 from tools.runtime.config_cli                  import ConfigCli
@@ -268,7 +268,7 @@ class TrialSweepScheduler:
         names   = [run_name for run_name, overrides in units]
         results = self.stage._order_results(self.stage._run_queue(jobs), names)
 
-        self.stage._write_results(results, self.results_path)
+        self.stage._write_results(SweepResults.merge(results, self.results_path, self.logger), self.results_path)
         return results
 
     def _inference_job(self, run_name: str, overrides: dict) -> GpuJob:
@@ -337,7 +337,7 @@ class TrialSweepScheduler:
         names   = [run_name for run_name, _ in todo]
         results = self.stage._order_results(self.stage._run_queue(jobs), names)
 
-        self.stage._write_results(results, self.infer_results_path)
+        self.stage._write_results(SweepResults.merge(results, self.infer_results_path, self.logger), self.infer_results_path)
         return results
 
     def _inference_rows(self) -> dict:
@@ -368,67 +368,83 @@ class TrialSweepScheduler:
 
         return SweepRecording.write(self.runs_root, self.config)
 
+    def _warn_existing_root(self, planned: list[tuple[str, dict]]) -> None:
+        """Warns a fresh launch whose runs root already holds runs of its planned units, listing what each unit's resume will do.
+
+        Args:
+            planned : Every `(run_name, overrides)` unit of the sweep.
+        """
+        if not self.runs_root.is_dir():
+            return
+
+        plan = SweepResumePlan(self.runs_root, [run_name for run_name, _ in planned], split=self.inference_split).build()
+        plan.warn_existing_root(self.logger, unit_resume=self.config.resume, trainer_resume=self.config.training.resume)
+
     def run(self) -> None:
         """Runs the whole sweep: plan units, train the pending ones, infer over every unit still missing it, then write the mode report.
+
+        The scheduler log closes with an ABORTED banner naming the error when
+        anything, the failure summary included, ends the sweep early.
 
         Raises:
             SystemExit : If any training or inference job did not finish DONE.
         """
-        planner     = self.planner()
-        experiments = planner.plan()
-        seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
-        planned     = self.planned_units()
-        units       = self.units()
-        recording   = self._record()
+        with self.logger:
+            planner     = self.planner()
+            experiments = planner.plan()
+            seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
+            planned     = self.planned_units()
+            units       = self.units()
+            recording   = self._record()
 
-        self.logger.section(f"Training trials: {self.config.trials_mode}")
-        self.logger.kv_table({
-            "Model (base config)"  : f"{self._model_key()} (per-trial settings may override the model)",
-            "Mode"                 : self.config.trials_mode,
-            **planner.summary(),
-            "Trials"               : len(experiments),
-            "Seeds"                : seeds,
-            "Planned units"        : len(planned),
-            "GPU jobs"             : len(units),
-            "GPUs"                 : self.config.gpus,
-            "GPU pool file"        : str(self.stage.pool_file),
-            **self._inference_rows(),
-            "Inference split"      : self.inference_split or "none (the sweep infers nothing)",
-            **self._resume_rows(),
-            "Resume from"          : self.config.resume_from or "—",
-            "Recording"            : str(recording),
-            "Forwarded overrides (scheduler options excluded; per-trial settings win)" : self.forward_overrides or "—",
-            "Log dir"              : str(self.log_dir),
-        }, title="Configuration")
+            self.logger.section(f"Training trials: {self.config.trials_mode}")
+            self.logger.kv_table({
+                "Model (base config)"  : f"{self._model_key()} (per-trial settings may override the model)",
+                "Mode"                 : self.config.trials_mode,
+                **planner.summary(),
+                "Trials"               : len(experiments),
+                "Seeds"                : seeds,
+                "Planned units"        : len(planned),
+                "GPU jobs"             : len(units),
+                "GPUs"                 : self.config.gpus,
+                "GPU pool file"        : str(self.stage.pool_file),
+                **self._inference_rows(),
+                "Inference split"      : self.inference_split or "none (the sweep infers nothing)",
+                **self._resume_rows(),
+                "Resume from"          : self.config.resume_from or "—",
+                "Recording"            : str(recording),
+                "Forwarded overrides (scheduler options excluded; per-trial settings win)" : self.forward_overrides or "—",
+                "Log dir"              : str(self.log_dir),
+            }, title="Configuration")
 
-        if self.resume_plan:
-            self.resume_plan.log(self.logger)
+            if self.resume_plan:
+                self.resume_plan.log(self.logger)
+            else:
+                self._warn_existing_root(planned)
 
-        results       = self._train_units(units)
-        infer_results = self._run_inference_pass(planned, results) if self.inference_split is not None else []
+            results       = self._train_units(units)
+            infer_results = self._run_inference_pass(planned, results) if self.inference_split is not None else []
 
-        self._write_mode_report()
+            self._write_mode_report()
 
-        self.logger.section("Summary")
-        rows = [{"Trial": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in results]
-        self.logger.metrics_table(rows, columns=["Trial", "Status", "Duration"])
+            self.logger.section("Summary")
+            rows = [{"Trial": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in results]
+            self.logger.metrics_table(rows, columns=["Trial", "Status", "Duration"])
 
-        if infer_results:
-            self.logger.subsection("Batched inference")
-            infer_rows = [{"Trial": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in infer_results]
-            self.logger.metrics_table(infer_rows, columns=["Trial", "Status", "Duration"])
+            if infer_results:
+                self.logger.subsection("Batched inference")
+                infer_rows = [{"Trial": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in infer_results]
+                self.logger.metrics_table(infer_rows, columns=["Trial", "Status", "Duration"])
 
-        failed       = [r for r in results if r["status"] != "DONE"]
-        infer_failed = [r for r in infer_results if r["status"] != "DONE"]
-        self.stage._log_failures(failed + infer_failed)
+            failed       = [r for r in results if r["status"] != "DONE"]
+            infer_failed = [r for r in infer_results if r["status"] != "DONE"]
+            self.stage._log_failures(failed + infer_failed)
 
-        self.logger.close()
+            problems = []
+            if failed:
+                problems.append(f"{len(failed)} of {len(results)} training trials failed")
+            if infer_failed:
+                problems.append(f"{len(infer_failed)} of {len(infer_results)} inference jobs failed")
 
-        problems = []
-        if failed:
-            problems.append(f"{len(failed)} of {len(results)} training trials failed")
-        if infer_failed:
-            problems.append(f"{len(infer_failed)} of {len(infer_results)} inference jobs failed")
-
-        if problems:
-            raise SystemExit("; ".join(problems) + f"; see {self.log_dir}")
+            if problems:
+                raise SystemExit("; ".join(problems) + f"; see {self.log_dir}")

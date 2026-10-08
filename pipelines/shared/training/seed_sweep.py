@@ -16,7 +16,7 @@ from pathlib import Path
 from typing  import Callable
 
 from pipelines.shared.inference.metadata    import CompletedInference
-from pipelines.shared.training.sweep_resume import SweepResumePlan
+from pipelines.shared.training.sweep_resume import SweepResults, SweepResumePlan
 from tools.orchestration      import ExperimentStage, GpuJob
 from tools.monitoring.logger  import Logger
 from tools.runtime.config_cli import ConfigCli
@@ -330,7 +330,7 @@ class SeedFanoutScheduler:
         names   = [run_name for _, run_name in todo]
         results = self.stage._order_results(self.stage._run_queue(jobs), names)
 
-        self.stage._write_results(results, self.infer_results_path)
+        self.stage._write_results(SweepResults.merge(results, self.infer_results_path, self.logger), self.infer_results_path)
         return results
 
     def _resume_units(self, units: list[tuple[int, str]]) -> tuple[list[tuple[int, str]], "SweepResumePlan | None"]:
@@ -357,6 +357,15 @@ class SeedFanoutScheduler:
 
         return SweepRecording.write(self.run_dir, self.config)
 
+    def _warn_existing_root(self, planned: list[tuple[int, str]]) -> None:
+        """Warns a fresh launch whose sweep root already holds seed runs, listing what each seed's resume will do.
+
+        Args:
+            planned : (seed, run name) pairs of every planned seed.
+        """
+        plan = SweepResumePlan(self.run_dir, [f"seed{seed}" for seed, _ in planned], split=self.inference_split).build()
+        plan.warn_existing_root(self.logger, unit_resume=self.config.resume, trainer_resume=self.config.training.resume)
+
     def _train_seeds(self, units: list[tuple[int, str]]) -> list[dict]:
         """Trains the outstanding seeds over the GPU pool and writes their results.
 
@@ -374,66 +383,69 @@ class SeedFanoutScheduler:
         names   = [run_name for _, run_name in units]
         results = self.stage._order_results(self.stage._run_queue(jobs), names)
 
-        self.stage._write_results(results, self.results_path)
+        self.stage._write_results(SweepResults.merge(results, self.results_path, self.logger), self.results_path)
         return results
 
     def run(self) -> None:
         """Launches every outstanding seed, then the inference pass over every seed still lacking it.
 
         Writes the training and inference result JSONs, logs the per-seed
-        summary tables and reports failures.
+        summary tables and reports failures. The sweep log closes with an
+        ABORTED banner naming the error when anything, the failure summary
+        included, ends the sweep early.
 
         Raises:
             SystemExit : If any training or inference job did not finish DONE.
         """
-        seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
-        planned     = [(seed, SeedSet.run_name(self.base_name, seed)) for seed in seeds]
-        units, plan = self._resume_units(planned)
-        recording   = self._record()
+        with self.logger:
+            seeds       = SeedSet.resolve(self.config.seeds, self.config.seed)
+            planned     = [(seed, SeedSet.run_name(self.base_name, seed)) for seed in seeds]
+            units, plan = self._resume_units(planned)
+            recording   = self._record()
 
-        self.logger.section("Seed fan-out")
-        self.logger.kv_table({
-            "Base run"        : self.base_name,
-            "Run dir"         : str(self.run_dir),
-            "Seeds"           : seeds,
-            "GPUs"            : self.config.gpus,
-            "GPU pool file"   : str(self.stage.pool_file),
-            "Infer at end"    : self.infer_at_end,
-            "Inference split" : self.inference_split or "none (the sweep infers nothing)",
-            "Resume from"     : self.config.resume_from or "—",
-            "Recording"       : str(recording),
-            "Forwarded overrides (scheduler options excluded)" : self.forward_overrides or "—",
-            "Log dir"         : str(self.log_dir),
-        }, title="Configuration")
+            self.logger.section("Seed fan-out")
+            self.logger.kv_table({
+                "Base run"        : self.base_name,
+                "Run dir"         : str(self.run_dir),
+                "Seeds"           : seeds,
+                "GPUs"            : self.config.gpus,
+                "GPU pool file"   : str(self.stage.pool_file),
+                "Infer at end"    : self.infer_at_end,
+                "Inference split" : self.inference_split or "none (the sweep infers nothing)",
+                "Resume from"     : self.config.resume_from or "—",
+                "Recording"       : str(recording),
+                "Forwarded overrides (scheduler options excluded)" : self.forward_overrides or "—",
+                "Log dir"         : str(self.log_dir),
+            }, title="Configuration")
 
-        if plan:
-            plan.log(self.logger)
+            if plan:
+                plan.log(self.logger)
+            else:
+                self._warn_existing_root(planned)
 
-        results       = self._train_seeds(units)
-        infer_results = self._run_inference_pass(planned, results) if self.inference_split is not None else []
+            results       = self._train_seeds(units)
+            infer_results = self._run_inference_pass(planned, results) if self.inference_split is not None else []
 
-        self.logger.section("Summary")
+            self.logger.section("Summary")
 
-        if results:
-            rows = [{"Seed": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in results]
-            self.logger.metrics_table(rows, columns=["Seed", "Status", "Duration"])
+            if results:
+                rows = [{"Seed": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in results]
+                self.logger.metrics_table(rows, columns=["Seed", "Status", "Duration"])
 
-        if infer_results:
-            self.logger.subsection("Batched inference")
-            infer_rows = [{"Seed": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in infer_results]
-            self.logger.metrics_table(infer_rows, columns=["Seed", "Status", "Duration"])
+            if infer_results:
+                self.logger.subsection("Batched inference")
+                infer_rows = [{"Seed": r["name"], "Status": r["status"], "Duration": f"{r['duration_s'] / 60:.1f} min"} for r in infer_results]
+                self.logger.metrics_table(infer_rows, columns=["Seed", "Status", "Duration"])
 
-        failed       = [r for r in results if r["status"] != "DONE"]
-        infer_failed = [r for r in infer_results if r["status"] != "DONE"]
-        self.stage._log_failures(failed + infer_failed)
+            failed       = [r for r in results if r["status"] != "DONE"]
+            infer_failed = [r for r in infer_results if r["status"] != "DONE"]
+            self.stage._log_failures(failed + infer_failed)
 
-        self.logger.close()
+            problems = []
+            if failed:
+                problems.append(f"{len(failed)} of {len(results)} seed runs failed")
+            if infer_failed:
+                problems.append(f"{len(infer_failed)} of {len(infer_results)} inference jobs failed")
 
-        problems = []
-        if failed:
-            problems.append(f"{len(failed)} of {len(results)} seed runs failed")
-        if infer_failed:
-            problems.append(f"{len(infer_failed)} of {len(infer_results)} inference jobs failed")
-
-        if problems:
-            raise SystemExit("; ".join(problems) + f"; see {self.log_dir}")
+            if problems:
+                raise SystemExit("; ".join(problems) + f"; see {self.log_dir}")

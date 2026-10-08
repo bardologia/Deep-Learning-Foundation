@@ -14,6 +14,7 @@ from pipelines.backbone.training.launcher               import BackboneTrainingL
 from pipelines.dual.training.launcher                   import DualTrainScheduler
 from pipelines.jepa.training.launcher                   import JepaTrainingLauncher, JepaTrialScheduler
 from pipelines.profile_autoencoder.training.launcher    import ProfileAeTrainingLauncher, ProfileAeTrialScheduler
+from tools.data.io                                      import FileIO
 from tools.runtime.completion                           import CompletionMarker
 
 
@@ -217,7 +218,7 @@ def test_inference_is_pending_when_the_stamp_records_another_split(tmp_path):
 
 
 def test_inference_covers_freshly_trained_units_and_skips_failed_ones(tmp_path):
-    """A fresh sweep infers over the units that trained and warns off the ones that failed."""
+    """A fresh sweep infers over the units that trained and warns off the ones that failed, and its log ends in an ABORTED banner naming the failures."""
     names            = [name for name, _ in _scheduler(tmp_path).planned_units()]
     scheduler        = _scheduler(tmp_path, infer_at_end="true")
     scheduler._stage = FakeStage(statuses={names[1]: "FAILED"})
@@ -226,6 +227,51 @@ def test_inference_covers_freshly_trained_units_and_skips_failed_ones(tmp_path):
         scheduler.run()
 
     assert scheduler._stage.submitted == [names, [name for name in names if name != names[1]]]
+
+    written = (scheduler.log_dir / "train_scheduler.log").read_text()
+
+    assert ">>> ABORTED train_scheduler" in written
+    assert "[Aborted] SystemExit: 1 of" in written
+
+
+def test_fresh_launch_into_a_root_holding_runs_warns_before_launching(tmp_path):
+    """A fresh launch (no resume_from) whose mode directory already holds a completed run warns about it and still launches every unit."""
+    root  = tmp_path / "ema"
+    names = [name for name, _ in _scheduler(tmp_path).planned_units()]
+    _complete_run(root, names[0])
+
+    scheduler        = _scheduler(tmp_path)
+    scheduler._stage = FakeStage()
+
+    scheduler.run()
+
+    written = (scheduler.log_dir / "train_scheduler.log").read_text()
+
+    assert scheduler._stage.submitted == [names]
+    assert f"{root} already holds runs of 1 planned unit(s)" in written
+    assert "1 completed unit(s) are reused without training" in written
+
+
+def test_results_file_of_an_earlier_launch_is_merged_not_replaced(tmp_path):
+    """A resumed sweep's results JSON keeps the entries of the units it did not rerun and replaces the ones it did."""
+    root  = tmp_path / "ema"
+    names = [name for name, _ in _scheduler(tmp_path).planned_units()]
+
+    _complete_run(root, names[0])
+    (root / names[1]).mkdir(parents=True)
+    FileIO.save_json([{"name": names[0], "status": "DONE", "duration_s": 60.0}, {"name": names[1], "status": "FAILED", "duration_s": 5.0}], root / "batch_train_logs" / "train_scheduler_results.json")
+
+    scheduler        = _scheduler(tmp_path, resume_from=root)
+    scheduler._stage = FakeStage()
+
+    scheduler.run()
+
+    written = scheduler._stage.written["train_scheduler_results.json"]
+
+    assert [record["name"] for record in written][:2] == names[:2]
+    assert written[0]["status"] == "DONE" and written[0]["duration_s"] == 60.0
+    assert written[1]["status"] == "DONE" and written[1]["duration_s"] == 60.0
+    assert "train_scheduler_results.json already holds 2 entry(ies)" in (scheduler.log_dir / "train_scheduler.log").read_text()
 
 
 def test_run_directories_carrying_a_label_prefix_count_as_inferred(tmp_path):
