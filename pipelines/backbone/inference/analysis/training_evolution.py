@@ -84,8 +84,8 @@ class TrainingEvolutionRun(AnalysisRun):
         Args:
             run      : Loaded run providing the ground-truth Gaussian parameters.
             renderer : Renderer producing profiles from parameters.
-            row       : Row index of the probe pixel.
-            col       : Range index of the probe pixel.
+            row      : Row index of the probe pixel.
+            col      : Column index of the probe pixel.
         """
         params = np.asarray(run.dataset.gt_parameters[:, row, col], dtype=np.float64)
         return renderer.render(params.reshape(1, -1, 1, 1))[0, :, 0, 0]
@@ -136,27 +136,40 @@ class TrainingEvolutionRun(AnalysisRun):
         frame_renderer = EvolutionFrames()
         ylims          = [max(float(curve.max()) * 1.5, 1e-6) for curve in gt_curves]
 
-        try:
-            for snapshot_path in snapshots:
-                payload = torch.load(snapshot_path, map_location=self.config.device, weights_only=False)
-                module.load_state_dict(payload["params"])
-                epoch = int(payload["epoch"]) + 1
-                epochs.append(epoch)
+        self.logger.info(f"{self.run_dir.name}: replaying {len(snapshots)} snapshots ({snapshots[0].stem} .. {snapshots[-1].stem}) at {len(centers)} probe pixels, then rendering {len(snapshots) * len(centers)} frames")
 
-                predictions = self._predict_centers(run, renderer, windows, centers_local)
-                for index, prediction in enumerate(predictions):
-                    ylims[index] = max(ylims[index], float(prediction.max()) * 1.05)
-                    frames_by_pix[index].append((epoch, prediction))
-        finally:
-            module.load_state_dict(best_state)
+        with self.logger.timer(f"Training evolution: snapshot replay ({len(snapshots)} snapshots)"), self.logger.track() as progress:
+            task = progress.add_task("[section]Snapshot replay[/section]", total=len(snapshots))
+
+            try:
+                for snapshot_path in snapshots:
+                    payload = torch.load(snapshot_path, map_location=self.config.device, weights_only=False)
+                    module.load_state_dict(payload["params"])
+                    epoch = int(payload["epoch"]) + 1
+                    epochs.append(epoch)
+
+                    predictions = self._predict_centers(run, renderer, windows, centers_local)
+                    for index, prediction in enumerate(predictions):
+                        ylims[index] = max(ylims[index], float(prediction.max()) * 1.05)
+                        frames_by_pix[index].append((epoch, prediction))
+
+                    progress.advance(task)
+            finally:
+                module.load_state_dict(best_state)
 
         gifs = {}
-        for index, (row, col) in enumerate(centers):
-            images = [frame_renderer.frame(run.z_axis, gt_curves[index], prediction, epoch, ylims[index]) for epoch, prediction in frames_by_pix[index]]
+        with self.logger.timer(f"Training evolution: frame rendering ({len(snapshots) * len(centers)} frames)"), self.logger.track() as progress:
+            task = progress.add_task("[section]GIF frames[/section]", total=len(snapshots) * len(centers))
 
-            gif_path = self.output_dir / f"evolution_row{row:04d}_col{col:04d}.gif"
-            images[0].save(gif_path, save_all=True, append_images=images[1:], duration=int(1000 / self.config.fps), loop=0)
-            gifs[f"row {row}, col {col}"] = gif_path
+            for index, (row, col) in enumerate(centers):
+                images = []
+                for epoch, prediction in frames_by_pix[index]:
+                    images.append(frame_renderer.frame(run.z_axis, gt_curves[index], prediction, epoch, ylims[index]))
+                    progress.advance(task)
+
+                gif_path = self.output_dir / f"evolution_row{row:04d}_col{col:04d}.gif"
+                images[0].save(gif_path, save_all=True, append_images=images[1:], duration=int(1000 / self.config.fps), loop=0)
+                gifs[f"row {row}, col {col}"] = gif_path
 
         payload = {"backbone": run.backbone_name, "split": self.config.split, "epochs": epochs, "pixels": [[row, col] for row, col in centers]}
         FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
