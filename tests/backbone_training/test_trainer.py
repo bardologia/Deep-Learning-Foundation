@@ -181,6 +181,21 @@ def test_train_writes_final_model_checkpoint(tmp_path):
     assert saved["best_epoch"]    == best["best_epoch"]
 
 
+def test_complete_stage_with_zero_weights_is_rejected_before_training(tmp_path):
+    """Verifies a curriculum whose complete stage would reduce the loss to zero is refused at construction, not at the swap."""
+    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    config           = tiny_trainer_config(n_gaussians=2, epochs=2)
+    logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
+
+    config.curriculum.enabled                  = True
+    config.curriculum.swap_epoch               = 1
+    config.curriculum.warmup                   = LossConfig(use_param_l1=True, weight_param_l1=1.0)
+    config.curriculum.complete.weight_param_l1 = 0.0
+
+    with pytest.raises(ValueError, match="summing to 0"):
+        Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+
+
 def test_multi_epoch_fit_records_losses(tmp_path):
     """Verifies a three-epoch fit records one finite training loss per epoch and at least one validation loss."""
     trainer = _build_trainer(tmp_path, epochs=3)
@@ -432,6 +447,7 @@ def test_curriculum_swap_replaces_loss_config(tmp_path):
 
     config.curriculum.enabled    = True
     config.curriculum.swap_epoch = 0
+    config.curriculum.warmup     = LossConfig(use_param_l1=True, weight_param_l1=1.0)
     config.curriculum.complete   = LossConfig(use_mse_curve=True, weight_mse_curve=1.0)
 
     logger     = Logger(log_dir=str(tmp_path / "logs"), name="curr", level="ERROR")
@@ -480,6 +496,7 @@ def test_curriculum_swap_applies_the_scheduled_learning_rate(tmp_path):
 
     config.curriculum.enabled      = True
     config.curriculum.swap_epoch   = 2
+    config.curriculum.warmup       = LossConfig(use_param_l1=True, weight_param_l1=1.0)
     config.curriculum.reset_lr     = False
     config.curriculum.reset_warmup = True
     config.warmup.warmup_enabled   = False

@@ -54,7 +54,7 @@ class Trainer(BaseTrainer):
             writer     : Optional TensorBoard writer.
 
         Raises:
-            ValueError : If the curriculum swap epoch is not below the epoch budget, which would leave the complete stage unused.
+            ValueError : If the curriculum swap epoch is not below the epoch budget, which would leave the complete stage unused, or if the complete stage enables no term or only zero-weight terms, which would make the loss identically zero after the swap.
         """
         self.model_cfg        = model_cfg
         self.gaussian_cfg     = config.gaussian
@@ -73,6 +73,8 @@ class Trainer(BaseTrainer):
             raise ValueError(f"curriculum.swap_epoch={self.curriculum.swap_epoch} must be below training.epochs={self.epochs}; the complete loss phase would never run")
 
         if self.curriculum.enabled:
+            Loss.active_weights(self.curriculum.complete)
+
             self.logger.section("[Curriculum]")
             self.logger.kv_table({
                 "Initial stage"   : "curriculum.warmup",

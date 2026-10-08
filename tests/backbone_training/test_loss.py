@@ -464,6 +464,37 @@ def test_param_weights_length_mismatch_raises():
         loss(pred, gt)
 
 
+def test_zero_weight_sum_is_rejected():
+    """Verifies a stage whose only enabled term has weight zero is refused, since the total would be identically zero."""
+    with pytest.raises(ValueError, match="summing to 0"):
+        build_loss(loss_cfg=LossConfig(use_param_l1=True, weight_param_l1=0.0))
+
+
+def test_stage_without_enabled_terms_is_rejected():
+    """Verifies a stage enabling no term at all is refused."""
+    with pytest.raises(ValueError, match="No loss term is enabled"):
+        build_loss(loss_cfg=LossConfig())
+
+
+def test_zero_weight_term_beside_a_weighted_one_is_warned_about(recording_logger):
+    """Verifies an enabled term with weight zero is named in a warning while the stage itself is accepted."""
+    cfg  = LossConfig(use_param_l1=True, weight_param_l1=1.0, use_cosine_curve=True, weight_cosine_curve=0.0)
+    loss = build_loss(loss_cfg=cfg, logger=recording_logger)
+
+    warnings = [message for level, message in recording_logger.messages if level == "warning"]
+
+    assert dict(loss.active_weights(cfg)) == {"cosine_curve": 0.0, "param_l1": 1.0}
+    assert warnings == ["Loss term 'cosine_curve' is enabled with weight 0; it is computed on every batch, gradients included, but contributes nothing to the total"]
+
+
+def test_curriculum_swap_to_a_zero_weight_stage_is_rejected():
+    """Verifies swapping to a stage whose weights sum to zero is refused at the swap."""
+    loss = build_loss()
+
+    with pytest.raises(ValueError, match="summing to 0"):
+        loss.set_curriculum(LossConfig(use_mse_curve=True, weight_mse_curve=0.0))
+
+
 def test_dx_is_the_z_axis_spacing():
     """Verifies the loss bin width equals the spacing of an increasing z axis."""
     axis = x_axis_tensor()
