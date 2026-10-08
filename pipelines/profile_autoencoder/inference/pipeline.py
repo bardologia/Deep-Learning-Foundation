@@ -66,6 +66,29 @@ class ProfileAeInferencePipeline(AeInferencePipeline):
         """Returns the split crop regions as plain tuples for the metrics file."""
         return {"split_regions": [list(region.as_tuple()) for region in run.split_regions]}
 
+    def _provenance_metrics(self, run) -> dict:
+        """Returns the scored weights plus the activity threshold and the curve sampling the metrics were computed on.
+
+        Args:
+            run : Loaded profile-autoencoder run, exposing the threshold and the kept pixel counts of its dataset.
+
+        Returns:
+            Mapping with the base checkpoint fields, 'activity_threshold' and a
+            'sampling' block (pixel_subsample, keep_empty_frac, seed, kept counts),
+            so metric files built on different curve sets can be told apart.
+        """
+        return {
+            **super()._provenance_metrics(run),
+            "activity_threshold" : float(run.activity_threshold),
+            "sampling"           : {
+                "pixel_subsample" : float(self.config.pixel_subsample),
+                "keep_empty_frac" : float(self.config.keep_empty_frac),
+                "seed"            : int(self.config.seed),
+                "n_kept_active"   : int(run.dataset.n_kept_active),
+                "n_kept_empty"    : int(run.dataset.n_kept_empty),
+            },
+        }
+
     def _metrics_summary(self, metrics: dict) -> dict:
         """Returns the headline metrics formatted for the console summary, naming the active subset the shape and peak metrics cover."""
         return {

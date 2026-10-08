@@ -131,6 +131,18 @@ def test_summary_warns_and_counts_inactive_latent_dimensions(tmp_path):
     assert "6 of the 8 latent dimensions" in logger.warnings[0]
 
 
+def test_profile_metrics_record_the_threshold_and_the_sampling_behind_them():
+    """The profile metrics carry the activity threshold and the sampling settings plus kept counts next to the scored checkpoint."""
+    config   = SimpleNamespace(checkpoint_name="best_model.pt", pixel_subsample=0.25, keep_empty_frac=0.05, seed=3)
+    run      = SimpleNamespace(checkpoint_meta={"epoch": 1}, activity_threshold=1e-3, dataset=SimpleNamespace(n_kept_active=120, n_kept_empty=30))
+    recorded = ProfileAeInferencePipeline(config)._provenance_metrics(run)
+
+    assert recorded["checkpoint"]         == "best_model.pt"
+    assert recorded["checkpoint_epoch"]   == 2
+    assert recorded["activity_threshold"] == 1e-3
+    assert recorded["sampling"]           == {"pixel_subsample": 0.25, "keep_empty_frac": 0.05, "seed": 3, "n_kept_active": 120, "n_kept_empty": 30}
+
+
 def test_profile_summary_names_the_active_subset_behind_the_shape_metrics():
     """The profile summary states how many curves the Pearson, relative L2 and peak metrics were computed over."""
     metrics = {"mse_mean": 0.5, "r2": 0.9, "n_active_curves": 1200, "n_curves": 5000, "pearson_mean": 0.8, "relative_l2_mean": 0.3, "peak_location_mae": 0.1}
