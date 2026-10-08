@@ -11,6 +11,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
+from tools.data.gaussians import GaussianMixture
+
 
 class SigmaScan:
     """Loss and masked Adam loop for one batch of profiles."""
@@ -29,9 +31,9 @@ class SigmaScan:
         Returns:
             Scalar MSE between the evaluated mixture and the profile.
         """
-        safe_s2 = 2.0 * jnp.maximum(sigmas, 1e-6) ** 2
+        safe_s2 = 2.0 * jnp.maximum(sigmas, GaussianMixture.SIGMA_FLOOR) ** 2
         diff    = z_axis[None, :] - mus[:, None]
-        expon   = jnp.clip(-(diff ** 2) / safe_s2[:, None], -100.0, 0.0)
+        expon   = jnp.clip(-(diff ** 2) / safe_s2[:, None], GaussianMixture.EXPON_FLOOR, GaussianMixture.EXPON_CEIL)
         pred    = (amps[:, None] * jnp.exp(expon)).sum(axis=0)
         mse     = jnp.mean((pred - profile) ** 2)
 
