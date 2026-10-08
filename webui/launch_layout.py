@@ -99,6 +99,7 @@ class LaunchLayout:
     NUM_WARMFRAC = {"kind": "number", "min": 0, "max": 1, "step": 0.005, "presets": [0.01, 0.02, 0.03, 0.05, 0.1]}
     NUM_PROB     = {"kind": "number", "min": 0, "max": 1, "step": 0.05, "presets": [0, 0.25, 0.5, 0.75, 1.0]}
     NUM_DPI      = {"kind": "number", "int": True, "min": 72, "max": 600, "presets": [110, 150, 300, 600]}
+    NUM_SECONDS  = {"kind": "number", "min": 0.5, "max": 60, "step": 0.5, "presets": [3, 5, 8, 10, 15, 30]}
     NUM_MAIL_MB  = {"kind": "number", "min": 1, "max": 100, "step": 0.5, "presets": [10, 15, 18, 24]}
     NUM_FILE_MB  = {"kind": "number", "min": 0, "max": 100, "step": 0.5, "presets": [0, 2, 5, 10, 15]}
 
@@ -185,7 +186,7 @@ class LaunchLayout:
         ]},
         {"title": "Profile picks", "fields": ["n_best_profiles", "n_worst_profiles", "n_random_profiles", {"path": "profile_seed", "widget": NUM_SEED}]},
         {"title": "Slices", "fields": ["n_col_slices", "n_row_slices", "n_z_slices"]},
-        {"title": "GIFs", "fields": ["gif_axes", "gif_fps", "gif_duration", "gif_max_frames", {"path": "gif_dpi", "widget": NUM_DPI}, "gif_separate_panels"]},
+        {"title": "GIFs", "fields": ["gif_axes", "gif_fps", {"path": "gif_duration", "widget": NUM_SECONDS}, "gif_max_frames", {"path": "gif_dpi", "widget": NUM_DPI}, "gif_separate_panels"]},
         {"title": "Figures", "fields": ["cmap_intensity", "cmap_error", "normalize_intensity", {"path": "fig_dpi", "widget": NUM_DPI}, {"path": "save_dpi", "widget": NUM_DPI}, {"path": "figure_style", "widget": CH_FIGSTYLE}]},
     ]
 
@@ -702,7 +703,7 @@ class LaunchLayout:
                         ]},
                         {"title": "Resource monitor", "fields": [
                             "resources.enabled",
-                            "resources.poll_interval_sec",
+                            {"path": "resources.poll_interval_sec", "widget": NUM_SECONDS},
                             "resources.warn_ram_pct",
                             "resources.warn_vram_pct",
                             "resources.warn_shm_pct",
