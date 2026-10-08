@@ -210,13 +210,16 @@ class ExcludedContent:
     which is what keeps an unforeseen heavy artifact out without naming it.
 
     Attributes:
-        source_dir : Directory the gathered files are read relative to.
-        patterns   : Path globs whose matches are left out.
-        suffixes   : Lowercased file extensions left out.
-        max_bytes  : Upper bound of one kept file in bytes; zero turns the size rule off.
-        logger     : Logger for the table of what was left out.
-        dropped    : One (relative path, size in bytes, rule) triple per file left out, filled by the filtering.
+        source_dir  : Directory the gathered files are read relative to.
+        patterns    : Path globs whose matches are left out.
+        suffixes    : Lowercased file extensions left out.
+        max_bytes   : Upper bound of one kept file in bytes; zero turns the size rule off.
+        logger      : Logger for the table of what was left out and the files the size cap dropped.
+        dropped     : One (relative path, size in bytes, rule) triple per file left out, filled by the filtering.
+        NAMED_LIMIT : Number of files the size-cap warning names before it only counts the rest.
     """
+
+    NAMED_LIMIT = 20
 
     def __init__(self, source_dir: Path, patterns: List[str], suffixes: List[str], max_bytes: int, logger) -> None:
         """Initializes the filter with the directory paths are read against, its three rules and the logger."""
@@ -254,7 +257,7 @@ class ExcludedContent:
         if not self.max_bytes:
             return ""
 
-        return f"over {self.max_bytes / (1024 * 1024):,.1f} MB" if path.stat().st_size > self.max_bytes else ""
+        return self._size_label() if path.stat().st_size > self.max_bytes else ""
 
     def _rule(self, path: Path, relative: Path) -> str:
         """Returns the first rule that leaves the file out, empty when all three keep it.
@@ -286,6 +289,21 @@ class ExcludedContent:
         rows = [{"Rule": rule, "Files": str(count), "Size": f"{total / (1024 * 1024):,.1f} MB"} for rule, (count, total) in sorted(groups.items())]
         self.logger.metrics_table(rows, columns=["Rule", "Files", "Size"], title=f"Left out of {self.source_dir}")
 
+    def _name_oversized(self) -> None:
+        """Warns with the files the size cap left out, largest first, since no path or suffix rule named them."""
+        oversized = sorted(((relative, size) for relative, size, rule in self.dropped if rule == self._size_label()), key=lambda item: item[1], reverse=True)
+        if not oversized:
+            return
+
+        names = [f"{relative} ({size / (1024 * 1024):,.1f} MB)" for relative, size in oversized[:self.NAMED_LIMIT]]
+        more  = f" and {len(oversized) - self.NAMED_LIMIT} more" if len(oversized) > self.NAMED_LIMIT else ""
+
+        self.logger.warning(f"{len(oversized)} file(s) of {self.source_dir} left out for being {self._size_label()}, largest first: {', '.join(names)}{more}")
+
+    def _size_label(self) -> str:
+        """Returns the name of the size rule, the cap it enforces in megabytes."""
+        return f"over {self.max_bytes / (1024 * 1024):,.1f} MB"
+
     def filter(self, paths: List[Path]) -> List[Path]:
         """Returns the files every rule keeps, recording and reporting the ones left out.
 
@@ -306,6 +324,7 @@ class ExcludedContent:
                 kept.append(path)
 
         self._report()
+        self._name_oversized()
         return kept
 
 

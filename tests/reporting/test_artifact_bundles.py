@@ -462,6 +462,37 @@ def test_excluded_content_names_the_rule_that_dropped_each_file(runs_dir):
     assert len(kept) == len(paths) - len(rules)
 
 
+def test_excluded_content_names_the_files_the_size_cap_dropped(runs_dir):
+    """Verifies the files left out by the size cap are named with their size in one warning, while rule-named drops are not."""
+    run_dir  = runs_dir / "backbone" / "unet_a"
+    paths    = sorted(path for path in run_dir.rglob("*") if path.is_file())
+    logger   = RecordingLogger()
+    excluded = ExcludedContent(run_dir, ["cubes"], [".pt"], 5000, logger)
+
+    excluded.filter(paths)
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0].startswith(f"1 file(s) of {run_dir} left out for being over 0.0 MB, largest first: inference/20260101_000000/animations/walk_z.gif (")
+    assert "best_model.pt" not in warnings[0]
+
+
+def test_excluded_content_names_the_largest_oversized_files_and_counts_the_rest(tmp_path):
+    """Verifies the size-cap warning lists the largest files first up to its limit and counts the others."""
+    source = tmp_path / "run"
+    source.mkdir()
+    for index in range(ExcludedContent.NAMED_LIMIT + 2):
+        (source / f"file_{index:02d}.bin").write_bytes(b"x" * (2000 + index))
+
+    logger = RecordingLogger()
+    ExcludedContent(source, [], [], 1000, logger).filter(sorted(source.iterdir()))
+
+    warning = [message for level, message in logger.messages if level == "warning"][0]
+    assert warning.startswith(f"{ExcludedContent.NAMED_LIMIT + 2} file(s) of {source} left out for being over 0.0 MB, largest first: file_21.bin")
+    assert warning.endswith(" and 2 more")
+    assert "file_00.bin" not in warning
+
+
 def test_run_bundle_aborts_on_a_missing_run_directory(entry_config, tmp_path):
     """Verifies a run path that does not exist aborts naming the directory."""
     config = entry_config.to_run_config(tmp_path / "runs" / "backbone" / "gone")
