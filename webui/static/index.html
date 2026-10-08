@@ -354,6 +354,7 @@
         <button type="button" class="cube-mode" data-view="metrics">Metric maps</button>
         <button type="button" class="cube-mode" data-view="transect">Transect</button>
         <button type="button" class="cube-mode" data-view="cloud">Point cloud</button>
+        <button type="button" class="cube-mode" data-view="volume" title="Ray-marched volume rendering of the cube with an adjustable transfer function">Volume</button>
         <button type="button" class="cube-mode" data-view="figures" title="Browse the figures and animations inference already rendered for this stamp">Figures</button>
         <select id="cube-cmap" class="cube-mselect cube-modes__cmap" aria-label="Cube colormap">
           <option value="jet" selected>jet</option>
@@ -614,8 +615,7 @@
               <button type="button" class="cube-space" data-source="predb">pred B</button>
               <button type="button" class="cube-space" data-source="diff">A &minus; B</button>
               <button type="button" class="cube-space" data-source="gt">gt</button>
-              <button type="button" class="cube-space" data-source="reduced">capon</button>
-              <button type="button" class="cube-space" data-source="full">full</button>
+              <button type="button" class="cube-space" data-source="full">reference</button>
             </div>
             <div class="cube-mctl" role="group" aria-label="Transfer function window">
               <label for="cube-volume-lo" title="Transfer function window: intensities below the lower bound stay transparent, opacity ramps up to the upper bound">tf window</label>
@@ -638,16 +638,16 @@
               <label for="cube-volume-clip-axis" title="Cut the volume open along one axis">clip</label>
               <select id="cube-volume-clip-axis" class="cube-mselect">
                 <option value="off" selected>off</option>
-                <option value="az">azimuth</option>
-                <option value="rg">range</option>
-                <option value="elev">elevation</option>
+                <option value="row">row</option>
+                <option value="col">col</option>
+                <option value="z">z</option>
               </select>
-              <input type="range" id="cube-volume-clip-pos" min="0" max="100" value="50" />
+              <input type="range" id="cube-volume-clip-pos" min="0" max="100" value="50" aria-label="Volume clipping position" />
             </div>
-            <span class="cube-elev__at" id="cube-volume-at"></span>
+            <span class="cube-z__at" id="cube-volume-at"></span>
           </div>
           <div class="cube-cloud__stage">
-            <canvas id="cube-volume-canvas"></canvas>
+            <canvas id="cube-volume-canvas" data-fig="volume view"></canvas>
           </div>
         </div>
       </div>

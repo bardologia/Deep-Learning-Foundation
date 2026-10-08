@@ -1294,6 +1294,42 @@ class CubeExplorer:
         header = np.array([rows.shape[0], total, 0.0, 0.0], dtype=np.float32)
         return header.tobytes() + np.ascontiguousarray(rows).tobytes()
 
+    VOLUME_MAX_DIM = 192
+
+    def volume_bin(self, cube_id: str, source: str, max_dim: int | None = None) -> bytes | None:
+        """Packs a strided-down cube source as a quantised volume for the WebGL renderer.
+
+        Every axis is strided until it fits ``max_dim``, then the voxels are mapped to uint8 over the source's display range, symmetric about zero for a diverging source, with NaN quantised to zero.
+
+        Args:
+            cube_id : Id of the loaded cube.
+            source  : Cube key to pack.
+            max_dim : Largest axis length after striding; VOLUME_MAX_DIM when None, else clipped into [2, 256].
+
+        Returns:
+            An eight-float32 header (z, row and column extents after striding, a diverging flag, vmin, vmax, 0, 0) followed by the uint8 voxels in (z, row, column) C order, or None when the cube or source is unknown.
+        """
+        entry = self._entry(cube_id, source)
+        if entry is None:
+            return None
+
+        max_dim = self.VOLUME_MAX_DIM if max_dim is None else int(np.clip(max_dim, 2, 256))
+        cube    = entry["cube"]
+        strides = tuple(max(1, int(np.ceil(extent / max_dim))) for extent in cube.shape)
+        block   = np.asarray(cube[::strides[0], ::strides[1], ::strides[2]], dtype=np.float32)
+
+        if entry.get("diverging"):
+            peak       = max(abs(float(entry["vmin"])), abs(float(entry["vmax"])), 1e-12)
+            vmin, vmax = -peak, peak
+        else:
+            vmin, vmax = float(entry["vmin"]), float(entry["vmax"])
+
+        norm   = np.clip((np.nan_to_num(block, nan=vmin) - vmin) / max(vmax - vmin, 1e-12), 0.0, 1.0)
+        voxels = np.round(norm * 255.0).astype(np.uint8)
+
+        header = np.array([*voxels.shape, 1.0 if entry.get("diverging") else 0.0, vmin, vmax, 0.0, 0.0], dtype=np.float32)
+        return header.tobytes() + np.ascontiguousarray(voxels).tobytes()
+
     def aux_grid_bin(self, cube_id: str) -> bytes | None:
         """Packs the aux map relative to its median as a binary grid.
 
