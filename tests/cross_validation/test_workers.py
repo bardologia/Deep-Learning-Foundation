@@ -693,3 +693,25 @@ def test_collector_rebuilds_training_results_from_markers_when_file_absent(tmp_p
 
     assert base[0].training_result["status"] == "DONE"
     assert base[1].training_result["status"] == "PARTIAL"
+
+
+@pytest.mark.dataset
+def test_training_worker_refuses_a_finished_unit_when_resume_is_off(test_data_dir, tmp_path, monkeypatch):
+    """With resume off a fold unit that already completed makes the worker exit instead of training over it or claiming it trained."""
+    config                    = worker_config(test_data_dir)
+    config.paths.log_base_dir = tmp_path
+    config.resume             = False
+    worker                    = FoldTrainingWorker(config, run_tag="rt")
+
+    unit = worker.unit_directory(worker.fold_run_name(1, 4))
+    unit.mkdir(parents=True)
+    CompletionMarker.stamp(unit, {"stage": "training"})
+
+    trained = []
+    monkeypatch.setattr(FoldTrainingWorker, "_run_backbone", lambda self, i, seed, sr, run_name: trained.append(run_name), raising=True)
+
+    with pytest.raises(SystemExit, match="already holds a completed run and resume is off"):
+        worker.run(1, seed=4)
+
+    assert trained == []
+    assert CompletionMarker.is_complete(unit)

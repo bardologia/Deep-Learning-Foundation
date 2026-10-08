@@ -412,8 +412,9 @@ class FoldTrainingWorker(CrossValidationWorker):
         """Trains one fold unit, dispatching on the configured training family.
 
         The unit's manifest is written first, so even a run that dies before
-        its first epoch is identifiable when the sweep is resumed, and a unit
-        that already finished is left as it is.
+        its first epoch is identifiable when the sweep is resumed; a unit that
+        already finished is left as it is on a resume and refused when resume
+        is off.
 
         Args:
             fold_index : Zero-based index of the fold.
@@ -422,6 +423,7 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         Raises:
             ValueError : If the training family is unsupported.
+            SystemExit : If the unit already holds a completed run while resume is off.
         """
         dispatch = {
             "backbone"            : self._run_backbone,
@@ -437,7 +439,7 @@ class FoldTrainingWorker(CrossValidationWorker):
 
         self._write_manifest(fold_index, seed, run_name)
 
-        if self.skip_complete(self.unit_directory(run_name), "fold_training"):
+        if self.skip_complete(self.unit_directory(run_name), "fold_training", self.config.resume):
             return
 
         dispatch[training_type](fold_index, seed, split_regions, run_name)

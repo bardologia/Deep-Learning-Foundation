@@ -542,3 +542,39 @@ def test_training_worker_writes_the_unit_manifest_into_the_handed_over_directory
     assert manifest["kind"] == BenchmarkUnitManifest.KIND
     assert BenchmarkUnitManifest.identity(manifest) == ("unet", "param_l1", 3)
     assert manifest["unit"] == "renamed/seed3"
+
+
+def test_training_worker_refuses_a_finished_unit_when_resume_is_off(config, monkeypatch):
+    """With resume off a unit that already completed is neither skipped as trained nor overwritten in place: the worker exits naming the directory."""
+    from pipelines.benchmark.workers import TrainingWorker
+    from tools.runtime.completion    import CompletionMarker
+
+    config.resume = False
+    worker        = TrainingWorker(config, "tag")
+    unit          = worker.run_dir / "training" / "renamed/seed3"
+    unit.mkdir(parents=True)
+    CompletionMarker.stamp(unit, {"stage": "training"})
+
+    trained = []
+    monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: trained.append(run_name), raising=True)
+
+    with pytest.raises(SystemExit, match="already holds a completed run and resume is off"):
+        worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+
+    assert trained == []
+    assert CompletionMarker.is_complete(unit)
+
+
+def test_training_worker_trains_an_unfinished_unit_when_resume_is_off(config, monkeypatch):
+    """With resume off a unit without a completion marker is trained as usual."""
+    from pipelines.benchmark.workers import TrainingWorker
+
+    config.resume = False
+    worker        = TrainingWorker(config, "tag")
+
+    trained = []
+    monkeypatch.setattr(TrainingWorker, "_run_backbone", lambda self, model_name, run_name, seed, loss_component: trained.append(run_name), raising=True)
+
+    worker.run("unet", seed=3, loss_component="param_l1", run_name="renamed/seed3")
+
+    assert trained == ["renamed/seed3"]
