@@ -227,6 +227,30 @@ def test_report_refuses_seeds_scored_on_different_splits(tmp_path):
         _report(group, runs)
 
 
+def test_report_counts_the_seeds_behind_every_aggregate(tmp_path):
+    """A key missing or non-finite in some seeds is averaged over the rest, counted and warned about."""
+    group = tmp_path / "group"
+    runs  = [
+        _seed_run(group, "seed0", {"curve_mse_gt": 1.0, "overall_r2_gt": 0.5, "ssim_gt": float("nan")}),
+        _seed_run(group, "seed1", {"curve_mse_gt": 3.0, "ssim_gt": float("nan")}),
+        _seed_run(group, "seed2", {"curve_mse_gt": 5.0, "overall_r2_gt": float("nan"), "ssim_gt": float("nan")}),
+    ]
+
+    logger = RecordingLogger()
+    report = SeedComparisonReport(group, runs, [run / "inference" / "stamp" for run in runs], 1e-3, "stamp", "metrics.json", "report.md", logger)
+    report.run()
+
+    payload  = json.loads((group / "inference" / "stamp" / "metrics.json").read_text(encoding="utf-8"))
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert payload["n"]["curve_mse_gt"]  == 3
+    assert payload["n"]["overall_r2_gt"] == 1
+    assert "ssim_gt" not in payload["mean"]
+    assert any(message.startswith("1 metric(s) aggregated over fewer than 3 seeds: overall_r2_gt (missing seed1,seed2)") for message in warnings)
+    assert any("non-finite in every seed" in message and "ssim_gt" in message for message in warnings)
+    assert ("info", "3 metric(s) aggregated over 3 seeds, 2 with every seed contributing") in logger.messages
+
+
 def test_report_markdown_has_per_seed_columns_stamps_and_links(tmp_path):
     """The markdown table lists per-seed columns, the inference stamp and relative links to per-seed reports."""
     group = tmp_path / "group"

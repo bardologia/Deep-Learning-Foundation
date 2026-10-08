@@ -8,6 +8,7 @@ label-suspect analysis.
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 
@@ -297,7 +298,10 @@ class SeedComparisonReport:
         seeds              : Seed labels, relative to the group directory.
         records            : Stamp name, split and completion time recorded per seed.
         split              : Data split every seed's stamp was scored on.
+        MAX_LISTED         : Number of metric keys named in the shortfall warning before it is cut.
     """
+
+    MAX_LISTED = 8
 
     def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], activity_threshold: float, output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
         """Binds the seed group and validates that at least two seeds are present.
@@ -351,11 +355,39 @@ class SeedComparisonReport:
         """Returns each seed's metrics dictionary, in seed order."""
         return [FileIO.load_json(inference_dir / self.metrics_filename) for inference_dir in self.inference_dirs]
 
+    def _listed(self, items: list[str]) -> str:
+        """Returns the items joined for a log line, cut after MAX_LISTED with the remainder counted."""
+        shown = ", ".join(items[:self.MAX_LISTED])
+        if len(items) > self.MAX_LISTED:
+            shown += f", and {len(items) - self.MAX_LISTED} more"
+
+        return shown
+
     def _aggregate(self, per_seed: list[dict]) -> tuple[dict, dict, dict, dict]:
-        """Returns the across-seed means, sample standard deviations, 95% confidence intervals and finite-sample counts of every metric key."""
+        """Returns the across-seed means, sample standard deviations, 95% confidence intervals and finite-sample counts of every metric key.
+
+        A key some seeds report without a finite value is aggregated over the seeds
+        that do, and one warning names those keys with the seeds that dropped out. A
+        numeric key that is non-finite in every seed is dropped with its own warning.
+
+        Args:
+            per_seed : Each seed's raw metrics dictionary, in seed order.
+
+        Returns:
+            Tuple of the mean, standard-deviation, interval and count mappings; the
+            count is the number of seeds whose finite value entered the mean.
+        """
         keys        = sorted({key for metrics in per_seed for key in metrics})
         means, stds = SeedAggregation.aggregate(per_seed, keys)
         cis, counts = SeedAggregation.intervals(per_seed, keys)
+        shortfall   = SeedAggregation.shortfall(per_seed, list(means), self.seeds)
+
+        if shortfall:
+            self.logger.warning(f"{len(shortfall)} metric(s) aggregated over fewer than {len(self.seeds)} seeds: {self._listed([f'{key} (missing {chr(44).join(missing)})' for key, missing in shortfall.items()])}")
+
+        dropped = [key for key in keys if key not in means and any(key in metrics and isinstance(metrics[key], float) and not math.isfinite(metrics[key]) for metrics in per_seed)]
+        if dropped:
+            self.logger.warning(f"{len(dropped)} metric(s) dropped from the aggregate, non-finite in every seed that reports them: {self._listed(dropped)}")
 
         return means, stds, cis, counts
 
@@ -568,13 +600,13 @@ class SeedComparisonReport:
         """
         FileIO.ensure_dirs(self.output_dir)
 
-        per_seed     = self._load_metrics()
-
+        per_seed                 = self._load_metrics()
         means, stds, cis, counts = self._aggregate(per_seed)
+        metrics_path             = self._write_metrics(means, stds, cis, counts)
+        report_path              = self._write_report(per_seed, means, stds, cis, counts)
 
-        metrics_path = self._write_metrics(means, stds, cis, counts)
-        report_path  = self._write_report(per_seed, means, stds, cis, counts)
-
+        complete = sum(1 for n in counts.values() if n == len(self.seeds))
+        self.logger.info(f"{len(means)} metric(s) aggregated over {len(self.seeds)} seeds, {complete} with every seed contributing")
         self.logger.info(f"Seed-comparison metrics : {metrics_path}")
         self.logger.info(f"Seed-comparison report  : {report_path}")
 
