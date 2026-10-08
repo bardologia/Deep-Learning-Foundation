@@ -431,13 +431,14 @@ class RobustnessRun(AnalysisRun):
 
         return scopes
 
-    def _write_report(self, run, results: dict, figures: dict[str, Path]) -> Path:
+    def _write_report(self, run, results: dict, figures: dict[str, Path], n_batches: int) -> Path:
         """Writes the markdown robustness report with one table per stress.
 
         Args:
-            run     : Loaded run providing the backbone name.
-            results : Sweep results holding "noise", "noise_tolerance", "gain", "drop" (possibly None) and "shift".
-            figures : Mapping from figure name to its written path.
+            run       : Loaded run providing the backbone name.
+            results   : Sweep results holding "noise", "noise_tolerance", "gain", "drop" (possibly None) and "shift".
+            figures   : Mapping from figure name to its written path.
+            n_batches : Number of batches every sweep ran over.
 
         Returns:
             The written report path.
@@ -447,7 +448,7 @@ class RobustnessRun(AnalysisRun):
 
         doc = MarkdownDoc(title=f"Robustness: {run.backbone_name}")
         doc.paragraph(
-            f"Curve-MSE degradation on {self.config.max_batches} '{self.config.split}' batches under four controlled stresses. "
+            f"Curve-MSE degradation on {n_batches} '{self.config.split}' batches under four controlled stresses. "
             f"Gaussian noise is added to the normalized inputs (averaged over {self.config.noise_draws} draws), either on all channels or restricted to one channel "
             "family, which separates amplitude fragility from derived-phase fragility. The gain sweep scales every input by a global factor, probing calibration "
             "error. Track dropout zeroes whole tracks (secondary and derived channels), averaged over up to "
@@ -556,10 +557,10 @@ class RobustnessRun(AnalysisRun):
 
         results = {"noise": noise, "noise_tolerance": tolerance, "gain": gain, "drop": drop, "shift": shift}
 
-        payload = {"backbone": run.backbone_name, "split": self.config.split, **results}
+        payload = {"backbone": run.backbone_name, "split": self.config.split, "n_batches": len(batches), **results}
         FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
-        report_path = self._write_report(run, results, figures)
+        report_path = self._write_report(run, results, figures, len(batches))
 
         suffix = "≥" if tolerance["censored"] else "="
 

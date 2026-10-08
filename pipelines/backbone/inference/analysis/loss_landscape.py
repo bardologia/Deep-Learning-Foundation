@@ -379,7 +379,9 @@ class LossLandscapeRun(AnalysisRun):
             run : Loaded run bundling the model, the dataloader and the normalizer.
 
         Returns:
-            A zero-argument callable returning the mean curve MSE over the cached batches.
+            A pair of the zero-argument callable returning the mean curve MSE over the
+            cached batches and the number of cached batches, which the loader's end caps
+            below max_batches.
 
         Raises:
             ValueError : If the loader yields no batch.
@@ -403,7 +405,7 @@ class LossLandscapeRun(AnalysisRun):
                 total      += float(((pred_curves - gt_curves) ** 2).mean())
             return total / len(batches)
 
-        return evaluate
+        return evaluate, len(batches)
 
     def _diagnose(self, alphas: np.ndarray, cuts: list[np.ndarray]) -> list[dict]:
         """Describes every 1-D cut, flagging the cuts that hold a non-finite loss as invalid.
@@ -442,7 +444,7 @@ class LossLandscapeRun(AnalysisRun):
 
         return diagnostics
 
-    def _write_report(self, run, center: float, diagnostics: list[dict], figures: dict[str, Path]) -> Path:
+    def _write_report(self, run, center: float, diagnostics: list[dict], figures: dict[str, Path], n_batches: int) -> Path:
         """Writes the markdown report of the landscape.
 
         Args:
@@ -450,6 +452,7 @@ class LossLandscapeRun(AnalysisRun):
             center      : Curve MSE at the trained weights.
             diagnostics : Per-direction validity, sharpness, curvature, flatness radius and minimum offset.
             figures     : Figure paths keyed by figure name.
+            n_batches   : Number of batches every landscape point was evaluated on.
 
         Returns:
             Path of the written report.
@@ -462,7 +465,7 @@ class LossLandscapeRun(AnalysisRun):
         doc = MarkdownDoc(title=f"Loss landscape: {run.backbone_name}")
         doc.paragraph(
             f"Curve-MSE landscape around the trained weights along {len(diagnostics)} filter-normalized random directions (Li et al. 2018 convention), "
-            f"evaluated on {self.config.max_batches} '{self.config.split}' batches. Sharpness is the relative loss increase within ±{CutDiagnostics.SHARPNESS_RADIUS} of the centre; "
+            f"evaluated on {n_batches} '{self.config.split}' batches. Sharpness is the relative loss increase within ±{CutDiagnostics.SHARPNESS_RADIUS} of the centre; "
             f"curvature is the normalized quadratic coefficient fitted within ±{CutDiagnostics.CURVATURE_RADIUS}; the flatness radius is the interpolated step at which the loss "
             f"doubles (censored at the sampled span when it never does); the minimum offset flags cuts whose sampled minimum is not the trained point. "
             "The objective is the physical curve MSE, not the training loss, so runs with different loss configurations stay comparable. "
@@ -505,8 +508,8 @@ class LossLandscapeRun(AnalysisRun):
             span, the centre loss, the 1-D steps and cuts, the 2-D steps and loss grid,
             and the per-direction diagnostics.
         """
-        loss_fn = self._loss_fn(run)
-        module  = run.model.module
+        loss_fn, n_batches = self._loss_fn(run)
+        module             = run.model.module
 
         directions = [FilterNormalizedDirection.build(module, seed=self.config.direction_seed + index) for index in range(self.config.n_directions)]
         evaluator  = LandscapeEvaluator(module, loss_fn)
@@ -546,6 +549,7 @@ class LossLandscapeRun(AnalysisRun):
         payload = {
             "backbone"    : run.backbone_name,
             "split"       : self.config.split,
+            "n_batches"   : n_batches,
             "span"        : self.config.span,
             "center_loss" : center,
             "alphas_1d"   : alphas_1d.tolist(),
@@ -556,7 +560,7 @@ class LossLandscapeRun(AnalysisRun):
         }
         FileIO.save_json(payload, self.output_dir / self.SUMMARY_FILENAME)
 
-        report_path = self._write_report(run, center, diagnostics, figures)
+        report_path = self._write_report(run, center, diagnostics, figures, n_batches)
 
         return AnalysisOutcome(payload, f"sharpness {sharpness.mean():.3f} ± {sharpness.std():.3f} over {len(valid)} of {len(cuts)} directions", report_path)
 

@@ -138,6 +138,28 @@ def test_capture_releases_the_tap_when_the_forward_fails(tmp_path):
     assert all("forward" not in module.__dict__ for module in run.model.module.modules())
 
 
+def test_capture_counts_the_batches_it_actually_ran(tmp_path):
+    """A loader shorter than max_batches caps the batch count the report and the JSON state."""
+    model, _ = get_backbone("attention_unet", in_channels=3, out_channels=6, **SMALL_OVERRIDES["attention_unet"])
+
+    class _Wrapper:
+        """Callable model wrapper exposing the backbone as ``module``, as the loaded run does."""
+        def __init__(self, module) -> None:
+            """Stores the wrapped module."""
+            self.module = module
+
+        def __call__(self, images):
+            """Runs the wrapped module."""
+            return self.module(images)
+
+    run = SimpleNamespace(model=_Wrapper(model.eval()), loader=[(torch.randn(1, 3, WINDOW, WINDOW),) for _ in range(2)])
+
+    records, n_batches = AttentionCaptureRun(tmp_path, AttentionCaptureConfig(max_batches=50), SilentLogger())._capture(run)
+
+    assert n_batches == 2
+    assert records["gates"]
+
+
 def test_model_without_attention_raises():
     """Attaching to a plain U-Net, which has neither gates nor attention, raises ValueError."""
     model, _ = get_backbone("unet", in_channels=3, out_channels=6, **SMALL_OVERRIDES["unet"])

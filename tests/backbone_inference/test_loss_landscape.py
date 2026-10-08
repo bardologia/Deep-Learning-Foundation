@@ -192,8 +192,9 @@ def test_landscape_pass_announces_tracks_and_times_its_stages(tmp_path, test_dat
     config  = LossLandscapeConfig(batch_size=2, max_batches=1, n_directions=2, n_points_1d=11, n_points_2d=3)
     logger  = StageLogger()
 
-    LossLandscapeRun(run_dir, config, logger).run()
+    outcome = LossLandscapeRun(run_dir, config, logger).run()
 
+    assert outcome.payload["n_batches"] == 1
     assert any(message.endswith("31 loss evaluations planned (2 cuts x 11 points + 3x3 grid)") for level, message in logger.messages if level == "info")
     assert logger.totals == [31] and logger.advances == 31
     assert logger.timers == ["Loss landscape: 1-D cuts (22 points)", "Loss landscape: 2-D grid (9 points)"]
