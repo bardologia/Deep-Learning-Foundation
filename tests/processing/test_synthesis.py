@@ -144,6 +144,26 @@ def test_a_different_seed_moves_the_scene(tmp_path, logger_stub):
     assert not np.array_equal(np.load(first.parameters_directory / "parameters.npy"), np.load(second.parameters_directory / "parameters.npy"))
 
 
+def test_session_records_an_abort_in_its_log(tmp_path, monkeypatch):
+    """Verifies a failing generation ends the session log with the error and an ABORTED banner."""
+    from pipelines.processing.synthesis import pipeline as pipeline_module
+
+    def failing_run(self):
+        """Raises in place of generating the dataset."""
+        raise RuntimeError("scene stage failed")
+
+    monkeypatch.setattr(pipeline_module.SyntheticDatasetPipeline, "run", failing_run)
+
+    with pytest.raises(RuntimeError, match="scene stage failed"):
+        pipeline_module.SyntheticDatasetSession(_tiny_config(tmp_path), log_dir=tmp_path / "logs").execute()
+
+    log_text = (tmp_path / "logs" / "generate_dataset.log").read_text(encoding="utf-8")
+
+    assert "RuntimeError: scene stage failed" in log_text
+    assert ">>> ABORTED generate_dataset" in log_text
+    assert ">>> END" not in log_text
+
+
 def test_layout_reads_the_generated_dataset(test_data_dir, params_dir, logger_stub, scene_config):
     layout = Layout(test_data_dir, logger=logger_stub, parameters_path=params_dir / "parameters.npy")
 

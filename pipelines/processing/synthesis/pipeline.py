@@ -194,14 +194,13 @@ class SyntheticDatasetSession:
     def execute(self) -> dict:
         """Opens the session log and runs the pipeline.
 
+        The log closes with the exception, its traceback and an ABORTED banner
+        when a stage raises.
+
         Returns:
             The output mapping returned by ``SyntheticDatasetPipeline.run``.
         """
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-        logger  = Logger(log_dir=str(self.log_dir), name="generate_dataset", level="INFO")
-        outputs = SyntheticDatasetPipeline(self.config, logger=logger).run()
-
-        logger.close()
-
-        return outputs
+        with Logger(log_dir=str(self.log_dir), name="generate_dataset", level="INFO") as logger:
+            return SyntheticDatasetPipeline(self.config, logger=logger).run()
