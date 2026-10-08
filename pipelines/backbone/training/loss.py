@@ -248,6 +248,7 @@ class Loss:
 
         raise ValueError(f"Unknown param_term kind: {kind!r}. Expected 'l1', 'huber', or 'mse'.")
 
+    @torch.no_grad()
     def _physical_errors(self, matched) -> dict:
         """Reports mean absolute errors of the matched Gaussians in physical units.
 
