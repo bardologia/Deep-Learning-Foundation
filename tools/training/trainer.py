@@ -73,6 +73,7 @@ class BaseTrainer:
         self.config = config
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._warn_cpu_device()
 
         self.distributed = DistributedContext.current()
 
@@ -153,6 +154,22 @@ class BaseTrainer:
         self._update_optimizer(self.lr_scheduler.effective_lrs())
         self._log_loop_configuration()
 
+    def _warn_cpu_device(self) -> None:
+        """Warns that training falls back to the CPU because torch sees no CUDA device.
+
+        The warning names the device mask the process was given and the CUDA
+        build of torch, which separate a missing or mismatched driver from a
+        mask pointing at no device, and says that AMP becomes CPU bfloat16
+        autocast when it is enabled.
+        """
+        if self.device.type == "cuda":
+            return
+
+        mask = os.environ.get("CUDA_VISIBLE_DEVICES", "unset")
+        amp  = "; use_amp now autocasts to bfloat16 on the CPU" if self.config.training.use_amp else ""
+
+        self.logger.warning(f"CUDA unavailable (CUDA_VISIBLE_DEVICES={mask}, torch CUDA build {torch.version.cuda}): training runs on the CPU at a fraction of GPU speed{amp}")
+
     def _log_init_banner(self) -> None:
         """Hook for subclasses to print a banner before components are built."""
         pass
@@ -182,7 +199,7 @@ class BaseTrainer:
             "Restore best at end"      : self.restore_best,
             "Resume"                   : self.resume,
             "Abort on non-finite loss" : self.abort_on_nonfinite_loss,
-            "DDP"                      : f"rank {self.distributed.rank + 1}/{self.distributed.world_size} (gradients averaged, val losses reduced across ranks)" if self.distributed.active else "off",
+            "DDP"                      : self._ddp_row(),
             "Debug logging"            : training.log_debug,
             "LR scale (batch-size rule)": f"x{self.config.optimizer.lr_scale:.4f} (from the micro-batch, ignores accumulation)",
             "Optimizer"                : self._optimizer_banner(),
@@ -191,15 +208,40 @@ class BaseTrainer:
             "cudnn"                    : f"deterministic={torch.backends.cudnn.deterministic}, benchmark={torch.backends.cudnn.benchmark}",
         })
 
+        self._log_ddp_scope()
+        self._log_param_groups()
+
+    def _ddp_row(self) -> str:
+        """Returns the DDP row of the loop table, stating which logged quantities are reduced across ranks and which stay on this rank's shard."""
+        if not self.distributed.active:
+            return "off"
+
+        return f"rank {self.distributed.rank + 1}/{self.distributed.world_size} (gradients averaged; loss/train and loss/val reduced across ranks; per-term diagnostics from this rank's shard only)"
+
+    def _log_ddp_scope(self) -> None:
+        """States once, in a DDP run, that the per-term diagnostics cover this rank's shard while the total losses cover every rank."""
+        if not self.distributed.active:
+            return
+
+        self.logger.info(f"DDP: loss_terms, loss_monitor, occupancy and param_error are reduced over this rank's shard only, 1/{self.distributed.world_size} of the patches, while loss/train and loss/val are reduced across all ranks; compare the per-term values with a single-GPU run as shard estimates, not as the same sample set")
+
+    def _log_param_groups(self) -> None:
+        """Logs each optimizer group's base learning rate after ``lr_scale`` beside the rate its first step uses.
+
+        The optimizer groups already hold the step-0 rates, the base rates
+        scaled by the warmup start factor, so the base rate is read from
+        ``base_lrs`` and the two are printed in separate columns.
+        """
         rows = []
         for i, pg in enumerate(self.optimizer.param_groups):
             rows.append({
                 "Group"        : pg.get("name", str(i)),
-                "LR"           : f"{pg['lr']:g}",
+                "Base LR"      : f"{self.base_lrs[i]:g}",
+                "Step-0 LR"    : f"{pg['lr']:g}",
                 "Weight decay" : f"{pg['weight_decay']:g}",
             })
 
-        self.logger.metrics_table(rows, columns=["Group", "LR", "Weight decay"], title="Optimizer Param Groups (after lr_scale)")
+        self.logger.metrics_table(rows, columns=["Group", "Base LR", "Step-0 LR", "Weight decay"], title="Optimizer Param Groups (base LR after lr_scale; step-0 LR includes the warmup start factor)")
 
     def _optimizer_banner(self) -> str:
         """Returns the one-line optimizer description for the loop-configuration table."""

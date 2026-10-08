@@ -1,7 +1,9 @@
 """Tests for the shared BaseTrainer optimizer and state helpers.
 
 Covers AdamW construction from parameter groups, learning rate updates,
-state capture, cache clearing and the abstract and no-op hooks.
+state capture, cache clearing, the CPU-fallback warning, the param-group
+table, the DDP scope of the logged metrics and the abstract and no-op
+hooks.
 """
 
 from __future__ import annotations
@@ -134,3 +136,81 @@ def test_no_op_hooks_return_none():
     assert BaseTrainer._on_optimizer_step(shim)           is None
     assert BaseTrainer._before_epoch(shim, 0)             is None
     assert BaseTrainer._after_eval(shim, 1.0, 0)          is None
+
+
+def test_cpu_device_is_warned_with_the_mask_and_the_amp_consequence(recording_logger, monkeypatch):
+    """Verifies a CPU device raises a warning naming the CUDA mask and that AMP becomes CPU bfloat16 autocast."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+
+    shim        = TrainerShim()
+    shim.device = torch.device("cpu")
+    shim.logger = recording_logger
+    shim.config = SimpleNamespace(training=SimpleNamespace(use_amp=True))
+
+    BaseTrainer._warn_cpu_device(shim)
+
+    [(level, message)] = recording_logger.messages
+
+    assert level == "warning"
+    assert "CUDA_VISIBLE_DEVICES=3" in message
+    assert "bfloat16 on the CPU" in message
+
+
+def test_cuda_device_is_not_warned(recording_logger):
+    """Verifies a CUDA device produces no fallback warning."""
+    shim        = TrainerShim()
+    shim.device = torch.device("cuda")
+    shim.logger = recording_logger
+
+    BaseTrainer._warn_cpu_device(shim)
+
+    assert recording_logger.messages == []
+
+
+def test_param_group_table_separates_the_base_rate_from_the_warmup_start_rate():
+    """Verifies the param-group table prints the base LR after lr_scale and the warmup-scaled step-0 LR in separate columns."""
+    tables = []
+    model  = torch.nn.Linear(4, 2)
+    shim   = _shim(model)
+
+    shim.base_lrs  = [0.01]
+    shim.optimizer = BaseTrainer._build_optimizer(shim, [{"params": list(model.parameters()), "lr": 0.001, "name": "main"}])
+    shim.logger    = SimpleNamespace(metrics_table=lambda rows, columns, title: tables.append((rows, columns, title)))
+
+    BaseTrainer._log_param_groups(shim)
+
+    [(rows, columns, title)] = tables
+
+    assert columns == ["Group", "Base LR", "Step-0 LR", "Weight decay"]
+    assert rows[0]["Base LR"]   == "0.01"
+    assert rows[0]["Step-0 LR"] == "0.001"
+    assert "warmup start factor" in title
+
+
+def test_ddp_scope_names_the_rank_local_diagnostics(recording_logger):
+    """Verifies a DDP run's loop row and one info line say the per-term diagnostics cover this rank's shard only."""
+    shim             = TrainerShim()
+    shim.logger      = recording_logger
+    shim.distributed = SimpleNamespace(active=True, rank=0, world_size=2)
+
+    row = BaseTrainer._ddp_row(shim)
+    BaseTrainer._log_ddp_scope(shim)
+
+    [(level, message)] = recording_logger.messages
+
+    assert row.startswith("rank 1/2") and "per-term diagnostics from this rank's shard only" in row
+    assert level == "info"
+    assert "1/2 of the patches" in message
+
+
+def test_ddp_scope_is_silent_without_ddp(recording_logger):
+    """Verifies a single-process run prints 'off' and no DDP scope line."""
+    shim             = TrainerShim()
+    shim.logger      = recording_logger
+    shim.distributed = SimpleNamespace(active=False)
+
+    assert BaseTrainer._ddp_row(shim) == "off"
+
+    BaseTrainer._log_ddp_scope(shim)
+
+    assert recording_logger.messages == []
