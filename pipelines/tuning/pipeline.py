@@ -166,13 +166,18 @@ class TuningScheduler:
             The model keys, in registry order.
 
         Raises:
-            SystemExit : If an unknown model or head was requested.
+            SystemExit : If an unknown model or head was requested, or a skip_models entry names neither a registry key nor a model key, which a typo would do while leaving its model in the run.
         """
         registry = self._registry()
 
         if target_model is None:
-            skip = set(self.config.skip_models)
-            return [key for key in self._model_keys() if key not in skip and ModelBuilder.split_key(key)[0] not in skip]
+            keys    = self._model_keys()
+            skip    = set(self.config.skip_models)
+            unknown = sorted(skip - set(keys) - set(registry))
+            if unknown:
+                sys.exit(f"ERROR: skip_models entries match no model of training_type '{self.config.training_type}': {unknown}; registry keys: {', '.join(registry)}; model keys: {', '.join(keys)}")
+
+            return [key for key in keys if key not in skip and ModelBuilder.split_key(key)[0] not in skip]
 
         name, head = ModelBuilder.split_key(target_model)
         if name not in registry:
@@ -409,6 +414,30 @@ class TuningScheduler:
 
         self._report_model(study, model_name, tune_cfg, ok)
 
+    def _configuration(self, models_to_run: list[str], resume: bool) -> dict:
+        """Returns the rows of the configuration table, the selected and skipped model keys named in full.
+
+        Args:
+            models_to_run : Model keys this launch tunes.
+            resume        : Whether the launch continues an existing study database.
+        """
+        tune_cfg = self.config.tuning
+
+        return {
+            "Run tag"          : self.tag,
+            "Stage"            : self.config.stage,
+            "Mode"             : "resume" if resume else "new",
+            "Models"           : f"{len(models_to_run)}: {', '.join(models_to_run)}",
+            "Skipped"          : ", ".join(self.config.skip_models) or "none",
+            "GPUs"             : self.config.gpus,
+            "Trial target"     : tune_cfg.n_trials,
+            "Search groups"    : SearchSpace.describe(tune_cfg),
+            "Plateau patience" : tune_cfg.plateau_patience or "off",
+            "Time budget"      : f"{tune_cfg.time_budget_h} h" if tune_cfg.time_budget_h else "none",
+            "Storage"          : self.storage_url,
+            "Log dir"          : str(self.run_dir),
+        }
+
     def schedule(self, target_model: str | None = None, resume: bool = False) -> None:
         """Validates the request, then tunes every selected model in turn.
 
@@ -429,7 +458,7 @@ class TuningScheduler:
             resume       : Whether to continue an existing study database.
 
         Raises:
-            SystemExit : If the training type or stage is unsupported, a full run has an empty GPU pool, the resume flag disagrees with the database on disk, a compare stage finds no database, or an unknown model or head was requested.
+            SystemExit : If the training type or stage is unsupported, a full run has an empty GPU pool, the resume flag disagrees with the database on disk, a compare stage finds no database, or an unknown model, head or skip_models entry was requested.
         """
         if self.config.training_type not in self.SUPPORTED_TYPES:
             sys.exit(f"ERROR: tuning does not support training_type '{self.config.training_type}'; supported: {', '.join(self.SUPPORTED_TYPES)}")
@@ -466,19 +495,7 @@ class TuningScheduler:
             models_to_run = self.selected_models(target_model)
 
             self.logger.section("Hyperparameter Tuning")
-            self.logger.kv_table({
-                "Run tag"          : self.tag,
-                "Stage"            : self.config.stage,
-                "Mode"             : "resume" if resume else "new",
-                "Models"           : len(models_to_run),
-                "GPUs"             : self.config.gpus,
-                "Trial target"     : tune_cfg.n_trials,
-                "Search groups"    : SearchSpace.describe(tune_cfg),
-                "Plateau patience" : tune_cfg.plateau_patience or "off",
-                "Time budget"      : f"{tune_cfg.time_budget_h} h" if tune_cfg.time_budget_h else "none",
-                "Storage"          : self.storage_url,
-                "Log dir"          : str(self.run_dir),
-            }, title="Configuration")
+            self.logger.kv_table(self._configuration(models_to_run, resume), title="Configuration")
 
             if self.resumed is not None:
                 self.resumed.log(self.logger)
