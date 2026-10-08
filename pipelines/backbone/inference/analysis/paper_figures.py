@@ -69,14 +69,18 @@ class PaperFigurePack:
             resolver : Resolver picking the inference directory of the run, including seed-swept runs.
 
         Returns:
-            One manifest entry per copied figure, holding the run label, the source path
-            and the target filename.
+            One manifest entry per copied figure, holding the run label, the source path,
+            the target filename, the inference stamp it came from, its split and its
+            completion time.
 
         Raises:
             FileNotFoundError : If the run saved no figures directory, or if a configured pattern matches nothing in it.
         """
         inference_dir = resolver.resolve(run_dir)
+        record        = SeedInferenceResolver.record(inference_dir)
         figures_dir   = inference_dir / self.config.figures_subdir
+
+        self.logger.info(f"{run_dir.name}: inference {record['stamp']} on split '{record['split']}', completed {record['completed_at']}")
 
         if not figures_dir.is_dir():
             raise FileNotFoundError(f"{figures_dir} is missing; the inference saved no figures (save_plots disabled?)")
@@ -91,7 +95,7 @@ class PaperFigurePack:
             for figure in figures:
                 target = self.output_dir / self._stable_name(run_dir, figures_dir, figure)
                 shutil.copy2(figure, target)
-                entries.append({"run": self._run_label(run_dir), "source": str(figure), "target": target.name})
+                entries.append({"run": self._run_label(run_dir), "source": str(figure), "target": target.name, "inference": str(inference_dir), "split": record["split"], "completed_at": record["completed_at"]})
 
         return entries
 
@@ -104,7 +108,7 @@ class PaperFigurePack:
         """
         FileIO.ensure_dirs(self.output_dir)
 
-        resolver = SeedInferenceResolver(self.config.inference_subdir, self.config.metrics_filename)
+        resolver = SeedInferenceResolver(self.config.inference_subdir, self.config.split, self.config.metrics_filename, self.logger)
         manifest = []
 
         for run_dir in self._select_runs():
@@ -115,6 +119,7 @@ class PaperFigurePack:
 
         payload = {
             "output_dir" : str(self.output_dir),
+            "split"      : self.config.split,
             "patterns"   : list(self.config.patterns),
             "note"       : "Figures are copied as rendered by each run's inference, whatever the extension: the paper style writes line and scatter figures as .pdf and keeps raster maps as .png. Re-run inference with figure_style=paper for publication styling before packing.",
             "figures"    : manifest,

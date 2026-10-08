@@ -1,6 +1,6 @@
 """Export of run metrics as publication-ready CSV, LaTeX and markdown tables.
 
-Walks a runs directory for finished inference stamps, collects each run's
+Walks a runs directory for completed inference stamps of one split, collects each run's
 scalar metrics, and renders one row per run: the CSV carries every scalar key
 for downstream analysis, while the LaTeX and markdown tables carry the
 selected columns at a fixed precision for direct inclusion in a paper.
@@ -23,7 +23,7 @@ class ResultTableExporter:
     Attributes:
         entry    : Entry configuration naming the runs root, columns and output.
         logger   : Logger receiving the discovery and output lines.
-        resolver : Resolver picking each run's latest finished inference stamp.
+        resolver : Resolver picking each run's newest completed inference stamp of the split.
     """
 
     def __init__(self, entry, logger: Logger) -> None:
@@ -35,7 +35,7 @@ class ResultTableExporter:
         """
         self.entry    = entry
         self.logger   = logger
-        self.resolver = SeedInferenceResolver(entry.inference_subdir, entry.metrics_filename)
+        self.resolver = SeedInferenceResolver(entry.inference_subdir, entry.split, entry.metrics_filename, logger)
 
     def _discover(self) -> list[tuple[str, Path]]:
         """Returns (run name, inference dir) pairs for every run with finished inference.
@@ -65,10 +65,10 @@ class ResultTableExporter:
             try:
                 rows.append((name, self.resolver.resolve(run_dir)))
             except FileNotFoundError:
-                self.logger.warning(f"Skipping {name}: no finished inference with {self.entry.metrics_filename}")
+                self.logger.warning(f"Skipping {name}: no completed '{self.entry.split}' inference with {self.entry.metrics_filename}")
 
         if not rows:
-            raise FileNotFoundError(f"No run under {root} holds a finished inference with {self.entry.metrics_filename}")
+            raise FileNotFoundError(f"No run under {root} holds a completed '{self.entry.split}' inference with {self.entry.metrics_filename}")
 
         return rows
 

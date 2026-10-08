@@ -2191,7 +2191,8 @@
       "fields": {
         "runs_dir": "Root directory the group directories are resolved against; with group_tags empty it is itself treated as the single seed group to aggregate",
         "group_tags": "Group directory names relative to runs_dir, each the shared training run directory holding one sweep's seed<N> runs; every selected group is compared in isolation and its report generated in sequence, an unmatched name raises FileNotFoundError, and empty treats runs_dir itself as one group",
-        "inference_subdir": "Fixed inference stamp to read from every seed run (run_dir/inference/<subdir>/metrics.json); empty picks each run's latest inference directory that holds a metrics file, and a missing stamp raises FileNotFoundError",
+        "split": "Data split every aggregated inference stamp must record in its completion marker (train, val or test); a seed whose newest completed stamp was scored on another split is refused, so one aggregate never mixes splits",
+        "inference_subdir": "Fixed inference stamp to read from every seed run (run_dir/inference/<subdir>); it must carry a completion marker for the configured split and a metrics file, and empty picks each run's newest completed stamp of that split, skipping stamps without a completion marker with a warning",
         "output_subdir": "Name of the aggregate output directory written under each group's inference/ subdirectory; empty falls back to inference_subdir when set, else a fresh timestamp shared by all groups",
         "metrics_filename": "Filename of the per-run metrics JSON read from each seed's inference directory and of the aggregate mean/std JSON written next to the report",
         "report_filename": "Filename of the generated seed-comparison markdown report, also used to link each seed's own report",
@@ -2640,7 +2641,8 @@
       "fields": {
         "runs_dir": "Root directory scanned recursively for runs holding a finished inference; each run becomes one table row",
         "run_filter": "Substrings a run's relative name must contain to be exported; empty exports every discovered run",
-        "inference_subdir": "Fixed inference stamp to read metrics from; empty picks each run's latest inference holding a metrics file",
+        "split": "Data split the exported inference stamp of every run must have been scored on (train, val or test), read from the stamp's completion marker",
+        "inference_subdir": "Fixed inference stamp to read metrics from; it must carry a completion marker for the configured split, and empty picks each run's newest completed stamp of that split, skipping stamps without a completion marker with a warning",
         "metrics_filename": "Metrics filename read inside the resolved inference stamp",
         "metrics": "Metric keys forming the LaTeX and markdown columns, in order; empty renders every scalar key seen across the runs",
         "sort_by": "Metric key the rows are ordered by; empty keeps discovery order",
@@ -2654,7 +2656,8 @@
       "fields": {
         "runs_dir": "Root directory scanned recursively for runs holding a finished inference report; each selected run contributes figures",
         "run_filter": "Run directory names (or names of parent directories whose nested runs are expanded) to pack; empty selects interactively on a TTY and every discovered run otherwise",
-        "inference_subdir": "Fixed inference stamp to read figures from; empty picks each run's latest inference holding a metrics file",
+        "split": "Data split the packed inference stamp of every run must have been scored on (train, val or test), read from the stamp's completion marker",
+        "inference_subdir": "Fixed inference stamp to read figures from; it must carry a completion marker for the configured split, and empty picks each run's newest completed stamp of that split, skipping stamps without a completion marker with a warning",
         "metrics_filename": "Filename marking a finished inference when resolving the latest stamp",
         "report_filename": "Report filename used as the run-discovery marker",
         "figures_subdir": "Name of the figures directory inside each inference stamp the patterns are matched against",

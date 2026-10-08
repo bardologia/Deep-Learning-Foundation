@@ -1,8 +1,9 @@
 """Aggregation of seed replicas of one training into a mean +/- std report.
 
-Each seed keeps its own finished inference; this module resolves those inference
-directories, reduces their scalar metrics across seeds, and optionally attaches
-per-pixel seed-disagreement maps with risk-coverage and label-suspect analysis.
+Each seed keeps its own completed inference; this module resolves those inference
+stamps for one data split, reduces their scalar metrics across seeds, and
+optionally attaches per-pixel seed-disagreement maps with risk-coverage and
+label-suspect analysis.
 """
 
 from __future__ import annotations
@@ -14,77 +15,119 @@ import numpy as np
 
 from pipelines.backbone.inference.analysis.seed_disagreement import SeedDisagreementMaps
 from pipelines.backbone.inference.report                     import Report
+from pipelines.shared.inference.metadata                     import CompletedInference
 from pipelines.shared.inference.run_classifier               import RunDirectoryWalk
 from tools.data.io                                           import FileIO
 from pipelines.backbone.inference.metrics                    import Metrics
 from tools.metrics.scoring                                   import SeedAggregation
 from tools.monitoring.logger                                 import Logger
 from tools.reporting.markdown                                import MarkdownTable, ScalarFormatter
+from tools.runtime.completion                                import CompletionMarker
 from tools.runtime.run_tag                                   import RunTag
 
 
 class SeedInferenceResolver:
-    """Resolves which finished inference directory of a seed run to aggregate.
+    """Resolves which completed inference stamp of a seed run to aggregate.
+
+    Only stamps carrying a completion marker for the configured split qualify, so a
+    crashed, still running or other-split inference never enters an aggregate.
 
     Attributes:
-        inference_subdir : Explicit inference subdirectory name, empty to take the latest.
-        metrics_filename : Metrics file whose presence marks an inference as finished.
+        inference_subdir : Explicit stamp name, empty to take the newest completed stamp of the split.
+        split            : Data split the chosen stamp must have been scored on.
+        metrics_filename : Metrics file every chosen stamp must hold.
+        logger           : Logger receiving the warnings about unfinished stamps.
+        unfinished       : Stamp names holding metrics but no completion marker, keyed by run directory.
     """
 
-    def __init__(self, inference_subdir: str, metrics_filename: str) -> None:
+    def __init__(self, inference_subdir: str, split: str, metrics_filename: str, logger: Logger) -> None:
         """Stores the inference selection rule.
 
         Args:
-            inference_subdir : Explicit inference subdirectory name, or empty to pick the latest finished inference per run.
-            metrics_filename : Metrics filename marking a finished inference.
+            inference_subdir : Explicit stamp name, or empty to pick each run's newest completed stamp of the split.
+            split            : Data split the stamp must record in its completion marker.
+            metrics_filename : Metrics filename the chosen stamp must hold.
+            logger           : Logger for the warnings about unfinished stamps.
         """
         self.inference_subdir = inference_subdir
+        self.split            = split
         self.metrics_filename = metrics_filename
+        self.logger           = logger
+
+        self.unfinished: dict[Path, list[str]] = {}
+
+    def _require_metrics(self, stamp: Path) -> None:
+        """Raises FileNotFoundError when a completed stamp holds no metrics file."""
+        if not (stamp / self.metrics_filename).is_file():
+            raise FileNotFoundError(f"No {self.metrics_filename} under {stamp}; the completed inference wrote no metrics, re-run it before comparing seeds")
 
     def _explicit(self, inference_root: Path) -> Path:
-        """Returns the named inference subdirectory, requiring it to hold metrics.
+        """Returns the named stamp, requiring its completion marker, split and metrics.
 
         Args:
             inference_root : The run's inference directory.
 
         Returns:
-            The requested inference directory.
+            The requested inference stamp.
 
         Raises:
-            FileNotFoundError : If it holds no metrics file.
+            FileNotFoundError : If the stamp carries no completion marker or no metrics file.
+            ValueError        : If the stamp was scored on another split than the configured one.
         """
         candidate = inference_root / self.inference_subdir
-        if not (candidate / self.metrics_filename).is_file():
-            raise FileNotFoundError(f"No {self.metrics_filename} under {candidate}; the requested inference_subdir does not hold a finished inference for this run")
 
+        if not CompletionMarker.is_complete(candidate):
+            raise FileNotFoundError(f"{candidate} carries no {CompletionMarker.FILENAME}; the requested inference_subdir is unfinished, or predates completion markers and needs scripts/backfill_completion_markers.py")
+
+        if candidate not in CompletedInference.stamps(inference_root, self.split):
+            recorded = CompletionMarker.payload(candidate)["split"]
+            raise ValueError(f"{candidate} was scored on split '{recorded}', not on the configured split '{self.split}'; point inference_subdir at a '{self.split}' stamp or change split")
+
+        self._require_metrics(candidate)
         return candidate
 
+    def _note_unfinished(self, inference_root: Path) -> None:
+        """Warns about stamps that hold metrics without a completion marker and records them.
+
+        Args:
+            inference_root : The run's inference directory.
+        """
+        unfinished = sorted(stamp.name for stamp in inference_root.iterdir() if stamp.is_dir() and (stamp / self.metrics_filename).is_file() and not CompletionMarker.is_complete(stamp))
+        if not unfinished:
+            return
+
+        self.unfinished[inference_root.parent] = unfinished
+        self.logger.warning(f"{inference_root.parent.name}: {len(unfinished)} stamp(s) hold {self.metrics_filename} without a completion marker and were skipped as unfinished: {', '.join(unfinished)}")
+
     def _latest(self, inference_root: Path) -> Path:
-        """Returns the last finished inference directory by name order.
+        """Returns the newest completed stamp of the split, skipping unfinished stamps.
 
         Args:
             inference_root : The run's inference directory.
 
         Returns:
-            The latest inference directory holding a metrics file.
+            The newest stamp carrying a completion marker for the split.
 
         Raises:
-            FileNotFoundError : If the run has no finished inference.
+            FileNotFoundError : If the run has no completed inference on the split.
         """
-        candidates = sorted(d for d in inference_root.iterdir() if d.is_dir() and (d / self.metrics_filename).is_file()) if inference_root.is_dir() else []
-        if not candidates:
-            raise FileNotFoundError(f"No inference with {self.metrics_filename} under {inference_root}; infer this run before comparing its seeds")
+        latest = CompletedInference.latest(inference_root, self.split)
+        if latest is None:
+            raise FileNotFoundError(f"No completed '{self.split}' inference under {inference_root}; infer this run on that split before comparing its seeds")
 
-        return candidates[-1]
+        self._require_metrics(latest)
+        self._note_unfinished(inference_root)
+
+        return latest
 
     def resolve(self, run_dir: Path) -> Path:
-        """Returns the inference directory of one seed run to aggregate.
+        """Returns the inference stamp of one seed run to aggregate.
 
         Args:
             run_dir : Directory of the seed training run.
 
         Returns:
-            The selected inference directory.
+            The selected inference stamp.
         """
         inference_root = Path(run_dir) / "inference"
 
@@ -92,6 +135,19 @@ class SeedInferenceResolver:
             return self._explicit(inference_root)
 
         return self._latest(inference_root)
+
+    @staticmethod
+    def record(inference_dir: Path) -> dict:
+        """Returns the stamp name, split and completion time a resolved stamp recorded.
+
+        Args:
+            inference_dir : A resolved inference stamp carrying a completion marker.
+
+        Returns:
+            Mapping with "stamp", "split" and "completed_at".
+        """
+        payload = CompletionMarker.payload(inference_dir)
+        return {"stamp": Path(inference_dir).name, "split": payload["split"], "completed_at": payload["completed_at"]}
 
 
 class SeedActivityThreshold:
@@ -230,7 +286,7 @@ class SeedComparisonReport:
     Attributes:
         group_dir          : Directory holding the seed runs.
         run_dirs           : Seed run directories in aggregation order.
-        inference_dirs     : Inference directory chosen for each seed run.
+        inference_dirs     : Inference stamp chosen for each seed run.
         activity_threshold : Activity threshold every seed's inference was scored with.
         metrics_filename   : Metrics filename read per seed and written aggregated.
         report_filename    : Filename of each seed's own report and of this report.
@@ -239,6 +295,8 @@ class SeedComparisonReport:
         ensemble           : Seed-ensemble scores, or None when not computed.
         output_dir         : Group-level inference directory receiving the aggregate.
         seeds              : Seed labels, relative to the group directory.
+        records            : Stamp name, split and completion time recorded per seed.
+        split              : Data split every seed's stamp was scored on.
     """
 
     def __init__(self, group_dir: Path, run_dirs: list[Path], inference_dirs: list[Path], activity_threshold: float, output_subdir: str, metrics_filename: str, report_filename: str, logger: Logger, disagreement: dict | None = None, ensemble: dict | None = None) -> None:
@@ -257,7 +315,7 @@ class SeedComparisonReport:
             ensemble           : Scores of the seed-ensemble evaluation, or None.
 
         Raises:
-            ValueError : If fewer than two seed runs are given.
+            ValueError : If fewer than two seed runs are given, or if their stamps were scored on different splits.
         """
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
@@ -274,6 +332,20 @@ class SeedComparisonReport:
 
         self.output_dir = self.group_dir / "inference" / output_subdir
         self.seeds      = [str(d.relative_to(self.group_dir)) for d in self.run_dirs]
+        self.records    = [SeedInferenceResolver.record(inference_dir) for inference_dir in self.inference_dirs]
+        self.split      = self._common_split()
+
+    def _common_split(self) -> str:
+        """Returns the split every seed's stamp recorded.
+
+        Raises:
+            ValueError : If the seeds resolved to stamps of different splits.
+        """
+        splits = {seed: record["split"] for seed, record in zip(self.seeds, self.records)}
+        if len(set(splits.values())) != 1:
+            raise ValueError(f"The seeds resolved to inferences of different splits {splits}; aggregate one split at a time")
+
+        return next(iter(splits.values()))
 
     def _load_metrics(self) -> list[dict]:
         """Returns each seed's metrics dictionary, in seed order."""
@@ -301,9 +373,10 @@ class SeedComparisonReport:
         """
         payload = {
             "n_seeds"            : len(self.run_dirs),
+            "split"              : self.split,
             "activity_threshold" : self.activity_threshold,
             "seed_runs"          : {seed: str(run_dir) for seed, run_dir in zip(self.seeds, self.run_dirs)},
-            "seed_inference"     : {seed: inference_dir.name for seed, inference_dir in zip(self.seeds, self.inference_dirs)},
+            "seed_inference"     : {seed: record for seed, record in zip(self.seeds, self.records)},
             "mean"               : means,
             "std"                : stds,
             "ci95"               : {key: list(interval) for key, interval in cis.items()},
@@ -337,10 +410,10 @@ class SeedComparisonReport:
         """Returns the markdown lines listing each seed run and linking its own report."""
         out = ["\n## 1. Seed runs\n"]
 
-        table = MarkdownTable(("Seed", "Run directory", "Inference", "Report"))
-        for seed, run_dir, inference_dir in zip(self.seeds, self.run_dirs, self.inference_dirs):
+        table = MarkdownTable(("Seed", "Run directory", "Inference", "Split", "Completed", "Report"))
+        for seed, run_dir, inference_dir, record in zip(self.seeds, self.run_dirs, self.inference_dirs, self.records):
             report_path = inference_dir / self.report_filename
-            table.add_row(f"`{seed}`", str(run_dir), f"`{inference_dir.name}`", f"[{self.report_filename}]({os.path.relpath(report_path, self.output_dir)})")
+            table.add_row(f"`{seed}`", str(run_dir), f"`{record['stamp']}`", record["split"], record["completed_at"], f"[{self.report_filename}]({os.path.relpath(report_path, self.output_dir)})")
 
         out.append("\n".join(table.render()))
         out.append("")
@@ -471,7 +544,7 @@ class SeedComparisonReport:
         lines = ["# ML Template Seed-Comparison Report", ""]
         lines.append(f"_Generated on {RunTag.timestamp()}_")
         lines.append("")
-        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's existing inference (no inference re-run), all scored at activity threshold {self._fmt(self.activity_threshold)}. Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std with a 95% confidence interval.")
+        lines.append(f"Aggregate over {len(self.seeds)} seed replicas of one training, built from each run's completed '{self.split}' inference (no inference re-run), all scored at activity threshold {self._fmt(self.activity_threshold)}. Each seed keeps its own full report (linked below); this report reduces their metrics to mean ± std with a 95% confidence interval.")
 
         lines += self._build_seed_runs_section()
         lines += self._build_metrics_section(per_seed, means, stds, cis, counts)
@@ -550,6 +623,28 @@ class SeedComparison:
         """Returns the group-level output directory name, defaulting to a fresh timestamp."""
         return self.config.output_subdir or self.config.inference_subdir or RunTag.now()
 
+    def _resolve_seeds(self, group_dir: Path, run_dirs: list[Path], resolver: SeedInferenceResolver) -> list[Path]:
+        """Resolves each seed's inference stamp and logs the chosen stamp, split and completion time per seed.
+
+        Args:
+            group_dir : Directory holding the seed runs, the seed labels are relative to it.
+            run_dirs  : Seed run directories in aggregation order.
+            resolver  : Resolver picking each seed's inference stamp.
+
+        Returns:
+            The resolved inference stamps, aligned with run_dirs.
+        """
+        inference_dirs = [resolver.resolve(run_dir) for run_dir in run_dirs]
+
+        rows = []
+        for run_dir, inference_dir in zip(run_dirs, inference_dirs):
+            record = SeedInferenceResolver.record(inference_dir)
+            rows.append({"Seed": str(run_dir.relative_to(group_dir)), "Inference": record["stamp"], "Split": record["split"], "Completed": record["completed_at"]})
+
+        self.logger.metrics_table(rows, columns=["Seed", "Inference", "Split", "Completed"], title="Seed inferences")
+
+        return inference_dirs
+
     def _compare_group(self, group_dir: Path, resolver: SeedInferenceResolver, output_subdir: str) -> Path:
         """Aggregates one group of seed runs, optionally with disagreement maps.
 
@@ -569,7 +664,7 @@ class SeedComparison:
         if len(run_dirs) < 2:
             raise ValueError(f"A seed comparison needs at least two seed runs inside {group_dir}, got {len(run_dirs)}: {[str(d) for d in run_dirs]}")
 
-        inference_dirs = [resolver.resolve(run_dir) for run_dir in run_dirs]
+        inference_dirs = self._resolve_seeds(group_dir, run_dirs, resolver)
         seeds          = [str(run_dir.relative_to(group_dir)) for run_dir in run_dirs]
         threshold      = SeedActivityThreshold(self.config.metrics_filename).resolve(seeds, inference_dirs)
 
@@ -615,19 +710,27 @@ class SeedComparison:
 
         group_dirs    = self._group_dirs()
         output_subdir = self._output_subdir()
-        resolver      = SeedInferenceResolver(self.config.inference_subdir, self.config.metrics_filename)
+        resolver      = SeedInferenceResolver(self.config.inference_subdir, self.config.split, self.config.metrics_filename, self.logger)
 
         self.logger.kv_table({
             "Runs dir"     : str(self.runs_dir),
             "Groups"       : len(group_dirs),
-            "Inference"    : self.config.inference_subdir or "latest per run",
+            "Split"        : self.config.split,
+            "Inference"    : self.config.inference_subdir or f"newest completed '{self.config.split}' stamp per run",
+            "Metrics file" : self.config.metrics_filename,
             "Output"       : output_subdir,
-            "Disagreement" : "maps + figures" if self.config.compute_disagreement else "disabled",
+            "Disagreement" : f"maps + figures from {self.config.cubes_subdir}/" if self.config.compute_disagreement else "disabled",
         }, title="Configuration")
 
         reports = []
         for group_dir in group_dirs:
             self.logger.subsection(f"Group: {group_dir}")
             reports.append(self._compare_group(group_dir, resolver, output_subdir))
+
+        if resolver.unfinished:
+            skipped = sum(len(names) for names in resolver.unfinished.values())
+            self.logger.warning(f"{skipped} unfinished inference stamp(s) skipped across {len(resolver.unfinished)} seed run(s)")
+
+        self.logger.ok(f"{len(reports)} seed group(s) compared on split '{self.config.split}'")
 
         return reports

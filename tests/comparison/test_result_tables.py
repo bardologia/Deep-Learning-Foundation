@@ -9,14 +9,18 @@ import pytest
 
 from configuration.diagnostics          import ResultTableEntryConfig
 from pipelines.comparison.result_tables import ResultTableExporter
-from tests.conftest                     import SilentLogger
+from tools.runtime.completion           import CompletionMarker
+from tests.conftest                     import RecordingLogger, SilentLogger
 
 
-def _run(root: Path, name: str, stamp: str, metrics: dict) -> Path:
-    """Creates one fake run with an inference stamp holding a metrics file."""
+def _run(root: Path, name: str, stamp: str, metrics: dict, split: str | None = "test") -> Path:
+    """Creates one fake run with an inference stamp holding a metrics file, completed on the split unless it is None."""
     stamp_dir = root / name / "inference" / stamp
     stamp_dir.mkdir(parents=True)
     (stamp_dir / "metrics.json").write_text(json.dumps(metrics))
+
+    if split is not None:
+        CompletionMarker.stamp(stamp_dir, {"stage": "inference", "split": split})
 
     return root / name
 
@@ -95,3 +99,19 @@ def test_exporter_raises_without_finished_inference(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         ResultTableExporter(_entry(root), SilentLogger()).run()
+
+
+def test_exporter_reads_only_completed_stamps_of_the_split(tmp_path):
+    """A newer unfinished or other-split stamp is skipped and the completed stamp of the split is exported."""
+    root = tmp_path / "runs"
+    _run(root, "run_a", "s1", {"curve_mse_gt": 1.0})
+    _run(root, "run_a", "s2", {"curve_mse_gt": 5.0}, split="val")
+    _run(root, "run_a", "s3", {"curve_mse_gt": 9.0}, split=None)
+
+    logger = RecordingLogger()
+    paths  = ResultTableExporter(_entry(root), logger).run()
+
+    csv = paths["csv"].read_text()
+
+    assert "run_a,1.0" in csv
+    assert any(level == "warning" and "s3" in message for level, message in logger.messages)

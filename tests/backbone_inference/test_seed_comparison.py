@@ -11,12 +11,37 @@ import numpy as np
 import pytest
 
 from pipelines.backbone.inference.analysis.seed_comparison import SeedActivityThreshold, SeedComparison, SeedComparisonReport, SeedEnsembleEvaluation, SeedInferenceResolver
+from tools.runtime.completion                              import CompletionMarker
 
 from tests.conftest import RecordingLogger, SilentLogger
 
 
+def _stamp(run_dir: Path, stamp: str, metrics: dict, split: str | None = "test") -> Path:
+    """Writes one inference stamp with metrics and a report under a run, completed unless split is None.
+
+    Args:
+        run_dir : Run directory receiving the inference/<stamp> subtree.
+        stamp   : Name of the inference output subdirectory.
+        metrics : Metric payload written to the inference metrics file.
+        split   : Split recorded in the completion marker, or None to leave the stamp unfinished.
+
+    Returns:
+        Path of the created stamp directory.
+    """
+    out_dir = run_dir / "inference" / stamp
+    out_dir.mkdir(parents=True)
+
+    (out_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
+
+    if split is not None:
+        CompletionMarker.stamp(out_dir, {"stage": "inference", "split": split})
+
+    return out_dir
+
+
 def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp", activity_threshold: float | None = 1e-3) -> Path:
-    """Writes a seed run directory holding one inference stamp with metrics and a report.
+    """Writes a seed run directory holding one completed test-split inference stamp.
 
     Args:
         group              : Directory holding the seed runs.
@@ -29,16 +54,13 @@ def _seed_run(group: Path, seed_name: str, metrics: dict, stamp: str = "stamp", 
         Path of the created run directory.
     """
     run_dir = group / seed_name
-    out_dir = run_dir / "inference" / stamp
-    out_dir.mkdir(parents=True)
+    (run_dir / "meta").mkdir(parents=True)
 
     recorded = dict(metrics)
     if activity_threshold is not None:
         recorded["activity_threshold"] = activity_threshold
 
-    (run_dir / "meta").mkdir(exist_ok=True)
-    (out_dir / "metrics.json").write_text(json.dumps(recorded), encoding="utf-8")
-    (out_dir / "report.md").write_text("# per-seed report", encoding="utf-8")
+    _stamp(run_dir, stamp, recorded)
 
     return run_dir
 
@@ -57,37 +79,55 @@ def _report(group: Path, runs: list[Path], stamp: str = "stamp") -> SeedComparis
     )
 
 
+def _resolver(inference_subdir: str = "", split: str = "test", logger=None) -> SeedInferenceResolver:
+    """Returns a resolver over metrics.json stamps with the given explicit stamp, split and logger."""
+    return SeedInferenceResolver(inference_subdir, split, "metrics.json", logger if logger is not None else SilentLogger())
+
+
 def test_resolver_picks_the_explicit_inference_subdir(tmp_path):
-    """An explicit inference subdirectory is resolved directly."""
+    """An explicit, completed inference subdirectory of the split is resolved directly."""
     run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
 
-    resolved = SeedInferenceResolver("20240101_000000", "metrics.json").resolve(run)
+    resolved = _resolver("20240101_000000").resolve(run)
 
     assert resolved == run / "inference" / "20240101_000000"
 
 
-def test_resolver_raises_when_the_explicit_subdir_has_no_metrics(tmp_path):
-    """An explicit subdirectory without metrics is rejected."""
+def test_resolver_rejects_an_explicit_subdir_without_a_completion_marker(tmp_path):
+    """An explicit subdirectory holding metrics but no completion marker is refused as unfinished."""
     run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
+    _stamp(run, "20240202_000000", {"m": 2.0}, split=None)
+
+    with pytest.raises(FileNotFoundError, match="completion marker"):
+        _resolver("20240202_000000").resolve(run)
 
     with pytest.raises(FileNotFoundError):
-        SeedInferenceResolver("20240202_000000", "metrics.json").resolve(run)
+        _resolver("20240303_000000").resolve(run)
 
 
-def test_resolver_picks_the_latest_inference_with_metrics(tmp_path):
-    """With no explicit subdirectory the latest stamp carrying metrics wins."""
+def test_resolver_rejects_an_explicit_subdir_of_another_split(tmp_path):
+    """An explicit subdirectory completed on another split is refused, naming both splits."""
     run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
+    _stamp(run, "20240202_000000", {"m": 2.0}, split="val")
 
-    later = run / "inference" / "20240301_000000"
-    later.mkdir()
-    (later / "metrics.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="scored on split 'val', not on the configured split 'test'"):
+        _resolver("20240202_000000").resolve(run)
 
-    empty = run / "inference" / "20240401_000000"
-    empty.mkdir()
 
-    resolved = SeedInferenceResolver("", "metrics.json").resolve(run)
+def test_resolver_picks_the_newest_completed_stamp_of_the_split(tmp_path):
+    """Without an explicit subdirectory the newest stamp completed on the split wins, skipping newer unfinished and other-split stamps."""
+    run    = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
+    chosen = _stamp(run, "20240301_000000", {"m": 2.0})
+    _stamp(run, "20240401_000000", {"m": 3.0}, split=None)
+    _stamp(run, "20240501_000000", {"m": 4.0}, split="val")
 
-    assert resolved == later
+    logger   = RecordingLogger()
+    resolver = _resolver(logger=logger)
+    resolved = resolver.resolve(run)
+
+    assert resolved == chosen
+    assert resolver.unfinished == {run: ["20240401_000000"]}
+    assert any(level == "warning" and "20240401_000000" in message and "unfinished" in message for level, message in logger.messages)
 
 
 def test_resolver_raises_when_a_run_has_no_inference(tmp_path):
@@ -96,7 +136,28 @@ def test_resolver_raises_when_a_run_has_no_inference(tmp_path):
     run.mkdir(parents=True)
 
     with pytest.raises(FileNotFoundError):
-        SeedInferenceResolver("", "metrics.json").resolve(run)
+        _resolver().resolve(run)
+
+
+def test_resolver_raises_when_only_unfinished_or_other_split_stamps_exist(tmp_path):
+    """Metrics without a completion marker, or completed on another split, never qualify."""
+    run = tmp_path / "group" / "seed0"
+    (run / "meta").mkdir(parents=True)
+    _stamp(run, "20240101_000000", {"m": 1.0}, split=None)
+    _stamp(run, "20240201_000000", {"m": 1.0}, split="val")
+
+    with pytest.raises(FileNotFoundError, match="No completed 'test' inference"):
+        _resolver().resolve(run)
+
+
+def test_resolver_record_reads_the_completion_marker(tmp_path):
+    """The record of a resolved stamp carries its name, split and completion time."""
+    run    = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
+    record = SeedInferenceResolver.record(run / "inference" / "20240101_000000")
+
+    assert record["stamp"] == "20240101_000000"
+    assert record["split"] == "test"
+    assert record["completed_at"]
 
 
 def test_report_requires_at_least_two_runs(tmp_path):
@@ -121,9 +182,12 @@ def test_report_aggregates_mean_and_sample_std(tmp_path):
     payload = json.loads((group / "inference" / "stamp" / "metrics.json").read_text(encoding="utf-8"))
 
     assert payload["n_seeds"]               == 2
+    assert payload["split"]                 == "test"
     assert payload["activity_threshold"]    == 1e-3
     assert list(payload["seed_runs"])       == ["seed0", "seed1"]
-    assert payload["seed_inference"]        == {"seed0": "stamp", "seed1": "stamp"}
+    assert payload["seed_inference"]["seed0"]["stamp"] == "stamp"
+    assert payload["seed_inference"]["seed1"]["split"] == "test"
+    assert payload["seed_inference"]["seed1"]["completed_at"]
     assert payload["mean"]["curve_mse_gt"]  == pytest.approx(2.0)
     assert payload["std"]["curve_mse_gt"]   == pytest.approx(math.sqrt(2.0))
     assert payload["mean"]["overall_r2_gt"] == pytest.approx(0.6)
@@ -149,6 +213,20 @@ def test_report_records_confidence_intervals_and_counts(tmp_path):
     assert high - low == pytest.approx(2.0 * 12.7062, rel=1e-3)
 
 
+def test_report_refuses_seeds_scored_on_different_splits(tmp_path):
+    """Seeds whose stamps were completed on different splits are never aggregated together."""
+    group = tmp_path / "group"
+    runs  = [_seed_run(group, "seed0", {"curve_mse_gt": 1.0})]
+
+    other = group / "seed1"
+    (other / "meta").mkdir(parents=True)
+    _stamp(other, "stamp", {"curve_mse_gt": 3.0}, split="val")
+    runs.append(other)
+
+    with pytest.raises(ValueError, match="different splits"):
+        _report(group, runs)
+
+
 def test_report_markdown_has_per_seed_columns_stamps_and_links(tmp_path):
     """The markdown table lists per-seed columns, the inference stamp and relative links to per-seed reports."""
     group = tmp_path / "group"
@@ -165,6 +243,7 @@ def test_report_markdown_has_per_seed_columns_stamps_and_links(tmp_path):
     assert "seed0" in text and "seed1" in text
     assert "±" in text
     assert "`stamp`" in text
+    assert "| Split" in text and "| test " in text
     assert "../../seed0/inference/stamp/report.md" in text
     assert "`curve_mse_gt`" in text
 
@@ -191,6 +270,7 @@ def _config(runs_dir: Path, group_tags: list[str], inference_subdir: str = "", o
     return SimpleNamespace(
         runs_dir             = str(runs_dir),
         group_tags           = group_tags,
+        split                = "test",
         inference_subdir     = inference_subdir,
         output_subdir        = output_subdir,
         metrics_filename     = "metrics.json",
@@ -379,4 +459,21 @@ def test_comparison_logs_through_the_given_logger(tmp_path):
     SeedComparison(_config(group, [], output_subdir="agg"), logger).run()
 
     assert ("section", "Seed comparison") in logger.messages
+    assert ("metrics_table", "Seed inferences") in logger.messages
     assert any(level == "subsection" and message.startswith("Group: ") for level, message in logger.messages)
+
+
+def test_comparison_counts_the_unfinished_stamps_it_skipped(tmp_path):
+    """Unfinished stamps are skipped per seed and summed up in a closing warning."""
+    group = tmp_path / "runs" / "group"
+    runs  = [_seed_run(group, "seed0", {"curve_mse_gt": 1.0}), _seed_run(group, "seed1", {"curve_mse_gt": 3.0})]
+    _stamp(runs[0], "zz_crashed", {"curve_mse_gt": 9.0}, split=None)
+
+    logger = RecordingLogger()
+    SeedComparison(_config(group, [], output_subdir="agg"), logger).run()
+
+    payload  = json.loads((group / "inference" / "agg" / "metrics.json").read_text(encoding="utf-8"))
+    warnings = [message for level, message in logger.messages if level == "warning"]
+
+    assert payload["seed_inference"]["seed0"]["stamp"] == "stamp"
+    assert any("1 unfinished inference stamp(s) skipped across 1 seed run(s)" == message for message in warnings)
