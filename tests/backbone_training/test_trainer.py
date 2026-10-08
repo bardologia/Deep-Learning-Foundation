@@ -3,11 +3,14 @@
 Covers component wiring and named parameter groups, a single optimisation step, one- and
 multi-epoch fits, TensorBoard throughput and diagnostic scalars, non-finite handling in
 training and evaluation with the term and data verdict in its messages, checkpoint save
-and restore, early-stopping and scheduler resets, and the curriculum swap with its
-learning-rate and diagnostic-threshold effects.
+and restore, resume from ``last.pt`` (an early-stopped state included), early-stopping
+and scheduler resets, and the curriculum swap with its learning-rate and
+diagnostic-threshold effects.
 """
 
 from __future__ import annotations
+
+import json
 
 import pytest
 import torch
@@ -53,12 +56,25 @@ def _loader(in_channels: int = 2, n_gaussians: int = 2, n: int = 6, hw: int = 16
     return DataLoader(TensorDataset(imgs, tgt), batch_size=2)
 
 
-def _build_trainer(tmp_path, epochs: int = 1, n_gaussians: int = 2) -> Trainer:
-    """Returns a Trainer over a tiny backbone with an identity output normalizer."""
+def _build_trainer(tmp_path, epochs: int = 1, n_gaussians: int = 2, resume: bool = False, level: str = "ERROR") -> Trainer:
+    """Returns a Trainer over a tiny backbone with an identity output normalizer.
+
+    Args:
+        tmp_path    : Run directory receiving checkpoints and logs/trainer.log.
+        epochs      : Number of training epochs.
+        n_gaussians : Number of Gaussian slots of the model and the targets.
+        resume      : Whether the trainer resumes from the run directory's last.pt.
+        level       : Level of the file logger, ERROR by default to keep it quiet.
+
+    Returns:
+        Trainer with its warmup resolved over 200 steps.
+    """
     model, model_cfg = tiny_model(in_channels=2, n_gaussians=n_gaussians)
     config           = tiny_trainer_config(n_gaussians=n_gaussians, epochs=epochs)
-    logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level="ERROR")
+    logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer", level=level)
     norm_stats       = identity_normalizer(n_gaussians * 3)
+
+    config.training.resume = resume
 
     trainer = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=norm_stats, emit_docs=False)
     trainer.warmup.resolve(200)
@@ -146,8 +162,6 @@ def test_trainer_builds_the_configured_optimizer_family(tmp_path):
 
 def test_swa_writes_averaged_checkpoint_and_marker(tmp_path):
     """With SWA on from epoch one, training writes swa_model.pt and records its val loss in the marker."""
-    import json
-
     trainer = _build_trainer(tmp_path, epochs=2)
 
     trainer.config.training.use_swa = True
@@ -440,6 +454,31 @@ def test_best_checkpoint_epoch_matches_trainer_state_convention(tmp_path):
     assert best["epoch"] == best["best_epoch"]
     assert best["epoch"] in (0, 1)
     assert last["epoch"] == 1
+
+
+def test_resume_of_an_early_stopped_state_trains_no_further_epoch(tmp_path):
+    """Verifies a state saved after early stopping fired is resumed straight into the final phase, with a warning, instead of training on."""
+    loader = _loader()
+    _build_trainer(tmp_path, epochs=1).train(loader, loader, loader)
+
+    state_path = tmp_path / "last.pt"
+    state      = torch.load(state_path, map_location="cpu", weights_only=False)
+
+    state["early_stopping"]["triggered"] = True
+    torch.save(state, state_path)
+
+    trainer = _build_trainer(tmp_path, epochs=3, resume=True, level="INFO")
+    trainer.train(loader, loader, loader)
+    trainer.logger.close()
+
+    marker = json.loads((tmp_path / "complete.json").read_text())
+    log    = (tmp_path / "logs" / "trainer.log").read_text()
+
+    assert len(trainer.train_losses) == 1
+    assert marker["early_stopped"]    is True
+    assert marker["epochs_completed"] == 1
+    assert "the restored state had already early-stopped at epoch 1" in log
+    assert "triggered=True" in log
 
 
 def test_restore_best_loads_best_parameters(tmp_path):
