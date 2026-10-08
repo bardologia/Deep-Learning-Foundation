@@ -7,6 +7,7 @@ shifts that probe positional dependence of the dense per-pixel prediction.
 
 from __future__ import annotations
 
+import functools
 import math
 from pathlib import Path
 
@@ -28,22 +29,40 @@ class RobustnessCore:
     Attributes:
         model    : Backbone model wrapper called on perturbed inputs.
         renderer : Renderer turning predicted Gaussian parameters into profiles.
+        on_sweep : Zero-argument callable invoked after every sweep over the batches, driving the progress bar.
         rng      : Seeded generator for noise draws and track-dropout subsets.
     """
 
     TOLERANCE_FACTOR = 2.0
 
-    def __init__(self, model, renderer: PredictionCurves, seed: int = 0) -> None:
+    def __init__(self, model, renderer: PredictionCurves, on_sweep, seed: int = 0) -> None:
         """Binds the model and renderer and seeds the perturbation generator.
 
         Args:
             model    : Backbone model wrapper mapping an input batch to parameters.
             renderer : Renderer producing z profiles from parameters.
+            on_sweep : Zero-argument callable invoked after every sweep over the batches.
             seed     : Seed for the noise and dropout random generator.
         """
         self.model    = model
         self.renderer = renderer
+        self.on_sweep = on_sweep
         self.rng      = np.random.default_rng(seed)
+
+    @staticmethod
+    def noise_sweeps(sigmas: list[float], draws: int) -> int:
+        """Returns the number of sweeps one noise curve runs: one clean anchor plus every draw of every nonzero sigma."""
+        return sum(1 if sigma == 0.0 else draws for sigma in {float(sigma) for sigma in sigmas})
+
+    @staticmethod
+    def gain_sweeps(factors: list[float]) -> int:
+        """Returns the number of sweeps the gain curve runs, the unit factor included."""
+        return len(set(list(factors) + [1.0]))
+
+    @staticmethod
+    def drop_sweeps(n_secondaries: int, draws: int) -> int:
+        """Returns the number of sweeps the dropout curve runs: the intact stack plus the capped draws per dropped count."""
+        return 1 + sum(min(draws, math.comb(n_secondaries, n_dropped)) for n_dropped in range(1, n_secondaries + 1))
 
     def _mse(self, batches: list[tuple[torch.Tensor, np.ndarray]], transform) -> float:
         """Returns the mean curve MSE against ground truth after applying a perturbation.
@@ -61,6 +80,8 @@ class RobustnessCore:
             with torch.no_grad():
                 curves = self.renderer.render(self.model(perturbed))
             total += float(((curves - gt_curves) ** 2).mean())
+
+        self.on_sweep()
 
         return total / len(batches)
 
@@ -195,6 +216,7 @@ class RobustnessCore:
                 total   += float(((expected[..., s:, :] - shifted[..., s:, :]) ** 2).mean())
 
             rows.append({"shift": s, "mse": total / len(batches)})
+            self.on_sweep()
 
         return rows
 
@@ -488,17 +510,37 @@ class RobustnessRun(AnalysisRun):
         """
         renderer = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
         batches  = self._batches(run, renderer)
-        core     = RobustnessCore(run.model, renderer, seed=self.config.seed)
 
-        sigmas = list(self.config.noise_sigmas)
-        noise  = {scope: core.noise_curve(batches, sigmas, channels=channels, draws=self.config.noise_draws) for scope, channels in self._noise_scopes(run).items()}
+        sigmas        = list(self.config.noise_sigmas)
+        scopes        = self._noise_scopes(run)
+        shifts        = [int(s) for s in self.config.shift_pixels]
+        per_secondary = TrackChannels.build(run) if run.dataset.input_config.use_secondaries or run.dataset.input_config.use_derived else None
 
-        input_config = run.dataset.input_config
-        has_tracks   = input_config.use_secondaries or input_config.use_derived
+        planned = {
+            "noise"   : len(scopes) * RobustnessCore.noise_sweeps(sigmas, self.config.noise_draws),
+            "gain"    : RobustnessCore.gain_sweeps(list(self.config.gain_factors)),
+            "dropout" : RobustnessCore.drop_sweeps(len(per_secondary), self.config.draws_per_count) if per_secondary is not None else 0,
+            "shift"   : len(shifts),
+        }
+        self.logger.info(f"{self.run_dir.name}: {sum(planned.values())} sweeps over {len(batches)} batches planned (" + ", ".join(f"{stress} {count}" for stress, count in planned.items()) + ")")
 
-        gain  = core.gain_curve(batches, list(self.config.gain_factors))
-        drop  = core.drop_curve(batches, TrackChannels.build(run), self.config.draws_per_count) if has_tracks else None
-        shift = core.shift_consistency(batches, [int(s) for s in self.config.shift_pixels])
+        with self.logger.track() as progress:
+            task = progress.add_task("[section]Robustness sweeps[/section]", total=sum(planned.values()))
+            core = RobustnessCore(run.model, renderer, functools.partial(progress.advance, task), seed=self.config.seed)
+
+            with self.logger.timer(f"Robustness: noise ({planned['noise']} sweeps)"):
+                noise = {scope: core.noise_curve(batches, sigmas, channels=channels, draws=self.config.noise_draws) for scope, channels in scopes.items()}
+
+            with self.logger.timer(f"Robustness: gain ({planned['gain']} sweeps)"):
+                gain = core.gain_curve(batches, list(self.config.gain_factors))
+
+            drop = None
+            if per_secondary is not None:
+                with self.logger.timer(f"Robustness: dropout ({planned['dropout']} sweeps)"):
+                    drop = core.drop_curve(batches, per_secondary, self.config.draws_per_count)
+
+            with self.logger.timer(f"Robustness: shift ({planned['shift']} sweeps)"):
+                shift = core.shift_consistency(batches, shifts)
 
         clean     = noise["all channels"][0]["mse"]
         tolerance = RobustnessCore.tolerance_sigma(noise["all channels"])
