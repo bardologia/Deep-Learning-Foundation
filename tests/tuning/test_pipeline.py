@@ -1,8 +1,10 @@
 """Tests for the tuning scheduler that fans studies out over GPUs.
 
-Covers trial distribution, study naming and storage layout, stale trial
-handling, result summaries, best-config persistence and the guards on
-training type, GPU pool and resumed configurations.
+Covers trial distribution, study naming and storage layout, the search
+groups and stop rules a study is decoded and counted under, stale and running
+trial handling, the status derived from a study and the records kept across
+launches, the worker tally and logs, best-config persistence and the guards
+on training type, GPU pool, skip list, stage and resumed configurations.
 """
 
 from __future__ import annotations
