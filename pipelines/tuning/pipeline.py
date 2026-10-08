@@ -412,6 +412,11 @@ class TuningScheduler:
     def schedule(self, target_model: str | None = None, resume: bool = False) -> None:
         """Validates the request, then tunes every selected model in turn.
 
+        The log is closed as a context manager, so an error escaping a model's
+        study ends tune_scheduler.log with the exception, its traceback and an
+        ABORTED banner, and it adopts Optuna's logger, so the warnings Optuna
+        raises while the studies are opened and reported land in the log file.
+
         The stage decides how much of a run happens here: 'prepare' only opens
         the studies, so trial workers launched separately have something to
         attach to, 'compare' only writes the reports of studies the workers
@@ -455,36 +460,34 @@ class TuningScheduler:
 
         self.logger = Logger(log_dir=str(self.run_dir), name="tune_scheduler")
 
-        try:
+        with self.logger:
+            self.logger.adopt("optuna")
+
             models_to_run = self.selected_models(target_model)
-        except SystemExit:
-            self.logger.close()
-            raise
 
-        self.logger.section("Hyperparameter Tuning")
-        self.logger.kv_table({
-            "Run tag"          : self.tag,
-            "Stage"            : self.config.stage,
-            "Mode"             : "resume" if resume else "new",
-            "Models"           : len(models_to_run),
-            "GPUs"             : self.config.gpus,
-            "Trial target"     : tune_cfg.n_trials,
-            "Search groups"    : SearchSpace.describe(tune_cfg),
-            "Plateau patience" : tune_cfg.plateau_patience or "off",
-            "Time budget"      : f"{tune_cfg.time_budget_h} h" if tune_cfg.time_budget_h else "none",
-            "Storage"          : self.storage_url,
-            "Log dir"          : str(self.run_dir),
-        }, title="Configuration")
+            self.logger.section("Hyperparameter Tuning")
+            self.logger.kv_table({
+                "Run tag"          : self.tag,
+                "Stage"            : self.config.stage,
+                "Mode"             : "resume" if resume else "new",
+                "Models"           : len(models_to_run),
+                "GPUs"             : self.config.gpus,
+                "Trial target"     : tune_cfg.n_trials,
+                "Search groups"    : SearchSpace.describe(tune_cfg),
+                "Plateau patience" : tune_cfg.plateau_patience or "off",
+                "Time budget"      : f"{tune_cfg.time_budget_h} h" if tune_cfg.time_budget_h else "none",
+                "Storage"          : self.storage_url,
+                "Log dir"          : str(self.run_dir),
+            }, title="Configuration")
 
-        if self.resumed is not None:
-            self.resumed.log(self.logger)
+            if self.resumed is not None:
+                self.resumed.log(self.logger)
 
-        for model_name in models_to_run:
-            self._tune_model(model_name, tune_cfg)
+            for model_name in models_to_run:
+                self._tune_model(model_name, tune_cfg)
 
-        self.logger.section("Summary")
-        self.logger.kv_table({
-            "Models tuned" : len(self.results),
-            "Results saved": str(self.summary_path),
-        }, title="Done")
-        self.logger.close()
+            self.logger.section("Summary")
+            self.logger.kv_table({
+                "Models tuned" : len(self.results),
+                "Results saved": str(self.summary_path),
+            }, title="Done")

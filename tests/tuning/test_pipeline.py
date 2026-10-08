@@ -283,6 +283,52 @@ def test_record_summarizes_counts(tmp_path):
     assert record["best_config"]      == "/tmp/best.json"
 
 
+def test_a_scheduler_crash_closes_its_log_with_the_exception(tmp_path, monkeypatch):
+    """An error escaping a model's report ends tune_scheduler.log with the exception, its traceback and an ABORTED banner instead of END."""
+    from configuration.tuning import TuningEntryConfig
+
+    cfg                    = TuningEntryConfig()
+    cfg.paths.log_base_dir = tmp_path
+    cfg.gpus               = [0]
+    orch                   = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
+
+    def diverged(model_name, tune_cfg):
+        """Raises the decode error a study and code that diverged produce."""
+        raise KeyError("study parameter 'features__idx' has no indexed_categorical entry")
+
+    monkeypatch.setattr(orch, "_tune_model", diverged)
+
+    with pytest.raises(KeyError, match="features__idx"):
+        orch.schedule(target_model="unet")
+
+    text = (orch.run_dir / "tune_scheduler.log").read_text()
+    assert ">>> ABORTED tune_scheduler" in text
+    assert ">>> END tune_scheduler" not in text
+    assert "Traceback (most recent call last)" in text
+
+
+def test_scheduler_log_keeps_optunas_warnings(tmp_path, monkeypatch):
+    """A warning Optuna raises while a model is tuned lands in tune_scheduler.log, and the handler is released at the end."""
+    from configuration.tuning import TuningEntryConfig
+
+    cfg                    = TuningEntryConfig()
+    cfg.paths.log_base_dir = tmp_path
+    cfg.gpus               = [0]
+    orch                   = TuningScheduler("testtag", cfg, entry_script=tmp_path / "entry.py")
+
+    def warn(model_name, tune_cfg):
+        """Emits an Optuna storage warning as opening a study may."""
+        logging.getLogger("optuna.storages._rdb").warning("Heartbeat of trial 3 is older than the grace period")
+
+    monkeypatch.setattr(orch, "_tune_model", warn)
+
+    orch.schedule(target_model="unet")
+
+    text = (orch.run_dir / "tune_scheduler.log").read_text()
+    assert "[WARNING] Heartbeat of trial 3 is older than the grace period" in text
+    assert not any(isinstance(handler, logging.FileHandler) for handler in logging.getLogger("optuna").handlers)
+
+
 @pytest.mark.slow
 def test_tune_model_extracts_synthetic_optimum_and_persists(tmp_path, monkeypatch):
     """Verifies that tuning recovers a synthetic optimum and persists best config and summary."""
