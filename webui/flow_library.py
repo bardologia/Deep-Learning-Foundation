@@ -537,7 +537,7 @@ class FlowLibrary:
             },
             {
                 "id": "paramterms", "title": "Parameter-space terms", "phase": "Parameter loss",
-                "note": "The default hungarian matching first orders GT slots by mu among active components (amplitudes at or below amp_zero_thr = 1e-4 pushed to the end), then permutes each pixel's predicted slots onto the GT slots by the optimal assignment, found by enumerating all K! permutations of the active-weighted L1 cost; the loss is therefore invariant to the predicted slot order. Under the opt-in sorted_gt mode the GT sort still happens but predictions keep their slot order, so each slot learns a fixed height rank. Inactive slots mask their mu and sigma to zero so empty slots contribute amplitude only. Param-L1 (the default supervised term) is active-normalised in normalised space; TV is an optional roughness penalty.",
+                "note": "The default hungarian matching first orders GT slots by mu among active components (amplitudes at or below the label run's activity threshold pushed to the end), then permutes each pixel's predicted slots onto the GT slots by the optimal assignment, found by enumerating all K! permutations of the active-weighted L1 cost; the loss is therefore invariant to the predicted slot order. Under the opt-in sorted_gt mode the GT sort still happens but predictions keep their slot order, so each slot learns a fixed height rank. Inactive slots mask their mu and sigma to zero so empty slots contribute amplitude only. Param-L1 (the default supervised term) is active-normalised in normalised space; TV is an optional roughness penalty.",
                 "inputs": ["thrn", "gtp"], "outputs": ["lj"],
                 "lines": [
                     [{"tex": r"\pi^{\star} = \operatorname*{arg\,min}_{\pi \in S_K}\ \textstyle\sum_k \mathbb{1}[a^{\mathrm{GT}}_k > 10^{-4}]\,\big|\tilde{\theta}_{\pi(k)} - \theta^{\mathrm{GT}}_{k}\big|_1"}],
@@ -737,10 +737,10 @@ class FlowLibrary:
             },
             {
                 "id": "pae_select", "title": "Active-pixel gate and subsample", "phase": "A - Curve genesis",
-                "note": "A pixel is active when any component amplitude exceeds amp_zero_thr = 1e-4; active pixels are kept at fraction pixel_subsample (default 1.0) and empty pixels at keep_empty_frac = 0.05, then the union is seed-shuffled.",
+                "note": "A pixel is active when any component amplitude exceeds the activity threshold recorded by the parameter run; active pixels are kept at fraction pixel_subsample (default 1.0) and empty pixels at keep_empty_frac = 0.05, then the union is seed-shuffled.",
                 "inputs": ["gp"], "outputs": ["active", "idx"],
                 "lines": [
-                    [{"id": "active", "tex": r"\mathbb{1}_{\mathrm{act},p}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\bigvee_{k}\big["}, {"id": "gp", "tex": r"a_{p,k}", "role": "intermediate"}, {"tex": r" > \tau_a\big],\qquad \tau_a = 10^{-3}"}],
+                    [{"id": "active", "tex": r"\mathbb{1}_{\mathrm{act},p}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\bigvee_{k}\big["}, {"id": "gp", "tex": r"a_{p,k}", "role": "intermediate"}, {"tex": r" > \tau_a\big],\qquad \tau_a \text{ from the label run}"}],
                     [{"id": "idx", "tex": r"\mathcal{I}", "role": "calculated"}, {"tex": "="}, {"tex": r"\mathrm{shuffle}\big(\mathcal{A}_{\rho}\,\cup\,\mathcal{E}_{\phi}\big),\quad |\mathcal{A}_\rho| = \rho\,|\mathcal{A}|,\ \ |\mathcal{E}_\phi| = 0.05\,|\mathcal{E}|"}],
                 ],
             },
@@ -1140,7 +1140,7 @@ class FlowLibrary:
             },
             {
                 "id": "align", "title": "GT denormalise and mu-sort", "phase": "Windowed predict",
-                "note": "GT params are denormalised by the dataset output stats (no clamp), then per pixel the slots are argsorted by mean with inactive slots (amplitude at or below 1e-3) pushed to the tail, giving GT a canonical mu-ordered storage order for downstream matching.",
+                "note": "GT params are denormalised by the dataset output stats (no clamp), then per pixel the slots are argsorted by mean with inactive slots (amplitude at or below the label run's activity threshold) pushed to the tail, giving GT a canonical mu-ordered storage order for downstream matching.",
                 "inputs": ["thgt"], "outputs": ["thgts"],
                 "lines": [
                     [{"id": "thgts", "tex": r"\theta^{\mathrm{GT}}_{\pi}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\mathrm{take}\big("}, {"id": "thgt", "tex": r"\theta^{\mathrm{GT}}", "role": "measured"}, {"tex": r",\ \pi^{\star}\big),\quad \pi^{\star} = \operatorname{argsort}_k\,\kappa_k"}],
@@ -1266,10 +1266,10 @@ class FlowLibrary:
             },
             {
                 "id": "paei_select", "title": "Active-pixel selection", "phase": "A - Load run",
-                "note": "Only pixels whose largest slot amplitude clears the zero threshold are fitted; every active pixel is kept and a small fraction of empty pixels (keep_empty_frac) is sampled in, then the index is shuffled. Default inference keeps all active pixels (pixel_subsample = 1).",
+                "note": "Only pixels whose largest slot amplitude clears the activity threshold persisted with the run are fitted; every active pixel is kept and a small fraction of empty pixels (keep_empty_frac) is sampled in, then the index is shuffled. Default inference keeps all active pixels (pixel_subsample = 1).",
                 "inputs": ["gparams"], "outputs": ["sel"],
                 "lines": [
-                    [{"id": "sel", "tex": r"\mathcal{S}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big\{\,i : \max_k\,a_{i,k}\big("}, {"id": "gparams", "tex": r"\theta^{\mathrm{GT}}", "role": "measured"}, {"tex": r"\big) > \tau_a\big\}\ \cup\ \mathrm{Sample}(\mathcal{E},\,f_e),\quad \tau_a = 10^{-3},\ f_e = 0.05"}],
+                    [{"id": "sel", "tex": r"\mathcal{S}", "role": "intermediate"}, {"tex": "="}, {"tex": r"\big\{\,i : \max_k\,a_{i,k}\big("}, {"id": "gparams", "tex": r"\theta^{\mathrm{GT}}", "role": "measured"}, {"tex": r"\big) > \tau_a\big\}\ \cup\ \mathrm{Sample}(\mathcal{E},\,f_e),\quad \tau_a \text{ from the label run},\ f_e = 0.05"}],
                 ],
             },
             {
@@ -1341,7 +1341,7 @@ class FlowLibrary:
             },
             {
                 "id": "paei_shape", "title": "Profile-shape fidelity", "phase": "D - Metrics",
-                "note": "On active curves only (GT peak above 1e-3): the magnitude-free shape agreement is the Pearson correlation of the mean-centred profiles and the relative L2 error, each averaged over active curves with a 1e-8 denominator floor.",
+                "note": "On active curves only (GT peak above the activity threshold persisted with the run): the magnitude-free shape agreement is the Pearson correlation of the mean-centred profiles and the relative L2 error, each averaged over active curves with a 1e-8 denominator floor.",
                 "inputs": ["pred", "gt"], "outputs": ["shp"],
                 "lines": [
                     [{"id": "shp", "tex": r"\rho", "role": "calculated"}, {"tex": "="}, {"tex": r"\Big\langle\dfrac{\langle\tilde{c}^{\mathrm{gt}},\,\tilde{\hat{c}}\rangle}{\lVert\tilde{c}^{\mathrm{gt}}\rVert\,\lVert\tilde{\hat{c}}\rVert + \varepsilon}\Big\rangle_{a},\qquad \tilde{c} = c - \bar{c}"}],

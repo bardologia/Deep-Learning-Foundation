@@ -624,13 +624,13 @@ window.FLOW_SKETCHES = {
   },
 
   pae_select: {
-    tip: "A pixel is active if any amplitude clears 1e-3; active pixels subsample, empties keep 5%, then shuffle.",
+    tip: "A pixel is active if any amplitude clears the label run's activity threshold; active pixels subsample, empties keep 5%, then shuffle.",
     build(svg) {
       const act = [1, 0, 1, 1, 0, 1, 1, 0, 1, 1];
       let cells = "", kept = "";
       for (let i = 0; i < 10; i++) { const x = 24 + i * 20, a = act[i]; cells += `<rect class="skl-pop ${a ? "f-cal" : "f-faint"}" x="${x}" y="34" width="16" height="16" style="opacity:${a ? 1 : 0.45}"/>`; }
       [0, 2, 5].forEach((i) => { kept += `<rect class="sk-live" x="${24 + i * 20}" y="34" width="16" height="16" style="fill:none;stroke:#4fd6c4;stroke-width:2.4"/>`; });
-      svg.innerHTML = `${cells}${kept}<text x="120" y="76" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">a_max &gt; 1e-3</text><text x="120" y="106" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">kept + 5% empty, shuffled</text>`;
+      svg.innerHTML = `${cells}${kept}<text x="120" y="76" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">a_max &gt; tau_a</text><text x="120" y="106" text-anchor="middle" style="fill:#7e8aa0;font-size:7px">kept + 5% empty, shuffled</text>`;
     },
     anim: pulse,
   },

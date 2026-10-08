@@ -495,7 +495,7 @@ class ProcessAnimator {
           ctx.fillText("max > 5e-2 ✓ fitted", pad.l + 10, pad.t + 36);
           ctx.restore();
         }
-        caption = "Activity gate: a pixel is fitted only if its profile max exceeds activity_threshold (5e-2)  ·  inactive pixels keep zeros";
+        caption = "Activity gate: a pixel is fitted only if its profile max exceeds activity_threshold (default 1e-3, recorded in the run metadata for every later stage)  ·  inactive pixels keep zeros";
       } else if (tt < 15.5) {
         const tn = tt - 13.0;
         const pmaxV = Math.max(...smo);
@@ -3459,7 +3459,7 @@ class ProcessAnimator {
       ctx.strokeStyle = "#ffcf6b"; ctx.lineWidth = 1.3;
       ctx.strokeRect(bx4 + 6, yGt + 7, cw - 12, 17);
       ctx.fillStyle = "#ffcf6b"; ctx.font = "11px 'IBM Plex Mono', monospace";
-      ctx.fillText("inactive: amp <= amp_zero_thr", bx4 - 48, yGt - 8);
+      ctx.fillText("inactive: amp <= activity threshold", bx4 - 48, yGt - 8);
 
       const sa = Math.min(1, Math.max(0, (ts - 10.4) / 0.6));
       if (sa > 0) {
@@ -3565,7 +3565,7 @@ class ProcessAnimator {
     }
 
     if (ts < 2.2) this._cap("ParamMatcher  ·  strategy = sort_gt_by_mu  ·  gt gaussians arrive in arbitrary slot order");
-    else if (ts < 4.5) this._cap("sort key = mu where amp > 1e-3, else inf  ·  inactive slots sink to the end");
+    else if (ts < 4.5) this._cap("sort key = mu where amp > activity threshold (from the label run), else inf  ·  inactive slots sink to the end");
     else if (ts < 7.0) this._cap("torch.argsort + gather along the gaussian axis  ·  gt in mu-ascending order, every pixel, every batch");
     else if (ts < 9.6) this._cap("Param loss is slot-by-slot  ·  pred slot k is always graded against the k-th lowest component");
     else if (ts < 13) this._cap("gt amp = 0 gates the slot: mu and sigma drop out of the loss  ·  the a term IS still graded, pulling pred a -> 0");
