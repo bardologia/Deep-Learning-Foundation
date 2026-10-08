@@ -26,9 +26,15 @@ class PeakInitialiser:
         """Creates the initialiser and warms its process pool when parallel.
 
         Args:
-            n_workers : Worker processes to spawn, floored at 1.
+            n_workers : Worker processes to spawn; 0 and 1 both keep the work in-process, and ``n_workers`` then reads 1.
+
+        Raises:
+            ValueError : If n_workers is negative.
         """
-        self.n_workers = max(1, int(n_workers))
+        if int(n_workers) < 0:
+            raise ValueError(f"PeakInitialiser n_workers must be 0 or more, got {n_workers}; 0 and 1 keep the peak initialisation in-process (config field parameter_workers)")
+
+        self.n_workers = 1 if int(n_workers) == 0 else int(n_workers)
         self._pool     = None
 
         if self.n_workers > 1:

@@ -223,7 +223,7 @@ class SigmaFittingExtractor:
             adam_b1              : Adam first-moment decay.
             adam_b2              : Adam second-moment decay.
             gpu_pixel_batch_size : Pixels per kernel invocation.
-            init_workers         : Process-pool size for peak initialisation; defaults to the CPU count capped at 32.
+            init_workers         : Process-pool size for peak initialisation; defaults to the CPUs available to this process, capped at 32.
             peak_initialiser     : Externally owned initialiser to reuse; a private one is created and closed by this extractor when omitted.
             kernel_backend       : Externally owned (kernel, n_devices, backend, devices) tuple; selected here when omitted.
         """
@@ -243,7 +243,7 @@ class SigmaFittingExtractor:
         self.adam_b1              = adam_b1
         self.adam_b2              = adam_b2
         self.gpu_pixel_batch_size = gpu_pixel_batch_size
-        self._init_workers        = min(32, os.cpu_count() or 8) if init_workers is None else init_workers
+        self._init_workers        = min(32, len(os.sched_getaffinity(0))) if init_workers is None else init_workers
 
         self.mode_masks = {}
         for mode in self.modes:
@@ -289,8 +289,12 @@ class SigmaFittingExtractor:
         self.logger.subsection(f"fit modes          : {self.modes}")
         self.logger.subsection(f"sigma_init_divisor : {sigma_init_divisor}")
         self.logger.subsection(f"activity_threshold : {self.activity_threshold}")
-        self.logger.subsection(f"init_workers       : {self._init_workers}")
+        self.logger.subsection(f"init_workers       : {self._peak_initialiser.n_workers} ({'in-process' if self._peak_initialiser.n_workers == 1 else 'process pool'}, {'shared by the entry' if not self._owns_initialiser else 'owned by this extractor'})")
         self.logger.subsection(f"n_devices          : {self._n_devices}")
+
+        available_cpus = len(os.sched_getaffinity(0))
+        if self._peak_initialiser.n_workers > available_cpus:
+            self.logger.warning(f"The peak initialiser runs {self._peak_initialiser.n_workers} worker processes but only {available_cpus} CPUs are available to this process ({os.cpu_count()} on the host); the workers share those cores and Phase 1 slows down, so set parameter_workers to at most {available_cpus}")
 
     def _prepare_data(
         self,
@@ -627,11 +631,10 @@ class SigmaFittingExtractor:
         prof_norm_all = profiles_norm[active_idx].astype(np.float32)
         scale_all     = safe_scale[active_idx, 0]
 
-        n_cpus = os.cpu_count() or 1
         self.logger.section(f"[{batch_tag} | Phase 1 — CPU Initialisation]")
         self.logger.subsection(f"Active pixels : {N_act}")
         self.logger.subsection(f"K             : {self.k_max} (shared init)")
-        self.logger.subsection(f"Workers       : {self._init_workers} / {n_cpus} logical CPUs")
+        self.logger.subsection(f"Workers       : {self._peak_initialiser.n_workers} / {len(os.sched_getaffinity(0))} CPUs available to this process ({os.cpu_count()} on the host)")
 
         t_init                   = perf_counter()
         amps_km, mus_km, sigs_km = self._peak_initialiser.run(prof_raw_all, z_axis, self.k_max, self.prominence_frac, self.sigma_init_divisor)

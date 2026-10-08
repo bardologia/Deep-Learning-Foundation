@@ -662,6 +662,29 @@ def test_extractor_refuses_a_fit_without_active_pixels_and_warns_on_a_sparse_one
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_worker_report_names_the_real_pool_and_the_available_cpus():
+    """Verifies a pool larger than the CPUs available to the process warns, 0 workers reads as one in-process worker, and a negative count is refused."""
+    import os
+    import types
+
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.sigma.extractor   import SigmaFittingExtractor
+    from pipelines.processing.param_extraction.sigma.initialiser import PeakInitialiser
+
+    available = len(os.sched_getaffinity(0))
+    logger    = RecordingLogger()
+
+    SigmaFittingExtractor(logger=logger, modes=["sigma"], lambda_values=[LAMBDA_K], k_max=K_MAX, peak_initialiser=types.SimpleNamespace(n_workers=available + 1))
+
+    assert any(f"runs {available + 1} worker processes but only {available} CPUs are available" in message for level, message in logger.messages if level == "warning")
+    assert any(f"init_workers       : {available + 1} (process pool, shared by the entry)" in message for level, message in logger.messages)
+    assert PeakInitialiser(n_workers=0).n_workers == 1
+
+    with pytest.raises(ValueError, match="n_workers must be 0 or more"):
+        PeakInitialiser(n_workers=-1)
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_kernel_backend_label_names_the_real_platform_and_the_entry_refuses_cpu(monkeypatch):
     """Verifies the backend label reports the device platform JAX fell back to, and that a GPU-requiring selection refuses it."""
     from pipelines.processing.param_extraction.sigma import selection as selection_module
