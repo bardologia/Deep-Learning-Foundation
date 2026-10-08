@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 
 from tools.data.regions                   import CropRegion
+
+from tests.conftest import SilentLogger
 from pipelines.backbone.inference.metrics import Metrics, Result
 from pipelines.backbone.inference.report  import Report, ReportPayloadBuilder
 
@@ -77,7 +79,7 @@ def _global_metrics():
         params_gt          = params.copy(),
     )
 
-    m = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4)
+    m = Metrics(res, z_axis, N_GAUSSIANS, cpu_workers=2, active_amp_thr=1e-4, logger=SilentLogger())
     return m.compute(
         z_indices   = np.arange(N_Z),
         col_indices = np.arange(W),

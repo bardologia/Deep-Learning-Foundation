@@ -19,7 +19,6 @@ from typing             import Callable, Dict, Iterable, Iterator, List, Optiona
 
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
-from tqdm            import tqdm
 
 from tools.data.gaussians            import GaussianActivity
 from tools.data.io                   import FileIO
@@ -27,6 +26,7 @@ from tools.data.preprocessing        import ProfileNormalizer
 from tools.metrics.gaussian_matching import GaussianMatcher
 from tools.metrics.slot_organization import SlotOrganization
 from tools.metrics.scoring           import R2
+from tools.monitoring.logger         import Logger
 
 
 @dataclass
@@ -137,25 +137,28 @@ class BoundedProcessPool:
 
     Attributes:
         num_workers : Process count, capped at the machine's CPU count.
+        logger      : Run logger the progress bar and the per-sweep slice count go through.
     """
 
-    def __init__(self, num_workers: int) -> None:
-        """Stores the worker count, capped at the machine's CPU count and at least one.
+    def __init__(self, num_workers: int, logger: Logger) -> None:
+        """Stores the worker count, capped at the machine's CPU count and at least one, and the run logger.
 
         Args:
             num_workers : Requested worker count.
+            logger      : Run logger; its progress bar shows the sweep and its info line records the slices scored.
         """
 
         self.num_workers = max(1, min(int(num_workers), os.cpu_count() or 1))
+        self.logger      = logger
 
     def results(self, worker: Callable, payloads: Iterable, total: int, description: str) -> List:
-        """Maps a worker over the payloads in submission order, showing a slice progress bar.
+        """Maps a worker over the payloads in submission order, tracking the sweep on the run logger.
 
         Args:
             worker      : Picklable callable taking one payload and returning one result.
             payloads    : Iterable yielding exactly `total` payloads, consumed lazily.
             total       : Number of payloads to submit and collect.
-            description : Progress-bar label.
+            description : Progress-bar label, repeated in the slice-count line logged when the sweep ends.
 
         Returns:
             Worker return values in payload order, of length `total`.
@@ -170,14 +173,18 @@ class BoundedProcessPool:
         with ProcessPoolExecutor(max_workers=n_workers) as pool:
             pending: deque = deque()
 
-            with tqdm(total=total, desc=description, unit="slice", leave=False) as pbar:
+            with self.logger.track(transient=True) as progress:
+                task = progress.add_task(description, total=total)
+
                 for _ in range(total):
                     while submitted < total and len(pending) < in_flight:
                         pending.append(pool.submit(worker, next(stream)))
                         submitted += 1
 
                     out.append(pending.popleft().result())
-                    pbar.update(1)
+                    progress.advance(task)
+
+        self.logger.info(f"{description}: {total} slices scored")
 
         return out
 
@@ -187,11 +194,12 @@ class Metrics:
 
     Attributes:
         result         : The inference result being scored.
-        x_axis         : Z axis in metres, of shape (n_z,).
+        z_axis         : Z axis in metres, of shape (n_z,).
         n_gaussians    : Gaussian count K.
         x_step         : Z bin spacing in metres.
         num_workers    : Process count used for the parallel SSIM sweep.
         active_amp_thr : Physical amplitude above which a Gaussian slot counts as active.
+        logger         : Run logger the SSIM sweeps report their progress and slice counts through.
     """
 
     def __init__(
@@ -201,6 +209,7 @@ class Metrics:
         n_gaussians    : int,
         cpu_workers    : int,
         active_amp_thr : float,
+        logger         : Logger,
     ) -> None:
         """Stores the result and derives the z step and SSIM worker count.
 
@@ -210,6 +219,7 @@ class Metrics:
             n_gaussians    : Gaussian count K.
             cpu_workers    : Requested worker count, capped at the machine's CPU count.
             active_amp_thr : Physical amplitude above which a Gaussian slot counts as active, as recorded by the label run.
+            logger         : Run logger handed to the SSIM slice pools.
         """
 
         self.result         = result
@@ -218,6 +228,7 @@ class Metrics:
         self.x_step         = float(z_axis[1] - z_axis[0])
         self.num_workers    = max(1, min(int(cpu_workers), os.cpu_count() or 1))
         self.active_amp_thr = float(active_amp_thr)
+        self.logger         = logger
         self._aligned       = None
 
     @staticmethod
@@ -424,7 +435,7 @@ class Metrics:
         if not specs:
             return out
 
-        scored = BoundedProcessPool(self.num_workers).results(Metrics._ssim_worker, self._ssim_payloads(pred, ref, specs), len(specs), f"SSIM ({prefix})")
+        scored = BoundedProcessPool(self.num_workers, self.logger).results(Metrics._ssim_worker, self._ssim_payloads(pred, ref, specs), len(specs), f"SSIM ({prefix})")
 
         for key, value in scored:
             out[key] = value
