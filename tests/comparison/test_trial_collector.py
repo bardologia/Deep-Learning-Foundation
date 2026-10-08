@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from pipelines.comparison.comparison_report import TrialComparisonReport
 from pipelines.comparison.trial_collector   import TrialCollector
 from tools.runtime.completion               import CompletionMarker
@@ -94,6 +96,49 @@ def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
     overview = (out_dir / "overview.md").read_text()
 
     assert "| 1/3 " in overview.replace("  ", " ")
+
+
+def test_empty_run_tags_raise(tmp_path):
+    """Verifies a comparison without any requested run tag refuses to run, since it discovers no runs on its own."""
+    with pytest.raises(ValueError, match="No run tags requested"):
+        TrialCollector(runs_dir=tmp_path, run_tags=[], logger=RecordingLogger(), inference_split="test").collect()
+
+
+def test_missing_run_directory_raises_naming_it(tmp_path):
+    """Verifies a requested run tag whose directory does not exist aborts the comparison and is named."""
+    _run_with_metrics(tmp_path / "run_x", 1.0)
+
+    with pytest.raises(FileNotFoundError, match="gone"):
+        TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "gone"], logger=RecordingLogger(), inference_split="test").collect()
+
+
+def test_trial_without_inference_on_the_split_warns_and_names_the_family_subdir(tmp_path):
+    """Verifies a trial inferred on another split, with stamps in a family sub-directory, is warned about but still listed."""
+    _run_with_metrics(tmp_path / "run_x", 1.0)
+    _run_with_metrics(tmp_path / "run_y", 2.0, split="val")
+    (tmp_path / "run_y" / "inference" / "profile_ae").mkdir()
+
+    logger    = RecordingLogger()
+    collector = TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "run_y"], logger=logger, inference_split="test")
+    records   = collector.collect()
+
+    warnings = [message for level, message in logger.messages if level == "warning"]
+    oks      = [message for level, message in logger.messages if level == "ok"]
+
+    assert [record.name for record in records] == ["run_x", "run_y"]
+    assert len(warnings) == 1
+    assert "run_y: no completed inference on split 'test'" in warnings[0]
+    assert "inference/profile_ae/" in warnings[0]
+    assert "2 trial(s) collected, 1 with inference metrics on split 'test'" in oks
+
+
+def test_comparison_without_any_scored_trial_raises(tmp_path):
+    """Verifies a comparison in which no trial carries metrics on the split aborts instead of writing empty pages."""
+    _run_with_metrics(tmp_path / "run_x", 1.0, split="val")
+    _run_with_metrics(tmp_path / "run_y", 2.0, split="val")
+
+    with pytest.raises(RuntimeError, match="split 'test'"):
+        TrialCollector(runs_dir=tmp_path, run_tags=["run_x", "run_y"], logger=RecordingLogger(), inference_split="test").collect()
 
 
 def test_flat_runs_pass_through_unchanged(tmp_path):

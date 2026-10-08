@@ -105,21 +105,30 @@ class TrialCollector(TrialArtifactReader):
         """Reads every requested run and aggregates its seed runs into trials.
 
         Returns:
-            One record per trial, with metrics reported as seed means; missing
-            run directories are logged and skipped. `seed_dispersion` is filled
-            in as a side effect.
+            One record per trial, with metrics reported as seed means.
+            `seed_dispersion` is filled in as a side effect.
+
+        Raises:
+            ValueError        : If no run tag was requested, since this comparison discovers no runs on its own.
+            FileNotFoundError : If a requested run directory does not exist.
+            RuntimeError      : If no collected trial carries inference metrics on the configured split.
         """
+        if not self.run_tags:
+            raise ValueError(f"No run tags requested: name the runs under {self.runs_dir} to compare, this comparison discovers none on its own")
+
         self.logger.section("Collecting trials")
+
+        expanded = self._expand_tags()
+        missing  = [str(run_dir) for _tag, run_dir in expanded if not run_dir.is_dir()]
+        if missing:
+            raise FileNotFoundError(f"Requested run directories not found: {', '.join(missing)}")
+
         records = []
-
-        for tag, run_dir in self._expand_tags():
-            if not run_dir.is_dir():
-                self.logger.error(f"Run directory not found: {run_dir}")
-                continue
-
+        for tag, run_dir in expanded:
             record            = TrialRecord(name=tag, run_dir=run_dir)
             record.checkpoint = self._read_checkpoint(run_dir)
             self._attach_inference(record)
+            self._warn_no_inference(record)
 
             status = f"inference {record.inference_dir.name}" if record.has_inference else "no inference"
             self.logger.info(f"{record.name:<36} {status}")
@@ -133,5 +142,11 @@ class TrialCollector(TrialArtifactReader):
         if self.seed_dispersion:
             n_seed_runs = sum(entry["n_seeds"] for entry in self.seed_dispersion.values())
             self.logger.ok(f"Aggregated {n_seed_runs} seed run(s) into {len(self.seed_dispersion)} trial(s), metrics reported as seed means")
+
+        scored = sum(1 for record in aggregated if record.metrics)
+        if not scored:
+            raise RuntimeError(f"None of the {len(aggregated)} collected trial(s) carries inference metrics on split '{self.inference_split}'; run inference on that split before comparing")
+
+        self.logger.ok(f"{len(aggregated)} trial(s) collected, {scored} with inference metrics on split '{self.inference_split}'")
 
         return aggregated

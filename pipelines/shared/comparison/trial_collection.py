@@ -14,14 +14,15 @@ from pathlib     import Path
 import numpy as np
 import torch
 
-from models                               import BACKBONE_HEADS
-from pipelines.shared.inference.metadata  import CompletedInference
-from pipelines.shared.model.model_builder import ModelBuilder
-from pipelines.shared.training.seed_sweep import SeedSet
-from tools.data.io                        import FileIO
-from tools.metrics.scoring                import SeedAggregation
-from tools.monitoring.logger              import Logger
-from tools.runtime.completion             import CompletionMarker
+from models                                    import BACKBONE_HEADS
+from pipelines.shared.inference.metadata       import CompletedInference
+from pipelines.shared.inference.run_classifier import InferenceLayout
+from pipelines.shared.model.model_builder      import ModelBuilder
+from pipelines.shared.training.seed_sweep      import SeedSet
+from tools.data.io                             import FileIO
+from tools.metrics.scoring                     import SeedAggregation
+from tools.monitoring.logger                   import Logger
+from tools.runtime.completion                  import CompletionMarker
 
 _TOTAL_PARAMS_PATTERN = re.compile(r"\*\*Total Parameters:\*\*\s*`([\d,]+)`")
 _CHECKPOINT_KEYS      = ("best_val_loss", "best_epoch", "epoch")
@@ -202,10 +203,12 @@ class TrialArtifactReader:
     """Reads checkpoint scalars and inference artifacts of a single trial.
 
     Attributes:
+        logger          : Logger for the per-run warnings.
         inference_split : Split whose completed inference stamps are attached, or None to skip inference attachment entirely.
     """
 
-    inference_split: str | None
+    logger          : Logger
+    inference_split : str | None
 
     def _read_checkpoint(self, trial_dir: Path) -> dict:
         """Returns the best-checkpoint scalars and completed epoch count of a trial.
@@ -268,6 +271,21 @@ class TrialArtifactReader:
     def _attach_figures(self, record: TrialRecord, inference_dir: Path) -> None:
         """Attaches the sorted PNG figures of an inference stamp to the record."""
         record.figures = sorted((inference_dir / "figures").glob("*.png")) if (inference_dir / "figures").is_dir() else []
+
+    def _warn_no_inference(self, record: TrialRecord) -> None:
+        """Warns when a run has no completed inference on the split, naming any family sub-directory whose stamps this collector does not read.
+
+        Args:
+            record : Collected run; nothing is logged when inference is attached or no split is configured.
+        """
+        if self.inference_split is None or record.has_inference:
+            return
+
+        inference_dir = record.run_dir / InferenceLayout.DIRNAME
+        families      = sorted(family for family in InferenceLayout.SUBDIRS.values() if (inference_dir / family).is_dir())
+        nested        = f"; stamps under {', '.join(f'{InferenceLayout.DIRNAME}/{family}/' for family in families)} are not read by this comparison" if families else ""
+
+        self.logger.warning(f"{record.name}: no completed inference on split '{self.inference_split}' under {inference_dir}{nested}; listed but not ranked")
 
 
 class TrainingResultsIndex:
