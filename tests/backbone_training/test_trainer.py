@@ -2,8 +2,9 @@
 
 Covers component wiring and named parameter groups, a single optimisation step, one- and
 multi-epoch fits, TensorBoard throughput and diagnostic scalars, non-finite handling in
-evaluation, checkpoint save and restore, early-stopping and scheduler resets, and the
-curriculum swap with its learning-rate and diagnostic-threshold effects.
+training and evaluation with the term and data verdict in its messages, checkpoint save
+and restore, early-stopping and scheduler resets, and the curriculum swap with its
+learning-rate and diagnostic-threshold effects.
 """
 
 from __future__ import annotations
@@ -244,6 +245,11 @@ def _loss_dict(total: float) -> dict:
     return {"total_loss": torch.tensor(total), "components": {}, "monitor": {}, "occupancy": {}, "physical": {}}
 
 
+def _diverged_loss_dict(bad_term: str) -> dict:
+    """Returns a loss output whose total and the named term are NaN while param_l1 stays finite."""
+    return {"total_loss": torch.tensor(float("nan")), "components": {"param_l1": torch.tensor(0.5), bad_term: torch.tensor(float("nan"))}, "monitor": {}, "occupancy": {}, "physical": {}}
+
+
 def test_evaluate_raises_on_nonfinite_loss(tmp_path):
     """Verifies evaluation aborts with FloatingPointError on a non-finite batch loss."""
     trainer = _build_trainer(tmp_path)
@@ -358,6 +364,47 @@ def test_evaluate_returns_nan_when_all_batches_nonfinite(tmp_path):
 
     assert result["num_batches"] == 0
     assert result["avg_loss"]    != result["avg_loss"]
+
+
+def test_nonfinite_train_loss_abort_names_the_term_and_clears_the_data(tmp_path):
+    """Verifies the training abort names the non-finite term and states that the batch inputs and targets were finite."""
+    trainer = _build_trainer(tmp_path)
+
+    trainer._compute_loss = lambda batch: _diverged_loss_dict("mse_curve")
+
+    with pytest.raises(FloatingPointError, match=r"non-finite terms: \['mse_curve'\]; inputs and targets finite"):
+        trainer.train_epoch(_loader(), epoch=0)
+
+
+def test_nonfinite_train_loss_abort_names_corrupt_inputs(tmp_path):
+    """Verifies the training abort blames the batch when the inputs already held NaN."""
+    trainer = _build_trainer(tmp_path)
+    loader  = _loader()
+
+    loader.dataset.tensors[0][0, 0, 0, 0] = float("nan")
+    trainer._compute_loss                 = lambda batch: _loss_dict(float("nan"))
+
+    with pytest.raises(FloatingPointError, match=r"non-finite terms: none \(every weighted term is finite\); non-finite inputs in the batch"):
+        trainer.train_epoch(loader, epoch=0)
+
+
+def test_evaluate_skip_warning_names_the_nonfinite_term(tmp_path):
+    """Verifies the skip-path warning of evaluation names the non-finite term when aborting is disabled."""
+    model, model_cfg = tiny_model(in_channels=2, n_gaussians=2)
+    config           = tiny_trainer_config(n_gaussians=2, epochs=1)
+    logger           = Logger(log_dir=str(tmp_path / "logs"), name="trainer_warn", level="WARNING")
+    trainer          = Trainer(model, model_cfg, x_axis_numpy(), config, tmp_path, logger, norm_stats=identity_normalizer(6), emit_docs=False)
+
+    trainer.abort_on_nonfinite_loss = False
+    trainer._eval_step              = lambda batch: _diverged_loss_dict("cosine_curve")
+
+    result = trainer.evaluate(_loader(), epoch=0)
+    logger.close()
+
+    text = (tmp_path / "logs" / "trainer_warn.log").read_text(encoding="utf-8")
+
+    assert result["num_batches"] == 0
+    assert "val loss is non-finite at epoch 1; non-finite terms: ['cosine_curve']; inputs and targets finite" in text
 
 
 def test_checkpoint_save_restore_round_trip(tmp_path):

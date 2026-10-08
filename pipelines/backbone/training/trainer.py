@@ -133,7 +133,7 @@ class Trainer(BaseTrainer):
         """Runs the model on one batch and evaluates the composite loss.
 
         Args:
-            batch : Tuple of the input patch stack of shape (batch, in_channels, height, width), the target Gaussian parameters of shape (batch, n_gaussians * params_per_gaussian, height, width), and optionally the per-pixel kz map in rad/m of shape (batch, tracks, height, width).
+            batch : Tuple of the input patch stack of shape (batch, in_channels, height, width) and the target Gaussian parameters of shape (batch, n_gaussians * params_per_gaussian, height, width).
 
         Returns:
             The loss dict produced by the criterion.
@@ -154,6 +154,27 @@ class Trainer(BaseTrainer):
             pred_params.register_hook(self.slot_vitals.observe_gradient)
 
         return self.criterion(pred_params, gt_params)
+
+    def _nonfinite_detail(self, loss_dict: dict, batch) -> str:
+        """Names the non-finite loss terms and whether the batch inputs or targets already held NaN or Inf.
+
+        Runs only when a batch loss is non-finite, so the data check costs
+        nothing per step and a default run no longer needs training.log_debug
+        to tell a corrupt batch from a diverging model.
+
+        Args:
+            loss_dict : Loss output of the failed batch.
+            batch     : Tuple of the input patch stack and the target parameters, as yielded by the loader.
+
+        Returns:
+            The base clause extended with the data verdict.
+        """
+        gt_params = batch[1] if len(batch) > 1 and batch[1] is not None else None
+        named     = (("inputs", batch[0]), ("targets", gt_params))
+        bad_data  = [name for name, tensor in named if tensor is not None and not torch.isfinite(tensor).all()]
+        verdict   = f"non-finite {' and '.join(bad_data)} in the batch" if bad_data else "inputs and targets finite, so the model or the loss produced it"
+
+        return f"{super()._nonfinite_detail(loss_dict, batch)}; {verdict}"
 
     def _scalars_page(self) -> ScalarsPage:
         """Adds the parameter errors, the occupancy statistics and the per slot vitals to the page."""
