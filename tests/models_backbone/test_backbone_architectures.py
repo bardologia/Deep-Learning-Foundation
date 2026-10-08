@@ -274,6 +274,18 @@ def test_swin_block_reuses_the_shifted_attention_mask_per_spatial_size():
     assert torch.allclose(first, second, atol=0.0, rtol=0.0)
 
 
+def test_transunet_rejects_an_image_too_small_for_its_cnn_stages():
+    """Verifies TransUNet refuses an image that the CNN downsampling stages reduce below one pixel."""
+    with pytest.raises(ValueError, match="is too small for 4 CNN downsampling stages"):
+        get_backbone("transunet", image_size=8, patch_size=1, cnn_features=[16, 32, 64, 128])
+
+
+def test_transunet_rejects_a_patch_larger_than_the_bottleneck():
+    """Verifies TransUNet refuses a patch size larger than the CNN bottleneck feature map."""
+    with pytest.raises(ValueError, match="cannot exceed bottleneck feature size"):
+        get_backbone("transunet", image_size=64, patch_size=16, cnn_features=[16, 32, 64])
+
+
 @pytest.mark.parametrize("heights", [(4, 3), (4, 3, 2, 2)])
 def test_u2net_rejects_rsu_heights_that_do_not_match_its_stages(heights):
     """Verifies U2-Net refuses an RSU height list that does not have three entries."""
@@ -297,6 +309,18 @@ def test_unetr_rejects_patch_size_indivisible_by_the_decoder_ladder():
     """Verifies UNETR refuses a patch size not divisible by its decoder upsampling ladder."""
     with pytest.raises(ValueError, match="multiple of 2 \\*\\* len\\(decoder_features\\)"):
         get_backbone("unetr", image_size=48, patch_size=24, decoder_features=[32, 16, 8, 8])
+
+
+def test_unetr_rejects_non_positive_patch_size():
+    """Verifies UNETR rejects non-positive patch sizes."""
+    with pytest.raises(ValueError, match="patch_size must be a positive integer"):
+        get_backbone("unetr", image_size=64, patch_size=0, embedding_dim=64, transformer_layers=4, transformer_heads=4, decoder_features=[32, 16, 8, 8])
+
+
+def test_unetr_rejects_patch_size_not_dividing_image_size():
+    """Verifies UNETR rejects patch sizes that do not evenly divide the image size."""
+    with pytest.raises(ValueError, match="image_size must be divisible by patch_size"):
+        get_backbone("unetr", image_size=64, patch_size=7, embedding_dim=64, transformer_layers=4, transformer_heads=4, decoder_features=[32, 16, 8, 8])
 
 
 def test_conv_block_rejects_even_kernels():
