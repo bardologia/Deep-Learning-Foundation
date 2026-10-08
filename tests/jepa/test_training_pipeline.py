@@ -15,6 +15,7 @@ import pytest
 
 from pipelines.jepa.training          import pipeline as jepa_pipeline
 from pipelines.jepa.training.pipeline import TrainingPipeline
+from tests.conftest                   import SilentLogger
 
 
 def test_resolve_ae_run_returns_none_when_no_run():
@@ -168,7 +169,7 @@ class _RecordingRunMetadata:
         """Builds the run paths from the logdir and run name and registers the instance."""
         self.run_directory      = Path(logdir) / str(run_name)
         self.metadata_directory = self.run_directory / "meta"
-        self.logger             = types.SimpleNamespace()
+        self.logger             = SilentLogger()
         self.closed             = False
 
         type(self).instances.append(self)
@@ -196,7 +197,7 @@ def test_run_closes_the_run_metadata_when_dataset_preparation_fails(tmp_path, mo
 
     pipeline                = TrainingPipeline.__new__(TrainingPipeline)
     pipeline.backbone_name  = "resunet"
-    pipeline.entry          = types.SimpleNamespace(run_name="jepa_test", seed=0, paths=types.SimpleNamespace(dataset_path=str(tmp_path), parameters_path=None, fingerprint_dataset=False))
+    pipeline.entry          = types.SimpleNamespace(run_name="jepa_test", seed=0, backbone_head="conv", paths=types.SimpleNamespace(dataset_path=str(tmp_path), parameters_path=None, fingerprint_dataset=False))
     pipeline.trainer_config = types.SimpleNamespace(io=types.SimpleNamespace(logdir=str(tmp_path)))
 
     def _failing_prepare(run_directory, logger, seed):
