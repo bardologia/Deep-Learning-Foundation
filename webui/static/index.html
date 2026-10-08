@@ -395,7 +395,7 @@
               <img id="cube-topdown" alt="Primary channel amplitude" />
               <i class="cube-cross" id="cube-cross" hidden></i>
             </div>
-            <span class="cube-axis cube-axis--x">range &rarr;</span>
+            <span class="cube-axis cube-axis--x">col &rarr;</span>
           </div>
           <p class="cube-coords" id="cube-coords">Hover the image to cut every cube &middot; click to lock the slices</p>
         </aside>
@@ -404,7 +404,7 @@
           <div class="cube-slices__bar">
             <button type="button" class="btn btn--mini" id="cube-back" hidden>&larr; Back to primary</button>
             <span class="cube-slices__at" id="cube-slices-at"></span>
-            <div class="cube-jump" role="group" aria-label="Set a cut by row and range">
+            <div class="cube-jump" role="group" aria-label="Set a cut by row and col">
               <span class="cube-jump__cell">
                 <label for="cube-jump-row">row</label>
                 <input type="number" id="cube-jump-row" class="cube-jump__input" min="0" step="1" inputmode="numeric" />
@@ -442,7 +442,7 @@
           </section>
           <section class="cube-cutgroup" data-axis="row">
             <h3 class="cube-cutgroup__title">
-              Row cut <span class="cube-cutgroup__sub">cube row at the marked range</span>
+              Row cut <span class="cube-cutgroup__sub">cube row at the marked col</span>
               <span class="cube-cutgroup__at" data-axis="row"></span>
             </h3>
             <div class="cube-cutgroup__stack">
@@ -489,7 +489,7 @@
           <div class="cube-z__bar">
             <div class="cube-sweep__controls">
               <button type="button" class="cube-sweep__play" id="cube-z-play">Play</button>
-              <div class="cube-jump" role="group" aria-label="Set an z bin">
+              <div class="cube-jump" role="group" aria-label="Set a z bin">
                 <span class="cube-jump__cell">
                   <label for="cube-z-input">bin</label>
                   <input type="number" id="cube-z-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
@@ -519,7 +519,7 @@
           <div class="cube-z__bar">
             <div class="cube-sweep__controls">
               <button type="button" class="cube-sweep__play" id="cube-row-play">Play</button>
-              <div class="cube-jump" role="group" aria-label="Set an row bin">
+              <div class="cube-jump" role="group" aria-label="Set a row bin">
                 <span class="cube-jump__cell">
                   <label for="cube-row-input">bin</label>
                   <input type="number" id="cube-row-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
@@ -820,7 +820,7 @@
           <div class="cube-z__bar">
             <div class="cube-sweep__controls">
               <button type="button" class="cube-sweep__play" id="cube-col-play">Play</button>
-              <div class="cube-jump" role="group" aria-label="Set a range bin">
+              <div class="cube-jump" role="group" aria-label="Set a col bin">
                 <span class="cube-jump__cell">
                   <label for="cube-col-input">bin</label>
                   <input type="number" id="cube-col-input" class="cube-jump__input" min="1" step="1" inputmode="numeric" />
@@ -828,7 +828,7 @@
                 </span>
               </div>
             </div>
-            <span class="cube-z__at" id="cube-col-at">Play the sweep, or scroll a panel to move through range.</span>
+            <span class="cube-z__at" id="cube-col-at">Play the sweep, or scroll a panel to move through col.</span>
             <div class="cube-spaces" role="group" aria-label="Value space">
               <button type="button" class="cube-space is-active" data-space="physical">Physical</button>
               <button type="button" class="cube-space" data-space="normalized">Normalized</button>
