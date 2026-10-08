@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -9,7 +11,7 @@ from configuration.dataset                              import InputConfig, Outp
 from configuration.normalization                        import ChannelStats, ChannelStrategy, NormMethod
 from pipelines.backbone.dataset.datasets                import MultiRegionDataset, PatchDataset
 from pipelines.backbone.dataset.normalizer              import Normalizer
-from pipelines.backbone.dataset.spatial                 import Patcher
+from pipelines.backbone.dataset.spatial                 import Cropper, Patcher
 from pipelines.backbone.dataset.stats                   import Stats
 from pipelines.profile_autoencoder.dataset.augmentation import ProfileAugmenter
 from pipelines.profile_autoencoder.dataset.datasets     import ProfileDataset
@@ -407,3 +409,39 @@ def test_profiledataset_keeps_every_active_pixel_at_full_subsample_and_no_empty_
     assert ds.n_kept_active == 4
     assert ds.n_kept_empty  == 0
     assert len(ds)          == 4
+
+
+def _stack_shim(enabled: set[str], views: dict) -> SimpleNamespace:
+    """Returns a Cropper stand-in whose groups and views are fixed and whose layout refuses every artifact read.
+
+    Args:
+        enabled : Input flags the stand-in reports as enabled.
+        views   : Cropped view returned per artifact group, None for a disabled group.
+    """
+    def _refuse(artifact):
+        """Fails the test when the stack reads an artifact directly."""
+        raise AssertionError(f"the stack read the {artifact} artifact although its group is disabled")
+
+    return SimpleNamespace(
+        _group_enabled = lambda flag: flag in enabled,
+        _group_view    = lambda artifact, flag, row_slice, col_slice: views.get(artifact),
+        layout         = SimpleNamespace(artifact_path=_refuse),
+    )
+
+
+def test_input_stack_without_complex_groups_is_empty_over_the_region():
+    """With no complex group enabled, as an aux-only input selects, the stack has zero layers over the region and no artifact is read."""
+    stack, n_primary, n_secondaries, n_derived = Cropper._stack_inputs(_stack_shim(set(), {}), slice(2, 6), slice(1, 4))
+
+    assert stack.shape == (0, 4, 3)
+    assert (n_primary, n_secondaries, n_derived) == (0, 0, 0)
+
+
+def test_input_stack_skips_the_primary_artifact_when_its_group_is_off():
+    """With the primary group off the stack takes its shape from the secondaries and never reads the primary artifact."""
+    secondaries = (np.arange(2 * 4 * 3) + 1j).reshape(2, 4, 3).astype(np.complex64)
+
+    stack, n_primary, n_secondaries, n_derived = Cropper._stack_inputs(_stack_shim({"use_secondaries"}, {"secondaries": secondaries}), slice(2, 6), slice(1, 4))
+
+    assert (n_primary, n_secondaries, n_derived) == (0, 2, 0)
+    np.testing.assert_array_equal(stack, secondaries)

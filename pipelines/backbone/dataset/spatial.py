@@ -125,25 +125,34 @@ class Cropper:
             col_slice : Range slice of the region.
 
         Returns:
-            A tuple of the complex stack of shape (layers, region_row, region_range),
+            A tuple of the complex stack of shape (layers, region_row, region_col),
             ordered primary, secondaries, derived, and the number of primary,
-            secondary and derived layers it holds.
+            secondary and derived layers it holds. The stack is empty, with zero
+            layers, when no complex group is enabled, as an aux-only input selects.
         """
-        primary      = np.load(str(self.layout.artifact_path("primary")), mmap_mode="r", allow_pickle=False)
-        primary_view = primary[..., row_slice, col_slice]
+        n_primary = 1 if self._group_enabled("use_primary") else 0
+        if n_primary:
+            primary      = np.load(str(self.layout.artifact_path("primary")), mmap_mode="r", allow_pickle=False)
+            primary_view = primary[..., row_slice, col_slice]
+        else:
+            primary_view = None
 
-        secondaries_view = self._group_view("secondaries",    "use_secondaries",    row_slice, col_slice)
-        derived_view     = self._group_view("derived", "use_derived", row_slice, col_slice)
+        secondaries_view = self._group_view("secondaries", "use_secondaries", row_slice, col_slice)
+        derived_view     = self._group_view("derived",     "use_derived",     row_slice, col_slice)
 
-        n_primary     = 1 if self._group_enabled("use_primary") else 0
-        n_secondaries = secondaries_view.shape[0]    if secondaries_view    is not None else 0
-        n_derived     = derived_view.shape[0] if derived_view is not None else 0
+        n_secondaries = secondaries_view.shape[0] if secondaries_view is not None else 0
+        n_derived     = derived_view.shape[0]     if derived_view     is not None else 0
 
         n_channels = n_primary + n_secondaries + n_derived
-        row_size   = primary_view.shape[-2]
-        col_size   = primary_view.shape[-1]
 
-        inputs_split = np.empty((n_channels, row_size, col_size), dtype=primary.dtype)
+        if n_channels == 0:
+            return np.empty((0, row_slice.stop - row_slice.start, col_slice.stop - col_slice.start), dtype=np.complex64), 0, 0, 0
+
+        reference_view = next(view for view in (primary_view, secondaries_view, derived_view) if view is not None)
+        row_size       = reference_view.shape[-2]
+        col_size       = reference_view.shape[-1]
+
+        inputs_split = np.empty((n_channels, row_size, col_size), dtype=reference_view.dtype)
 
         if n_primary:
             inputs_split[0] = primary_view
