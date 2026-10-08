@@ -164,6 +164,52 @@ def test_session_records_an_abort_in_its_log(tmp_path, monkeypatch):
     assert ">>> END" not in log_text
 
 
+def test_session_refuses_a_finished_dataset_directory(tmp_path):
+    """Verifies a directory holding a layout or a parameter run is refused before the session log opens, naming what it holds."""
+    from pipelines.processing.synthesis.pipeline import SyntheticDatasetSession
+
+    config = _tiny_config(tmp_path)
+    config.data_directory.mkdir(parents=True)
+    (config.data_directory / "dataset.json").write_text("{}", encoding="utf-8")
+    (config.output_directory / "params" / "params_k2").mkdir(parents=True)
+
+    with pytest.raises(FileExistsError, match=r"data/dataset.json, params/params_k2"):
+        SyntheticDatasetSession(config, log_dir=tmp_path / "logs").execute()
+
+    assert not (tmp_path / "logs").exists()
+
+
+def test_session_warns_about_an_unfinished_run_and_writes_the_layout_last(tmp_path, monkeypatch):
+    """Verifies leftovers of an unfinished run are named in a warning, and a generation failing before the layout leaves no layout behind."""
+    from pipelines.processing.synthesis        import pipeline as pipeline_module
+    from pipelines.processing.synthesis.writer import DatasetDirectoryGuard
+    from tests.conftest                        import RecordingLogger
+
+    config = _tiny_config(tmp_path)
+    config.data_directory.mkdir(parents=True)
+    np.save(config.data_directory / "cube_full.npy", np.zeros((2, 2, 2), dtype=np.float32))
+
+    guard     = DatasetDirectoryGuard(config.output_directory)
+    leftovers = guard.leftovers()
+    logger    = RecordingLogger()
+    guard.warn(leftovers, logger)
+
+    assert leftovers == ["data"]
+    assert any(level == "warning" and "leftovers of an unfinished run" in message for level, message in logger.messages)
+
+    def failing_parameters(self, parameters, diagnostics):
+        """Raises in place of writing the parameter run."""
+        raise OSError("disk full")
+
+    monkeypatch.setattr(DatasetWriter, "write_parameters", failing_parameters)
+
+    with pytest.raises(OSError, match="disk full"):
+        pipeline_module.SyntheticDatasetSession(config, log_dir=tmp_path / "logs").execute()
+
+    assert (config.metadata_directory / "config_state.json").is_file()
+    assert not (config.data_directory / "dataset.json").exists()
+
+
 def test_layout_reads_the_generated_dataset(test_data_dir, params_dir, logger_stub, scene_config):
     layout = Layout(test_data_dir, logger=logger_stub, parameters_path=params_dir / "parameters.npy")
 

@@ -2,7 +2,8 @@
 
 The pipeline samples smooth parameter fields, evaluates the profiles, cube and
 channels they imply, scores the mixture against the observed cube as a
-parameter run would, and writes the dataset.
+parameter run would, and writes the dataset. The session refuses a directory
+already holding a finished dataset and records an abort in its log.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pipelines.processing.synthesis.diagnostics import FitDiagnosticsBuilder
 from pipelines.processing.synthesis.fields      import WhiteNoiseSampler
 from pipelines.processing.synthesis.parameters  import ParameterFieldBuilder
 from pipelines.processing.synthesis.scene       import AuxFieldBuilder, ZAxis, ChannelBuilder, ProfileBuilder, CubeBuilder
-from pipelines.processing.synthesis.writer      import DatasetWriter
+from pipelines.processing.synthesis.writer      import DatasetDirectoryGuard, DatasetWriter
 from tools.data.gaussians                       import GaussianActivity
 from tools.data.io                              import FileIO
 from tools.monitoring.logger                    import Logger
@@ -124,7 +125,11 @@ class SyntheticDatasetPipeline:
         return parameters, diagnostics
 
     def _stage_write(self, arrays: dict, parameters: np.ndarray, diagnostics: dict) -> dict:
-        """Writes the arrays, the layout, the configuration state and the parameter run.
+        """Writes the arrays, the configuration state and the parameter run, then the layout last.
+
+        The layout marks a finished dataset for every reader and for the
+        directory guard, so a generation that fails part-way leaves no layout
+        behind.
 
         Args:
             arrays      : Mapping holding one array per ``DatasetWriter.ARTIFACTS`` key.
@@ -139,9 +144,9 @@ class SyntheticDatasetPipeline:
         FileIO.ensure_dirs(self.config.data_directory, self.config.metadata_directory)
 
         self.writer.write_arrays(arrays)
-        layout_path = self.writer.write_layout()
         state_path  = self.writer.write_state()
         outputs     = self.writer.write_parameters(parameters, diagnostics)
+        layout_path = self.writer.write_layout()
 
         return {"dataset_json": layout_path, "config_state": state_path, **outputs}
 
@@ -192,15 +197,24 @@ class SyntheticDatasetSession:
         self.log_dir = Path(log_dir)
 
     def execute(self) -> dict:
-        """Opens the session log and runs the pipeline.
+        """Refuses a finished dataset directory, opens the session log and runs the pipeline.
 
-        The log closes with the exception, its traceback and an ABORTED banner
-        when a stage raises.
+        The directory is checked before the log is opened, and the log closes
+        with the exception, its traceback and an ABORTED banner when a stage
+        raises.
 
         Returns:
             The output mapping returned by ``SyntheticDatasetPipeline.run``.
+
+        Raises:
+            FileExistsError : If the output directory already holds a finished dataset.
         """
+        guard     = DatasetDirectoryGuard(self.config.output_directory)
+        leftovers = guard.leftovers()
+
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
         with Logger(log_dir=str(self.log_dir), name="generate_dataset", level="INFO") as logger:
+            guard.warn(leftovers, logger)
+
             return SyntheticDatasetPipeline(self.config, logger=logger).run()

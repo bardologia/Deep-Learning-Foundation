@@ -1,4 +1,10 @@
-"""Writes a synthetic dataset in the on-disk layout the training and inference pipelines read."""
+"""Writes a synthetic dataset in the on-disk layout the training and inference pipelines read.
+
+Holds the guard that refuses to generate into a directory already holding a
+finished dataset and the writer of the arrays, the configuration state, the
+parameter run and the dataset layout, which is written last and marks a
+finished dataset.
+"""
 
 from __future__ import annotations
 
@@ -14,8 +20,79 @@ from tools.data.io           import FileIO
 from tools.monitoring.logger import Logger
 
 
+class DatasetDirectoryGuard:
+    """Refuses to generate into a directory that already holds a finished dataset.
+
+    A directory counts as a finished dataset when it carries the dataset layout
+    or parameter runs under params/. Each of these means later stages have
+    already read, or been fitted to, the arrays a rerun would replace in place,
+    and nothing downstream could tell the old and the new arrays apart
+    afterwards. A directory left behind by an unfinished run carries neither
+    and is reused with a warning.
+
+    Attributes:
+        LAYOUT_RELPATH : Dataset layout the writer saves last, relative to the dataset directory.
+        PARAMS_DIRNAME : Directory holding the dataset's parameter runs.
+        output_dir     : Dataset directory the guard inspects.
+    """
+
+    LAYOUT_RELPATH = Path("data") / "dataset.json"
+    PARAMS_DIRNAME = "params"
+
+    def __init__(self, output_dir: Path) -> None:
+        """Binds the guard to a dataset directory.
+
+        Args:
+            output_dir : Dataset directory a generation is about to write into.
+        """
+        self.output_dir = Path(output_dir)
+
+    def parameter_runs(self) -> list[str]:
+        """Returns the names of the parameter runs held under params/, sorted."""
+        params_dir = self.output_dir / self.PARAMS_DIRNAME
+
+        if not params_dir.is_dir():
+            return []
+
+        return sorted(child.name for child in params_dir.iterdir() if child.is_dir())
+
+    def leftovers(self) -> list[str]:
+        """Refuses a finished dataset directory and returns what an unfinished run left in it.
+
+        Called before a session creates anything in the directory, so the
+        returned names are an earlier run's, never the session's own.
+
+        Returns:
+            Sorted names of the directory's entries; empty for an absent or empty directory.
+
+        Raises:
+            FileExistsError : If the directory holds a dataset layout or parameter runs.
+        """
+        if not self.output_dir.exists():
+            return []
+
+        markers = [str(self.LAYOUT_RELPATH)] if (self.output_dir / self.LAYOUT_RELPATH).is_file() else []
+        runs    = [f"{self.PARAMS_DIRNAME}/{run}" for run in self.parameter_runs()]
+
+        if markers or runs:
+            held = ", ".join(markers + runs)
+            raise FileExistsError(f"Dataset directory {self.output_dir} already holds a finished dataset ({held}); generation refuses to overwrite it because its parameter runs and training runs were built on the arrays in it. Choose another output_directory or remove the directory by hand.")
+
+        return sorted(child.name for child in self.output_dir.iterdir())
+
+    def warn(self, contents: list[str], logger: Logger) -> None:
+        """Warns that an unfinished run's leftovers are overwritten; silent when there are none.
+
+        Args:
+            contents : Entries the directory held before the session started, as leftovers returns them.
+            logger   : Logger receiving the warning.
+        """
+        if contents:
+            logger.warning(f"Dataset directory {self.output_dir} exists without a finished dataset (contents: {contents}); the leftovers of an unfinished run are overwritten")
+
+
 class DatasetWriter:
-    """Saves the arrays, layout, configuration state and parameter run of a synthetic dataset.
+    """Saves the arrays, configuration state, parameter run and layout of a synthetic dataset.
 
     Attributes:
         ARTIFACTS : Array name to the file it is saved under in data/.
@@ -64,7 +141,7 @@ class DatasetWriter:
             self._save_array(name, arrays[name])
 
     def write_layout(self) -> Path:
-        """Writes data/dataset.json, the layout downstream pipelines read the dataset through.
+        """Writes data/dataset.json, the layout downstream pipelines read the dataset through and the mark of a finished dataset.
 
         Returns:
             Path of the written layout file.
