@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import math
 import sys
+import time
 from collections import defaultdict
 
 import torch
@@ -82,8 +83,16 @@ class LossScaleProbe:
             norm_stats   = self.norm_stats,
         )
 
+    def _batch_budget(self, train_loader) -> int:
+        """Returns the number of batches the probe measures: the configured count, capped by the loader length."""
+        return min(self.probe_cfg.n_batches, len(train_loader))
+
     def _collect(self, criterion, train_loader, model, device) -> dict[str, list[float]]:
         """Records the per-batch value of every loss component without gradients.
+
+        The pass runs every probed term on each batch, so it is tracked with a
+        progress bar and closed with the number of batches measured and the
+        time they took.
 
         Args:
             criterion    : The unit-weight loss to evaluate.
@@ -95,11 +104,17 @@ class LossScaleProbe:
             Mapping of component name to the list of per-batch values.
         """
         model.eval()
-        accum: dict[str, list[float]] = defaultdict(list)
 
-        with torch.no_grad():
+        accum    = defaultdict(list)
+        budget   = self._batch_budget(train_loader)
+        measured = 0
+        start    = time.perf_counter()
+
+        with torch.no_grad(), self.logger.track(transient=True) as progress:
+            task = progress.add_task("[section]Loss scale probe[/section]", total=budget)
+
             for i, batch in enumerate(train_loader):
-                if i >= self.probe_cfg.n_batches:
+                if i >= budget:
                     break
 
                 inputs  = batch[0].to(device)
@@ -110,7 +125,12 @@ class LossScaleProbe:
                     if "/" not in name:
                         accum[name].append(float(val))
 
+                measured += 1
+                progress.update(task, advance=1)
+
         model.train()
+
+        self.logger.subsection(f"Probe measured {measured} batches in {time.perf_counter() - start:.1f}s")
 
         return accum
 
@@ -249,9 +269,10 @@ class LossScaleProbe:
             return {}
 
         criterion = self._build_criterion(z_axis)
+        budget    = self._batch_budget(train_loader)
 
         self.logger.section("[Loss Scale Probe]")
-        self.logger.subsection(f"Averaging over {self.probe_cfg.n_batches} batches; all enabled term weights forced to 1.0.")
+        self.logger.subsection(f"Averaging over {budget} batches ({self.probe_cfg.n_batches} configured, {len(train_loader)} in the train loader); all enabled term weights forced to 1.0.")
         self.logger.subsection(self.SHAPING_NOTE)
 
         accum = self._collect(criterion, train_loader, model, device)
@@ -264,6 +285,7 @@ class LossScaleProbe:
         self._emit_report(report)
 
         if self.probe_cfg.exit_after:
+            self.logger.warning("probe.exit_after=True: stopping after the probe report; no training ran and no checkpoint, test metrics or complete.json were written. Set probe.exit_after=false to train after the probe.")
             sys.exit(0)
 
         return report["suggested"]
