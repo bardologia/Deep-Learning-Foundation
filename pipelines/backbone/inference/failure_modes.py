@@ -174,37 +174,44 @@ class FailureModes:
 
         return sep
 
-    def _miss_by_separation(self, pairs: dict) -> list[dict]:
+    def _miss_by_separation(self, pairs: dict) -> tuple[list[dict], str]:
         """Profiles the miss rate against ground-truth component separation.
 
         Args:
             pairs : Payload from the slot pairing.
 
         Returns:
-            One row per quantile bin holding the bin "center" in metres, the
-            pixel count "n" and the "miss_rate"; empty when too few pixels carry
-            two active ground-truth components to bin reliably.
+            Tuple of one row per quantile bin holding the bin "center" in metres,
+            the pixel count "n" and the "miss_rate", and a status string saying
+            either how many bins were computed over how many two-component pixels
+            or why the profile was skipped. The rows are empty when too few
+            pixels carry two active ground-truth components, when their
+            separations fall on too few distinct quantile edges, or when every
+            bin is sparse.
         """
         sep       = self._min_gt_separation(pairs)
         missed    = pairs["n_missed"] > 0
         has_pairs = np.isfinite(sep)
+        n_pairs   = int(has_pairs.sum())
 
-        if has_pairs.sum() < self.MIN_BIN_COUNT:
-            return []
+        if n_pairs < self.MIN_BIN_COUNT:
+            return [], f"skipped: only {n_pairs} pixels carry two active GT components, need {self.MIN_BIN_COUNT}"
 
         values = sep[has_pairs]
         misses = missed[has_pairs]
         edges  = np.unique(np.quantile(values, np.linspace(0.0, 1.0, self.N_SEP_BINS + 1)))
 
         if edges.size < 3:
-            return []
+            return [], f"skipped: the separations of the {n_pairs} two-component pixels take {edges.size} distinct quantile value(s), too few to bin"
 
         index = np.clip(np.searchsorted(edges, values, side="right") - 1, 0, edges.size - 2)
 
-        rows = []
+        rows    = []
+        dropped = 0
         for b in range(edges.size - 1):
             members = index == b
             if members.sum() < self.MIN_BIN_COUNT:
+                dropped += 1
                 continue
             rows.append({
                 "center"    : (float(edges[b]) + float(edges[b + 1])) / 2.0,
@@ -212,7 +219,10 @@ class FailureModes:
                 "miss_rate" : float(misses[members].mean()),
             })
 
-        return rows
+        if not rows:
+            return [], f"skipped: every separation bin over the {n_pairs} two-component pixels holds fewer than {self.MIN_BIN_COUNT} pixels"
+
+        return rows, f"computed: {len(rows)} bins over {n_pairs} two-component pixels, {dropped} sparse bin(s) under {self.MIN_BIN_COUNT} pixels dropped"
 
     def _scalars(self, pairs: dict, mode_map: np.ndarray) -> dict:
         """Summarises the failure classification as scalar rates.
@@ -247,11 +257,14 @@ class FailureModes:
 
         Returns:
             A tuple of the mode map of shape (rows, cols), the miss-rate rows
-            by separation, and the scalar summary.
+            by separation, and the scalar summary, whose "failure_sep_status"
+            entry says whether the separation profile was computed or why not.
         """
-        mode_map = self._mode_map(pairs)
-        by_sep   = self._miss_by_separation(pairs)
-        scalars  = self._scalars(pairs, mode_map)
+        mode_map       = self._mode_map(pairs)
+        by_sep, status = self._miss_by_separation(pairs)
+        scalars        = self._scalars(pairs, mode_map)
+
+        scalars["failure_sep_status"] = status
 
         return mode_map, by_sep, scalars
 

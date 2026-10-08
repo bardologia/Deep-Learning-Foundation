@@ -530,8 +530,8 @@ class InferencePipeline:
             meta           : Run metadata resolving the metrics and cube paths.
             run            : Loaded run supplying the Gaussian count.
             result         : Inference result, updated in place with the mode map, pairs and separation table.
-            global_metrics : Metric dictionary, extended in place and rewritten to disk.
-            logger         : Logger for the section headings and result line.
+            global_metrics : Metric dictionary, extended in place and rewritten to disk, including failure_sep_status saying whether the miss-rate-by-separation profile was computed or why not.
+            logger         : Logger for the section headings and result lines.
         """
 
         if result.params_pred is None or result.params_gt is None:
@@ -560,6 +560,7 @@ class InferencePipeline:
             np.save(meta.cube_dir / "failure_mode.npy", mode_map)
 
         logger.subsection(f"Failure modes : miss rate {scalars['failure_miss_rate'] * 100.0:.2f}%, hallucination rate {scalars['failure_halluc_rate'] * 100.0:.2f}%, clean pixels {scalars['failure_frac_ok'] * 100.0:.1f}%")
+        logger.subsection(f"Miss rate by GT separation : {scalars['failure_sep_status']}")
 
     def _calibrate_presence(self, meta: InferenceMetadata, run, result, global_metrics: dict, logger: Logger) -> None:
         """Builds the presence-reliability curve relating predicted amplitude to detection precision.

@@ -6,10 +6,17 @@ width or amplitude, and that the miss rate rises for closely spaced components.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
-from pipelines.backbone.inference.failure_modes import FailureModes
+from configuration.inference                         import InferenceConfig
+from pipelines.backbone.inference.failure_modes      import FailureModes
+from pipelines.backbone.inference.pipeline           import InferencePipeline
+from pipelines.backbone.inference.run_metadata_paths import InferenceMetadata
+
+from tests.conftest import RecordingLogger
 
 
 H, W = 10, 8
@@ -146,3 +153,54 @@ def test_miss_by_separation_rises_for_close_components():
     far   = [row for row in by_sep if row["center"] > 20.0]
     assert close and far
     assert min(row["miss_rate"] for row in close) > max(row["miss_rate"] for row in far)
+
+
+def test_miss_by_separation_status_reports_the_computed_bins():
+    """A profile that binned the separations records how many bins it computed over how many two-component pixels."""
+    H_, W_ = 40, 30
+    gt     = np.zeros((6, H_, W_))
+
+    gt[0] = 1.0
+    gt[1] = 10.0
+    gt[2] = 3.0
+    gt[3] = 1.0
+    gt[5] = 3.0
+    gt[4] = np.linspace(14.0, 60.0, H_)[:, None]
+
+    _mode_map, by_sep, scalars = FailureModes(gt.copy(), gt, 2, 1e-4).run()
+
+    assert by_sep
+    assert scalars["failure_sep_status"] == f"computed: {len(by_sep)} bins over {H_ * W_} two-component pixels, 0 sparse bin(s) under 30 pixels dropped"
+
+
+def test_miss_by_separation_status_names_why_the_profile_was_skipped():
+    """Too few two-component pixels, or separations without spread, leave the rows empty with a status naming the reason."""
+    single = _params([(1.0, 10.0, 3.0)])
+    paired = _params([(1.0, 10.0, 3.0), (2.0, 40.0, 4.0)])
+
+    _m1, by_sep_single, scalars_single = FailureModes(single.copy(), single, 1, 1e-4).run()
+    _m2, by_sep_paired, scalars_paired = FailureModes(paired.copy(), paired, 2, 1e-4).run()
+
+    assert by_sep_single == [] and by_sep_paired == []
+    assert scalars_single["failure_sep_status"] == "skipped: only 0 pixels carry two active GT components, need 30"
+    assert scalars_paired["failure_sep_status"] == f"skipped: the separations of the {H * W} two-component pixels take 1 distinct quantile value(s), too few to bin"
+
+
+def test_pipeline_stage_records_and_logs_why_the_separation_profile_is_missing(tmp_path):
+    """The failure-mode stage stores failure_sep_status in metrics.json and logs it, so a missing section 5.8 has a stated reason."""
+    gt = _params([(1.0, 10.0, 3.0)])
+
+    config = InferenceConfig(run_directory=tmp_path, output_subdir="failure", device="cpu", save_cubes=False)
+    meta   = InferenceMetadata(config)
+    meta.create_dirs()
+
+    result  = SimpleNamespace(params_pred=gt.copy(), params_gt=gt, assignment=lambda n_gaussians, threshold: None)
+    run     = SimpleNamespace(n_gaussians=1, activity_threshold=1e-4)
+    logger  = RecordingLogger()
+    metrics = {}
+
+    InferencePipeline(config)._classify_failures(config, meta, run, result, metrics, logger)
+
+    assert result.miss_by_sep == []
+    assert metrics["failure_sep_status"] == "skipped: only 0 pixels carry two active GT components, need 30"
+    assert ("subsection", "Miss rate by GT separation : skipped: only 0 pixels carry two active GT components, need 30") in logger.messages
