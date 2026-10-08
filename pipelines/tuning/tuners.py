@@ -35,6 +35,9 @@ class ParamSampler:
 
         Returns:
             Mapping from parameter name to the sampled value.
+
+        Raises:
+            ValueError : If a dimension declares a type other than float, categorical or indexed_categorical.
         """
         sampled = {}
 
@@ -50,6 +53,9 @@ class ParamSampler:
             elif kind == "indexed_categorical":
                 idx           = trial.suggest_categorical(name + "__idx", list(range(len(spec["choices"]))))
                 sampled[name] = spec["choices"][idx]
+
+            else:
+                raise ValueError(f"Unknown search space parameter type '{kind}' for parameter '{name}'. Supported: float, categorical, indexed_categorical.")
 
         return sampled
 

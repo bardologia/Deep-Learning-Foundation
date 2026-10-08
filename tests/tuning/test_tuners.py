@@ -1,8 +1,8 @@
 """Tests for parameter sampling, best-config persistence and the Tuner.
 
-Covers float, categorical and indexed categorical sampling and decoding,
-convergence on a synthetic objective, best-config writing and the trial
-configs the backbone Tuner materializes.
+Covers float, categorical and indexed categorical sampling and decoding, the
+rejection of an unknown dimension type, convergence on a synthetic objective,
+best-config writing and the trial configs the backbone Tuner materializes.
 """
 
 from __future__ import annotations
@@ -90,6 +90,14 @@ def test_sampler_indexed_categorical_stores_index_returns_value():
     assert sampled["features"] in INDEXED_SPACE["features"]["choices"]
     assert "features__idx" in study.trials[0].params
     assert "features"      not in study.trials[0].params
+
+
+def test_sampler_rejects_an_unknown_parameter_type():
+    """Verifies that a dimension with an undeclared type raises instead of being left out of the sample."""
+    trial = optuna.create_study().ask()
+
+    with pytest.raises(ValueError, match="Unknown search space parameter type 'int' for parameter 'depth'"):
+        ParamSampler().sample(trial, {"depth": {"type": "int", "low": 2, "high": 8}})
 
 
 def test_sampler_decode_roundtrips_indexed_categorical():
