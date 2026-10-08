@@ -649,15 +649,15 @@ class FigureComposer:
         return figure_paths
 
     def animate(self, result: Result, run, z_axis_np: np.ndarray) -> Dict[str, Path]:
-        """Renders one walk-through GIF per configured axis over the predicted and GT cubes.
+        """Renders the walk-through GIFs per configured axis over the predicted and GT cubes.
 
         Args:
-            result    : Inference result carrying the predicted and GT curve cubes of shape (n_z, row, col).
+            result    : Inference result carrying the predicted and GT curve cubes of shape (n_z, rows, cols).
             run       : Loaded run supplying the raw cube.
             z_axis_np : Z axis in metres, of shape (n_z,).
 
         Returns:
-            Mapping of "walk_<axis>" to the written GIF path.
+            Mapping of "walk_<axis>" to the composite GIF path, plus "walk_<axis>_<cube>" entries when separate panels are enabled.
         """
 
         cfg    = self.cfg
@@ -665,19 +665,21 @@ class FigureComposer:
         logger = self.logger
 
         animator = Animator(
-            logger      = logger,
-            cmap        = cfg.cmap_intensity,
-            err_cmap    = cfg.cmap_error,
-            dpi         = cfg.gif_dpi,
-            fps         = cfg.gif_fps,
-            max_frames  = cfg.gif_max_frames,
-            num_workers = cfg.gif_workers,
+            logger          = logger,
+            cmap            = cfg.cmap_intensity,
+            err_cmap        = cfg.cmap_error,
+            dpi             = cfg.gif_dpi,
+            fps             = cfg.gif_fps,
+            duration        = cfg.gif_duration,
+            max_frames      = cfg.gif_max_frames,
+            separate_panels = cfg.gif_separate_panels,
+            num_workers     = cfg.gif_workers,
         )
 
         gif_paths: Dict[str, Path] = {}
         for axis in cfg.gif_axes:
             logger.subsection(f"Generating walk GIF along {axis} axis")
-            gif_paths[f"walk_{axis}"] = animator.walk_gif(
+            gif_paths.update(animator.walk_gif(
                 pred_cube  = result.pred_curves,
                 gt_cube    = result.gt_curves,
                 axis       = axis,
@@ -686,7 +688,7 @@ class FigureComposer:
                 row_offset = result.row_offset,
                 col_offset = result.col_offset,
                 full_cube  = run.full_curves,
-            )
+            ))
 
         logger.subsection("")
 

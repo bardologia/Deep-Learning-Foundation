@@ -118,7 +118,7 @@ def _cfg_stub():
         stitch_window=True, cube_dtype="float32", save_cubes=False, save_plots=True,
         save_animations=False, n_best_profiles=4, n_worst_profiles=4, n_random_profiles=4,
         n_col_slices=3, n_row_slices=3, n_z_slices=3, gif_axes=["col"],
-        gif_fps=12, gif_max_frames=10, device="cpu", num_workers=2,
+        gif_fps=12, gif_duration=None, gif_max_frames=10, gif_separate_panels=False, device="cpu", num_workers=2,
     )
 
 

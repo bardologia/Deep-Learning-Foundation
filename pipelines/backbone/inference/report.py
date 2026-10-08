@@ -62,23 +62,25 @@ class ReportPayloadBuilder:
             Serialisable configuration snapshot consumed by the report's configuration table.
         """
         return {
-            "stitch_window"     : cfg.stitch_window,
-            "cube_dtype"        : cfg.cube_dtype,
-            "save_cubes"        : cfg.save_cubes,
-            "save_plots"        : cfg.save_plots,
-            "save_animations"   : cfg.save_animations,
-            "n_best_profiles"   : cfg.n_best_profiles,
-            "n_worst_profiles"  : cfg.n_worst_profiles,
-            "n_random_profiles" : cfg.n_random_profiles,
-            "n_col_slices"      : cfg.n_col_slices,
-            "n_row_slices"      : cfg.n_row_slices,
-            "n_z_slices"        : cfg.n_z_slices,
-            "gif_axes"          : cfg.gif_axes,
-            "gif_fps"           : cfg.gif_fps,
-            "gif_max_frames"    : cfg.gif_max_frames,
-            "device"            : cfg.device,
-            "batch_size"        : run.dataset_config.batch_size,
-            "num_workers"       : cfg.num_workers,
+            "stitch_window"       : cfg.stitch_window,
+            "cube_dtype"          : cfg.cube_dtype,
+            "save_cubes"          : cfg.save_cubes,
+            "save_plots"          : cfg.save_plots,
+            "save_animations"     : cfg.save_animations,
+            "n_best_profiles"     : cfg.n_best_profiles,
+            "n_worst_profiles"    : cfg.n_worst_profiles,
+            "n_random_profiles"   : cfg.n_random_profiles,
+            "n_col_slices"        : cfg.n_col_slices,
+            "n_row_slices"        : cfg.n_row_slices,
+            "n_z_slices"          : cfg.n_z_slices,
+            "gif_axes"            : cfg.gif_axes,
+            "gif_fps"             : cfg.gif_fps,
+            "gif_duration"        : cfg.gif_duration,
+            "gif_max_frames"      : cfg.gif_max_frames,
+            "gif_separate_panels" : cfg.gif_separate_panels,
+            "device"              : cfg.device,
+            "batch_size"          : run.dataset_config.batch_size,
+            "num_workers"         : cfg.num_workers,
         }
 
 
@@ -247,23 +249,25 @@ class Report:
 
         out.append("\n### 1.5 Inference configuration\n")
         out.append(self._kv_table([
-            ("device",             cfg["device"]),
-            ("batch_size",         cfg["batch_size"]),
-            ("num_workers",        cfg["num_workers"]),
-            ("stitch_window",      cfg["stitch_window"]),
-            ("cube_dtype",         cfg["cube_dtype"]),
-            ("save_cubes",         cfg["save_cubes"]),
-            ("save_plots",         cfg["save_plots"]),
-            ("save_animations",    cfg["save_animations"]),
-            ("n_best_profiles",    cfg["n_best_profiles"]),
-            ("n_worst_profiles",   cfg["n_worst_profiles"]),
-            ("n_random_profiles",  cfg["n_random_profiles"]),
-            ("n_col_slices",     cfg["n_col_slices"]),
-            ("n_row_slices",   cfg["n_row_slices"]),
-            ("n_z_slices", cfg["n_z_slices"]),
-            ("gif_axes",           cfg["gif_axes"]),
-            ("gif_fps",            cfg["gif_fps"]),
-            ("gif_max_frames",     cfg["gif_max_frames"]),
+            ("device",              cfg["device"]),
+            ("batch_size",          cfg["batch_size"]),
+            ("num_workers",         cfg["num_workers"]),
+            ("stitch_window",       cfg["stitch_window"]),
+            ("cube_dtype",          cfg["cube_dtype"]),
+            ("save_cubes",          cfg["save_cubes"]),
+            ("save_plots",          cfg["save_plots"]),
+            ("save_animations",     cfg["save_animations"]),
+            ("n_best_profiles",     cfg["n_best_profiles"]),
+            ("n_worst_profiles",    cfg["n_worst_profiles"]),
+            ("n_random_profiles",   cfg["n_random_profiles"]),
+            ("n_col_slices",        cfg["n_col_slices"]),
+            ("n_row_slices",        cfg["n_row_slices"]),
+            ("n_z_slices",          cfg["n_z_slices"]),
+            ("gif_axes",            cfg["gif_axes"]),
+            ("gif_fps",             cfg["gif_fps"]),
+            ("gif_duration",        cfg["gif_duration"]),
+            ("gif_max_frames",      cfg["gif_max_frames"]),
+            ("gif_separate_panels", cfg["gif_separate_panels"]),
         ]))
         out.append("")
 
@@ -910,7 +914,8 @@ class Report:
             out.append("\n## 9. Animations\n")
             out.append(
                 "Each GIF walks through one axis of the stitched test cube. "
-                "The colour scale is fixed across frames.\n"
+                "The colour scale is fixed across frames. Names ending in a cube name "
+                "(pred, gt, full) are single-panel versions sized to the slice aspect ratio.\n"
             )
             for n, (name, path) in enumerate(sorted(gp.items()), start=1):
                 out.append(f"\n### 9.{n} `{name}`\n")

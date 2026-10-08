@@ -129,9 +129,11 @@ class InferenceQueueConfig:
         n_row_slices             : Cube slices plotted along the rows.
         n_z_slices               : Cube slices plotted along z.
         gif_axes                 : Cube axes animated in the GIF exports.
-        gif_fps                  : Frames per second of the GIF exports.
+        gif_fps                  : Frames per second of the GIF exports, used when gif_duration is None.
+        gif_duration             : Total playback length of each GIF export in seconds, or None to let gif_fps govern.
         gif_max_frames           : Maximum frames per GIF export.
         gif_dpi                  : Rendering resolution of animation frames.
+        gif_separate_panels      : Whether each cube is also exported as its own single-panel GIF sized to the slice aspect ratio.
         cmap_intensity           : Colormap used for intensity imagery.
         cmap_error               : Colormap used for error imagery.
         normalize_intensity      : Whether intensity maps are normalized before display.
@@ -170,10 +172,12 @@ class InferenceQueueConfig:
     n_row_slices : int = 5
     n_z_slices   : int = 5
 
-    gif_axes       : list[str] = field(default_factory=lambda: ["z"])
-    gif_fps        : int       = 12
-    gif_max_frames : int       = 150
-    gif_dpi        : int       = 110
+    gif_axes            : list[str]    = field(default_factory=lambda: ["z"])
+    gif_fps             : int          = 12
+    gif_duration        : float | None = None
+    gif_max_frames      : int          = 150
+    gif_dpi             : int          = 110
+    gif_separate_panels : bool         = False
 
     cmap_intensity      : str  = "jet"
     cmap_error          : str  = "magma"

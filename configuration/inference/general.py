@@ -1,8 +1,8 @@
 """Configuration for backbone and dual volumetric inference runs.
 
-Holds the output layout, the analysis toggles (reduced volumetric imaging, data
-consistency, flip consistency, stratified metrics, curve-parameter fitting)
-and the plotting and animation settings applied to every inference run.
+Holds the output layout, the analysis toggles (flip consistency, stratified
+metrics, curve-parameter fitting) and the plotting and animation settings
+applied to every inference run.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ class InferenceConfig:
         seed                     : Seed used for the random profile and slice selections.
         log_level                : Logging verbosity for the inference logger.
         split                    : Dataset split evaluated, typically "train", "val" or "test".
-        region_override          : Crop region as [row_start, row_end, range_start, range_end] overriding the split region.
+        region_override          : Crop region as [row_start, row_end, col_start, col_end] overriding the split region.
         checkpoint_name          : Checkpoint file name loaded from the run directory.
         batch_size               : Patch batch size, or None to reuse the training batch size.
         num_workers              : Dataloader worker processes.
@@ -64,13 +64,15 @@ class InferenceConfig:
         n_worst_profiles         : Number of worst-scoring profiles plotted.
         n_random_profiles        : Number of randomly drawn profiles plotted.
         profile_seed             : Seed for the random profile draw.
-        n_range_slices           : Number of range slices plotted.
-        n_row_slices         : Number of row slices plotted.
-        n_z_slices       : Number of z slices plotted.
-        gif_axes                 : Cube axes animated, from "z", "range" and "row".
-        gif_fps                  : Animation frame rate.
+        n_col_slices             : Number of col slices plotted.
+        n_row_slices             : Number of row slices plotted.
+        n_z_slices               : Number of z slices plotted.
+        gif_axes                 : Cube axes animated, from "z", "col" and "row".
+        gif_fps                  : Animation frame rate, used when gif_duration is None.
+        gif_duration             : Total playback length of each animation in seconds, or None to let gif_fps govern.
         gif_max_frames           : Upper bound on frames per animation.
         gif_dpi                  : Rendering resolution of animation frames.
+        gif_separate_panels      : Whether each cube (prediction, GT, raw cube) is also written as its own single-panel GIF sized to the slice aspect ratio.
         cmap_intensity           : Colormap used for intensity imagery.
         cmap_error               : Colormap used for error imagery.
         normalize_intensity      : Whether intensity maps are normalized before display.
@@ -116,10 +118,12 @@ class InferenceConfig:
     n_row_slices : int = 5
     n_z_slices   : int = 5
 
-    gif_axes       : List[str] = field(default_factory=lambda: ["z"])
-    gif_fps        : int       = 12
-    gif_max_frames : int       = 150
-    gif_dpi        : int       = 110
+    gif_axes            : List[str]       = field(default_factory=lambda: ["z"])
+    gif_fps             : int             = 12
+    gif_duration        : Optional[float] = None
+    gif_max_frames      : int             = 150
+    gif_dpi             : int             = 110
+    gif_separate_panels : bool            = False
 
     cmap_intensity      : str  = "jet"
     cmap_error          : str  = "magma"
