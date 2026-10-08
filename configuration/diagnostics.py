@@ -659,13 +659,13 @@ class ReceptiveFieldConfig:
 
 @dataclass
 class ActivationXrayConfig:
-    """Settings of the activation x-ray recorded over forward channels.
+    """Settings of the activation x-ray recorded over forward passes.
 
     Attributes:
         runs_dir                   : Root directory holding the run folders.
         run_filter                 : Run names to restrict the analysis to; empty means all.
         split                      : Dataset split the batches are drawn from.
-        device                     : Torch device the forward channels run on.
+        device                     : Torch device the forward passes run on.
         checkpoint_name            : Checkpoint loaded from each run.
         output_subdir              : Subdirectory of a run receiving the results.
         batch_size                 : Patches per recorded batch.
@@ -753,7 +753,7 @@ class AttentionCaptureConfig:
         runs_dir              : Root directory holding the run folders.
         run_filter            : Run names to restrict the analysis to; empty means all.
         split                 : Dataset split the batches are drawn from.
-        device                : Torch device the forward channels run on.
+        device                : Torch device the forward passes run on.
         checkpoint_name       : Checkpoint loaded from each run.
         output_subdir         : Subdirectory of a run receiving the results.
         batch_size            : Patches per batch.
@@ -787,7 +787,7 @@ class LayerProbeConfig:
         runs_dir          : Root directory holding the run folders.
         run_filter        : Run names to restrict the analysis to; empty means all.
         split             : Dataset split the probe data is drawn from.
-        device            : Torch device the forward channels run on.
+        device            : Torch device the forward passes run on.
         checkpoint_name   : Checkpoint loaded from each run.
         output_subdir     : Subdirectory of a run receiving the results.
         batch_size        : Patches per batch.
@@ -827,7 +827,7 @@ class CkaConfig:
         runs_dir          : Root directory holding the run folders.
         run_filter        : Run names to restrict the comparison to; empty means all.
         split             : Dataset split the activations are drawn from.
-        device            : Torch device the forward channels run on.
+        device            : Torch device the forward passes run on.
         checkpoint_name   : Checkpoint loaded from each run.
         output_dir        : Directory receiving the similarity matrices and figures.
         batch_size        : Patches per batch.
@@ -868,7 +868,7 @@ class LossLandscapeConfig:
         output_subdir   : Subdirectory of a run receiving the results.
         batch_size      : Patches per evaluation batch.
         max_batches     : Batches averaged per landscape point.
-        span            : Half-width of the perturbation col in filter-normalised units.
+        span            : Half-width of the perturbation range in filter-normalised units.
         n_directions    : Random directions sampled for the 1D profiles.
         n_points_1d     : Points evaluated along each 1D direction.
         n_points_2d     : Points per axis of the 2D landscape grid.
@@ -903,7 +903,7 @@ class RobustnessConfig:
         runs_dir         : Root directory holding the run folders.
         run_filter       : Run names to restrict the analysis to; empty means all.
         split            : Dataset split the batches are drawn from.
-        device           : Torch device the forward channels run on.
+        device           : Torch device the forward passes run on.
         checkpoint_name  : Checkpoint loaded from each run.
         output_subdir    : Subdirectory of a run receiving the results.
         batch_size       : Patches per batch.
@@ -947,7 +947,7 @@ class TrainingEvolutionConfig:
         runs_dir         : Root directory holding the run folders.
         run_filter       : Run names to restrict the analysis to; empty means all.
         split            : Dataset split the probe patches are drawn from.
-        device           : Torch device the forward channels run on.
+        device           : Torch device the forward passes run on.
         checkpoint_name  : Checkpoint used as the final animation frame.
         output_subdir    : Subdirectory of a run receiving the animation.
         window           : Side length in pixels of the animated neighbourhood.
