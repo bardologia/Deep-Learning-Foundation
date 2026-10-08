@@ -354,14 +354,15 @@ class CkaComparison:
         keep = np.linspace(0, len(names) - 1, self.config.max_layers).astype(int)
         return [names[index] for index in sorted(set(keep))]
 
-    def _collect(self, run) -> dict[str, np.ndarray]:
+    def _collect(self, run, name: str) -> dict[str, np.ndarray]:
         """Records layer activations at the sampled pixels of one run.
 
         Layers that do not emit a (batch, channels, height, width) feature map on
-        the input grid are dropped.
+        the input grid are dropped; the usable layer and sample counts are logged.
 
         Args:
-            run : Loaded run providing the model and loader.
+            run  : Loaded run providing the model and loader.
+            name : Run label used in the log line.
 
         Returns:
             Mapping from layer name to features of shape (samples, channels).
@@ -401,7 +402,12 @@ class CkaComparison:
         if not chunks:
             raise ValueError(f"Run {run.backbone_name} produced no (B, C, H, W) feature map on the input grid to compare")
 
-        return {layer: np.concatenate(parts, axis=0) for layer, parts in chunks.items()}
+        features  = {layer: np.concatenate(parts, axis=0) for layer, parts in chunks.items()}
+        n_samples = next(iter(features.values())).shape[0]
+
+        self.logger.info(f"{name}: {len(features)} of {len(layers)} probed layers usable, {n_samples} sampled pixels")
+
+        return features
 
     def _write_report(self, names: list[str], summary: np.ndarray, pairs: dict, figures: dict[str, Path]) -> Path:
         """Writes the markdown CKA report with the alignment matrix and pair diagnostics.
@@ -458,39 +464,47 @@ class CkaComparison:
 
         grids    = []
         features = []
-        for run_dir in run_dirs:
-            run = self._load(run_dir)
+        for index, (run_dir, name) in enumerate(zip(run_dirs, names), start=1):
+            with self.logger.timer(f"CKA features [{index}/{len(run_dirs)}] {name}"):
+                run = self._load(run_dir)
 
-            grids.append(self._sample_grid(run))
-            self._validate_alignment(grids)
+                grids.append(self._sample_grid(run))
+                self._validate_alignment(grids)
 
-            features.append(self._collect(run))
-            del run
+                features.append(self._collect(run, name))
+                del run
 
         plots   = CkaPlots()
         figures = {}
-
-        for i, name in enumerate(names):
-            safe = name.replace("/", "_")
-            figures[f"self_{safe}"] = plots.self_heatmap(CkaComputation.cross_matrix(features[i], features[i]), name, self.output_dir / "self" / f"{i}.png")
-
         summary = np.eye(len(names))
         pairs   = {}
 
-        for (i, j) in combinations(range(len(names)), 2):
-            matrix            = CkaComputation.cross_matrix(features[i], features[j])
-            score             = CkaComputation.alignment_score(matrix)
-            forward, backward = CkaComputation.best_match_profiles(matrix)
+        run_pairs = list(combinations(range(len(names)), 2))
+        self.logger.info(f"{len(names)} runs -> {len(names)} self matrices and {len(run_pairs)} pair matrices")
 
-            summary[i, j] = summary[j, i] = score
-            pairs[(names[i], names[j])]   = {
-                "score"               : score,
-                "divergence_forward"  : CkaComputation.divergence_depth(forward),
-                "divergence_backward" : CkaComputation.divergence_depth(backward),
-            }
+        with self.logger.timer(f"CKA matrices ({len(names) + len(run_pairs)})"), self.logger.track() as progress:
+            task = progress.add_task("[section]CKA matrices[/section]", total=len(names) + len(run_pairs))
 
-            figures[f"pair_{i}_{j}"]    = plots.pair_heatmap(matrix, names[i], names[j], score, self.output_dir / "pairs" / f"{i}_{j}.png")
-            figures[f"profile_{i}_{j}"] = plots.best_match_profile(forward, backward, names[i], names[j], self.output_dir / "pairs" / f"{i}_{j}_profile.png")
+            for i, name in enumerate(names):
+                safe = name.replace("/", "_")
+                figures[f"self_{safe}"] = plots.self_heatmap(CkaComputation.cross_matrix(features[i], features[i]), name, self.output_dir / "self" / f"{i}.png")
+                progress.advance(task)
+
+            for (i, j) in run_pairs:
+                matrix            = CkaComputation.cross_matrix(features[i], features[j])
+                score             = CkaComputation.alignment_score(matrix)
+                forward, backward = CkaComputation.best_match_profiles(matrix)
+
+                summary[i, j] = summary[j, i] = score
+                pairs[(names[i], names[j])]   = {
+                    "score"               : score,
+                    "divergence_forward"  : CkaComputation.divergence_depth(forward),
+                    "divergence_backward" : CkaComputation.divergence_depth(backward),
+                }
+
+                figures[f"pair_{i}_{j}"]    = plots.pair_heatmap(matrix, names[i], names[j], score, self.output_dir / "pairs" / f"{i}_{j}.png")
+                figures[f"profile_{i}_{j}"] = plots.best_match_profile(forward, backward, names[i], names[j], self.output_dir / "pairs" / f"{i}_{j}_profile.png")
+                progress.advance(task)
 
         figures["alignment"] = plots.summary_heatmap(summary, names, self.output_dir / "alignment.png")
 
