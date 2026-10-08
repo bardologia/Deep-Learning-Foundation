@@ -1147,23 +1147,33 @@ class AttentionTap:
 
 
 class AttentionMath:
-    """Scaled dot-product attention routed through the capture tap."""
+    """Scaled dot-product attention on the fused kernel, or on an explicit path while the capture tap is enabled."""
 
     @staticmethod
     def scaled_dot_product(query, key, value, scale, attention_dropout, attention_bias=None):
-        """Computes scaled dot-product attention and records the weights.
+        """Computes scaled dot-product attention.
+
+        While the capture tap is disabled the fused torch kernel runs and the
+        dropout module is never called; its probability is applied in training
+        mode only. While the tap is enabled the weights are formed explicitly,
+        recorded, and passed through the dropout module.
 
         Args:
             query             : Queries of shape (batch, heads, queries, head_dim).
             key               : Keys of shape (batch, heads, keys, head_dim).
             value             : Values of shape (batch, heads, keys, head_dim).
             scale             : Multiplier applied to the query-key products, usually head_dim ** -0.5.
-            attention_dropout : Dropout module applied to the softmaxed weights.
+            attention_dropout : nn.Dropout module applied to the softmaxed weights.
             attention_bias    : Additive bias broadcast onto the attention logits, used for relative position and window masking, or None.
 
         Returns:
             Attended values of shape (batch, heads, queries, head_dim).
         """
+        if AttentionTap._sink is None:
+            dropout_p = attention_dropout.p if attention_dropout.training else 0.0
+
+            return functional.scaled_dot_product_attention(query, key, value, attn_mask=attention_bias, dropout_p=dropout_p, scale=scale)
+
         attention_weights = (query @ key.transpose(-2, -1)) * scale
 
         if attention_bias is not None:

@@ -25,7 +25,7 @@ from models.blocks import (
     ResidualConvBlock,
     TransformerBlock,
 )
-from models.blocks import AttentionMath, FeatureGeometry, LayerFactory
+from models.blocks import AttentionMath, AttentionTap, FeatureGeometry, LayerFactory
 
 
 ACTIVATIONS    = ["relu", "leaky_relu", "gelu", "elu", "silu"]
@@ -235,6 +235,52 @@ def test_scaled_dot_product():
     out = AttentionMath.scaled_dot_product(q, k, v, scale=0.5, attention_dropout=torch.nn.Dropout(0.0))
     assert out.shape == (2, 2, 5, 4)
     assert _finite(out)
+
+
+@pytest.mark.parametrize("with_bias", [False, True])
+def test_scaled_dot_product_fused_path_matches_the_tapped_path(with_bias):
+    """Verifies the fused attention kernel and the tapped explicit path agree in eval mode, with and without an additive bias."""
+    generator = torch.Generator().manual_seed(0)
+    q         = torch.randn(2, 2, 5, 4, generator=generator, dtype=torch.float64)
+    k         = torch.randn(2, 2, 5, 4, generator=generator, dtype=torch.float64)
+    v         = torch.randn(2, 2, 5, 4, generator=generator, dtype=torch.float64)
+    bias      = torch.randn(2, 1, 5, 5, generator=generator, dtype=torch.float64) if with_bias else None
+    dropout   = torch.nn.Dropout(0.3).eval()
+
+    fused = AttentionMath.scaled_dot_product(q, k, v, 0.5, dropout, bias)
+
+    sink = []
+    AttentionTap.enable(sink)
+    try:
+        tapped = AttentionMath.scaled_dot_product(q, k, v, 0.5, dropout, bias)
+    finally:
+        AttentionTap.disable()
+
+    assert len(sink) == 1
+    assert torch.allclose(fused, tapped, atol=1e-6, rtol=0.0)
+
+
+def test_shifted_swin_block_fused_path_matches_the_tapped_path():
+    """Verifies a shifted Swin block, whose attention adds the relative-position bias and the cyclic-shift mask, agrees on both attention paths in eval mode."""
+    from models.backbone.swin_unet import SwinTransformerBlock
+
+    torch.manual_seed(1)
+    block = SwinTransformerBlock(embedding_dim=8, num_heads=2, window_size=4, shift_size=2, attention_dropout=0.3).double().eval()
+    torch.nn.init.normal_(block.attention.relative_position_bias_table, std=1.0)
+    x     = torch.randn(2, 8 * 8, 8, dtype=torch.float64)
+
+    sink = []
+    with torch.no_grad():
+        fused = block(x, 8, 8)
+
+        AttentionTap.enable(sink)
+        try:
+            tapped = block(x, 8, 8)
+        finally:
+            AttentionTap.disable()
+
+    assert len(sink) == 1
+    assert torch.allclose(fused, tapped, atol=1e-6, rtol=0.0)
 
 
 def test_multi_head_self_attention():
