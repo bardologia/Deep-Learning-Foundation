@@ -1,19 +1,23 @@
 "use strict";
 
-const pulse = (svg, gsap) => {
-  if (!gsap) return null;
-  const els = svg.querySelectorAll(".sk-live");
-  if (!els.length) return null;
-  return gsap.to(els, { opacity: 0.35, duration: 1.25, ease: "sine.inOut", repeat: -1, yoyo: true, stagger: { each: 0.16, from: "start" } });
-};
+class FlowSketches {
 
-const grid = (cells, build) => {
-  let s = "";
-  for (let r = 0; r < cells; r++) for (let c = 0; c < cells; c++) s += build(r, c);
-  return s;
-};
+  static pulse(svg, gsap) {
+    if (!gsap) return null;
 
-window.FLOW_SKETCHES = {
+    const els = svg.querySelectorAll(".sk-live");
+    if (!els.length) return null;
+
+    return gsap.to(els, { opacity: 0.35, duration: 1.25, ease: "sine.inOut", repeat: -1, yoyo: true, stagger: { each: 0.16, from: "start" } });
+  }
+
+  static grid(cells, build) {
+    let out = "";
+    for (let r = 0; r < cells; r++) for (let c = 0; c < cells; c++) out += build(r, c);
+    return out;
+  }
+
+  static CATALOG = {
 
   threshold: {
     tip: "Samples below t_f = 0.25 x peak are zeroed and bins past H_tr = 170 dropped before the fit sees the profile.",
@@ -62,7 +66,7 @@ window.FLOW_SKETCHES = {
       <circle class="sk-live skl-pop f-cal" cx="60" cy="40" r="4.5"/>
       <circle class="sk-live skl-pop f-cal" cx="168" cy="58" r="4.5"/>
       <circle cx="114" cy="70" r="4" class="skl-pop f-faint"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   geometry: {
@@ -129,7 +133,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-faint" x1="28" y1="104" x2="214" y2="104"/>
       <path class="skl-draw c-cal" d="M28 100 C70 96 84 70 108 56 S170 44 214 44" style="fill:none"/>
       <circle class="sk-live skl-pop f-cal" cx="214" cy="44" r="4"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   scoreK: {
@@ -159,7 +163,7 @@ window.FLOW_SKETCHES = {
       <rect x="188" y="62" width="22" height="54" class="skl-pop f-mid"/>
       <path class="skl-draw c-cal" d="M103 36 L103 62 M97 56 L103 62 L109 56" style="fill:none"/>
       <text x="103" y="30" text-anchor="middle" style="fill:#4fd6c4;font-size:9px;font-weight:700">K*=2</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   rescale: {
@@ -203,7 +207,7 @@ window.FLOW_SKETCHES = {
         <text x="40" y="34" style="fill:#4fd6c4;font-size:9px">R2</text>
         ${m}`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   diagnostics: {
@@ -259,7 +263,7 @@ window.FLOW_SKETCHES = {
         <rect x="124" y="96" width="20" height="20" class="skl-pop f-cal"/>
         <rect x="148" y="96" width="20" height="20" class="skl-pop f-cal"/>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   stack: {
@@ -284,7 +288,7 @@ window.FLOW_SKETCHES = {
       for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) g += `<rect x="${40 + c * 41}" y="${30 + r * 32}" width="40" height="30" class="skl-pop f-mid" style="opacity:.16;stroke:#f5b971;stroke-width:.8"/>`;
       svg.innerHTML = `${g}<rect class="sk-live" x="81" y="62" width="40" height="30" style="fill:none;stroke:#4fd6c4;stroke-width:2.2"/>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   padgeom: {
@@ -351,7 +355,7 @@ window.FLOW_SKETCHES = {
       for (let i = 0; i < 9; i++) { const x = 30 + i * 20, r = i % 3; row += `<rect class="skl-pop ${cls[r]}" x="${x}" y="40" width="16" height="22"/><text x="${x + 8}" y="55" text-anchor="middle" style="fill:#0b1014;font-size:7px">${roles[r]}</text>`; out += `<rect class="sk-live skl-pop f-cal" x="${x}" y="92" width="16" height="22"/>`; }
       svg.innerHTML = `<text x="120" y="30" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">interleaved theta</text>${row}<text x="120" y="80" text-anchor="middle" style="fill:#c3cbd8;font-size:12px">&#8595;</text>${out}`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   augment_geo: {
@@ -494,7 +498,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-pop" x1="60" y1="48" x2="60" y2="60" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <line class="sk-live skl-pop" x1="120" y1="22" x2="120" y2="32" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <line class="sk-live skl-pop" x1="150" y1="50" x2="150" y2="58" style="stroke:#f5b971;stroke-width:3;opacity:1"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   curvepoint: {
@@ -562,7 +566,7 @@ window.FLOW_SKETCHES = {
       <text x="160" y="68" text-anchor="middle" style="fill:#f5b971;font-size:7px">/ sum</text>
       <rect class="sk-live skl-pop f-fin" x="192" y="48" width="24" height="70"/>
       <text x="204" y="132" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">L</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   gradclip: {
@@ -586,7 +590,7 @@ window.FLOW_SKETCHES = {
       <circle cx="70" cy="92" r="2.5" class="skl-pop f-mid" style="opacity:.4"/>
       <circle cx="98" cy="114" r="2.5" class="skl-pop f-mid" style="opacity:.4"/>
       <circle class="sk-live skl-pop f-fin" cx="120" cy="122" r="5"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   schedule: {
@@ -608,7 +612,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-cal" d="M30 50 L62 72 L94 60 L120 90 L150 78 L180 96 L210 88" style="fill:none"/>
       <circle class="sk-live skl-pop f-fin" cx="120" cy="90" r="5"/>
       <text x="120" y="108" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">best</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pae_stack: {
@@ -632,7 +636,7 @@ window.FLOW_SKETCHES = {
       [0, 2, 5].forEach((i) => { kept += `<rect class="sk-live" x="${24 + i * 20}" y="34" width="16" height="16" style="fill:none;stroke:#4fd6c4;stroke-width:2.4"/>`; });
       svg.innerHTML = `${cells}${kept}<text x="120" y="76" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">a_max &gt; tau_a</text><text x="120" y="106" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">kept + 5% empty, shuffled</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pae_genesis: {
@@ -679,7 +683,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-pop" x1="108" y1="60" x2="108" y2="70" style="stroke:#c4a3ff;stroke-width:3"/>
       <line class="sk-live skl-pop" x1="120" y1="52" x2="120" y2="60" style="stroke:#c4a3ff;stroke-width:3"/>
       <line class="sk-live skl-pop" x1="132" y1="62" x2="132" y2="72" style="stroke:#c4a3ff;stroke-width:3"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pae_encode: {
@@ -690,7 +694,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-faint" d="M112 62 L140 72 L140 84 L112 92 Z" style="fill:none"/>
       <rect x="150" y="64" width="16" height="26" rx="2" class="sk-live skl-pop f-mid"/>
       <text x="158" y="108" text-anchor="middle" style="fill:#f5b971;font-size:7px">z : d=24</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pae_embednorm: {
@@ -701,7 +705,7 @@ window.FLOW_SKETCHES = {
       hs.forEach((h, i) => { const x = 48 + i * 16, y = h >= 0 ? 76 - h : 76, ht = Math.abs(h); b += `<rect class="skl-pop f-mid" x="${x}" y="${y}" width="11" height="${ht}"/>`; });
       svg.innerHTML = `<line class="skl-axis" x1="40" y1="76" x2="200" y2="76"/>${b}<circle cx="120" cy="76" r="30" class="sk-live skl-dash c-cal" style="fill:none"/><text x="120" y="126" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">(z - mean)/std</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pae_decode: {
@@ -725,7 +729,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-pop" x1="64" y1="34" x2="64" y2="46" style="stroke:#f5b971;stroke-width:3"/>
       <line class="sk-live skl-pop" x1="128" y1="22" x2="128" y2="34" style="stroke:#f5b971;stroke-width:3"/>
       <line class="sk-live skl-pop" x1="160" y1="50" x2="160" y2="58" style="stroke:#f5b971;stroke-width:3"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pae_paramgroups: {
@@ -761,7 +765,7 @@ window.FLOW_SKETCHES = {
       <circle cx="100" cy="114" r="2.5" class="skl-pop f-mid" style="opacity:.6"/>
       <circle class="sk-live skl-pop f-fin" cx="120" cy="122" r="5"/>
       <text x="120" y="140" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">clip tau=1</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pae_checkpoint: {
@@ -771,7 +775,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-cal" d="M30 52 L60 74 L92 62 L120 92 L150 80 L180 98 L210 90" style="fill:none"/>
       <circle class="sk-live skl-pop f-fin" cx="120" cy="92" r="5"/>
       <text x="120" y="110" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">best theta*</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iae_encode: {
@@ -783,7 +787,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-faint" d="M112 62 L150 72 L150 82 L112 92 Z" style="fill:none"/>
       <rect x="162" y="60" width="18" height="34" rx="2" class="sk-live skl-pop f-mid"/>
       <text x="171" y="110" text-anchor="middle" style="fill:#f5b971;font-size:7px">z0 : C_e</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iae_embednorm: {
@@ -797,7 +801,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-draw c-cal" x1="120" y1="76" x2="151" y2="54"/>
       <circle class="sk-live skl-pop f-cal" cx="151" cy="54" r="3.6"/>
       <text x="120" y="116" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">||z|| = 1</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iae_decode: {
@@ -821,7 +825,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-pop" x1="64" y1="34" x2="64" y2="44" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <line class="sk-live skl-pop" x1="128" y1="26" x2="128" y2="36" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <line class="sk-live skl-pop" x1="160" y1="54" x2="160" y2="62" style="stroke:#f5b971;stroke-width:3;opacity:1"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iae_reconterm: {
@@ -847,7 +851,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-draw c-mid" x1="120" y1="78" x2="151" y2="60"/>
       <circle class="sk-live skl-pop f-mid" cx="151" cy="60" r="3.6"/>
       <text x="120" y="122" text-anchor="middle" style="fill:#f5b971;font-size:7px">clip to ||g|| = tau</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iae_adamw: {
@@ -858,7 +862,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-cal" d="M30 40 C70 46 96 92 130 104 S190 112 214 113" style="fill:none"/>
       <circle class="sk-live skl-pop f-cal" cx="214" cy="113" r="4"/>
       <text x="120" y="36" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">L down</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iae_schedule: {
@@ -883,7 +887,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-faint" x1="118" y1="96" x2="118" y2="118"/>
       <circle class="sk-live skl-pop f-fin" cx="118" cy="96" r="4.5"/>
       <text x="118" y="34" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">best</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   jep_couple: {
@@ -975,7 +979,7 @@ window.FLOW_SKETCHES = {
       <text x="158" y="56" style="fill:#f5b971;font-size:7px">z*_n</text>
       <line class="sk-live skl-draw c-fin" x1="84" y1="94" x2="150" y2="58"/>
       <text x="104" y="84" style="fill:#c4a3ff;font-size:7px">|z_n - z*_n|&#178;</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   jep_recon: {
@@ -1002,7 +1006,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-mid" d="M156 84 L182 84 M175 79 L182 84 L175 89" style="fill:none"/>
       <rect class="sk-live skl-pop f-fin" x="190" y="52" width="24" height="66"/>
       <text x="202" y="132" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">L</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   jep_step: {
@@ -1014,7 +1018,7 @@ window.FLOW_SKETCHES = {
       <circle cx="100" cy="114" r="2.5" class="skl-pop f-mid" style="opacity:.6"/>
       <circle class="sk-live skl-pop f-fin" cx="120" cy="124" r="5"/>
       <text x="120" y="146" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">bb + AE ft</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
 
@@ -1027,7 +1031,7 @@ window.FLOW_SKETCHES = {
       <circle class="sk-live skl-pop f-fin" cx="120" cy="92" r="5"/>
       <text x="120" y="110" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">best</text>
       <text x="200" y="60" text-anchor="end" style="fill:#c3cbd8;font-size:7px">val loss</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   jep_diag: {
@@ -1063,7 +1067,7 @@ window.FLOW_SKETCHES = {
       for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) g += `<rect x="${44 + c * 34}" y="${40 + r * 28}" width="30" height="24" rx="2" style="fill:#1b242f;stroke:#303d4c"/>`;
       svg.innerHTML = `${g}<rect class="sk-live" x="44" y="40" width="30" height="24" rx="2" style="fill:rgba(110,168,255,0.25);stroke:#6ea8ff;stroke-width:2"/><text x="120" y="138" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">sliding window</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   idenorm: {
@@ -1161,7 +1165,7 @@ window.FLOW_SKETCHES = {
       <path class="skl-draw c-fin" d="M120 77 L152 77 M144 71 L152 77 L144 83" style="fill:none"/>
       <rect x="160" y="52" width="50" height="50" rx="3" class="skl-draw c-fin" style="fill:rgba(196,163,255,0.15)"/>
       <text x="185" y="118" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">params</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   pixelmaps: {
@@ -1177,7 +1181,7 @@ window.FLOW_SKETCHES = {
         <path class="skl-draw c-cal" d="M98 74 L112 74 M106 69 L112 74 L106 79" style="fill:none"/>
         ${cells}`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   globalcurve: {
@@ -1246,7 +1250,7 @@ window.FLOW_SKETCHES = {
       }
       svg.innerHTML = s + `<text x="120" y="146" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">active + 5% empties</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   paei_curves: {
@@ -1298,7 +1302,7 @@ window.FLOW_SKETCHES = {
       <rect class="sk-live skl-pop f-cal" x="150" y="70" width="30" height="9" rx="2" style="opacity:.8"/>
       <rect class="sk-live skl-pop f-cal" x="150" y="82" width="30" height="9" rx="2" style="opacity:.6"/>
       <text x="165" y="108" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">z : d=24</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   paei_decode: {
@@ -1340,7 +1344,7 @@ window.FLOW_SKETCHES = {
         <rect x="168" y="46" width="44" height="56" rx="3" class="skl-draw c-fin" style="fill:rgba(196,163,255,0.10)"/>
         <text x="190" y="78" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">.npy</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   paei_physical: {
@@ -1352,7 +1356,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-pop" x1="70" y1="46" x2="70" y2="54" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <line class="sk-live skl-pop" x1="140" y1="40" x2="140" y2="48" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <text x="120" y="28" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">R2 = 1 - SSE/SST</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   paei_shape: {
@@ -1450,7 +1454,7 @@ window.FLOW_SKETCHES = {
       for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) g += `<rect x="${44 + c * 38}" y="${32 + r * 30}" width="37" height="29" class="skl-pop f-meas" style="opacity:.14;stroke:#6ea8ff;stroke-width:.8"/>`;
       svg.innerHTML = `${g}<rect class="sk-live" x="82" y="62" width="37" height="29" style="fill:none;stroke:#4fd6c4;stroke-width:2.2"/><text x="120" y="138" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">test region &#8594; x-hat patches</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iaei_encode: {
@@ -1465,7 +1469,7 @@ window.FLOW_SKETCHES = {
       <rect class="sk-live skl-pop f-mid" x="150" y="78" width="16" height="16"/>
       <rect class="sk-live skl-pop f-mid" x="168" y="78" width="16" height="16"/>
       <text x="167" y="110" text-anchor="middle" style="fill:#f5b971;font-size:8px">z</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iaei_decode: {
@@ -1498,14 +1502,14 @@ window.FLOW_SKETCHES = {
   iaei_embed: {
     tip: "Each patch embedding is the latent averaged over its spatial dimensions, a global mean pool to a D-vector.",
     build(svg) {
-      const m = grid(3, (r, c) => `<rect class="sk-live skl-pop f-mid" x="${40 + c * 22}" y="${44 + r * 22}" width="20" height="20" style="opacity:.7"/>`);
+      const m = FlowSketches.grid(3, (r, c) => `<rect class="sk-live skl-pop f-mid" x="${40 + c * 22}" y="${44 + r * 22}" width="20" height="20" style="opacity:.7"/>`);
       svg.innerHTML = `${m}
         <text x="118" y="80" text-anchor="middle" style="fill:#c3cbd8;font-size:12px">&#8594;</text>
         <rect x="150" y="44" width="18" height="62" class="skl-pop f-cal"/>
         <text x="159" y="120" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">z-bar</text>
         <text x="72" y="122" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">mean over h,w</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iaei_residual: {
@@ -1518,7 +1522,7 @@ window.FLOW_SKETCHES = {
       <line class="sk-live skl-pop" x1="124" y1="27" x2="124" y2="37" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <line class="sk-live skl-pop" x1="156" y1="53" x2="156" y2="61" style="stroke:#f5b971;stroke-width:3;opacity:1"/>
       <text x="120" y="122" text-anchor="middle" style="fill:#f5b971;font-size:7px">e = x-tilde - x</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iaei_physical: {
@@ -1563,7 +1567,7 @@ window.FLOW_SKETCHES = {
       <rect x="170" y="86" width="18" height="30" class="skl-pop f-cal"/>
       <rect x="196" y="80" width="14" height="36" class="skl-pop f-faint"/>
       <text x="120" y="132" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">m_c per channel</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   iaei_embstats: {
@@ -1609,7 +1613,7 @@ window.FLOW_SKETCHES = {
       <rect class="sk-live skl-pop f-cal" x="118" y="64" width="94" height="20" rx="2"/>
       <text x="165" y="58" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">N* (budget)</text>
       <text x="165" y="78" text-anchor="middle" style="fill:#0b1014;font-size:8px">params</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_search: {
@@ -1624,7 +1628,7 @@ window.FLOW_SKETCHES = {
       <text x="132" y="36" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">N*</text>
       <circle class="sk-live skl-pop f-mid" cx="120" cy="100" r="4.5"/>
       <text x="120" y="128" text-anchor="middle" style="fill:#f5b971;font-size:7px">s = sqrt(l h)</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_widths: {
@@ -1641,7 +1645,7 @@ window.FLOW_SKETCHES = {
       <rect class="skl-pop f-faint" x="176" y="54" width="18" height="66" style="opacity:.5"/>
       <text x="185" y="50" text-anchor="middle" style="fill:#c3cbd8;font-size:6px">locked</text>
       <text x="204" y="134" text-anchor="end" style="fill:#4fd6c4;font-size:7px">round&#183;8</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_context: {
@@ -1653,7 +1657,7 @@ window.FLOW_SKETCHES = {
       <rect class="sk-live skl-pop f-meas" x="92" y="114" width="56" height="16"/>
       <text x="120" y="126" text-anchor="middle" style="fill:#0b1014;font-size:7px">C_ctx</text>
       <text x="120" y="24" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">device VRAM</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_probe: {
@@ -1668,7 +1672,7 @@ window.FLOW_SKETCHES = {
       <rect class="sk-live skl-pop f-mid" x="132" y="52" width="20" height="70"/>
       <rect class="skl-pop f-faint" x="162" y="30" width="20" height="92" style="opacity:.5"/>
       <text x="120" y="138" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">b = 1, 2, 4, 8, 16</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_maxbatch: {
@@ -1684,7 +1688,7 @@ window.FLOW_SKETCHES = {
       <rect x="130" y="56" width="24" height="68" class="sk-live" style="fill:none;stroke:#4fd6c4;stroke-width:2"/>
       <rect class="skl-pop f-faint" x="162" y="34" width="20" height="88" style="opacity:.35"/>
       <text x="142" y="50" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">B*</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_units: {
@@ -1698,7 +1702,7 @@ window.FLOW_SKETCHES = {
         <rect x="72" y="38" width="122" height="20" class="sk-live" style="fill:none;stroke:#4fd6c4;stroke-width:2"/>
         <text x="52" y="52" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">m1</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_train: {
@@ -1712,7 +1716,7 @@ window.FLOW_SKETCHES = {
       <circle class="sk-live skl-pop f-cal" cx="150" cy="90" r="4.5"/>
       <text x="150" y="82" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">best</text>
       <text x="120" y="136" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">val loss / epoch</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_infer: {
@@ -1726,7 +1730,7 @@ window.FLOW_SKETCHES = {
       <rect class="skl-pop f-cal" x="176" y="70" width="12" height="34"/>
       <rect class="skl-pop f-cal" x="192" y="58" width="12" height="46"/>
       <text x="182" y="118" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">metrics q</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_aggregate: {
@@ -1741,7 +1745,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-draw c-cal" x1="100" y1="92" x2="116" y2="92"/>
       <circle class="sk-live skl-pop f-cal" cx="108" cy="68" r="4.5"/>
       <text x="108" y="132" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">mean &#177; std</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   bench_leaderboard: {
@@ -1756,7 +1760,7 @@ window.FLOW_SKETCHES = {
       <text x="32" y="99" text-anchor="end" style="fill:#c3cbd8;font-size:7px">3</text>
       <text x="32" y="125" text-anchor="end" style="fill:#c3cbd8;font-size:7px">4</text>
       <text x="200" y="47" style="fill:#c4a3ff;font-size:8px">Score</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   cv_partition: {
@@ -1791,7 +1795,7 @@ window.FLOW_SKETCHES = {
       roles.forEach((r, i) => { const live = (r === "test" || r === "val") ? " sk-live" : ""; b += `<rect class="skl-pop ${cls[r]}${live}" x="${28 + i * 31}" y="50" width="28" height="42"/>`; });
       svg.innerHTML = `${b}<text x="104" y="42" text-anchor="middle" style="fill:#c4a3ff;font-size:8px">test</text><text x="135" y="42" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">val</text><text x="120" y="110" text-anchor="middle" style="fill:#6ea8ff;font-size:8px">train = merge(rest)</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   cv_units: {
@@ -1801,7 +1805,7 @@ window.FLOW_SKETCHES = {
       for (let r = 0; r < 3; r++) { g += `<text x="30" y="${58 + r * 26}" style="fill:#6ea8ff;font-size:7px">fold_${r}</text>`; for (let c = 0; c < 3; c++) g += `<rect class="sk-live skl-pop f-cal" x="${76 + c * 40}" y="${46 + r * 26}" width="34" height="18" style="opacity:${0.45 + 0.16 * c}"/>`; }
       svg.innerHTML = `<text x="146" y="36" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">seed 0    seed 1    seed 2</text>${g}`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   cv_train: {
@@ -1815,7 +1819,7 @@ window.FLOW_SKETCHES = {
       <circle class="sk-live skl-pop f-cal" cx="150" cy="104" r="3.4"/>
       <text x="150" y="96" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">L*_k</text>
       <text x="120" y="132" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">epoch</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   cv_infer: {
@@ -1847,7 +1851,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-mid" x1="160" y1="98" x2="176" y2="98"/>
       <circle class="sk-live skl-pop f-mid" cx="168" cy="74" r="4.2"/>
       <text x="168" y="122" text-anchor="middle" style="fill:#f5b971;font-size:7px">mean, seed std</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   cv_aggregate: {
@@ -1858,7 +1862,7 @@ window.FLOW_SKETCHES = {
       ys.forEach((y, i) => { d += `<circle class="skl-pop f-cal" cx="${44 + i * 22}" cy="${y}" r="3"/>`; });
       svg.innerHTML = `<line class="skl-axis" x1="30" y1="116" x2="214" y2="116"/><rect class="sk-live skl-pop f-fin" x="34" y="62" width="176" height="28" style="opacity:.16"/><line class="skl-dash c-fin" x1="34" y1="76" x2="210" y2="76"/><text x="34" y="54" style="fill:#c4a3ff;font-size:7px">mean +/- std</text><text x="120" y="132" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">folds</text>${d}`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   cv_report: {
@@ -1889,7 +1893,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-axis" x1="30" y1="44" x2="210" y2="44"/>
       <text x="30" y="38" style="fill:#c3cbd8;font-size:7px">p_drop</text>
       <circle class="sk-live skl-pop f-cal" cx="96" cy="44" r="4"/>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   spacearch: {
@@ -1946,7 +1950,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-fin" x1="104" y1="30" x2="104" y2="118"/>
       <circle class="sk-live skl-pop f-fin" cx="104" cy="30" r="5"/>
       <text x="60" y="26" style="fill:#c4a3ff;font-size:7px">l/g</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   liar: {
@@ -1990,7 +1994,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-dash c-fin" x1="30" y1="102" x2="206" y2="102"/>
       <circle class="sk-live skl-pop f-cal" cx="158" cy="102" r="4"/>
       <text x="158" y="96" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">min L</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   prune: {
@@ -2022,7 +2026,7 @@ window.FLOW_SKETCHES = {
       <circle class="sk-live skl-pop f-fin" cx="150" cy="110" r="5"/>
       <circle cx="184" cy="82" r="3" class="skl-pop f-cal" style="opacity:.5"/>
       <text x="150" y="132" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">argmin f</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_target: {
@@ -2039,7 +2043,7 @@ window.FLOW_SKETCHES = {
       <text x="184" y="66" style="fill:#f5b971;font-size:7px">back</text>
       <circle cx="152" cy="120" r="4" class="skl-pop f-cal"/>
       <text x="180" y="124" style="fill:#4fd6c4;font-size:7px">L(x)</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_grid: {
@@ -2054,7 +2058,7 @@ window.FLOW_SKETCHES = {
         <text x="36" y="68" text-anchor="middle" transform="rotate(-90 36 68)" style="fill:#6ea8ff;font-size:7px">batch b</text>
         <text x="127" y="134" text-anchor="middle" style="fill:#6ea8ff;font-size:7px">workers w</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_loader: {
@@ -2067,7 +2071,7 @@ window.FLOW_SKETCHES = {
       <rect x="134" y="52" width="74" height="42" rx="3" class="skl-draw c-cal" style="fill:rgba(79,214,196,0.1)"/>
       <text x="171" y="77" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">R_load</text>
       <text x="118" y="116" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">GPU idle (loader only)</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_ceiling: {
@@ -2081,7 +2085,7 @@ window.FLOW_SKETCHES = {
       <line class="skl-axis" x1="158" y1="104" x2="158" y2="34"/>
       <rect x="168" y="40" width="20" height="64" class="skl-pop f-cal"/>
       <text x="188" y="120" text-anchor="middle" style="fill:#4fd6c4;font-size:8px">R_gpu</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_e2e: {
@@ -2094,7 +2098,7 @@ window.FLOW_SKETCHES = {
       <text x="145" y="102" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">t_c compute</text>
       <line class="skl-axis" x1="40" y1="90" x2="204" y2="90"/>
       <text x="122" y="128" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">w_d = t_d / (t_d + t_c)</text>`; },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_ratios: {
@@ -2125,7 +2129,7 @@ window.FLOW_SKETCHES = {
         <text x="124" y="134" text-anchor="middle" style="fill:#c3cbd8;font-size:7px">workers</text>
         <text x="24" y="40" style="fill:#c3cbd8;font-size:7px">w_d</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_recommend: {
@@ -2138,7 +2142,7 @@ window.FLOW_SKETCHES = {
         <circle cx="123" cy="42" r="4" class="sk-live skl-pop f-fin"/>
         <text x="120" y="134" text-anchor="middle" style="fill:#c4a3ff;font-size:7px">max R_e2e -> l*</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_refine: {
@@ -2155,7 +2159,7 @@ window.FLOW_SKETCHES = {
         <text x="46" y="90" text-anchor="middle" transform="rotate(-90 46 90)" style="fill:#c3cbd8;font-size:6px">pin 0</text>
         <text x="128" y="112" text-anchor="middle" style="fill:#4fd6c4;font-size:7px">best (p*, pin*)</text>`;
     },
-    anim: pulse,
+    anim: FlowSketches.pulse,
   },
 
   feed_final: {
@@ -2186,3 +2190,6 @@ window.FLOW_SKETCHES = {
   },
 
 };
+}
+
+window.FlowSketches = FlowSketches;

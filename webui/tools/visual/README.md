@@ -73,6 +73,19 @@ instead of four.
 node literal_split.js /tmp/fields.json
 ```
 
+## Flow sketch harness
+
+`flow_sketch_catalog.js` loads `flow_sketches.js` and `flow_view.js` under plain node with
+no DOM and no server, reads the catalogue through `FlowSketches.CATALOG`, the name the
+Model walkthrough reads it by, and builds every sketch against a stub SVG. It prints each
+sketch's tooltip, the length of the markup it drew and whether it started an animation.
+`tests/webui/test_content_libraries.py` drives it, which is the contract that keeps the
+walkthrough from failing on a catalogue renamed on one side only.
+
+```
+node flow_sketch_catalog.js
+```
+
 ## Repo-map diagram harness
 
 `render_diagram.js` renders a single repo-map schema (one folder/diagram from
