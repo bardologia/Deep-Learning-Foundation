@@ -6,7 +6,6 @@ single import and resolve the right configuration registry from a training-type
 string.
 """
 
-from .backbone import *  # noqa: F401,F403
 from .backbone import BACKBONE_CONFIG_REGISTRY, BACKBONE_HEADS, BACKBONE_IMAGE_SIZE_MODELS, BACKBONE_MODEL_REGISTRY, get_backbone
 from .blocks   import DropPath, LayerFactory
 from .profile_autoencoder import (
