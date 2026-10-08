@@ -30,14 +30,15 @@ class TrainingPipeline:
     """Runs one backbone training job from dataset preparation to test metrics.
 
     Attributes:
-        trainer_config : Trainer, curriculum and gaussian configuration.
-        dataset_config : Patch dataset configuration.
-        backbone_name  : Registered backbone architecture name.
-        model_config   : Resolved model configuration, or None to take registry defaults.
-        seed           : Seed applied to every random source of the run.
-        run_name       : Explicit run directory name, or None to derive one.
-        overfit_check  : Configuration of the pre-training overfit gate.
-        patch_size     : Patch size after the backbone's squaring requirement is applied.
+        trainer_config   : Trainer, curriculum and gaussian configuration.
+        dataset_config   : Patch dataset configuration.
+        backbone_name    : Registered backbone architecture name.
+        model_config     : Resolved model configuration, or None to take registry defaults.
+        seed             : Seed applied to every random source of the run.
+        run_name         : Explicit run directory name, or None to derive one.
+        overfit_check    : Configuration of the pre-training overfit gate.
+        configured_patch : Patch size and stride as configured, before the backbone's squaring requirement is applied.
+        patch_size       : Patch size after the backbone's squaring requirement is applied.
     """
 
     MODEL_CONFIG_IO = BackboneModelConfigIO
@@ -73,6 +74,7 @@ class TrainingPipeline:
         self.overfit_check  = overfit_check if overfit_check is not None else OverfitCheckConfig()
 
         patch                    = self.dataset_config.patch
+        self.configured_patch    = (tuple(patch.size), tuple(patch.stride))
         patch.size, patch.stride = ModelBuilder.square_patch(self._square_patch_backbones(), patch.size, patch.stride)
         self.patch_size          = patch.size
 
@@ -80,9 +82,41 @@ class TrainingPipeline:
 
         self.dataset_config.n_gaussians = trainer_config.gaussian.n_default_gaussians
 
+    @property
+    def effective_patch(self) -> tuple[tuple[int, int], tuple[int, int]]:
+        """The patch size and stride the run trains on, after the squaring requirement."""
+        return (tuple(self.patch_size), tuple(self.dataset_config.patch.stride))
+
+    @property
+    def patch_squared(self) -> bool:
+        """Whether the backbone's square-input requirement changed the configured patch geometry."""
+        return self.effective_patch != self.configured_patch
+
     def _square_patch_backbones(self) -> list[str]:
         """Returns the backbones whose square-patch requirement constrains the patch geometry."""
         return [self.backbone_name]
+
+    def _patch_geometry_label(self) -> str:
+        """Returns the patch geometry cell of the execution table, naming the configured values when the backbone squared them."""
+        size, stride = self.effective_patch
+        effective    = f"patch {size} stride {stride}"
+
+        if not self.patch_squared:
+            return effective
+
+        configured_size, configured_stride = self.configured_patch
+
+        return f"configured patch {configured_size} stride {configured_stride} -> effective {effective} ({self.backbone_name} needs a square input)"
+
+    def _patch_geometry_payload(self) -> dict:
+        """Returns the configured and effective patch geometry recorded in run_summary.json."""
+        return {
+            "configured_size"   : list(self.configured_patch[0]),
+            "configured_stride" : list(self.configured_patch[1]),
+            "size"              : list(self.effective_patch[0]),
+            "stride"            : list(self.effective_patch[1]),
+            "squared"           : self.patch_squared,
+        }
 
     def _build_dataset_pipeline(self, run_directory: Path, logger) -> DatasetPipeline:
         """Builds the patch dataset pipeline and derives the z axis from its profile length.
@@ -278,6 +312,9 @@ class TrainingPipeline:
             if resolved_entry_config is not None:
                 ResolvedEntryConfigWriter.save(resolved_entry_config, self.run_metadata.run_directory, self.logger)
 
+            if self.patch_squared:
+                self.logger.warning(f"{self.backbone_name} needs a square input: {self._patch_geometry_label()}; pixels per batch and patches per epoch differ from the configured geometry, and the resolved entry config keeps the configured values")
+
             self.run_metadata.save_dataset_fingerprint(self.dataset_config.preprocessing_run_directory, self.dataset_config.parameters_path, enabled=self.dataset_config.fingerprint_dataset)
 
             self.logger.section("[PyTorch Training Pipeline Execution]")
@@ -285,6 +322,7 @@ class TrainingPipeline:
                 "Seed"           : self.seed,
                 "Gaussian slots" : self.trainer_config.gaussian.n_default_gaussians,
                 "Z axis"         : f"[{self.trainer_config.gaussian.x_min:g}, {self.trainer_config.gaussian.x_max:g}] m (sample count set by the dataset profile length)",
+                "Patch geometry" : self._patch_geometry_label(),
             })
 
             self.dataset_pipeline = self._build_dataset_pipeline(self.run_metadata.run_directory, self.logger)
@@ -312,6 +350,7 @@ class TrainingPipeline:
                 x_axis_length    = x_axis_length,
                 n_gaussians      = n_gaussians,
                 seed             = self.seed,
+                patch_geometry   = self._patch_geometry_payload(),
             )
             self.logger.ok(f"Run metadata saved : {self.run_metadata.run_directory}")
 

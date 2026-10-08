@@ -241,20 +241,33 @@ def _square_patch_trainer_config() -> BackboneTrainerConfig:
 
 
 def test_pipeline_squares_the_patch_for_square_only_backbones():
-    """Verifies a square-only backbone widens the patch and stride to the larger axis."""
+    """Verifies a square-only backbone widens the patch and stride to the larger axis while keeping the configured geometry on record."""
     pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="swin_unet")
 
     assert pipeline.dataset_config.patch.size   == (64, 64)
     assert pipeline.dataset_config.patch.stride == (32, 32)
     assert pipeline.patch_size                  == (64, 64)
+    assert pipeline.configured_patch            == ((64, 32), (32, 16))
+    assert pipeline.patch_squared               is True
+
+
+def test_pipeline_names_the_configured_and_effective_geometry_when_squared():
+    """Verifies the execution-table cell and the run-summary payload show configured against effective geometry for a squared patch."""
+    pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="swin_unet")
+
+    assert pipeline._patch_geometry_label()   == "configured patch (64, 32) stride (32, 16) -> effective patch (64, 64) stride (32, 32) (swin_unet needs a square input)"
+    assert pipeline._patch_geometry_payload() == {"configured_size": [64, 32], "configured_stride": [32, 16], "size": [64, 64], "stride": [32, 32], "squared": True}
 
 
 def test_pipeline_keeps_rectangular_patches_for_convolutional_backbones():
-    """Verifies a convolutional backbone keeps the rectangular patch and stride."""
+    """Verifies a convolutional backbone keeps the rectangular patch and stride and reports the geometry as configured."""
     pipeline = TrainingPipeline(trainer_config=_square_patch_trainer_config(), dataset_config=_square_patch_dataset_config(), backbone_name="resunet")
 
     assert pipeline.dataset_config.patch.size   == (64, 32)
     assert pipeline.dataset_config.patch.stride == (32, 16)
+    assert pipeline.patch_squared               is False
+    assert pipeline._patch_geometry_label()     == "patch (64, 32) stride (32, 16)"
+    assert pipeline._patch_geometry_payload()["squared"] is False
 
 
 def test_dual_pipeline_squares_the_patch_when_a_trunk_is_square_only():
