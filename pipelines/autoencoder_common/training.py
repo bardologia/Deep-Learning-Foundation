@@ -152,6 +152,16 @@ class AutoencoderTrainingPipeline:
         with TrainingRunMetadata(self.trainer_config, self.run_label, Path(self.trainer_config.io.logdir), self.entry.run_name) as run_meta:
             logger = run_meta.logger
 
+            logger.section(f"[{self.run_label.replace('_', ' ').title()} Training Pipeline Execution]")
+            logger.kv_table({
+                "Run Label"     : self.run_label,
+                "Model"         : self.ae_model_name,
+                "Embedding Dim" : self.autoencoder_cfg.embedding_dim,
+                "Seed"          : self.entry.seed,
+                "Batch Size"    : self.dataset_config.batch_size,
+                "Run Directory" : str(run_meta.run_directory),
+            })
+
             run_meta.save_dataset_fingerprint(self.entry.paths.dataset_path, self.entry.paths.parameters_path, enabled=self.entry.paths.fingerprint_dataset)
 
             train_loader, val_loader, test_loader, z_axis, model_dim, datasets, metadata_args = self._prepare_data(run_meta.run_directory, logger)
@@ -160,6 +170,7 @@ class AutoencoderTrainingPipeline:
             self._log_model(logger, model, model_dim)
 
             self._save_metadata(run_meta, *metadata_args)
+            logger.ok(f"Run metadata saved : {run_meta.run_directory}")
             self._run_overfit_check(run_meta, logger, model_dim, z_axis, datasets)
 
             return self._train(run_meta, logger, model, z_axis, train_loader, val_loader, test_loader)

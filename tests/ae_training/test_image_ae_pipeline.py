@@ -25,6 +25,7 @@ from models.image_autoencoder                      import IMAGE_AE_CONFIG_REGIST
 from pipelines.autoencoder_common                  import training as autoencoder_training
 from pipelines.image_autoencoder.training          import pipeline as image_pipeline
 from pipelines.shared.config.run_metadata          import TrainingRunMetadata
+from tests.conftest                                import SilentLogger
 
 
 pytestmark = [pytest.mark.slow, pytest.mark.usefixtures("force_cpu")]
@@ -52,6 +53,7 @@ def _pipeline(cfg):
     pipe.autoencoder_cfg = cfg
     pipe.ae_model_name   = "conv2d_ae"
     pipe.entry           = types.SimpleNamespace(run_name="image_ae_test", seed=0, paths=types.SimpleNamespace(dataset_path=".", parameters_path=None, fingerprint_dataset=False))
+    pipe.dataset_config  = types.SimpleNamespace(batch_size=4)
     return pipe
 
 
@@ -173,7 +175,7 @@ class _RecordingRunMetadata:
     def __init__(self, trainer_config, run_label, logdir, run_name):
         """Derives the run directory and registers the instance on the class."""
         self.run_directory = Path(logdir) / str(run_name)
-        self.logger        = types.SimpleNamespace()
+        self.logger        = SilentLogger()
         self.closed        = False
 
         type(self).instances.append(self)
