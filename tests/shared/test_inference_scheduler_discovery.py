@@ -2,9 +2,12 @@
 
 Covers recursive discovery filtered by run type, a root that is itself a run,
 filters naming runs by relative path, parent directory or run name, the skip
-of runs already scored on the split, unique job names and log paths for
-equally named leaves, the GPU pool file location, and the errors raised for a
-missing runs directory, an unmatched filter entry or no match.
+of runs already scored on the split with the requested checkpoint, partly
+stamped region groups and other-checkpoint stamps that are scored again, the
+table of rejected runs, unique job names and log paths for equally named
+leaves, the GPU pool file location, and the errors raised for a missing runs
+directory, an unmatched filter entry, no match or a family block setting a
+field the fan-out overwrites.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from types   import SimpleNamespace
 import pytest
 
 from pipelines.shared.inference.inference_scheduler import InferenceScheduler, RunSelection
+from pipelines.shared.inference.metadata            import CompletedInference, RegionPass
 from pipelines.shared.inference.run_classifier      import InferenceLayout, RunArtifacts, RunType
 from tools.runtime.completion                       import CompletionMarker
 
@@ -28,30 +32,37 @@ def _make_run(directory: Path, config_name: str) -> Path:
     return directory
 
 
-def _stamp(run_dir: Path, run_type: str, split: str, name: str = "20260101_000000") -> Path:
-    """Writes a completed inference stamp of the family on the split under the run."""
-    stamp = InferenceLayout.base(run_dir, run_type) / name
+def _stamp(run_dir: Path, run_type: str, split: str, name: str = "20260101_000000", checkpoint: str | None = None) -> Path:
+    """Writes a completed inference stamp of the family on the split under the run, recording the checkpoint when one is named."""
+    stamp   = InferenceLayout.base(run_dir, run_type) / name
+    payload = {"split": split}
+
+    if checkpoint is not None:
+        payload[CompletedInference.CHECKPOINT_KEY] = {"name": checkpoint, "epoch": 10, "best_epoch": 10, "best_val_loss": 0.1}
+
     stamp.mkdir(parents=True)
-    CompletionMarker.stamp(stamp, {"split": split})
+    CompletionMarker.stamp(stamp, payload)
     return stamp
 
 
-def _scheduler(runs: Path, run_filter, run_type: str, gpus_file: str = "", skip_completed: bool = True, split: str = "test") -> InferenceScheduler:
+def _scheduler(runs: Path, run_filter, run_type: str, gpus_file: str = "", skip_completed: bool = True, split: str = "test", checkpoint_name: str = "best_model.pt") -> InferenceScheduler:
     """Builds an InferenceScheduler over a runs directory.
 
     Args:
-        runs           : Root directory holding the run directories.
-        run_filter     : Run names to restrict discovery to; empty selects all.
-        run_type       : Run type the scheduler accepts.
-        gpus_file      : Explicit GPU pool file path, or empty for the default.
-        skip_completed : Whether runs already scored on the split are left alone.
-        split          : Split the scheduler scores.
+        runs            : Root directory holding the run directories.
+        run_filter      : Run names to restrict discovery to; empty selects all.
+        run_type        : Run type the scheduler accepts.
+        gpus_file       : Explicit GPU pool file path, or empty for the default.
+        skip_completed  : Whether runs already scored on the split are left alone.
+        split           : Split the scheduler scores.
+        checkpoint_name : Checkpoint the scheduler scores.
 
     Returns:
         The configured scheduler.
     """
     config = SimpleNamespace(runs_dir=str(runs), run_filter=run_filter, gpus=[0], gpus_file=gpus_file, poll_interval_s=1, skip_completed=skip_completed)
-    return InferenceScheduler(config, Path("main/x.py"), run_type, split=split)
+    block  = SimpleNamespace(split=split, checkpoint_name=checkpoint_name, run_directory=Path("."), output_subdir=None)
+    return InferenceScheduler(config, Path("main/x.py"), run_type, block=block)
 
 
 def test_no_filter_discovers_runs_at_any_depth_and_respects_type(tmp_path):
@@ -222,3 +233,82 @@ def test_run_selection_relative_name_of_the_root_is_its_own_name(tmp_path):
 
     assert selection.relative(tmp_path / "run") == "run"
     assert selection.resolve(["run"])           == [tmp_path / "run"]
+
+
+def test_a_partly_stamped_region_group_is_shown_as_partial_and_scored_again(tmp_path):
+    """Verifies a run whose region group stamped one of two regions is listed as partial, warned about with the missing region and scored again."""
+    runs    = tmp_path / "runs"
+    partial = _make_run(runs / "partial", RunArtifacts.BACKBONE_CONFIG)
+    stamp   = InferenceLayout.base(partial, RunType.BACKBONE) / "20260101_000000_region0"
+
+    stamp.mkdir(parents=True)
+    CompletionMarker.stamp(stamp, {"split": "test", RegionPass.KEY: RegionPass(index=0, count=2, group="20260101_000000").payload()})
+
+    logger    = RecordingLogger()
+    scheduler = _scheduler(runs, [], RunType.BACKBONE)
+
+    assert scheduler._run_dirs(logger) == [partial]
+    assert scheduler.skipped           == []
+    assert ("warning", "partial: the region group 20260101_000000 on split 'test' stamped regions [0] of 2; regions [1] were never scored, so the run is scored again") in logger.messages
+    assert scheduler._inference_state(partial, SilentLogger()) == ("partial (1/2 regions)", False)
+
+
+def test_a_run_scored_only_with_another_checkpoint_is_scored_again(tmp_path):
+    """Verifies stamps recording another checkpoint do not count as scored, are warned about and shown as done with the other checkpoint."""
+    runs  = tmp_path / "runs"
+    other = _make_run(runs / "other", RunArtifacts.BACKBONE_CONFIG)
+    same  = _make_run(runs / "same", RunArtifacts.BACKBONE_CONFIG)
+    _stamp(other, RunType.BACKBONE, "test", checkpoint="best_model.pt")
+    _stamp(same,  RunType.BACKBONE, "test", checkpoint="best_model.pt")
+    _stamp(same,  RunType.BACKBONE, "test", name="20260102_000000", checkpoint="last_model.pt")
+
+    logger    = RecordingLogger()
+    scheduler = _scheduler(runs, [], RunType.BACKBONE, checkpoint_name="last_model.pt")
+
+    assert scheduler._run_dirs(logger) == [other]
+    assert scheduler.skipped           == [same]
+    assert ("warning", "other: its stamps on split 'test' were scored with best_model.pt, not the requested last_model.pt; the run is scored again") in logger.messages
+    assert scheduler._inference_state(other, SilentLogger()) == ("done (other checkpoint: best_model.pt)", False)
+
+
+def test_a_stamp_without_a_recorded_checkpoint_still_counts_as_scored(tmp_path):
+    """Verifies a marker that records no checkpoint keeps the run skipped and says so in the table state."""
+    runs = tmp_path / "runs"
+    done = _make_run(runs / "done", RunArtifacts.BACKBONE_CONFIG)
+    _stamp(done, RunType.BACKBONE, "test")
+
+    scheduler = _scheduler(runs, [], RunType.BACKBONE, checkpoint_name="last_model.pt")
+
+    assert scheduler._inference_state(done, SilentLogger()) == ("done (checkpoint not recorded)", True)
+
+
+def test_rejected_runs_are_listed_with_their_family_and_unclassifiable_ones_warned_about(tmp_path):
+    """Verifies other-family runs and unclassifiable directories are tabled by name, and the unclassifiable ones warned about with the classifier's reason."""
+    runs = tmp_path / "runs"
+    _make_run(runs / "backbone_run", RunArtifacts.BACKBONE_CONFIG)
+    _make_run(runs / "ae_run", RunArtifacts.PROFILE_AE_CONFIG)
+    (runs / "interrupted" / "meta").mkdir(parents=True)
+
+    logger    = RecordingLogger()
+    scheduler = _scheduler(runs, [], RunType.BACKBONE)
+
+    assert scheduler._run_dirs(logger) == [runs / "backbone_run"]
+    assert ("metrics_table", "Skipping 2 run(s) not of type 'backbone'") in logger.messages
+
+    warnings = [msg for level, msg in logger.messages if level == "warning"]
+
+    assert len(warnings) == 1
+    assert warnings[0].startswith("interrupted is left out: Run ") and "has no recognized model config under meta/" in warnings[0]
+
+
+@pytest.mark.parametrize("field, value, message", [
+    ("output_subdir", "final_test",     "output_subdir='final_test'"),
+    ("run_directory", Path("runs/one"), "run_directory='runs/one'"),
+])
+def test_a_block_setting_a_field_the_fan_out_overwrites_is_refused(tmp_path, field, value, message):
+    """Verifies the scheduler refuses an output_subdir or run_directory it would silently replace, before walking any run."""
+    scheduler = _scheduler(tmp_path / "absent", [], RunType.BACKBONE)
+    setattr(scheduler.block, field, value)
+
+    with pytest.raises(ValueError, match=message):
+        scheduler.run()

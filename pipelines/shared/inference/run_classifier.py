@@ -118,11 +118,3 @@ class RunClassifier:
                 return run_type
 
         raise ValueError(f"Run '{run_directory}' has no recognized model config under meta/ (no backbone, profile-autoencoder, image-autoencoder, or dual config); cannot infer.")
-
-    @classmethod
-    def is_type(cls, run_directory: Path, run_type: str) -> bool:
-        """True when the run classifies as the given family; False when unclassifiable."""
-        try:
-            return cls.classify(run_directory) == run_type
-        except ValueError:
-            return False

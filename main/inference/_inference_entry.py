@@ -24,7 +24,7 @@ class InferenceEntry:
         entry_script : Path to the concrete entry script, re-invoked for worker processes.
         run_type     : Run family this entry serves, selecting config, description and runner.
         CONFIGS      : Entry configuration class name per run family.
-        BLOCKS       : Name of the per-run inference block inside that configuration, whose split decides which runs are already scored.
+        BLOCKS       : Name of the per-run inference block inside that configuration, whose split and checkpoint decide which runs are already scored.
         DESCRIPTIONS : Help text per run family.
     """
 
@@ -101,9 +101,9 @@ class InferenceEntry:
         from tools.runtime.config_cli            import ConfigCli
 
         config = ConfigCli(self._entry_config(), description=self.DESCRIPTIONS[self.run_type]).apply()
-        split  = getattr(config, self.BLOCKS[self.run_type]).split
+        block  = getattr(config, self.BLOCKS[self.run_type])
 
-        results = InferenceScheduler(config=config, entry_script=self.entry_script, run_type=self.run_type, split=split).run()
+        results = InferenceScheduler(config=config, entry_script=self.entry_script, run_type=self.run_type, block=block).run()
 
         if any(result.status != "DONE" for result in results):
             sys.exit(1)
