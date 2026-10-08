@@ -213,6 +213,15 @@ class LegacyParamLoss:
         return (sq_err * mask).sum(dim=(0, 2, 3)) / (mask.sum() + LegacyParamLoss.EMPTY_FLOOR)
 
     @staticmethod
+    def _present_gate(pred: torch.Tensor, amp_thr: float) -> torch.Tensor:
+        """Returns the detached slot-2 presence gate of bound-scaled predictions, of shape (batch, 1, height, width).
+
+        The gate opens where the scaled slot-2 amplitude exceeds ``amp_thr`` and
+        the scaled slot-2 width is non-negative, the legacy a_ths and w_ths rules.
+        """
+        return ((pred[:, 1, 0:1] > amp_thr) & (pred[:, 1, 2:3] >= 0.0)).to(pred.dtype).detach()
+
+    @staticmethod
     def masked_mse(pred_phys: torch.Tensor, gt_phys: torch.Tensor, bounds_min: tuple, bounds_max: tuple, amp_thr: float) -> torch.Tensor:
         """Returns the faithful imitation of the legacy masked MSE in the bound-scaled space.
 
@@ -242,7 +251,7 @@ class LegacyParamLoss:
         pred = LegacyParamLoss._scale(pred_phys, bounds_min, bounds_max)
         gt   = LegacyParamLoss._scale(gt_phys, bounds_min, bounds_max)
 
-        present = ((pred[:, 1, 0:1] > amp_thr) & (pred[:, 1, 2:3] >= 0.0)).to(pred.dtype).detach()
+        present = LegacyParamLoss._present_gate(pred, amp_thr)
         absent  = 1.0 - present
 
         sq_first  = (pred[:, 0] - gt[:, 0]) ** 2
@@ -252,6 +261,33 @@ class LegacyParamLoss:
         loss_second = LegacyParamLoss._group_mean(sq_second, present)
 
         return (loss_first + loss_second).sum()
+
+    @staticmethod
+    def present_fraction(pred_phys: torch.Tensor, bounds_min: tuple, bounds_max: tuple, amp_thr: float) -> torch.Tensor:
+        """Returns the share of pixels where the prediction opens the slot-2 gate of the masked legacy loss.
+
+        The gate is the model's own verdict, so a false-negative collapse closes
+        it everywhere and slot-2 parameters then receive no supervision at all;
+        this share is the only direct reading of that state.
+
+        Args:
+            pred_phys  : Predicted physical parameters of shape (batch, 2, 3, height, width).
+            bounds_min : Six lower bounds ordered amp1, mu1, sigma1, amp2, mu2, sigma2.
+            bounds_max : Six upper bounds in the same order.
+            amp_thr    : Presence threshold applied to the scaled slot-2 amplitude.
+
+        Returns:
+            Scalar in [0, 1]; 0.0 means slot-2 parameters received no supervision in the batch.
+
+        Raises:
+            ValueError : If the prediction does not carry exactly two Gaussian slots.
+        """
+        if pred_phys.shape[1] != LegacyParamLoss.LEGACY_GAUSSIANS:
+            raise ValueError(f"LegacyParamLoss.present_fraction reads the two-Gaussian legacy gate; got {pred_phys.shape[1]} Gaussian slots.")
+
+        pred = LegacyParamLoss._scale(pred_phys, bounds_min, bounds_max)
+
+        return LegacyParamLoss._present_gate(pred, amp_thr).mean()
 
 
 class ParamLoss:

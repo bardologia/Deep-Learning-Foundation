@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import torch
 
-from tools.loss.param_loss import ParamLoss, ParamMatcher
+from tools.loss.param_loss import LegacyParamLoss, ParamLoss, ParamMatcher
 
 
 PARAM_NAMES = ["amp", "mu", "sigma"]
@@ -201,6 +201,33 @@ def test_match_ignores_inactive_gt():
     assert err.max().item() < 1e-9
 
 
+def test_match_five_slots_with_inactive_gt_is_a_minimum_cost_permutation():
+    """Verifies five-slot matching with two inactive ground-truth slots per pixel gathers a permutation of the predicted slots at the brute-force minimum cost."""
+    b, g, h, w = 2, 5, 4, 4
+    gen        = torch.Generator().manual_seed(40)
+    gt         = _params(41, b, g, h, w)
+    gt_phys    = gt.clone()
+    inactive   = torch.rand(b, g, h, w, generator=gen).argsort(dim=1).argsort(dim=1) < 2
+    gt_phys[:, :, 0] = (~inactive).to(torch.float64)
+
+    pred = gt[:, [3, 0, 4, 1, 2]] + 0.01 * _params(42, b, g, h, w)
+
+    matched, _, sorted_gt, sorted_phys = ParamMatcher.match(pred, pred.clone(), gt, gt_phys, active_thr=1e-4)
+
+    hits     = (matched[:, :, None] == pred[:, None, :]).all(dim=3)
+    gathered = hits.int().argmax(dim=2)
+
+    assert torch.equal(hits.sum(dim=2), torch.ones(b, g, h, w, dtype=torch.long))
+    assert torch.equal(gathered.sort(dim=1).values, torch.arange(g)[None, :, None, None].expand(b, g, h, w))
+
+    active   = (sorted_phys[:, :, 0] > 1e-4).to(torch.float64)
+    achieved = ((matched - sorted_gt).abs().sum(2) * active).sum(1)
+    per_perm = [((pred[:, list(perm)] - sorted_gt).abs().sum(2) * active).sum(1) for perm in itertools.permutations(range(g))]
+    brute    = torch.stack(per_perm).min(dim=0).values
+
+    assert torch.allclose(achieved, brute, atol=1e-12)
+
+
 def test_match_rejects_large_g():
     """Verifies matching refuses more slots than MAX_GAUSSIANS."""
     b, g, h, w = 1, ParamMatcher.MAX_GAUSSIANS + 1, 1, 1
@@ -295,8 +322,8 @@ def test_presence_weights_report_the_clamp_per_slot():
     """Verifies presence_weights returns 0.5/frac and 0.5/(1-frac) per slot and flags only the slots whose fraction hit the clamp."""
     b, g, h, w = 1, 3, 4, 4
     active = torch.zeros(b, g, 1, h, w, dtype=torch.float64)
-    active[:, 0]          = 1.0
-    active[:, 1, :, :1]   = 1.0
+    active[:, 0]        = 1.0
+    active[:, 1, :, :1] = 1.0
 
     active_weight, inactive_weight, clamped = ParamLoss.presence_weights(active)
 
@@ -306,6 +333,28 @@ def test_presence_weights_report_the_clamp_per_slot():
     assert inactive_weight[1].item() == pytest.approx(0.5 / 0.75)
     assert active_weight[2].item()   == pytest.approx(0.5 / ParamLoss.FRAC_CLAMP)
     assert inactive_weight[0].item() == pytest.approx(0.5 / ParamLoss.FRAC_CLAMP)
+
+
+def test_legacy_present_fraction_reads_both_halves_of_the_slot2_gate():
+    """Verifies present_fraction counts a pixel only where the scaled slot-2 amplitude passes the threshold and the scaled width is non-negative."""
+    bounds_min = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    bounds_max = (1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
+    pred       = torch.zeros(1, 2, 3, 1, 4, dtype=torch.float64)
+
+    pred[0, 1, 0, 0, :] = torch.tensor([0.5, 0.5, 0.5, 0.0], dtype=torch.float64)
+    pred[0, 1, 2, 0, :] = torch.tensor([0.1, 0.1, -0.1, 0.1], dtype=torch.float64)
+
+    share = LegacyParamLoss.present_fraction(pred, bounds_min, bounds_max, 0.25)
+
+    assert share.item() == pytest.approx(0.5)
+    assert LegacyParamLoss.present_fraction(torch.zeros_like(pred), bounds_min, bounds_max, 0.25).item() == 0.0
+
+
+def test_legacy_present_fraction_rejects_non_two_gaussian_predictions():
+    """Verifies present_fraction refuses a prediction whose slot count is not the legacy two."""
+    bounds = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    with pytest.raises(ValueError, match="two-Gaussian legacy gate"):
+        LegacyParamLoss.present_fraction(torch.zeros(1, 3, 3, 1, 2), bounds, tuple(v + 1.0 for v in bounds), 1e-4)
 
 
 def test_presence_scale_default_is_identity():
