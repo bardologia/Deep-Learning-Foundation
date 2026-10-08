@@ -28,11 +28,13 @@ class StubLogger:
     Attributes:
         messages : (kind, message) pairs in arrival order.
         tables   : (title, mapping) pairs of every key-value table.
+        metrics  : (title, rows) pairs of every metrics table.
     """
     def __init__(self):
         """Initialises the message and table buffers."""
         self.messages = []
         self.tables   = []
+        self.metrics  = []
 
     def section(self, t):     self.messages.append(("section", t))
     def subsection(self, t):  self.messages.append(("subsection", t))
@@ -40,6 +42,7 @@ class StubLogger:
     def warning(self, t):     self.messages.append(("warning", t))
     def error(self, t):       self.messages.append(("error", t))
     def kv_table(self, data, title=None, **k): self.tables.append((title, dict(data)))
+    def metrics_table(self, rows, columns, title=None, **k): self.metrics.append((title, [dict(row) for row in rows]))
     def close(self): pass
 
     def of_kind(self, kind: str) -> list:
@@ -763,7 +766,47 @@ def test_resume_allows_more_trials_and_a_new_gpu_pool(tmp_path):
     orch.config.tuning.n_trials = orch.config.tuning.n_trials + 50
     orch.config.gpus            = [0]
 
-    orch._guard_resumed_config(orch.run_dir / "resolved_config.json")
+    assert orch._guard_resumed_config(orch.run_dir / "resolved_config.json") == {}
+
+
+def test_resume_returns_the_changed_leaves_outside_the_study_keys(tmp_path):
+    """A leaf that alters the objective without defining the study passes the guard and comes back for the warning; launch keys and stop rules do not."""
+    orch = _resumed_scheduler(tmp_path)
+
+    orch.config.pixel_subsample = 0.5
+    orch.config.n_workers       = 4
+    orch.config.tuning.n_trials = orch.config.tuning.n_trials + 1
+
+    assert orch._guard_resumed_config(orch.run_dir / "resolved_config.json") == {"pixel_subsample": (1.0, 0.5)}
+
+
+def test_a_changed_config_is_archived_before_the_new_one_is_recorded(tmp_path):
+    """The earlier launch's resolved config moves into config_history when this launch differs, and stays put when it matches."""
+    orch     = _resumed_scheduler(tmp_path)
+    resolved = orch.run_dir / "resolved_config.json"
+    recorded = resolved.read_text()
+
+    assert orch._archive_previous_config(resolved) is None
+    assert resolved.read_text() == recorded
+
+    orch.config.pixel_subsample = 0.5
+    archived = orch._archive_previous_config(resolved)
+
+    assert archived.parent      == orch.run_dir / "config_history"
+    assert archived.read_text() == recorded
+    assert not resolved.exists()
+
+
+def test_resume_changes_are_warned_with_a_table(tmp_path):
+    """The changed leaves are warned about and listed with their recorded and current values, and the archive is named."""
+    orch        = _orchestrator(tmp_path)
+    orch.logger = StubLogger()
+
+    orch._log_resume_changes({"pixel_subsample": (1.0, 0.5)}, tmp_path / "config_history" / "x.json")
+
+    assert orch.logger.of_kind("warning") == ["1 recorded leaves changed on resume; trials from this launch train under the new values, so the study mixes trials scored under both"]
+    assert orch.logger.metrics == [("Changed on resume", [{"Leaf": "pixel_subsample", "Recorded": "1.0", "Now": "0.5"}])]
+    assert orch.logger.of_kind("info") == [f"The resolved config of the earlier launch was kept at {tmp_path / 'config_history' / 'x.json'}"]
 
 
 def test_resume_allows_changed_stop_rules(tmp_path):

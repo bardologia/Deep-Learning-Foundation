@@ -15,16 +15,18 @@ from pathlib import Path
 import optuna
 from optuna.trial import TrialState
 
-from configuration.tuning                 import TuningConfig
-from models                               import BACKBONE_HEADS, config_registry
-from pipelines.shared.model.model_builder import ModelBuilder
-from pipelines.tuning.plots               import StudyPlotter
-from pipelines.tuning.storage             import TuningStorage
-from pipelines.tuning.tuners              import BestConfigWriter, SearchSpace, StudyProgress, StudyStopRules, StudyTargetStop
-from tools.data.io                        import FileIO
-from tools.orchestration.gpu_queue        import GpuJob, GpuPoolFile, GpuQueue
-from tools.monitoring.logger              import Logger
-from tools.runtime.config_cli             import ConfigCli
+from configuration.tuning                       import TuningConfig
+from models                                     import BACKBONE_HEADS, config_registry
+from pipelines.shared.model.model_builder       import ModelBuilder
+from pipelines.shared.orchestration.resumed_run import TuningResumedRun
+from pipelines.tuning.plots                     import StudyPlotter
+from pipelines.tuning.storage                   import TuningStorage
+from pipelines.tuning.tuners                    import BestConfigWriter, SearchSpace, StudyProgress, StudyStopRules, StudyTargetStop
+from tools.data.io                              import FileIO
+from tools.orchestration.gpu_queue              import GpuJob, GpuPoolFile, GpuQueue
+from tools.monitoring.logger                    import Logger
+from tools.runtime.config_cli                   import ConfigCli
+from tools.runtime.run_tag                      import RunTag
 
 
 class TuningScheduler:
@@ -34,6 +36,8 @@ class TuningScheduler:
         SUPPORTED_TYPES : Training types that can be tuned.
         STUDY_KEYS      : Config keys whose values define a study and may not change on resume.
         MUTABLE_KEYS    : Study keys exempted from that rule.
+        LAUNCH_KEYS     : Keys every launch sets for itself (devices, worker count, stage, location), left out of the changes a resume reports.
+        HISTORY_DIR     : Directory inside the run holding the resolved configs earlier launches recorded.
         RECORD_KEYS     : Fields of one model's record in tuning_results.json.
         STAGES          : Parts of a tuning run that can be executed on their own, so separate launches can create the studies, run the workers and write the reports.
         tag             : Run tag naming the tuning directory and the studies.
@@ -53,6 +57,8 @@ class TuningScheduler:
     SUPPORTED_TYPES = ("backbone", "image_autoencoder", "jepa", "profile_autoencoder")
     STUDY_KEYS      = ("training_type", "heads", "skip_models", "tuning", "curriculum", "paths.dataset_path", "paths.parameters_path", "paths.secondary_labels")
     MUTABLE_KEYS    = ("tuning.n_trials", "tuning.plateau_patience", "tuning.plateau_min_delta", "tuning.time_budget_h")
+    LAUNCH_KEYS     = (*TuningResumedRun.LAUNCH_FIELDS, *TuningResumedRun.LOCATION_FIELDS, "n_workers")
+    HISTORY_DIR     = "config_history"
     RECORD_KEYS     = ("model", "status", "trials_completed", "trials_pruned", "trials_failed", "trials_running", "target", "stop_reason", "val_loss", "best_config")
     STAGES          = ("full", "prepare", "compare")
 
@@ -92,11 +98,14 @@ class TuningScheduler:
 
         return any(key == prefix or key.startswith(f"{prefix}.") for prefix in self.STUDY_KEYS)
 
-    def _guard_resumed_config(self, resolved_path: Path) -> None:
-        """Aborts the resume when a study-defining setting changed.
+    def _guard_resumed_config(self, resolved_path: Path) -> dict:
+        """Aborts the resume when a study-defining setting changed, and returns the other recorded leaves it changes.
 
         Args:
             resolved_path : Path of the resolved config saved by the first run.
+
+        Returns:
+            Mapping from each changed leaf outside the study keys, the mutable stop rules and the launch keys to its (recorded, current) values; trials of this launch train under the current ones.
 
         Raises:
             SystemExit : If any study-defining key differs from the stored value.
@@ -107,6 +116,26 @@ class TuningScheduler:
 
         if changed:
             sys.exit(f"ERROR: --resume cannot change the fields that define the study '{self.tag}'; trials already stored were optimised under {', '.join(f'{key}={old!r} (now {new!r})' for key, (old, new) in sorted(changed.items()))}; start a new run tag instead")
+
+        return {key: (stored[key], value) for key, value in sorted(current.items()) if key in stored and stored[key] != value and not self._defines_study(key) and key not in self.MUTABLE_KEYS and key not in self.LAUNCH_KEYS}
+
+    def _archive_previous_config(self, resolved_path: Path) -> Path | None:
+        """Moves the resolved config an earlier launch recorded into the history when this launch changes it.
+
+        Args:
+            resolved_path : Path of the run's resolved config.
+
+        Returns:
+            Where the earlier config was kept, or None when there was none or it matches this launch.
+        """
+        if not resolved_path.is_file() or FileIO.load_json(resolved_path) == ConfigCli.to_mapping(self.config):
+            return None
+
+        archived = self.run_dir / self.HISTORY_DIR / f"{RunTag.now()}.json"
+        archived.parent.mkdir(parents=True, exist_ok=True)
+        resolved_path.replace(archived)
+
+        return archived
 
     def _distribute_trials(self, total: int, n_workers: int) -> list[int]:
         """Splits the outstanding trials as evenly as possible over the workers."""
@@ -566,6 +595,20 @@ class TuningScheduler:
             "Log dir"          : str(self.run_dir),
         }
 
+    def _log_resume_changes(self, changed: dict, archived: Path | None) -> None:
+        """Warns about the recorded leaves this resume changes outside the study keys, and says where the earlier config went.
+
+        Args:
+            changed  : Changed leaf to (recorded, current) values, as the resume guard returned them.
+            archived : Where the earlier launch's resolved config was kept, or None.
+        """
+        if changed:
+            self.logger.warning(f"{len(changed)} recorded leaves changed on resume; trials from this launch train under the new values, so the study mixes trials scored under both")
+            self.logger.metrics_table([{"Leaf": key, "Recorded": repr(old), "Now": repr(new)} for key, (old, new) in changed.items()], columns=["Leaf", "Recorded", "Now"], title="Changed on resume")
+
+        if archived is not None:
+            self.logger.info(f"The resolved config of the earlier launch was kept at {archived}")
+
     def _load_results(self) -> None:
         """Takes over the records earlier launches wrote, so a launch over fewer models keeps the records of the others.
 
@@ -668,10 +711,10 @@ class TuningScheduler:
         tune_cfg      = self.config.tuning
         resolved_path = self.run_dir / "resolved_config.json"
 
-        if resume:
-            self._guard_resumed_config(resolved_path)
+        changed = self._guard_resumed_config(resolved_path) if resume else {}
 
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        archived = self._archive_previous_config(resolved_path)
         ConfigCli.save_resolved(self.config, resolved_path)
 
         self.logger = Logger(log_dir=str(self.run_dir), name="tune_scheduler")
@@ -687,6 +730,7 @@ class TuningScheduler:
             if self.resumed is not None:
                 self.resumed.log(self.logger)
 
+            self._log_resume_changes(changed, archived)
             self._load_results()
 
             for model_name in models_to_run:
