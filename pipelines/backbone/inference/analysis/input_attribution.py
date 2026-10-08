@@ -7,6 +7,7 @@ correlation and writes the figures and markdown report.
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
 import matplotlib.patches as mpatches
@@ -290,17 +291,20 @@ class ChannelOcclusion:
     Attributes:
         model    : Model being evaluated.
         renderer : Renderer turning predicted Gaussian parameters into height profiles.
+        on_pass  : Zero-argument callable invoked after every occluded forward pass, driving the progress bar.
     """
 
-    def __init__(self, model, renderer: PredictionCurves) -> None:
-        """Stores the model and the curve renderer.
+    def __init__(self, model, renderer: PredictionCurves, on_pass) -> None:
+        """Stores the model, the curve renderer and the progress callback.
 
         Args:
             model    : Model to evaluate.
             renderer : Renderer producing the profiles the shift is measured on.
+            on_pass  : Zero-argument callable invoked after every occluded forward pass.
         """
         self.model    = model
         self.renderer = renderer
+        self.on_pass  = on_pass
 
     def deltas(self, loader, max_batches: int, channel_sets: list[list[int]]) -> np.ndarray:
         """Returns the mean curve MSE increase caused by zeroing each channel set.
@@ -333,6 +337,7 @@ class ChannelOcclusion:
                     occluded[:, channels] = 0.0
                     curves                = self.renderer.render(self.model(occluded))
                     totals[s]            += float(((curves - base_curves) ** 2).mean())
+                    self.on_pass()
 
                 count += 1
 
@@ -484,7 +489,8 @@ class InputAttributionRun(AnalysisRun):
         centers = probes.centers(self.config.n_row_probes, self.config.n_col_probes)
         windows = probes.assemble(centers)
 
-        return GradientAttribution(run.model.module, self.config.window).channel_importance(windows)
+        with self.logger.timer(f"Input attribution: gradient pass ({len(centers)} probe windows)"):
+            return GradientAttribution(run.model.module, self.config.window).channel_importance(windows)
 
     def _occlusion(self, run, per_track: list[list[int]] | None) -> tuple[np.ndarray, np.ndarray | None] | tuple[None, None]:
         """Runs the single-channel and whole-track occlusion tests when enabled.
@@ -502,11 +508,17 @@ class InputAttributionRun(AnalysisRun):
             return None, None
 
         renderer     = PredictionCurves(run.n_gaussians, run.z_axis, self.config.render_amp_floor)
-        occlusion    = ChannelOcclusion(run.model, renderer)
         channel_sets = [[c] for c in range(run.in_channels)]
         track_sets   = per_track if per_track is not None else []
+        n_batches    = min(self.config.max_batches, len(run.loader))
+        n_passes     = len(channel_sets + track_sets) * n_batches
 
-        deltas = occlusion.deltas(run.loader, self.config.max_batches, channel_sets + track_sets)
+        self.logger.info(f"{self.run_dir.name}: occluding {len(channel_sets)} channels and {len(track_sets)} secondaries over {n_batches} batches ({n_passes} forward passes)")
+
+        with self.logger.timer(f"Input attribution: occlusion ({n_passes} passes)"), self.logger.track() as progress:
+            task      = progress.add_task("[section]Channel occlusion[/section]", total=n_passes)
+            occlusion = ChannelOcclusion(run.model, renderer, functools.partial(progress.advance, task))
+            deltas    = occlusion.deltas(run.loader, self.config.max_batches, channel_sets + track_sets)
 
         channel_deltas = deltas[:run.in_channels]
         track_deltas   = deltas[run.in_channels:] if track_sets else None
