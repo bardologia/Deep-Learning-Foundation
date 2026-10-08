@@ -301,6 +301,40 @@ def test_epoch_start_restores_masking_after_an_evaluation_pass():
     assert trainer.train_batches  == 1
 
 
+def test_masked_batches_monitor_the_realised_hidden_fraction():
+    """Each masked training batch reports the realised hidden-pixel fraction of its mask among the loss monitors."""
+    trainer = _masked_trainer("all")
+    trainer.model.train()
+
+    out = trainer._compute_loss((torch.rand(2, 2, SPATIAL, SPATIAL), torch.rand(2, 3 * N_GAUSSIANS, SPATIAL, SPATIAL)))
+
+    fraction = float(out["monitor"]["mask_hidden_fraction"])
+    assert 0.0 < fraction <= 1.0
+
+
+def test_unmasked_evaluation_batches_carry_no_hidden_fraction():
+    """An evaluation pass is unmasked, so no hidden fraction is reported for it."""
+    trainer = _masked_trainer("all")
+    trainer.model.eval()
+
+    out = trainer._compute_loss((torch.rand(2, 2, SPATIAL, SPATIAL), torch.rand(2, 3 * N_GAUSSIANS, SPATIAL, SPATIAL)))
+
+    assert "mask_hidden_fraction" not in out["monitor"]
+
+
+def test_masking_table_states_the_nominal_ratio_and_the_unmasked_validation():
+    """The [Input Masking] rows call the ratio nominal, point at the tracked realised fraction and say validation is unmasked over all pixels."""
+    trainer         = make_trainer_shim()
+    trainer.masking = JepaMaskingConfig(enabled=True, strategy="block", mask_ratio=0.4, n_blocks=3, loss_on="masked")
+
+    rows = trainer._masking_table()
+
+    assert rows["Mask ratio"].startswith("0.4 nominal (3 blocks")
+    assert "mask_hidden_fraction" in rows["Mask ratio"]
+    assert rows["Validation"].startswith("unmasked, loss over all pixels")
+    assert rows["Loss on"] == "masked"
+
+
 def test_epoch_log_refuses_an_unmasked_epoch():
     """An epoch that trained batches without masking any of them raises instead of passing as a masked run."""
     trainer         = _masked_trainer("all")

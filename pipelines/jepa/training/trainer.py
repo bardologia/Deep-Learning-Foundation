@@ -128,12 +128,7 @@ class Trainer(BaseTrainer):
 
         if self.masking.enabled:
             self.logger.section("[Input Masking]")
-            self.logger.kv_table({
-                "Strategy"   : self.masking.strategy,
-                "Mask ratio" : f"{self.masking.mask_ratio:g}" + (f" ({self.masking.n_blocks} blocks)" if self.masking.strategy == "block" else ""),
-                "Fill"       : self.masking.fill + (f" (std={self.masking.fill_noise_std:g})" if self.masking.fill == "noise" else ""),
-                "Loss on"    : self.masking.loss_on,
-            })
+            self.logger.kv_table(self._masking_table())
 
         if self.curriculum.enabled and self.curriculum.swap_epoch >= self.epochs:
             raise ValueError(f"curriculum.swap_epoch={self.curriculum.swap_epoch} must be below training.epochs={self.epochs}; the main loss stage would never run")
@@ -214,6 +209,21 @@ class Trainer(BaseTrainer):
 
         return ParameterLoss(self.z_axis, self.logger, self.tracker, self.gaussian_cfg, stage, norm_stats=self.norm_stats, log_all_losses=self.config.training.log_all_losses)
 
+    def _masking_table(self) -> dict:
+        """Returns the input-masking rows: strategy, nominal ratio, fill, loss scope and the unmasked validation.
+
+        The nominal ratio is what the sampler aims for; block masks are unions
+        of rectangles, so the realised hidden fraction is tracked per epoch as
+        the loss monitor 'mask_hidden_fraction'.
+        """
+        return {
+            "Strategy"   : self.masking.strategy,
+            "Mask ratio" : f"{self.masking.mask_ratio:g} nominal" + (f" ({self.masking.n_blocks} blocks; overlaps lower the realised fraction)" if self.masking.strategy == "block" else "") + "; realised fraction tracked as loss_monitor/mask_hidden_fraction",
+            "Fill"       : self.masking.fill + (f" (std={self.masking.fill_noise_std:g})" if self.masking.fill == "noise" else ""),
+            "Loss on"    : self.masking.loss_on,
+            "Validation" : "unmasked, loss over all pixels (masking is a training-time augmentation only)",
+        }
+
     def _before_epoch(self, epoch: int) -> None:
         """Performs the curriculum loss swap if this epoch is the swap epoch."""
         self.curriculum_controller.maybe_swap(epoch)
@@ -291,7 +301,9 @@ class Trainer(BaseTrainer):
             batch : Tuple of the input patch batch of shape (batch, channels, rows, cols) and the normalized ground-truth parameter batch.
 
         Returns:
-            The criterion's loss dict for this batch.
+            The criterion's loss dict for this batch; on a masked batch its
+            "monitor" entry also carries 'mask_hidden_fraction', the realised
+            fraction of hidden pixels of the sampled mask.
         """
         images    = batch[0].to(self.device)
         gt_params = batch[1].to(self.device)
@@ -306,7 +318,10 @@ class Trainer(BaseTrainer):
             mask   = self.mask_sampler.sample(images.shape[0], images.shape[-2], images.shape[-1], images.device)
             pred   = self.model(self.input_masker.apply(images, mask))
             self.masked_batches += 1
-            return self.criterion(pred, gt_params, mask if self.masking.loss_on == "masked" else None)
+
+            out = self.criterion(pred, gt_params, mask if self.masking.loss_on == "masked" else None)
+            out["monitor"]["mask_hidden_fraction"] = mask.float().mean()
+            return out
 
         return self.criterion(self.model(images), gt_params)
 
