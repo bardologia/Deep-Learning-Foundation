@@ -44,7 +44,7 @@ talking to one group of JSON endpoints.
 
 | Tab | Route | Backed by | What it does |
 |---|---|---|---|
-| Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (NUKE under the watchdog card), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. |
+| Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (NUKE under the watchdog card), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. The watchdog card also holds keep-alive, which detaches the server from the terminal and the login session into its own `ml-template-webui-<pid>.scope` systemd scope, and kill front end, which stops every console server on the same project root (`/api/system/shutdown` force-kills the siblings, then stops itself and returns their pids); running and detached jobs survive and are adopted again on the next start. |
 | Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 15 animated step-by-step derivations from dataset synthesis and parameter extraction through training, inference, benchmarking and tuning. |
 | Pipelines | `#/pipelines` | `/api/pipelines` | The 15 pipelines as staged flows; each maps to the entry point that runs it. |
 | Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 13 folders and 29 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
@@ -119,6 +119,9 @@ contract and never writes to a config file.
   from a switch (`modelBy`: a field plus a value-to-field mapping), which is how the
   cross-validation form shows the architecture fields of the backbone, JEPA trunk or
   autoencoder its training type selects; a type without a mapping edits the raw dict.
+  Fields measured in seconds (`gif_duration`, the extraction's resource poll interval)
+  use a seconds widget with presets, and the tune form groups its study switches under
+  Search groups and its plateau and time-budget rules under Stop rules.
 - **Overrides.** Edited fields are appended to the command as `--<dotted.path> <value>`,
   which `ConfigCli` coerces to the field's type. The command preview always shows exactly
   what will run.
