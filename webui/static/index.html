@@ -571,7 +571,7 @@
             </div>
             <div class="cube-mctl" role="group" aria-label="Amplitude threshold">
               <label for="cube-cloud-thr" id="cube-cloud-thr-label">amp &ge;</label>
-              <input type="col" id="cube-cloud-thr" min="0" max="100" value="0" />
+              <input type="range" id="cube-cloud-thr" min="0" max="100" value="0" />
               <span class="cube-mctl__val" id="cube-cloud-thr-val"></span>
             </div>
             <div class="cube-mctl" role="group" aria-label="Point budget">
@@ -757,12 +757,12 @@
                 <option value="below">below</option>
                 <option value="above">above</option>
               </select>
-              <input type="col" id="cube-metric-thr" min="0" max="1000" value="500" disabled />
+              <input type="range" id="cube-metric-thr" min="0" max="1000" value="500" disabled />
               <span class="cube-mctl__val" id="cube-metric-thr-val"></span>
             </div>
             <div class="cube-mctl" role="group" aria-label="Overlay opacity">
               <label for="cube-metric-alpha">opacity</label>
-              <input type="col" id="cube-metric-alpha" min="0" max="100" value="75" />
+              <input type="range" id="cube-metric-alpha" min="0" max="100" value="75" />
             </div>
             <button type="button" class="btn btn--mini" id="cube-metric-download" title="Download the current overlay as a PNG file">PNG</button>
           </div>
@@ -791,7 +791,7 @@
               <h3 class="cube-panel-title" title="Keep the selected layer's most confident share of pixels (lowest values for error-like layers, highest for R&sup2;-like layers) and compare the kept-pixel metric means against the full region">Selective prediction</h3>
               <div class="cube-mctl">
                 <label for="cube-selective-cov">coverage</label>
-                <input type="col" id="cube-selective-cov" min="5" max="100" value="100" />
+                <input type="range" id="cube-selective-cov" min="5" max="100" value="100" />
                 <span class="cube-mctl__val" id="cube-selective-val">100%</span>
                 <label class="lb-check" title="Paint only the pixels the current coverage keeps, so the scene erodes from least to most confident"><input type="checkbox" id="cube-selective-mask" /> mask</label>
                 <button type="button" class="btn btn--mini" id="cube-selective-play" title="Sweep the coverage down to 5% and back">Play</button>
