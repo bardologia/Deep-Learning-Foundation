@@ -12,11 +12,14 @@ from pathlib     import Path
 
 import pytest
 
+import scripts.rename_runs as rename_runs
+
 from configuration.dataset                import AugmentationConfig
 from configuration.training               import EmbeddingLossConfig, LossConfig, ParamMatching
 from configuration.training.jepa          import JepaMaskingConfig
 from pipelines.shared.training.run_naming import RunNaming
 from scripts.rename_runs                  import RunRenamer
+from tools.monitoring.logger              import Logger
 
 
 def _param_loss() -> LossConfig:
@@ -72,8 +75,8 @@ def _write_metadata(run_dir: Path, profile: bool, image: bool) -> None:
 
 
 def _renamer(root: Path, apply: bool, monkeypatch, tmp_path: Path) -> RunRenamer:
-    """Returns a RunRenamer over `root`, with the working directory moved to tmp_path."""
-    monkeypatch.chdir(tmp_path)
+    """Returns a RunRenamer over `root` whose migration log lands under tmp_path instead of the repository logs."""
+    monkeypatch.setattr(rename_runs, "Logger", lambda log_dir, name: Logger(log_dir=str(tmp_path / "logs"), name=name))
     return RunRenamer([root], apply=apply)
 
 
