@@ -90,16 +90,14 @@ def test_orientation_lower_tokens():
 
 
 def test_orientation_higher_tokens():
-    """Verifies R-squared, SSIM, F1, accuracy, improvement and agreement names are higher-is-better."""
-    assert MetricOrientation.direction("r2_curve") == "higher"
-    assert MetricOrientation.direction("ssim_z") == "higher"
-    assert MetricOrientation.higher_is_better("matched_f1") is True
-    assert MetricOrientation.direction("count_acc_gt3")   == "higher"
-    assert MetricOrientation.direction("count_acc_pred3") == "higher"
-    assert MetricOrientation.direction("count_exact_frac") == "higher"
+    """Verifies R-squared, SSIM, F1, accuracy and improvement names are higher-is-better."""
+    assert MetricOrientation.direction("r2_curve")                   == "higher"
+    assert MetricOrientation.direction("ssim_z")                     == "higher"
+    assert MetricOrientation.higher_is_better("matched_f1")          is True
+    assert MetricOrientation.direction("count_acc_gt3")              == "higher"
+    assert MetricOrientation.direction("count_acc_pred3")            == "higher"
+    assert MetricOrientation.direction("count_exact_frac")           == "higher"
     assert MetricOrientation.direction("improvement_pixel_mse_mean") == "higher"
-    assert MetricOrientation.direction("physics_valid_fraction")     == "higher"
-    assert MetricOrientation.direction("phase_agreement_gt_mean")    == "higher"
 
 
 def test_orientation_neutral_returns_none():
@@ -113,9 +111,53 @@ def test_orientation_neutral_returns_none():
     assert MetricOrientation.direction("slot_2_active_pred_frac") is None
 
 
-def test_orientation_default_is_lower():
-    """Verifies an unrecognised metric name defaults to lower-is-better."""
-    assert MetricOrientation.direction("some_unknown_thing") == "lower"
+def test_orientation_undefined_counts_are_neutral():
+    """Verifies the undefined-pixel counts of the R-squared maps are descriptive and not ranked higher-is-better through their r2 token."""
+    for key in ("pixel_r2_gt_undefined_count", "label_r2_undefined_count", "r2_undefined_count"):
+        assert MetricOrientation.direction(key) is None, key
+
+
+def test_orientation_undeclared_key_raises():
+    """Verifies a metric with no declared orientation is refused instead of ranked as an error metric."""
+    with pytest.raises(KeyError, match="some_unknown_thing"):
+        MetricOrientation.direction("some_unknown_thing")
+
+
+def test_orientation_slot_organization_and_failure_ok_are_higher():
+    """Verifies the slot-identity diagnostics, the ok-failure fraction and the presence rank correlation rank higher-is-better."""
+    for key in ("slot_gt_alignment", "slot_mu_rank_diag", "slot_usage_entropy", "failure_frac_ok", "presence_rank_corr"):
+        assert MetricOrientation.direction(key) == "higher", key
+
+
+def test_orientation_fractions_of_faults_are_lower():
+    """Verifies count, clamp, failure, overflow and cross-entropy keys rank lower-is-better."""
+    for key in ("count_over_frac", "count_under_frac", "clamp_amp_ceil_frac", "failure_frac_missed", "failure_miss_rate", "norm_in_ch2_overflow_frac", "norm_in_ch1_nonfinite_frac", "norm_in_nonfinite_frac", "norm_in_worst_abs_mean", "z_ce_gt_12", "pixel_peak_idx_d_gt_p95", "pixel_peak_idx_d_gt_nonempty_mean", "pixel_peak_err_units_mean_gt_nonempty", "roughness_excess_frac", "label_r2_frac_below_half", "jepa_embedding_nmse"):
+        assert MetricOrientation.direction(key) == "lower", key
+
+
+def test_orientation_descriptive_slot_and_audit_keys_are_neutral():
+    """Verifies per-slot parameter statistics, normalization channel moments, coverage counts and config echoes are not ranked."""
+    for key in ("slot_1_amp_active_gt_mean", "slot_3_mu_global_pred_std", "slot_0_mu_gt_mean", "norm_in_ch0_mean", "clamp_n_active", "activity_threshold", "roughness_ratio", "checkpoint_epoch", "n_pixels_gt_empty", "gt_empty_frac", "strat_label_r2_spearman", "strat_gt_active_count_n_bins", "strat_label_r2_pixels_dropped", "ssim_gt_z_n_scored", "ssim_norm_col_n_nonfinite", "jepa_decoder_floor_frac", "jepa_decode_amplification"):
+        assert MetricOrientation.direction(key) is None, key
+
+
+def test_orientation_spreads_are_not_ranked():
+    """Verifies per-pixel standard deviations are spreads rather than scores, while the means keep their orientation."""
+    for key in ("pixel_cosine_gt_std", "pixel_cosine_gt_nonempty_std", "pixel_r2_gt_std", "pixel_mae_gt_std", "pixel_peak_idx_d_gt_std"):
+        assert MetricOrientation.direction(key) is None, key
+
+    assert MetricOrientation.direction("pixel_cosine_gt_mean") == "higher"
+    assert MetricOrientation.direction("pixel_mae_gt_mean")    == "lower"
+
+
+def test_orientation_autoencoder_keys_are_declared():
+    """Verifies the autoencoder inference metrics rank errors lower, correlations higher, and leave sizes, counts and settings unranked."""
+    for key in ("rmse", "mse_mean", "mse_median", "mse_mean_normalized", "mae_mean", "mae_mean_normalized", "relative_l2_mean", "relative_l2_median", "curve_l1", "curve_l1_p90"):
+        assert MetricOrientation.direction(key) == "lower", key
+    for key in ("pearson_mean", "pearson_median"):
+        assert MetricOrientation.direction(key) == "higher", key
+    for key in ("n_curves", "n_active_curves", "n_valid_pixels", "num_batches", "profile_length", "patch_height", "embedding_dim", "embedding_norm_mean", "seed", "extract_floor_matched_n_pairs"):
+        assert MetricOrientation.direction(key) is None, key
 
 
 def test_orientation_reduction_overrides_mse_token():
