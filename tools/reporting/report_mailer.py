@@ -26,12 +26,15 @@ from email.message import EmailMessage
 from pathlib       import Path
 from typing        import List
 
+from configuration.comparison                  import TrialComparisonConfig
 from configuration.diagnostics                 import ExperimentReportMailConfig, ReportMailEntryConfig
-from pipelines.shared.inference.run_classifier import RunDirectoryWalk
+from pipelines.shared.inference.metadata       import CompletedInference
+from pipelines.shared.inference.run_classifier import InferenceLayout, RunDirectoryWalk
 from pipelines.shared.training.seed_sweep      import SeedSet
 from tools.data.io                             import FileIO
 from tools.reporting.artifact_bundles          import ArtifactBundle, DatasetSelector, ParamRunSelector, RunContentBundle, RunContentSelector
 from tools.reporting.report_collector          import ReportImageRewriter
+from tools.runtime.completion                  import CompletionMarker
 from tools.runtime.run_selector                import RunSelector
 from tools.runtime.run_tag                     import RunTag
 
@@ -88,6 +91,27 @@ class TrialTree:
         seeds = cls.seed_runs(trial)
         return seeds if seeds else [Path(trial)]
 
+    @staticmethod
+    def inference_stamps(inference_dir: Path, split: str | None) -> list[Path]:
+        """Returns the completed inference stamps of a run, ordered by stamp name.
+
+        Spatial families stamp directly under the inference directory and the
+        profile and image autoencoder families under their family
+        sub-directory, so both layouts are listed.
+
+        Args:
+            inference_dir : Inference directory of the run.
+            split         : Split the stamps must have scored, or None for every split.
+        """
+        bases = [Path(inference_dir)] + [Path(inference_dir) / family for family in InferenceLayout.SUBDIRS.values()]
+
+        if split is None:
+            stamps = [stamp for base in bases if base.is_dir() for stamp in base.iterdir() if stamp.is_dir() and CompletionMarker.is_complete(stamp)]
+        else:
+            stamps = [stamp for base in bases for stamp in CompletedInference.stamps(base, split)]
+
+        return sorted(stamps, key=lambda stamp: stamp.name)
+
 
 class Experiment:
     """One mailable experiment: a directory of trial runs, their comparison and the configuration they ran with.
@@ -126,6 +150,10 @@ class Experiment:
 
         return trials
 
+    def inference_split(self) -> str:
+        """Returns the split the trial comparison scores and every mailed trial report is picked from, the trial-comparison default."""
+        return TrialComparisonConfig.inference_split
+
     def comparison_root(self, comparison_dirname: str) -> Path:
         """Returns the directory holding the timestamped comparison stamps."""
         return self.trials_dir / comparison_dirname
@@ -141,11 +169,10 @@ class Experiment:
             comparison_dirname : Directory under the trials directory receiving the stamp.
             logger             : Logger for the collection and the written files.
         """
-        from configuration.comparison               import TrialComparisonConfig
         from pipelines.comparison.comparison_report import TrialComparisonReport
         from pipelines.comparison.trial_collector   import TrialCollector
 
-        config  = TrialComparisonConfig(runs_dir=self.trials_dir, run_tags=[trial.name for trial in self.trials()])
+        config  = TrialComparisonConfig(runs_dir=self.trials_dir, run_tags=[trial.name for trial in self.trials()], inference_split=self.inference_split())
         out_dir = self.comparison_root(comparison_dirname) / RunTag.now()
 
         collector = TrialCollector(runs_dir=self.trials_dir, run_tags=config.run_tags, logger=logger, inference_split=config.inference_split)
@@ -304,6 +331,18 @@ class BenchmarkExperiment(Experiment):
         directory = Path(directory)
         return (directory / "pipeline").is_dir() and bool(TrialTree.trials(directory / cls.TRAINING_DIRNAME))
 
+    def _recorded_config(self):
+        """Returns the benchmark configuration the run recorded in its pipeline directory."""
+        from configuration.benchmark                    import BenchmarkConfig
+        from pipelines.shared.orchestration.resumed_run import StagedRunLocator
+        from tools.runtime.config_cli                   import ConfigCli
+
+        return ConfigCli.load_resolved(BenchmarkConfig(), StagedRunLocator.config_path(self.root))
+
+    def inference_split(self) -> str:
+        """Returns the split the run's inference stage scored, as its recorded configuration names it."""
+        return self._recorded_config().inference.split
+
     def comparison_root(self, comparison_dirname: str) -> Path:
         """Returns the run's own comparison directory, whatever the sweep comparison directory is called."""
         return self.root / self.COMPARISON_DIRNAME
@@ -313,18 +352,15 @@ class BenchmarkExperiment(Experiment):
         return list(self.COMPARISON_REPORTS)
 
     def write_comparison(self, comparison_dirname: str, logger) -> Path:
-        """Runs the benchmark comparison stage over the run with the configuration it recorded and returns the stamp.
+        """Runs the benchmark comparison stage over the run with the configuration and split it recorded and returns the stamp.
 
         Args:
             comparison_dirname : Ignored; the benchmark writes under its own comparison directory.
             logger             : Logger for the stage.
         """
-        from configuration.benchmark                    import BenchmarkConfig
-        from pipelines.benchmark.stages                 import ComparisonStage
-        from pipelines.shared.orchestration.resumed_run import StagedRunLocator
-        from tools.runtime.config_cli                   import ConfigCli
+        from pipelines.benchmark.stages import ComparisonStage
 
-        config = ConfigCli.load_resolved(BenchmarkConfig(), StagedRunLocator.config_path(self.root))
+        config = self._recorded_config()
         stage  = ComparisonStage(config=config, run_tag=self.root.name, logger=logger, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images, inference_split=config.inference.split, run_dir=self.root)
 
         return stage.run()
@@ -502,7 +538,7 @@ class ReportBundle:
         destination = self.staging_dir / output_name
 
         destination.write_text(rewritten, encoding="utf-8")
-        self.logger.ok(f"Staged {output_name}")
+        self.logger.ok(f"Staged {output_name} from {report_path}")
         return destination
 
     def _stage_copy(self, path: Path, output_name: str | None = None) -> Path:
@@ -518,7 +554,7 @@ class ReportBundle:
         destination = self.staging_dir / (output_name or path.name)
 
         destination.write_bytes(path.read_bytes())
-        self.logger.ok(f"Staged {destination.name}")
+        self.logger.ok(f"Staged {destination.name} from {path}")
         return destination
 
 
@@ -536,22 +572,39 @@ class ExperimentReportBundle(ReportBundle):
         self.config     = config
         self.experiment = experiment
 
-    def _reports_under(self, run_dir: Path) -> list[Path]:
-        """Returns every report under a run's inference directory, oldest stamp first.
-
-        Spatial families stamp directly under the inference directory and the
-        other families one level deeper, so both depths are searched.
+    def _run_report(self, run_dir: Path, split: str) -> Path:
+        """Returns the report of a single run's newest completed inference on the split.
 
         Args:
-            run_dir : Run or trial directory whose inference reports are listed.
+            run_dir : Run directory whose inference stamps are searched, directly and under the family sub-directories.
+            split   : Split the inference must have scored, the one the trial comparison reads.
+
+        Raises:
+            FileNotFoundError : If no completed inference on the split holds a report, naming the splits whose stamps do.
         """
         inference = run_dir / self.config.inference_dirname
+        reports   = [stamp / self.config.report_filename for stamp in TrialTree.inference_stamps(inference, split)]
+        reports   = [path for path in reports if path.is_file()]
+
+        if reports:
+            return reports[-1]
+
+        others = sorted({CompletionMarker.payload(stamp)["split"] for stamp in TrialTree.inference_stamps(inference, None) if (stamp / self.config.report_filename).is_file()})
+        found  = f"; reports exist for split(s) {', '.join(others)}" if others else ""
+
+        raise FileNotFoundError(f"No '{self.config.report_filename}' of a completed '{split}' inference under {inference}{found}; run inference on the '{split}' split of this trial before mailing it")
+
+    def _seed_aggregates(self, trial_dir: Path) -> list[Path]:
+        """Returns the seed-aggregate reports of a seeded trial, oldest stamp first.
+
+        Args:
+            trial_dir : Trial directory whose inference directory holds one stamp per seed comparison.
+        """
+        inference = trial_dir / self.config.inference_dirname
         if not inference.is_dir():
             return []
 
-        reports = list(inference.glob(f"*/{self.config.report_filename}")) + list(inference.glob(f"*/*/{self.config.report_filename}"))
-
-        return sorted((path for path in reports if path.is_file()), key=lambda path: path.parent.name)
+        return sorted(path for path in inference.glob(f"*/{self.config.report_filename}") if path.is_file())
 
     def _aggregate_seeds(self, trial_dir: Path) -> None:
         """Writes the seed-aggregate report of a seeded trial, as the seed comparison entry does.
@@ -566,25 +619,23 @@ class ExperimentReportBundle(ReportBundle):
 
         SeedComparison(SeedComparisonConfig(runs_dir=trial_dir.parent, group_tags=[trial_dir.name]), self.logger).run()
 
-    def _trial_report(self, trial_dir: Path) -> Path:
-        """Returns the newest trial-level report, writing the seed aggregate of a seeded trial when missing or asked for.
+    def _trial_report(self, trial_dir: Path, split: str) -> Path:
+        """Returns the report mailed for one trial: a single run's newest report on the split, or a seeded trial's newest seed aggregate, written first when missing or asked for.
 
         Args:
             trial_dir : Trial directory whose report is located.
+            split     : Split a single run's report must have scored, the one the trial comparison reads.
 
         Raises:
-            FileNotFoundError : If a single-run trial holds no inference report, so there is nothing to mail for it.
+            FileNotFoundError : If a single-run trial holds no report of a completed inference on the split.
         """
-        seeded = bool(TrialTree.seed_runs(trial_dir))
+        if not TrialTree.seed_runs(trial_dir):
+            return self._run_report(trial_dir, split)
 
-        if seeded and (self.config.regenerate_reports or not self._reports_under(trial_dir)):
+        if self.config.regenerate_reports or not self._seed_aggregates(trial_dir):
             self._aggregate_seeds(trial_dir)
 
-        reports = self._reports_under(trial_dir)
-        if not reports:
-            raise FileNotFoundError(f"No '{self.config.report_filename}' under {trial_dir / self.config.inference_dirname}; run inference on this trial before mailing it")
-
-        return reports[-1]
+        return self._seed_aggregates(trial_dir)[-1]
 
     def _comparison_stamp(self) -> Path | None:
         """Returns the comparison stamp to gather, writing one when missing or asked for; None for an experiment of one trial."""
@@ -637,8 +688,9 @@ class ExperimentReportBundle(ReportBundle):
         FileIO.ensure_dirs(self.staging_dir)
 
         trials = self.experiment.trials()
+        split  = self.experiment.inference_split()
 
-        staged  = [self._stage_report(self._trial_report(trial), f"{trial.name}.md") for trial in trials]
+        staged  = [self._stage_report(self._trial_report(trial, split), f"{trial.name}.md") for trial in trials]
         staged += [self._stage_file(path, f"comparison_{path.name}") for path in self._comparison_reports(self._comparison_stamp())]
         staged += [self._stage_file(path, name) for path, name in self.experiment.extra_reports(self.config.regenerate_reports, self.logger)]
         staged += [self._stage_copy(path) for path in self.experiment.config_files(self.logger)]
