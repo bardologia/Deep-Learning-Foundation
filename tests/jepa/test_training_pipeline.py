@@ -1,7 +1,8 @@
 """Tests for the JEPA training pipeline's validation gates and run bookkeeping.
 
 Covers autoencoder run-directory resolution, the head restriction under profile coupling,
-checkpoint presence and run-completion checks, the head passed into the overfit gate, z-axis
+checkpoint presence and run-completion checks, the parameter counts logged after coupling,
+the head passed into the overfit gate, z-axis
 agreement and the checkpoint record kept when loading a pretrained profile autoencoder, the
 provenance comparison of coupled runs, the persistence of that record, and closing the run
 metadata when dataset preparation fails."""
@@ -16,6 +17,7 @@ import pytest
 
 from configuration.dataset                      import InputConfig, ProfileDatasetConfig, SplitRegions
 from configuration.normalization                import ChannelStats, ChannelStrategy, NormMethod
+from configuration.training.jepa                import EmbeddingLossConfig
 from pipelines.backbone.dataset.stats           import Stats
 from pipelines.jepa.training                    import pipeline as jepa_pipeline
 from pipelines.jepa.training.pipeline           import CoupledRunProvenance, TrainingPipeline
@@ -24,6 +26,8 @@ from tools.data.io                              import FileIO
 from tools.data.regions                         import CropRegion
 from tools.runtime.completion                   import CompletionMarker
 from tests.conftest                             import SilentLogger
+from tests.jepa.conftest                        import EMBEDDING_DIM
+from tests.jepa.test_trainer                    import build_module
 
 
 class _RecordingLogger(SilentLogger):
@@ -144,6 +148,53 @@ def test_validate_checkpoint_passes_when_present_and_complete(tmp_path):
     CompletionMarker.stamp(tmp_path, {"stage": "training"})
 
     TrainingPipeline.validate_checkpoint(ckpt, "profile")
+
+
+def _coupled_pipeline(module, profile_mode: str):
+    """Returns a pipeline stub around a built module with the given profile coupling mode and no image frontend."""
+    pipe                     = TrainingPipeline.__new__(TrainingPipeline)
+    pipe.backbone_name       = "conv1x1"
+    pipe.ae_model_name       = "mlp_ae"
+    pipe.autoencoder_cfg     = module.profile_autoencoder.config
+    pipe.image_ae_cfg        = None
+    pipe.image_ae_model_name = None
+    pipe.trainer_config      = types.SimpleNamespace(profile_autoencoder_mode=profile_mode, image_autoencoder_mode="frozen", target_provider="stopgrad", embedding_loss=EmbeddingLossConfig(), profile_autoencoder_checkpoint="/ae/best_model.pt")
+
+    return pipe
+
+
+def test_module_table_counts_trainable_parameters_after_frozen_coupling():
+    """With the default frozen coupling the autoencoder weights leave the trainable count and fill the frozen row."""
+    module = build_module()
+    pipe   = _coupled_pipeline(module, "frozen")
+    logger = _RecordingLogger()
+
+    pipe._apply_coupling(module)
+    pipe._log_module(logger, module, module.backbone, 2, 2, EMBEDDING_DIM)
+
+    backbone_params    = sum(p.numel() for p in module.backbone.parameters())
+    autoencoder_params = sum(p.numel() for p in module.profile_autoencoder.parameters())
+    table              = logger.tables[-1]
+
+    assert not any(p.requires_grad for p in module.profile_autoencoder.parameters())
+    assert table["Trainable Parameters"].startswith(f"{backbone_params:,} (after coupling")
+    assert table["Frozen Parameters"] == f"{autoencoder_params:,}"
+
+
+def test_module_table_counts_a_finetuned_autoencoder_as_trainable():
+    """Under fine-tune coupling the autoencoder weights stay trainable and nothing is frozen."""
+    module = build_module()
+    pipe   = _coupled_pipeline(module, "finetune")
+    logger = _RecordingLogger()
+
+    pipe._apply_coupling(module)
+    pipe._log_module(logger, module, module.backbone, 2, 2, EMBEDDING_DIM)
+
+    total = sum(p.numel() for p in module.parameters())
+    table = logger.tables[-1]
+
+    assert table["Trainable Parameters"].startswith(f"{total:,} (after coupling")
+    assert table["Frozen Parameters"] == "0"
 
 
 class _GateStop(Exception):

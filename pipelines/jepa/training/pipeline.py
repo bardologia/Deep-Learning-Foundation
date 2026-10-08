@@ -27,6 +27,7 @@ from pipelines.shared.model.model_builder                import ModelBuilder
 from pipelines.shared.training.overfit_check             import OverfitCheck
 from pipelines.shared.training.run_naming                import JepaNamingSpec, RunNaming
 from pipelines.shared.training.training_runner           import EntryConfigTrainRunner
+from pipelines.jepa.training.coupling                    import CouplingMode
 from pipelines.jepa.training.loss                        import Loss as EmbeddingLoss
 from pipelines.jepa.training.trainer                     import JepaModule, Trainer
 from pipelines.shared.config.config_persistence          import ProfileAutoencoderConfigIO, ImageAutoencoderConfigIO, ProfileDatasetConfigIO
@@ -434,21 +435,40 @@ class TrainingPipeline:
         backbone, backbone_cfg = self._build_backbone(backbone_in, backbone_out, self.dataset_config.patch.size, config=backbone_config)
         module                 = JepaModule(backbone, profile_autoencoder=profile_autoencoder, image_autoencoder=image_autoencoder)
 
+        self._apply_coupling(module)
         self._log_module(logger, module, backbone, dataset_in_channels, backbone_in, backbone_out)
         return module, backbone_cfg
 
+    def _apply_coupling(self, module) -> None:
+        """Applies the configured frozen or fine-tune mode to each coupled autoencoder.
+
+        Freshly built autoencoders keep every weight trainable, and the trainer
+        applies the coupling modes only when it is constructed; applying them
+        here already makes the parameter counts logged next describe what the
+        optimizer will actually train.
+
+        Args:
+            module : Assembled JepaModule.
+        """
+        if module.profile_autoencoder is not None:
+            CouplingMode(self.trainer_config.profile_autoencoder_mode, "profile autoencoder").apply(module.profile_autoencoder)
+
+        if module.image_autoencoder is not None:
+            CouplingMode(self.trainer_config.image_autoencoder_mode, "image autoencoder").apply(module.image_autoencoder)
+
     def _log_module(self, logger, module, backbone, dataset_in: int, backbone_in: int, backbone_out: int) -> None:
-        """Prints the built-module table with widths, parameter counts and coupling state.
+        """Prints the built-module table with widths, parameter counts after coupling, and coupling state.
 
         Args:
             logger       : Logger receiving the section and table.
-            module       : Assembled JepaModule.
+            module       : Assembled JepaModule with the coupling modes applied.
             backbone     : Backbone submodule, counted separately.
             dataset_in   : Input channel count produced by the dataset.
             backbone_in  : Input channel count seen by the backbone.
             backbone_out : Output channel count emitted by the backbone.
         """
         backbone_params  = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
+        total_params     = sum(p.numel() for p in module.parameters())
         trainable_params = sum(p.numel() for p in module.parameters() if p.requires_grad)
 
         info = {
@@ -457,7 +477,8 @@ class TrainingPipeline:
             "Backbone In"          : backbone_in,
             "Backbone Out"         : backbone_out,
             "Backbone Parameters"  : f"{backbone_params:,}",
-            "Trainable Parameters" : f"{trainable_params:,}",
+            "Trainable Parameters" : f"{trainable_params:,} (after coupling; what the optimizer trains)",
+            "Frozen Parameters"    : f"{total_params - trainable_params:,}",
         }
 
         if self.autoencoder_cfg is not None:
