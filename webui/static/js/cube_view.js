@@ -248,6 +248,7 @@ class CubeParams {
     this.token = 0;
     this.pixelSeq = 0;
     this.picked = null;
+    this.adopted = 0;
 
     this.fieldEl.querySelectorAll(".cube-space").forEach((btn) => {
       btn.addEventListener("click", () => this._setField(btn.dataset.field));
@@ -260,6 +261,7 @@ class CubeParams {
   configure(meta) {
     this.meta = meta.params || null;
     this.picked = null;
+    this.adopted = 0;
     this.cross.hidden = true;
     this.openBtn.hidden = true;
     this.tableEl.innerHTML = "";
@@ -277,10 +279,25 @@ class CubeParams {
 
   render() {
     if (!this.meta) return;
+    this._adoptFocus();
     this._syncBtns();
     this._fetchMap();
     this._updateLegend();
     if (this.picked) this._fetchPixel(this.picked.row, this.picked.col);
+  }
+
+  _adoptFocus() {
+    const host = this.host;
+    if (!host.focus || this.adopted === host.focusSeq) return;
+
+    this.adopted = host.focusSeq;
+    const point  = host.focusPoint();
+    if (!point) return;
+
+    this.picked           = point;
+    this.cross.hidden     = false;
+    this.cross.style.left = `${point.fx * 100}%`;
+    this.cross.style.top  = `${point.fy * 100}%`;
   }
 
   _setSource(source) {
@@ -388,6 +405,8 @@ class CubeParams {
     this.cross.style.left = `${fx * 100}%`;
     this.cross.style.top  = `${fy * 100}%`;
 
+    this.host.setFocus(row, col);
+    this.adopted = this.host.focusSeq;
     this._fetchPixel(row, col);
   }
 
@@ -469,6 +488,7 @@ class CubeMetrics {
     this.hist = null;
     this.histKey = null;
     this.picked = null;
+    this.adopted = 0;
     this.debounceTimer = null;
     this.hoverQueued = null;
     this.hoverFetching = false;
@@ -493,6 +513,7 @@ class CubeMetrics {
     this.hist = null;
     this.histKey = null;
     this.picked = null;
+    this.adopted = 0;
     this.cross.hidden = true;
     this.openBtn.hidden = true;
     this.readoutEl.innerHTML = "";
@@ -512,10 +533,29 @@ class CubeMetrics {
 
   render() {
     if (!this.layer) return;
+    this._adoptFocus();
     this._syncBtns();
     this._refresh();
     this._fetchHist();
     this._onCoverage();
+  }
+
+  _adoptFocus() {
+    const host = this.host;
+    if (!host.focus || this.adopted === host.focusSeq || !this.layer) return;
+
+    this.adopted = host.focusSeq;
+    const point  = host.focusPoint();
+    if (!point) return;
+
+    this.picked               = point;
+    this.cross.hidden         = false;
+    this.cross.style.left     = `${point.fx * 100}%`;
+    this.cross.style.top      = `${point.fy * 100}%`;
+    this.coordsEl.textContent = `locked at row = ${point.row} · col = ${point.col} · click again to unlock`;
+    this.openBtn.hidden       = false;
+
+    this._fetchReadout(point.row, point.col);
   }
 
   async _fetchHist() {
@@ -812,6 +852,8 @@ class CubeMetrics {
     this.coordsEl.textContent = `locked at row = ${point.row} · col = ${point.col} · click again to unlock`;
     this.openBtn.hidden       = false;
 
+    this.host.setFocus(point.row, point.col);
+    this.adopted = this.host.focusSeq;
     this._fetchReadout(point.row, point.col);
   }
 
@@ -1597,6 +1639,7 @@ class CubeView {
     this.jumpPrint     = refs.jumpPrint;
     this.jumpDownload  = refs.jumpDownload;
     this.jumpCsv       = refs.jumpCsv;
+    this.jumpParams    = refs.jumpParams;
     this.jumpRowRange  = refs.jumpRowRange;
     this.jumpColRange  = refs.jumpColRange;
     this.progress      = refs.progress;
@@ -1616,6 +1659,9 @@ class CubeView {
     this.point = null;
     this.mode = "map";
     this.locked = null;
+    this.focus = null;
+    this.focusSeq = 0;
+    this.cutsAdopted = 0;
     this.holdTimer = null;
     this.holdHintTimer = null;
     this.holdHintOn = false;
@@ -1684,6 +1730,7 @@ class CubeView {
     if (this.jumpPrint) this.jumpPrint.addEventListener("click", () => this._printSlices());
     this.jumpDownload.addEventListener("click", () => this._downloadCuts());
     this.jumpCsv.addEventListener("click", () => this._downloadProfilesCsv());
+    this.jumpParams.addEventListener("click", () => this._setView("params"));
   }
 
   leave() {
@@ -1792,6 +1839,8 @@ class CubeView {
     this.meta = null;
     this.point = null;
     this.locked = null;
+    this.focus = null;
+    this.cutsAdopted = this.focusSeq;
     this.mode = "map";
     this.panels.forEach((panel) => {
       this._releasePanel(panel);
@@ -1926,6 +1975,7 @@ class CubeView {
       this.params.configure(meta);
       const paramsBtn = this.modeBtns.find((btn) => btn.dataset.view === "params");
       if (paramsBtn) paramsBtn.hidden = !meta.params;
+      this.jumpParams.hidden = !meta.params;
       if (!meta.params && this.view === "params") this._setView("explorer");
     }
 
@@ -1970,15 +2020,18 @@ class CubeView {
     const { row, col } = this.pendingFocus;
     this.pendingFocus = null;
 
-    const clampedAz = Math.max(0, Math.min(this.meta.n_rows - 1, row));
-    const clampedRg = Math.max(0, Math.min(this.meta.n_cols - 1, col));
+    const clampedRow = Math.max(0, Math.min(this.meta.n_rows - 1, row));
+    const clampedCol = Math.max(0, Math.min(this.meta.n_cols - 1, col));
+
+    this.setFocus(clampedRow, clampedCol);
+    this.cutsAdopted = this.focusSeq;
 
     this._setView("explorer");
     this._follow({
-      row : clampedAz,
-      col : clampedRg,
-      fx  : this.meta.n_cols > 1 ? clampedRg / (this.meta.n_cols - 1) : 0.5,
-      fy  : this.meta.n_rows > 1 ? clampedAz / (this.meta.n_rows - 1) : 0.5,
+      row : clampedRow,
+      col : clampedCol,
+      fx  : this.meta.n_cols > 1 ? clampedCol / (this.meta.n_cols - 1) : 0.5,
+      fy  : this.meta.n_rows > 1 ? clampedRow / (this.meta.n_rows - 1) : 0.5,
     }, true);
   }
 
@@ -2076,6 +2129,13 @@ class CubeView {
     }
     if (view === "figures" && this.meta) {
       this.figures.render();
+      return;
+    }
+
+    if (view === "explorer" && this.meta && this.focus && this.cutsAdopted !== this.focusSeq) {
+      const point = this.focusPoint();
+      this._follow(point, true);
+      this._enterSlices(point);
       return;
     }
 
@@ -2379,12 +2439,28 @@ class CubeView {
     if (this.jumpColRange) this.jumpColRange.textContent = `0–${this.meta.n_cols - 1}`;
   }
 
+  setFocus(row, col) {
+    this.focus     = { row, col };
+    this.focusSeq += 1;
+  }
+
+  focusPoint() {
+    if (!this.focus || !this.meta) return null;
+
+    const row = Math.max(0, Math.min(this.meta.n_rows - 1, this.focus.row));
+    const col = Math.max(0, Math.min(this.meta.n_cols - 1, this.focus.col));
+    return { row, col, fx: (col + 0.5) / this.meta.n_cols, fy: (row + 0.5) / this.meta.n_rows };
+  }
+
   _enterSlices(point) {
     this.mode                 = "slices";
     this.locked               = { row: point.row, col: point.col };
     this.deck.dataset.mode    = "slices";
     this.back.hidden          = false;
     this.slicesAt.textContent = `locked at row = ${point.row} · col = ${point.col} · hover a slice for profiles · Esc to go back`;
+
+    this.setFocus(point.row, point.col);
+    this.cutsAdopted = this.focusSeq;
     this._queueProfiles(point.row, point.col);
   }
 

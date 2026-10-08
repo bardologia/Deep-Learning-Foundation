@@ -13,7 +13,8 @@ mark the keep threshold, and never draw a distribution fetched for another layer
 The cut, profile and transect downloads must hand the visible panels and the profiles to the
 shared exporter under names carrying the run, stamp and pixel. The Figures view must list a
 stamp's saved figures once per cube, drop a listing that lands after the cube changed, and
-list the new cube's figures when one loads while the view is open.
+list the new cube's figures when one loads while the view is open. A pixel locked in the cuts,
+the parameter map or the metric map becomes the one shared focus the other views adopt.
 """
 
 from __future__ import annotations
@@ -250,6 +251,71 @@ def test_download_buttons_are_on_the_page_and_wired_to_the_cube_view():
 
     for ref, element in (("jumpDownload", "cube-jump-download"), ("jumpCsv", "cube-jump-csv"), ("download", "cube-transect-download"), ("download", "cube-metric-download")):
         assert re.search(rf'{ref}\s*: document\.getElementById\("{element}"\)', app), element
+
+
+@NEEDS_JS
+def test_focus_point_clamps_into_the_cube_and_centres_on_the_pixel():
+    """The shared focus is clamped into the cube and placed at the centre of its pixel."""
+    assert _check("focus")["clamped"] == {"row": 3, "col": 0, "fx": pytest.approx(0.5 / 6), "fy": pytest.approx(3.5 / 4)}
+
+
+@NEEDS_JS
+def test_a_pixel_picked_on_the_parameter_map_becomes_the_shared_focus():
+    """Clicking the parameter map sets the shared focus at that pixel and marks it as already adopted there."""
+    assert _check("focus")["paramPick"] == {"focus": {"row": 1, "col": 3}, "seq": 2, "adopted": 2, "fetched": [[1, 3]]}
+
+
+@NEEDS_JS
+def test_the_metric_view_adopts_the_shared_focus_once_and_reads_every_layer_there():
+    """Opening the metric view locks its crosshair on the shared focus and reads it out, and a second render does not read again."""
+    adopted = _check("focus")["adopted"]
+
+    assert adopted["picked"] == [1, 3]
+    assert adopted["coords"] == "locked at row = 1 · col = 3 · click again to unlock"
+    assert adopted["cross"] == [f"{3.5 / 6 * 100}%", "37.5%"]
+    assert adopted["open"] and adopted["readouts"] == [[1, 3]]
+
+
+@NEEDS_JS
+def test_the_parameter_view_adopts_a_pixel_locked_on_the_metric_map():
+    """A pixel locked on the metric map becomes the focus, and the parameter view then reads its slots at that pixel."""
+    observed = _check("focus")
+
+    assert observed["metricPick"] == {"focus": {"row": 3, "col": 5}, "adopted": True, "readouts": [[3, 5]]}
+    assert observed["paramAdopt"] == {"picked": [3, 5], "fetched": [[3, 5]], "cross": True}
+
+
+@NEEDS_JS
+def test_returning_to_the_cuts_locks_them_on_a_new_focus_once():
+    """Back on the cuts a focus set elsewhere moves the cut and locks the slices there, and it is not entered twice."""
+    observed = _check("focus")
+
+    assert observed["entered"] == {"followed": [[3, 5]], "mode": "slices", "locked": {"row": 3, "col": 5}, "profiled": [[3, 5]], "adopted": True}
+    assert observed["kept"] == {"followed": [], "fetched": [[3, 5]]}
+
+
+@NEEDS_JS
+def test_opening_the_cube_at_a_pixel_moves_the_focus_without_locking_the_previous_one():
+    """Opening the cube at a pixel from another tab makes that pixel the focus instead of locking the cuts on the previous focus."""
+    observed = _check("focus")
+
+    assert observed["opened"] == {"focus": {"row": 3, "col": 2}, "mode": "map", "followed": [[3, 2]], "view": "explorer"}
+    assert observed["reopened"] == {"picked": [3, 2], "readouts": [[3, 2]]}
+
+
+@NEEDS_JS
+def test_params_here_button_shows_only_for_cubes_with_parameters():
+    """The cuts bar offers the Params here jump only when the loaded cube carries Gaussian parameters."""
+    assert _check("focus")["button"] == {"withParams": True, "withoutParams": False}
+
+
+def test_params_here_button_is_on_the_page_and_wired_to_the_cube_view():
+    """The cuts bar carries a hidden Params here button and app.js hands it to the cube view."""
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    app  = (WEBUI_ROOT / "static" / "js" / "app.js").read_text()
+
+    assert html.count('id="cube-jump-params" hidden') == 1
+    assert re.search(r'jumpParams\s*: document\.getElementById\("cube-jump-params"\)', app)
 
 
 @NEEDS_JS
