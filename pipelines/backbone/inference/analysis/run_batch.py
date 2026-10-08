@@ -124,7 +124,7 @@ class AnalysisRun:
             num_workers     = 0,
             device          = self.config.device,
             checkpoint_name = self.config.checkpoint_name,
-            load_cube   = False,
+            load_cube       = False,
         )
 
     def _batch_size(self) -> int:
