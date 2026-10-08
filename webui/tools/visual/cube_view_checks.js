@@ -190,10 +190,12 @@ class CubeViewChecks {
     cloud.leave();
     const left = { running: cloud.sweepFrame !== null, pending: frames.pending.size };
 
-    const view    = Object.create(CubeView.prototype);
-    view.sweeps   = [];
-    view.cloud    = cloud;
-    view.timeline = this._timelineStub();
+    const view        = Object.create(CubeView.prototype);
+    view.sweeps       = [];
+    view.cloud        = cloud;
+    view.timeline     = this._timelineStub();
+    view.storyTimer   = null;
+    view.storyPlayBtn = this._element();
     cloud._startSweep();
     view.leave();
     const viewLeft = { running: cloud.sweepFrame !== null, pending: frames.pending.size };
@@ -555,6 +557,236 @@ class CubeViewChecks {
     const tab = calls.splice(0);
 
     return { loaded, left, opened, recoloured, tab };
+  }
+
+  _linkedView() {
+    const { CubeView } = this.classes;
+    const toasts       = [];
+    const calls        = [];
+
+    this.sandbox.Toast           = { show: (text, kind) => toasts.push({ text, kind }) };
+    this.sandbox.URLSearchParams = URLSearchParams;
+
+    const modeBtn = (view, label, hidden) => ({ dataset: { view }, textContent: ` ${label} `, hidden, classList: { toggle: () => {} } });
+    const view    = Object.create(CubeView.prototype);
+    Object.assign(view, {
+      cubes      : [{ id: "/runs/a/inference/stamp_1" }, { id: "/runs/a/inference/stamp_2" }],
+      selectedId : "/runs/a/inference/stamp_1",
+      meta       : { n_rows: 8, n_cols: 6, sources: ["pred"], metric_maps: [] },
+      view       : "explorer",
+      space      : "physical",
+      cmap       : "jet",
+      locked     : null,
+      focus      : null,
+      polling    : false,
+      metrics    : { layer: { key: "pixel_mse" }, layers: [{ key: "pixel_mse" }, { key: "pixel_r2" }], _setLayer: (key) => calls.push(`layer ${key}`) },
+      modeBtns   : [modeBtn("explorer", "Cuts", false), modeBtn("metrics", "Metric maps", false), modeBtn("params", "Parameters", true)],
+      cmapSel    : { value: "jet", options: [{ value: "jet" }, { value: "viridis" }] },
+    });
+    view.select       = (id) => calls.push(`select ${id}`);
+    view._setCmap     = (cmap) => { view.cmap = cmap; calls.push(`cmap ${cmap}`); };
+    view._setSpace    = (space) => { view.space = space; calls.push(`space ${space}`); };
+    view._setView     = (name) => { view.view = name; calls.push(`view ${name}`); };
+    view._follow      = (point) => calls.push(`follow ${point.row},${point.col},${point.fx},${point.fy}`);
+    view._enterSlices = (point) => { view.locked = { row: point.row, col: point.col }; calls.push(`lock ${point.row},${point.col}`); };
+    return { view, toasts, calls };
+  }
+
+  async deepLink() {
+    const { view, toasts, calls } = this._linkedView();
+    const take = () => ({ calls: calls.splice(0), toasts: toasts.splice(0).map((toast) => toast.text) });
+
+    view.focus  = { row: 2, col: 3 };
+    const plain = view.stateParam();
+    view.locked = { row: 5, col: 1 };
+    view.view   = "metrics";
+    const param = view.stateParam();
+    const query = Object.fromEntries(new URLSearchParams(decodeURIComponent(param)));
+    const parsed = view._parseState(param);
+
+    const refused = { noId: view._parseState(encodeURIComponent("view=metrics")), empty: view._parseState(null), broken: view._parseState("%E0%A4%A"), toasts: take().toasts };
+
+    view.view   = "explorer";
+    view.locked = null;
+    view.pendingState = view._parseState(encodeURIComponent("id=/runs/a/inference/stamp_1&view=metrics&row=99&col=-4&layer=pixel_r2&space=normalized&cmap=viridis"));
+    view._applyPendingState();
+    const applied = { ...take(), pending: view.pendingState };
+
+    view.pendingState = view._parseState(encodeURIComponent("id=/runs/a/inference/stamp_1&view=params&cmap=plasma&layer=banana"));
+    view._applyPendingState();
+    const hidden = take();
+
+    view.pendingState = view._parseState(encodeURIComponent("id=/runs/a/inference/stamp_1&view=sideways"));
+    view._applyPendingState();
+    const unknown = take();
+
+    view.pendingState = view._parseState(encodeURIComponent("id=/runs/a/inference/stamp_2&view=metrics"));
+    view.polling      = true;
+    view._applyPendingState();
+    const waiting = { ...take(), pending: !!view.pendingState };
+
+    view.polling = false;
+    view._applyPendingState();
+    const selected = { ...take(), pending: !!view.pendingState };
+
+    view.selectedId = "/runs/a/inference/stamp_2";
+    view.meta       = null;
+    view._applyPendingState();
+    const failed = { ...take(), pending: view.pendingState };
+
+    view.meta         = { n_rows: 8, n_cols: 6, sources: ["pred"], metric_maps: [] };
+    view.pendingState = view._parseState(encodeURIComponent("id=/runs/b/inference/stamp_9"));
+    view._applyPendingState();
+    const foreign = { ...take(), pending: view.pendingState };
+
+    view.entered       = true;
+    view._refreshStrip = async () => calls.push("strip");
+    await view.enter(encodeURIComponent("id=/runs/a/inference/stamp_2&row=1&col=1"));
+    const reentered = take();
+
+    this.sandbox.Api  = { get: async () => ({ id: "/runs/a/inference/stamp_2", state: "ready", cube: { n_rows: 8, n_cols: 6 } }) };
+    view._setProgress = () => {};
+    view._display     = () => calls.push("display");
+    view.pendingState = view._parseState(encodeURIComponent("id=/runs/a/inference/stamp_2&row=3&col=4"));
+    await view._poll();
+    const polled = { ...take(), polling: view.polling, pending: view.pendingState };
+
+    return { plain, query, parsed, refused, applied, hidden, unknown, waiting, selected, failed, foreign, reentered, polled };
+  }
+
+  _storyView() {
+    const { CubeView } = this.classes;
+    const { view, toasts, calls } = this._linkedView();
+    const saved   = [];
+    const copied  = [];
+    const timers  = { next: 0, live: new Map() };
+
+    const node = (tag) => {
+      const el = { tag, children: [], className: "", textContent: "", listeners: {} };
+      el.appendChild      = (child) => el.children.push(child);
+      el.addEventListener = (type, handler) => { el.listeners[type] = handler; };
+      return el;
+    };
+
+    this.sandbox.localStorage  = this._storage();
+    this.sandbox.document      = { createElement: (tag) => node(tag) };
+    this.sandbox.location      = { origin: "http://host:8772", pathname: "/" };
+    this.sandbox.navigator     = { clipboard: { writeText: (url) => { copied.push(url); return Promise.resolve(); } } };
+    this.sandbox.FigureExport  = { download: (name, source) => saved.push({ name, source }), slug: (text) => String(text).replace(/[^A-Za-z0-9._-]+/g, "_") };
+    this.sandbox.setTimeout    = (handler) => { timers.next += 1; timers.live.set(timers.next, handler); return timers.next; };
+    this.sandbox.clearTimeout  = (id) => timers.live.delete(id);
+
+    const list = node("ol");
+    Object.defineProperty(list, "innerHTML", { set: () => { list.children = []; } });
+
+    const snap = { canvas: null };
+    const active = { hidden: false, querySelectorAll: (selector) => (selector === "canvas" && snap.canvas ? [snap.canvas] : []) };
+
+    Object.assign(view, {
+      storySnapshots : {},
+      storyTimer     : null,
+      storyPanel     : this._element({ hidden: true }),
+      storyName      : this._element({ value: "" }),
+      storyPlayBtn   : this._element({ textContent: "Play" }),
+      storyHint      : this._element(),
+      storyList      : list,
+      viewEls        : [{ hidden: true, querySelectorAll: () => [] }, active],
+      sweeps         : [],
+      timeline       : this._timelineStub(),
+    });
+    return { view, toasts, calls, saved, copied, timers, list, snap, CubeView };
+  }
+
+  async story() {
+    const { view, toasts, calls, saved, copied, timers, list, snap, CubeView } = this._storyView();
+    const steps = () => JSON.parse(this.sandbox.localStorage.getItem(CubeView.STORY_KEY) || "[]");
+    const rows  = () => list.children.map((item) => [item.children[0].textContent, ...item.children.slice(1).map((btn) => btn.textContent)]);
+
+    view._storyTogglePlay();
+    const emptyPlay = { toasts: toasts.splice(0).map((toast) => toast.text), timers: timers.live.size };
+
+    view._toggleStoryPanel();
+    const opened = { hidden: view.storyPanel.hidden, hint: view.storyHint.textContent };
+
+    snap.canvas = { width: 40, offsetParent: {}, toDataURL: () => "data:image/png;base64,AAA" };
+    view.focus  = { row: 2, col: 3 };
+    view.storyName.value = "  overview  ";
+    view._storyAdd();
+    snap.canvas = null;
+    view.locked = { row: 5, col: 1 };
+    view._storyAdd();
+    const added = { steps: steps().map((step) => ({ name: step.name, param: decodeURIComponent(step.param) })), snapshots: Object.keys(view.storySnapshots).length, name: view.storyName.value, rows: rows(), hint: view.storyHint.textContent };
+    toasts.splice(0);
+
+    view._storyExport();
+    const exported = saved.splice(0);
+
+    list.children[1].children[2].listeners.click();
+    await Promise.resolve();
+    const linked = copied.splice(0);
+
+    calls.splice(0);
+    list.children[0].children[1].listeners.click();
+    const went = calls.splice(0);
+
+    view._storyTogglePlay();
+    const playing = { label: view.storyPlayBtn.textContent, timers: timers.live.size };
+    [...timers.live.entries()].forEach(([id, handler]) => { timers.live.delete(id); handler(); });
+    const first = calls.splice(0);
+    view.leave = view.leave.bind(view);
+    view.metrics.leave = () => {};
+    view.leave();
+    const stopped = { label: view.storyPlayBtn.textContent, timer: view.storyTimer, timers: timers.live.size };
+
+    view._storyTogglePlay();
+    while (timers.live.size) {
+      const [id, handler] = [...timers.live.entries()][0];
+      timers.live.delete(id);
+      handler();
+    }
+    const replayed = { calls: calls.splice(0).filter((call) => call.startsWith("lock")), label: view.storyPlayBtn.textContent };
+
+    list.children[0].children[3].listeners.click();
+    const removed = { names: steps().map((step) => step.name), snapshots: Object.keys(view.storySnapshots).length, rows: rows().length };
+
+    toasts.splice(0);
+    view._storyExport();
+    const none = { saved: saved.splice(0).length, toast: toasts.splice(0).map((toast) => toast.kind) };
+
+    view._storyClear();
+    const cleared = { steps: steps().length, rows: rows().length, hint: view.storyHint.textContent };
+
+    view.meta = null;
+    view._storyAdd();
+    view._copyLink();
+    const unloaded = { toasts: toasts.splice(0).map((toast) => toast.text), steps: steps().length };
+
+    view.meta              = { n_rows: 8, n_cols: 6, sources: ["pred"], metric_maps: [] };
+    this.sandbox.navigator = {};
+    view._copyLink();
+    const insecure = toasts.splice(0).map((toast) => toast.text);
+
+    const drawnImages = [];
+    this.sandbox.document = {
+      createElement: () => ({ width: 0, height: 0, getContext: () => ({ drawImage: (img) => drawnImages.push(img.id) }), toDataURL () { return `copy ${this.width}x${this.height}`; } }),
+    };
+    const pick = (canvases, imgs) => {
+      view.viewEls = [{ hidden: false, querySelectorAll: (selector) => (selector === "canvas" ? canvases : imgs) }];
+      return view._snapshotDataUrl();
+    };
+    const shownCanvas  = { width: 10, offsetParent: {}, toDataURL: () => "canvas" };
+    const hiddenCanvas = { width: 10, offsetParent: null, toDataURL: () => "hidden" };
+    const blankCanvas  = { width: 0, offsetParent: {}, toDataURL: () => "blank" };
+    const shownImg     = { id: "map", naturalWidth: 6, naturalHeight: 8, offsetParent: {} };
+    const hiddenImg    = { id: "off", naturalWidth: 6, naturalHeight: 8, offsetParent: null };
+    const snapshots    = {
+      canvas : pick([hiddenCanvas, blankCanvas, shownCanvas], [shownImg]),
+      img    : pick([hiddenCanvas, blankCanvas], [hiddenImg, shownImg]),
+      none   : pick([hiddenCanvas], [hiddenImg]),
+      drawn  : drawnImages,
+    };
+
+    return { emptyPlay, opened, added, exported, linked, went, playing, first, stopped, replayed, removed, none, cleared, unloaded, insecure, snapshots };
   }
 
   async pixel() {
@@ -1076,19 +1308,21 @@ class CubeViewChecks {
 
     const stub = Object.create(CubeView.prototype);
     Object.assign(stub, {
-      view       : view,
-      selectedId : "stamp/b",
-      visible    : new Set(),
-      sweeps     : [],
-      modeBtns   : [],
-      progress   : this._element(),
-      coords     : this._element(),
-      hint       : this._element(),
-      stage      : this._element(),
-      topdown    : this._element(),
-      mapWrap    : this._element(),
-      figures    : { configure: () => {}, render: () => {} },
-      timeline   : this._timelineStub(),
+      view         : view,
+      selectedId   : "stamp/b",
+      visible      : new Set(),
+      sweeps       : [],
+      modeBtns     : [],
+      progress     : this._element(),
+      coords       : this._element(),
+      hint         : this._element(),
+      stage        : this._element(),
+      topdown      : this._element(),
+      mapWrap      : this._element(),
+      figures      : { configure: () => {}, render: () => {} },
+      timeline     : this._timelineStub(),
+      storyTimer   : null,
+      storyPlayBtn : this._element(),
       ...extra,
     });
     ["_clearBitmapCache", "_syncSpaceBtns", "_syncProfModeBtns", "_renderSourceToggles", "_applyVisibility", "_initCutBounds", "_follow", "_consumeFocus"].forEach((name) => { stub[name] = () => {}; });

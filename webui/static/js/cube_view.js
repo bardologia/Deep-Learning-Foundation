@@ -2614,6 +2614,8 @@ class CubeView {
   static STALL_AFTER_S = 5;
   static HOLD_HINT_MS = 800;
   static SWEEP_CACHE_BYTES = 192 * 1024 * 1024;
+  static STORY_KEY = "cube-story";
+  static STORY_STEP_MS = 2600;
 
   static tint(hex, alpha) {
     const raw  = hex.replace("#", "");
@@ -2750,22 +2752,288 @@ class CubeView {
     this.jumpDownload.addEventListener("click", () => this._downloadCuts());
     this.jumpCsv.addEventListener("click", () => this._downloadProfilesCsv());
     this.jumpParams.addEventListener("click", () => this._setView("params"));
+
+    this.pendingState   = null;
+    this.storySnapshots = {};
+    this.storyTimer     = null;
+    this.storyPanel     = refs.story.panel;
+    this.storyName      = refs.story.name;
+    this.storyPlayBtn   = refs.story.play;
+    this.storyHint      = refs.story.hint;
+    this.storyList      = refs.story.list;
+
+    refs.linkBtn.addEventListener("click", () => this._copyLink());
+    refs.story.toggle.addEventListener("click", () => this._toggleStoryPanel());
+    refs.story.add.addEventListener("click", () => this._storyAdd());
+    refs.story.export.addEventListener("click", () => this._storyExport());
+    refs.story.clear.addEventListener("click", () => this._storyClear());
+    this.storyPlayBtn.addEventListener("click", () => this._storyTogglePlay());
   }
 
   leave() {
     this._stopSweeps();
+    this._storyStopPlay();
     if (this.metrics) this.metrics.leave();
     if (this.cloud) this.cloud.leave();
     this.timeline.leave();
   }
 
-  async enter() {
+  async enter(param = null) {
+    const state = this._parseState(param);
+    if (state) this.pendingState = state;
+
     if (this.entered) {
       await this._refreshStrip();
+      this._applyPendingState();
       return;
     }
     this.entered = true;
     await this.refresh();
+    this._applyPendingState();
+  }
+
+  _parseState(param) {
+    if (!param) return null;
+
+    let query;
+    try {
+      query = new URLSearchParams(decodeURIComponent(param));
+    } catch (e) {
+      Toast.show("The cube link could not be read.", "warn");
+      return null;
+    }
+    if (!query.get("id")) return null;
+
+    return {
+      id    : query.get("id"),
+      view  : query.get("view"),
+      row   : query.has("row") ? Number(query.get("row")) : null,
+      col   : query.has("col") ? Number(query.get("col")) : null,
+      layer : query.get("layer"),
+      space : query.get("space"),
+      cmap  : query.get("cmap"),
+    };
+  }
+
+  stateParam() {
+    const query = new URLSearchParams();
+    query.set("id", this.selectedId);
+    query.set("view", this.view);
+    query.set("space", this.space);
+    query.set("cmap", this.cmap);
+
+    const point = this.locked || this.focus;
+    if (point) {
+      query.set("row", String(point.row));
+      query.set("col", String(point.col));
+    }
+    if (this.metrics && this.metrics.layer) query.set("layer", this.metrics.layer.key);
+
+    return encodeURIComponent(query.toString());
+  }
+
+  _applyPendingState() {
+    const state = this.pendingState;
+    if (!state || this.polling) return;
+
+    if (state.id === this.selectedId) {
+      this.pendingState = null;
+      if (this.meta) this._applyState(state);
+      return;
+    }
+
+    if (this.cubes.some((cube) => cube.id === state.id)) {
+      this.select(state.id);
+    } else if (this.cubes.length) {
+      Toast.show("The linked cube is not in the current runs root.", "warn");
+      this.pendingState = null;
+    }
+  }
+
+  _applyState(state) {
+    if (state.cmap && [...this.cmapSel.options].some((option) => option.value === state.cmap)) {
+      this.cmapSel.value = state.cmap;
+      this._setCmap(state.cmap);
+    }
+    if (state.space) this._setSpace(state.space);
+
+    if (Number.isFinite(state.row) && Number.isFinite(state.col)) {
+      const row   = Math.max(0, Math.min(this.meta.n_rows - 1, state.row));
+      const col   = Math.max(0, Math.min(this.meta.n_cols - 1, state.col));
+      const point = { row, col, fx: (col + 0.5) / this.meta.n_cols, fy: (row + 0.5) / this.meta.n_rows };
+      if (this.view !== "explorer") this._setView("explorer");
+      this._follow(point, true);
+      this._enterSlices(point);
+    }
+
+    if (state.layer && this.metrics && this.metrics.layers.some((layer) => layer.key === state.layer)) this.metrics._setLayer(state.layer);
+    if (state.view) {
+      const btn = this.modeBtns.find((candidate) => candidate.dataset.view === state.view);
+      if (btn && !btn.hidden) this._setView(state.view);
+      else if (btn) Toast.show(`This cube has no ${btn.textContent.trim()} view; the link opened without it.`, "warn");
+      else Toast.show(`The link names an unknown view '${state.view}'; it opened without it.`, "warn");
+    }
+  }
+
+  _copyLink() {
+    if (!this.selectedId || !this.meta) {
+      Toast.show("Load a cube first.", "warn");
+      return;
+    }
+    this._shareLink(this.stateParam(), "View link copied to the clipboard.");
+  }
+
+  _shareLink(param, copied) {
+    const url = `${location.origin}${location.pathname}#/cube/${param}`;
+    if (!navigator.clipboard) {
+      Toast.show(url, "ok");
+      return;
+    }
+    navigator.clipboard.writeText(url).then(() => Toast.show(copied, "ok")).catch(() => Toast.show(url, "ok"));
+  }
+
+  _storyStore() {
+    return JSON.parse(localStorage.getItem(CubeView.STORY_KEY) || "[]");
+  }
+
+  _storySave(steps) {
+    localStorage.setItem(CubeView.STORY_KEY, JSON.stringify(steps));
+  }
+
+  _toggleStoryPanel() {
+    this.storyPanel.hidden = !this.storyPanel.hidden;
+    if (!this.storyPanel.hidden) this._storyRender();
+  }
+
+  _storyAdd() {
+    if (!this.selectedId || !this.meta) {
+      Toast.show("Load a cube first.", "warn");
+      return;
+    }
+
+    const steps = this._storyStore();
+    const step  = {
+      id    : `${Date.now()}_${Math.floor(Math.random() * 1e6)}`,
+      name  : this.storyName.value.trim() || `step ${steps.length + 1}`,
+      param : this.stateParam(),
+    };
+
+    const snapshot = this._snapshotDataUrl();
+    if (snapshot) this.storySnapshots[step.id] = snapshot;
+
+    steps.push(step);
+    this._storySave(steps);
+    this.storyName.value = "";
+    this._storyRender();
+    Toast.show(`Story step '${step.name}' recorded.`, "ok");
+  }
+
+  _snapshotDataUrl() {
+    const active = this.viewEls.find((el) => !el.hidden);
+    const canvas = [...active.querySelectorAll("canvas")].find((c) => c.width > 0 && c.offsetParent !== null);
+    if (canvas) return canvas.toDataURL("image/png");
+
+    const img = [...active.querySelectorAll("img")].find((candidate) => candidate.naturalWidth > 0 && candidate.offsetParent !== null);
+    if (!img) return null;
+
+    const copy  = document.createElement("canvas");
+    copy.width  = img.naturalWidth;
+    copy.height = img.naturalHeight;
+    copy.getContext("2d").drawImage(img, 0, 0);
+    return copy.toDataURL("image/png");
+  }
+
+  _storyRender() {
+    const steps = this._storyStore();
+    this.storyHint.textContent = steps.length ? `${steps.length} steps · snapshots last until the page reloads` : "No steps yet; set up a view and press Add step.";
+
+    this.storyList.innerHTML = "";
+    steps.forEach((step, index) => {
+      const item  = document.createElement("li");
+      const label = document.createElement("span");
+      label.className   = "cube-story__name";
+      label.textContent = `${index + 1}. ${step.name}`;
+      item.appendChild(label);
+
+      item.appendChild(this._storyButton("Go", () => this._storyGo(step)));
+      item.appendChild(this._storyButton("Copy link", () => this._shareLink(step.param, "Step link copied.")));
+      item.appendChild(this._storyButton("Remove", () => this._storyRemove(step)));
+      this.storyList.appendChild(item);
+    });
+  }
+
+  _storyButton(text, onClick) {
+    const btn = document.createElement("button");
+    btn.type        = "button";
+    btn.className   = "btn btn--mini";
+    btn.textContent = text;
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+
+  _storyRemove(step) {
+    this._storySave(this._storyStore().filter((entry) => entry.id !== step.id));
+    delete this.storySnapshots[step.id];
+    this._storyRender();
+  }
+
+  _storyGo(step) {
+    const state = this._parseState(step.param);
+    if (!state) return;
+    this.pendingState = state;
+    this._applyPendingState();
+  }
+
+  _storyTogglePlay() {
+    if (this.storyTimer !== null) {
+      this._storyStopPlay();
+      return;
+    }
+
+    const steps = this._storyStore();
+    if (!steps.length) {
+      Toast.show("The story has no steps yet.", "warn");
+      return;
+    }
+
+    let index = 0;
+    this.storyPlayBtn.textContent = "Stop";
+    const advance = () => {
+      this._storyGo(steps[index]);
+      index += 1;
+      if (index >= steps.length) {
+        this._storyStopPlay();
+        return;
+      }
+      this.storyTimer = setTimeout(advance, CubeView.STORY_STEP_MS);
+    };
+    this.storyTimer = setTimeout(advance, 0);
+  }
+
+  _storyStopPlay() {
+    if (this.storyTimer !== null) clearTimeout(this.storyTimer);
+    this.storyTimer = null;
+    this.storyPlayBtn.textContent = "Play";
+  }
+
+  _storyExport() {
+    const steps = this._storyStore();
+    let count   = 0;
+
+    steps.forEach((step, index) => {
+      const snapshot = this.storySnapshots[step.id];
+      if (!snapshot) return;
+      FigureExport.download(`story_${String(index + 1).padStart(2, "0")}_${FigureExport.slug(step.name)}.png`, snapshot);
+      count += 1;
+    });
+
+    if (!count) Toast.show("No snapshots in memory; a snapshot is taken when a step is added and lasts until the page reloads.", "warn");
+  }
+
+  _storyClear() {
+    this._storySave([]);
+    this.storySnapshots = {};
+    this._storyRender();
   }
 
   fileTag() {
@@ -2934,6 +3202,7 @@ class CubeView {
     }
 
     this.polling = false;
+    this._applyPendingState();
   }
 
   _slowestStage(timings) {
