@@ -263,6 +263,35 @@ def test_recorded_threshold_above_a_faint_slot_masks_it(tmp_path):
     assert np.all(np.isnan(strict_mu))
 
 
+def test_layers_carry_a_source_record_and_replacing_them_warns(tmp_path):
+    """Every seed's cube directory gets a source record, and a second comparison warns before replacing the earlier layers."""
+    group  = tmp_path / "group"
+    curves = np.ones((N_Z, N_ROWS, N_COLS))
+    params = _params((1.0, 5.0, 2.0))
+    runs   = [_seed_run(group, f"seed{i}", curves, params) for i in range(2)]
+
+    first = StageLogger()
+    _maps(group, runs, logger=first).run()
+
+    source = json.loads((runs[1] / "inference" / "stamp" / "cubes" / "seed_disagreement_source.json").read_text(encoding="utf-8"))
+
+    assert source["group_dir"]          == str(group)
+    assert source["output_subdir"]      == "agg"
+    assert source["activity_threshold"] == 1e-4
+    assert set(source["seeds"])         == {"seed0", "seed1"}
+    assert source["written_at"]
+    assert not [message for level, message in first.messages if level == "warning" and "replacing" in message]
+
+    second = StageLogger()
+    _maps(group, runs, logger=second).run()
+
+    replaced = [message for level, message in second.messages if level == "warning" and "replacing" in message]
+
+    assert len(replaced) == 4
+    assert any(message.startswith("seed0: replacing 4 layer(s) of an earlier seed comparison") for message in replaced)
+    assert any(message.startswith("seed1: replacing 1 layer(s) of an earlier seed comparison") and "label_suspect" in message for message in replaced)
+
+
 def test_missing_cubes_raise(tmp_path):
     """A run missing a prediction cube is rejected."""
     group = tmp_path / "group"
@@ -312,6 +341,8 @@ def test_comparison_writes_maps_figures_and_report_section(tmp_path):
 
     assert payload["activity_threshold"] == 1e-4
     assert payload["disagreement"]["seed_std_amp_finite_frac"] == 1.0
+    assert set(payload["disagreement_maps"]) == set(SeedDisagreementMaps.MAP_TITLES)
+    assert len(payload["disagreement_maps"]["seed_std_profile"]) == 2
     assert "Seed disagreement maps" in text
     assert f"100.0% ({N_ROWS * N_COLS} px)" in text
     assert "seed_std_profile"       in text

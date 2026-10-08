@@ -416,7 +416,8 @@ class SeedComparisonReport:
         }
 
         if self.disagreement is not None:
-            payload["disagreement"] = self.disagreement["summary"]
+            payload["disagreement"]      = self.disagreement["summary"]
+            payload["disagreement_maps"] = self.disagreement["maps_written"]
 
         if self.ensemble is not None:
             payload["ensemble"] = self.ensemble
