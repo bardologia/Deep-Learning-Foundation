@@ -16,7 +16,7 @@ from scipy.stats import pearsonr, spearmanr
 
 from tools.data.preprocessing import ProfilePreprocessor
 from tools.metrics.scoring    import R2
-from tools.data.gaussians     import GaussianActivity, GaussianMixture
+from tools.data.gaussians     import GaussianActivity, GaussianAxis, GaussianMixture
 from tools.monitoring.logger  import Logger
 
 
@@ -505,11 +505,6 @@ class FittingMetricsCalculator:
         """Returns the cube of shape (n_z, rows, cols) as a read-only memory map."""
         return np.load(str(cube_path), mmap_mode="r", allow_pickle=False)
 
-    @staticmethod
-    def _build_z_axis(z_range: Tuple[float, float], n_z: int) -> np.ndarray:
-        """Returns the z axis of ``n_z`` samples spanning the z range."""
-        return np.linspace(float(z_range[0]), float(z_range[1]), n_z, dtype=np.float32)
-
     def _reconstruct_slice(self, parameters_array : np.ndarray, h_val : float) -> np.ndarray:
         """Evaluates the fitted mixture at one height.
 
@@ -656,7 +651,7 @@ class FittingMetricsCalculator:
         self.logger.subsection(f"Loading cube : {Path(cube_path).name}")
         cube    = self._open_cube(Path(cube_path))
         z_range = tuple(metadata["z_range"])
-        z_axis  = self._build_z_axis(z_range, cube.shape[0])
+        z_axis  = GaussianAxis.build(float(z_range[0]), float(z_range[1]), cube.shape[0])
 
         self.logger.subsection(f"Cube shape  : {cube.shape}")
         self.logger.subsection(f"Z range       : [{z_range[0]:.1f}, {z_range[1]:.1f}] m")
