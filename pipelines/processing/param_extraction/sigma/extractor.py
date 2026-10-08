@@ -10,6 +10,7 @@ from __future__ import annotations
 import gc
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses        import dataclass
 from pathlib            import Path
 from time               import perf_counter
 from typing             import Dict, Optional, Tuple
@@ -28,6 +29,42 @@ from .initialiser import PeakInitialiser
 from .selection   import BestKSelector, KernelBackendSelector
 
 
+@dataclass
+class ExtractionOutcome:
+    """What one extraction group fitted, recorded into every permutation's run metadata.
+
+    Attributes:
+        n_z_bins           : Z bins of the fitted cube.
+        total_pixels       : Pixels of the row-col grid.
+        active_pixels      : Pixels whose preprocessed peak cleared the activity threshold and were fitted.
+        truncation_applied : Whether the truncation index lies inside the z axis, so truncation zeroed any bin.
+        backend            : Kernel backend label naming the device platform and count.
+        devices            : JAX devices the fit ran on, as strings.
+        fit_seconds        : Wall-clock seconds of the fitting loop over every batch, mode and K.
+    """
+
+    n_z_bins           : int
+    total_pixels       : int
+    active_pixels      : int
+    truncation_applied : bool
+    backend            : str
+    devices            : list
+    fit_seconds        : float
+
+    def to_metadata(self) -> dict:
+        """Returns the outcome under the keys the run metadata records."""
+        return {
+            "n_z_bins"           : self.n_z_bins,
+            "total_pixels"       : self.total_pixels,
+            "active_pixels"      : self.active_pixels,
+            "active_fraction"    : self.active_pixels / self.total_pixels,
+            "truncation_applied" : self.truncation_applied,
+            "backend"            : self.backend,
+            "devices"            : list(self.devices),
+            "fit_seconds"        : self.fit_seconds,
+        }
+
+
 class SigmaFittingExtractor:
     """Fits Gaussian mixtures to every active pixel of a cube on GPU.
 
@@ -38,6 +75,7 @@ class SigmaFittingExtractor:
         mode_masks    : Per-mode gradient masks as (amplitude, mean, sigma) scalars.
         backend       : Kernel backend label naming the device platform and count the fit runs on.
         devices       : JAX devices the fit runs on.
+        outcome       : Record of the last run's fitted pixels, truncation, backend and duration; None before run().
     """
 
     MAX_PENDING_SCORINGS = 2
@@ -132,6 +170,7 @@ class SigmaFittingExtractor:
         self._n_devices = n_devices
         self.backend    = backend
         self.devices    = list(active_devices)
+        self.outcome    : Optional[ExtractionOutcome] = None
 
         self.logger.section("[GPU Parameter Extractor]")
         self.logger.subsection(f"JAX active devices : {self.devices}")
@@ -193,6 +232,11 @@ class SigmaFittingExtractor:
         self.logger.subsection(f"k_max        : {self.k_max}")
         self.logger.subsection(f"Total pixels : {n_col * n_row:,}")
         self.logger.subsection(f"Batches      : {-(-n_col // self.col_batch_size)}")
+
+        if self.truncation_index < H:
+            self.logger.subsection(f"Truncation   : bins >= {self.truncation_index} zeroed ({H - self.truncation_index} of {H})")
+        else:
+            self.logger.warning(f"truncation_index {self.truncation_index} >= {H} z bins: no z bin is truncated on this cube, so the setting has no effect and every fit_truncation_index >= {H} produces the same run")
 
         return (
             cube_mmap, H, n_row, n_col,
@@ -665,6 +709,8 @@ class SigmaFittingExtractor:
                     "best_k" : np.zeros((n_row, n_col),                      dtype=np.int16),
                 }
 
+        t_fit = perf_counter()
+
         try:
             total_attempted = self._run_fitting(
                 cube_mmap, z_axis, z_ax_j,
@@ -679,9 +725,21 @@ class SigmaFittingExtractor:
                 jax.clear_caches()
             gc.collect()
 
+        self.outcome = ExtractionOutcome(
+            n_z_bins           = int(H),
+            total_pixels       = int(n_col * n_row),
+            active_pixels      = int(total_attempted),
+            truncation_applied = bool(self.truncation_index < H),
+            backend            = self.backend,
+            devices            = [str(device) for device in self.devices],
+            fit_seconds        = perf_counter() - t_fit,
+        )
+
         self.logger.section("[Results]")
         self.logger.subsection(f"Active pixels fitted : {total_attempted:,} / {n_col * n_row:,}")
         self.logger.subsection(f"Permutations fitted  : {len(outputs)} ({len(self.modes)} modes x {len(self.lambda_values)} lambdas)")
+        self.logger.subsection(f"Backend              : {self.backend} on {self.outcome.devices}")
+        self.logger.subsection(f"Fit elapsed          : {self.outcome.fit_seconds:.1f}s")
 
         results = {}
         for key, maps in outputs.items():
