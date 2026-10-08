@@ -394,6 +394,44 @@ class Metrics:
 
         return out
 
+    def _gt_empty_stats(self) -> Dict[str, float]:
+        """Counts the pixels with an empty ground-truth profile and scores cosine and peak error over the others.
+
+        A pixel whose label fit left every Gaussian at zero amplitude has an all-zero GT
+        curve, so its cosine is 0 by construction and its peak displacement is measured
+        from z bin 0. The headline "pixel_cosine_gt_*" and "pixel_peak_*" statistics
+        keep those pixels; the "_nonempty" statistics leave them out.
+
+        Returns:
+            Scalar metrics "n_pixels_gt_empty" and "gt_empty_frac", the moments and percentiles of the cosine and peak-index maps over non-empty pixels keyed "pixel_cosine_gt_nonempty_<statistic>" and "pixel_peak_idx_d_gt_nonempty_<statistic>", and "pixel_peak_err_units_mean_gt_nonempty" in metres.
+
+        Raises:
+            ValueError : If every pixel of the split has an empty ground-truth profile.
+        """
+
+        empty   = self.result.gt_curves.max(axis=0) <= 0.0
+        keep    = ~empty
+        n_empty = int(empty.sum())
+
+        if not keep.any():
+            raise ValueError(f"Every one of the {empty.size} pixels of the split has an empty ground-truth profile; the labels hold no component to score against")
+
+        peak = self.result.pixel_peak_err_idx[keep]
+
+        out = {
+            "n_pixels_gt_empty" : n_empty,
+            "gt_empty_frac"     : n_empty / empty.size,
+        }
+
+        out.update(self._expand_pixel_stats((
+            ("pixel_cosine_gt_nonempty",     self.result.pixel_cosine[keep]),
+            ("pixel_peak_idx_d_gt_nonempty", peak.astype(np.float32)),
+        )))
+
+        out["pixel_peak_err_units_mean_gt_nonempty"] = float(peak.mean()) * self.x_step
+
+        return out
+
     @staticmethod
     def _basic_stats(x: np.ndarray) -> Dict[str, float]:
         """Returns mean, standard deviation, median, minimum and maximum of an array."""
@@ -912,8 +950,13 @@ class Metrics:
 
         Returns:
             Flat mapping of metric name to value, covering cube statistics, curve errors,
-            per-pixel distributions, peak displacement in metres, SSIM in denormalised and
-            unit-area form, per-z series, roughness and the parameter-space metrics.
+            per-pixel distributions, the count of pixels with an empty GT profile with the
+            cosine and peak statistics over the others, peak displacement in metres, SSIM in
+            denormalised and unit-area form, per-z series, roughness and the
+            parameter-space metrics.
+
+        Raises:
+            ValueError : If every pixel of the split has an empty ground-truth profile.
         """
 
         pred = self.result.pred_curves
@@ -949,6 +992,8 @@ class Metrics:
         metrics["pixel_peak_err_units_mean_gt"]   = float(self.result.pixel_peak_err_idx.mean())              * self.x_step
         metrics["pixel_peak_err_units_median_gt"] = float(np.median(self.result.pixel_peak_err_idx))          * self.x_step
         metrics["pixel_peak_err_units_p95_gt"]    = float(np.percentile(self.result.pixel_peak_err_idx, 95))  * self.x_step
+
+        metrics.update(self._gt_empty_stats())
 
         metrics.update(self._slice_ssim(pred, gt, z_indices, col_indices, row_indices, prefix="gt"))
 
