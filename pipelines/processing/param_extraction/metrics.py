@@ -237,13 +237,13 @@ class FittingMetricsCalculator:
         logger             : Logger for the stage report.
         threshold_factor   : Peak fraction below which profile bins were zeroed by the fitter.
         truncation_index   : Z bin above which the profile was truncated by the fitter.
-        amp_threshold      : Amplitude above which a Gaussian slot counts as active.
-        col_chunk        : Number of col bins processed per streaming chunk.
+        amp_threshold      : Amplitude above which a Gaussian slot counts as active, as recorded by the run metadata.
+        col_chunk          : Number of col bins processed per streaming chunk.
         contrast_estimator : Peak-to-floor contrast estimator.
         k_diagnostics      : Model-order selection diagnostics.
     """
 
-    def __init__(self, n_gaussians : int, logger : Logger, threshold_factor : float, truncation_index : int, amp_threshold : float = 1e-3, col_chunk : int = 128) -> None:
+    def __init__(self, n_gaussians : int, logger : Logger, threshold_factor : float, truncation_index : int, amp_threshold : float, col_chunk : int = 128) -> None:
         """Configures the metrics calculator to mirror the fitter's preprocessing.
 
         Args:
@@ -251,8 +251,8 @@ class FittingMetricsCalculator:
             logger           : Logger for the stage report.
             threshold_factor : Peak fraction below which profile bins were zeroed.
             truncation_index : Z bin above which the profile was truncated.
-            amp_threshold    : Amplitude above which a Gaussian slot counts as active.
-            col_chunk      : Number of col bins processed per streaming chunk.
+            amp_threshold    : Amplitude above which a Gaussian slot counts as active, as recorded by the run metadata.
+            col_chunk        : Number of col bins processed per streaming chunk.
         """
         self.n_gaussians      = n_gaussians
         self.logger           = logger

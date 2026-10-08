@@ -48,10 +48,10 @@ class FittingResultPlotter(PlotBase):
         logger           : Logger,
         threshold_factor : float,
         truncation_index : int,
-        fig_dpi          : int   = 150,
-        save_dpi         : int   = 300,
-        n_fits_per_k     : int   = 5,
-        amp_threshold    : float = 1e-3,
+        amp_threshold    : float,
+        fig_dpi          : int = 150,
+        save_dpi         : int = 300,
+        n_fits_per_k     : int = 5,
     ) -> None:
         """Builds the four sub-plotters that make up the report.
 
@@ -61,10 +61,10 @@ class FittingResultPlotter(PlotBase):
             logger           : Logger for the plotting report.
             threshold_factor : Peak fraction below which profile bins were zeroed.
             truncation_index : Z bin above which the profile was truncated.
+            amp_threshold    : Amplitude above which a Gaussian slot counts as active, as recorded by the run metadata.
             fig_dpi          : Figure resolution used while rendering.
             save_dpi         : Resolution the PNGs are written at.
             n_fits_per_k     : Number of example pixels sampled per selected model order.
-            amp_threshold    : Amplitude above which a Gaussian slot counts as active.
         """
         self.output_directory = Path(output_directory)
         self.n_gaussians      = n_gaussians
@@ -120,7 +120,7 @@ class FittingResultPlotter(PlotBase):
         self.logger.subsection("Plotting active-Gaussian count colormap")
         saved["n_gaussians_map"] = self.spatial_plotter.plot_discrete_k_map(
             activity_map,
-            rf"Number of active Gaussians per pixel  ($A_k \geq {self.amp_threshold:g}$)",
+            rf"Number of active Gaussians per pixel  ($A_k > {self.amp_threshold:g}$)",
             r"active Gaussians $K$",
             dirs["colormaps"] / "n_gaussians_map.png",
         )
