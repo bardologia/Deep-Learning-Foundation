@@ -25,7 +25,7 @@ class ComparisonReportBase:
     Attributes:
         HEADLINE_METRICS : Ordered (metric key, column label) pairs forming the flat leaderboard.
         HEADLINE_GROUPS  : Named groups of headline metric keys, averaged within a group so correlated metrics do not outvote independent axes.
-        seed_dispersion  : Per-trial seed statistics keyed by trial name, holding "n_seeds", "best_val_loss_std", "metrics" (per-key standard deviations) and "seed_metrics" (per-seed metric dicts).
+        seed_dispersion  : Per-trial seed statistics keyed by trial name, holding "n_seeds", "n_used" (per-key count of seeds whose finite value entered the mean), "best_val_loss_std", "metrics" (per-key standard deviations) and "seed_metrics" (per-seed metric dicts).
     """
 
     HEADLINE_METRICS = [
@@ -53,6 +53,20 @@ class ComparisonReportBase:
         """Returns the across-seed standard deviation of one metric for one trial."""
         entry = self.seed_dispersion.get(name)
         return entry["metrics"].get(key) if entry else None
+
+    def _seeds_cell(self, name: str) -> str:
+        """Returns the Seeds cell of a trial: its seed count, or "used/total" when some metric mean rests on fewer seeds than the trial holds."""
+        entry = self.seed_dispersion.get(name)
+        if entry is None:
+            return "1"
+
+        n_seeds = entry["n_seeds"]
+        n_used  = min(entry["n_used"].values(), default=n_seeds)
+
+        if n_used == n_seeds:
+            return str(n_seeds)
+
+        return f"{n_used}/{n_seeds}"
 
     def _ranking(self, metrics: list[tuple[str, str]], scored: list[TrialRecord]) -> RankingResult:
         """Ranks the scored trials over the given (metric key, label) pairs.
@@ -286,7 +300,7 @@ class ComparisonReport(ComparisonReportBase):
 
         lines += ["## Training\n"]
         if self.has_seed_sweep:
-            lines += ["Seed-swept models aggregate their seed runs: losses and metrics are seed means (± sample std), while the inference figures and report come from one representative seed.\n"]
+            lines += ["Seed-swept models aggregate their seed runs: losses and metrics are seed means (± sample std), while the inference figures and report come from one representative seed. A Seeds cell of the form used/total marks a model whose least-covered metric mean rests on fewer seeds than the model holds, because some seed lacks an inference on the split or reports a non-finite value.\n"]
         lines += self._training_table()
         lines.append("")
 
@@ -337,7 +351,7 @@ class ComparisonReport(ComparisonReportBase):
                 duration,
             ]
             if self.has_seed_sweep:
-                cells.insert(1, str(self.seed_dispersion.get(r.name, {}).get("n_seeds", 1)))
+                cells.insert(1, self._seeds_cell(r.name))
             table.add_row(*cells)
 
         return table.render()

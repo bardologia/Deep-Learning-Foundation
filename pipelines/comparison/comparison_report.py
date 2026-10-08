@@ -111,10 +111,6 @@ class TrialComparisonReport(ComparisonReportBase):
         self.has_seed_sweep  = any(entry["n_seeds"] > 1 for entry in self.seed_dispersion.values())
         self.assets          = ReportAssets(base=self.out_dir, embed_images=embed_images)
 
-    def _n_seeds(self, name: str) -> int:
-        """Returns the number of seed runs aggregated into a trial."""
-        return self.seed_dispersion.get(name, {}).get("n_seeds", 1)
-
     def _write_overview(self) -> Path:
         """Writes the run table and leaderboards to `overview.md`.
 
@@ -125,7 +121,7 @@ class TrialComparisonReport(ComparisonReportBase):
         lines += ["## Runs\n"]
 
         if self.has_seed_sweep:
-            lines += ["Seed-swept trials aggregate their seed runs: metrics and losses are seed means (± sample std), while the inference run, figures, and report link come from one representative seed.\n"]
+            lines += ["Seed-swept trials aggregate their seed runs: metrics and losses are seed means (± sample std), while the inference run, figures, and report link come from one representative seed. A Seeds cell of the form used/total marks a trial whose least-covered metric mean rests on fewer seeds than the trial holds, because some seed lacks an inference on the split or reports a non-finite value.\n"]
 
         headers = ["Run", "Seeds", "Inference run", "Checkpoint", "Best val loss", "Epochs", "Report"] if self.has_seed_sweep else ["Run", "Inference run", "Checkpoint", "Best val loss", "Epochs", "Report"]
         table   = MarkdownTable(tuple(headers))
@@ -141,7 +137,7 @@ class TrialComparisonReport(ComparisonReportBase):
 
             cells = [f"`{r.name}`", inference, f"{epoch} (best {best_epoch})", best_loss, n_epochs, report_lnk]
             if self.has_seed_sweep:
-                cells.insert(1, str(self._n_seeds(r.name)))
+                cells.insert(1, self._seeds_cell(r.name))
             table.add_row(*cells)
 
         lines += table.render()

@@ -66,7 +66,7 @@ def test_duplicate_unit_and_seed_tags_collapse_once(tmp_path):
 
 
 def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
-    """Verifies a seed without inference and a seed with a NaN metric are counted out of the mean and warned about, and the seed standing for the trial is named."""
+    """Verifies a seed without inference and a seed with a NaN metric are counted out of the mean, warned about, and shown as used/total in the Seeds cell."""
     _run_with_metrics(tmp_path / "trial_a" / "seed0", 2.0)
     _run_with_metrics(tmp_path / "trial_a" / "seed1", float("nan"))
     (tmp_path / "trial_a" / "seed2").mkdir()
@@ -87,6 +87,13 @@ def test_seed_means_disclose_the_seeds_they_cover(tmp_path):
     assert any("seed2" in message and "curve_rmse_gt" in message and "1 of 3" in message for message in warnings)
     assert any(message == "trial_a: figures and report from trial_a/seed0" for message in infos)
     assert any(message.startswith("Aggregated 3 seed run(s) into 1 trial(s)") for message in oks)
+
+    out_dir = tmp_path / "comparison"
+    TrialComparisonReport(records=records, out_dir=out_dir, compare_images=False, compare_gifs=False, embed_images=False, logger=RecordingLogger(), seed_dispersion=collector.seed_dispersion).write_all()
+
+    overview = (out_dir / "overview.md").read_text()
+
+    assert "| 1/3 " in overview.replace("  ", " ")
 
 
 def test_flat_runs_pass_through_unchanged(tmp_path):
