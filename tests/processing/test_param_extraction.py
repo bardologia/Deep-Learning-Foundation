@@ -537,6 +537,55 @@ def test_scoring_throttle_reraises_a_failed_future():
 
 
 @pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
+def test_fit_progress_counts_kernel_calls_and_logs_a_periodic_line():
+    """Verifies the fit progress extrapolates its total from the loaded batches and writes a progress line with the chunk, count and ETA."""
+    from tests.conftest import RecordingLogger
+    from pipelines.processing.param_extraction.sigma.extractor import FitProgress
+
+    class TotalRecorder:
+        """Progress stub recording the totals the bar task is given.
+
+        Attributes:
+            totals   : Totals passed to update().
+            advanced : Number of advance() calls.
+        """
+
+        def __init__(self):
+            """Initialises the empty records."""
+            self.totals   = []
+            self.advanced = 0
+
+        def add_task(self, description, total=None):
+            """Returns a fixed task identifier."""
+            return 0
+
+        def update(self, task, total=None):
+            """Records the new total."""
+            self.totals.append(total)
+
+        def advance(self, task, advance=1):
+            """Counts one advance."""
+            self.advanced += advance
+
+    logger   = RecordingLogger()
+    progress = TotalRecorder()
+    tracker  = FitProgress(logger, progress, n_batches=2)
+
+    tracker.LOG_EVERY_SECONDS = 0.0
+
+    assert tracker.plan_batch(n_active=100, chunk_size=32, n_modes=2, k_max=3) == 4
+    assert progress.totals == [48]
+
+    tracker.advance("Batch 1/2", "sigma", 1, 1, 4)
+
+    assert progress.advanced == 1
+    assert any("Batch 1/2 | mode sigma | K=1 | chunk 1/4 | 1/48 kernel calls" in message and "ETA" in message for level, message in logger.messages if level == "subsection")
+
+    assert tracker.plan_batch(n_active=0, chunk_size=32, n_modes=2, k_max=3) == 0
+    assert progress.totals == [48, 24]
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="jax not installed in this environment")
 def test_kernel_masks_freeze_parameter_groups():
     """Verifies the Adam kernel masks hold amplitude, mean or sigma fixed while the unmasked groups move."""
     import jax.numpy as jnp
