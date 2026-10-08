@@ -439,6 +439,8 @@ class CubeMetrics {
   constructor(refs, host) {
     this.host = host;
     this.layerEl = refs.layer;
+    this.rangeWrapEl = refs.rangeWrap;
+    this.classesEl = refs.classes;
     this.vminEl = refs.vmin;
     this.vmaxEl = refs.vmax;
     this.resetEl = refs.reset;
@@ -640,6 +642,16 @@ class CubeMetrics {
       `&vmin=${vmin}&vmax=${vmax}&keep_min=${keep_min}&keep_max=${keep_max}&alpha=${this.alpha}`;
     this.img.src = `/api/cubes/metric_map?${query}`;
 
+    const classes = this.layer.classes;
+    this.rangeWrapEl.hidden = !!classes;
+    this.cbar.hidden        = !!classes;
+    this.minEl.hidden       = !!classes;
+    this.maxEl.hidden       = !!classes;
+    this.classesEl.hidden   = !classes;
+    this.classesEl.innerHTML = classes
+      ? classes.map((c) => `<span class="cube-cat"><i style="background:${c.color}"></i>${SharedCharts.esc(c.name)}</span>`).join("")
+      : "";
+
     this.cbar.src = `/api/cubes/cbar?cmap=viridis`;
     this.minEl.textContent = this.host._fmt(vmin);
     this.maxEl.textContent = this.host._fmt(vmax);
@@ -673,7 +685,8 @@ class CubeMetrics {
       this.hoverQueued = null;
       const data       = await Api.get(`/api/cubes/metric_at?id=${encodeURIComponent(this.host.selectedId)}&key=${encodeURIComponent(this.layer.key)}&row=${row}&col=${col}`);
       if (data && data.ok && !this.picked) {
-        this.coordsEl.textContent = `row = ${data.row} · col = ${data.col} · ${this.layer.label} = ${data.value === null ? "–" : this.host._fmt(data.value)}`;
+        const shown = data.value === null ? "–" : (data.name || this.host._fmt(data.value));
+        this.coordsEl.textContent = `row = ${data.row} · col = ${data.col} · ${this.layer.label} = ${shown}`;
       }
     }
 
@@ -712,7 +725,7 @@ class CubeMetrics {
     let html = `<table class="cube-metrics cube-metrics--params"><tbody>`;
     this.layers.forEach((layer, i) => {
       const data = results[i];
-      const value = data && data.ok && data.value !== null ? this.host._fmt(data.value) : "–";
+      const value = data && data.ok && data.value !== null ? (data.name ? SharedCharts.esc(data.name) : this.host._fmt(data.value)) : "–";
       html += `<tr><th scope="row">${SharedCharts.esc(layer.label)}</th><td>${value}</td></tr>`;
     });
     html += `</tbody></table>`;

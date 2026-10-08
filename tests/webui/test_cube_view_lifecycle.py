@@ -7,7 +7,8 @@ cleared, released and replaced bitmaps must close while a bitmap a sweep still s
 kept. The point cloud's section-cut plane must bound itself by the cloud's true extent,
 hide the points beyond it, and stop its sweep loop when the view or the tab is left. The
 parameter map's pixel readout must keep the pixel picked last when answers arrive out of
-order.
+order. Class metric layers must swap the colour bar for a named legend and read out class
+names.
 """
 
 from __future__ import annotations
@@ -142,3 +143,22 @@ def test_params_pixel_readout_ignores_a_late_answer_for_an_earlier_click():
     observed = _check("pixel")
 
     assert observed == {"coords": "row = 2 · col = 2 · threshold 0.1", "rendered": [2], "open": True}
+
+
+@NEEDS_JS
+def test_class_layers_swap_the_colour_bar_for_a_named_legend():
+    """A class layer hides the range controls and colour bar and lists its classes; a continuous layer restores them."""
+    observed = _check("legend")
+
+    assert observed["discrete"]["legend"] and not observed["discrete"]["range"] and not observed["discrete"]["cbar"] and not observed["discrete"]["bounds"]
+    assert "#f58518" in observed["discrete"]["html"] and ">suspect</span>" in observed["discrete"]["html"]
+    assert observed["continuous"] == {"range": True, "cbar": True, "bounds": True, "legend": False, "html": ""}
+
+
+@NEEDS_JS
+def test_class_layers_read_out_class_names():
+    """Hovering a class layer names the class under the cursor, and the locked readout names it beside continuous values."""
+    observed = _check("legend")
+
+    assert observed["hover"] == "row = 1 · col = 2 · label suspect = suspect"
+    assert "<td>suspect</td>" in observed["readout"] and "<td>0.25</td>" in observed["readout"]

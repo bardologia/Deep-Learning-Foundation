@@ -9,7 +9,7 @@ class CubeViewChecks {
     vm.createContext(this.sandbox);
 
     const source = fs.readFileSync(path.join(staticDir, "cube_view.js"), "utf8");
-    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeCloud, CubeView };`, this.sandbox, { filename: "cube_view.js" });
+    vm.runInContext(`${source}\nglobalThis.classes = { CubeSweep, CubeParams, CubeMetrics, CubeCloud, CubeView };`, this.sandbox, { filename: "cube_view.js" });
     this.classes = this.sandbox.classes;
   }
 
@@ -239,6 +239,50 @@ class CubeViewChecks {
     await first;
 
     return { coords: params.coordsEl.textContent, rendered: params.rendered, open: !params.openBtn.hidden };
+  }
+
+  _metrics(answer) {
+    const { CubeMetrics } = this.classes;
+
+    this.sandbox.SharedCharts = { esc: (text) => String(text) };
+    this.sandbox.Api          = { get: async (url) => answer(new URLSearchParams(url.split("?")[1])) };
+
+    const refs = {};
+    ["layer", "rangeWrap", "classes", "vmin", "vmax", "reset", "mode", "thr", "thrVal", "alpha", "img", "cross", "cbar", "min", "max", "coords", "readout", "open"].forEach((name) => {
+      refs[name] = this._element({ innerHTML: "" });
+    });
+
+    const host = { selectedId: "cube", meta: { n_rows: 4, n_cols: 6 }, _fmt: (value) => String(value) };
+    return { metrics: new CubeMetrics(refs, host), refs };
+  }
+
+  async legend() {
+    const legend  = [{ index: 0, name: "clean", color: "#4c78a8" }, { index: 1, name: "suspect", color: "#f58518" }];
+    const answers = { label_suspect: { value: 1, name: "suspect" }, pixel_r2: { value: 0.25 } };
+    const { metrics, refs } = this._metrics((query) => ({ ok: true, row: Number(query.get("row")), col: Number(query.get("col")), key: query.get("key"), ...answers[query.get("key")] }));
+
+    const classLayer      = { key: "label_suspect", label: "label suspect", vmin: 0, vmax: 1, classes: legend };
+    const continuousLayer = { key: "pixel_r2", label: "R2", vmin: 0, vmax: 1, classes: null };
+    metrics.layers        = [classLayer, continuousLayer];
+
+    const shown = () => ({ range: !refs.rangeWrap.hidden, cbar: !refs.cbar.hidden, bounds: !refs.min.hidden && !refs.max.hidden, legend: !refs.classes.hidden, html: refs.classes.innerHTML });
+
+    metrics.layer = classLayer;
+    metrics._draw();
+    const discrete = shown();
+
+    metrics.hoverQueued = { row: 1, col: 2 };
+    await metrics._hoverPump();
+    const hover = refs.coords.textContent;
+
+    await metrics._fetchReadout(1, 2);
+    const readout = refs.readout.innerHTML;
+
+    metrics.layer = continuousLayer;
+    metrics._draw();
+    const continuous = shown();
+
+    return { discrete, continuous, hover, readout };
   }
 
   async run(name) {
