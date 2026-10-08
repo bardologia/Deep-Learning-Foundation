@@ -321,7 +321,7 @@ class BenchmarkExperiment(Experiment):
         from tools.runtime.config_cli                   import ConfigCli
 
         config = ConfigCli.load_resolved(BenchmarkConfig(), StagedRunLocator.config_path(self.root))
-        stage  = ComparisonStage(config=config, run_tag=self.root.name, logger=logger, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images, run_dir=self.root)
+        stage  = ComparisonStage(config=config, run_tag=self.root.name, logger=logger, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images, inference_split=config.inference.split, run_dir=self.root)
 
         return stage.run()
 

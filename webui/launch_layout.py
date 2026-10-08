@@ -1185,7 +1185,7 @@ class LaunchLayout:
             "sections": [
                 {"key": "config", "title": "Configuration", "panels": [
                     {"kind": "fields", "groups": [
-                        {"title": "Run", "fields": ["paths.log_base_dir", "run_tag"]},
+                        {"title": "Run", "fields": ["paths.log_base_dir", "run_tag", "inference_split"]},
                         {"title": "Report", "fields": ["reference_model", "embed_images"]},
                     ]},
                 ]},

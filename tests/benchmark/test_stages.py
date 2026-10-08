@@ -268,7 +268,7 @@ def test_fresh_run_stages_report_no_unidentified_directory(data_config, logger_s
 
 def test_comparison_stage_run_invokes_collector_and_report(config, logger_stub, monkeypatch):
     """Verifies the comparison stage hands the collector the run directory and split, and forwards the reference model and seed dispersion to the report."""
-    stage = ComparisonStage(config=config, run_tag="t", logger=logger_stub, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images)
+    stage = ComparisonStage(config=config, run_tag="t", logger=logger_stub, reference_model=config.size_match.reference_model, embed_images=config.comparison.embed_images, inference_split=config.inference.split)
 
     collected = {}
 
@@ -397,6 +397,17 @@ def test_training_stage_hands_a_fresh_unit_its_own_name(data_config, logger_stub
     job = stage._job(f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7")
 
     assert job.command[job.command.index("--run-name") + 1] == f"unet-conv-hungarian-{SCENE_K_TAG}-hv-AB__param_l1/seed7"
+
+
+def test_comparison_stage_builds_from_the_standalone_entry_config(logger_stub):
+    """The compare_runs entry config, which carries no GPU pool and no inference block, constructs the stage and hands it the split explicitly."""
+    from configuration.comparison import ComparisonEntryConfig
+
+    entry = ComparisonEntryConfig(run_tag="t")
+    stage = ComparisonStage(config=entry, run_tag="t", logger=logger_stub, reference_model=entry.reference_model, embed_images=entry.embed_images, inference_split=entry.inference_split)
+
+    assert stage.inference_split == "test"
+    assert stage.run_dir == Path(entry.paths.log_base_dir) / "t"
 
 
 @pytest.mark.dataset

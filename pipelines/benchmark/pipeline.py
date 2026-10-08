@@ -157,7 +157,7 @@ class BenchmarkPipeline(StagedPipeline):
 
     def _run_comparison(self) -> Path:
         """Writes the cross-model comparison reports and returns their output directory."""
-        stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, reference_model=self.config.size_match.reference_model, embed_images=self.config.comparison.embed_images)
+        stage   = ComparisonStage(config=self.config, run_tag=self.run_tag, logger=self.logger, reference_model=self.config.size_match.reference_model, embed_images=self.config.comparison.embed_images, inference_split=self.config.inference.split)
         out_dir = stage.run()
 
         self._mark_stage("comparison", "completed")

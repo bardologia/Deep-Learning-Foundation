@@ -654,22 +654,25 @@ class ComparisonStage(ExperimentStage):
     Attributes:
         reference_model : Model key every other model is compared against.
         embed_images    : Whether figures are embedded into the reports.
+        inference_split : Dataset split whose completed inference stamps supply each run's metrics.
     """
 
-    def __init__(self, config, run_tag: str, logger: Logger, reference_model: str, embed_images: bool, run_dir: Path | None = None) -> None:
-        """Stores the comparison reference and figure embedding preference.
+    def __init__(self, config, run_tag: str, logger: Logger, reference_model: str, embed_images: bool, inference_split: str, run_dir: Path | None = None) -> None:
+        """Stores the comparison reference, figure embedding preference and the scored split.
 
         Args:
-            config          : Benchmark configuration.
+            config          : Benchmark configuration, or the standalone comparison entry configuration, supplying the paths.
             run_tag         : Tag identifying this benchmark run.
             logger          : Logger for the stage.
             reference_model : Model key used as comparison baseline.
             embed_images    : Whether figures are embedded into the reports.
+            inference_split : Dataset split whose completed inference stamps are collected.
             run_dir         : Explicit run directory, or None to derive it from the configured log base and the run tag.
         """
         super().__init__(config=config, run_tag=run_tag, logger=logger, run_dir=run_dir)
         self.reference_model = reference_model
         self.embed_images    = embed_images
+        self.inference_split = inference_split
 
     def run(self) -> Path:
         """Aggregates the run records over seeds and writes the reports.
@@ -679,7 +682,7 @@ class ComparisonStage(ExperimentStage):
         """
         self.logger.section("Comparison reports")
 
-        collector = BenchmarkSeedCollector(run_dir=self.run_dir, logger=self.logger, inference_split=self.config.inference.split)
+        collector = BenchmarkSeedCollector(run_dir=self.run_dir, logger=self.logger, inference_split=self.inference_split)
         records   = collector.collect()
 
         out_dir = self.run_dir / "comparison" / RunTag.now()

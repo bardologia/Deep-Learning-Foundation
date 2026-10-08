@@ -88,12 +88,14 @@ class ComparisonEntryConfig:
         run_tag         : Benchmark run whose models are compared.
         reference_model : Model the others are reported relative to.
         embed_images    : Whether figures are embedded instead of linked.
+        inference_split : Dataset split whose completed inference stamps supply each run's metrics.
         paths           : Log path configuration.
     """
 
     run_tag         : Optional[str] = None
     reference_model : str           = SizeMatchConfig.reference_model
     embed_images    : bool          = ComparisonReportConfig.embed_images
+    inference_split : str           = "test"
 
     paths : ComparisonPathsConfig = field(default_factory=ComparisonPathsConfig)
 

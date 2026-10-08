@@ -2204,6 +2204,7 @@
         "run_tag": "Benchmark run tag to compare; None picks the most recent run with a training subdirectory under log_base_dir",
         "reference_model": "Model whose parameter count anchored the size-matched capacity comparison, highlighted in the report",
         "embed_images": "Base64-embed figures inline in the generated markdown report instead of linking external files",
+        "inference_split": "Dataset split whose completed inference stamps supply each model's metrics in the rebuilt comparison; defaults to test, the split a full benchmark scores last",
         "paths": "ComparisonPathsConfig sub-config giving the benchmark log_base_dir the run_tag is resolved against"
       }
     },
