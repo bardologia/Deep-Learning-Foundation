@@ -1216,12 +1216,16 @@ class StatusBoard {
       `<div class="ctl__stack">` +
       `<section class="sboard sboard--ctl sboard--notify" aria-label="Job notifications">` +
       `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-ntf-light" aria-hidden="true"></i>notify</span><span class="ctl__state"><span class="wd__mode" id="sb-ntf-mode">--</span></span></header>` +
+      `<div class="ntf__body">` +
+      `<div class="ntf__side">` +
       `<div class="ctl__fields">` +
       `<label class="ctl__field"><span class="ntf__key">ntfy topic</span><input class="ntf__input" id="sb-ntf-topic" type="text" placeholder="pick-a-secret-topic" spellcheck="false" autocomplete="off"></label>` +
       `<label class="ctl__field"><span class="ntf__key">server</span><input class="ntf__input" id="sb-ntf-server" type="text" spellcheck="false" autocomplete="off"></label>` +
       `</div>` +
       `<p class="ctl__hint" title="Install the ntfy app (or open ntfy.sh in a browser) and subscribe to the same topic. Every job notifies when it starts and when it ends — direct launches, queued runs and follow-ups alike. Fan-out experiments additionally push the first ETA, 25/50/75% progress milestones and per-unit failures. Failures arrive high-priority.">push to your phone when a job starts, progresses and ends</p>` +
-      `<div class="ctl__figure"><div class="fig-fill">${HairlineFigure.html("notify", 'id="sb-ntf-figure" aria-hidden="true"')}</div></div>` +
+      `</div>` +
+      `<div class="ctl__figure ntf__figure"><div class="fig-fill">${HairlineFigure.html("notify", 'id="sb-ntf-figure" aria-hidden="true"')}</div></div>` +
+      `</div>` +
       `<div class="ctl__actions">` +
       `<button type="button" class="impact__arm" id="sb-ntf-test" title="Send a test notification to the topic now">test</button>` +
       `<button type="button" class="impact__arm" id="sb-ntf-save" title="Save topic and server">save</button>` +

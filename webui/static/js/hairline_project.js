@@ -3454,26 +3454,27 @@ class WatchdogFigure extends HairlineFigureBase {
 
 class NotifyFigure extends HairlineFigureBase {
   static RANGE      = [3, 5, 8];
-  static PARTS      = [[-20, -2], [20, 2]];
-  static TOWER      = [7, 6, 28];
-  static HANDSET    = [7.5, 1.4, 30];
-  static DOCK       = [9, 3.4, 3];
+  static PLINTH     = [-28, -16, 26, 14];
+  static TOWER      = [-24, -14, -10, -2, 24];
+  static DOCK       = [5, 3, 23, 10, 3];
+  static HANDSET    = [6.5, 5.1, 21.5, 7.9, 26];
   static SLOTS      = 3;
   static CARD       = [5.7, 4.6, 0.8];
   static PITCH      = 6.4;
   static ENVELOPE   = [2.8, 1.9, 0.6];
-  static ARC        = 14;
+  static ARC        = 8;
   static REST       = 1;
   static CADENCE_MS = 3400;
   static FLIGHT_MS  = 1400;
 
   constructor({ stage, svg }, value) {
-    super(svg, value, 3.5);
+    super(svg, value, 4.4);
     this.armed = true;
     this.next  = 0;
     this.clock = performance.now();
-    this._camera(this._extent(), 168);
-    this._buildPlinth();
+    this._camera(this._extent(), 162);
+    const [x0, y0, x1, y1] = NotifyFigure.PLINTH;
+    this._plinth(x0, y0, x1, y1, 6, 3);
     this._buildParts();
     this._buildEnvelope();
     this.cards = [this._card(1, 1), this._card(0, 1)];
@@ -3482,30 +3483,33 @@ class NotifyFigure extends HairlineFigureBase {
   }
 
   _extent() {
-    const box = [[-32, -14], [32, -14], [-32, 12], [32, 12]].map(([r, d]) => [...this._onScreen(r, d), -3]);
-    return box.concat([[...this._onScreen(0, 0), NotifyFigure.HANDSET[2] + NotifyFigure.DOCK[2] + NotifyFigure.ARC], [...this._onScreen(...NotifyFigure.PARTS[1]), NotifyFigure.HANDSET[2] + NotifyFigure.DOCK[2] + NotifyFigure.RANGE[2]]]);
-  }
-
-  _buildPlinth() {
-    HL.put(HL.solid(this.g), HL.prism(this.P, this.front, this._screenBox(-32, -14, 32, 12, 6), this._screenBox(-29.8, -11.8, 29.8, 9.8, 4), -3, 0));
+    const [x0, y0, x1, y1]         = NotifyFigure.PLINTH;
+    const [tx0, ty0, tx1, ty1, th] = NotifyFigure.TOWER;
+    const [hx0, hy0, hx1, hy1, hh] = NotifyFigure.HANDSET;
+    const lift                     = NotifyFigure.RANGE[2];
+    const apex                     = NotifyFigure.DOCK[4] + hh + NotifyFigure.ARC + NotifyFigure.ENVELOPE[1] + 1.5;
+    return [[x0, y0, -3], [x1, y1, -3], [x1, y0, -3], [x0, y1, -3], [tx0, ty0, th + lift], [tx1, ty1, th + lift], [hx0, hy0, NotifyFigure.DOCK[4] + hh + lift], [hx1, hy1, NotifyFigure.DOCK[4] + hh + lift], [(tx0 + tx1 + hx0 + hx1) / 4, (ty0 + ty1 + hy0 + hy1) / 4, apex]];
   }
 
   _buildParts() {
-    this.parts = NotifyFigure.PARTS.map(([r, d], k) => {
-      const [x, y] = this._onScreen(r, d);
-      return { k, x, y, group: HL.mk("g", {}, this.g), tw: HL.tween(0), drawn: NaN, restX: this.P(x, y, 0)[0] };
-    });
-    const [server, phone] = this.parts;
+    const [tx0, ty0, tx1, ty1]     = NotifyFigure.TOWER;
+    const [dx0, dy0, dx1, dy1, dh] = NotifyFigure.DOCK;
+    const [hx0, hy0, hx1, hy1]     = NotifyFigure.HANDSET;
 
-    server.main  = HL.solid(server.group);
-    server.lines = HL.mk("path", { class: "nf lo" }, server.group);
-    server.led   = HL.flatDot(server.group, this.C, 0.9, "dot m");
-
-    const [dw, dd, dh] = NotifyFigure.DOCK;
-    HL.put(HL.solid(phone.group), HL.prism(this._shifted(phone.x, phone.y, 0), this.front, this._screenBox(-dw, -dd, dw, dd, 1.4), this._screenBox(-dw + 0.8, -dd + 0.8, dw - 0.8, dd - 0.8, 0.8), 0, dh));
-    phone.main   = HL.solid(phone.group);
-    phone.screen = HL.mk("path", { class: "nf lo" }, phone.group);
-    this.cardBox = HL.mk("g", {}, phone.group);
+    const server = { k: 0, group: HL.mk("g", {}, this.g), tw: HL.tween(0), drawn: NaN, cx: (tx0 + tx1) / 2, cy: (ty0 + ty1) / 2 };
+    const phone  = { k: 1, group: HL.mk("g", {}, this.g), tw: HL.tween(0), drawn: NaN, cx: (hx0 + hx1) / 2, cy: (hy0 + hy1) / 2 };
+    server.restX  = this.P(server.cx, server.cy, 0)[0];
+    phone.restX   = this.P(phone.cx, phone.cy, 0)[0];
+    server.rings  = HL.rings(tx0, ty0, tx1, ty1, 1.6, 1);
+    server.main   = HL.solid(server.group);
+    server.lines  = HL.mk("path", { class: "nf lo" }, server.group);
+    server.led    = HL.flatDot(server.group, this.C, 0.9, "dot m");
+    HL.put(HL.solid(phone.group), HL.prism(this.P, this.front, ...HL.rings(dx0, dy0, dx1, dy1, 1.4, 0.8), 0, dh));
+    phone.rings   = HL.rings(hx0, hy0, hx1, hy1, 1.2, 0.6);
+    phone.main    = HL.solid(phone.group);
+    phone.screen  = HL.mk("path", { class: "nf lo" }, phone.group);
+    this.cardBox  = HL.mk("g", {}, phone.group);
+    this.parts    = [server, phone];
   }
 
   _buildEnvelope() {
@@ -3539,34 +3543,32 @@ class NotifyFigure extends HairlineFigureBase {
   }
 
   _drawServer(part, lift) {
-    const [w, d, h] = NotifyFigure.TOWER;
-    const P         = this._shifted(part.x, part.y, lift);
-    const face      = (r, z) => P(...this._onScreen(r, d), z);
-    HL.put(part.main, HL.prism(P, this.front, this._screenBox(-w, -d, w, d, 1.6), this._screenBox(-w + 1, -d + 1, w - 1, d - 1, 1), 0, h));
-    part.lines.setAttribute("d", [6, 11.5, 17, 22.5].map((z) => HL.seg(face(-w + 1.6, z), face(w - 1.6, z))).join(""));
-    HL.place(part.led, face(w - 2.4, 25));
+    const [x0, , x1, y1, h] = NotifyFigure.TOWER;
+    HL.put(part.main, HL.prism(this.P, this.front, ...part.rings, lift, lift + h));
+    part.lines.setAttribute("d", [6, 11.5, 17].map((z) => HL.seg(this.P(x0 + 1.6, y1, lift + z), this.P(x1 - 1.6, y1, lift + z))).join(""));
+    HL.place(part.led, this.P(x1 - 2.4, y1, lift + h - 3));
   }
 
   _drawPhone(part, lift) {
-    const [w, t, h] = NotifyFigure.HANDSET;
-    const z0        = NotifyFigure.DOCK[2] + lift;
-    const P         = this._shifted(part.x, part.y, 0);
-    const face      = (r, z) => P(...this._onScreen(r, t), z);
-    HL.put(part.main, HL.prism(P, this.front, this._screenBox(-w, -t, w, t, 1.2), this._screenBox(-w + 0.6, -t + 0.6, w - 0.6, t - 0.6, 0.8), z0, z0 + h));
-    part.screen.setAttribute("d", HL.poly([face(-w + 1.4, z0 + 2.6), face(w - 1.4, z0 + 2.6), face(w - 1.4, z0 + h - 2.2), face(-w + 1.4, z0 + h - 2.2)]));
-    this._drawCards(P, z0 + h - 4, this.clock);
+    const [x0, , x1, y1, h] = NotifyFigure.HANDSET;
+    const z0                = NotifyFigure.DOCK[4] + lift;
+    HL.put(part.main, HL.prism(this.P, this.front, ...part.rings, z0, z0 + h));
+    part.screen.setAttribute("d", HL.poly([this.P(x0 + 1.4, y1, z0 + 2.6), this.P(x1 - 1.4, y1, z0 + 2.6), this.P(x1 - 1.4, y1, z0 + h - 2.2), this.P(x0 + 1.4, y1, z0 + h - 2.2)]));
+    this._drawCards(z0 + h - 4, this.clock);
   }
 
-  _drawCards(P, top, now) {
-    const [w, h, t] = NotifyFigure.CARD;
-    const front     = NotifyFigure.HANDSET[1];
-    const face      = (r, z) => P(...this._onScreen(r, front + t), z);
+  _drawCards(top, now) {
+    const [w, h, t]      = NotifyFigure.CARD;
+    const [x0, , x1, y1] = NotifyFigure.HANDSET;
+    const cx             = (x0 + x1) / 2;
+    const ring           = HL.rings(cx - w, y1, cx + w, y1 + t, 0.5, 0.2)[0];
+    const face           = (x, z) => this.P(x, y1 + t, z);
     for (const card of this.cards) {
       const grow = HL.tval(card.grow, now);
       const z1   = top - HL.tval(card.slot, now) * NotifyFigure.PITCH;
       const z0   = z1 - h * grow;
-      HL.put(card.el, grow < 0.05 ? { sil: "", crease: "" } : HL.prism(P, this.front, this._screenBox(-w, front, w, front + t, 0.6), null, z0, z1));
-      card.lines.setAttribute("d", grow < 0.9 ? "" : HL.seg(face(-w + 1.3, z1 - 1.5), face(w - 4.6, z1 - 1.5)) + HL.seg(face(-w + 1.3, z1 - 3.2), face(w - 1.3, z1 - 3.2)));
+      HL.put(card.el, grow < 0.05 ? { sil: "", crease: "" } : HL.prism(this.P, this.front, ring, null, z0, z1));
+      card.lines.setAttribute("d", grow < 0.9 ? "" : HL.seg(face(cx - w + 1.3, z1 - 1.5), face(cx + w - 4.6, z1 - 1.5)) + HL.seg(face(cx - w + 1.3, z1 - 3.2), face(cx + w - 1.3, z1 - 3.2)));
     }
     this._prune(now);
   }
@@ -3595,8 +3597,8 @@ class NotifyFigure extends HairlineFigureBase {
 
   _along(now, f) {
     const [server, phone] = this.parts;
-    const a               = [server.x, server.y, NotifyFigure.TOWER[2] + HL.tval(server.tw, now) + 1.5];
-    const b               = [phone.x, phone.y, NotifyFigure.DOCK[2] + NotifyFigure.HANDSET[2] + HL.tval(phone.tw, now) + 1.5];
+    const a               = [server.cx, server.cy, NotifyFigure.TOWER[4] + HL.tval(server.tw, now) + 1.5];
+    const b               = [phone.cx, phone.cy, NotifyFigure.DOCK[4] + NotifyFigure.HANDSET[4] + HL.tval(phone.tw, now) + 1.5];
     const m               = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.max(a[2], b[2]) + NotifyFigure.ARC];
     const w               = 1 - f;
     return [0, 1, 2].map((i) => w * w * a[i] + 2 * w * f * m[i] + f * f * b[i]);
@@ -3605,9 +3607,8 @@ class NotifyFigure extends HairlineFigureBase {
   _drawEnvelope(at) {
     const [w, h, t] = NotifyFigure.ENVELOPE;
     const P         = this._shifted(at[0], at[1], at[2]);
-    const face      = (r, z) => P(...this._onScreen(r, t), z);
-    HL.put(this.envelope.el, HL.prism(P, this.front, this._screenBox(-w, -t, w, t, 0.3), null, -h, h));
-    this.envelope.flap.setAttribute("d", HL.open([face(-w + 0.3, h - 0.2), face(0, -0.2), face(w - 0.3, h - 0.2)]));
+    HL.put(this.envelope.el, HL.prism(P, this.front, HL.rings(-w, -t, w, t, 0.3, 0.1)[0], null, -h, h));
+    this.envelope.flap.setAttribute("d", HL.open([P(-w + 0.3, t, h - 0.2), P(0, t, -0.2), P(w - 0.3, t, h - 0.2)]));
   }
 
   _hide() {
