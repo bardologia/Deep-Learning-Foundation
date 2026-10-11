@@ -57,7 +57,7 @@ talking to one group of JSON endpoints.
 | Sequences | `#/sequences` | `/api/sequences/*` | Experiment sequences as a drag-and-drop DAG board: launch blocks chained by predecessors with checkpoints, skip toggles, per-block decision axes, an isolated per-execution workspace, resume scans over the persisted workspace state, and per-block finalize chains carrying the same switches as the launch page, chained onto the block's own end without holding back its successors: inside the workspace in an isolated sequence, on the entry's own sweep directory otherwise. A tuning block that declares `model_overrides` (and, when its study samples the batch size, `training.batch_size`) records the best configuration its run wrote as that verdict once its job ends, so the blocks after it run on the tuned values; while it runs, the board prints the study snapshot its workers write (trials done, best value, stall count, rate and time to the target) from `/api/sequences/<id>/study?block=`. The notifier announces a block held at its checkpoint and a recorded verdict. |
 | Survey | `#/survey` | `/api/survey/*` | Model survey over many trained runs at once: pick runs, and compare their weight statistics, spectra and health indicators side by side. |
 | Configuration | `#/configuration` | `/api/configs` | Every configuration dataclass, field, type and default, parsed live from `configuration/`. |
-| Console | `#/console` | `/api/jobs`, `/api/jobs/<id>/stream` | Real-time stdout of launched jobs over SSE with stop control. A dropped stream reconnects and replays from its last event id; while it is down, and after a console restart, a tile takes its status from the polled job list, and a tile whose job the console no longer knows turns `untracked` with its Stop disabled. The terminal refits whenever its tile changes size, and the sub-run menu caps its height at the room left inside the tile. Fan-out experiments add a progress strip from `/api/jobs/<id>/progress`: units done of total, mean unit duration, ETA and projected finish. Once a job has ended (finished, failed, cancelled or untracked) its tile shows Retry, which reopens the launch page with the overrides, interpreter, detach switch, follow-up and finalize switches the job was launched with, ready to adjust and launch again; each job record keeps that request under `request` (overrides before the per-job GPU pool file). |
+| Console | `#/console` | `/api/jobs`, `/api/stream` | Real-time stdout of launched jobs with stop control. The page opens one server-sent-events channel (`GET /api/stream?channel=<id>`) and subscribes every job tile, every selected sub-run and the Feed Tuner to it through `POST /api/stream/<channel>/subscribe` and `/unsubscribe` (body `job_id`, optional integer `unit`, and `after`, the last event id held, 0 for none; anything else is a 400), so any number of open tiles costs the browser a single connection out of its six per origin instead of one each, which used to freeze every other request once six tiles or sub-runs were open. Every event carries its subscription key; a channel that cannot keep up is truncated with a marker rather than allowed to stall the publishers. A dropped channel reconnects and each job stream replays from its last event id (a sub-run tail restarts from its top, and a restarted server, recognised by the `boot` token in the channel's `hello` frame, replays everything); while it is down, and after a console restart, a tile takes its status from the polled job list, and a tile whose job the console no longer knows turns `untracked` with its Stop disabled. The terminal refits whenever its tile changes size, and the sub-run menu caps its height at the room left inside the tile. Fan-out experiments add a progress strip from `/api/jobs/<id>/progress`: units done of total, mean unit duration, ETA and projected finish. Once a job has ended (finished, failed, cancelled or untracked) its tile shows Retry, which reopens the launch page with the overrides, interpreter, detach switch, follow-up and finalize switches the job was launched with, ready to adjust and launch again; each job record keeps that request under `request` (overrides before the per-job GPU pool file). |
 | TensorBoard | `#/tensorboard` | `/api/tensorboard/*` | Starts and supervises a TensorBoard process against any run directory. The run picker browses the runs root as a folder tree from `/api/tensorboard/tree`: a run is a folder holding `tensorboard/` and is never descended into, a folder of runs only is a set served on click, and a folder holding further run folders is a group that expands, with an open-all button serving the whole group. A console tile's TensorBoard of a data-parallel job opens rank zero's event folder only, leaving the secondary ranks' mirrors out. |
 | Leaderboard | `#/leaderboard` | `/api/leaderboard`, `/api/curves` | Three modes. Runs: every saved inference `metrics.json` as one sortable, filterable table with run-name axes parsed into dropdowns and a metric plus resolved-config diff; seeded layouts also get one seed-mean row per unit. Trials: seeded runs aggregated to mean-and-std bars. Curves: native overlay of TensorBoard scalars across runs. |
 | Results | `#/results` | `/api/results/*`, `/api/fs/*` | Browse any run or dataset directory: rendered markdown reports, figure galleries with compare pinning, configs, and inline log and text files. |
@@ -67,7 +67,7 @@ talking to one group of JSON endpoints.
 | Microscope | `#/microscope` | `/api/probe/*` | Model microscope over a trained run: load the checkpoint with its real dataset, click a pixel, and inspect the predicted profile against ground truth, gradient attribution of every output family to every input channel with per-pair spatial maps, feature-map grids along a clickable architecture strip, and live what-if perturbations with per-slot deltas. |
 | Triage | `#/triage` | `/api/triage/*` | Error triage over a saved inference: the worst blocks ranked by pixel MSE, tagged with dominant failure mode, label fit, seed disagreement and flip disagreement where those cubes exist. Each case opens the cube explorer at its worst pixel and takes a persisted verdict plus a note under `logs/triage/`. |
 | Autopsy | `#/autopsy` | `/api/autopsy/*` | Guided A/B comparison of two inferences over the same region: the largest relative metric gaps with an orientation-aware winner per row, plus the blocks where the runs disagree most, each rendered as both predicted profiles against the ground truth. |
-| Feed Tuner | `#/feedtuner` | `/api/scripts/tune_dataloader/config`, `/api/run` | Launch surface for the DataLoader sweep with its own result view. |
+| Feed Tuner | `#/feedtuner` | `/api/scripts/tune_dataloader/config`, `/api/run`, `/api/stream` | Launch surface for the DataLoader sweep with its own result view. |
 
 ## Saving figures
 
@@ -127,7 +127,7 @@ contract and never writes to a config file.
   which `ConfigCli` coerces to the field's type. The command preview always shows exactly
   what will run.
 - **Launch.** `ProcessManager` runs the script from the repository root with the selected
-  interpreter and streams its output over SSE. Exit codes are reported as they are.
+  interpreter and streams its output over the page's live-output channel. Exit codes are reported as they are.
 - **Queue.** Schedule captures the same command but places it in a sequential queue. A
   queued run starts once every running job and every earlier queued run has ended,
   regardless of exit code. Queued runs can be cancelled before they start; an emergency
@@ -157,7 +157,7 @@ interpreters, `catalog_roots.py` gates filesystem browsing to roots the user has
 and `web_logger.py` handles console logging.
 
 **Launching and supervision.** `script_catalog.py`, `script_config_resolver.py`,
-`launch_layout.py`, `config_registry.py`, `run_launcher.py`, `process_manager.py`,
+`launch_layout.py`, `config_registry.py`, `run_launcher.py`, `process_manager.py`, `stream_hub.py`,
 `finalize_chain.py`, `saved_run_store.py`, `config_template_store.py`, `job_describer.py`, `notifier.py`, `gpu_schedule.py`,
 `gpu_watchdog.py`, `resource_watchdog.py`, `contention_monitor.py`, `system_monitor.py`,
 `proc_stats.py`, `tensorboard_manager.py`.
@@ -176,14 +176,14 @@ tests under `tests/webui/`: `equation_library.py`, `flow_library.py`,
 
 **Frontend.** `static/index.html`, `static/css/styles.css`, `static/vendor/marked.min.js`,
 `static/vendor/thinking-orbs-engine.js`, `static/vendor/hairline-kernel.js`,
-`static/vendor/hairline-figures.js` and 50 modules under `static/js/`. `app.js` and
+`static/vendor/hairline-figures.js` and 51 modules under `static/js/`. `app.js` and
 `router.js` wire the views; one module per tab (`home`, `equations`, `flow_view` with
 `flow_sketches`, `pipelines`, `repomap`, `models`, `scripts`, `launch` with its widget
 modules (`python_literal`, `form_widgets`, `model_panels`, `gpu_pickers`,
 `experiment_builder`, `config_form`) and `launch_pickers`, `ablation`, `saved_runs`,
 `templates`, `sequences`, `configs`, `console`, `tensorboard`, `leaderboard`, `results`,
 `cube_view`, `slice_collector`, `fit_lab`, `microscope`, `survey`, `triage`, `autopsy`,
-`feed_tuner`); the rest are shared helpers (`api`, `mathjax`, `shared_charts`,
+`feed_tuner`); the rest are shared helpers (`api`, `stream_hub` with the page's single live-output channel, `mathjax`, `shared_charts`,
 `results_sources`, `run_strip`, `canvas_base`, `figure_export`, `figure_saver`, `diagram`,
 `gauges`, `process_anim`, `training_anim`, `thinking_orb`, `hairline_figure` with
 `hairline_project`).

@@ -26,8 +26,8 @@ from routers.tensorboard_router import TensorboardRouter
 
 from tests.webui.conftest import FakeHandler, WEBUI_ROOT
 
-ROUTE_COUNT   = 154
-SECTION_COUNT = 41
+ROUTE_COUNT   = 156
+SECTION_COUNT = 42
 
 RESOLUTIONS = [
     ("GET",  "/",                                  StaticRouter),
@@ -68,7 +68,9 @@ RESOLUTIONS = [
     ("GET",  "/api/scripts/train_backbone",        CatalogRouter),
     ("GET",  "/api/scripts/train_backbone/config", CatalogRouter),
     ("POST", "/api/run",                           JobRouter),
-    ("GET",  "/api/jobs/job-1/stream",             JobRouter),
+    ("GET",  "/api/stream",                        JobRouter),
+    ("POST", "/api/stream/ch-1/subscribe",         JobRouter),
+    ("POST", "/api/stream/ch-1/unsubscribe",       JobRouter),
     ("GET",  "/api/jobs/job-1/log",                JobRouter),
     ("POST", "/api/saved-runs/abc/delete",         SavedRunRouter),
     ("GET",  "/api/saved-runs",                    SavedRunRouter),
@@ -193,7 +195,7 @@ def build_routers() -> list:
         ModelLibraryRouter("/api/image-autoencoders",   None),
         ModelLibraryRouter("/api/jepa-variants",        None),
         CatalogRouter(None, None, None, None, None, None),
-        JobRouter(None, None, None),
+        JobRouter(None, None, None, None),
         SavedRunRouter(None, None, None),
         ConfigTemplateRouter(None),
         SequenceRouter(None, None),

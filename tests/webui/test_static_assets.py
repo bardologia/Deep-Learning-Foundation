@@ -47,6 +47,11 @@ def test_shared_helpers_load_before_their_users():
     for user in ("equations.js", "flow_view.js"):
         assert loaded.index("mathjax.js") < loaded.index(user)
 
+    assert loaded.index("api.js") < loaded.index("stream_hub.js")
+
+    for user in ("console.js", "feed_tuner.js"):
+        assert loaded.index("stream_hub.js") < loaded.index(user)
+
 
 def test_mathjax_bootstrap_lives_in_one_module():
     """Only mathjax.js holds the tex2svgPromise bootstrap."""

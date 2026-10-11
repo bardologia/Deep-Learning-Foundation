@@ -48,6 +48,7 @@ from sequence_runner                   import SequenceRunner
 from sequence_store                    import SequenceStore
 from script_catalog                    import ScriptCatalog
 from script_config_resolver            import ScriptConfigResolver
+from stream_hub                        import StreamHub
 from system_monitor                    import SystemMonitor
 from tensorboard_manager               import TensorboardManager
 from training_curves                   import TrainingCurves
@@ -135,6 +136,7 @@ class WebUIServer:
         self.notifier          = JobNotifier(self.paths, self.logger)
         self.describer         = JobDescriber(self.paths, self.resolver)
         self.processes         = ProcessManager(self.paths, self.logger, self.notifier, self.describer)
+        self.stream_hub        = StreamHub(self.logger)
         self.progress_watch    = ExperimentProgressWatcher(self.processes, self.notifier, self.logger)
         self.saved_runs        = SavedRunStore(self.paths, self.logger)
         self.templates         = ConfigTemplateStore(self.paths, self.logger)
@@ -188,7 +190,7 @@ class WebUIServer:
             ModelLibraryRouter("/api/image-autoencoders",   self.image_ae_models),
             ModelLibraryRouter("/api/jepa-variants",        self.jepa_models),
             CatalogRouter(self.paths, self.catalog, self.resolver, self.layout, self.models, self.launcher),
-            JobRouter(self.paths, self.processes, self.launcher),
+            JobRouter(self.paths, self.processes, self.launcher, self.stream_hub),
             SavedRunRouter(self.paths, self.saved_runs, self.launcher),
             ConfigTemplateRouter(self.templates),
             SequenceRouter(self.sequence_store, self.sequence_runner),

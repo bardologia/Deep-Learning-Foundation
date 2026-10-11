@@ -503,7 +503,7 @@ class ConsoleTile {
   constructor(job, manager, host) {
     this.job = job;
     this.manager = manager;
-    this.source = null;
+    this.sub = null;
     this.opened = false;
 
     this.root = document.createElement("div");
@@ -590,7 +590,7 @@ class ConsoleTile {
     this.selectedUnit = null;
     this.unitTerm = null;
     this.unitFit = null;
-    this.unitSource = null;
+    this.unitSub = null;
     this.unitOpened = false;
     this.picker = new TileUnitPicker(this);
 
@@ -667,43 +667,43 @@ class ConsoleTile {
   }
 
   _connect() {
-    this.source = new EventSource(`/api/jobs/${this.job.job_id}/stream`);
-    this.source.onmessage = (ev) => this._onEvent(ev);
-    this.source.onerror = () => this._onStreamError();
-  }
-
-  _onStreamError() {
-    if (this.source.readyState === EventSource.CLOSED) {
-      this._disconnect();
-      return;
-    }
-    if (this.streamLost) return;
-    this.streamLost = true;
-    this._note("live stream interrupted, reconnecting — the job list keeps the status current meanwhile", "33");
+    this.sub = StreamHub.instance().subscribe(this.job.job_id, null, (data) => this._onEvent(data));
   }
 
   get streamOpen() {
-    return this.source !== null && this.source.readyState === EventSource.OPEN;
+    return this.sub !== null && !this.sub.closed && StreamHub.instance().connected;
   }
 
   _disconnect() {
-    if (this.source) {
-      this.source.close();
-      this.source = null;
+    if (this.sub) {
+      this.sub.close();
+      this.sub = null;
     }
   }
 
-  _onEvent(ev) {
+  _linkEvent(data, term) {
+    if (data.type === "link") {
+      if (data.state === "lost" && !this.streamLost) {
+        this.streamLost = true;
+        this._note("live stream interrupted, reconnecting — the job list keeps the status current meanwhile", "33", term);
+      }
+      return true;
+    }
+    if (data.type === "truncated") {
+      this._note(`stream truncated: ${data.dropped} event(s) dropped, this page could not keep up; the on-disk log is complete`, "31", term);
+      return true;
+    }
+    return false;
+  }
+
+  _onEvent(data) {
+    if (this._linkEvent(data, this.term)) return;
     this.streamLost = false;
 
-    let data;
-    try {
-      data = JSON.parse(ev.data);
-    } catch (e) {
-      return;
-    }
-
-    if (data.type === "chunk") {
+    if (data.type === "unavailable") {
+      this._note(`live stream unavailable: ${data.error}`, "33");
+      this._disconnect();
+    } else if (data.type === "chunk") {
       this.term.write(data.data);
     } else if (data.type === "line") {
       this.term.writeln(data.text);
@@ -956,29 +956,26 @@ class ConsoleTile {
     }
 
     this.unitTerm.reset();
-    this.unitSource = new EventSource(`/api/jobs/${this.job.job_id}/stream?unit=${index}`);
-    this.unitSource.onmessage = (ev) => this._onUnitEvent(ev);
-    this.unitSource.onerror = () => this._closeUnitStream();
+    this.unitSub = StreamHub.instance().subscribe(this.job.job_id, index, (data) => this._onUnitEvent(data));
   }
 
   _closeUnitStream() {
-    if (this.unitSource) {
-      this.unitSource.close();
-      this.unitSource = null;
+    if (this.unitSub) {
+      this.unitSub.close();
+      this.unitSub = null;
     }
   }
 
-  _onUnitEvent(ev) {
-    let data;
-    try {
-      data = JSON.parse(ev.data);
-    } catch (e) {
-      return;
-    }
+  _onUnitEvent(data) {
+    if (this._linkEvent(data, this.unitTerm)) return;
 
-    if (data.type === "chunk") {
+    if (data.type === "unavailable") {
+      this._note(`sub-run stream unavailable: ${data.error}`, "33", this.unitTerm);
+      this._closeUnitStream();
+    } else if (data.type === "chunk") {
       this.unitTerm.write(data.data);
     } else if (data.type === "unit") {
+      this.unitTerm.reset();
       this._note(`${data.name} — following ${data.log}`, "36", this.unitTerm);
     } else if (data.type === "status") {
       if (data.missing) this._note("not started yet — no log file, reopen once it is running", "33", this.unitTerm);

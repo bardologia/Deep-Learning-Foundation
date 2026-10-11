@@ -39,15 +39,17 @@ from web_logger     import WebLogger
 class JobStream:
     """Broadcasts one job's output events to every attached console viewer.
 
-    A replay buffer lets a late subscriber catch up, and a viewer whose queue
-    fills is truncated rather than allowed to stall the publisher. Every
+    A replay buffer lets a late subscriber catch up. A subscriber is any sink
+    with ``put_nowait``: a bounded queue, which is truncated with a marker when
+    it fills rather than allowed to stall the publisher, or a channel sink that
+    forwards the events into a page's multiplexed stream channel. Every
     published event carries a running ``id``, so a viewer that reconnects
     replays only the events after the last one it received.
 
     Attributes:
         logger        : Console logger warning about truncated viewers.
         buffer        : Replay buffer of the most recent events, capped at 4000.
-        subscribers   : Queues of the currently attached viewers.
+        subscribers   : Sinks of the currently attached viewers.
         dropped       : Total events dropped across all truncations.
         lock          : Guards the buffer, the subscriber list and the event counter.
         event_counter : Id of the last published event.
@@ -94,7 +96,7 @@ class JobStream:
         """Empties a backed-up viewer queue, marks the gap, and returns how many events were lost.
 
         Args:
-            sub   : Queue of the viewer that could not keep up.
+            sub   : Bounded queue of the viewer that could not keep up.
             event : Event that overflowed the queue, re-queued after the marker.
         """
         dropped = 0
@@ -111,22 +113,31 @@ class JobStream:
 
         return dropped
 
+    def attach(self, sink, last_event_id: int = 0) -> None:
+        """Attaches a viewer sink, replaying the buffered events newer than ``last_event_id`` into it first.
+
+        Args:
+            sink          : Object with ``put_nowait(event)`` receiving every event from now on.
+            last_event_id : Id of the last event the viewer already holds; 0 replays the whole buffer.
+        """
+        with self.lock:
+            for event in self.buffer:
+                if event["id"] > last_event_id:
+                    sink.put_nowait(event)
+            self.subscribers.append(sink)
+
     def subscribe(self, last_event_id: int = 0) -> queue.Queue:
-        """Attaches a viewer and returns its queue, pre-filled with the buffered events after ``last_event_id``.
+        """Attaches a bounded viewer queue and returns it, pre-filled with the buffered events after ``last_event_id``.
 
         Args:
             last_event_id : Id of the last event the viewer already holds; 0 replays the whole buffer.
         """
         sub = queue.Queue(maxsize=self.QUEUE_LIMIT)
-        with self.lock:
-            for event in self.buffer:
-                if event["id"] > last_event_id:
-                    sub.put_nowait(event)
-            self.subscribers.append(sub)
+        self.attach(sub, last_event_id)
         return sub
 
-    def unsubscribe(self, sub: queue.Queue) -> None:
-        """Detaches a viewer queue, ignoring one that is already gone."""
+    def unsubscribe(self, sub) -> None:
+        """Detaches a viewer sink, ignoring one that is already gone."""
         with self.lock:
             if sub in self.subscribers:
                 self.subscribers.remove(sub)
