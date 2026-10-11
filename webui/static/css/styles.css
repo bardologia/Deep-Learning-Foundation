@@ -869,6 +869,13 @@ main { margin-left: var(--navw); }
 .ctl__stack { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ctl__stack > .sboard--ctl { flex: 1 1 auto; }
 .ctl__stack > .sboard--nuke { flex-grow: 1.3; }
+.ntf__body { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 12px 12px; flex: 1 1 auto; min-height: 0; }
+.ntf__side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ntf__side .ctl__field { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.ntf__figure { min-height: 165px; margin: -6px -14px -4px 0; }
+@media (max-width: 1280px) {
+  .ntf__body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
 .nuke__figure { min-height: 140px; margin: -2px -6px -2px -4px; flex: 0 0 auto; }
 .nuke__figure > .fig-fill > hairline-figure { width: min(100cqw, 140cqh); top: auto; bottom: 0; transform: translateX(-50%); }
 .sboard--nuke .wd__nuke { justify-content: center; width: 100%; margin-top: auto; padding: 11px 13px; font-size: 13px; }
