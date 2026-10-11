@@ -251,15 +251,16 @@ bench of swappable cartridges), `repo` (folder sizes as a static snapshot), `lan
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
 `balance`, `profileae`, `imageae`, `embed`, `podium`, `tiles`, `transect`, `film`, `tray`,
 `jepa`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
-`watchdog`, `notify`, `nuke`, `calendar` and `hourglass`. Ten of them take `state`:
-`gpus` (`{devices: [{holder, util}]}`), `balance` (`{mine, others, alarm}`), `guard`
-(`{gpus, invaded, critical}`), `scheduler` (`{jobs: [{id, running, position, of}]}`),
-`feed` (`{workers, prefetch, wait, util, feed}`), `watchdog` (`{armed, gauges: [{level,
-limit, alert}]}`, four gauges for CPU, load, RAM and disk), `notify` (`{armed}`), `nuke`
-(`{firing}`), `calendar` (`{days: [{slots: [{mine, others}]}]}`, six 4-hour slots a day,
-shares averaged over the GPUs) and `hourglass` (`{wait_s}`); `gpus`, `balance`, `feed`,
-`watchdog`, `notify`, `nuke`, `calendar` and `hourglass` draw their static scene when no
-state is given.
+`watchdog`, `notify`, `nuke`, `cores`, `calendar` and `hourglass`. Eleven of them take
+`state`: `gpus` (`{devices: [{holder, util}]}`), `balance` (`{mine, others, alarm}`),
+`guard` (`{gpus, invaded, critical}`), `scheduler` (`{jobs: [{id, running, position,
+of}]}`), `feed` (`{workers, prefetch, wait, util, feed}`), `watchdog` (`{armed, gauges:
+[{level, limit, alert}]}`, four gauges for CPU, load, RAM and disk), `notify`
+(`{armed}`), `nuke` (`{firing}`), `cores` (`{cores}`, one busy percentage per core, the
+field relaid when the count changes), `calendar` (`{days: [{slots: [{mine, others}]}]}`,
+six 4-hour slots a day, shares averaged over the GPUs) and `hourglass` (`{wait_s}`);
+`gpus`, `balance`, `feed`, `watchdog`, `notify`, `nuke`, `cores`, `calendar` and
+`hourglass` draw their static scene when no state is given.
 
 Every page shows at least one figure, and the element remounts when its `name` changes,
 so a page can swap it with what is on screen: Architectures by zoo tab and Model by its
@@ -292,7 +293,9 @@ schedule next switches pools, which `GpuWeekPanel` reads from the 168 hourly pha
 Monday 00:00) and the current hour that `/api/system` reports under `gpu_schedule.week`
 and `gpu_schedule.week_hour`, so the sand runs slower the further off the next switch is.
 The CUDA devices grid fills the empty cell of an odd GPU count with a `gpus` shelf of the
-real devices; the memory card is a two by two grid, the disk readings beside `riffle`
+real devices; the processor card ends in `cores`, one pillar per core as tall as it is
+busy under a dashed plane at the 50% dispatch line, the pillars above it rimmed bright;
+the memory card is a two by two grid, the disk readings beside `riffle`
 above the memory rule and the RAM and swap bars over the memory plot beside the
 `cabinet` rack below it; the GPU activity card puts `patch` at its top and lets the lanes
 fill the rest (30 to 80 px per GPU, the panel taking any slack); the neighbour impact
