@@ -3933,6 +3933,122 @@ class NukeFigure extends HairlineFigureBase {
   }
 }
 
+class CoresFigure extends HairlineFigureBase {
+  static RANGE  = [2, 4, 7];
+  static CELL   = 10;
+  static FOOT   = 7.4;
+  static BASE   = 1.6;
+  static RISE   = 26;
+  static BUSY   = 50;
+  static SPAN   = [372, 280];
+  static SAMPLE = [35, 80, 12, 60, 95, 20, 48, 70];
+
+  constructor({ stage, svg }, value) {
+    super(svg, value, 2.7);
+    this.loads = CoresFigure.SAMPLE.slice();
+    this.count = this.loads.length;
+    this._layout();
+    this._start(stage, svg);
+    this._retarget(performance.now());
+  }
+
+  _height(load) {
+    return CoresFigure.BASE + (CoresFigure.RISE * HL.clamp(load, 0, 100)) / 100;
+  }
+
+  _layout() {
+    this.g.replaceChildren();
+    const n     = this.count;
+    this.cols   = Math.max(1, Math.ceil(Math.sqrt(n * 2)));
+    this.rows   = Math.max(1, Math.ceil(n / this.cols));
+    this.width  = this.cols * CoresFigure.CELL;
+    this.depth  = this.rows * CoresFigure.CELL;
+    const peak  = CoresFigure.BASE + CoresFigure.RISE + CoresFigure.RANGE[2];
+    const pts   = [[-4, -4, -4], [this.width + 4, this.depth + 4, -4], [this.width + 4, -4, -4], [-4, this.depth + 4, -4], [0, 0, peak], [this.width, this.depth, peak]];
+    this.C.S    = 1;
+    const unit  = HL.proj(this.C);
+    const xs    = pts.map(([x, y, z]) => unit(x, y, z)[0]);
+    const ys    = pts.map(([x, y, z]) => unit(x, y, z)[1]);
+    this.C.S    = Math.min(CoresFigure.SPAN[0] / (Math.max(...xs) - Math.min(...xs)), CoresFigure.SPAN[1] / (Math.max(...ys) - Math.min(...ys)));
+    this._camera(pts, 166);
+    this._plinth(-4, -4, this.width + 4, this.depth + 4, 7, 4);
+    const z       = this._height(CoresFigure.BUSY);
+    const corners = [[-2, -2], [this.width + 2, -2], [this.width + 2, this.depth + 2], [-2, this.depth + 2]];
+    HL.mk("path", { d: HL.poly(corners.map(([x, y]) => this.P(x, y, z))), class: "dash nf" }, this.g);
+    const inset = (CoresFigure.CELL - CoresFigure.FOOT) / 2;
+    this.pillars = [];
+    for (let k = 0; k < n; k++) {
+      const i             = k % this.cols;
+      const j             = Math.floor(k / this.cols);
+      const x0            = i * CoresFigure.CELL + inset;
+      const y0            = j * CoresFigure.CELL + inset;
+      const [ring, inner] = HL.rings(x0, y0, x0 + CoresFigure.FOOT, y0 + CoresFigure.FOOT, 1.8, 0.7);
+      const at            = this.P(x0 + CoresFigure.FOOT / 2, y0 + CoresFigure.FOOT / 2, 0);
+      this.pillars.push({ k, i, j, ring, inner, at, h: HL.tween(this._height(this.loads[k] || 0), 520), tw: HL.tween(0), drawn: null, busy: null, el: null });
+    }
+    this.pillars.sort((a, b) => a.i + a.j - (b.i + b.j));
+    for (const pillar of this.pillars) pillar.el = HL.solid(this.g);
+  }
+
+  _tick(dt, now) {
+    let moving   = false;
+    const busyAt = this._height(CoresFigure.BUSY) - 1e-6;
+    for (const pillar of this.pillars) {
+      const h    = HL.tval(pillar.h, now);
+      const lift = HL.tval(pillar.tw, now);
+      if (!HL.tdone(pillar.h, now) || !HL.tdone(pillar.tw, now)) moving = true;
+      const key = `${h.toFixed(2)}:${lift.toFixed(2)}`;
+      if (key !== pillar.drawn) {
+        pillar.drawn = key;
+        HL.put(pillar.el, HL.prism(this.P, this.front, pillar.ring, pillar.inner, lift, lift + h));
+      }
+      const busy = pillar.h.to >= busyAt;
+      if (busy !== pillar.busy) {
+        pillar.busy = busy;
+        pillar.el.cr.setAttribute("class", busy ? "nf hi" : "nf lo");
+      }
+    }
+    return moving;
+  }
+
+  _move(p) {
+    let best = null;
+    let near = Infinity;
+    for (const pillar of this.pillars) {
+      const d = Math.hypot(pillar.at[0] - p[0], pillar.at[1] - p[1]);
+      if (d < near) {
+        near = d;
+        best = pillar;
+      }
+    }
+    if (best) this._choose(best.k);
+  }
+
+  setState(state) {
+    if (!Array.isArray(state.cores)) throw new Error("cores figure: state.cores must be an array of busy percentages");
+    const loads = state.cores.map((u) => HL.clamp(Number(u) || 0, 0, 100));
+    const now   = performance.now();
+    this.loads  = loads;
+    if (loads.length !== this.count) {
+      this.count  = Math.max(1, loads.length);
+      this.chosen = null;
+      this._layout();
+    } else {
+      for (const pillar of this.pillars) HL.tset(pillar.h, this._height(loads[pillar.k]), now, pillar.k * 12);
+    }
+    this.loop.wake();
+  }
+
+  _retarget(now) {
+    for (const pillar of this.pillars) {
+      const on = this.chosen === pillar.k;
+      HL.tset(pillar.tw, on ? this.amount : 0, now, 0);
+      pillar.el.sil.classList.toggle("hi", on);
+    }
+    this.loop.wake();
+  }
+}
+
 class DeskCalendarFigure extends HairlineFigureBase {
   static RANGE   = [8, 14, 24];
   static SLOTS   = 6;
@@ -4499,6 +4615,7 @@ class ProjectFigures {
     watchdog:  ProjectFigures.entry(WatchdogFigure, "A camera on a pole used as a searchlight, sweeping its beam around a ring of four targets for CPU, load, RAM and disk, each a bullseye puck standing taller the nearer its reading is to the alert limit. The sweep slows over each target and the target in the light takes the bright edge; on a target with an active alert the beam stops for a few seconds, turns solid and bright, then sweeps on. The pointer picks a target and the camera turns to it."),
     notify:    ProjectFigures.entry(NotifyFigure, "A server and a phone in its dock. An envelope arcs from the server into the phone and a new notification card slides in at the top of its screen, pushing the older ones down. The pointer picks the server or the phone and it lifts."),
     nuke:      ProjectFigures.entry(NukeFigure, "A nuclear charge on a plinth: a drum with hazard bands and a radiation trefoil on its lid and a plunger detonator wired to it. When the nuke fires the plunger goes down, a pulse runs along the wire, a mushroom cloud rises from the drum and a shockwave ring sweeps the plinth; once the dust settles the cloud sinks and the plunger rises. The pointer picks the detonator or the drum and it lifts."),
+    cores:     ProjectFigures.entry(CoresFigure, "The processor's cores as a field of pillars on a plinth, each standing as tall as that core is busy, with a dashed plane at the height where a core counts as dispatched; the pillars that reach above it take a bright rim. The pointer picks a core and it lifts."),
     calendar:  ProjectFigures.entry(DeskCalendarFigure, "A desk calendar of the last thirty days, one page per day, each page carrying that day's six four-hour slots as bars: your share of the GPUs bright, everyone else's after it, the idle rest an empty track. The pages turn slowly a day at a time, rest on today and riffle back; the pointer's position across the calendar picks a day."),
     hourglass: ProjectFigures.entry(HourglassFigure, "An hourglass on a round plinth, its sand running from the upper bulb into a pile in the lower one; when the top runs dry it turns over and starts again. The longer the wait, the slower the sand runs, and the pointer lifts the glass off its stand."),
   };

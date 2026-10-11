@@ -896,7 +896,6 @@ class StatusBoard {
     this.els = els;
     this.built = false;
     this.gpuEls = [];
-    this.coreEls = [];
     this.cpuDial = null;
     this.impactMeters = null;
     this.histMax = 144;
@@ -1154,7 +1153,6 @@ class StatusBoard {
     this._disposeGauges();
     this.built = true;
     const gpus = sys.gpus || [];
-    const cores = (sys.cpu && sys.cpu.cores) || [];
     this.gpuCount = gpus.length;
     this.gpuIndices = gpus.map((g, i) => (g.index != null ? g.index : i));
 
@@ -1177,8 +1175,6 @@ class StatusBoard {
         ).join("")
       : `<div class="sboard__empty">${sys.gpus_known ? "no CUDA devices visible to the backend" : "nvidia-smi is not answering, GPU occupancy is unknown"}</div>`;
     const gpuShelf = gpus.length % 2 === 1 ? `<div class="gcard gcard--shelf">${HairlineFigure.html("gpus", 'class="gcard__figure" id="sb-gpu-shelf" aria-hidden="true"')}</div>` : "";
-
-    const coreCells = cores.map((_, i) => `<i class="cpu__cell" data-core="${i}" title="core ${i}"></i>`).join("");
 
     const lim = (sys.alerts && sys.alerts.limits) || {};
     const limitCells = [
@@ -1288,7 +1284,7 @@ class StatusBoard {
       `</div>` +
       `</div>` +
       `<canvas class="sboard__graph" id="sb-cpu-graph"></canvas>` +
-      `<div class="cpu__grid" id="sb-cores">${coreCells}</div>` +
+      `<div class="cpu__figure" title="one pillar per core, as tall as that core is busy; the dashed plane is the dispatch line at 50%"><div class="fig-fill">${HairlineFigure.html("cores", 'id="sb-cores-figure" aria-hidden="true"')}</div></div>` +
       `</section>` +
 
       `</div>` +
@@ -1432,7 +1428,6 @@ class StatusBoard {
       io:  new window.LinearMeter(document.getElementById("sb-impact-io-meter"),  { label: "DISK STALL %", color: "111, 155, 255", zones: [{ from: 25, to: 60, color: "251, 191, 36" }, { from: 60, to: 100, color: "248, 113, 113" }] }),
       cpu: new window.LinearMeter(document.getElementById("sb-impact-cpu-meter"), { label: "CPU STALL %", color: "111, 155, 255", zones: [{ from: 40, to: 70, color: "251, 191, 36" }, { from: 70, to: 100, color: "248, 113, 113" }] }),
     };
-    this.coreEls = [...this.els.board.querySelectorAll(".cpu__cell")];
     this.activity = new GpuActivityTimeline(document.getElementById("sb-act-graph"), document.getElementById("sb-act-read"));
     if (this._guardHistory) this.activity.setMarkers(this._guardHistory.records || []);
     this._wireActivityRanges();
@@ -1733,14 +1728,9 @@ class StatusBoard {
       const el = document.getElementById(id);
       if (el && load[i] != null) el.textContent = load[i].toFixed(1);
     });
-    const cores = cpu.cores || [];
-    cores.forEach((u, i) => {
-      const cell = this.coreEls[i];
-      if (!cell) return;
-      const a = 0.06 + Math.min(1, u / 100) * 0.84;
-      cell.style.background = `rgba(111, 155, 255, ${a.toFixed(3)})`;
-      cell.title = `core ${i} · ${Math.round(u)}%`;
-    });
+    const cores   = cpu.cores || [];
+    const pillars = document.getElementById("sb-cores-figure");
+    if (pillars && cores.length) pillars.state = { cores: cores.map((u) => Math.round(u)) };
 
     if (cores.length) {
       const avg    = cores.reduce((s, u) => s + u, 0) / cores.length;

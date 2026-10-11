@@ -613,8 +613,7 @@ main { margin-left: var(--navw); }
 .cpu__load div { display: flex; flex-direction: column; gap: 2px; }
 .cpu__load dt { font-family: var(--mono); font-size: 16px; color: var(--dk-ink); }
 .cpu__load dd { margin: 0; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dk-faint); }
-.cpu__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15px, 1fr)); gap: 3px; margin-top: 14px; }
-.cpu__cell { display: block; aspect-ratio: 1; border-radius: 1px; background: rgba(111, 155, 255, 0.06); transition: background 0.5s linear; }
+.cpu__figure { position: relative; flex: 1 1 210px; min-height: 210px; margin: 6px -10px -8px; }
 
 /* storage and memory grid: readings left, figures right */
 .sysres__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr); grid-template-rows: 1fr auto 1fr; column-gap: 16px; flex: 1 1 auto; }
@@ -2854,7 +2853,6 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
   .sboard--cpu, .sboard--sysres, .sboard--gpuhist, .sboard--procs, .sboard--jobs { grid-column: 1 / -1; }
-  .cpu__grid { grid-template-columns: repeat(auto-fill, minmax(13px, 1fr)); }
   .ptable__row { grid-template-columns: 52px 50px 54px 34px 20px minmax(0, 1fr); }
   .ptable__row .ptable__gpu { display: none; }
 }
