@@ -1202,7 +1202,6 @@ class StatusBoard {
 
       `<div class="sboard__strips">` +
 
-      `<div class="ctl__stack">` +
       `<section class="sboard sboard--ctl" aria-label="Resource watchdog">` +
       `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-wd-light" aria-hidden="true"></i>watchdog</span><span class="ctl__state"><span class="wd__mode" id="sb-wd-mode">--</span><button type="button" class="wd__status" id="sb-wd-status" title="Show the alerts again">--</button></span></header>` +
       `<dl class="ctl__tiles">${limitCells}</dl>` +
@@ -1213,12 +1212,9 @@ class StatusBoard {
       `<button type="button" class="impact__arm" id="sb-kill-ui" title="Stop EVERY web console server of this project, this one and any instance left behind by earlier keep-alive launches: running and detached jobs survive and are re-adopted on the next start, but queued launches, watchdogs and TensorBoard viewers die with them">kill front end</button>` +
       `</div>` +
       `</section>` +
-      `<button type="button" class="wd__nuke" id="sb-nuke" title="Kill every process running under your user">` +
-      `<span class="wd__nuke-sym" aria-hidden="true">&#9762;</span><span class="wd__nuke-txt">NUKE</span>` +
-      `</button>` +
-      `</div>` +
 
-      `<section class="sboard sboard--ctl" aria-label="Job notifications">` +
+      `<div class="ctl__stack">` +
+      `<section class="sboard sboard--ctl sboard--notify" aria-label="Job notifications">` +
       `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-ntf-light" aria-hidden="true"></i>notify</span><span class="ctl__state"><span class="wd__mode" id="sb-ntf-mode">--</span></span></header>` +
       `<div class="ctl__fields">` +
       `<label class="ctl__field"><span class="ntf__key">ntfy topic</span><input class="ntf__input" id="sb-ntf-topic" type="text" placeholder="pick-a-secret-topic" spellcheck="false" autocomplete="off"></label>` +
@@ -1232,6 +1228,16 @@ class StatusBoard {
       `<button type="button" class="impact__arm" id="sb-ntf-toggle" title="Toggle job start/end notifications">notify: --</button>` +
       `</div>` +
       `</section>` +
+
+      `<section class="sboard sboard--ctl sboard--nuke" aria-label="Nuke">` +
+      `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-nuke-light" aria-hidden="true"></i>nuke</span><span class="ctl__state"><span class="wd__mode is-off" id="sb-nuke-mode">ready</span></span></header>` +
+      `<div class="ctl__figure nuke__figure"><div class="fig-fill">${HairlineFigure.html("nuke", 'id="sb-nuke-figure" aria-hidden="true"')}</div></div>` +
+      `<p class="ctl__hint" title="SIGTERM, then SIGKILL after a grace period, for every process running under your user on this machine. Only the web console itself is spared, so detached monitors, sequences and queued launches die with the rest.">every process of yours on this machine; the web UI is spared</p>` +
+      `<button type="button" class="wd__nuke" id="sb-nuke" title="Kill every process running under your user">` +
+      `<span class="wd__nuke-sym" aria-hidden="true">&#9762;</span><span class="wd__nuke-txt">NUKE</span>` +
+      `</button>` +
+      `</section>` +
+      `</div>` +
 
       `<section class="sboard sboard--ctl" aria-label="GPU week schedule">` +
       `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-sch-light" aria-hidden="true"></i>gpu week</span><span class="ctl__state"><span class="wd__mode" id="sb-sch-mode">--</span></span></header>` +
@@ -1453,12 +1459,25 @@ class StatusBoard {
     const btn = document.getElementById("sb-nuke");
     if (!btn) return;
 
+    const figure = document.getElementById("sb-nuke-figure");
+    const light  = document.getElementById("sb-nuke-light");
+    const mode   = document.getElementById("sb-nuke-mode");
+    const fire   = (on) => {
+      if (figure) figure.state = { firing: on };
+      if (light) light.classList.toggle("is-danger", on);
+      if (mode) {
+        mode.textContent = on ? "firing" : "ready";
+        mode.classList.toggle("is-danger", on);
+      }
+    };
+
     btn.addEventListener("click", async () => {
       const ok = window.confirm("NUKE: this kills EVERY process running under your user (training runs, shells, jobs). The web UI is spared. Continue?");
       if (!ok) return;
 
       btn.disabled = true;
       btn.classList.add("is-firing");
+      fire(true);
       try {
         const res = await Api.post("/api/system/nuke");
         if (res && res.ok) {
@@ -1471,6 +1490,7 @@ class StatusBoard {
       } finally {
         btn.disabled = false;
         btn.classList.remove("is-firing");
+        fire(false);
       }
     });
   }
