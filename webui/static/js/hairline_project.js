@@ -83,6 +83,12 @@ class HairlineFigureBase {
     return (x, y, z) => this.P(x + dx, y + dy, z + dz);
   }
 
+  _height(pts) {
+    const P  = HL.proj(this.C);
+    const ys = pts.map(([x, y, z]) => P(x, y, z)[1]);
+    return Math.max(...ys) - Math.min(...ys);
+  }
+
   _onScreen(r, d) {
     return [(r + d) * Math.SQRT1_2, (d - r) * Math.SQRT1_2];
   }
@@ -3648,6 +3654,284 @@ class NotifyFigure extends HairlineFigureBase {
   }
 }
 
+class NukeFigure extends HairlineFigureBase {
+  static RANGE      = [3, 5, 8];
+  static PLINTH     = [-17, -11, 12, 11];
+  static BOX        = [-10, 4, 4, 3.5, 6];
+  static ROD        = [0.9, 8];
+  static HANDLE     = [4, 0.9, 1.5];
+  static DRUM       = [3, -2, 6.5, 12];
+  static BANDS      = [0.42, 0.56];
+  static TREFOIL    = [1.1, 2, 4.8, 30];
+  static CLOUD      = [2.6, 8.5, 11, 16];
+  static WAVE       = [6.5, 24];
+  static WIRE       = [[-6, 5], [-1.5, 8.5], [3, 4.6]];
+  static PRESS_MS   = 260;
+  static PULSE_MS   = 450;
+  static WAVE_MS    = 1000;
+  static HOLD_MS    = 2200;
+  static BLINK_MS   = 1600;
+  static ids        = 0;
+
+  constructor({ stage, svg }, value) {
+    super(svg, value, 7.4);
+    this.firing   = false;
+    this.fired    = null;
+    this.released = null;
+    this.down     = false;
+    this.wave     = null;
+    this.cloud    = HL.tween(0, 700);
+    this.plunger  = HL.spring(1, { k: 50, c: 11, eps: 0.002 });
+
+    const pts = this._extent();
+    this._camera(pts, 320 - this._height(pts) / 2 - 6);
+    this._buildPlinth(svg);
+    this._buildWire();
+    this._buildDrum();
+    this._buildDetonator();
+    this._buildCloud();
+    this.parts = [this.det, this.drum];
+    this._start(stage, svg);
+    this._retarget(performance.now());
+  }
+
+  _extent() {
+    const [r0, d0, r1, d1] = NukeFigure.PLINTH;
+    const [br, bd, , , bh] = NukeFigure.BOX;
+    const [dr, dd, , H]    = NukeFigure.DRUM;
+    const lift             = NukeFigure.RANGE[2];
+    const top              = bh + 1.5 + NukeFigure.ROD[1] + NukeFigure.HANDLE[2] + lift;
+    const cap              = NukeFigure.CLOUD[1];
+    const crown            = H + NukeFigure.CLOUD[3];
+    const floor            = [[r0, d0], [r1, d0], [r0, d1], [r1, d1]].map(([r, d]) => [...this._onScreen(r, d), -3]);
+    const cloud            = [[dr - cap, dd], [dr + cap, dd], [dr, dd - cap], [dr, dd + cap]].map(([r, d]) => [...this._onScreen(r, d), crown]);
+    return floor.concat([[...this._onScreen(br, bd), top], [...this._onScreen(dr, dd), H + lift]], cloud);
+  }
+
+  _buildPlinth(svg) {
+    const [r0, d0, r1, d1] = NukeFigure.PLINTH;
+    const ring             = this._screenBox(r0, d0, r1, d1, 6);
+    HL.put(HL.solid(this.g), HL.prism(this.P, this.front, ring, this._screenBox(r0 + 2.2, d0 + 2.2, r1 - 2.2, d1 - 2.2, 4), -3, 0));
+    const id   = `nk-top-${++NukeFigure.ids}`;
+    const clip = HL.mk("clipPath", { id }, HL.mk("defs", {}, svg));
+    HL.mk("path", { d: HL.poly(HL.ringAt(this.P, ring, 0)) }, clip);
+    this.clip = `url(#${id})`;
+  }
+
+  _buildWire() {
+    const [a, m, b] = NukeFigure.WIRE;
+    const pts       = Array.from({ length: 17 }, (_, k) => {
+      const f = k / 16;
+      const w = 1 - f;
+      return [w * w * a[0] + 2 * w * f * m[0] + f * f * b[0], w * w * a[1] + 2 * w * f * m[1] + f * f * b[1]];
+    });
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    this.wire = { pts, cum };
+    HL.mk("path", { d: HL.open(pts.map(([r, d]) => this.P(...this._onScreen(r, d), 0.3))), class: "nf lo" }, this.g);
+    this.ripple = HL.mk("path", { class: "nf hi", "clip-path": this.clip }, this.g);
+    this.pulse  = HL.flatDot(this.g, this.C, 1.2, "dot");
+    this.pulse.setAttribute("display", "none");
+  }
+
+  _alongWire(f) {
+    const { pts, cum } = this.wire;
+    const s            = HL.clamp(f, 0, 1) * cum[cum.length - 1];
+    let i              = 1;
+    while (i < cum.length - 1 && cum[i] < s) i++;
+    const t = (s - cum[i - 1]) / (cum[i] - cum[i - 1]);
+    return [HL.lerp(pts[i - 1][0], pts[i][0], t), HL.lerp(pts[i - 1][1], pts[i][1], t)];
+  }
+
+  _buildDrum() {
+    const [r, d, R] = NukeFigure.DRUM;
+    const [x, y]    = this._onScreen(r, d);
+    const group     = HL.mk("g", {}, this.g);
+    const el        = HL.solid(group);
+    this.drum = { k: 1, x, y, el, sils: [el], ring: HL.circ(R, 48), inner: HL.circ(R - 1, 48), bands: HL.mk("path", { class: "dash nf" }, group), trefoil: HL.mk("path", { class: "nf" }, group), hub: HL.mk("path", { class: "nf" }, group), live: false, tw: HL.tween(0), drawn: null, restX: this.P(x, y, 0)[0] };
+  }
+
+  _buildDetonator() {
+    const [r, d] = NukeFigure.BOX;
+    const [x, y] = this._onScreen(r, d);
+    const group  = HL.mk("g", {}, this.g);
+    const el     = HL.solid(group);
+    const rod    = HL.solid(group);
+    const handle = HL.solid(group);
+    this.det = { k: 0, x, y, el, rod, handle, sils: [el, rod, handle], lamp: HL.flatDot(group, this.C, 0.8, "dot m"), cls: "dot m", tw: HL.tween(0), drawn: null, restX: this.P(x, y, 0)[0] };
+  }
+
+  _buildCloud() {
+    const group     = HL.mk("g", {}, this.g);
+    this.stem       = HL.solid(group);
+    this.cap        = HL.solid(group);
+    this.cloudDrawn = null;
+  }
+
+  _tick(dt, now) {
+    this._sequence(now);
+    HL.stepS(this.plunger, dt);
+    this._drawDrum(now);
+    this._drawDetonator(now);
+    this._drawCloud(now);
+    this._drawWave(now);
+    return true;
+  }
+
+  _sequence(now) {
+    if (this.fired === null) return;
+    const t   = now - this.fired;
+    const p0  = NukeFigure.PRESS_MS;
+    const p1  = p0 + NukeFigure.PULSE_MS;
+    const fly = !this.down && t >= p0 && t < p1 && !HL.reducedMotion();
+    if (fly) {
+      HL.place(this.pulse, this.P(...this._onScreen(...this._alongWire((t - p0) / NukeFigure.PULSE_MS)), 0.3));
+      this.pulse.removeAttribute("display");
+    } else {
+      this.pulse.setAttribute("display", "none");
+    }
+    if (!this.down && t >= p1) {
+      this.down = true;
+      this.wave = now;
+      HL.tset(this.cloud, 1, now, 0);
+    }
+    const settled = this.down && t >= p1 + NukeFigure.HOLD_MS && this.released !== null && now - this.released >= 400;
+    if (settled) {
+      this.fired     = null;
+      this.down      = false;
+      this.plunger.k = 50;
+      this.plunger.c = 11;
+      this.plunger.t = 1;
+      HL.tset(this.cloud, 0, now, 0);
+    }
+  }
+
+  _drawDrum(now) {
+    const drum = this.drum;
+    const lift = HL.tval(drum.tw, now);
+    const key  = lift.toFixed(3);
+    if (key !== drum.drawn) {
+      drum.drawn = key;
+      const [, , , H]           = NukeFigure.DRUM;
+      const [hub, ri, ro, half] = NukeFigure.TREFOIL;
+      const P                   = this._shifted(drum.x, drum.y, lift);
+      const face                = HL.run(drum.ring, this.front);
+      HL.put(drum.el, HL.prism(P, this.front, drum.ring, drum.inner, 0, H));
+      drum.bands.setAttribute("d", NukeFigure.BANDS.map((at) => HL.open(HL.ringAt(P, face, H * at))).join(""));
+      drum.trefoil.setAttribute("d", [90, 210, 330].map((a0) => {
+        const pts = [];
+        for (let k = 0; k <= 6; k++) {
+          const a = HL.rad(a0 - half + (2 * half * k) / 6);
+          pts.push(P(ri * Math.cos(a), ri * Math.sin(a), H));
+        }
+        for (let k = 6; k >= 0; k--) {
+          const a = HL.rad(a0 - half + (2 * half * k) / 6);
+          pts.push(P(ro * Math.cos(a), ro * Math.sin(a), H));
+        }
+        return HL.poly(pts);
+      }).join(""));
+      drum.hub.setAttribute("d", HL.poly(HL.ringAt(P, HL.circ(hub, 16), H)));
+    }
+    const live = this.fired !== null;
+    if (live !== drum.live) {
+      drum.live = live;
+      drum.trefoil.setAttribute("class", live ? "nf hi" : "nf");
+      drum.hub.setAttribute("class", live ? "nf hi" : "nf");
+    }
+  }
+
+  _drawDetonator(now) {
+    const det   = this.det;
+    const lift  = HL.tval(det.tw, now);
+    const press = Math.max(0, this.plunger.x);
+    const key   = `${lift.toFixed(3)}:${press.toFixed(3)}`;
+    if (key !== det.drawn) {
+      det.drawn = key;
+      const [, , w, dd, h] = NukeFigure.BOX;
+      const [rr, stroke]   = NukeFigure.ROD;
+      const [hl, ht, hz]   = NukeFigure.HANDLE;
+      const P              = this._shifted(det.x, det.y, lift);
+      const top            = h + 1.5 + stroke * press;
+      HL.put(det.el, HL.prism(P, this.front, this._screenBox(-w, -dd, w, dd, 1.2), this._screenBox(-w + 0.8, -dd + 0.8, w - 0.8, dd - 0.8, 0.8), 0, h));
+      HL.put(det.rod, HL.prism(P, this.front, HL.circ(rr, 24), null, h, top));
+      HL.put(det.handle, HL.prism(P, this.front, this._screenBox(-hl, -ht, hl, ht, 0.7), this._screenBox(-hl + 0.4, -ht + 0.4, hl - 0.4, ht - 0.4, 0.4), top, top + hz));
+      HL.place(det.lamp, P(...this._onScreen(w - 1.6, dd - 1.6), h));
+    }
+    const cls = this.fired !== null ? "dot" : now % NukeFigure.BLINK_MS < NukeFigure.BLINK_MS * 0.7 ? "dot m" : "dot off";
+    if (cls !== det.cls) {
+      det.cls = cls;
+      det.lamp.setAttribute("class", cls);
+    }
+  }
+
+  _drawCloud(now) {
+    const g    = HL.tval(this.cloud, now);
+    const lift = HL.tval(this.drum.tw, now);
+    const key  = `${g.toFixed(3)}:${lift.toFixed(3)}`;
+    if (key === this.cloudDrawn) return;
+    this.cloudDrawn = key;
+    if (g < 0.03) {
+      HL.put(this.stem, { sil: "", crease: "" });
+      HL.put(this.cap, { sil: "", crease: "" });
+      return;
+    }
+    const [, , , H]                   = NukeFigure.DRUM;
+    const [stemR, capR, rise0, rise1] = NukeFigure.CLOUD;
+    const P                           = this._shifted(this.drum.x, this.drum.y, lift);
+    const swell                       = 0.35 + 0.65 * g;
+    const z0                          = H + rise0 * g;
+    const z1                          = H + rise1 * g;
+    HL.put(this.stem, HL.prism(P, this.front, HL.circ(stemR * swell, 24), null, H, z0 + 1));
+    HL.put(this.cap, HL.prism(P, this.front, HL.circ(capR * swell, 40), HL.circ((capR - 1.5) * swell, 40), z0, z1));
+  }
+
+  _drawWave(now) {
+    if (this.wave === null) return;
+    const s = (now - this.wave) / NukeFigure.WAVE_MS;
+    if (s >= 1 || HL.reducedMotion()) {
+      this.wave = null;
+      this.ripple.setAttribute("d", "");
+      return;
+    }
+    const [w0, w1] = NukeFigure.WAVE;
+    const P        = this._shifted(this.drum.x, this.drum.y, 0);
+    this.ripple.setAttribute("d", HL.poly(HL.ringAt(P, HL.circ(HL.lerp(w0, w1, s), 72), 0.2)));
+  }
+
+  _move(p) {
+    this._choose(this.parts[HairlineFigureBase.nearest(this.parts.map((part) => part.restX), p[0])].k);
+  }
+
+  setState(state) {
+    const firing = !!state.firing;
+    if (firing === this.firing) return;
+    const now   = performance.now();
+    this.firing = firing;
+    if (firing) {
+      this.released = null;
+      if (this.fired === null) {
+        this.fired     = now;
+        this.down      = false;
+        this.plunger.k = 160;
+        this.plunger.c = 14;
+        this.plunger.t = 0;
+      }
+    } else {
+      this.released = now;
+    }
+    this.loop.wake();
+  }
+
+  _retarget(now) {
+    for (const part of this.parts) {
+      const on = this.chosen === part.k;
+      HL.tset(part.tw, on ? this.amount : 0, now, 0);
+      for (const el of part.sils) el.sil.classList.toggle("hi", on);
+    }
+    this.loop.wake();
+  }
+}
+
 class DeskCalendarFigure extends HairlineFigureBase {
   static RANGE   = [8, 14, 24];
   static SLOTS   = 6;
@@ -4213,6 +4497,7 @@ class ProjectFigures {
     field:     ProjectFigures.entry(ReceptiveFieldFigure, "A tiled input under a lamp on a pole with one collar per layer. The pointer picks a layer, the lamp rises to it, and the patch of input it lights widens: the receptive field of that layer."),
     watchdog:  ProjectFigures.entry(WatchdogFigure, "A camera on a pole used as a searchlight, sweeping its beam around a ring of four targets for CPU, load, RAM and disk, each a bullseye puck standing taller the nearer its reading is to the alert limit. The sweep slows over each target and the target in the light takes the bright edge; on a target with an active alert the beam stops for a few seconds, turns solid and bright, then sweeps on. The pointer picks a target and the camera turns to it."),
     notify:    ProjectFigures.entry(NotifyFigure, "A server and a phone in its dock. An envelope arcs from the server into the phone and a new notification card slides in at the top of its screen, pushing the older ones down. The pointer picks the server or the phone and it lifts."),
+    nuke:      ProjectFigures.entry(NukeFigure, "A nuclear charge on a plinth: a drum with hazard bands and a radiation trefoil on its lid and a plunger detonator wired to it. When the nuke fires the plunger goes down, a pulse runs along the wire, a mushroom cloud rises from the drum and a shockwave ring sweeps the plinth; once the dust settles the cloud sinks and the plunger rises. The pointer picks the detonator or the drum and it lifts."),
     calendar:  ProjectFigures.entry(DeskCalendarFigure, "A desk calendar of the last thirty days, one page per day, each page carrying that day's six four-hour slots as bars: your share of the GPUs bright, everyone else's after it, the idle rest an empty track. The pages turn slowly a day at a time, rest on today and riffle back; the pointer's position across the calendar picks a day."),
     hourglass: ProjectFigures.entry(HourglassFigure, "An hourglass on a round plinth, its sand running from the upper bulb into a pile in the lower one; when the top runs dry it turns over and starts again. The longer the wait, the slower the sand runs, and the pointer lifts the glass off its stand."),
   };
