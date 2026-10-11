@@ -1206,7 +1206,6 @@ class StatusBoard {
       `<div class="ctl__actions">` +
       `<button type="button" class="impact__arm" id="sb-detach" title="Detach the backend from your terminal AND login session (retroactive nohup + own systemd scope with lingering): monitors and sequences survive SSH logout, session cleanup and stray SIGTERMs; only SIGKILL or the kill front end button stop it">keep-alive: --</button>` +
       `<button type="button" class="impact__arm" id="sb-impact-arm" title="When armed, auto-nukes all your processes if you slow other users too much">auto-nuke: --</button>` +
-      `<button type="button" class="impact__arm" id="sb-kill-ui" title="Stop EVERY web console server of this project, this one and any instance left behind by earlier keep-alive launches: running and detached jobs survive and are re-adopted on the next start, but queued launches, watchdogs and TensorBoard viewers die with them">kill front end</button>` +
       `</div>` +
       `</section>` +
 
@@ -1230,13 +1229,22 @@ class StatusBoard {
       `</div>` +
       `</section>` +
 
-      `<section class="sboard sboard--ctl sboard--nuke" aria-label="Nuke">` +
-      `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-nuke-light" aria-hidden="true"></i>nuke</span><span class="ctl__state"><span class="wd__mode is-off" id="sb-nuke-mode">ready</span></span></header>` +
+      `<section class="sboard sboard--ctl sboard--nuke" aria-label="Kill switches">` +
+      `<header class="sboard__cap"><span class="ctl__title"><i class="wd__light" id="sb-nuke-light" aria-hidden="true"></i>kill switches</span><span class="ctl__state"><span class="wd__mode is-off" id="sb-nuke-mode">ready</span></span></header>` +
+      `<div class="kill__pair">` +
+      `<div class="kill__cell">` +
       `<div class="ctl__figure nuke__figure"><div class="fig-fill">${HairlineFigure.html("nuke", 'id="sb-nuke-figure" aria-hidden="true"')}</div></div>` +
       `<p class="ctl__hint" title="SIGTERM, then SIGKILL after a grace period, for every process running under your user on this machine. Only the web console itself is spared, so detached monitors, sequences and queued launches die with the rest.">every process of yours on this machine; the web UI is spared</p>` +
       `<button type="button" class="wd__nuke" id="sb-nuke" title="Kill every process running under your user">` +
       `<span class="wd__nuke-sym" aria-hidden="true">&#9762;</span><span class="wd__nuke-txt">NUKE</span>` +
       `</button>` +
+      `</div>` +
+      `<div class="kill__cell">` +
+      `<div class="ctl__figure kill__figure"><div class="fig-fill">${HairlineFigure.html("guillotine", 'id="sb-kill-figure" aria-hidden="true"')}</div></div>` +
+      `<p class="ctl__hint" title="Stops every web console server of this project, this one and any instance left behind by earlier keep-alive launches. Running and detached jobs survive and are re-adopted on the next start; queued launches, watchdogs and TensorBoard viewers die with the console.">stops every web console of this project; running jobs survive and are re-adopted on restart</p>` +
+      `<button type="button" class="impact__arm kill__btn" id="sb-kill-ui" title="Stop EVERY web console server of this project, this one and any instance left behind by earlier keep-alive launches: running and detached jobs survive and are re-adopted on the next start, but queued launches, watchdogs and TensorBoard viewers die with them">kill front end</button>` +
+      `</div>` +
+      `</div>` +
       `</section>` +
       `</div>` +
 
@@ -1546,6 +1554,8 @@ class StatusBoard {
           this._serverDown = true;
           btn.textContent = "front end: down";
           btn.classList.add("is-armed");
+          const figure = document.getElementById("sb-kill-figure");
+          if (figure) figure.state = { down: true };
           const others = res.siblings.length ? `, plus ${res.siblings.length} other instance(s): pids ${res.siblings.join(", ")}` : "";
           Toast.show(`front end stopped (pid ${res.pid}${others}); running jobs keep going; restart it from the terminal (webui/run.sh)`, "ok");
         } else {

@@ -4209,6 +4209,145 @@ class GpuWireFigure extends HairlineFigureBase {
   }
 }
 
+class GuillotineFigure extends HairlineFigureBase {
+  static RANGE    = [2, 4, 7];
+  static PLINTH   = [-16, -15, 16, 15];
+  static SERVER   = [-4.5, -3.8, 4.5, 3.8, 15];
+  static POSTS    = [-9.5, 9.5];
+  static POST     = [0.9, 30];
+  static BAR      = 2;
+  static BLADE    = [0.6, 7, 8, 3.2];
+  static TOP      = 20;
+  static APART    = 2.4;
+  static RISE_MS  = 1800;
+  static HOLD_MS  = 900;
+  static DROP_MS  = 260;
+  static SPLIT_MS = 420;
+  static OPEN_MS  = 1100;
+  static JOIN_MS  = 500;
+
+  constructor({ stage, svg }, value) {
+    super(svg, value, 6);
+    this.phase = "rise";
+    this.t0    = performance.now();
+    this.blade = 0;
+    this.down  = false;
+    this.gap   = HL.tween(0, GuillotineFigure.SPLIT_MS);
+    this.drawn = null;
+
+    this._camera(this._extent(), 162);
+    const [x0, y0, x1, y1] = GuillotineFigure.PLINTH;
+    this._plinth(x0, y0, x1, y1, 5, 3);
+    this._buildFrame();
+    this.parts = [this.server];
+    this._start(stage, svg);
+    this._retarget(performance.now());
+  }
+
+  _extent() {
+    const [x0, y0, x1, y1]         = GuillotineFigure.PLINTH;
+    const [sx0, sy0, sx1, sy1, sh] = GuillotineFigure.SERVER;
+    const [pw, ph]                 = GuillotineFigure.POST;
+    const [pa, pb]                 = GuillotineFigure.POSTS;
+    const crown                    = ph + GuillotineFigure.BAR;
+    const lift                     = GuillotineFigure.RANGE[2];
+    return [[x0, y0, -3], [x1, y1, -3], [x1, y0, -3], [x0, y1, -3], [-pw, pa - pw, crown], [pw, pb + pw, crown], [sx0, sy0, sh + lift], [sx1, sy1, sh + lift]];
+  }
+
+  _buildFrame() {
+    const [pw, ph] = GuillotineFigure.POST;
+    const [pa, pb] = GuillotineFigure.POSTS;
+    HL.put(HL.solid(this.g), HL.prism(this.P, this.front, ...HL.rings(-pw, pa - pw, pw, pa + pw, 0.4, 0.2), 0, ph));
+    const group  = HL.mk("g", {}, this.g);
+    const left   = HL.solid(group);
+    const bladeG = HL.mk("g", {}, group);
+    const right  = HL.solid(group);
+    this.server  = { k: 0, left, right, el: right, vents: HL.mk("path", { class: "nf lo" }, group), led: HL.flatDot(group, this.C, 0.9, "dot m"), tw: HL.tween(0), drawn: NaN, restX: this.P(0, 0, 0)[0] };
+
+    this.bladeEl   = HL.solid(bladeG);
+    this.bladeEdge = HL.mk("path", { class: "nf lo" }, bladeG);
+    HL.put(HL.solid(this.g), HL.prism(this.P, this.front, ...HL.rings(-pw, pb - pw, pw, pb + pw, 0.4, 0.2), 0, ph));
+    HL.put(HL.solid(this.g), HL.prism(this.P, this.front, ...HL.rings(-pw, pa - pw, pw, pb + pw, 0.4, 0.2), ph, ph + GuillotineFigure.BAR));
+  }
+
+  _tick(dt, now) {
+    this._phase(now);
+    const lift = HL.tval(this.server.tw, now);
+    const gap  = HL.tval(this.gap, now);
+    const key  = `${lift.toFixed(2)}:${gap.toFixed(3)}:${this.blade.toFixed(2)}`;
+    if (key !== this.drawn) {
+      this.drawn = key;
+      this._drawServer(lift, gap);
+      this._drawBlade(this.blade);
+    }
+    return true;
+  }
+
+  _phase(now) {
+    const t     = now - this.t0;
+    const quick = HL.reducedMotion();
+    switch (this.phase) {
+      case "rise":
+        this.blade = GuillotineFigure.TOP * (quick ? 1 : HL.EASE_LIFT(t / GuillotineFigure.RISE_MS));
+        if (t >= GuillotineFigure.RISE_MS || quick) { this.phase = "hold"; this.t0 = now; this.blade = GuillotineFigure.TOP; }
+        break;
+      case "hold":
+        if (t >= GuillotineFigure.HOLD_MS) { this.phase = "drop"; this.t0 = now; }
+        break;
+      case "drop": {
+        const s    = quick ? 1 : Math.min(1, t / GuillotineFigure.DROP_MS);
+        this.blade = GuillotineFigure.TOP * (1 - s * s);
+        if (s >= 1) { this.phase = "open"; this.t0 = now; HL.tset(this.gap, 1, now, 0); }
+        break;
+      }
+      case "open":
+        if (t >= GuillotineFigure.OPEN_MS && !this.down) { this.phase = "join"; this.t0 = now; HL.tset(this.gap, 0, now, 0); }
+        break;
+      case "join":
+        if (t >= GuillotineFigure.JOIN_MS) { this.phase = "rise"; this.t0 = now; }
+        break;
+      default:
+        break;
+    }
+  }
+
+  _drawServer(lift, gap) {
+    const server              = this.server;
+    const [x0, y0, x1, y1, h] = GuillotineFigure.SERVER;
+    const a                   = GuillotineFigure.APART * gap;
+    HL.put(server.left, HL.prism(this.P, this.front, ...HL.rings(x0 - a, y0, -a, y1, 1, 0.5), lift, lift + h));
+    HL.put(server.right, HL.prism(this.P, this.front, ...HL.rings(a, y0, x1 + a, y1, 1, 0.5), lift, lift + h));
+    server.vents.setAttribute("d", [3.4, 6.4, 9.4].map((z) => HL.seg(this.P(x0 - a + 1.4, y1, lift + z), this.P(-a - 0.4, y1, lift + z)) + HL.seg(this.P(a + 0.4, y1, lift + z), this.P(x1 + a - 1.4, y1, lift + z))).join(""));
+    HL.place(server.led, this.P(x1 + a - 2, y1 - 2, lift + h));
+  }
+
+  _drawBlade(z) {
+    const [bt, bw, bh, slant] = GuillotineFigure.BLADE;
+    const face                = (x) => [[x, -bw, z + slant], [x, bw, z], [x, bw, z + bh], [x, -bw, z + bh]].map(([px, py, pz]) => this.P(px, py, pz));
+    const far                 = face(-bt);
+    const near                = face(bt);
+    HL.put(this.bladeEl, { sil: HL.poly(HL.hull(far.concat(near))), crease: HL.poly(near) });
+    this.bladeEdge.setAttribute("d", HL.seg(near[0], near[1]));
+  }
+
+  _move() {
+    this._choose(0);
+  }
+
+  setState(state) {
+    this.down = !!state.down;
+    this.loop.wake();
+  }
+
+  _retarget(now) {
+    const on = this.chosen === 0;
+    HL.tset(this.server.tw, on ? this.amount : 0, now, 0);
+    this.server.left.sil.classList.toggle("hi", on);
+    this.server.right.sil.classList.toggle("hi", on);
+    this.loop.wake();
+  }
+}
+
 class DeskCalendarFigure extends HairlineFigureBase {
   static RANGE   = [8, 14, 24];
   static SLOTS   = 6;
@@ -4744,40 +4883,41 @@ class ProjectFigures {
   }
 
   static CATALOG = {
-    voxels:    ProjectFigures.entry(VoxelColumnFigure, "A pixel's profile as a column cut into z bins, wide at the bottom and again near the top. The pointer's height picks a bin and it slides out of the column."),
-    folds:     ProjectFigures.entry(CvFoldsFigure, "A drum cut into five cross-validation folds, each numbered with dots. The pointer's angle picks a fold and it slides out as the held-out one."),
-    ablation:  ProjectFigures.entry(AblationTowerFigure, "A stacking-block tower of nine levels. The pointer's height picks a level and its middle block slides out, the way an ablation removes one component."),
-    slices:    ProjectFigures.entry(SliceLoafFigure, "A cube cut into eleven slices whose tops follow a profile. The pointer picks a slice and it slides out of the block with its neighbours."),
-    slots:     ProjectFigures.entry(GaussianSlotsFigure, "Three Gaussian slots, each a tray of fins tracing one component; the middle slot has collapsed flat. The pointer picks a slot and its component rises."),
-    gpus:      ProjectFigures.entry(GpuShelfFigure, "Six GPU cards standing in a chassis, each with two fans and a status light. The pointer picks a card and it rises out of its slot."),
-    guard:     ProjectFigures.entry(GpuGuardFigure, "A fenced yard of GPU card slots with a gate in the front fence. Another user's process, a puck, patrols the path outside and bumps the shut gate; during an intrusion the gate swings open and the puck rolls in to the card it invaded. The pointer picks a card and it rises."),
-    backbone:  ProjectFigures.entry(BackboneBenchFigure, "A test bench for the backbone zoo: an input patch, a socket and an output dish of Gaussian-slot pins on the front lane, and one cartridge per family on the shelf behind (a U block, a grid of tokens, a pyramid, a ridged slab, a single column). The pointer picks a cartridge, it hops into the socket, and the output pins settle to what it predicts."),
-    repo:      ProjectFigures.entry(RepoCityFigure, "The repository as a city: one district per top-level folder, block heights following its size in lines. The pointer picks a district and its blocks rise."),
-    landscape: ProjectFigures.entry(LossLandscapeFigure, "A loss surface of pillars with a ball resting in its minimum. The ball follows the pointer across the surface and rolls back down to the minimum when it leaves."),
-    surface:   ProjectFigures.entry(GaussianSurfaceFigure, "A surface drawn as ridgelines with two Gaussian bumps, one tall and narrow, one low and wide, riding a dashed straight track across it. The pointer pulls the nearer bump along the track and the other keeps its distance."),
-    balance:   ProjectFigures.entry(BalanceFigure, "A balance weighing run A against run B, its pans numbered with dots. The pointer's side tips the beam, and the heavier pan lights."),
-    profileae: ProjectFigures.entry(ProfileAutoencoderFigure, "A profile autoencoder as a stack of round plates, narrowing to the latent and widening again. The pointer's height picks a layer and the stack opens above it."),
-    imageae:   ProjectFigures.entry(ImageAutoencoderFigure, "An image autoencoder as a stack of square plates, narrowing to the latent and widening again. The pointer's height picks a layer and the stack opens above it."),
-    embed:     ProjectFigures.entry(JepaEmbeddingFigure, "JEPA in this project: the backbone on the left reads an image tile and grows a predicted embedding comb; the frozen profile autoencoder on the right encodes the true profile into the target comb. The pointer runs training from left to right and the predicted comb settles onto the target."),
-    podium:    ProjectFigures.entry(PodiumFigure, "A podium of five ranks, each step numbered with dots. The pointer picks a step and it rises with its neighbours."),
-    tiles:     ProjectFigures.entry(MetricTilesFigure, "A metric map as a field of tiles with a hot spot and a fold seam. The pointer picks a tile and the region around it rises."),
-    transect:  ProjectFigures.entry(TransectFigure, "Nine vertical profiles standing along a dashed transect line, each a column of discs tracing a low and a high peak. The pointer picks a profile and it slides out of the line."),
-    film:      ProjectFigures.entry(FilmStripFigure, "Inference stamps as frames on a dated rail, each holding a profile that sharpens from the first stamp to the latest. The pointer picks a frame and it rises."),
-    tray:      ProjectFigures.entry(ReportTrayFigure, "A loose stack of printed plots on a tray. The pointer's height picks a sheet and it slides out of the stack."),
-    jepa:      ProjectFigures.entry(JepaMasksFigure, "A board of image patches with a few masked flat. A two by two target block follows the pointer and lifts out of its context."),
-    shelf:     ProjectFigures.entry(CheckpointShelfFigure, "Checkpoints standing on a shelf as cartridges, the best one pulled forward. The pointer picks a cartridge and it slides out."),
-    dial:      ProjectFigures.entry(LrDialFigure, "A learning-rate dial with a detent at each decade. The pointer's angle turns the knob and it settles on the nearest detent."),
-    threshold: ProjectFigures.entry(ThresholdFigure, "A field of pixel activity pillars cut by a dashed threshold plane. The pointer's height moves the plane and the part of each pillar above it lights."),
-    scheduler: ProjectFigures.entry(SchedulerFigure, "A job rack with four sockets on its top and a staircase of steps leading up to it. Running jobs stand as crates in the sockets, waiting jobs stand on the steps, and the waiting job nearest the front climbs toward the rack. The pointer picks the rack or a step and what stands there lifts."),
-    sampler:   ProjectFigures.entry(PatchSamplerFigure, "A scene of striped tiles, with a batch of patches stacked on a tray beside it. The pointer picks a tile and that patch lifts out of the scene, leaving its hole behind."),
-    feed:      ProjectFigures.entry(FeedLineFigure, "A DataLoader feeding a GPU: one belt per worker carries crates to a rail, a prefetch tray holds the batches waiting, and the GPU at the end draws them in while its fans spin with its load. The pointer picks a worker, the tray or the GPU and it lifts."),
-    field:     ProjectFigures.entry(ReceptiveFieldFigure, "A tiled input under a lamp on a pole with one collar per layer. The pointer picks a layer, the lamp rises to it, and the patch of input it lights widens: the receptive field of that layer."),
-    watchdog:  ProjectFigures.entry(WatchdogFigure, "A camera on a pole used as a searchlight, sweeping its beam around a ring of four targets for CPU, load, RAM and disk, each a bullseye puck standing taller the nearer its reading is to the alert limit. The sweep slows over each target and the target in the light takes the bright edge; on a target with an active alert the beam stops for a few seconds, turns solid and bright, then sweeps on. The pointer picks a target and the camera turns to it."),
-    notify:    ProjectFigures.entry(NotifyFigure, "A server and a phone in its dock. An envelope arcs from the server into the phone and a new notification card slides in at the top of its screen, pushing the older ones down. The pointer picks the server or the phone and it lifts."),
-    nuke:      ProjectFigures.entry(NukeFigure, "A nuclear charge on a plinth: a drum with hazard bands and a radiation trefoil on its lid and a plunger detonator wired to it. When the nuke fires the plunger goes down, a pulse runs along the wire, a mushroom cloud rises from the drum and a shockwave ring sweeps the plinth; once the dust settles the cloud sinks and the plunger rises. The pointer picks the detonator or the drum and it lifts."),
-    cores:     ProjectFigures.entry(CoresFigure, "The processor's cores as a field of pillars on a plinth, each standing as tall as that core is busy, with a dashed plane at the height where a core counts as dispatched; the pillars that reach above it take a bright rim. The pointer picks a core and it lifts."),
-    gpuwire:   ProjectFigures.entry(GpuWireFigure, "A graphics card standing in its slot, fed by a power cable that drops in from above. Its fans spin faster the busier the GPU is, and packets of energy run along the cable the more power it draws, each one flashing the card's light as it lands. The pointer lifts the card out of its slot."),
-    calendar:  ProjectFigures.entry(DeskCalendarFigure, "A desk calendar of the last thirty days, one page per day, each page carrying that day's six four-hour slots as bars: your share of the GPUs bright, everyone else's after it, the idle rest an empty track. The pages turn slowly a day at a time, rest on today and riffle back; the pointer's position across the calendar picks a day."),
-    hourglass: ProjectFigures.entry(HourglassFigure, "An hourglass on a round plinth, its sand running from the upper bulb into a pile in the lower one; when the top runs dry it turns over and starts again. The longer the wait, the slower the sand runs, and the pointer lifts the glass off its stand."),
+    voxels:     ProjectFigures.entry(VoxelColumnFigure, "A pixel's profile as a column cut into z bins, wide at the bottom and again near the top. The pointer's height picks a bin and it slides out of the column."),
+    folds:      ProjectFigures.entry(CvFoldsFigure, "A drum cut into five cross-validation folds, each numbered with dots. The pointer's angle picks a fold and it slides out as the held-out one."),
+    ablation:   ProjectFigures.entry(AblationTowerFigure, "A stacking-block tower of nine levels. The pointer's height picks a level and its middle block slides out, the way an ablation removes one component."),
+    slices:     ProjectFigures.entry(SliceLoafFigure, "A cube cut into eleven slices whose tops follow a profile. The pointer picks a slice and it slides out of the block with its neighbours."),
+    slots:      ProjectFigures.entry(GaussianSlotsFigure, "Three Gaussian slots, each a tray of fins tracing one component; the middle slot has collapsed flat. The pointer picks a slot and its component rises."),
+    gpus:       ProjectFigures.entry(GpuShelfFigure, "Six GPU cards standing in a chassis, each with two fans and a status light. The pointer picks a card and it rises out of its slot."),
+    guard:      ProjectFigures.entry(GpuGuardFigure, "A fenced yard of GPU card slots with a gate in the front fence. Another user's process, a puck, patrols the path outside and bumps the shut gate; during an intrusion the gate swings open and the puck rolls in to the card it invaded. The pointer picks a card and it rises."),
+    backbone:   ProjectFigures.entry(BackboneBenchFigure, "A test bench for the backbone zoo: an input patch, a socket and an output dish of Gaussian-slot pins on the front lane, and one cartridge per family on the shelf behind (a U block, a grid of tokens, a pyramid, a ridged slab, a single column). The pointer picks a cartridge, it hops into the socket, and the output pins settle to what it predicts."),
+    repo:       ProjectFigures.entry(RepoCityFigure, "The repository as a city: one district per top-level folder, block heights following its size in lines. The pointer picks a district and its blocks rise."),
+    landscape:  ProjectFigures.entry(LossLandscapeFigure, "A loss surface of pillars with a ball resting in its minimum. The ball follows the pointer across the surface and rolls back down to the minimum when it leaves."),
+    surface:    ProjectFigures.entry(GaussianSurfaceFigure, "A surface drawn as ridgelines with two Gaussian bumps, one tall and narrow, one low and wide, riding a dashed straight track across it. The pointer pulls the nearer bump along the track and the other keeps its distance."),
+    balance:    ProjectFigures.entry(BalanceFigure, "A balance weighing run A against run B, its pans numbered with dots. The pointer's side tips the beam, and the heavier pan lights."),
+    profileae:  ProjectFigures.entry(ProfileAutoencoderFigure, "A profile autoencoder as a stack of round plates, narrowing to the latent and widening again. The pointer's height picks a layer and the stack opens above it."),
+    imageae:    ProjectFigures.entry(ImageAutoencoderFigure, "An image autoencoder as a stack of square plates, narrowing to the latent and widening again. The pointer's height picks a layer and the stack opens above it."),
+    embed:      ProjectFigures.entry(JepaEmbeddingFigure, "JEPA in this project: the backbone on the left reads an image tile and grows a predicted embedding comb; the frozen profile autoencoder on the right encodes the true profile into the target comb. The pointer runs training from left to right and the predicted comb settles onto the target."),
+    podium:     ProjectFigures.entry(PodiumFigure, "A podium of five ranks, each step numbered with dots. The pointer picks a step and it rises with its neighbours."),
+    tiles:      ProjectFigures.entry(MetricTilesFigure, "A metric map as a field of tiles with a hot spot and a fold seam. The pointer picks a tile and the region around it rises."),
+    transect:   ProjectFigures.entry(TransectFigure, "Nine vertical profiles standing along a dashed transect line, each a column of discs tracing a low and a high peak. The pointer picks a profile and it slides out of the line."),
+    film:       ProjectFigures.entry(FilmStripFigure, "Inference stamps as frames on a dated rail, each holding a profile that sharpens from the first stamp to the latest. The pointer picks a frame and it rises."),
+    tray:       ProjectFigures.entry(ReportTrayFigure, "A loose stack of printed plots on a tray. The pointer's height picks a sheet and it slides out of the stack."),
+    jepa:       ProjectFigures.entry(JepaMasksFigure, "A board of image patches with a few masked flat. A two by two target block follows the pointer and lifts out of its context."),
+    shelf:      ProjectFigures.entry(CheckpointShelfFigure, "Checkpoints standing on a shelf as cartridges, the best one pulled forward. The pointer picks a cartridge and it slides out."),
+    dial:       ProjectFigures.entry(LrDialFigure, "A learning-rate dial with a detent at each decade. The pointer's angle turns the knob and it settles on the nearest detent."),
+    threshold:  ProjectFigures.entry(ThresholdFigure, "A field of pixel activity pillars cut by a dashed threshold plane. The pointer's height moves the plane and the part of each pillar above it lights."),
+    scheduler:  ProjectFigures.entry(SchedulerFigure, "A job rack with four sockets on its top and a staircase of steps leading up to it. Running jobs stand as crates in the sockets, waiting jobs stand on the steps, and the waiting job nearest the front climbs toward the rack. The pointer picks the rack or a step and what stands there lifts."),
+    sampler:    ProjectFigures.entry(PatchSamplerFigure, "A scene of striped tiles, with a batch of patches stacked on a tray beside it. The pointer picks a tile and that patch lifts out of the scene, leaving its hole behind."),
+    feed:       ProjectFigures.entry(FeedLineFigure, "A DataLoader feeding a GPU: one belt per worker carries crates to a rail, a prefetch tray holds the batches waiting, and the GPU at the end draws them in while its fans spin with its load. The pointer picks a worker, the tray or the GPU and it lifts."),
+    field:      ProjectFigures.entry(ReceptiveFieldFigure, "A tiled input under a lamp on a pole with one collar per layer. The pointer picks a layer, the lamp rises to it, and the patch of input it lights widens: the receptive field of that layer."),
+    watchdog:   ProjectFigures.entry(WatchdogFigure, "A camera on a pole used as a searchlight, sweeping its beam around a ring of four targets for CPU, load, RAM and disk, each a bullseye puck standing taller the nearer its reading is to the alert limit. The sweep slows over each target and the target in the light takes the bright edge; on a target with an active alert the beam stops for a few seconds, turns solid and bright, then sweeps on. The pointer picks a target and the camera turns to it."),
+    notify:     ProjectFigures.entry(NotifyFigure, "A server and a phone in its dock. An envelope arcs from the server into the phone and a new notification card slides in at the top of its screen, pushing the older ones down. The pointer picks the server or the phone and it lifts."),
+    nuke:       ProjectFigures.entry(NukeFigure, "A nuclear charge on a plinth: a drum with hazard bands and a radiation trefoil on its lid and a plunger detonator wired to it. When the nuke fires the plunger goes down, a pulse runs along the wire, a mushroom cloud rises from the drum and a shockwave ring sweeps the plinth; once the dust settles the cloud sinks and the plunger rises. The pointer picks the detonator or the drum and it lifts."),
+    cores:      ProjectFigures.entry(CoresFigure, "The processor's cores as a field of pillars on a plinth, each standing as tall as that core is busy, with a dashed plane at the height where a core counts as dispatched; the pillars that reach above it take a bright rim. The pointer picks a core and it lifts."),
+    gpuwire:    ProjectFigures.entry(GpuWireFigure, "A graphics card standing in its slot, fed by a power cable that drops in from above. Its fans spin faster the busier the GPU is, and packets of energy run along the cable the more power it draws, each one flashing the card's light as it lands. The pointer lifts the card out of its slot."),
+    guillotine: ProjectFigures.entry(GuillotineFigure, "A server tower standing under a guillotine. The blade climbs its frame, hangs for a moment and drops, and the tower splits in two halves that slide apart before closing up again for the next stroke; once the front end has been killed the halves stay apart. The pointer lifts the server."),
+    calendar:   ProjectFigures.entry(DeskCalendarFigure, "A desk calendar of the last thirty days, one page per day, each page carrying that day's six four-hour slots as bars: your share of the GPUs bright, everyone else's after it, the idle rest an empty track. The pages turn slowly a day at a time, rest on today and riffle back; the pointer's position across the calendar picks a day."),
+    hourglass:  ProjectFigures.entry(HourglassFigure, "An hourglass on a round plinth, its sand running from the upper bulb into a pile in the lower one; when the top runs dry it turns over and starts again. The longer the wait, the slower the sand runs, and the pointer lifts the glass off its stand."),
   };
 }
