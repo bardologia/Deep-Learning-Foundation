@@ -307,8 +307,8 @@ the 50% dispatch line, the pillars above it rimmed bright; the memory card is a 
 two grid, the disk readings beside `riffle` above the memory rule and the RAM and swap
 bars over the memory plot beside the `cabinet` rack below it; the GPU activity card puts
 `patch` at its top and lets the lanes fill the rest (30 to 80 px per GPU, the panel
-taking any slack); the neighbour impact card weighs your stall share against everyone
-else's on `balance`; the full-width host history puts `phosphor` (with `autopilot="off"`,
+taking any slack); the neighbour impact card weighs your own slice's stall against the
+worst neighbour's on `balance`; the full-width host history puts `phosphor` (with `autopilot="off"`,
 so its own frame loop plays) against its left edge and `router` against its right, the
 two plots between them; the jobs card shows `scheduler` fed from the live job list
 (running jobs in the rack, queued and scheduled ones on the steps); the GPU guard card
