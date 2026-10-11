@@ -213,15 +213,16 @@ class UsersTable {
       `<section class="sboard sboard--users" aria-label="Active users">` +
       `<header class="sboard__cap"><span>active users</span><span class="sboard__n" id="sb-users-n">--</span></header>` +
       `<div class="utable">` +
-      `<div class="utable__row utable__row--head"><span>user</span><span title="summed over all the user's processes; 100% = one full core">cpu%</span><span title="memory attributed to the user: proportional set size for your own processes, private resident for other users, so shared pages are not double-counted">ram</span><span title="share of used RAM (total minus available), same base as the neighbour impact panel">ram%</span><span class="utable__gpu" title="GPU memory the user has allocated across all CUDA devices">gpu mem</span><span title="CUDA devices the user holds memory on">gpus</span><span title="processes owned by the user">procs</span><span title="open login sessions">ssh</span></div>` +
+      `<div class="utable__row utable__row--head"><span>user</span><span title="summed over all the user's processes; 100% = one full core">cpu%</span><span title="share of the last 10 s the user's own tasks spent waiting for cpu / ram / disk, read from the user's cgroup pressure files">stall c/m/d</span><span title="memory attributed to the user: proportional set size for your own processes, private resident for other users, so shared pages are not double-counted">ram</span><span title="share of used RAM (total minus available), same base as the neighbour impact panel">ram%</span><span class="utable__gpu" title="GPU memory the user has allocated across all CUDA devices">gpu mem</span><span title="CUDA devices the user holds memory on">gpus</span><span title="processes owned by the user">procs</span><span title="open login sessions">ssh</span></div>` +
       `<div class="utable__body" id="sb-users"></div>` +
       `</div>` +
       `</section>`
     );
   }
 
-  render(users) {
+  render(users, slices) {
     const body = document.getElementById("sb-users");
+    const stallByUid = new Map(slices.map((row) => [row.uid, row.stall]));
     const n = document.getElementById("sb-users-n");
     if (!body) return;
     if (n) n.textContent = `${users.length} user${users.length === 1 ? "" : "s"}`;
@@ -234,10 +235,12 @@ class UsersTable {
     body.innerHTML = users.map((u) => {
       const cls = u.cpu >= 100 ? "is-hot" : u.cpu >= 25 ? "is-mid" : "";
       const gpus = (u.gpus || []).length ? u.gpus.join(",") : "--";
+      const stall = stallByUid.get(u.uid) || null;
       return (
         `<div class="utable__row${u.me ? " is-me" : ""}">` +
         `<span class="utable__user">${SharedCharts.esc(u.user)}${u.me ? `<i class="utable__me">you</i>` : ""}</span>` +
         `<span class="utable__cpu ${cls}">${u.cpu.toFixed(1)}</span>` +
+        `<span class="utable__stall${stall && Math.max(stall.cpu, stall.mem, stall.io) >= 20 ? " is-hot" : stall && Math.max(stall.cpu, stall.mem, stall.io) >= 5 ? " is-mid" : ""}">${stall ? `${stall.cpu.toFixed(0)}/${stall.mem.toFixed(0)}/${stall.io.toFixed(0)}` : "--"}</span>` +
         `<span>${ByteFormat.mb(u.mem)}</span>` +
         `<span class="utable__share">${u.mem_share.toFixed(1)}%</span>` +
         `<span class="utable__gpu">${u.gpu_mem ? ByteFormat.mb(u.gpu_mem * 1048576) : "--"}</span>` +
@@ -1343,7 +1346,7 @@ class StatusBoard {
 
       `<section class="sboard sboard--impact" aria-label="Neighbour impact">` +
       `<header class="sboard__cap"><span>neighbour impact</span><i class="impact__light" id="sb-impact-light" aria-hidden="true"></i><span class="sboard__n" id="sb-impact-verdict">--</span></header>` +
-      `<p class="impact__lede" id="sb-impact-lede">${ThinkingOrb.busy("listening", "measuring whether your jobs stall other users…")}</p>` +
+      `<p class="impact__lede" id="sb-impact-lede">${ThinkingOrb.busy("listening", "reading every user's stall from their cgroup slice…")}</p>` +
       `<div class="impact__grid">` +
       `<div class="impact__cell"><canvas class="gmeter gmeter--impact" id="sb-impact-mem-meter"></canvas><span class="impact__share" id="sb-impact-mem-share">your share --</span><div class="bar bar--share"><i class="bar__fill bar__fill--share" id="sb-impact-mem-share-bar"></i></div></div>` +
       `<div class="impact__cell"><canvas class="gmeter gmeter--impact" id="sb-impact-io-meter"></canvas><span class="impact__share" id="sb-impact-io-share">your share --</span><div class="bar bar--share"><i class="bar__fill bar__fill--share" id="sb-impact-io-share-bar"></i></div></div>` +
@@ -1355,6 +1358,7 @@ class StatusBoard {
       `<div><dt id="sb-impact-iorate">--</dt><dd>disk busy</dd></div>` +
       `<div><dt id="sb-impact-mine">--</dt><dd>your procs</dd></div>` +
       `<div><dt id="sb-impact-top">--</dt><dd>top ram user</dd></div>` +
+      `<div><dt id="sb-impact-stalled">--</dt><dd>users stalled</dd></div>` +
       `</dl>` +
       HairlineFigure.html("balance", 'class="impact__figure" id="sb-impact-balance" aria-hidden="true"') +
       `</div>` +
@@ -1434,9 +1438,9 @@ class StatusBoard {
     this.cpuDial = new window.DialGauge(document.getElementById("sb-cpu-dial"), { big: true, label: "BUSY %", color: "111, 155, 255", majors: 5, minors: 4, zones: [{ from: 75, to: 90, color: "251, 191, 36" }, { from: 90, to: 100, color: "248, 113, 113" }] });
 
     this.impactMeters = {
-      mem: new window.LinearMeter(document.getElementById("sb-impact-mem-meter"), { label: "MEM STALL %", color: "111, 155, 255", zones: [{ from: 10, to: 25, color: "251, 191, 36" }, { from: 25, to: 100, color: "248, 113, 113" }] }),
-      io:  new window.LinearMeter(document.getElementById("sb-impact-io-meter"),  { label: "DISK STALL %", color: "111, 155, 255", zones: [{ from: 25, to: 60, color: "251, 191, 36" }, { from: 60, to: 100, color: "248, 113, 113" }] }),
-      cpu: new window.LinearMeter(document.getElementById("sb-impact-cpu-meter"), { label: "CPU STALL %", color: "111, 155, 255", zones: [{ from: 40, to: 70, color: "251, 191, 36" }, { from: 70, to: 100, color: "248, 113, 113" }] }),
+      mem: new window.LinearMeter(document.getElementById("sb-impact-mem-meter"), { label: "NEIGHBOUR MEM STALL %", color: "111, 155, 255", zones: [{ from: 10, to: 30, color: "251, 191, 36" }, { from: 30, to: 100, color: "248, 113, 113" }] }),
+      io:  new window.LinearMeter(document.getElementById("sb-impact-io-meter"),  { label: "NEIGHBOUR DISK STALL %", color: "111, 155, 255", zones: [{ from: 20, to: 50, color: "251, 191, 36" }, { from: 50, to: 100, color: "248, 113, 113" }] }),
+      cpu: new window.LinearMeter(document.getElementById("sb-impact-cpu-meter"), { label: "NEIGHBOUR CPU STALL %", color: "111, 155, 255", zones: [{ from: 20, to: 50, color: "251, 191, 36" }, { from: 50, to: 100, color: "248, 113, 113" }] }),
     };
     this.activity = new GpuActivityTimeline(document.getElementById("sb-act-graph"), document.getElementById("sb-act-read"));
     if (this._guardHistory) this.activity.setMarkers(this._guardHistory.records || []);
@@ -1785,7 +1789,7 @@ class StatusBoard {
       this._bar("sb-disk-repo-bar", disk.repo_used ? (100 * disk.repo_used) / disk.total : 0);
     }
 
-    this.usersTable.render(sys.users || []);
+    this.usersTable.render(sys.users || [], ((sys.impact || {}).signals || {}).users || []);
     this.processTable.render(sys.procs || []);
   }
 
@@ -1841,6 +1845,7 @@ class StatusBoard {
   }
 
   _renderImpact(impact) {
+    const sources    = impact.sources || {};
     const sig        = impact.signals || {};
     const active     = impact.active || [];
     const leak       = active.find((a) => a.kind === "leak");
@@ -1855,31 +1860,39 @@ class StatusBoard {
       armBtn.classList.toggle("is-armed", this._autoNuke);
     }
 
-    const psi  = sig.psi || {};
+    const missing = [];
+    if (sources.psi === false)    missing.push("the kernel exposes no /proc/pressure");
+    if (sources.cgroup === false) missing.push("the host has no per-user cgroup slices");
+
     const mem  = sig.mem || {};
     const io   = sig.io || {};
     const cpu  = sig.cpu || {};
     const swap = sig.swap || {};
+    const near = sig.others || {};
+    const own  = (sig.mine || {}).stall || {};
 
     const contended = new Set(contention.map((a) => a.kind));
-    const gauge = (kind, psiVal, shareVal) => {
+    const gauge = (kind, res, who) => {
       const meter = (this.impactMeters || {})[kind];
-      if (meter) meter.set(psiVal || 0);
+      if (meter) meter.set(who.stall || 0);
       const shareId  = `sb-impact-${kind}-share`;
-      const sharePct = (shareVal || 0) * 100;
-      this._txt(shareId, `your share <b>${sharePct.toFixed(0)}</b>%`);
+      const sharePct = (res.mine_share || 0) * 100;
+      const worst    = who.user ? ` &middot; worst ${SharedCharts.esc(who.user)} <b>${(who.stall || 0).toFixed(0)}</b>%` : " &middot; no neighbour";
+      this._txt(shareId, `your share <b>${sharePct.toFixed(0)}</b>%${worst}`);
       const shareEl = document.getElementById(shareId);
-      if (shareEl) shareEl.classList.toggle("is-dominant", sharePct >= 50 && contended.has(kind));
+      if (shareEl) shareEl.classList.toggle("is-dominant", !!res.dominant && contended.has(kind));
       this._bar(`${shareId}-bar`, sharePct);
     };
-    gauge("mem", (psi.mem || {}).some, mem.mine_share);
-    gauge("io",  (psi.io  || {}).some, io.mine_share);
-    gauge("cpu", (psi.cpu || {}).some, cpu.mine_share);
-    this._renderBalance([[(psi.mem || {}).some, mem.mine_share], [(psi.io || {}).some, io.mine_share], [(psi.cpu || {}).some, cpu.mine_share]], mine.length > 0);
+    gauge("mem", mem, near.mem || {});
+    gauge("io",  io,  near.io  || {});
+    gauge("cpu", cpu, near.cpu || {});
+    this._renderBalance(own, near, mine.length > 0);
 
+    const stalled = Math.max(0, ...["cpu", "mem", "io"].map((k) => (near[k] || {}).n || 0));
     this._txt("sb-impact-swap", `<b>${(swap.out_mbs || 0).toFixed(1)}</b> MB/s`);
     this._txt("sb-impact-iorate", `<b>${(io.util || 0).toFixed(0)}</b> %`);
     this._txt("sb-impact-mine", `<b>${(sig.mine || {}).nproc || 0}</b> &middot; ${((sig.mine || {}).mem_gb || 0).toFixed(1)}G`);
+    this._txt("sb-impact-stalled", `<b>${stalled}</b> &middot; of ${Math.max(0, (sig.users || []).length - 1)}`);
 
     const top = sig.top;
     const topEl = document.getElementById("sb-impact-top");
@@ -1893,20 +1906,25 @@ class StatusBoard {
     const lede    = document.getElementById("sb-impact-lede");
     let culprit = mine.some((a) => a.level === "danger") ? "danger" : mine.length ? "warn" : "clear";
     if (culprit === "clear" && leak) culprit = "warn";
+    if (missing.length) culprit = "off";
     if (light) light.className = `impact__light is-${culprit}`;
     if (verdict) {
-      verdict.textContent = mine.length ? "you are the cause" : leak ? "ram climbing" : others.length ? "busy, not you" : "all clear";
+      verdict.textContent = missing.length ? "unavailable" : mine.length ? "you are the cause" : leak ? "ram climbing" : others.length ? "busy, not you" : "all clear";
     }
     if (lede) {
-      lede.textContent = mine.length
-        ? "Your jobs are stalling other users on the resources flagged below."
-        : leak
-          ? "No contention yet, but a process of yours is steadily accumulating RAM — see below."
-          : others.length
-            ? (top && !top.is_mine
-                ? `The server is contended, but not by you — dominant consumer is ${top.user} (${(top.mem_gb || 0).toFixed(0)} GB, ${top.nproc} procs).`
-                : "The server is contended, but your jobs are not the dominant cause.")
-            : "No contention: other users are not being slowed by your jobs.";
+      lede.textContent = missing.length
+        ? `Cannot measure neighbour stall: ${missing.join("; ")}.`
+        : mine.length
+          ? "Other users' tasks are stalling on the resources flagged below, and you are their dominant consumer."
+          : leak
+            ? "No neighbour is stalling yet, but a process of yours is steadily accumulating RAM. See below."
+            : others.length
+              ? (top && !top.is_mine
+                  ? `Other users are stalling, but you are not the dominant consumer. The largest RAM holder is ${top.user} (${(top.mem_gb || 0).toFixed(0)} GB, ${top.nproc} procs).`
+                  : "Other users are stalling, but you are not the dominant consumer.")
+              : sources.slice === false
+                ? "No neighbour is stalling. This console runs outside your user slice, so jobs launched here are not charged to you."
+                : "No neighbour is stalling: no other user's tasks are waiting for CPU, memory or disk.";
     }
 
     const logBox = document.getElementById("sb-impact-log");
@@ -1948,17 +1966,14 @@ class StatusBoard {
     }
   }
 
-  _renderBalance(pairs, alarm) {
+  _renderBalance(own, near, alarm) {
     const balance = document.getElementById("sb-impact-balance");
     if (!balance) return;
 
-    let mine   = 0;
-    let others = 0;
-    for (const [stall, share] of pairs) {
-      const weight = (stall || 0) / 100;
-      mine        += weight * (share || 0);
-      others      += weight * (1 - (share || 0));
-    }
+    const worst  = (read) => Math.max(0, ...["cpu", "mem", "io"].map((k) => (read(k) || 0) / 100));
+    const mine   = worst((k) => own[k]);
+    const others = worst((k) => (near[k] || {}).stall);
+
     const state = { mine: Math.round(mine * 1000) / 1000, others: Math.round(others * 1000) / 1000, alarm };
     const key   = JSON.stringify(state);
     if (key === this._balanceKey && balance.state) return;

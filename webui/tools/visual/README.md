@@ -160,6 +160,24 @@ node gauge_checks.js fonts
 node gauge_checks.js sweep
 ```
 
+## Neighbour impact harness
+
+`impact_checks.js` loads `home.js` under plain node with a stub DOM, runs one named
+scenario against the real `UsersTable` and `StatusBoard` and prints what it observed as
+JSON. The `users` scenario renders the active users table over a set of users and the
+per-user slice rows of the contention monitor, and reads the header, the column count of
+each row and each user's stall cell. The `impact` scenario renders the neighbour impact
+card from four monitor payloads (this user blamed, the kernel sources missing, the console
+outside the user slice, and someone else's contention) and reads the meters, the share
+lines, the stalled count, the verdict, the lede, the light and the state handed to the
+figure. `tests/webui/test_home_impact.py` drives both, which is the contract that keeps
+the card reading the monitor's field names and saying why it cannot measure.
+
+```
+node impact_checks.js users
+node impact_checks.js impact
+```
+
 ## Repo-map diagram harness
 
 `render_diagram.js` renders a single repo-map schema (one folder/diagram from
