@@ -251,16 +251,18 @@ bench of swappable cartridges), `repo` (folder sizes as a static snapshot), `lan
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
 `balance`, `profileae`, `imageae`, `embed`, `podium`, `tiles`, `transect`, `film`, `tray`,
 `jepa`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
-`watchdog`, `notify`, `nuke`, `cores`, `calendar` and `hourglass`. Eleven of them take
-`state`: `gpus` (`{devices: [{holder, util}]}`), `balance` (`{mine, others, alarm}`),
-`guard` (`{gpus, invaded, critical}`), `scheduler` (`{jobs: [{id, running, position,
-of}]}`), `feed` (`{workers, prefetch, wait, util, feed}`), `watchdog` (`{armed, gauges:
-[{level, limit, alert}]}`, four gauges for CPU, load, RAM and disk), `notify`
+`watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `calendar` and `hourglass`. Twelve of
+them take `state`: `gpus` (`{devices: [{holder, util}]}`), `balance` (`{mine, others,
+alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler` (`{jobs: [{id, running,
+position, of}]}`), `feed` (`{workers, prefetch, wait, util, feed}`), `watchdog` (`{armed,
+gauges: [{level, limit, alert}]}`, four gauges for CPU, load, RAM and disk), `notify`
 (`{armed}`), `nuke` (`{firing}`), `cores` (`{cores}`, one busy percentage per core, the
-field relaid when the count changes), `calendar` (`{days: [{slots: [{mine, others}]}]}`,
-six 4-hour slots a day, shares averaged over the GPUs) and `hourglass` (`{wait_s}`);
-`gpus`, `balance`, `feed`, `watchdog`, `notify`, `nuke`, `cores`, `calendar` and
-`hourglass` draw their static scene when no state is given.
+field relaid when the count changes), `gpuwire` (`{util, power}`, utilisation in percent
+and power draw as a fraction of the limit, falling back to the utilisation when no power
+is given), `calendar` (`{days: [{slots: [{mine, others}]}]}`, six 4-hour slots a day,
+shares averaged over the GPUs) and `hourglass` (`{wait_s}`); `gpus`, `balance`, `feed`,
+`watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `calendar` and `hourglass` draw their
+static scene when no state is given.
 
 Every page shows at least one figure, and the element remounts when its `name` changes,
 so a page can swap it with what is on screen: Architectures by zoo tab and Model by its
@@ -292,23 +294,26 @@ drum; the GPU week card shows `hourglass`, its `wait_s` set to the time left unt
 schedule next switches pools, which `GpuWeekPanel` reads from the 168 hourly phases (from
 Monday 00:00) and the current hour that `/api/system` reports under `gpu_schedule.week`
 and `gpu_schedule.week_hour`, so the sand runs slower the further off the next switch is.
-The CUDA devices grid fills the empty cell of an odd GPU count with a `gpus` shelf of the
-real devices; the processor card ends in `cores`, one pillar per core as tall as it is
-busy under a dashed plane at the 50% dispatch line, the pillars above it rimmed bright;
-the memory card is a two by two grid, the disk readings beside `riffle`
-above the memory rule and the RAM and swap bars over the memory plot beside the
-`cabinet` rack below it; the GPU activity card puts `patch` at its top and lets the lanes
-fill the rest (30 to 80 px per GPU, the panel taking any slack); the neighbour impact
-card weighs your stall share against everyone else's on `balance`; the full-width host
-history puts `phosphor` (with `autopilot="off"`, so its own frame loop plays) against
-its left edge and `router` against its right, the two plots between them; the jobs card
-shows `scheduler` fed from the live job list (running jobs in the rack, queued and
-scheduled ones on the steps); the GPU guard card shows `guard`, whose barrier lifts
-during an intrusion; `terminal` is a tile to the left of the server internals; and the
-heatmap card carries `calendar` on its right, a desk calendar of the same days whose
-pages carry each day's six 4-hour slots as bars (autopilot off: it turns one page every
-2.6 s and rests 6 s on today). Feed Tuner shows `feed` under its results table: the
-candidate being measured during a sweep, the adopted configuration after it. Tile and
-filler figures sit in an absolutely positioned `.fig-fill` box with `container-type:
-size` and take `min(100cqw, 125cqh)` as their width, so they keep the 5:4 box the
-kernel's pointer mapping assumes and never add height to their row.
+Each CUDA device card sets its utilisation dial, its utilisation and memory plot and a
+`gpuwire` figure side by side, the card's fans spinning with utilisation while energy
+packets run down its cable at a rate set by the power draw. The CUDA devices grid fills
+the empty cell of an odd GPU count with a `gpus` shelf of the real devices; the processor
+card ends in `cores`, one pillar per core as tall as it is busy under a dashed plane at
+the 50% dispatch line, the pillars above it rimmed bright; the memory card is a two by
+two grid, the disk readings beside `riffle` above the memory rule and the RAM and swap
+bars over the memory plot beside the `cabinet` rack below it; the GPU activity card puts
+`patch` at its top and lets the lanes fill the rest (30 to 80 px per GPU, the panel
+taking any slack); the neighbour impact card weighs your stall share against everyone
+else's on `balance`; the full-width host history puts `phosphor` (with `autopilot="off"`,
+so its own frame loop plays) against its left edge and `router` against its right, the
+two plots between them; the jobs card shows `scheduler` fed from the live job list
+(running jobs in the rack, queued and scheduled ones on the steps); the GPU guard card
+shows `guard`, whose barrier lifts during an intrusion; `terminal` is a tile to the left
+of the server internals; and the heatmap card carries `calendar` on its right, a desk
+calendar of the same days whose pages carry each day's six 4-hour slots as bars
+(autopilot off: it turns one page every 2.6 s and rests 6 s on today). Feed Tuner shows
+`feed` under its results table: the candidate being measured during a sweep, the adopted
+configuration after it. Tile and filler figures sit in an absolutely positioned
+`.fig-fill` box with `container-type: size` and take `min(100cqw, 125cqh)` as their
+width, so they keep the 5:4 box the kernel's pointer mapping assumes and never add height
+to their row.
