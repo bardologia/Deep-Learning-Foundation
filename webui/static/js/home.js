@@ -1163,6 +1163,7 @@ class StatusBoard {
           `<div class="gcard__cluster">` +
           `<canvas class="gdial gdial--big gdial--util"></canvas>` +
           `<canvas class="gcard__graph"></canvas>` +
+          `<div class="gcard__live" title="fans spin with utilisation, the cable carries power draw"><div class="fig-fill">${HairlineFigure.html("gpuwire", 'class="gcard__wire" aria-hidden="true"')}</div></div>` +
           `</div>` +
           `<div class="gcard__meters">` +
           `<canvas class="gmeter gmeter--temp"></canvas>` +
@@ -1415,6 +1416,7 @@ class StatusBoard {
       who: card.querySelector(".gcard__who"),
       power: card.querySelector(".gcard__power"),
       graph: card.querySelector(".gcard__graph"),
+      wire: card.querySelector(".gcard__wire"),
       dialU: new window.DialGauge(card.querySelector(".gdial--util"), { big: true, label: "UTIL %", color: "111, 155, 255", majors: 5, minors: 4 }),
       meterT: new window.LinearMeter(card.querySelector(".gmeter--temp"), { min: 20, max: 100, label: "TEMP °C", color: "45, 212, 191", zones: [{ from: 70, to: 85, color: "251, 191, 36" }, { from: 85, to: 100, color: "248, 113, 113" }] }),
       meterP: new window.LinearMeter(card.querySelector(".gmeter--power"), { max: (gpus[i] && gpus[i].power_limit) || 250, label: "POWER W", color: "167, 139, 250" }),
@@ -1686,6 +1688,7 @@ class StatusBoard {
       const memPct = g.mem_total ? (100 * g.mem_used) / g.mem_total : 0;
 
       el.dialU.set(util);
+      if (el.wire) el.wire.state = { util, power: g.power_limit && g.power != null ? Math.max(0, Math.min(1, g.power / g.power_limit)) : undefined };
       el.meterT.set(g.temp);
       if (g.power_limit) el.meterP.range(g.power_limit);
       el.meterP.set(g.power);

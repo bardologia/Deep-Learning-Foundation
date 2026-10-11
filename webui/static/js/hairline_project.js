@@ -4049,6 +4049,166 @@ class CoresFigure extends HairlineFigureBase {
   }
 }
 
+class GpuWireFigure extends HairlineFigureBase {
+  static RANGE    = [3, 5, 8];
+  static PLINTH   = [2, -21, 18, 21];
+  static SOCKET   = [6.5, -18, 13.5, 18, 1.4];
+  static CARD     = [8, -16, 12, 16, 16];
+  static FANS     = [[-8, 8, 5.4], [8, 8, 5.4]];
+  static HEIGHT   = 32;
+  static INLET    = -40;
+  static SPIN     = [0.6, 14];
+  static RATE     = [2.6, 0.22];
+  static SPEED    = [0.35, 1.5];
+  static FLASH_MS = 160;
+  static SAMPLE   = { util: 55, power: 0.55 };
+
+  constructor({ stage, svg }, value) {
+    super(svg, value, 5.6);
+    this.util    = GpuWireFigure.SAMPLE.util / 100;
+    this.energy  = GpuWireFigure.SAMPLE.power;
+    this.spin    = HL.spring(this._spinFor(this.util), { k: 6, c: 5, eps: 0.01 });
+    this.flow    = HL.spring(this.energy, { k: 10, c: 6, eps: 0.002 });
+    this.angle   = 0;
+    this.packets = [];
+    this.next    = 0;
+    this.flash   = 0;
+    this.lit     = null;
+    this._camera(this._extent(), 160);
+    const [x0, y0, x1, y1] = GpuWireFigure.PLINTH;
+    this._plinth(x0, y0, x1, y1, 5, 3);
+    this._buildWire();
+    this._buildCard();
+    this.parts = [this.card];
+    this._start(stage, svg);
+    this._retarget(performance.now());
+  }
+
+  _spinFor(util) {
+    const [idle, full] = GpuWireFigure.SPIN;
+    return idle + (full - idle) * util;
+  }
+
+  _extent() {
+    const [x0, y0, x1, y1]         = GpuWireFigure.PLINTH;
+    const [cx0, cy0, cx1, cy1, ch] = GpuWireFigure.CARD;
+    const lift                     = GpuWireFigure.RANGE[2];
+    const mid                      = (cx0 + cx1) / 2;
+    return [[x0, y0, -3], [x1, y1, -3], [x1, y0, -3], [x0, y1, -3], [cx0, cy0, ch + lift], [cx1, cy1, ch + lift], [mid, GpuWireFigure.INLET, GpuWireFigure.HEIGHT], [mid, 0, GpuWireFigure.HEIGHT]];
+  }
+
+  _buildWire() {
+    const [cx0, , cx1, , ch] = GpuWireFigure.CARD;
+    const mid                = (cx0 + cx1) / 2;
+    const pts                = [[mid, GpuWireFigure.INLET, GpuWireFigure.HEIGHT], [mid, 0, GpuWireFigure.HEIGHT], [mid, 0, ch + 0.5]];
+    const cum                = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]));
+    this.wire = { pts, cum };
+    HL.mk("path", { d: HL.open(pts.map(([x, y, z]) => this.P(x, y, z))), class: "nf lo" }, this.g);
+    this.packetLayer = HL.mk("g", {}, this.g);
+  }
+
+  _alongWire(f) {
+    const { pts, cum } = this.wire;
+    const s            = HL.clamp(f, 0, 1) * cum[cum.length - 1];
+    let i              = 1;
+    while (i < cum.length - 1 && cum[i] < s) i++;
+    const t = (s - cum[i - 1]) / (cum[i] - cum[i - 1]);
+    return [0, 1, 2].map((k) => HL.lerp(pts[i - 1][k], pts[i][k], t));
+  }
+
+  _buildCard() {
+    const [sx0, sy0, sx1, sy1, sh] = GpuWireFigure.SOCKET;
+    const [x0, y0, x1, y1]         = GpuWireFigure.CARD;
+    const group                    = HL.mk("g", {}, this.g);
+    HL.put(HL.solid(group), HL.prism(this.P, this.front, ...HL.rings(sx0, sy0, sx1, sy1, 0.9, 0.5), 0, sh));
+    const [ring, inner] = HL.rings(x0, y0, x1, y1, 1.1, 0.5);
+    const el            = HL.solid(group);
+    this.card = { k: 0, ring, inner, el, fans: HL.mk("path", { class: "nf lo" }, group), led: HL.flatDot(group, this.C, 0.9, "dot off"), lift: 0, tw: HL.tween(0), drawn: NaN, restX: this.P((x0 + x1) / 2, (y0 + y1) / 2, 0)[0] };
+  }
+
+  _tick(dt, now) {
+    HL.stepS(this.spin, dt);
+    HL.stepS(this.flow, dt);
+    this.angle = (this.angle + this.spin.x * dt) % (Math.PI * 2);
+    this._advance(this.parts, now);
+    this._drawFans();
+    this._flow(dt, now);
+    return true;
+  }
+
+  _draw(card, lift) {
+    const [x0, y0, x1, y1, h] = GpuWireFigure.CARD;
+    card.lift                 = lift;
+    HL.put(card.el, HL.prism(this.P, this.front, card.ring, card.inner, lift, lift + h));
+    HL.place(card.led, this.P((x0 + x1) / 2, y1 - 2.4, lift + h));
+  }
+
+  _drawFans() {
+    const card           = this.card;
+    const [, y0, x1, y1] = GpuWireFigure.CARD;
+    const mid            = (y0 + y1) / 2;
+    const at             = (cy, cz, a, radius) => this.P(x1, cy + radius * Math.cos(a), cz + radius * Math.sin(a));
+    let d                = "";
+    for (const [fy, fz, R] of GpuWireFigure.FANS) {
+      const cy = mid + fy;
+      const cz = card.lift + fz;
+      d       += HairlineGeometry.faceCircle(this.P, x1, cy, cz, R);
+      for (let j = 0; j < 3; j++) {
+        const a = this.angle + (j * Math.PI * 2) / 3;
+        d      += HL.seg(at(cy, cz, a, 1.1), at(cy, cz, a + 0.5, R * 0.82));
+      }
+    }
+    card.fans.setAttribute("d", d);
+  }
+
+  _flow(dt, now) {
+    const e     = HL.clamp(this.flow.x, 0, 1);
+    const speed = HL.lerp(GpuWireFigure.SPEED[0], GpuWireFigure.SPEED[1], e);
+    let arrived = false;
+    for (const packet of this.packets) {
+      packet.s += speed * dt;
+      if (packet.s >= 1) {
+        arrived = true;
+        packet.el.remove();
+      }
+    }
+    if (arrived) this.flash = now + GpuWireFigure.FLASH_MS;
+    this.packets = this.packets.filter((packet) => packet.s < 1);
+    if (now >= this.next) {
+      this.next = now + HL.lerp(GpuWireFigure.RATE[0], GpuWireFigure.RATE[1], e) * 1000;
+      this.packets.push({ s: 0, el: HL.flatDot(this.packetLayer, this.C, 1.1, "dot") });
+    }
+    for (const packet of this.packets) HL.place(packet.el, this.P(...this._alongWire(packet.s)));
+    const lit = now < this.flash ? "dot" : this.util >= 0.5 ? "dot m" : "dot off";
+    if (lit !== this.lit) {
+      this.lit = lit;
+      this.card.led.setAttribute("class", lit);
+    }
+  }
+
+  _move() {
+    this._choose(0);
+  }
+
+  setState(state) {
+    const util = HL.clamp(Number(state.util) || 0, 0, 100) / 100;
+    if (!Number.isFinite(util)) throw new Error("gpuwire figure: state.util must be a percentage");
+    this.util   = util;
+    this.energy = Number.isFinite(state.power) ? HL.clamp(state.power, 0, 1) : util;
+    this.spin.t = this._spinFor(util);
+    this.flow.t = this.energy;
+    this.loop.wake();
+  }
+
+  _retarget(now) {
+    const on = this.chosen === 0;
+    HL.tset(this.card.tw, on ? this.amount : 0, now, 0);
+    this.card.el.sil.classList.toggle("hi", on);
+    this.loop.wake();
+  }
+}
+
 class DeskCalendarFigure extends HairlineFigureBase {
   static RANGE   = [8, 14, 24];
   static SLOTS   = 6;
@@ -4616,6 +4776,7 @@ class ProjectFigures {
     notify:    ProjectFigures.entry(NotifyFigure, "A server and a phone in its dock. An envelope arcs from the server into the phone and a new notification card slides in at the top of its screen, pushing the older ones down. The pointer picks the server or the phone and it lifts."),
     nuke:      ProjectFigures.entry(NukeFigure, "A nuclear charge on a plinth: a drum with hazard bands and a radiation trefoil on its lid and a plunger detonator wired to it. When the nuke fires the plunger goes down, a pulse runs along the wire, a mushroom cloud rises from the drum and a shockwave ring sweeps the plinth; once the dust settles the cloud sinks and the plunger rises. The pointer picks the detonator or the drum and it lifts."),
     cores:     ProjectFigures.entry(CoresFigure, "The processor's cores as a field of pillars on a plinth, each standing as tall as that core is busy, with a dashed plane at the height where a core counts as dispatched; the pillars that reach above it take a bright rim. The pointer picks a core and it lifts."),
+    gpuwire:   ProjectFigures.entry(GpuWireFigure, "A graphics card standing in its slot, fed by a power cable that drops in from above. Its fans spin faster the busier the GPU is, and packets of energy run along the cable the more power it draws, each one flashing the card's light as it lands. The pointer lifts the card out of its slot."),
     calendar:  ProjectFigures.entry(DeskCalendarFigure, "A desk calendar of the last thirty days, one page per day, each page carrying that day's six four-hour slots as bars: your share of the GPUs bright, everyone else's after it, the idle rest an empty track. The pages turn slowly a day at a time, rest on today and riffle back; the pointer's position across the calendar picks a day."),
     hourglass: ProjectFigures.entry(HourglassFigure, "An hourglass on a round plinth, its sand running from the upper bulb into a pile in the lower one; when the top runs dry it turns over and starts again. The longer the wait, the slower the sand runs, and the pointer lifts the glass off its stand."),
   };

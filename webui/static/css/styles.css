@@ -512,14 +512,15 @@ main { margin-left: var(--navw); }
 .gcard__head { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); min-width: 0; }
 .gcard__idx { font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--dk-acc); white-space: nowrap; }
 .gcard__name { flex: 1; font-size: 11.5px; color: var(--dk-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gcard__cluster { display: flex; align-items: flex-end; gap: 18px; margin-top: 4px; min-width: 0; }
+.gcard__cluster { display: grid; grid-template-columns: 172px minmax(0, 1fr) 128px; align-items: end; gap: 10px; margin: 6px 0 4px; min-width: 0; }
+.gcard__live { position: relative; width: 100%; height: 140px; min-width: 0; margin: 0 -16px 0 0; }
 .gcard__meters { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; min-width: 0; }
 .gcard__vramrow { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .gcard__vlabel { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dk-faint); }
 .gseg { display: block; flex: 1 1 auto; min-width: 0; height: 13px; }
 .gcard__vram { text-align: right; font-family: var(--mono); font-size: 11.5px; color: var(--dk-dim); white-space: nowrap; }
 .gcard__vram b { color: var(--dk-ink); font-weight: 600; }
-.gcard__graph { display: block; flex: 1 1 auto; min-width: 0; height: 128px; }
+.gcard__graph { display: block; width: 100%; min-width: 0; height: 124px; }
 .gcard__foot { display: flex; align-items: baseline; gap: 16px; font-family: var(--mono); font-size: 11px; color: var(--dk-dim); }
 .gcard__legend { display: inline-flex; align-items: center; gap: 6px; color: var(--dk-faint); margin-left: auto; }
 .lg { width: 10px; height: 2px; border-radius: 1px; display: inline-block; }
