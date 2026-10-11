@@ -240,7 +240,7 @@ class StreamHubClientSuite {
     const b = hub.subscribe("job-a", null, (e) => tuner.push(e));
     await this.tick();
 
-    assert.equal(this.posts.filter((p) => p.url.endsWith("/subscribe")).length, 1, "the key is announced once");
+    assert.equal(FakeEventSource.opened.length, 1, "no second connection");
     this.current().message({ key: "job-a", type: "chunk", data: "x", id: 1 });
     assert.deepEqual(tile.map((e) => e.data), ["x"]);
     assert.deepEqual(tuner.map((e) => e.data), ["x"]);
@@ -257,6 +257,83 @@ class StreamHubClientSuite {
     await this.tick();
     assert.deepEqual(this.posts.map((p) => p.url.split("/").pop()), ["unsubscribe"]);
     assert.equal(hub.source, null, "the channel closes with the last viewer");
+  }
+
+  async testAViewerJoiningAFollowedKeyIsReplayedTheWholeStreamWhileTheFirstSeesNothingTwice() {
+    const hub   = this.fresh();
+    const tuner = [];
+    const tile  = [];
+    hub.subscribe("job-a", null, (e) => tuner.push(e.id));
+    this.current().hello("boot-a");
+    await this.tick();
+    for (const id of [1, 2, 3]) this.current().message({ key: "job-a", type: "chunk", data: "x", id });
+    this.posts.length = 0;
+
+    hub.subscribe("job-a", null, (e) => tile.push(e.id));
+    await this.tick();
+    assert.deepEqual(this.posts.map((p) => p.body), [{ job_id: "job-a", unit: null, after: 0 }], "the late viewer re-announces the key from the start");
+
+    this.current().message({ key: "job-a", type: "chunk", data: "in flight", id: 4 });
+    for (const id of [1, 2, 3, 4, 5]) this.current().message({ key: "job-a", type: "chunk", data: "replay", id });
+
+    assert.deepEqual(tuner, [1, 2, 3, 4, 5], "the first viewer drops the replayed ids it already holds");
+    assert.deepEqual(tile,  [1, 2, 3, 4, 5], "the late viewer waits for the replay instead of starting mid-stream");
+  }
+
+  async testAViewerJoiningWhileTheLinkIsDownIsReplayedFromTheStartAfterHello() {
+    const hub  = this.fresh();
+    const tile = [];
+    hub.subscribe("job-a", null, () => {});
+    this.current().hello("boot-a");
+    await this.tick();
+    for (const id of [1, 2, 3]) this.current().message({ key: "job-a", type: "chunk", data: "x", id });
+    this.current().fail(false);
+    this.posts.length = 0;
+
+    hub.subscribe("job-a", null, (e) => tile.push(e.id));
+    await this.tick();
+    assert.equal(this.posts.length, 0, "nothing is announced while the link is down");
+
+    this.current().hello("boot-a");
+    await this.tick();
+    assert.deepEqual(this.posts.map((p) => p.body), [{ job_id: "job-a", unit: null, after: 0 }]);
+
+    for (const id of [1, 2, 3, 4]) this.current().message({ key: "job-a", type: "chunk", data: "replay", id });
+    assert.deepEqual(tile, [1, 2, 3, 4]);
+  }
+
+  async testARestartClearsTheGateOfAViewerStillWaitingForItsReplay() {
+    const hub  = this.fresh();
+    const tile = [];
+    hub.subscribe("job-a", null, () => {});
+    this.current().hello("boot-a");
+    await this.tick();
+    for (const id of [1, 2, 3, 4, 5, 6]) this.current().message({ key: "job-a", type: "chunk", data: "x", id });
+    hub.subscribe("job-a", null, (e) => { if (e.id != null) tile.push(e.id); });
+    await this.tick();
+
+    this.current().fail(false);
+    this.current().hello("boot-b");
+    await this.tick();
+    for (const id of [1, 2]) this.current().message({ key: "job-a", type: "chunk", data: "after restart", id });
+
+    assert.deepEqual(tile, [1, 2]);
+  }
+
+  async testUnitTailsAreNotDeduplicatedSinceEveryAnnounceRestartsTheirIds() {
+    const hub  = this.fresh();
+    const seen = [];
+    hub.subscribe("job-a", 2, (e) => { if (e.id != null) seen.push(e.id); });
+    this.current().hello("boot-a");
+    await this.tick();
+    for (const id of [1, 2, 3]) this.current().message({ key: "job-a/2", type: "chunk", data: "x", id });
+
+    this.current().fail(false);
+    this.current().hello("boot-a");
+    await this.tick();
+    for (const id of [1, 2]) this.current().message({ key: "job-a/2", type: "chunk", data: "fresh tail", id });
+
+    assert.deepEqual(seen, [1, 2, 3, 1, 2]);
   }
 
   async testAViewerClosingItselfInsideItsHandlerDoesNotDisturbTheOtherViewersOfTheKey() {
