@@ -251,7 +251,7 @@ class FeedTuner {
   constructor() {
     this.results = [];
     this.jobId = null;
-    this.source = null;
+    this.sub = null;
     this.buffer = "";
     this.meta = null;
     this.expected = 0;
@@ -513,42 +513,27 @@ class FeedTuner {
   }
 
   _connect() {
-    this.source = new EventSource(`/api/jobs/${this.jobId}/stream`);
-    this.source.onmessage = (ev) => this._onEvent(ev);
-    this.source.onerror = () => this._reconnect();
-  }
-
-  _reconnect() {
-    if (!this.jobId) return;
-    if (!this.source || this.source.readyState !== EventSource.CLOSED) return;
-
-    this.source.close();
-    this.source = null;
-    this._appendLog("stream dropped, reconnecting");
-    setTimeout(() => {
-      if (this.jobId && !this.source) this._connect();
-    }, 2000);
+    this.sub = StreamHub.instance().subscribe(this.jobId, null, (data) => this._onEvent(data));
   }
 
   _disconnect() {
-    if (this.source) {
-      this.source.close();
-      this.source = null;
+    if (this.sub) {
+      this.sub.close();
+      this.sub = null;
     }
     this.jobId = null;
     this.runBtn.classList.remove("is-busy");
     this.stopBtn.hidden = true;
   }
 
-  _onEvent(ev) {
-    let data;
-    try {
-      data = JSON.parse(ev.data);
-    } catch (e) {
-      return;
-    }
-
+  _onEvent(data) {
     if (data.type === "chunk") this._consume(data.data);
+    else if (data.type === "link" && data.state === "lost") this._appendLog("stream dropped, reconnecting");
+    else if (data.type === "truncated") this._appendLog(`stream truncated: ${data.dropped} event(s) dropped, this page could not keep up`);
+    else if (data.type === "unavailable") {
+      this._appendLog(`stream unavailable: ${data.error}`);
+      this._disconnect();
+    }
     else if (data.type === "status" && data.status && data.status !== "running") this._appendLog(`process ${data.status}${data.code != null ? ` (exit ${data.code})` : ""}`);
     else if (data.type === "end") this._disconnect();
   }
