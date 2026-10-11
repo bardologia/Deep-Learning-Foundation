@@ -498,8 +498,8 @@ main { margin-left: var(--navw); }
 }
 
 .gdial { display: block; flex: 0 0 auto; }
-.gdial--big { width: 172px; height: 128px; }
-.gdial--cpu { width: 196px; height: 146px; }
+.gdial--big { width: 172px; height: 140px; }
+.gdial--cpu { width: 196px; height: 160px; }
 .gmeter { display: block; width: 100%; height: 46px; }
 .gcard {
   border: 2px solid var(--dk-line);

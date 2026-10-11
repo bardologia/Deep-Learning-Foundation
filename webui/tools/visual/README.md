@@ -142,6 +142,24 @@ node cube_view_checks.js cut
 node cube_view_checks.js pixel
 ```
 
+## Gauge harness
+
+`gauge_checks.js` loads `canvas_base.js` and `gauges.js` under plain node with a stub
+canvas, a stub animation frame queue, stub timers and a `document.fonts.ready` it releases
+itself, runs one named scenario and prints what it observed as JSON. The `fonts` scenario
+counts the draws of a dial and a linear meter before and after the fonts settle; `sweep`
+feeds a dial readings during and after its ignition sweep and past its trail cap;
+`dispose` disposes a dial mid-sweep; `alarm` runs the frame loop with the needle below,
+inside and back out of the last alarm zone. `tests/webui/test_gauges.py` drives all four,
+which is the contract that keeps the dial text in the web font, the first reading from
+being lost to the sweep, and the frame loop from running on once the needle has landed
+outside an alarm.
+
+```
+node gauge_checks.js fonts
+node gauge_checks.js sweep
+```
+
 ## Repo-map diagram harness
 
 `render_diagram.js` renders a single repo-map schema (one folder/diagram from
