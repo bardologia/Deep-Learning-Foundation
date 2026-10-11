@@ -1,16 +1,39 @@
 "use strict";
 
 class StreamSubscription {
-  constructor(hub, jobId, unit, handler) {
+  constructor(hub, jobId, unit, handler, gate) {
     this.hub     = hub;
     this.jobId   = jobId;
     this.unit    = unit;
     this.handler = handler;
     this.closed  = false;
+    this.lastId  = 0;
+    this.gate    = gate;
   }
 
   get key() {
     return StreamHub.keyOf(this.jobId, this.unit);
+  }
+
+  receive(data) {
+    if (data.id != null) {
+      if (this.unit == null && !this._admits(data.id)) return;
+      this.lastId = data.id;
+    }
+    this.handler(data);
+  }
+
+  _admits(id) {
+    if (this.gate !== null) {
+      if (id > this.gate) return false;
+      this.gate = null;
+    }
+    return id > this.lastId;
+  }
+
+  rewind() {
+    this.lastId = 0;
+    this.gate   = null;
   }
 
   close() {
@@ -21,18 +44,30 @@ class StreamSubscription {
 
 class StreamKey {
   constructor(jobId, unit) {
-    this.jobId  = jobId;
-    this.unit   = unit;
-    this.lastId = 0;
-    this.subs   = new Set();
+    this.jobId = jobId;
+    this.unit  = unit;
+    this.subs  = new Set();
   }
 
   get viewers() {
     return [...this.subs].filter((sub) => !sub.closed);
   }
 
+  get lastId() {
+    const ids = this.viewers.map((sub) => sub.lastId);
+    return ids.length ? Math.min(...ids) : 0;
+  }
+
+  get newestId() {
+    return Math.max(0, ...this.viewers.map((sub) => sub.lastId));
+  }
+
   deliver(data) {
-    this.viewers.forEach((sub) => sub.handler(data));
+    this.viewers.forEach((sub) => sub.receive(data));
+  }
+
+  rewind() {
+    this.subs.forEach((sub) => sub.rewind());
   }
 }
 
@@ -68,15 +103,16 @@ class StreamHub {
   }
 
   subscribe(jobId, unit, handler) {
-    const sub   = new StreamSubscription(this, jobId, unit, handler);
-    const fresh = !this.keys.has(sub.key);
-    if (fresh) this.keys.set(sub.key, new StreamKey(jobId, unit));
+    const name = StreamHub.keyOf(jobId, unit);
+    if (!this.keys.has(name)) this.keys.set(name, new StreamKey(jobId, unit));
 
-    const key = this.keys.get(sub.key);
+    const key  = this.keys.get(name);
+    const gate = unit == null && key.newestId ? key.newestId : null;
+    const sub  = new StreamSubscription(this, jobId, unit, handler, gate);
     key.subs.add(sub);
 
     if (!this.source) this._connect();
-    else if (this.open && fresh) this._announce(key);
+    else if (this.open) this._announce(key);
     return sub;
   }
 
@@ -121,7 +157,6 @@ class StreamHub {
 
     const key = this.keys.get(data.key);
     if (!key) return;
-    if (data.id != null) key.lastId = data.id;
     key.deliver(data);
   }
 
@@ -131,7 +166,7 @@ class StreamHub {
     this.open = true;
 
     this.keys.forEach((key) => {
-      if (restarted) key.lastId = 0;
+      if (restarted) key.rewind();
       this._announce(key);
     });
   }
