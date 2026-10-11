@@ -3332,7 +3332,7 @@ p.seq-block__flag--study  { color: var(--accent); overflow-wrap: anywhere; }
 /* stage: sliding deck of map, slices and profiles */
 .cube-stage[hidden], .cube-slices[hidden], .cube-progress[hidden] { display: none; }
 
-[data-page="cube"]:has(#cube-stage:not([hidden])) .page__head { display: none; }
+[data-page="cube"].is-staged .page__head { display: none; }
 
 .cube-deck {
   display: grid;

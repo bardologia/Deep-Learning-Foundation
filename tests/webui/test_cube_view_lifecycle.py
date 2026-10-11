@@ -37,7 +37,9 @@ the chosen source, and stops playing when its view or the tab is left. A #/cube/
 the cube, view, locked pixel, metric layer, value space and colormap, loads another cube first when it
 names one, and says so when its view is hidden or unknown or its cube is outside the runs root. The
 story recorder keeps named steps with their link state and a snapshot, replays them in order, copies
-their links, exports the snapshots through the shared exporter and stops playing with the tab.
+their links, exports the snapshots through the shared exporter and stops playing with the tab. The
+cube view marks its page section is-staged exactly while the stage shows, and the stylesheet hides
+the page header on that class rather than on a :has() rule over the stage.
 """
 
 from __future__ import annotations
@@ -1064,3 +1066,31 @@ def test_a_hidden_class_legend_takes_no_room_beside_the_colour_bar():
 
     assert ".cube-pmap__classes { display: flex;" in css
     assert ".cube-pmap__classes[hidden] { display: none; }" in css
+
+
+@NEEDS_JS
+def test_cube_view_marks_its_page_staged_exactly_while_the_stage_shows():
+    """Showing a cube stages the page, and selecting another cube or finding no cubes unstages it with the stage hidden."""
+    observed = _check("stage")
+
+    assert observed["before"] == {"hidden": True, "staged": False}
+    assert observed["shown"] == {"hidden": False, "staged": True}
+    assert observed["loading"] == {"hidden": True, "staged": False}
+    assert observed["reshown"] == {"hidden": False, "staged": True}
+    assert observed["empty"] == {"hidden": True, "staged": False}
+
+
+def test_cube_page_header_hides_on_the_staged_class_and_not_on_a_has_rule():
+    """The header hides on the is-staged class of the page holding the stage; no :has() rule watches the stage, since one on an ancestor re-checks on every DOM mutation."""
+    css  = (WEBUI_ROOT / "static" / "css" / "styles.css").read_text()
+    html = (WEBUI_ROOT / "static" / "index.html").read_text()
+    view = (WEBUI_ROOT / "static" / "js" / "cube_view.js").read_text()
+
+    assert '[data-page="cube"].is-staged .page__head { display: none; }' in css
+    assert re.findall(r":has\([^)]*cube-stage", css) == []
+    assert re.findall(r"^body:has\(", css, re.M) == []
+
+    opening = html[:html.index('id="cube-stage"')].rsplit("<section ", 1)[1]
+    assert opening.startswith('class="page page--pad" data-page="cube">')
+    assert re.search(r'this\.page\s+= refs\.stage\.closest\("\.page"\);', view)
+    assert len(re.findall(r"this\.stage\.hidden =", view)) == 1
