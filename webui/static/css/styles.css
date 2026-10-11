@@ -876,9 +876,14 @@ main { margin-left: var(--navw); }
 @media (max-width: 1280px) {
   .ntf__body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
+.kill__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; flex: 1 1 auto; min-height: 0; }
+.kill__cell { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.kill__cell .wd__nuke, .kill__btn { width: 100%; justify-content: center; margin-top: auto; }
+.kill__btn { padding: 11px 13px; font-size: 13px; font-weight: 800; text-align: center; }
 .nuke__figure { min-height: 140px; margin: -2px -6px -2px -4px; flex: 0 0 auto; }
 .nuke__figure > .fig-fill > hairline-figure { width: min(100cqw, 140cqh); top: auto; bottom: 0; transform: translateX(-50%); }
-.sboard--nuke .wd__nuke { justify-content: center; width: 100%; margin-top: auto; padding: 11px 13px; font-size: 13px; }
+.kill__figure { min-height: 140px; margin: -2px -4px -2px -6px; flex: 0 0 auto; }
+.sboard--nuke .wd__nuke { padding: 11px 13px; font-size: 13px; }
 .sboard--ctl { display: flex; flex-direction: column; gap: 12px; }
 .sboard--ctl .sboard__cap { margin-bottom: 0; }
 .ctl__title { display: inline-flex; align-items: center; gap: 9px; }

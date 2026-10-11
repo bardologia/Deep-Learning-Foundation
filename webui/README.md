@@ -44,7 +44,7 @@ talking to one group of JSON endpoints.
 
 | Tab | Route | Backed by | What it does |
 |---|---|---|---|
-| Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (the nuke card stacked under notify), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. The watchdog card also holds keep-alive, which detaches the server from the terminal and the login session into its own `ml-template-webui-<pid>.scope` systemd scope, and kill front end, which stops every console server on the same project root (`/api/system/shutdown` force-kills the siblings, then stops itself and returns their pids); running and detached jobs survive and are adopted again on the next start. |
+| Home | `#/home` | `/api/system`, `/api/jobs`, `/api/gpu-schedule`, `/api/gpu-guard/history`, `/api/gpu-activity`, `/api/host-history`, `/api/server-log`, `/api/notify/*` | Live host and GPU telemetry as a board of cards: the watchdog, notify and GPU week control cards (a kill switches card stacked under notify), the CUDA devices beside the processor, storage and memory, the day/week/month GPU activity timeline with intrusion markers, the neighbour-impact card, the persistent host history (CPU, RAM and network on a scaled time axis with a hover readout), the jobs card, the GPU guard history, the server's own log, the 30-day GPU heatmap calendar, and the active users and processes at the end. Alerts show for 90 s after they first appear and then hide; the watchdog status reopens them and the dismiss button hides them at once. The watchdog card also holds keep-alive, which detaches the server from the terminal and the login session into its own `ml-template-webui-<pid>.scope` systemd scope; the kill switches card pairs the nuke, which kills every process of this user on this machine but the console, with kill front end, which stops every console server on the same project root (`/api/system/shutdown` force-kills the siblings, then stops itself and returns their pids); running and detached jobs survive and are adopted again on the next start. |
 | Model | `#/model` | `/api/equations`, `/api/flows` | The curated equation catalog, 6 groups and 111 items, rendered with MathJax, plus the flow walkthroughs: 15 animated step-by-step derivations from dataset synthesis and parameter extraction through training, inference, benchmarking and tuning. |
 | Pipelines | `#/pipelines` | `/api/pipelines` | The 15 pipelines as staged flows; each maps to the entry point that runs it. The animated ones open a process walkthrough whose stage chips light up the stage being played, mark the earlier ones done and seek the animation to a stage when clicked. |
 | Repo Map | `#/repomap` | `/api/repomap` | Curated module-level schematics, 13 folders and 29 diagrams, each with nodes, edges and the artifacts a stage reads and writes. |
@@ -251,18 +251,20 @@ bench of swappable cartridges), `repo` (folder sizes as a static snapshot), `lan
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
 `balance`, `profileae`, `imageae`, `embed`, `podium`, `tiles`, `transect`, `film`, `tray`,
 `jepa`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
-`watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `calendar` and `hourglass`. Twelve of
-them take `state`: `gpus` (`{devices: [{holder, util}]}`), `balance` (`{mine, others,
-alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler` (`{jobs: [{id, running,
-position, of}]}`), `feed` (`{workers, prefetch, wait, util, feed}`), `watchdog` (`{armed,
-gauges: [{level, limit, alert}]}`, four gauges for CPU, load, RAM and disk), `notify`
-(`{armed}`), `nuke` (`{firing}`), `cores` (`{cores}`, one busy percentage per core, the
-field relaid when the count changes), `gpuwire` (`{util, power}`, utilisation in percent
-and power draw as a fraction of the limit, falling back to the utilisation when no power
-is given), `calendar` (`{days: [{slots: [{mine, others}]}]}`, six 4-hour slots a day,
-shares averaged over the GPUs) and `hourglass` (`{wait_s}`); `gpus`, `balance`, `feed`,
-`watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `calendar` and `hourglass` draw their
-static scene when no state is given.
+`watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `calendar` and
+`hourglass`. Thirteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
+`balance` (`{mine, others, alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler`
+(`{jobs: [{id, running, position, of}]}`), `feed` (`{workers, prefetch, wait, util,
+feed}`), `watchdog` (`{armed, gauges: [{level, limit, alert}]}`, four gauges for CPU,
+load, RAM and disk), `notify` (`{armed}`), `nuke` (`{firing}`), `cores` (`{cores}`, one
+busy percentage per core, the field relaid when the count changes), `gpuwire` (`{util,
+power}`, utilisation in percent and power draw as a fraction of the limit, falling back
+to the utilisation when no power is given), `guillotine` (`{down}`, which keeps the
+halves apart once the front end has been killed), `calendar` (`{days: [{slots: [{mine,
+others}]}]}`, six 4-hour slots a day, shares averaged over the GPUs) and `hourglass`
+(`{wait_s}`); `gpus`, `balance`, `feed`, `watchdog`, `notify`, `nuke`, `cores`,
+`gpuwire`, `guillotine`, `calendar` and `hourglass` draw their static scene when no state
+is given.
 
 Every page shows at least one figure, and the element remounts when its `name` changes,
 so a page can swap it with what is on screen: Architectures by zoo tab and Model by its
@@ -288,9 +290,11 @@ alert limit); on a target with an active alert the beam stops for 2.6 s, solid a
 bright, then sweeps on, and the camera droops while the watchdog is offline. It runs
 with `autopilot="off"`, since the sweep is its own motion; `notify` sends an envelope
 from the server into a docked phone while notifications are on and goes quiet when they
-are off; the nuke card stacked under it shows `nuke`, whose plunger drops while a nuke
-request is in flight, sending a pulse along the wire and a mushroom cloud up from the
-drum; the GPU week card shows `hourglass`, its `wait_s` set to the time left until the
+are off; the kill switches card stacked under it pairs `nuke`, whose plunger drops while
+a nuke request is in flight, sending a pulse along the wire and a mushroom cloud up from
+the drum, with `guillotine` over kill front end, a server tower whose blade climbs, drops
+and splits it in two on a loop and leaves it split once the front end has been killed;
+the GPU week card shows `hourglass`, its `wait_s` set to the time left until the
 schedule next switches pools, which `GpuWeekPanel` reads from the 168 hourly phases (from
 Monday 00:00) and the current hour that `/api/system` reports under `gpu_schedule.week`
 and `gpu_schedule.week_hour`, so the sand runs slower the further off the next switch is.
