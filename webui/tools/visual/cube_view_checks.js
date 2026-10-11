@@ -1366,6 +1366,7 @@ class CubeViewChecks {
       coords       : this._element(),
       hint         : this._element(),
       stage        : this._element(),
+      page         : this._element(),
       topdown      : this._element(),
       mapWrap      : this._element(),
       figures      : { configure: () => {}, render: () => {} },
@@ -1778,6 +1779,39 @@ class CubeViewChecks {
     const error = await answer({ ok: false, error: "cube not loaded" });
 
     return { loading, listed, cached, dropped, none, error, calls, reloaded: { figures: this._reloaded("figures"), explorer: this._reloaded("explorer") } };
+  }
+
+  async stage() {
+    const staged   = new Set();
+    const page     = this._element();
+    page.classList = { toggle: (name, on) => (on ? staged.add(name) : staged.delete(name)) };
+
+    const meta = { timings: { total: 1 }, sources: ["pred"], n_rows: 4, n_cols: 4 };
+    const view = this._displayStub("explorer", { page });
+    const read = () => ({ hidden: view.stage.hidden, staged: staged.has("is-staged") });
+
+    view.stage.hidden = true;
+    const before      = read();
+
+    view._display(meta);
+    const shown = read();
+
+    Object.assign(view, { polling: false, cubes: [], panels: [], runStrip: null, focusSeq: 0, atLabels: {}, deck: { dataset: {} }, back: this._element(), cross: this._element(), slicesAt: this._element(), profAt: this._element(), slicesEl: this._element() });
+    ["_stopSweeps", "_clearProfMetrics", "_hideRefs", "_renderStrip"].forEach((name) => { view[name] = () => {}; });
+    this.sandbox.Api            = { post: async () => ({ ok: false, error: "cube gone" }), get: async () => ({ cubes: [] }) };
+    this.sandbox.ThinkingOrb    = { busy: () => "" };
+    this.sandbox.ResultsSources = { runs: () => "runs" };
+
+    await view.select("stamp/c");
+    const loading = read();
+
+    view._display(meta);
+    const reshown = read();
+
+    await view.refresh();
+    const empty = read();
+
+    return { before, shown, loading, reshown, empty };
   }
 
   async run(name) {

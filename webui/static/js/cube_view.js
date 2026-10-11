@@ -2634,6 +2634,7 @@ class CubeView {
   constructor(refs) {
     this.strip         = refs.strip;
     this.stage         = refs.stage;
+    this.page          = refs.stage.closest(".page");
     this.deck          = refs.deck;
     this.topdown       = refs.topdown;
     this.cross         = refs.cross;
@@ -3081,7 +3082,7 @@ class CubeView {
     if (!this.cubes.length) {
       this.hint.textContent = data.error || "No saved cubes found. Run an inference with save_cubes=True first.";
       this.hint.hidden = false;
-      this.stage.hidden = true;
+      this._showStage(false);
       return;
     }
 
@@ -3157,7 +3158,7 @@ class CubeView {
     this.profAt.textContent   = "Hover a slice to read the profiles at that position.";
     if (this.atLabels.col) this.atLabels.col.textContent = "";
     if (this.atLabels.row) this.atLabels.row.textContent = "";
-    this.stage.hidden = true;
+    this._showStage(false);
     this.slicesEl.hidden = true;
     this.slicesEl.classList.remove("is-in");
     this.hint.hidden = true;
@@ -3248,7 +3249,7 @@ class CubeView {
     this._applyVisibility();
 
     this.hint.hidden = true;
-    this.stage.hidden = false;
+    this._showStage(true);
     this.mapWrap.classList.add("is-loading");
     this.topdown.src = `/api/cubes/primary?id=${encodeURIComponent(this.selectedId)}`;
 
@@ -3300,6 +3301,15 @@ class CubeView {
 
     const sweep = this._sweepFor(this.view);
     if (sweep) sweep.play();
+  }
+
+  _showStage(shown) {
+    this.stage.hidden = !shown;
+    this._syncStageChrome();
+  }
+
+  _syncStageChrome() {
+    this.page.classList.toggle("is-staged", !this.stage.hidden);
   }
 
   _readColors() {
