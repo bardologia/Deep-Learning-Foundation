@@ -142,6 +142,17 @@ contract and never writes to a config file.
   user's own processes' share of the repo disk. Without `/proc/pressure` or `user.slice`
   the monitor stays off and the panel says so. `JobNotifier` pushes start and end events
   over ntfy.
+- **Politeness.** `JobPoliteness` (`politeness.py`) holds the level every local launch
+  starts under, persisted in `logs/politeness.json`: `off` adds no prefix, `polite` (the
+  default) prefixes the command with `nice -n 10 ionice -c 2 -n 7`, `background` with
+  `nice -n 19 ionice -c 3`. `nice -n` adds to the console's own niceness, capped at 19.
+  The prefix execs into the interpreter, so the job pid is the interpreter's and the job
+  record's command line shows it. `JobThrottle` is the runtime
+  lever: with auto-throttle on (the default), the first alarm the contention monitor
+  attributes to this user runs `renice -n 19` and `ionice -c 3` over every process this
+  user owns except the console's own line, once per alarm until it clears. Priorities can
+  only be lowered without privileges, so a throttled job stays throttled until it ends.
+  Both are set from the watchdog card on the Home page (`POST /api/impact/politeness`).
 
 Scripts expect the dataset paths and GPUs named in the configuration defaults. On a
 machine without them, a launched job streams its real traceback to the console.

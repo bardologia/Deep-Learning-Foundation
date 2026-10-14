@@ -61,6 +61,7 @@ class SystemRouter(SubRouter):
         table.add("POST", "/api/system/shutdown",    self.shutdown)
         table.add("POST", "/api/gpu-schedule",       self.schedule)
         table.add("POST", "/api/impact/arm",         self.arm_impact)
+        table.add("POST", "/api/impact/politeness",  self.politeness)
         table.add("POST", "/api/notify/config",      self.notify_config)
         table.add("POST", "/api/notify/test",        self.notify_test)
 
@@ -114,6 +115,10 @@ class SystemRouter(SubRouter):
     def arm_impact(self, exchange: HttpExchange) -> None:
         """Arms or disarms the neighbour-impact monitor."""
         exchange.send_json(self.contention.arm(bool(exchange.body.get("armed"))))
+
+    def politeness(self, exchange: HttpExchange) -> None:
+        """Sets the launch politeness level and the auto-throttle flag from the request body."""
+        exchange.send_result(self.contention.politeness.configure(exchange.body or {}))
 
     def notify_config(self, exchange: HttpExchange) -> None:
         """Updates the job notification configuration from the request body."""

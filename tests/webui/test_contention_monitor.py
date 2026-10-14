@@ -6,7 +6,8 @@ neighbour is this user's alarm only when this user is the dominant consumer,
 host pressure alone raises nothing), the disabled state when a kernel source is
 missing, alarm bookkeeping (only alarms attributed to the current user are
 logged, escalations are logged once, neighbour alarms clear silently), the
-separate full-stall threshold used for I/O, and the auto-nuke push.
+separate full-stall threshold used for I/O, the automatic throttle that fires
+once per announced alarm of this user's, and the auto-nuke push.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import threading
 import pytest
 
 from contention_monitor import ContentionMonitor
+from politeness         import JobPoliteness
 from proc_stats         import UserSlices
 from web_logger         import WebLogger
 
@@ -38,6 +40,25 @@ class StubNuke:
         """Records a trigger and returns a successful no-op result."""
         self.fired += 1
         return {"ok": True, "signalled": 0, "killed": 0}
+
+
+class StubThrottle:
+    """Stand-in for the job throttle, counting calls and answering a fixed result.
+
+    Attributes:
+        calls  : Number of `apply` invocations.
+        result : Mapping returned by every `apply`.
+    """
+
+    def __init__(self, ok: bool = True) -> None:
+        """Starts with no calls and a result of the given success."""
+        self.calls  = 0
+        self.result = {"ok": ok, "processes": 3, "renice": 0 if ok else 1, "ionice": 0, "error": "" if ok else "renice: failed to set priority"}
+
+    def apply(self) -> dict:
+        """Records one call and returns the fixed result."""
+        self.calls += 1
+        return dict(self.result)
 
 
 class FakeHost:
@@ -99,10 +120,17 @@ def host(tmp_path, monkeypatch):
     return fake
 
 
+def _monitor(tmp_path, throttle: StubThrottle | None = None) -> ContentionMonitor:
+    """Builds a contention monitor over stub paths with the given or a fresh stub throttle."""
+    paths  = StubPaths(tmp_path / "repo")
+    logger = WebLogger()
+    return ContentionMonitor(paths, logger, StubNotifier(), StubNuke(), throttle or StubThrottle(), JobPoliteness(paths, logger))
+
+
 @pytest.fixture
 def monitor(tmp_path, host):
-    """Returns a contention monitor over stub paths, the fake host and a stub nuker."""
-    return ContentionMonitor(StubPaths(tmp_path / "repo"), WebLogger(), StubNotifier(), StubNuke())
+    """Returns a contention monitor over stub paths, the fake host, a stub nuker and a stub throttle."""
+    return _monitor(tmp_path)
 
 
 def _signals(io_full: float) -> dict:
@@ -133,6 +161,11 @@ def _signals(io_full: float) -> dict:
 def _alarm(monitor: ContentionMonitor, kind: str) -> dict | None:
     """Returns the active alarm of the given kind, or None if it is not raised."""
     return next((entry for entry in monitor.state()["active"] if entry["kind"] == kind), None)
+
+
+def _alarm_events(monitor: ContentionMonitor) -> list[dict]:
+    """Returns the recorded events minus the throttle entries the announcements add."""
+    return [event for event in monitor.state()["events"] if event["kind"] != "throttle"]
 
 
 def _advance(monitor: ContentionMonitor, host: FakeHost, me_usec: int, other_usec: int, **pressure) -> dict:
@@ -236,7 +269,7 @@ def test_a_fully_stalled_neighbour_escalates_to_danger(monitor, host):
 def test_missing_pressure_files_disable_the_monitor(tmp_path, host, monkeypatch):
     """Checks a kernel without /proc/pressure leaves the monitor off instead of sampling zeros."""
     monkeypatch.setattr(UserSlices, "PSI_ROOT", str(tmp_path / "absent"))
-    monitor = ContentionMonitor(StubPaths(tmp_path / "repo"), WebLogger(), StubNotifier(), StubNuke())
+    monitor = _monitor(tmp_path)
 
     monitor.start()
 
@@ -252,7 +285,7 @@ def test_an_alarm_that_becomes_mine_is_recorded_and_logged(monitor):
     assert monitor.state()["events"] == []
 
     monitor._raise("mem", "warn", True, "you hold the RAM")
-    events = monitor.state()["events"]
+    events = _alarm_events(monitor)
 
     assert len(events)         == 1
     assert events[0]["kind"]   == "mem"
@@ -266,7 +299,7 @@ def test_an_escalation_to_danger_is_recorded_once(monitor):
     monitor._raise("mem", "danger", True, "you hold the RAM and the neighbours are stalling")
     monitor._raise("mem", "danger", True, "you hold the RAM and the neighbours are stalling")
 
-    levels = [event["level"] for event in monitor.state()["events"]]
+    levels = [event["level"] for event in _alarm_events(monitor)]
     assert levels == ["warn", "danger"]
 
 
@@ -297,7 +330,9 @@ def test_an_announced_alert_is_pushed_through_the_notifier(monitor):
     for _ in range(ContentionMonitor.SUSTAIN):
         monitor._track("io", "warn", True, False, True, "disk stall caused by you")
 
-    assert monitor.notifier.alerts == [("neighbour impact: io", "disk stall caused by you", "default")]
+    pushed = [alert for alert in monitor.notifier.alerts if alert[0].startswith("neighbour impact")]
+
+    assert pushed == [("neighbour impact: io", "disk stall caused by you", "default")]
 
 
 def test_a_neighbours_alert_is_not_pushed(monitor):
@@ -306,6 +341,96 @@ def test_a_neighbours_alert_is_not_pushed(monitor):
         monitor._track("io", "warn", True, False, False, "disk stall caused by them")
 
     assert monitor.notifier.alerts == []
+
+
+def test_announcing_my_alarm_throttles_once(monitor):
+    """Checks the first announcement of an alarm this user causes lowers the running jobs once and records it."""
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("cpu", "warn", True, False, True, "cpu stall caused by you")
+    monitor._track("cpu", "warn", True, False, True, "cpu stall caused by you")
+    monitor._track("cpu", "danger", True, False, True, "cpu stall caused by you, worse")
+
+    events = [event for event in monitor.state()["events"] if event["kind"] == "throttle"]
+
+    assert monitor.throttle.calls == 1
+    assert len(events) == 1
+    assert "lowered 3 processes" in events[0]["message"]
+    assert monitor.state()["throttled"] == ["cpu"]
+    assert ("auto-throttle", events[0]["message"], "default") in monitor.notifier.alerts
+
+
+def test_a_dropped_alarm_can_throttle_again_when_it_returns(monitor):
+    """Checks the throttle re-arms only after the alarm has cleared."""
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("mem", "warn", True, False, True, "memory stall caused by you")
+    monitor._drop("mem")
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("mem", "warn", True, False, True, "memory stall caused by you")
+
+    assert monitor.throttle.calls == 2
+    assert monitor.state()["throttled"] == ["mem"]
+
+
+def test_a_neighbours_alarm_never_throttles(monitor):
+    """Checks an alarm attributed to another user leaves this user's jobs alone."""
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("io", "danger", True, False, False, "disk stall caused by them")
+
+    assert monitor.throttle.calls == 0
+    assert monitor.state()["throttled"] == []
+
+
+def test_a_leak_alarm_never_throttles(monitor):
+    """Checks the advisory RAM-growth alarm does not lower priorities."""
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("leak", "warn", True, False, True, "process climbing")
+
+    assert monitor.throttle.calls == 0
+
+
+def test_auto_throttle_off_leaves_the_jobs_alone(monitor):
+    """Checks the politeness flag gates the automatic throttle."""
+    monitor.politeness.configure({"auto_throttle": False})
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("cpu", "danger", True, False, True, "cpu stall caused by you")
+
+    assert monitor.throttle.calls == 0
+    assert _alarm(monitor, "cpu")["mine"] is True
+
+
+def test_an_alarm_that_becomes_mine_throttles_at_the_flip(monitor):
+    """Checks ownership flipping to this user on a standing alarm triggers the throttle."""
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("cpu", "warn", True, False, False, "cpu stall caused by them")
+
+    assert monitor.throttle.calls == 0
+
+    monitor._track("cpu", "warn", True, False, True, "cpu stall caused by you")
+
+    assert monitor.throttle.calls == 1
+
+
+def test_a_failed_throttle_is_recorded_as_danger(tmp_path, host):
+    """Checks a throttle that could not lower the processes is logged, recorded and pushed high."""
+    monitor = _monitor(tmp_path, StubThrottle(ok=False))
+    for _ in range(ContentionMonitor.SUSTAIN):
+        monitor._track("cpu", "warn", True, False, True, "cpu stall caused by you")
+
+    events = [event for event in monitor.state()["events"] if event["kind"] == "throttle"]
+
+    assert len(events) == 1
+    assert events[0]["level"] == "danger"
+    assert "throttle FAILED" in events[0]["message"]
+    assert ("auto-throttle", events[0]["message"], "high") in monitor.notifier.alerts
+
+
+def test_the_state_carries_the_politeness_settings(monitor):
+    """Checks the UI snapshot includes the launch politeness and its prefix."""
+    state = monitor.state()["politeness"]
+
+    assert state["level"]         == "polite"
+    assert state["auto_throttle"] is True
+    assert state["prefix"]        == "nice -n 10 ionice -c 2 -n 7"
 
 
 def test_the_auto_nuke_pushes_an_urgent_notification(monitor):

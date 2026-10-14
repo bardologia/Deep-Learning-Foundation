@@ -31,6 +31,7 @@ from tools.orchestration.gpu_queue import GpuPoolFile, GpuProgressFile
 from job_describer  import JobDescriber
 from log_transcript import AnsiTranscript
 from notifier       import JobNotifier
+from politeness     import JobPoliteness
 from proc_stats     import ProcStats
 from project_paths  import ProjectPaths
 from web_logger     import WebLogger
@@ -234,19 +235,21 @@ class ProcessManager:
     POOL_SCRIPTS     = ("train_backbone", "train_dual", "train_jepa", "train_image_autoencoder", "train_profile_autoencoder", "benchmark", "cross_validate", "tune", "infer_backbone", "infer_profile_autoencoder", "infer_image_autoencoder", "infer_dual")
     POOL_FIELD       = "gpus_file"
 
-    def __init__(self, paths: ProjectPaths, logger: WebLogger, notifier: JobNotifier, describer: JobDescriber) -> None:
+    def __init__(self, paths: ProjectPaths, logger: WebLogger, notifier: JobNotifier, describer: JobDescriber, politeness: JobPoliteness) -> None:
         """Creates an empty job table and reads the host constants the manager needs.
 
         Args:
-            paths     : Project paths supplying the script registry and pool directory.
-            logger    : Console logger for job lifecycle messages.
-            notifier  : Notifier pushed to on job start and finish.
-            describer : Builds the description shown for each launch.
+            paths      : Project paths supplying the script registry and pool directory.
+            logger     : Console logger for job lifecycle messages.
+            notifier   : Notifier pushed to on job start and finish.
+            describer  : Builds the description shown for each launch.
+            politeness : Politeness level whose nice and ionice prefix every local launch starts under.
         """
         self.paths         = paths
         self.logger        = logger
         self.notifier      = notifier
         self.describer     = describer
+        self.politeness    = politeness
         self.jobs          = {}
         self.streams       = {}
         self.launch_queue  = deque()
@@ -457,7 +460,10 @@ class ProcessManager:
         return env
 
     def _start(self, record: dict, stream: JobStream) -> str | None:
-        """Spawns the job in its own session and starts pumping its output.
+        """Spawns the job in its own session, under the politeness prefix, and starts pumping its output.
+
+        The prefix execs through `nice` and `ionice` into the interpreter, so the
+        pid the process handle reports is the interpreter's own.
 
         Args:
             record : Job record to start; updated in place with the pid, the running status and a fresh start timestamp.
@@ -467,7 +473,7 @@ class ProcessManager:
             None once the process is running, or the spawn error as text.
         """
         entry = self.paths.script_entry(record["script"])
-        argv  = [record["interpreter"], "-u", str(entry["path"])]
+        argv  = self.politeness.prefix() + [record["interpreter"], "-u", str(entry["path"])]
         for path, value in record["overrides"].items():
             argv += [f"--{path}", value]
         if record.get("detach"):
@@ -636,9 +642,9 @@ class ProcessManager:
         return cleaned
 
     def _render_command(self, interpreter: str, key: str, overrides: dict, detach: bool = False) -> str:
-        """Returns the shell-quoted command line shown for a job in the console."""
+        """Returns the shell-quoted command line shown for a job in the console, politeness prefix included."""
         entry = self.paths.script_entry(key)
-        parts = [interpreter, "-u", entry["rel"]]
+        parts = self.politeness.prefix() + [interpreter, "-u", entry["rel"]]
         for path, value in overrides.items():
             parts += [f"--{path}", shlex.quote(value)]
         if detach:
@@ -1660,6 +1666,10 @@ class ProcessNuke:
         """Returns this user's pids minus the spared ones."""
         return [pid for pid in self._user_pids() if pid not in spared]
 
+    def targets(self) -> list[int]:
+        """Returns every pid this user owns except the server's own ancestor line."""
+        return self._targets(self._spared_pids())
+
     def _user_pids(self) -> list[int]:
         """Returns every pid in /proc owned by this user."""
         pids = []
@@ -1699,8 +1709,7 @@ class ProcessNuke:
             Mapping with "ok" True, the number "signalled" with SIGTERM and the
             number "killed" with SIGKILL.
         """
-        spared  = self._spared_pids()
-        targets = self._targets(spared)
+        targets = self.targets()
 
         if not targets:
             self.logger.muted("nuke requested, no processes to kill")

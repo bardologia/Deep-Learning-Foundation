@@ -18,6 +18,7 @@ from collections import deque
 from datetime    import datetime
 
 from notifier   import JobNotifier
+from politeness import JobPoliteness, JobThrottle
 from proc_stats import MemInfo, ProcStats, ProcSweep, UserSlices
 from web_logger import WebLogger
 
@@ -30,6 +31,8 @@ class ContentionMonitor:
         logger      : Web logger carrying the alerts to the console.
         notifier    : Notifier the announced alerts and auto-nuke firings are pushed through.
         nuke        : Object exposing `nuke()`, invoked when auto-nuke fires.
+        throttle    : Object exposing `apply()`, invoked when an alarm this user causes is announced.
+        politeness  : Politeness settings deciding whether the throttle fires automatically.
         lock        : Guards the shared signal, alert and event state.
         uid         : Numeric user id whose slice and processes count as "mine".
         page        : Page size in bytes, for converting swap counters to megabytes.
@@ -41,6 +44,7 @@ class ContentionMonitor:
         events      : Bounded log of announced alerts and auto-nuke firings.
         streaks     : Consecutive breach counts per resource kind.
         announced   : Kinds whose alert has been surfaced to the user.
+        throttled   : Kinds whose announced alert already triggered the throttle.
         auto_nuke   : Whether the automatic nuke is armed.
         nuke_streak : Consecutive samples of severe self-caused stall.
         last_nuke   : Monotonic timestamp of the last auto-nuke, for the cooldown.
@@ -68,20 +72,24 @@ class ContentionMonitor:
     LEAK_GROWTH_MBPM    = 120.0
     LEAK_RECENT_MB      = 60.0
 
-    def __init__(self, paths, logger: WebLogger, notifier: JobNotifier, nuke) -> None:
+    def __init__(self, paths, logger: WebLogger, notifier: JobNotifier, nuke, throttle: JobThrottle, politeness: JobPoliteness) -> None:
         """Reads the host constants, checks the kernel sources and prepares empty sampling state.
 
         Args:
-            paths    : Project paths whose repo root selects the monitored disk.
-            logger   : Web logger the alerts are written to.
-            notifier : Notifier the announced alerts and auto-nuke firings are pushed through.
-            nuke     : Killer object whose `nuke()` terminates this user's runs.
+            paths      : Project paths whose repo root selects the monitored disk.
+            logger     : Web logger the alerts are written to.
+            notifier   : Notifier the announced alerts, throttles and auto-nuke firings are pushed through.
+            nuke       : Killer object whose `nuke()` terminates this user's runs.
+            throttle   : Throttle whose `apply()` lowers this user's running processes' priority.
+            politeness : Politeness settings deciding whether the throttle fires automatically.
         """
-        self.paths    = paths
-        self.logger   = logger
-        self.notifier = notifier
-        self.nuke     = nuke
-        self.lock     = threading.Lock()
+        self.paths      = paths
+        self.logger     = logger
+        self.notifier   = notifier
+        self.nuke       = nuke
+        self.throttle   = throttle
+        self.politeness = politeness
+        self.lock       = threading.Lock()
         self.uid      = os.getuid()
         self.page     = os.sysconf("SC_PAGE_SIZE")
         self.cores    = os.cpu_count() or 1
@@ -93,6 +101,7 @@ class ContentionMonitor:
         self.events    = deque(maxlen=20)
         self.streaks   = {}
         self.announced = set()
+        self.throttled = set()
 
         self.auto_nuke   = False
         self.nuke_streak = 0
@@ -150,16 +159,19 @@ class ContentionMonitor:
         """Returns the monitor snapshot served to the web UI.
 
         Returns:
-            Dictionary with the auto-nuke flag, the source availability, the latest
-            signals, the currently active alerts and the recent event log.
+            Dictionary with the auto-nuke flag, the politeness settings, the kinds
+            currently throttled, the source availability, the latest signals, the
+            currently active alerts and the recent event log.
         """
         with self.lock:
             return {
-                "auto_nuke" : self.auto_nuke,
-                "sources"   : dict(self.sources),
-                "signals"   : dict(self.signals),
-                "active"    : list(self.active.values()),
-                "events"    : list(self.events),
+                "auto_nuke"  : self.auto_nuke,
+                "politeness" : self.politeness.state(),
+                "throttled"  : sorted(self.throttled),
+                "sources"    : dict(self.sources),
+                "signals"    : dict(self.signals),
+                "active"     : list(self.active.values()),
+                "events"     : list(self.events),
             }
 
     def _watch(self) -> None:
@@ -675,7 +687,8 @@ class ContentionMonitor:
 
         A refreshed alert is announced again only when ownership flips to this user
         or when its severity escalates to danger, so a standing alert stays quiet.
-        Every announcement is also pushed through the notifier.
+        Every announcement is also pushed through the notifier, and the first
+        announcement of a resource alert triggers the automatic throttle.
 
         Args:
             kind    : Resource key the alert belongs to.
@@ -701,6 +714,34 @@ class ContentionMonitor:
         if announce:
             self.logger.warning(f"neighbour impact: {message}")
             self.notifier.system_alert(f"neighbour impact: {kind}", message, "high" if level == "danger" else "default")
+            self._throttle_once(kind)
+
+    def _throttle_once(self, kind: str) -> None:
+        """Lowers this user's running processes' priority the first time a resource alert is announced.
+
+        Skipped for the leak kind, when auto-throttle is off, or while the same
+        alert already triggered a throttle; the alert must drop before it can
+        throttle again. The outcome is logged, appended to the event log and
+        pushed through the notifier.
+
+        Args:
+            kind : Resource key of the announced alert.
+        """
+        if kind == "leak" or not self.politeness.auto_throttle():
+            return
+
+        with self.lock:
+            if kind in self.throttled:
+                return
+            self.throttled.add(kind)
+
+        result  = self.throttle.apply()
+        outcome = f"lowered {result['processes']} processes to nice {JobThrottle.NICE} and idle I/O" if result["ok"] else f"throttle FAILED on {result['processes']} processes: {result['error']}"
+        message = f"AUTO-THROTTLE after {kind} alarm: {outcome}"
+
+        with self.lock:
+            self.events.append({"kind": "throttle", "level": "warn" if result["ok"] else "danger", "message": message, "time": datetime.now().isoformat(timespec="seconds")})
+        self.notifier.system_alert("auto-throttle", message, "default" if result["ok"] else "high")
 
     def _drop(self, kind: str) -> None:
         """Clears an alert, logging the recovery only if it had been announced.
@@ -712,6 +753,7 @@ class ContentionMonitor:
             known     = self.active.pop(kind, None)
             announced = kind in self.announced
             self.announced.discard(kind)
+            self.throttled.discard(kind)
 
         if known is not None and announced:
             self.logger.muted(f"stall cleared: {kind}")
