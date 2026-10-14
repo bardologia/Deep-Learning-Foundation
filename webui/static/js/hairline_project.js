@@ -4348,6 +4348,276 @@ class GuillotineFigure extends HairlineFigureBase {
   }
 }
 
+class ChipsFigure extends HairlineFigureBase {
+  static RANGE   = [1.5, 3, 5];
+  static TABLE   = 36;
+  static CHIP    = [3.4, 1.05];
+  static POT     = 12;
+  static STACKS  = [[-4.6, 0], [4.6, 0]];
+  static ANGLES  = [Math.PI * 1.1667, Math.PI * 1.8333, Math.PI * 0.5];
+  static ROD     = [20, 0.7];
+  static HEAD    = [7, 1, 2.6];
+  static KNOB    = [1.3, 1.8];
+  static SCOOP   = 0.35;
+  static REACH   = [9, 25];
+  static PERIOD  = 12.8;
+  static TIMES   = [1.2, 2.4, 3.6];
+  static FLIGHT  = 0.9;
+  static STAGGER = 0.28;
+  static ARC     = 10;
+  static FULL    = 0.3;
+  static MAX     = 4;
+  static LOOSE   = [[25, 10, 2], [20.5, -11.5, 1], [27, -7.5, 1]];
+  static BURST   = [2.2, 0.3, 0.2, 60];
+
+  constructor({ stage, svg }, value) {
+    super(svg, value, 4.1);
+    this.alarm  = false;
+    this.counts = [2, 1, 1];
+    this.clock  = 0;
+    this.potKey = null;
+    this.bursts = [null, null];
+    this._camera(this._extent(), 170);
+    this._buildTable();
+    this._buildSticks();
+    this.parts = this.sticks;
+    this._start(stage, svg);
+    this._retarget(performance.now());
+  }
+
+  _extent() {
+    const reach = ChipsFigure.REACH[1] + ChipsFigure.ROD[0];
+    const r     = ChipsFigure.TABLE;
+    const tips  = ChipsFigure.ANGLES.map((a) => [reach * Math.cos(a), reach * Math.sin(a), 2]);
+    return [[-r, 0, -3], [r, 0, -3], [0, -r, -3], [0, r, -3], [0, 0, ChipsFigure.POT * ChipsFigure.CHIP[1] + ChipsFigure.ARC]].concat(tips);
+  }
+
+  _buildTable() {
+    const r = ChipsFigure.TABLE;
+    HL.put(HL.solid(this.g), HL.prism(this.P, this.front, HL.circ(r, 96), HL.circ(r - 2.4, 96), -3, 0));
+    HL.mk("path", { d: HL.poly(HL.ringAt(this.P, HL.circ(r - 7, 96), 0.1)), class: "dash nf" }, this.g);
+  }
+
+  _buildSticks() {
+    const layers  = [HL.mk("g", {}, this.g), null, null];
+    this.potLayer = HL.mk("g", {}, this.g);
+    layers[1]     = HL.mk("g", {}, this.g);
+    layers[2]     = HL.mk("g", {}, this.g);
+    this.flight   = HL.mk("g", {}, this.g);
+    this.pot      = Array.from({ length: ChipsFigure.POT }, () => HL.solid(this.potLayer));
+    this.sticks   = ChipsFigure.ANGLES.map((a, k) => {
+      const dir   = [Math.cos(a), Math.sin(a)];
+      const side  = [-Math.sin(a), Math.cos(a)];
+      const group = layers[k];
+      this._loose(group, dir, side);
+      const under = dir[0] + dir[1] > 0;
+      const tray  = under ? HL.mk("g", {}, group) : null;
+      const rod   = HL.solid(group);
+      const head  = HL.solid(group);
+      const knob  = HL.solid(group);
+      const dot   = HL.flatDot(group, this.C, 0.7, k === 2 ? "dot" : "dot off");
+      const bed   = under ? tray : HL.mk("g", {}, group);
+      const chips = Array.from({ length: ChipsFigure.MAX }, () => HL.solid(bed));
+      const home  = ChipsFigure.REACH[1];
+      return { k, dir, side, group, bed, rod, head, knob, dot, chips, el: rod, offset: (k * ChipsFigure.PERIOD) / 3, pick: null, tw: HL.tween(0), drawn: NaN, restX: this.P(dir[0] * home, dir[1] * home, 0)[0], restY: this.P(dir[0] * home, dir[1] * home, 0)[1] };
+    });
+  }
+
+  _loose(group, dir, side) {
+    for (const [along, across, count] of ChipsFigure.LOOSE) {
+      const x = dir[0] * along + side[0] * across;
+      const y = dir[1] * along + side[1] * across;
+      for (let level = 0; level < count; level++) this._chip(HL.solid(group), [x, y, level * ChipsFigure.CHIP[1]], 0, dir, side, false);
+    }
+  }
+
+  _box(cx, cy, dir, side, along, across, radius) {
+    const corners = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([a, b]) => [cx + dir[0] * along * a + side[0] * across * b, cy + dir[1] * along * a + side[1] * across * b]);
+    return HairlineGeometry.samples(HL.fillet(corners, [radius, radius, radius, radius], 3));
+  }
+
+  _chip(el, c, phi, dir, side, hi) {
+    const [R, T] = ChipsFigure.CHIP;
+    const cp     = Math.cos(phi);
+    const sp     = Math.sin(phi);
+    const w      = [cp * dir[0], cp * dir[1], sp];
+    const n      = [-sp * dir[0], -sp * dir[1], cp];
+    const ring   = (radius, drop) => Array.from({ length: 24 }, (_, i) => {
+      const t = (i / 24) * Math.PI * 2;
+      const u = Math.cos(t) * radius;
+      const v = Math.sin(t) * radius;
+      return this.P(c[0] + u * side[0] + v * w[0] - drop * n[0], c[1] + u * side[1] + v * w[1] - drop * n[1], c[2] + v * w[2] - drop * n[2]);
+    });
+    const top    = ring(R, 0);
+    const bottom = ring(R, T);
+    HL.put(el, { sil: HL.poly(HL.hull(top.concat(bottom))), crease: HL.poly(top) + HL.poly(ring(R * 0.58, 0)) });
+    el.sil.classList.toggle("hi", !!hi);
+  }
+
+  _hideChip(el) {
+    HL.put(el, { sil: "", crease: "" });
+  }
+
+  _tick(dt, now) {
+    this.clock += dt;
+    this._advance(this.sticks, now);
+    const out = this.sticks.map((stick) => this._stick(stick));
+    this._pot(ChipsFigure.POT - out.reduce((s, n) => s + n, 0));
+    return true;
+  }
+
+  _draw(stick, lift) {
+    stick.lift = lift;
+  }
+
+  _stick(stick) {
+    const [t0, t1, t2]   = ChipsFigure.TIMES;
+    const [near, far]    = ChipsFigure.REACH;
+    const t              = (this.clock + stick.offset) % ChipsFigure.PERIOD;
+    const n              = this.counts[stick.k];
+    const lift           = stick.lift || 0;
+    const hi             = this.alarm && stick.k === 2;
+    const ease           = (u) => { const v = HL.clamp(u, 0, 1); return v * v * (3 - 2 * v); };
+    let head             = far;
+    if (t < t0) head = HL.lerp(far, near, ease(t / t0));
+    else if (t < t1) head = HL.lerp(near, far, ease((t - t0) / (t1 - t0)));
+    this._rake(stick, head, lift, hi);
+    if (t < t0) stick.pick = null;
+    else if (!stick.pick) stick.pick = Array.from({ length: n }, () => this._landing(true));
+
+    let out = 0;
+    for (let i = 0; i < ChipsFigure.MAX; i++) {
+      const el = stick.chips[i];
+      if (i >= n || t < t0) { this._hideChip(el); continue; }
+      const start = t2 + i * ChipsFigure.STAGGER;
+      const z0    = i * ChipsFigure.CHIP[1];
+      if (t < t2 || t < start) {
+        const r     = t < t1 ? head - 5 : far - 5;
+        const at    = [stick.dir[0] * r, stick.dir[1] * r, z0];
+        const grab  = ease((t - t0) / ChipsFigure.SCOOP);
+        const from  = stick.pick && stick.pick[i] ? stick.pick[i] : at;
+        const c     = grab >= 1 ? at : [HL.lerp(from[0], at[0], grab), HL.lerp(from[1], at[1], grab), HL.lerp(from[2], at[2], grab) + 2.5 * grab * (1 - grab)];
+        if (el.g.parentNode !== stick.bed) stick.bed.appendChild(el.g);
+        this._chip(el, c, 0, stick.dir, stick.side, hi);
+        out++;
+        continue;
+      }
+      const s = (t - start) / ChipsFigure.FLIGHT;
+      if (s >= 1) {
+        if (el.flying) { el.flying = false; this._burst(); }
+        this._hideChip(el);
+        continue;
+      }
+      el.flying = true;
+      const from   = [stick.dir[0] * (far - 5), stick.dir[1] * (far - 5), z0];
+      const target = this._landing();
+      const c      = [HL.lerp(from[0], target[0], s), HL.lerp(from[1], target[1], s), HL.lerp(from[2], target[2], s) + ChipsFigure.ARC * 4 * s * (1 - s)];
+      if (el.g.parentNode !== this.flight) this.flight.appendChild(el.g);
+      this._chip(el, c, s * Math.PI * 4, [-stick.dir[0], -stick.dir[1]], stick.side, hi);
+      out++;
+    }
+    return out;
+  }
+
+  _rake(stick, head, lift, hi) {
+    const [length, half]      = ChipsFigure.ROD;
+    const [span, thick, tall] = ChipsFigure.HEAD;
+    const { dir, side }       = stick;
+    const mid                 = head + length / 2;
+    const z                   = 0.9 + lift;
+    HL.put(stick.rod, HL.prism(this.P, this.front, this._box(dir[0] * mid, dir[1] * mid, dir, side, length / 2, half, 0.5), null, z, z + 1));
+    HL.put(stick.head, HL.prism(this.P, this.front, this._box(dir[0] * head, dir[1] * head, dir, side, thick, span, 0.5), this._box(dir[0] * head, dir[1] * head, dir, side, thick - 0.3, span - 0.4, 0.3), z, z + tall));
+
+    const [kr, kh] = ChipsFigure.KNOB;
+    const kx       = dir[0] * (head + length - kr);
+    const ky       = dir[1] * (head + length - kr);
+    HL.put(stick.knob, HL.prism(this._shifted(kx, ky, 0), this.front, HL.circ(kr, 20), HL.circ(kr - 0.5, 20), z - 0.3, z - 0.3 + kh));
+    HL.place(stick.dot, this.P(kx, ky, z - 0.3 + kh));
+
+    const lit = hi || this.chosen === stick.k;
+    for (const part of [stick.rod, stick.head, stick.knob]) part.sil.classList.toggle("hi", lit);
+  }
+
+  _landing(take) {
+    const counts = this.potCounts || [ChipsFigure.POT / 2, ChipsFigure.POT / 2];
+    const which  = take ? (counts[0] >= counts[1] ? 0 : 1) : (counts[0] <= counts[1] ? 0 : 1);
+    const [x, y] = ChipsFigure.STACKS[which];
+    if (take) counts[which] = Math.max(0, counts[which] - 1);
+    return [x, y, counts[which] * (ChipsFigure.CHIP[1] + this._gap(which))];
+  }
+
+  _burst() {
+    const counts = this.potCounts || [0, 0];
+    const which  = counts[0] <= counts[1] ? 0 : 1;
+    if (!HL.reducedMotion()) this.bursts[which] = this.clock;
+  }
+
+  _gap(which) {
+    const t0 = this.bursts[which];
+    if (t0 === null) return 0;
+
+    const [gap, rise, hold, g] = ChipsFigure.BURST;
+    const t                    = this.clock - t0;
+    if (t < rise) { const u = t / rise; return gap * (1 - (1 - u) * (1 - u)); }
+    if (t < rise + hold) return gap;
+    const fall = t - rise - hold;
+    const z    = gap - 0.5 * g * fall * fall;
+    if (z <= 0) { this.bursts[which] = null; return 0; }
+    return z;
+  }
+
+  _pot(count) {
+    const total = HL.clamp(Math.round(count), 0, ChipsFigure.POT);
+    const gaps  = [this._gap(0), this._gap(1)];
+    const key   = `${total}:${gaps[0].toFixed(2)}:${gaps[1].toFixed(2)}`;
+    if (key === this.potKey) return;
+    this.potKey    = key;
+    const a        = Math.ceil(total / 2);
+    const b        = total - a;
+    this.potCounts = [a, b];
+    const dir      = [1, 0];
+    const side     = [0, 1];
+    this.pot.forEach((el, i) => {
+      const inA = i < a;
+      const inB = !inA && i < a + b;
+      if (!inA && !inB) { this._hideChip(el); return; }
+      const [x, y] = ChipsFigure.STACKS[inA ? 0 : 1];
+      const level  = inA ? i : i - a;
+      this._chip(el, [x, y, level * (ChipsFigure.CHIP[1] + gaps[inA ? 0 : 1])], 0, dir, side, false);
+    });
+  }
+
+  _move(p) {
+    let best = 0;
+    let near = Infinity;
+    for (const stick of this.sticks) {
+      const d = Math.hypot(stick.restX - p[0], stick.restY - p[1]);
+      if (d < near) { near = d; best = stick.k; }
+    }
+    this._choose(best);
+  }
+
+  setState(state) {
+    const mine   = Math.max(0, state.mine);
+    const others = Math.max(0, state.others);
+    if (!Number.isFinite(mine + others)) throw new Error("chips figure: state.mine and state.others must be numbers");
+    const pull   = (share) => 1 + Math.round(HL.clamp(share / ChipsFigure.FULL, 0, 1) * (ChipsFigure.MAX - 1));
+    const theirs = pull(others);
+    const first  = Math.max(1, Math.round(theirs / 2));
+    this.counts  = [first, Math.max(1, theirs - first), pull(mine)];
+    this.alarm   = !!state.alarm;
+    this.loop.wake();
+  }
+
+  _retarget(now) {
+    for (const stick of this.sticks) {
+      HL.tset(stick.tw, this.chosen === stick.k ? this.amount : 0, now, 0);
+      stick.drawn = NaN;
+    }
+    this.loop.wake();
+  }
+}
+
 class DeskCalendarFigure extends HairlineFigureBase {
   static RANGE   = [8, 14, 24];
   static SLOTS   = 6;
@@ -4917,6 +5187,7 @@ class ProjectFigures {
     cores:      ProjectFigures.entry(CoresFigure, "The processor's cores as a field of pillars on a plinth, each standing as tall as that core is busy, with a dashed plane at the height where a core counts as dispatched; the pillars that reach above it take a bright rim. The pointer picks a core and it lifts."),
     gpuwire:    ProjectFigures.entry(GpuWireFigure, "A graphics card standing in its slot, fed by a power cable that drops in from above. Its fans spin faster the busier the GPU is, and packets of energy run along the cable the more power it draws, each one flashing the card's light as it lands. The pointer lifts the card out of its slot."),
     guillotine: ProjectFigures.entry(GuillotineFigure, "A server tower standing under a guillotine. The blade climbs its frame, hangs for a moment and drops, and the tower splits in two halves that slide apart before closing up again for the next stroke; once the front end has been killed the halves stay apart. The pointer lifts the server."),
+    chips:      ProjectFigures.entry(ChipsFigure, "A round table with a pot of poker chips in the middle and three croupier rakes reaching in from the edge, one per user with yours marked bright, a few loose chips lying at each player's side. Each rake slides in, drags chips off the pot to its side and lets them go, and the chips toss themselves back into the pot one by one, flipping like coins, the pot's stacks jumping apart as each one lands. The more a user stalls the machine, the more chips its rake takes; during an alarm your rake turns bright. The pointer picks a rake and it lifts off the felt."),
     calendar:   ProjectFigures.entry(DeskCalendarFigure, "A desk calendar of the last thirty days, one page per day, each page carrying that day's six four-hour slots as bars: your share of the GPUs bright, everyone else's after it, the idle rest an empty track. The pages turn slowly a day at a time, rest on today and riffle back; the pointer's position across the calendar picks a day."),
     hourglass:  ProjectFigures.entry(HourglassFigure, "An hourglass on a round plinth, its sand running from the upper bulb into a pile in the lower one; when the top runs dry it turns over and starts again. The longer the wait, the slower the sand runs, and the pointer lifts the glass off its stand."),
   };

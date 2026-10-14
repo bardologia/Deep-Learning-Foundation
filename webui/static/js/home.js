@@ -1360,7 +1360,7 @@ class StatusBoard {
       `<div><dt id="sb-impact-top">--</dt><dd>top ram user</dd></div>` +
       `<div><dt id="sb-impact-stalled">--</dt><dd>users stalled</dd></div>` +
       `</dl>` +
-      HairlineFigure.html("balance", 'class="impact__figure" id="sb-impact-balance" aria-hidden="true"') +
+      HairlineFigure.html("chips", 'class="impact__figure" id="sb-impact-balance" aria-hidden="true"') +
       `</div>` +
       `</section>` +
 

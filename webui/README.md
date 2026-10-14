@@ -251,9 +251,9 @@ bench of swappable cartridges), `repo` (folder sizes as a static snapshot), `lan
 `surface` (two Gaussian bumps riding a straight track across a ridgeline surface),
 `balance`, `profileae`, `imageae`, `embed`, `podium`, `tiles`, `transect`, `film`, `tray`,
 `jepa`, `shelf`, `dial`, `threshold`, `scheduler`, `sampler`, `feed`, `field`,
-`watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `calendar` and
-`hourglass`. Thirteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
-`balance` (`{mine, others, alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler`
+`watchdog`, `notify`, `nuke`, `cores`, `gpuwire`, `guillotine`, `chips`, `calendar` and
+`hourglass`. Fourteen of them take `state`: `gpus` (`{devices: [{holder, util}]}`),
+`balance` and `chips` (`{mine, others, alarm}`), `guard` (`{gpus, invaded, critical}`), `scheduler`
 (`{jobs: [{id, running, position, of}]}`), `feed` (`{workers, prefetch, wait, util,
 feed}`), `watchdog` (`{armed, gauges: [{level, limit, alert}]}`, four gauges for CPU,
 load, RAM and disk), `notify` (`{armed}`), `nuke` (`{firing}`), `cores` (`{cores}`, one
@@ -262,7 +262,7 @@ power}`, utilisation in percent and power draw as a fraction of the limit, falli
 to the utilisation when no power is given), `guillotine` (`{down}`, which keeps the
 halves apart once the front end has been killed), `calendar` (`{days: [{slots: [{mine,
 others}]}]}`, six 4-hour slots a day, shares averaged over the GPUs) and `hourglass`
-(`{wait_s}`); `gpus`, `balance`, `feed`, `watchdog`, `notify`, `nuke`, `cores`,
+(`{wait_s}`); `gpus`, `balance`, `chips`, `feed`, `watchdog`, `notify`, `nuke`, `cores`,
 `gpuwire`, `guillotine`, `calendar` and `hourglass` draw their static scene when no state
 is given.
 
@@ -308,7 +308,8 @@ two grid, the disk readings beside `riffle` above the memory rule and the RAM an
 bars over the memory plot beside the `cabinet` rack below it; the GPU activity card puts
 `patch` at its top and lets the lanes fill the rest (30 to 80 px per GPU, the panel
 taking any slack); the neighbour impact card weighs your own slice's stall against the
-worst neighbour's on `balance`; the full-width host history puts `phosphor` (with `autopilot="off"`,
+worst neighbour's on `chips`, a poker table whose three rakes, one per user with yours
+bright, each take more chips from the pot the more that user stalls the machine; the full-width host history puts `phosphor` (with `autopilot="off"`,
 so its own frame loop plays) against its left edge and `router` against its right, the
 two plots between them; the jobs card shows `scheduler` fed from the live job list
 (running jobs in the rack, queued and scheduled ones on the steps); the GPU guard card
