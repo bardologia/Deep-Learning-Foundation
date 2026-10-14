@@ -1208,6 +1208,8 @@ class StatusBoard {
       `<div class="ctl__figure"><div class="fig-fill">${HairlineFigure.html("watchdog", 'id="sb-wd-figure" autopilot="off" aria-hidden="true"')}</div></div>` +
       `<div class="ctl__actions">` +
       `<button type="button" class="impact__arm" id="sb-detach" title="Detach the backend from your terminal AND login session (retroactive nohup + own systemd scope with lingering): monitors and sequences survive SSH logout, session cleanup and stray SIGTERMs; only SIGKILL or the kill front end button stop it">keep-alive: --</button>` +
+      `<select class="ntf__input impact__level" id="sb-impact-politeness" aria-label="launch politeness" title="Priority every local launch starts under: off adds no nice, polite adds nice 10 with best-effort I/O 7, background adds nice 19 with idle I/O. Applies to the next launch; running jobs keep theirs."><option value="off">launch: off</option><option value="polite">launch: polite</option><option value="background">launch: background</option></select>` +
+      `<button type="button" class="impact__arm" id="sb-impact-throttle" title="When on, the first alarm that blames you drops every process of yours to nice 19 and idle I/O (the console itself is spared). Priorities can only be lowered, so a throttled job stays throttled until it ends.">auto-throttle: --</button>` +
       `<button type="button" class="impact__arm" id="sb-impact-arm" title="When armed, auto-nukes all your processes if you slow other users too much">auto-nuke: --</button>` +
       `</div>` +
       `</section>` +
@@ -1455,6 +1457,7 @@ class StatusBoard {
     this.alertShelf.wire(document.getElementById("sb-alerts"), document.getElementById("sb-wd-status"));
     this._wireNuke();
     this._wireImpactArm();
+    this._wireImpactPoliteness();
     this._wireDetach();
     this._wireKillUi();
     this._ntfSeeded = false;
@@ -1640,6 +1643,29 @@ class StatusBoard {
       if (topic) topic.value = ntf.topic || "";
       if (server) server.value = ntf.server || "";
     }
+  }
+
+  _wireImpactPoliteness() {
+    const select = document.getElementById("sb-impact-politeness");
+    const toggle = document.getElementById("sb-impact-throttle");
+    const send   = async (payload, control) => {
+      control.disabled = true;
+      try {
+        const res = await Api.post("/api/impact/politeness", payload);
+        if (res && res.ok) {
+          this._politeness = res;
+          Toast.show(`launch politeness ${res.level} (${res.label}), auto-throttle ${res.auto_throttle ? "on" : "off"}`, "ok");
+        } else {
+          Toast.show(`politeness update failed: ${(res && res.error) || "unknown error"}`, "error");
+        }
+      } catch (e) {
+        Toast.show("politeness update failed: network error", "error");
+      } finally {
+        control.disabled = false;
+      }
+    };
+    if (select) select.addEventListener("change", () => send({ level: select.value }, select));
+    if (toggle) toggle.addEventListener("click", () => send({ auto_throttle: !(this._politeness || {}).auto_throttle }, toggle));
   }
 
   _wireImpactArm() {
@@ -1860,6 +1886,19 @@ class StatusBoard {
       armBtn.classList.toggle("is-armed", this._autoNuke);
     }
 
+    const pol    = impact.politeness || null;
+    const select = document.getElementById("sb-impact-politeness");
+    const toggle = document.getElementById("sb-impact-throttle");
+    if (pol) {
+      this._politeness = pol;
+      if (select && !select.disabled && document.activeElement !== select) select.value = pol.level;
+      if (toggle) {
+        toggle.textContent = `auto-throttle: ${pol.auto_throttle ? "on" : "off"}`;
+        toggle.classList.toggle("is-safe", !!pol.auto_throttle);
+      }
+    }
+    const throttled = impact.throttled || [];
+
     const missing = [];
     if (sources.psi === false)    missing.push("the kernel exposes no /proc/pressure");
     if (sources.cgroup === false) missing.push("the host has no per-user cgroup slices");
@@ -1915,7 +1954,9 @@ class StatusBoard {
       lede.textContent = missing.length
         ? `Cannot measure neighbour stall: ${missing.join("; ")}.`
         : mine.length
-          ? "Other users' tasks are stalling on the resources flagged below, and you are their dominant consumer."
+          ? (throttled.length
+              ? `Other users' tasks are stalling on the resources flagged below, and you are their dominant consumer. Your jobs were dropped to nice 19 and idle I/O after the ${throttled.join(", ")} alarm.`
+              : "Other users' tasks are stalling on the resources flagged below, and you are their dominant consumer.")
           : leak
             ? "No neighbour is stalling yet, but a process of yours is steadily accumulating RAM. See below."
             : others.length

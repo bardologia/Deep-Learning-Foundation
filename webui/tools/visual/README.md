@@ -170,12 +170,17 @@ each row and each user's stall cell. The `impact` scenario renders the neighbour
 card from four monitor payloads (this user blamed, the kernel sources missing, the console
 outside the user slice, and someone else's contention) and reads the meters, the share
 lines, the stalled count, the verdict, the lede, the light and the state handed to the
-figure. `tests/webui/test_home_impact.py` drives both, which is the contract that keeps
-the card reading the monitor's field names and saying why it cannot measure.
+figure. The `politeness` scenario renders the card with the monitor's politeness
+settings and a throttled alarm, then changes the launch level and flips the
+auto-throttle toggle against a stub `Api.post`, and reads the controls, the posted
+bodies, the toasts and the lede. `tests/webui/test_home_impact.py` drives all three,
+which is the contract that keeps the card reading the monitor's field names and saying
+why it cannot measure.
 
 ```
 node impact_checks.js users
 node impact_checks.js impact
+node impact_checks.js politeness
 ```
 
 ## Repo-map diagram harness

@@ -975,6 +975,7 @@ main { margin-left: var(--navw); }
 .impact__arm.is-warn { color: #fff; background: #b45309; border-color: #7c3a06; font-weight: 800; }
 .impact__arm.is-warn:disabled { opacity: 1; cursor: default; }
 .impact__arm:disabled { opacity: 0.5; cursor: default; }
+.impact__level { width: auto; min-width: 0; padding: 4px 8px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; }
 
 .impact__grid { display: flex; flex-direction: column; gap: 14px; }
 .impact__cell { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
