@@ -1759,6 +1759,7 @@ class ServerDetacher:
 
     APPLY_TIMEOUT_S  = 30.0
     ESCAPE_TIMEOUT_S = 5.0
+    WAKE_S           = 0.25
     LOG_NAME         = "webui_server.log"
     SCOPE_PREFIX     = "ml-template-webui"
     SERVE_SCRIPT     = Path(__file__).resolve().with_name("serve.py")
@@ -1954,11 +1955,16 @@ class ServerDetacher:
     def wait_loop(self) -> None:
         """Parks the main thread until it is asked to detach the server or to shut down.
 
+        The kernel may hand a process-directed signal to any thread, while
+        Python runs signal handlers only on the main thread once it executes
+        bytecode again, so the wait wakes every WAKE_S seconds to run pending
+        shield handlers instead of leaving them queued until the next request.
         Returns once shutdown is requested; running jobs are their own session
         leaders and survive.
         """
         while True:
-            self.requested.wait()
+            if not self.requested.wait(self.WAKE_S):
+                continue
             self.requested.clear()
             if self.stopping.is_set():
                 self.logger.warning(f"front end shutdown requested from the console (pid {os.getpid()}); running jobs are their own session leaders and keep going")
