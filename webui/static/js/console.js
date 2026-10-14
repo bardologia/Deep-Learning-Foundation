@@ -496,9 +496,87 @@ class TileUnitPicker {
 }
 
 
+class TerminalGauge {
+  static PASSES = 3;
+
+  constructor(options) {
+    this.host = document.createElement("div");
+    this.host.className = "console-tile__out console-gauge";
+    this.host.setAttribute("aria-hidden", "true");
+    this.host.style.cssText = "position:absolute; left:-10000px; top:0; visibility:hidden; pointer-events:none;";
+    document.body.appendChild(this.host);
+
+    this.term = new Terminal({ ...options, cols: 2, rows: 2 });
+    this.fit  = new FitAddon.FitAddon();
+    this.term.loadAddon(this.fit);
+    this.term.open(this.host);
+  }
+
+  propose(font, width, height) {
+    this.host.style.width  = `${width}px`;
+    this.host.style.height = `${height}px`;
+    if (this.term.options.fontSize !== font) this.term.options.fontSize = font;
+
+    let dims = this.fit.proposeDimensions();
+    for (let pass = 0; pass < TerminalGauge.PASSES && dims && dims.cols && dims.rows; pass++) {
+      const cols = Math.min(ConsoleTile.MAX_COLS, dims.cols);
+      const rows = Math.max(2, dims.rows);
+      if (this.term.cols === cols && this.term.rows === rows) break;
+      this.term.resize(cols, rows);
+      dims = this.fit.proposeDimensions();
+    }
+    return dims;
+  }
+}
+
+
 class ConsoleTile {
-  static GPU_POLL_MS   = 4000;
-  static LIVE_STATUSES = new Set(["pending", "running", "queued", "scheduled"]);
+  static GPU_POLL_MS      = 4000;
+  static LIVE_STATUSES    = new Set(["pending", "running", "queued", "scheduled"]);
+  static MAX_COLS         = 120;
+  static FONT_STEP        = 0.25;
+  static TERMINAL_OPTIONS = {
+    cols: 120,
+    rows: 24,
+    convertEol: true,
+    disableStdin: true,
+    cursorBlink: false,
+    cursorInactiveStyle: "none",
+    scrollback: 10000,
+    allowTransparency: true,
+    fontFamily: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace',
+    fontSize: 12,
+    fontWeight: 600,
+    fontWeightBold: 800,
+    lineHeight: 1.25,
+    minimumContrastRatio: 7,
+    theme: {
+      background: "rgba(0, 0, 0, 0)",
+      foreground: "#f4f7f8",
+      cursor: "rgba(0, 0, 0, 0)",
+      selectionBackground: "#2a3a52",
+      black: "#6b7280",
+      red: "#ff8b8b",
+      green: "#86efac",
+      yellow: "#fde68a",
+      blue: "#93c5fd",
+      magenta: "#f0abfc",
+      cyan: "#67e8f9",
+      white: "#f4f7f8",
+      brightBlack: "#b6bfc8",
+      brightRed: "#fca5a5",
+      brightGreen: "#bbf7d0",
+      brightYellow: "#fef08a",
+      brightBlue: "#bfdbfe",
+      brightMagenta: "#f5d0fe",
+      brightCyan: "#a5f3fc",
+      brightWhite: "#ffffff",
+    },
+  };
+
+  static quantize(font) {
+    return Math.round(font / ConsoleTile.FONT_STEP) * ConsoleTile.FONT_STEP;
+  }
 
   constructor(job, manager, host) {
     this.job = job;
@@ -623,44 +701,7 @@ class ConsoleTile {
   }
 
   _makeTerm() {
-    const term = new Terminal({
-      cols: 120,
-      rows: 24,
-      convertEol: true,
-      disableStdin: true,
-      cursorBlink: false,
-      cursorInactiveStyle: "none",
-      scrollback: 10000,
-      allowTransparency: true,
-      fontFamily: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace',
-      fontSize: 12,
-      fontWeight: 600,
-      fontWeightBold: 800,
-      lineHeight: 1.25,
-      minimumContrastRatio: 7,
-      theme: {
-        background: "rgba(0, 0, 0, 0)",
-        foreground: "#f4f7f8",
-        cursor: "rgba(0, 0, 0, 0)",
-        selectionBackground: "#2a3a52",
-        black: "#6b7280",
-        red: "#ff8b8b",
-        green: "#86efac",
-        yellow: "#fde68a",
-        blue: "#93c5fd",
-        magenta: "#f0abfc",
-        cyan: "#67e8f9",
-        white: "#f4f7f8",
-        brightBlack: "#b6bfc8",
-        brightRed: "#fca5a5",
-        brightGreen: "#bbf7d0",
-        brightYellow: "#fef08a",
-        brightBlue: "#bfdbfe",
-        brightMagenta: "#f5d0fe",
-        brightCyan: "#a5f3fc",
-        brightWhite: "#ffffff",
-      },
-    });
+    const term = new Terminal(ConsoleTile.TERMINAL_OPTIONS);
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     return { term, fit };
@@ -1014,23 +1055,25 @@ class ConsoleTile {
     const h = host.clientHeight;
     if (!w || !h) return;
 
+    const gauge = this.manager.gauge;
+    let font = ConsoleTile.quantize(Math.max(8, Math.min(16, (w - 16) / 72)));
+    let dims = gauge.propose(font, w, h);
+    if (dims && dims.cols && dims.cols < ConsoleTile.MAX_COLS) {
+      font = ConsoleTile.quantize(Math.max(7, (font * dims.cols) / ConsoleTile.MAX_COLS));
+      dims = gauge.propose(font, w, h);
+    }
+    if (!dims || !dims.cols || !dims.rows) return;
+
+    if (term.options.fontSize !== font) term.options.fontSize = font;
+    term.resize(Math.min(ConsoleTile.MAX_COLS, dims.cols), Math.max(2, dims.rows));
+
     if (!this[openedFlag]) {
       term.open(host);
       this[openedFlag] = true;
     }
 
-    let font = Math.max(8, Math.min(16, (w - 16) / 72));
-    term.options.fontSize = font;
-
-    let dims = fitAddon.proposeDimensions();
-    if (dims && dims.cols && dims.cols < 120) {
-      font = Math.max(7, (font * dims.cols) / 120);
-      term.options.fontSize = font;
-      dims = fitAddon.proposeDimensions();
-    }
-    if (!dims || !dims.cols || !dims.rows) return;
-
-    term.resize(Math.min(120, dims.cols), Math.max(2, dims.rows));
+    const check = fitAddon.proposeDimensions();
+    if (check && check.cols && check.rows) term.resize(Math.min(ConsoleTile.MAX_COLS, check.cols), Math.max(2, check.rows));
     term.scrollToBottom();
   }
 
@@ -1060,7 +1103,9 @@ class RunConsole {
     this.tiles = new Map();
     this.dismissed = new Set();
     this.launchView = null;
+    this._gauge = null;
     this._fitTimer = null;
+    this._fitFrame = 0;
 
     window.addEventListener("resize", () => this.queueFit());
     document.fonts.ready.then(() => this.queueFit());
@@ -1184,9 +1229,21 @@ class RunConsole {
     this.queueFit();
   }
 
+  get gauge() {
+    if (!this._gauge) this._gauge = new TerminalGauge(ConsoleTile.TERMINAL_OPTIONS);
+    return this._gauge;
+  }
+
   queueFit() {
     clearTimeout(this._fitTimer);
-    this._fitTimer = setTimeout(() => this.tiles.forEach((t) => t.fit()), 120);
+    cancelAnimationFrame(this._fitFrame);
+    this._fitTimer = setTimeout(() => this._fitInTurns([...this.tiles.keys()]), 120);
+  }
+
+  _fitInTurns(pending) {
+    const tile = this.tiles.get(pending.shift());
+    if (tile) tile.fit();
+    if (pending.length) this._fitFrame = requestAnimationFrame(() => this._fitInTurns(pending));
   }
 
   _renderList() {
