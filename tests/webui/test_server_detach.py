@@ -5,8 +5,9 @@ The server tests drive a real ``serve.py`` process over HTTP: they check that th
 front-end process together with every other console on the same root while sparing
 consoles on other roots, and that a detached server shields itself, surviving SIGHUP,
 SIGTERM and SIGINT while reporting its log file, holding scope and any shield failure.
-A unit test checks that an unreadable cgroup file during the session escape lands in
-the shield error.
+Unit tests check that an unreadable cgroup file during the session escape lands in
+the shield error and that the main thread's wait loop wakes on a timeout, so a
+signal handed to another thread is still handled promptly.
 """
 
 from __future__ import annotations
@@ -178,13 +179,16 @@ def test_detach_survives_termination_signals(server):
 
     for signum in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
         proc.send_signal(signum)
-    time.sleep(1.0)
+
+    deadline = time.monotonic() + 5.0
+    log_text = Path(result["log_path"]).read_text()
+    while "ignored by the keep-alive shield" not in log_text and time.monotonic() < deadline:
+        time.sleep(0.1)
+        log_text = Path(result["log_path"]).read_text()
 
     after = _get(port, "/api/system")
     assert after["server"]["detached"] is True
     assert proc.poll() is None
-
-    log_text = Path(result["log_path"]).read_text()
     assert "ignored by the keep-alive shield" in log_text
 
     again = _post(port, "/api/system/detach")
@@ -205,3 +209,43 @@ def test_unreadable_cgroup_file_lands_in_the_shield_error(tmp_path, monkeypatch)
 
     assert detacher.shield_error == "failed to read /proc/self/cgroup: procfs unavailable"
     assert detacher.scope        == ""
+
+
+class CountingEvent:
+    """Event stand-in recording each wait timeout and raising the shutdown flag after a few timed-out waits.
+
+    Attributes:
+        detacher : Detacher whose stopping flag is raised once enough waits have timed out.
+        timeouts : Timeout passed to each wait, oldest first.
+        rounds   : Number of timed-out waits before the request is answered.
+    """
+
+    def __init__(self, detacher: ServerDetacher, rounds: int) -> None:
+        """Binds the detacher and the number of idle waits."""
+        self.detacher = detacher
+        self.timeouts = []
+        self.rounds   = rounds
+
+    def wait(self, timeout: float | None = None) -> bool:
+        """Records the timeout and reports a request only after the idle rounds have passed."""
+        self.timeouts.append(timeout)
+        if len(self.timeouts) <= self.rounds:
+            return False
+
+        self.detacher.stopping.set()
+        return True
+
+    def clear(self) -> None:
+        """Accepts the clear the wait loop sends after a request."""
+        return None
+
+
+def test_the_wait_loop_wakes_on_a_timeout_until_a_request_arrives(tmp_path):
+    """Each wait carries WAKE_S as its timeout, idle wakes loop back to waiting, and a shutdown request ends the loop."""
+    detacher           = ServerDetacher(StubPaths(tmp_path), WebLogger())
+    detacher.requested = CountingEvent(detacher, rounds=3)
+
+    detacher.wait_loop()
+
+    assert detacher.requested.timeouts == [ServerDetacher.WAKE_S] * 4
+    assert not detacher.applied.is_set()
