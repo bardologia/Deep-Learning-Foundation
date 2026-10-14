@@ -1,18 +1,23 @@
-"""Tests for the webui contention monitor that flags machine-wide resource pressure.
+"""Tests for the webui contention monitor that flags the stall this user inflicts on neighbours.
 
-Covers alarm bookkeeping (only alarms attributed to the current user are logged,
-escalations are logged once, neighbour alarms clear silently), the separate PSI
-full-stall threshold used for I/O, and the CPU rate accounting that must survive
-a process disappearing between samples.
+Covers the per-user slice sampling (CPU share from the slice counters, the
+worst-stalled neighbour per resource, dominance), the verdicts (a stalled
+neighbour is this user's alarm only when this user is the dominant consumer,
+host pressure alone raises nothing), the disabled state when a kernel source is
+missing, alarm bookkeeping (only alarms attributed to the current user are
+logged, escalations are logged once, neighbour alarms clear silently), the
+separate full-stall threshold used for I/O, and the auto-nuke push.
 """
 
 from __future__ import annotations
 
-import time
+import os
+import threading
 
 import pytest
 
 from contention_monitor import ContentionMonitor
+from proc_stats         import UserSlices
 from web_logger         import WebLogger
 
 from tests.webui.conftest import StubNotifier, StubPaths
@@ -35,37 +40,209 @@ class StubNuke:
         return {"ok": True, "signalled": 0, "killed": 0}
 
 
+class FakeHost:
+    """Writes a fake /proc/pressure directory and user.slice tree.
+
+    Attributes:
+        psi    : Directory standing in for /proc/pressure.
+        slices : Directory standing in for /sys/fs/cgroup/user.slice.
+    """
+
+    def __init__(self, root) -> None:
+        """Creates the two directories with quiet host pressure files."""
+        self.psi    = root / "pressure"
+        self.slices = root / "user.slice"
+        self.psi.mkdir()
+        self.slices.mkdir()
+        for name in ("cpu", "memory", "io"):
+            (self.psi / name).write_text(self.pressure(0.0, 0.0))
+
+    @staticmethod
+    def pressure(some: float, full: float) -> str:
+        """Returns the text of a pressure file with the given avg10 percentages."""
+        return f"some avg10={some:.2f} avg60=0.00 avg300=0.00 total=0\nfull avg10={full:.2f} avg60=0.00 avg300=0.00 total=0\n"
+
+    def host(self, resource: str, some: float, full: float = 0.0) -> None:
+        """Sets the machine-wide pressure of one resource ("cpu", "memory" or "io")."""
+        (self.psi / resource).write_text(self.pressure(some, full))
+
+    def user(self, uid: int, cpu_usec: int, anon: int = 0, cpu: tuple = (0.0, 0.0), mem: tuple = (0.0, 0.0), io: tuple = (0.0, 0.0)) -> None:
+        """Writes or rewrites one user slice.
+
+        Args:
+            uid      : Numeric user id of the slice.
+            cpu_usec : Cumulative CPU time of the slice in microseconds.
+            anon     : Anonymous memory charged to the slice in bytes.
+            cpu      : (some, full) avg10 percentages of the slice's CPU pressure.
+            mem      : (some, full) avg10 percentages of the slice's memory pressure.
+            io       : (some, full) avg10 percentages of the slice's I/O pressure.
+        """
+        base = self.slices / f"user-{uid}.slice"
+        base.mkdir(exist_ok=True)
+        (base / "cpu.stat").write_text(f"usage_usec {cpu_usec}\nuser_usec {cpu_usec}\nsystem_usec 0\n")
+        (base / "memory.stat").write_text(f"anon {anon}\nfile 0\nshmem 0\n")
+        (base / "cpu.pressure").write_text(self.pressure(*cpu))
+        (base / "memory.pressure").write_text(self.pressure(*mem))
+        (base / "io.pressure").write_text(self.pressure(*io))
+
+
+ME       = os.getuid()
+NEIGHBOUR = 424242
+
+
 @pytest.fixture
-def monitor(tmp_path):
-    """Returns a contention monitor over stub paths and a stub nuker."""
-    return ContentionMonitor(StubPaths(tmp_path), WebLogger(), StubNotifier(), StubNuke())
+def host(tmp_path, monkeypatch):
+    """Points the slice reader at a fake host tree and returns its writer."""
+    fake = FakeHost(tmp_path)
+    monkeypatch.setattr(UserSlices, "PSI_ROOT", str(fake.psi))
+    monkeypatch.setattr(UserSlices, "ROOT", str(fake.slices))
+    return fake
+
+
+@pytest.fixture
+def monitor(tmp_path, host):
+    """Returns a contention monitor over stub paths, the fake host and a stub nuker."""
+    return ContentionMonitor(StubPaths(tmp_path / "repo"), WebLogger(), StubNotifier(), StubNuke())
 
 
 def _signals(io_full: float) -> dict:
-    """Builds a saturated-disk signal sample.
+    """Builds a sample where one neighbour is fully stalled on disk by this user.
 
     Args:
-        io_full : PSI full-stall percentage for the I/O domain.
+        io_full : PSI full-stall percentage of the neighbour's I/O pressure.
 
     Returns:
-        Signal dictionary with quiet CPU and memory but 99 percent disk
-        utilisation entirely attributed to the current user.
+        Signal dictionary with quiet CPU and memory, a neighbour stalled 99 percent
+        of the time on I/O, and the disk throughput entirely driven by this user.
     """
+    quiet = {"stall": 0.0, "full": 0.0, "user": None, "n": 0}
     return {
-        "psi"  : {"cpu": {"some": 0.0, "full": 0.0}, "mem": {"some": 0.0, "full": 0.0}, "io": {"some": 99.0, "full": io_full}},
-        "swap" : {"in_mbs": 0.0, "out_mbs": 0.0},
-        "mem"  : {"used_pct": 10.0, "mine_gb": 1.0, "mine_share": 0.1},
-        "io"   : {"device": "sda", "util": 99.0, "await_ms": 1.0, "read_mbs": 1.0, "write_mbs": 1.0, "total_mbs": 2.0, "mine_mbs": 2.0, "mine_share": 1.0},
-        "cpu"  : {"load_ratio": 0.1, "mine_pct": 1.0, "mine_share": 0.1},
-        "mine" : {"nproc": 1, "mem_gb": 1.0},
-        "leak" : None,
-        "top"  : None,
+        "psi"    : {"cpu": {"some": 0.0, "full": 0.0}, "mem": {"some": 0.0, "full": 0.0}, "io": {"some": 99.0, "full": io_full}},
+        "swap"   : {"in_mbs": 0.0, "out_mbs": 0.0},
+        "mem"    : {"used_pct": 10.0, "mine_gb": 1.0, "mine_share": 0.1, "dominant": False},
+        "io"     : {"device": "sda", "util": 99.0, "await_ms": 1.0, "read_mbs": 1.0, "write_mbs": 1.0, "total_mbs": 2.0, "mine_mbs": 2.0, "mine_share": 1.0, "dominant": True},
+        "cpu"    : {"load_ratio": 0.1, "mine_pct": 1.0, "mine_share": 0.1, "dominant": False},
+        "mine"   : {"nproc": 1, "mem_gb": 1.0, "stall": {"cpu": 0.0, "mem": 0.0, "io": 0.0}},
+        "leak"   : None,
+        "top"    : None,
+        "users"  : [],
+        "others" : {"cpu": dict(quiet), "mem": dict(quiet), "io": {"stall": 99.0, "full": io_full, "user": "neighbour", "n": 1}},
     }
 
 
 def _alarm(monitor: ContentionMonitor, kind: str) -> dict | None:
     """Returns the active alarm of the given kind, or None if it is not raised."""
     return next((entry for entry in monitor.state()["active"] if entry["kind"] == kind), None)
+
+
+def _advance(monitor: ContentionMonitor, host: FakeHost, me_usec: int, other_usec: int, **pressure) -> dict:
+    """Rewrites both slices with the given counters and takes one sample.
+
+    Args:
+        monitor    : Monitor under test.
+        host       : Fake host tree.
+        me_usec    : Cumulative CPU time of this user's slice.
+        other_usec : Cumulative CPU time of the neighbour's slice.
+        pressure   : Pressure tuples forwarded to the neighbour's slice.
+
+    Returns:
+        The sample as returned by `_sample`.
+    """
+    host.user(ME, me_usec, anon=4 << 30)
+    host.user(NEIGHBOUR, other_usec, anon=1 << 30, **pressure)
+    return monitor._sample()
+
+
+def test_slice_rows_carry_cpu_memory_and_stall(host):
+    """Checks a slice row reports its counter, its charged memory and its three pressures."""
+    host.user(NEIGHBOUR, 5_000_000, anon=3 << 30, cpu=(12.5, 1.0), io=(7.0, 0.0))
+
+    rows = UserSlices.rows()
+
+    assert len(rows) == 1
+    assert rows[0]["uid"]      == NEIGHBOUR
+    assert rows[0]["cpu_usec"] == 5_000_000
+    assert rows[0]["mem"]      == 3 << 30
+    assert rows[0]["stall"]    == {"cpu": {"some": 12.5, "full": 1.0}, "mem": {"some": 0.0, "full": 0.0}, "io": {"some": 7.0, "full": 0.0}}
+
+
+def test_cpu_share_comes_from_the_slice_counters(monitor, host):
+    """Checks the CPU share is this slice's delta over the sum of every slice's delta."""
+    _advance(monitor, host, 0, 0)
+    sample = _advance(monitor, host, 6_000_000, 2_000_000)
+
+    assert sample["cpu"]["mine_share"] == pytest.approx(0.75)
+    assert sample["cpu"]["dominant"]  is True
+    assert sample["others"]["cpu"]["user"] is not None
+
+
+def test_the_worst_stalled_neighbour_is_reported_per_resource(monitor, host):
+    """Checks the neighbour summary names the stalled user and counts those above the threshold."""
+    _advance(monitor, host, 0, 0)
+    sample = _advance(monitor, host, 1, 1, cpu=(45.0, 6.0), mem=(2.0, 0.0))
+
+    assert sample["others"]["cpu"] == {"stall": 45.0, "full": 6.0, "user": sample["others"]["cpu"]["user"], "n": 1}
+    assert sample["others"]["mem"]["n"] == 0
+    assert sample["mine"]["stall"]      == {"cpu": 0.0, "mem": 0.0, "io": 0.0}
+
+
+def test_a_stalled_neighbour_with_me_dominant_is_my_alarm(monitor, host):
+    """Checks a neighbour waiting for CPU while this user holds most of it raises an alarm owned by this user."""
+    _advance(monitor, host, 0, 0)
+    for step in range(1, ContentionMonitor.SUSTAIN + 1):
+        monitor._evaluate(_advance(monitor, host, step * 9_000_000, step * 1_000_000, cpu=(50.0, 0.0)))
+
+    alarm = _alarm(monitor, "cpu")
+
+    assert alarm is not None
+    assert alarm["mine"]  is True
+    assert alarm["level"] == "warn"
+    assert "waited for a core 50%" in alarm["message"]
+
+
+def test_a_stalled_neighbour_with_another_dominant_is_not_mine(monitor, host):
+    """Checks the same neighbour stall is attributed elsewhere when the neighbour holds the CPU."""
+    _advance(monitor, host, 0, 0)
+    for step in range(1, ContentionMonitor.SUSTAIN + 1):
+        monitor._evaluate(_advance(monitor, host, step * 1_000_000, step * 9_000_000, cpu=(50.0, 0.0)))
+
+    alarm = _alarm(monitor, "cpu")
+
+    assert alarm is not None
+    assert alarm["mine"] is False
+    assert monitor.state()["events"] == []
+
+
+def test_host_pressure_without_a_stalled_neighbour_raises_nothing(monitor, host):
+    """Checks machine-wide pressure alone, with every neighbour's slice quiet, is not an alarm."""
+    host.host("cpu", 90.0)
+    host.host("io", 90.0, 20.0)
+    _advance(monitor, host, 0, 0)
+    for step in range(1, ContentionMonitor.SUSTAIN + 2):
+        monitor._evaluate(_advance(monitor, host, step * 9_000_000, step * 1_000_000))
+
+    assert monitor.state()["active"] == []
+
+
+def test_a_fully_stalled_neighbour_escalates_to_danger(monitor, host):
+    """Checks the neighbour's full-stall average drives the alarm level."""
+    _advance(monitor, host, 0, 0)
+    for step in range(1, ContentionMonitor.SUSTAIN + 1):
+        monitor._evaluate(_advance(monitor, host, step * 9_000_000, step * 1_000_000, cpu=(60.0, 10.0)))
+
+    assert _alarm(monitor, "cpu")["level"] == "danger"
+
+
+def test_missing_pressure_files_disable_the_monitor(tmp_path, host, monkeypatch):
+    """Checks a kernel without /proc/pressure leaves the monitor off instead of sampling zeros."""
+    monkeypatch.setattr(UserSlices, "PSI_ROOT", str(tmp_path / "absent"))
+    monitor = ContentionMonitor(StubPaths(tmp_path / "repo"), WebLogger(), StubNotifier(), StubNuke())
+
+    monitor.start()
+
+    assert monitor.state()["sources"]["psi"] is False
+    assert monitor.state()["signals"] == {}
+    assert "ContentionMonitor" not in [thread.name for thread in threading.enumerate()]
 
 
 def test_an_alarm_that_becomes_mine_is_recorded_and_logged(monitor):
@@ -86,8 +263,8 @@ def test_an_escalation_to_danger_is_recorded_once(monitor):
     """Checks repeated raises at the same level log nothing and only the escalation is added."""
     monitor._raise("mem", "warn", True, "you hold the RAM")
     monitor._raise("mem", "warn", True, "you hold the RAM")
-    monitor._raise("mem", "danger", True, "you hold the RAM and the machine is stalling")
-    monitor._raise("mem", "danger", True, "you hold the RAM and the machine is stalling")
+    monitor._raise("mem", "danger", True, "you hold the RAM and the neighbours are stalling")
+    monitor._raise("mem", "danger", True, "you hold the RAM and the neighbours are stalling")
 
     levels = [event["level"] for event in monitor.state()["events"]]
     assert levels == ["warn", "danger"]
@@ -103,44 +280,30 @@ def test_an_alarm_raised_for_a_neighbour_clears_without_a_log(monitor):
 
 
 def test_io_escalation_uses_its_own_full_threshold(monitor, monkeypatch):
-    """Checks the I/O alarm level follows IO_PSI_FULL rather than the shared threshold."""
+    """Checks the I/O alarm level follows IO_FULL rather than the shared threshold."""
     for _ in range(ContentionMonitor.SUSTAIN):
-        monitor._evaluate(_signals(io_full=4.0))
+        monitor._evaluate(_signals(io_full=6.0))
 
     assert _alarm(monitor, "io")["level"] == "danger"
 
-    monkeypatch.setattr(ContentionMonitor, "IO_PSI_FULL", 50.0)
-    monitor._evaluate(_signals(io_full=4.0))
+    monkeypatch.setattr(ContentionMonitor, "IO_FULL", 50.0)
+    monitor._evaluate(_signals(io_full=6.0))
 
     assert _alarm(monitor, "io")["level"] == "warn"
-
-
-def test_an_exiting_process_does_not_zero_the_cpu_rate(monitor):
-    """Checks a stale process entry from a previous sample does not drive the measured CPU share to zero."""
-    monitor._sample()
-    monitor.prev_mine[10 ** 8] = (10 ** 9, 10 ** 12)
-
-    deadline = time.monotonic() + 0.3
-    while time.monotonic() < deadline:
-        pass
-
-    signals = monitor._sample()
-
-    assert signals["cpu"]["mine_pct"] > 0.0
 
 
 def test_an_announced_alert_is_pushed_through_the_notifier(monitor):
     """An alert attributed to this user is pushed once when it is announced."""
     for _ in range(ContentionMonitor.SUSTAIN):
-        monitor._track("io", "warn", True, False, True, "disk contention caused by you")
+        monitor._track("io", "warn", True, False, True, "disk stall caused by you")
 
-    assert monitor.notifier.alerts == [("neighbour impact: io", "disk contention caused by you", "default")]
+    assert monitor.notifier.alerts == [("neighbour impact: io", "disk stall caused by you", "default")]
 
 
 def test_a_neighbours_alert_is_not_pushed(monitor):
     """An alert another user causes stays out of the push channel."""
     for _ in range(ContentionMonitor.SUSTAIN):
-        monitor._track("io", "warn", True, False, False, "disk contention caused by them")
+        monitor._track("io", "warn", True, False, False, "disk stall caused by them")
 
     assert monitor.notifier.alerts == []
 
@@ -149,7 +312,7 @@ def test_the_auto_nuke_pushes_an_urgent_notification(monitor):
     """A fired auto-nuke pushes one urgent notification."""
     monitor.auto_nuke = True
     for _ in range(ContentionMonitor.SUSTAIN):
-        monitor._track("mem", "danger", True, False, True, "memory contention caused by you")
+        monitor._track("mem", "danger", True, False, True, "memory stall caused by you")
     for _ in range(ContentionMonitor.NUKE_SUSTAIN):
         monitor._check_nuke()
 

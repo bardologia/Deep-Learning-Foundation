@@ -133,7 +133,14 @@ contract and never writes to a config file.
   regardless of exit code. Queued runs can be cancelled before they start; an emergency
   stop clears the whole queue.
 - **Supervision.** `GpuWatchdog`, `ResourceWatchdog` and `ContentionMonitor` guard GPU
-  intrusion, host memory and neighbour impact; `JobNotifier` pushes start and end events
+  intrusion, host memory and neighbour impact. The contention monitor reads every login
+  user's cgroup slice under `user.slice`: the slice's own pressure files say whether that
+  user's tasks are waiting for CPU, memory or disk, and `cpu.stat` and `memory.stat` give
+  each user's share of the resource, exited children included. An alarm needs a neighbour
+  stalled for two samples and is this user's only when this user is the dominant
+  consumer; disk has no per-user byte counter, so its ownership falls back to this
+  user's own processes' share of the repo disk. Without `/proc/pressure` or `user.slice`
+  the monitor stays off and the panel says so. `JobNotifier` pushes start and end events
   over ntfy.
 
 Scripts expect the dataset paths and GPUs named in the configuration defaults. On a
