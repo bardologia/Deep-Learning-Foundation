@@ -38,6 +38,7 @@ from request_router                    import RequestRouter
 from resource_watchdog                 import ResourceWatchdog
 from config_template_store             import ConfigTemplateStore
 from contention_monitor                import ContentionMonitor
+from politeness                        import JobPoliteness, JobThrottle
 from results_browser                   import ResultsBrowser
 from run_config_reader                 import RunConfigReader
 from run_launcher                      import RunLauncher
@@ -135,7 +136,8 @@ class WebUIServer:
         self.repomap           = RepoMapLibrary()
         self.notifier          = JobNotifier(self.paths, self.logger)
         self.describer         = JobDescriber(self.paths, self.resolver)
-        self.processes         = ProcessManager(self.paths, self.logger, self.notifier, self.describer)
+        self.politeness        = JobPoliteness(self.paths, self.logger)
+        self.processes         = ProcessManager(self.paths, self.logger, self.notifier, self.describer, self.politeness)
         self.stream_hub        = StreamHub(self.logger)
         self.progress_watch    = ExperimentProgressWatcher(self.processes, self.notifier, self.logger)
         self.saved_runs        = SavedRunStore(self.paths, self.logger)
@@ -143,7 +145,8 @@ class WebUIServer:
         self.nuke              = ProcessNuke(self.logger)
         self.detacher          = ServerDetacher(self.paths, self.logger)
         self.system            = SystemMonitor(self.paths, self.logger)
-        self.contention        = ContentionMonitor(self.paths, self.logger, self.notifier, self.nuke)
+        self.throttle          = JobThrottle(self.nuke, self.logger)
+        self.contention        = ContentionMonitor(self.paths, self.logger, self.notifier, self.nuke, self.throttle, self.politeness)
         self.watchdog          = ResourceWatchdog(self.processes, self.contention, self.logger, self.notifier, self.paths)
         self.gpu_guard         = GpuWatchdog(self.system, self.paths, self.logger, self.processes, self.notifier)
         self.gpu_schedule      = GpuSchedule(self.paths, self.logger, self.processes, self.system, self.gpu_guard)

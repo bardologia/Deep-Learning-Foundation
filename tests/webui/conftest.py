@@ -30,6 +30,7 @@ from cube_explorer   import CubeExplorer
 from gpu_activity    import GpuActivityLog
 from host_history    import HostHistoryLog
 from notifier        import JobNotifier
+from politeness      import JobPoliteness
 from process_manager import ProcessManager
 from system_monitor  import ActiveUsers, SystemHistory, SystemMonitor
 from web_logger      import WebLogger
@@ -326,7 +327,7 @@ def make_manager(tmp_path):
 
         paths   = StubPaths(tmp_path)
         logger  = WebLogger()
-        manager = ProcessManager(paths, logger, JobNotifier(paths, logger), StubDescriber())
+        manager = ProcessManager(paths, logger, JobNotifier(paths, logger), StubDescriber(), JobPoliteness(paths, logger))
         built.append(manager)
 
         return manager
