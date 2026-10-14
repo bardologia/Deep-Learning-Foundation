@@ -38,6 +38,8 @@ class ImpactChecks {
     this.staticDir = staticDir;
     this.nodes     = new Map();
     this.toasts    = [];
+    this.posts     = [];
+    this.answer    = null;
   }
 
   _node(id) {
@@ -53,6 +55,7 @@ class ImpactChecks {
       SharedCharts: { esc: (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") },
       ThinkingOrb : { busy: (state, text) => `<orb ${state}>${text}</orb>` },
       Toast       : { show: (text, kind) => { this.toasts.push({ text, kind }); } },
+      Api         : { post: async (url, body) => { this.posts.push({ url, body }); return this.answer(body); } },
     };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
@@ -144,6 +147,35 @@ class ImpactChecks {
     const notMine  = read({ auto_nuke: false, sources: ok, signals: { ...this._signals(), top: { user: "alice", mem_gb: 40, nproc: 9, is_mine: false } }, active: [others], events: [] });
 
     return { mine, missing, outside, notMine };
+  }
+
+  async politeness() {
+    const board  = this._board();
+    const ok     = { psi: true, cgroup: true, slice: true, device: "nvme0n1" };
+    const blamed = { kind: "mem", level: "warn", mine: true, message: "memory: alice and 1 more stalled" };
+    const state  = { level: "polite", auto_throttle: true, nice: 10, label: "nice 10, ionice best-effort 7", prefix: "nice -n 10 ionice -c 2 -n 7", levels: ["off", "polite", "background"] };
+    const select = this._node("sb-impact-politeness");
+    const toggle = this._node("sb-impact-throttle");
+
+    board._renderImpact({ auto_nuke: false, politeness: state, throttled: ["mem"], sources: ok, signals: this._signals(), active: [blamed], events: [] });
+    const shown = { level: select.value, toggle: toggle.textContent, safe: toggle.classes.has("is-safe"), lede: this._node("sb-impact-lede").textContent };
+
+    const labels = { off: "no nice, no ionice", polite: "nice 10, ionice best-effort 7", background: "nice 19, ionice idle" };
+    const server = { ...state };
+    board._wireImpactPoliteness();
+    this.answer  = (body) => { Object.assign(server, body); return { ok: true, ...server, label: labels[server.level] }; };
+    select.value = "background";
+    await select.fire("change");
+    await toggle.fire("click");
+
+    this.answer = () => ({ ok: false, error: "unknown politeness level 'loud'" });
+    select.value = "loud";
+    await select.fire("change");
+
+    board._renderImpact({ auto_nuke: false, politeness: { ...state, auto_throttle: false }, throttled: [], sources: ok, signals: this._signals(), active: [blamed], events: [] });
+    const after = { toggle: toggle.textContent, safe: toggle.classes.has("is-safe"), lede: this._node("sb-impact-lede").textContent, disabled: [select.disabled, toggle.disabled] };
+
+    return { shown, posts: this.posts, toasts: this.toasts, after };
   }
 
   async run(name) {

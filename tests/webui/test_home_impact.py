@@ -7,7 +7,10 @@ resource, each share line names that neighbour, the stats row counts the stalled
 neighbours, the figure weighs this user's own slice stall against the worst
 neighbour's, and missing kernel sources or a console outside the user slice are
 said in the lede. The active users table gains a cpu/ram/disk stall column read
-from the same slices.
+from the same slices. The watchdog card's launch politeness select and
+auto-throttle toggle mirror the monitor's politeness settings and post changes
+to ``/api/impact/politeness``, and the lede names the alarm that throttled the
+running jobs.
 """
 
 from __future__ import annotations
@@ -125,3 +128,35 @@ def test_impact_says_when_the_console_runs_outside_your_user_slice():
 
     assert outside["verdict"] == "all clear"
     assert outside["lede"] == "No neighbour is stalling. This console runs outside your user slice, so jobs launched here are not charged to you."
+
+
+@NEEDS_JS
+def test_politeness_controls_mirror_the_monitor_settings():
+    """The select shows the level, the toggle the auto-throttle flag, and the lede names the alarm that throttled your jobs."""
+    observed = _check("politeness")
+
+    assert observed["shown"]["level"] == "polite"
+    assert observed["shown"]["toggle"] == "auto-throttle: on"
+    assert observed["shown"]["safe"] is True
+    assert observed["shown"]["lede"].endswith("Your jobs were dropped to nice 19 and idle I/O after the mem alarm.")
+    assert observed["after"]["toggle"] == "auto-throttle: off"
+    assert observed["after"]["safe"] is False
+    assert observed["after"]["lede"] == "Other users' tasks are stalling on the resources flagged below, and you are their dominant consumer."
+
+
+@NEEDS_JS
+def test_politeness_controls_post_one_setting_at_a_time_and_report_the_outcome():
+    """A level change posts the level, the toggle posts the flipped flag, and a refusal is toasted as an error with the controls enabled again."""
+    observed = _check("politeness")
+
+    assert observed["posts"] == [
+        {"url": "/api/impact/politeness", "body": {"level": "background"}},
+        {"url": "/api/impact/politeness", "body": {"auto_throttle": False}},
+        {"url": "/api/impact/politeness", "body": {"level": "loud"}},
+    ]
+    assert observed["toasts"][-3:] == [
+        {"text": "launch politeness background (nice 19, ionice idle), auto-throttle on", "kind": "ok"},
+        {"text": "launch politeness background (nice 19, ionice idle), auto-throttle off", "kind": "ok"},
+        {"text": "politeness update failed: unknown politeness level 'loud'", "kind": "error"},
+    ]
+    assert observed["after"]["disabled"] == [False, False]
