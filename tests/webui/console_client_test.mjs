@@ -29,6 +29,70 @@ class FakeTerm {
 }
 
 
+class FakeXterm {
+  constructor(options) {
+    const log    = [];
+    this.log     = log;
+    this.cols    = options.cols;
+    this.rows    = options.rows;
+    this.element = null;
+    this.options = new Proxy({ ...options }, {
+      set(target, name, value) {
+        if (name === "fontSize") log.push(["font", value]);
+        target[name] = value;
+        return true;
+      },
+    });
+  }
+
+  loadAddon(addon) {
+    addon.term = this;
+  }
+
+  resize(cols, rows) {
+    this.cols = cols;
+    this.rows = rows;
+    this.log.push(["resize", cols, rows]);
+  }
+
+  open(host) {
+    this.element = host;
+    this.log.push(["open"]);
+  }
+
+  scrollToBottom() {
+    return;
+  }
+}
+
+
+class FakeFitAddon {
+  static CELL_WIDTH  = 0.6;
+  static CELL_HEIGHT = 1.25;
+
+  proposeDimensions() {
+    const host = this.term.element;
+    if (!host) return undefined;
+
+    const width  = host.clientWidth  ?? parseFloat(host.style.width);
+    const height = host.clientHeight ?? parseFloat(host.style.height);
+    const font   = this.term.options.fontSize;
+    return { cols: Math.floor((width - 24) / (font * FakeFitAddon.CELL_WIDTH)), rows: Math.floor((height - 20) / (font * FakeFitAddon.CELL_HEIGHT)) };
+  }
+}
+
+
+class FakeDocument {
+  constructor() {
+    this.body = { children: [], appendChild(el) { this.children.push(el); } };
+  }
+
+  createElement(tag) {
+    return { tag, className: "", style: {}, setAttribute() { return; } };
+  }
+}
+
+
 class FakeStreamHub {
   constructor() {
     this.subs      = [];
@@ -45,14 +109,41 @@ class FakeStreamHub {
 
 class ConsoleClientSuite {
   constructor(source) {
-    this.hub = new FakeStreamHub();
+    this.hub      = new FakeStreamHub();
+    this.document = new FakeDocument();
+    this.timers   = new Map();
+    this.frames   = new Map();
+    this.handle   = 0;
 
-    const sandbox = { window: {}, console, StreamHub: { instance: () => this.hub } };
+    const sandbox = {
+      window                : {},
+      console,
+      document              : this.document,
+      Terminal              : FakeXterm,
+      FitAddon              : { FitAddon: FakeFitAddon },
+      StreamHub             : { instance: () => this.hub },
+      setTimeout            : (fn) => this._schedule(this.timers, fn),
+      clearTimeout          : (handle) => this.timers.delete(handle),
+      requestAnimationFrame : (fn) => this._schedule(this.frames, fn),
+      cancelAnimationFrame  : (handle) => this.frames.delete(handle),
+    };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(`${source}\nglobalThis.classes = { ConsoleTile, RunConsole };`, sandbox, { filename: "console.js" });
 
     this.classes = sandbox.classes;
+  }
+
+  _schedule(queue, fn) {
+    this.handle += 1;
+    queue.set(this.handle, fn);
+    return this.handle;
+  }
+
+  flush(queue) {
+    const due = [...queue.values()];
+    queue.clear();
+    due.forEach((fn) => fn());
   }
 
   tile() {
@@ -152,6 +243,131 @@ class ConsoleClientSuite {
     assert.match(tile.unitTerm.text, /sub-run stream unavailable: unit index 4 is out of range/);
     assert.equal(sub.closed, true);
     assert.equal(tile.unitSub, null);
+  }
+
+  console() {
+    const runConsole     = Object.create(this.classes.RunConsole.prototype);
+    runConsole.tiles     = new Map();
+    runConsole._gauge    = null;
+    runConsole._fitTimer = null;
+    runConsole._fitFrame = 0;
+    return runConsole;
+  }
+
+  sizingTile(width, height) {
+    const { ConsoleTile } = this.classes;
+
+    const tile   = Object.create(ConsoleTile.prototype);
+    tile.manager = this.console();
+    tile.opened  = false;
+
+    const term = new FakeXterm(ConsoleTile.TERMINAL_OPTIONS);
+    const fit  = new FakeFitAddon();
+    term.loadAddon(fit);
+
+    return { tile, term, fit, host: { clientWidth: width, clientHeight: height } };
+  }
+
+  testFontSizesAreQuantisedToQuarterPixels() {
+    const { ConsoleTile } = this.classes;
+
+    assert.equal(ConsoleTile.quantize(12.13), 12.25);
+    assert.equal(ConsoleTile.quantize(12.1), 12);
+    assert.equal(ConsoleTile.quantize(7.874), 7.75);
+  }
+
+  testATileSizesItsTerminalBeforeOpeningIt() {
+    const { tile, term, fit, host } = this.sizingTile(900, 400);
+
+    tile._fitInto(term, fit, host, "opened");
+
+    const openAt = term.log.findIndex((op) => op[0] === "open");
+    const before = term.log.slice(0, openAt);
+    const after  = term.log.slice(openAt + 1);
+    const sized  = before.filter((op) => op[0] === "resize").pop();
+
+    assert.ok(openAt > 0, "the terminal is opened after it was sized");
+    assert.ok(sized, "the dimensions are set before open()");
+    assert.equal(tile.opened, true);
+    assert.equal(term.options.fontSize % 0.25, 0, "the font size sits on a quarter pixel");
+    assert.ok(term.cols <= 120 && term.rows >= 2);
+    assert.deepEqual(after.filter((op) => op[0] === "font"), [], "no font change on the open terminal");
+    after.forEach((op) => assert.deepEqual(op, sized, "the post-open proposal check is a no-op resize"));
+  }
+
+  testRefittingAnOpenTerminalAtTheSameSizeLeavesItsFontAlone() {
+    const { tile, term, fit, host } = this.sizingTile(900, 400);
+    tile._fitInto(term, fit, host, "opened");
+    term.log.length = 0;
+
+    tile._fitInto(term, fit, host, "opened");
+
+    assert.deepEqual(term.log.filter((op) => op[0] === "font" || op[0] === "open"), []);
+  }
+
+  testANarrowTileShrinksTheFontToKeepItsColumns() {
+    const { tile, term, fit, host } = this.sizingTile(500, 300);
+
+    tile._fitInto(term, fit, host, "opened");
+
+    assert.ok(term.options.fontSize < 8, `font ${term.options.fontSize} shrank below the 8 px floor of the width rule`);
+    assert.ok(term.options.fontSize >= 7);
+    assert.equal(term.options.fontSize % 0.25, 0);
+  }
+
+  testAnUnmeasuredTileIsLeftClosed() {
+    const { tile, term, fit } = this.sizingTile(0, 0);
+
+    tile._fitInto(term, fit, { clientWidth: 0, clientHeight: 400 }, "opened");
+
+    assert.deepEqual(term.log, []);
+    assert.equal(tile.opened, false);
+  }
+
+  testThePageBuildsOneHiddenGaugeAndReusesIt() {
+    const before     = this.document.body.children.length;
+    const runConsole = this.console();
+
+    const gauge = runConsole.gauge;
+
+    assert.equal(runConsole.gauge, gauge);
+    assert.equal(this.document.body.children.length, before + 1);
+    assert.match(gauge.host.style.cssText, /visibility:hidden/);
+  }
+
+  testTilesAreFittedOnePerAnimationFrame() {
+    const runConsole = this.console();
+    const order      = [];
+    ["a", "b", "c"].forEach((id) => runConsole.tiles.set(id, { fit: () => order.push(id) }));
+
+    runConsole.queueFit();
+    assert.deepEqual(order, [], "nothing is fitted before the debounce timer fires");
+
+    this.flush(this.timers);
+    assert.deepEqual(order, ["a"]);
+
+    this.flush(this.frames);
+    assert.deepEqual(order, ["a", "b"]);
+
+    this.flush(this.frames);
+    assert.deepEqual(order, ["a", "b", "c"]);
+    assert.equal(this.frames.size, 0);
+  }
+
+  testANewFitRequestCancelsThePendingFrames() {
+    const runConsole = this.console();
+    const order      = [];
+    ["a", "b", "c"].forEach((id) => runConsole.tiles.set(id, { fit: () => order.push(id) }));
+
+    runConsole.queueFit();
+    this.flush(this.timers);
+    runConsole.queueFit();
+
+    assert.equal(this.frames.size, 0, "the frame chain of the earlier request is cancelled");
+    this.flush(this.timers);
+    this.flush(this.frames);
+    this.flush(this.frames);
+    assert.deepEqual(order, ["a", "a", "b", "c"]);
   }
 
   async run() {
