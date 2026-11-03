@@ -10,7 +10,7 @@ class DatasetPicker {
     run_groups:   { endpoint: "/api/fs/run_groups", key: "groups", noun: "groups",   hint: "nothing selected = runs_dir itself is treated as one seed group", badge: (d) => ({ text: `${d.n_runs} runs`, tone: d.n_runs >= 2 ? "ok" : "warn" }) },
     experiments:  { endpoint: "/api/fs/experiments", key: "experiments", noun: "experiments", hint: "nothing selected = every experiment found is mailed; missing seed aggregates and comparisons are written first", badge: (d) => ({ text: `${d.kind} · ${d.n_trials} trial${d.n_trials === 1 ? "" : "s"} · ${d.n_comparisons ? `${d.n_comparisons} comparison${d.n_comparisons === 1 ? "" : "s"}` : "no comparison yet"}`, tone: d.n_comparisons >= 1 ? "ok" : "warn" }) },
     param_trials: { endpoint: "/api/fs/param_trials", key: "trials", noun: "trials", hint: "select 2 or more trials to compare across datasets", badge: (d) => (d.dataset ? { text: d.dataset, tone: "ok" } : null) },
-    secondaries:  { endpoint: "/api/fs/secondaries", key: "secondaries", noun: "secondaries", hint: "nothing selected = the primary alone, no secondary channel", query: "dataset", none: (n) => `none of ${n} secondaries`, badge: (d) => (d.standard ? { text: "standard", tone: "ok" } : null) },
+    secondaries:  { endpoint: "/api/fs/secondaries", key: "secondaries", noun: "secondaries", hint: "nothing selected = every secondary channel (full stack)", query: "dataset", none: (n) => `none of ${n} secondaries`, badge: (d) => (d.standard ? { text: "standard", tone: "ok" } : null) },
   };
 
   constructor(view, leaf, spec) {
