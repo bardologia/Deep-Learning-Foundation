@@ -1075,6 +1075,14 @@ class LaunchLayout:
                 ]},
                 {"key": "autoencoder", "title": "Autoencoder", "when": {"field": "training_type", "in": ["profile_autoencoder"]}, "panels": [
                     {"kind": "special", "panel": "model_card", "fields": ["autoencoder.ae_model_name"]},
+                    {"kind": "fields", "groups": [
+                        {"title": "Learning rates", "fields": [
+                            {"path": "autoencoder.encoder_lr", "widget": NUM_LR},
+                            {"path": "autoencoder.decoder_lr", "widget": NUM_LR},
+                            {"path": "autoencoder.encoder_wd", "widget": NUM_WD},
+                            {"path": "autoencoder.decoder_wd", "widget": NUM_WD},
+                        ]},
+                    ]},
                     {"kind": "fields", "title": "Autoencoder loss", "template": "ae_loss_profile", "at": "autoencoder.ae_loss"},
                     {"kind": "fields", "title": "Profile augmentation", "template": "profile_augmentation", "at": "autoencoder.profile_augmentation"},
                     {"kind": "fields", "title": "Sampling", "groups": [

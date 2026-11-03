@@ -434,6 +434,20 @@ def test_ae_fold_entry_carries_the_cross_validated_profile_augmentation(test_dat
 
 
 @pytest.mark.dataset
+def test_ae_fold_entry_carries_the_cross_validated_learning_rates(test_data_dir):
+    """Verifies the encoder and decoder learning rates and weight decays of the sweep reach the fold entry config."""
+    config                        = worker_config(test_data_dir, "profile_autoencoder")
+    config.autoencoder.encoder_lr = 1.5e-3
+    config.autoencoder.decoder_lr = 2.5e-3
+    config.autoencoder.encoder_wd = 5e-4
+    config.autoencoder.decoder_wd = 7e-4
+
+    entry = FoldTrainingWorker(config, run_tag="rt")._ae_entry_config("fold_0", 3)
+
+    assert (entry.encoder_lr, entry.decoder_lr, entry.encoder_wd, entry.decoder_wd) == (1.5e-3, 2.5e-3, 5e-4, 7e-4)
+
+
+@pytest.mark.dataset
 def test_ae_fold_pipeline_samples_with_the_cross_validated_profile_augmentation(test_data_dir, tmp_path):
     """Verifies the forwarded augmentation reaches the profile dataset every fold trains on."""
     from pipelines.profile_autoencoder.training.pipeline import TrainingPipeline
