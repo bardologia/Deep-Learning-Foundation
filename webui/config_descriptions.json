@@ -2135,7 +2135,11 @@
         "ae_loss": "ProfileAeLossConfig loss sub-config: summable use_*/weight_* curve terms (mse, l1, huber, charbonnier, cosine, log_energy, tv, sobolev) plus the latent-noise term",
         "pixel_subsample": "Fraction of active (non-empty) profile pixels randomly kept when building the dataset, default 1.0 keeps all",
         "keep_empty_frac": "Fraction of empty (no-Gaussian) pixels randomly kept alongside the active ones, default 0.05",
-        "profile_augmentation": "ProfileAugmentationConfig sub-config setting amplitude-scale, shift, flip, and additive-noise probabilities applied to the training profile curves of every fold"
+        "profile_augmentation": "ProfileAugmentationConfig sub-config setting amplitude-scale, shift, flip, and additive-noise probabilities applied to the training profile curves of every fold",
+        "encoder_lr": "Learning rate of the profile autoencoder's encoder parameter group in every fold, so the folds train at the rate the validated sweep used",
+        "decoder_lr": "Learning rate of the profile autoencoder's decoder parameter group in every fold",
+        "encoder_wd": "Weight decay of the profile autoencoder's encoder parameter group in every fold",
+        "decoder_wd": "Weight decay of the profile autoencoder's decoder parameter group in every fold"
       }
     },
     "tuning/general::TuningConfig": {
