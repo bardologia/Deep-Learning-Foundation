@@ -65,10 +65,10 @@ def test_x_axis_validation_rejects_a_shifted_axis_of_equal_length(tmp_path):
     axis    = np.linspace(0.0, 30.0, 16).astype(np.float32)
     shifted = axis + 5.0
 
-    ProfileAeRunLoader._validate_x_axis(axis, axis.copy(), tmp_path / "best_model.pt")
+    ProfileAeRunLoader._validate_x_axis(axis, axis.copy(), tmp_path / "best_model.pt", tmp_path / "dataset")
 
     with pytest.raises(ValueError, match="z axis"):
-        ProfileAeRunLoader._validate_x_axis(axis, shifted, tmp_path / "best_model.pt")
+        ProfileAeRunLoader._validate_x_axis(axis, shifted, tmp_path / "best_model.pt", tmp_path / "dataset")
 
 
 def test_x_axis_validation_rejects_a_different_bin_count(tmp_path):
@@ -78,6 +78,7 @@ def test_x_axis_validation_rejects_a_different_bin_count(tmp_path):
             np.linspace(0.0, 30.0, 16).astype(np.float32),
             np.linspace(0.0, 30.0, 32).astype(np.float32),
             tmp_path / "best_model.pt",
+            tmp_path / "dataset",
         )
 
 

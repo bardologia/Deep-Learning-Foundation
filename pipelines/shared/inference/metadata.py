@@ -3,18 +3,25 @@
 A split stored as several disjoint regions is scored once per region, each
 pass stamping its own output directory. The region pass recorded in every
 such marker lets the discovery treat the group as one inference that is
-complete only when every region of it carries a marker.
+complete only when every region of it carries a marker. A run scored on a
+foreign dataset records that target in its marker and stamps under its own
+tree, apart from the run's own inference.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib     import Path
 
-from tools.data.io                     import FileIO
-from tools.runtime.completion          import CompletionMarker
-from tools.runtime.environment_capture import EnvironmentCapture
-from tools.runtime.run_tag             import RunTag
+from configuration.dataset                    import DatasetConfig, SplitRegions
+from configuration.dataset.gaussian           import DatasetParameterPairing
+from configuration.inference.general          import InferenceConfig
+from pipelines.shared.dataset.dataset_spatial import Layout
+from tools.data.io                            import FileIO
+from tools.data.regions                       import CropRegion
+from tools.runtime.completion                 import CompletionMarker
+from tools.runtime.environment_capture        import EnvironmentCapture
+from tools.runtime.run_tag                    import RunTag
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,162 @@ class RegionPass:
         entry = payload[RegionPass.KEY]
 
         return RegionPass(index=int(entry["index"]), count=int(entry["count"]), group=str(entry["group"]))
+
+
+class TargetDataset:
+    """Foreign dataset one inference pass scores a trained run on, in place of the run's own split.
+
+    The target scene has no train, validation or test partition: none of it was
+    seen in training, so its scored crop is the test split of a dataset
+    configuration that keeps the run's patch geometry, input channel layout and
+    batch settings and swaps the scene, the labels and the secondary channels.
+
+    Attributes:
+        KEY              : Completion-marker and metrics entry the target is recorded under.
+        SPLIT            : Split name the target crop is scored as.
+        dataset_path     : Dataset directory of the target scene.
+        parameters_path  : Gaussian label cube of the target parameter run.
+        secondary_labels : Secondary channel labels fed to the model, or None for every secondary channel of the target stack.
+        region           : Scored crop of the target scene.
+    """
+
+    KEY   = "target_dataset"
+    SPLIT = "test"
+
+    def __init__(self, dataset_path: Path, parameters_path: Path, secondary_labels: tuple | None, region: CropRegion) -> None:
+        """Stores the target scene, its labels, the secondary channels fed to the model and the scored crop."""
+        self.dataset_path     = Path(dataset_path)
+        self.parameters_path  = Path(parameters_path)
+        self.secondary_labels = secondary_labels
+        self.region           = region
+
+    @property
+    def name(self) -> str:
+        """Directory name of the target dataset, naming its stamp tree inside a run."""
+        return self.dataset_path.name
+
+    @staticmethod
+    def _check_block(config: InferenceConfig) -> None:
+        """Refuses the inference settings that only make sense on the run's own split.
+
+        Raises:
+            ValueError : If the split is not the test split or a region override is set.
+        """
+        if config.split != TargetDataset.SPLIT:
+            raise ValueError(f"inference.target is enabled with split='{config.split}', but a target crop is scored as the held-out {TargetDataset.SPLIT} split of the target scene; leave inference.split at '{TargetDataset.SPLIT}'.")
+
+        if config.region_override:
+            raise ValueError(f"inference.target is enabled together with region_override={config.region_override}; the scored crop of a target dataset is inference.target.row_start/row_end/col_start/col_end, so leave region_override unset.")
+
+    @staticmethod
+    def _check_paths(dataset_path: Path, parameters_path: Path) -> CropRegion:
+        """Checks that the target dataset and its label cube exist and belong together.
+
+        Args:
+            dataset_path    : Dataset directory of the target scene.
+            parameters_path : Gaussian label cube inside that dataset.
+
+        Returns:
+            The global crop the target dataset covers.
+
+        Raises:
+            FileNotFoundError : If the dataset layout manifest or the label cube is missing.
+            ValueError        : If the label cube does not live inside the target dataset.
+        """
+        layout_path = dataset_path / Layout.LAYOUT_RELPATH
+        if not layout_path.is_file():
+            raise FileNotFoundError(f"inference.target.dataset_path={dataset_path} holds no {Layout.LAYOUT_RELPATH}; point it at a dataset directory written by generate_dataset.")
+
+        DatasetParameterPairing.relative_template(dataset_path, parameters_path)
+
+        if not parameters_path.is_file():
+            raise FileNotFoundError(f"inference.target.parameters_path={parameters_path} does not exist; the target scene needs a parameter run to score the predictions against.")
+
+        return CropRegion(*FileIO.load_json(layout_path)["global_crop"])
+
+    @staticmethod
+    def _region(config: InferenceConfig, global_crop: CropRegion) -> CropRegion:
+        """Returns the scored crop of the target scene, checked against its global crop.
+
+        An axis whose start and end are both zero spans the whole global crop along
+        that axis, so leaving all four bounds at zero scores the full target scene.
+
+        Args:
+            config      : Inference configuration carrying the target crop bounds.
+            global_crop : Global crop of the target dataset.
+
+        Raises:
+            ValueError : If the crop is empty or inverted, or does not lie inside the global crop.
+        """
+        target      = config.target
+        row_bounds  = (global_crop.row_start, global_crop.row_end) if target.row_start == target.row_end == 0 else (target.row_start, target.row_end)
+        col_bounds  = (global_crop.col_start, global_crop.col_end) if target.col_start == target.col_end == 0 else (target.col_start, target.col_end)
+        bounds      = (*row_bounds, *col_bounds)
+
+        if not (bounds[0] < bounds[1] and bounds[2] < bounds[3]):
+            raise ValueError(f"inference.target crop {bounds} is empty or inverted; set start < end on each axis inside the target's global crop {global_crop.as_tuple()}, or leave both bounds of an axis at 0 to span the whole crop along it.")
+
+        region = CropRegion(*bounds)
+        if not global_crop.contains(region):
+            raise ValueError(f"inference.target crop {region.as_tuple()} is not contained in the global crop {global_crop.as_tuple()} of {target.dataset_path}.")
+
+        return region
+
+    @staticmethod
+    def of(config: InferenceConfig) -> "TargetDataset | None":
+        """Returns the checked target of an inference configuration, or None when the run is scored on its own split.
+
+        Args:
+            config : Inference configuration whose target block is read.
+
+        Raises:
+            ValueError        : If the split or region override conflicts with a target, the crop is invalid, or the label cube lives outside the target dataset.
+            FileNotFoundError : If the target dataset or its label cube is missing.
+        """
+        target = config.target
+        if not target.enabled:
+            return None
+
+        TargetDataset._check_block(config)
+
+        dataset_path    = Path(target.dataset_path)
+        parameters_path = Path(target.parameters_path)
+        global_crop     = TargetDataset._check_paths(dataset_path, parameters_path)
+        labels          = tuple(target.secondary_labels) if target.secondary_labels else None
+
+        return TargetDataset(dataset_path, parameters_path, labels, TargetDataset._region(config, global_crop))
+
+    def dataset_config(self, trained: DatasetConfig) -> DatasetConfig:
+        """Returns the run's dataset configuration moved onto the target scene.
+
+        Args:
+            trained : Dataset configuration the run was trained with.
+
+        Returns:
+            The same patch geometry, channel layout and batch settings over the target scene, its labels and secondary channels, with the scored crop as the only (test) region.
+        """
+        return replace(
+            trained,
+            preprocessing_run_directory = self.dataset_path,
+            parameters_path             = self.parameters_path,
+            secondary_labels            = self.secondary_labels,
+            split_regions               = SplitRegions(train=[], val=[], test=self.region),
+        )
+
+    def payload(self) -> dict:
+        """Returns the marker and metrics entry naming the target scene, its labels, secondary channels and crop."""
+        return {
+            "dataset_path"     : str(self.dataset_path),
+            "parameters_path"  : str(self.parameters_path),
+            "secondary_labels" : list(self.secondary_labels) if self.secondary_labels is not None else None,
+            "region"           : list(self.region.as_tuple()),
+        }
+
+    def describe(self) -> str:
+        """Returns a one-line description of the target for logs and reports."""
+        channels = ", ".join(self.secondary_labels) if self.secondary_labels else "every secondary channel"
+
+        return f"{self.name}, labels {self.parameters_path.parent.name}, crop {self.region.as_tuple()}, secondaries {channels}"
 
 
 class CompletedInference:
@@ -173,6 +336,23 @@ class CompletedInference:
             return None
 
         return str(payload[CompletedInference.CHECKPOINT_KEY]["name"])
+
+    @staticmethod
+    def target(stamp: Path) -> dict:
+        """Returns the target dataset a completed stamp under a cross-dataset tree was scored on, as its marker records it.
+
+        Args:
+            stamp : Completed inference stamp directory under a run's cross-dataset tree.
+
+        Raises:
+            KeyError : If the marker records no target dataset, which no stamp of that tree is written without.
+        """
+        payload = CompletionMarker.payload(stamp)
+
+        if TargetDataset.KEY not in payload:
+            raise KeyError(f"inference completion marker at {stamp} records no '{TargetDataset.KEY}'; every stamp under a cross-dataset tree is written with one, so this stamp was not written by the target-dataset inference.")
+
+        return payload[TargetDataset.KEY]
 
     @staticmethod
     def latest(base: Path, split: str) -> Path | None:

@@ -191,7 +191,7 @@ class ProfileAeRunLoader(RunArtifactLoader):
         model.load_state_dict(ckpt["params"])
         model.eval()
 
-        self._validate_x_axis(ckpt_x_axis, np.asarray(z_axis, dtype=np.float32), ckpt_path)
+        self._validate_x_axis(ckpt_x_axis, np.asarray(z_axis, dtype=np.float32), ckpt_path, dataset_config.preprocessing_run_directory)
 
         batch_size = config.batch_size if config.batch_size is not None else dataset_config.batch_size
         loader     = DataLoader(

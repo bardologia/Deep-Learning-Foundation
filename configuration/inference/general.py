@@ -1,8 +1,9 @@
 """Configuration for backbone and dual volumetric inference runs.
 
 Holds the output layout, the analysis toggles (SSIM against the raw cube, flip
-consistency, stratified metrics, curve-parameter fitting) and the plotting and
-animation settings applied to every inference run.
+consistency, stratified metrics, curve-parameter fitting), the plotting and
+animation settings applied to every inference run, and the target dataset a run
+can be scored on instead of the dataset it was trained on.
 """
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib     import Path
 from typing      import List, Optional
+
+from configuration.reference_layout import ReferenceLayout
 
 
 @dataclass
@@ -31,6 +34,37 @@ class InferencePaths:
     cubes_subdir      : str = "cubes"
     metrics_filename  : str = "metrics.json"
     report_filename   : str = "report.md"
+
+
+@dataclass
+class TargetDatasetConfig:
+    """Dataset a trained run is scored on in place of the split it was trained with.
+
+    The run keeps its checkpoint, patch geometry, input channel layout and training
+    normalization statistics; only the scene, its labels, the secondary channels fed
+    to the model and the scored crop change. The target scene must share the run's z
+    axis, Gaussian count K and number of secondary channels. An axis whose start and
+    end are both 0 spans the target's whole global crop, so the default scores the full scene.
+
+    Attributes:
+        enabled          : Whether the run is scored on this dataset instead of its own split.
+        dataset_path     : Dataset directory of the target scene.
+        parameters_path  : Gaussian label cube (parameters.npy) of a parameter run inside the target dataset, the reference every metric is scored against.
+        secondary_labels : Secondary channel labels of the target scene fed to the model, as many as the run was trained with; empty feeds every secondary channel of the target stack.
+        row_start        : First row of the scored crop of the target scene, inclusive; 0 together with row_end 0 takes the whole row extent.
+        row_end          : Last row of the scored crop of the target scene, exclusive.
+        col_start        : First col of the scored crop of the target scene, inclusive; 0 together with col_end 0 takes the whole col extent.
+        col_end          : Last col of the scored crop of the target scene, exclusive.
+    """
+
+    enabled          : bool      = False
+    dataset_path     : Path      = ReferenceLayout.DATASET_DIR
+    parameters_path  : Path      = ReferenceLayout.PARAMETERS
+    secondary_labels : List[str] = field(default_factory=list)
+    row_start        : int       = 0
+    row_end          : int       = 0
+    col_start        : int       = 0
+    col_end          : int       = 0
 
 
 @dataclass
@@ -81,6 +115,7 @@ class InferenceConfig:
         save_dpi                 : Figure resolution used when saving.
         figure_style             : Named matplotlib style applied to the figures.
         paths                    : Output subdirectory and file-name layout.
+        target                   : Foreign dataset the run is scored on instead of its own split, off by default.
     """
 
     run_directory : Path
@@ -135,7 +170,8 @@ class InferenceConfig:
     save_dpi            : int  = 300
     figure_style        : str  = "report"
 
-    paths               : InferencePaths = field(default_factory=InferencePaths)
+    paths               : InferencePaths      = field(default_factory=InferencePaths)
+    target              : TargetDatasetConfig = field(default_factory=TargetDatasetConfig)
 
     @classmethod
     def for_run_directory(cls) -> "InferenceConfig":

@@ -7,6 +7,7 @@ entry configs consumed by the `main/inference` entry points.
 from configuration.inference.general import (
     InferencePaths,
     InferenceConfig,
+    TargetDatasetConfig,
 )
 from configuration.inference.backbone            import BackboneInferenceEntryConfig
 from configuration.inference.image_autoencoder   import ImageAeInferenceEntryConfig

@@ -125,6 +125,21 @@ class LaunchLayout:
     PICK_DATASETS = {"kind": "dataset", "mode": "datasets", "multi": True, "baseFrom": "dataset_base_path", "validOnly": True}
     PICK_CHANNELS = {"kind": "dataset", "mode": "secondaries", "multi": True, "datasetFrom": "paths.dataset_path", "standardButton": True}
 
+    NUM_CROP             = {"kind": "number", "int": True, "min": 0, "max": 100000, "presets": [0, 500, 1000, 1500, 2000]}
+    PICK_TARGET_PARAMS   = {"kind": "dataset", "mode": "params", "datasetFrom": "inference.target.dataset_path"}
+    PICK_TARGET_CHANNELS = {"kind": "dataset", "mode": "secondaries", "multi": True, "datasetFrom": "inference.target.dataset_path", "standardButton": True}
+
+    INFERENCE_TARGET_FIELDS = [
+        "inference.target.enabled",
+        "inference.target.dataset_path",
+        "inference.target.parameters_path",
+        "inference.target.secondary_labels",
+        "inference.target.row_start",
+        "inference.target.row_end",
+        "inference.target.col_start",
+        "inference.target.col_end",
+    ]
+
     MULTI_K       = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add K, Enter", "empty": "select at least one K"}
     MULTI_LAMBDA  = {"kind": "multi", "numeric": True, "placeholder": "add lambda, Enter", "empty": "select at least one lambda"}
     MULTI_INT     = {"kind": "multi", "numeric": True, "integer": True, "placeholder": "add value, Enter", "empty": "add at least one value"}
@@ -386,6 +401,19 @@ class LaunchLayout:
             ]},
             *INFERENCE_REPORT_GROUPS,
         ],
+        "inference_target": [
+            {"title": "Scene", "fields": [
+                {"gate": "enabled", "fields": [
+                    {"path": "dataset_path", "widget": PICK_DATASET},
+                    {"path": "parameters_path", "widget": PICK_TARGET_PARAMS},
+                    {"path": "secondary_labels", "widget": PICK_TARGET_CHANNELS},
+                    {"path": "row_start", "widget": NUM_CROP},
+                    {"path": "row_end", "widget": NUM_CROP},
+                    {"path": "col_start", "widget": NUM_CROP},
+                    {"path": "col_end", "widget": NUM_CROP},
+                ]},
+            ]},
+        ],
         "profile_inference": [
             {"title": "Run", "fields": ["run_directory", "output_subdir", "device", "log_level", {"path": "seed", "widget": NUM_SEED}]},
             {"title": "Execution", "fields": ["split", "checkpoint_name", {"path": "batch_size", "widget": NUM_BATCH}, {"path": "num_workers", "widget": NUM_WORKERS}]},
@@ -578,11 +606,14 @@ class LaunchLayout:
         ]},
     ]
 
+    INFERENCE_TARGET_NOTE = "Scores every selected run on a dataset it was never trained on. The run keeps its checkpoint and training normalization; the target must share its z axis and K, and feed as many secondary channels. Leaving an axis at 0 to 0 scores the whole target scene along it. Stamps land under <run>/cross_dataset/<dataset>/, apart from the run's own inference, and split must stay test."
+
     INFER_BACKBONE_LAYOUT = {
         "essentials": InferenceEssentials.for_block("inference.split"),
         "sections": [
             {"key": "backbone", "title": "Backbone", "panels": [
                 {"kind": "fields", "title": "Backbone inference", "template": "inference_full", "at": "inference"},
+                {"kind": "fields", "title": "Target dataset", "note": INFERENCE_TARGET_NOTE, "template": "inference_target", "at": "inference.target"},
 
                 {"kind": "hidden", "fields": ["inference.region_override", "gpus_file"]},
             ]},
@@ -616,6 +647,7 @@ class LaunchLayout:
         "sections": [
             {"key": "dual", "title": "Dual", "panels": [
                 {"kind": "fields", "title": "Dual-trunk model inference", "template": "inference_full", "at": "inference"},
+                {"kind": "fields", "title": "Target dataset", "note": INFERENCE_TARGET_NOTE, "template": "inference_target", "at": "inference.target"},
 
                 {"kind": "hidden", "fields": ["inference.region_override", "gpus_file"]},
             ]},
@@ -750,7 +782,7 @@ class LaunchLayout:
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after", "infer_at_end"]}]},
                     {"kind": "fields", "title": "Inference run", "template": "inference_full", "at": "inference"},
 
-                    {"kind": "hidden", "fields": ["inference.region_override"]},
+                    {"kind": "hidden", "fields": ["inference.region_override", *INFERENCE_TARGET_FIELDS]},
                 ]},
             ],
         },
@@ -883,7 +915,7 @@ class LaunchLayout:
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after", "infer_at_end"]}]},
                     {"kind": "fields", "title": "Inference run", "template": "inference_full", "at": "inference"},
 
-                    {"kind": "hidden", "fields": ["inference.region_override"]},
+                    {"kind": "hidden", "fields": ["inference.region_override", *INFERENCE_TARGET_FIELDS]},
                 ]},
             ],
         },
@@ -935,7 +967,7 @@ class LaunchLayout:
                     {"kind": "fields", "groups": [{"title": "After training", "fields": ["infer_after", "infer_at_end"]}]},
                     {"kind": "fields", "title": "Inference run", "template": "inference_full", "at": "inference"},
 
-                    {"kind": "hidden", "fields": ["inference.region_override"]},
+                    {"kind": "hidden", "fields": ["inference.region_override", *INFERENCE_TARGET_FIELDS]},
                 ]},
             ],
         },

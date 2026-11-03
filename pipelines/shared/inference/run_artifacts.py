@@ -114,19 +114,20 @@ class RunArtifactLoader:
         return ckpt, z_axis, meta
 
     @staticmethod
-    def _validate_x_axis(ckpt_x_axis: np.ndarray, z_axis: np.ndarray, ckpt_path: Path) -> None:
-        """Checks that the checkpoint's z axis matches the rebuilt dataset axis.
+    def _validate_x_axis(ckpt_x_axis: np.ndarray, z_axis: np.ndarray, ckpt_path: Path, dataset_dir: Path) -> None:
+        """Checks that the checkpoint's z axis matches the axis of the dataset being scored.
 
         Args:
             ckpt_x_axis : Z axis stored in the checkpoint, shape (x_axis_length,) in metres.
-            z_axis      : Z axis produced by the persisted dataset config, shape (x_axis_length,) in metres.
+            z_axis      : Z axis of the dataset being scored, shape (x_axis_length,) in metres.
             ckpt_path   : Checkpoint path, quoted in the error message.
+            dataset_dir : Dataset directory being scored, quoted in the error message.
 
         Raises:
             ValueError : The axes differ in length or values, which would report every z metric in the wrong units.
         """
         if ckpt_x_axis.shape != z_axis.shape or not np.allclose(ckpt_x_axis, z_axis, rtol=1e-5, atol=1e-5):
-            raise ValueError(f"Checkpoint '{ckpt_path}' was trained on z axis [{ckpt_x_axis[0]:.3f}, {ckpt_x_axis[-1]:.3f}] with {ckpt_x_axis.size} bins, but the persisted dataset config produces axis [{z_axis[0]:.3f}, {z_axis[-1]:.3f}] with {z_axis.size} bins; every z metric would be reported in the wrong units.")
+            raise ValueError(f"Checkpoint '{ckpt_path}' was trained on z axis [{ckpt_x_axis[0]:.3f}, {ckpt_x_axis[-1]:.3f}] with {ckpt_x_axis.size} bins, but the dataset it is scored on ({dataset_dir}) produces axis [{z_axis[0]:.3f}, {z_axis[-1]:.3f}] with {z_axis.size} bins; every z metric would be reported in the wrong units.")
 
     @staticmethod
     def _axis_label(axis: np.ndarray) -> str:

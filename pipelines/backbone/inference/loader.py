@@ -2,7 +2,8 @@
 
 Reads the run summary, dataset-creation config, checkpoint and normalization statistics,
 reconstructs the backbone with the persisted head, and assembles the patch dataset,
-dataloader and stitching grid into a single `Run` container.
+dataloader and stitching grid into a single `Run` container. The dataset is the
+run's own split, or a foreign target scene the run was never trained on.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from pipelines.backbone.dataset.stats           import Stats
 from pipelines.backbone.dataset.spatial         import GridInfo
 from pipelines.backbone.inference.model_wrapper import ModelWrapper
 from pipelines.shared.config.config_persistence import BackboneModelConfigIO
+from pipelines.shared.inference.metadata        import TargetDataset
 from pipelines.shared.inference.run_artifacts   import RunArtifactLoader
 
 
@@ -89,7 +91,9 @@ class Run:
         x_axis_length      : Number of z bins.
         n_gaussians        : Gaussian count K the run was trained with.
         activity_threshold : Physical amplitude above which a Gaussian slot counts as active, read from the label run's extraction metadata.
-        dataset_config     : Dataset-creation configuration restored from the run.
+        dataset_config     : Dataset configuration scored: the one restored from the run, or that one moved onto a target scene.
+        training_dataset   : Dataset directory the run was trained on.
+        target             : Foreign dataset the run is scored on, or None when it is scored on its own split.
         split_name         : Name of the split being inferred ("train", "val" or "test").
         split_region       : Crop region covered by the inference, including any guard extension.
         core_region        : Unextended stored split region the region override contains, set only when an override was applied.
@@ -113,6 +117,8 @@ class Run:
     n_gaussians        : int
     activity_threshold : float
     dataset_config     : DatasetConfig
+    training_dataset   : Path
+    target             : TargetDataset | None
     split_name         : str
     split_region       : CropRegion
     core_region        : CropRegion | None
@@ -165,6 +171,37 @@ class RunLoader(RunArtifactLoader):
 
         if out_channels != expected:
             raise ValueError(f"Run '{self.run_directory}' persists out_channels={out_channels} but n_gaussians={n_gaussians} requires a {expected}-channel parameter head; the run summary describes a head this loader cannot read.")
+
+    def _validate_target_gaussians(self, target: TargetDataset, label_gaussians: int, n_gaussians: int) -> None:
+        """Checks that the target's label run fits the same number of Gaussians the run predicts.
+
+        Args:
+            target          : Foreign dataset the run is scored on.
+            label_gaussians : Gaussian count K of the target's parameter run.
+            n_gaussians     : Gaussian count K the run was trained with.
+
+        Raises:
+            ValueError : If the two counts differ, which leaves the parameter-space metrics without a slot-for-slot reference.
+        """
+
+        if label_gaussians != n_gaussians:
+            raise ValueError(f"Run '{self.run_directory}' predicts K={n_gaussians} Gaussians but the target labels {target.parameters_path} were fitted with K={label_gaussians}; pick a parameter run of {target.name} extracted at K={n_gaussians}.")
+
+    def _validate_target_channels(self, target: TargetDataset, dataset_channels: int, in_channels: int) -> None:
+        """Checks that the target scene yields as many input channels as the run consumes.
+
+        Args:
+            target           : Foreign dataset the run is scored on.
+            dataset_channels : Input width the target patch dataset yields.
+            in_channels      : Input width the run was trained with.
+
+        Raises:
+            ValueError : If the widths differ, which happens when the target feeds a different number of secondary channels.
+        """
+
+        if dataset_channels != in_channels:
+            channels = ", ".join(target.secondary_labels) if target.secondary_labels else "every secondary channel"
+            raise ValueError(f"Run '{self.run_directory}' consumes {in_channels} input channels but the target {target.name} with secondaries {channels} yields {dataset_channels}; set inference.target.secondary_labels to as many secondary channels of {target.name} as the run was trained with.")
 
     def _build_model(self, backbone_name: str, in_channels: int, out_channels: int, patch_size: Tuple[int, int]):
         """Rebuilds the backbone from the persisted model config and records its head name.
@@ -222,23 +259,25 @@ class RunLoader(RunArtifactLoader):
         checkpoint_name : str,
         load_cube       : bool = True,
         region_override : Optional[CropRegion] = None,
+        target          : Optional[TargetDataset] = None,
     ) -> Run:
         """Loads model, dataset and dataloader for one split of a trained run.
 
         Args:
-            split           : Split to infer over ("train", "val" or "test").
+            split           : Split to infer over ("train", "val" or "test"); a target crop is always scored as "test".
             batch_size      : Batch size override for the dataloader, or None to keep the trained value.
             num_workers     : Worker count for the dataloader.
             device          : Torch device string the model is moved to.
             checkpoint_name : File name of the checkpoint inside the run directory.
             load_cube       : Whether to read the raw cube; when False `full_curves` refuses use.
             region_override : Crop region replacing the split region, used for guard-extended inference or for one region of a split stored as several.
+            target          : Foreign dataset scored in place of the run's own split, or None.
 
         Returns:
             The assembled `Run` container.
 
         Raises:
-            ValueError : If the checkpoint's z axis differs from the axis the dataset's preprocessing run defines, which would report every z metric in the wrong units.
+            ValueError : If the checkpoint's z axis differs from the axis of the dataset being scored, which would report every z metric in the wrong units, or a target dataset carries a different Gaussian count or input width than the run.
         """
 
         self.logger.section("[Inference: Load Run]")
@@ -246,11 +285,12 @@ class RunLoader(RunArtifactLoader):
 
         run_summary = self._read_json("run_summary.json")
 
-        dataset_config = self._build_dataset_config(
+        trained_config = self._build_dataset_config(
             payload     = self._read_json("dataset_creation_config.json"),
             batch_size  = batch_size,
             num_workers = num_workers,
         )
+        dataset_config = trained_config if target is None else target.dataset_config(trained_config)
 
         backbone_name = str(run_summary["model_name"])
         in_channels   = int(run_summary["in_channels"])
@@ -261,6 +301,9 @@ class RunLoader(RunArtifactLoader):
 
         gaussian           = GaussianConfig.from_dataset(dataset_config.preprocessing_run_directory, dataset_config.parameters_path)
         activity_threshold = gaussian.activity_threshold
+
+        if target is not None:
+            self._validate_target_gaussians(target, gaussian.n_default_gaussians, n_gaussians)
 
         ckpt_path = self.run_directory / checkpoint_name
         model     = self._build_model(backbone_name, in_channels, out_channels, dataset_config.patch.size)
@@ -283,7 +326,10 @@ class RunLoader(RunArtifactLoader):
         )
 
         dataset_axis = GaussianAxis.build(gaussian.x_min, gaussian.x_max, layout.profile_length)
-        self._validate_x_axis(z_axis, dataset_axis, ckpt_path)
+        self._validate_x_axis(z_axis, dataset_axis, ckpt_path, dataset_config.preprocessing_run_directory)
+
+        if target is not None:
+            self._validate_target_channels(target, dataset.input_channels, in_channels)
 
         core_region = None
         if region_override is not None:
@@ -313,12 +359,14 @@ class RunLoader(RunArtifactLoader):
 
         self.logger.section(f"[Split]         : '{split}'")
         self.logger.kv_table({
+            "Scored dataset": dataset_config.preprocessing_run_directory if target is None else f"target {target.describe()}",
+            "Trained on":     trained_config.preprocessing_run_directory,
             "Patches":        grid.grid.number_of_patches,
             "Row size":       region.row_size,
             "Col size":       region.col_size,
             "Z axis length":  z_axis.size,
             "Region":         region.as_tuple(),
-            "Region source":  "stored split region" if core_region is None else f"region override; stored core region {core_region.as_tuple()}",
+            "Region source":  ("stored split region" if core_region is None else f"region override; stored core region {core_region.as_tuple()}") if target is None else "target crop",
             "Batch size":     f"{dataset_config.batch_size} (from training)" if batch_size is None else dataset_config.batch_size,
             "Loader workers": dataset_config.num_workers,
         })
@@ -333,6 +381,8 @@ class RunLoader(RunArtifactLoader):
             n_gaussians        = n_gaussians,
             activity_threshold = activity_threshold,
             dataset_config     = dataset_config,
+            training_dataset   = Path(trained_config.preprocessing_run_directory),
+            target             = target,
             split_name         = split,
             split_region       = region,
             core_region        = core_region,

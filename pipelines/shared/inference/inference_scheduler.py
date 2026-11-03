@@ -3,7 +3,9 @@
 Walks whatever path it is given, keeps the runs of the requested family, leaves
 alone the ones already scored on the configured split with the requested
 checkpoint, and dispatches one worker subprocess per remaining run through the
-shared GPU queue.
+shared GPU queue. When the family block enables a target dataset, a run counts
+as scored only by a stamp of its cross-dataset tree recording the same target
+scene, labels, secondary channels and crop.
 """
 
 from __future__ import annotations
@@ -11,7 +13,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from pipelines.shared.inference.metadata       import CompletedInference
+from configuration.inference.general           import InferenceConfig
+from pipelines.shared.inference.metadata       import CompletedInference, TargetDataset
 from pipelines.shared.inference.run_classifier import InferenceLayout, RunClassifier, RunDirectoryWalk
 from tools.monitoring.logger                   import Logger
 from tools.orchestration.gpu_queue             import GpuJob, GpuJobResult, GpuPoolFile, GpuQueue
@@ -79,6 +82,7 @@ class InferenceScheduler:
         block           : Family inference block of the entry configuration, carrying the split and the checkpoint the workers score.
         split           : Dataset split the family block scores, deciding which runs already hold their inference.
         checkpoint_name : Checkpoint file the family block scores; a run whose stamps record only other checkpoints is scored again.
+        target          : Foreign dataset the family block scores every run on, or None when runs are scored on their own split.
         runs_dir        : Path being walked: a run, a sweep, an experiment or a whole runs tree.
         work_dir        : Timestamped directory holding worker logs and the resolved config.
         pool_file       : File describing the live GPU pool.
@@ -93,6 +97,10 @@ class InferenceScheduler:
             entry_script : Entry script the workers re-invoke.
             run_type     : Model family to select from the runs tree.
             block        : Family inference block of the configuration, naming the split and checkpoint the workers score.
+
+        Raises:
+            ValueError        : If the block enables a target dataset that conflicts with the split or a region override, or names an invalid crop.
+            FileNotFoundError : If an enabled target's dataset or label cube is missing.
         """
         self.config          = config
         self.entry_script    = entry_script
@@ -100,6 +108,7 @@ class InferenceScheduler:
         self.block           = block
         self.split           = block.split
         self.checkpoint_name = block.checkpoint_name
+        self.target          = TargetDataset.of(block) if isinstance(block, InferenceConfig) else None
         self.runs_dir        = Path(config.runs_dir).expanduser()
         self.work_dir        = Path("logs") / "inference" / run_type / RunTag.now()
         self.pool_file       = GpuPoolFile.resolve(config.gpus_file, self.work_dir)
@@ -182,12 +191,13 @@ class InferenceScheduler:
         """Returns how far a run is scored on the configured split and whether it counts as scored.
 
         A run counts as scored when one of its completed stamps on the split records
-        the requested checkpoint. Stamps that record only other checkpoints are warned
-        about and the run is scored again; stamps whose marker records no checkpoint
-        (autoencoder stamps, older backbone stamps) still count as scored
-        and say so in the table. A split scored region by region whose launch stamped
-        only some of its regions reads as partial, is warned about with the missing
-        region indices and is scored again.
+        the requested checkpoint; with a target dataset, only the stamps of the run's
+        cross-dataset tree that record the same target count. Stamps that record only
+        other checkpoints are warned about and the run is scored again; stamps whose
+        marker records no checkpoint (autoencoder stamps, older backbone stamps) still
+        count as scored and say so in the table. A split scored region by region whose
+        launch stamped only some of its regions reads as partial, is warned about with
+        the missing region indices and is scored again.
 
         Args:
             run_dir : Run directory whose inference stamps are inspected.
@@ -196,8 +206,11 @@ class InferenceScheduler:
         Returns:
             Tuple of the state shown in the run table ("done", "done (checkpoint not recorded)", "done (other checkpoint: X)", "partial (k/N regions)" or "missing") and whether the run already holds a completed inference with the requested checkpoint.
         """
-        base   = InferenceLayout.base(run_dir, self.run_type)
+        base   = InferenceLayout.base(run_dir, self.run_type) if self.target is None else InferenceLayout.target_base(run_dir, self.run_type, self.target.name)
         stamps = CompletedInference.stamps(base, self.split)
+
+        if self.target is not None:
+            stamps = [stamp for stamp in stamps if CompletedInference.target(stamp) == self.target.payload()]
 
         if stamps:
             recorded = [CompletedInference.checkpoint_name(stamp) for stamp in stamps]
@@ -240,7 +253,7 @@ class InferenceScheduler:
         if not matched:
             raise FileNotFoundError(f"No run of type '{self.run_type}' found under {self.runs_dir}: {len(candidates)} candidate director(ies) were walked and all were rejected. Check runs_dir and the entry point family.")
 
-        column = f"Inference ({self.split})"
+        column = f"Inference ({self.split})" if self.target is None else f"Inference on {self.target.name}"
         rows   = []
         for directory in matched:
             state, done = self._inference_state(directory, logger)
@@ -308,13 +321,15 @@ class InferenceScheduler:
             logger.section("Inference")
 
             run_dirs = self._run_dirs(logger)
+            scored   = f"'{self.split}'" if self.target is None else f"the target {self.target.name} (same labels, secondary channels and crop)"
 
             logger.kv_table({
                 "Run type"       : self.run_type,
                 "Split"          : self.split,
+                "Target dataset" : self.target.describe() if self.target is not None else "none (runs scored on their own split)",
                 "Checkpoint"     : self.checkpoint_name,
                 "Runs to score"  : len(run_dirs),
-                "Runs skipped"   : f"{len(self.skipped)} (already scored on '{self.split}' with {self.checkpoint_name} or an unrecorded checkpoint)",
+                "Runs skipped"   : f"{len(self.skipped)} (already scored on {scored} with {self.checkpoint_name} or an unrecorded checkpoint)",
                 "GPUs"           : self.config.gpus,
                 "GPU pool file"  : str(self.pool_file),
                 "Runs dir"       : str(self.runs_dir),
@@ -324,7 +339,7 @@ class InferenceScheduler:
             }, title="Configuration")
 
             if not run_dirs:
-                logger.ok("every selected run already holds a completed inference on this split; nothing to score")
+                logger.ok(f"every selected run already holds a completed inference on {scored}; nothing to score")
                 return []
 
             config_path = self._worker_config()
