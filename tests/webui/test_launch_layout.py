@@ -116,6 +116,29 @@ def test_secondary_labels_pick_secondaries_from_the_page_dataset(key, flow_confi
     assert widget["datasetFrom"] in paths
 
 
+@pytest.mark.parametrize("key, flow_config", [("infer_backbone", BackboneInferenceEntryConfig), ("infer_dual", DualInferenceEntryConfig)])
+def test_the_target_dataset_pickers_read_the_target_scene(key, flow_config):
+    """The label-run and secondary-channel pickers of the target block list the target dataset, not a dataset of the run."""
+    paths   = [path for path, _value in ConfigCli._leaves(flow_config())]
+    widgets = LaunchLayout().build(key, [{"path": path} for path in paths])["widgets"]
+
+    assert widgets["inference.target.parameters_path"]["mode"]         == "params"
+    assert widgets["inference.target.parameters_path"]["datasetFrom"]  == "inference.target.dataset_path"
+    assert widgets["inference.target.secondary_labels"]["mode"]        == "secondaries"
+    assert widgets["inference.target.secondary_labels"]["datasetFrom"] == "inference.target.dataset_path"
+
+
+@pytest.mark.parametrize("key, flow_config", [("train_backbone", BackboneEntryConfig), ("train_jepa", JepaEntryConfig), ("train_dual", DualEntryConfig)])
+def test_the_training_pages_hide_the_target_dataset_block(key, flow_config):
+    """The inference run after training scores the run's own split, so the training pages keep the target block hidden."""
+    paths  = [path for path, _value in ConfigCli._leaves(flow_config())]
+    layout = LaunchLayout().build(key, [{"path": path} for path in paths])
+    hidden = {field for section in layout["sections"] for panel in section["panels"] if panel["kind"] == "hidden" for field in panel["fields"]}
+
+    assert set(LaunchLayout.INFERENCE_TARGET_FIELDS) <= hidden
+    assert not any(path.startswith("inference.target.") for path in layout["widgets"])
+
+
 @pytest.mark.parametrize("key, flow_config", _INFERENCE_PAGES)
 def test_inference_layout_claims_every_config_field_exactly_once(key, flow_config):
     """Every inference page layout claims each field of its entry config exactly once."""
