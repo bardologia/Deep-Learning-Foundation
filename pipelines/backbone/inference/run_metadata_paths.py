@@ -1,17 +1,21 @@
 """Output directory layout of a backbone inference run.
 
 Derives the figure, animation, log, cube, metric and report paths from the inference
-configuration, either under an explicit output subdirectory or under a fresh timestamp.
+configuration, either under an explicit output subdirectory or under a fresh timestamp,
+inside the run's inference tree or, for a pass scored on a foreign dataset, inside the
+run's cross-dataset tree for that dataset.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from configuration.inference           import InferenceConfig
-from tools.data.io                     import FileIO
-from tools.runtime.environment_capture import EnvironmentCapture
-from tools.runtime.run_tag             import RunTag
+from configuration.inference                   import InferenceConfig
+from pipelines.shared.inference.metadata       import TargetDataset
+from pipelines.shared.inference.run_classifier import InferenceLayout, RunType
+from tools.data.io                             import FileIO
+from tools.runtime.environment_capture         import EnvironmentCapture
+from tools.runtime.run_tag                     import RunTag
 
 
 class InferenceMetadata:
@@ -32,12 +36,17 @@ class InferenceMetadata:
 
     CONFIG_FILENAME = "inference_config.json"
 
-    def __init__(self, config: InferenceConfig) -> None:
-        """Derives every output path from the configuration, timestamping when no subdir is set."""
+    def __init__(self, config: InferenceConfig, target: TargetDataset | None = None) -> None:
+        """Derives every output path from the configuration, timestamping when no subdir is set.
+
+        Args:
+            config : Inference configuration naming the run and the output layout.
+            target : Foreign dataset the pass scores the run on, whose cross-dataset tree receives the stamp, or None to stamp under the run's inference directory.
+        """
         self.config = config
         paths       = config.paths
 
-        base = config.run_directory / "inference"
+        base = InferenceLayout.base(config.run_directory, RunType.BACKBONE) if target is None else InferenceLayout.target_base(config.run_directory, RunType.BACKBONE, target.name)
         self.output_dir     = base / config.output_subdir if config.output_subdir else base / RunTag.now()
         self.figures_dir    = self.output_dir / paths.figures_subdir
         self.animations_dir = self.output_dir / paths.animations_subdir

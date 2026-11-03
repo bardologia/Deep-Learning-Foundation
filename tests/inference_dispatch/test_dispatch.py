@@ -2,8 +2,9 @@
 
 Covers the backbone, profile-autoencoder, image-autoencoder and dual run types, the routing of
 JEPA runs to the backbone type, the refusal to classify an empty run, and agreement between
-RunArtifacts filenames and the config IO classes. Also covers the per-family runners and the
-per-region scoring of a split stored as several regions."""
+RunArtifacts filenames and the config IO classes. Also covers the per-family runners, the
+per-region scoring of a split stored as several regions and the single pass of a run scored
+on a target dataset."""
 
 from __future__ import annotations
 
@@ -226,6 +227,38 @@ def test_dual_runner_scores_each_stored_region_with_the_dual_components(tmp_path
     assert all(config.run_directory == run for config, _ in _RecordingPipeline.passes)
     assert components == [DUAL_INFERENCE_COMPONENTS] * 2
     assert [region_pass.index for region_pass in _RecordingPipeline.region_passes] == [0, 1]
+
+
+def test_dual_runner_scores_an_enabled_target_in_one_pass_without_the_stored_regions(tmp_path, monkeypatch):
+    """With a target dataset enabled the dual runner skips the split-region loop: one pass, no region override, no region pass."""
+    import configuration.inference                       as inference_configs
+    import pipelines.backbone.inference.pipeline         as backbone_pipeline
+    import pipelines.shared.inference.inference_dispatch as dispatch
+    from pipelines.dual.inference.pipeline               import DUAL_INFERENCE_COMPONENTS
+
+    monkeypatch.setattr(backbone_pipeline, "InferencePipeline", _RecordingPipeline)
+    monkeypatch.setattr(_RecordingPipeline, "passes", [])
+    monkeypatch.setattr(_RecordingPipeline, "region_passes", [])
+
+    run = _write_split_regions(tmp_path / "run", [
+        {"row_start": 150, "row_end": 200, "col_start": 0, "col_end": 50},
+        {"row_start": 250, "row_end": 300, "col_start": 0, "col_end": 50},
+    ])
+
+    entry                          = inference_configs.DualInferenceEntryConfig()
+    entry.inference.target.enabled = True
+
+    dispatch.DualInferenceRunner(entry).run(run)
+
+    assert len(_RecordingPipeline.passes) == 1
+
+    config, components = _RecordingPipeline.passes[0]
+
+    assert config.run_directory             == run
+    assert config.output_subdir             is None
+    assert config.region_override           is None
+    assert components                       == DUAL_INFERENCE_COMPONENTS
+    assert _RecordingPipeline.region_passes == [None]
 
 
 def test_split_region_loop_scores_each_disjoint_region_in_its_own_pass(tmp_path, monkeypatch):

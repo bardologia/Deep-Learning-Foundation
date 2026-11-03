@@ -1742,6 +1742,19 @@
         "report_filename": "Filename of the Markdown run report written at the output directory root"
       }
     },
+    "inference/general::TargetDatasetConfig": {
+      "summary": "Scores a trained run on a dataset it was never trained on: the checkpoint, patch geometry, input channels and training normalization statistics stay, the scene, its labels, the secondary channels and the scored crop change",
+      "fields": {
+        "enabled": "Score the run on the target dataset below instead of its own split; the split must stay 'test' and region_override unset",
+        "dataset_path": "Dataset directory of the target scene; its z axis must match the run's",
+        "parameters_path": "Gaussian label cube (parameters.npy) of a parameter run inside the target dataset, extracted at the same K the run predicts; every metric is scored against it",
+        "secondary_labels": "Secondary channels of the target scene fed to the model, as many as the run was trained with; empty feeds every secondary channel of the target stack",
+        "row_start": "First row of the scored crop of the target scene, inclusive, inside its global crop; with row_end also 0 the whole row extent is scored",
+        "row_end": "Last row of the scored crop of the target scene, exclusive",
+        "col_start": "First col of the scored crop of the target scene, inclusive, inside its global crop; with col_end also 0 the whole col extent is scored",
+        "col_end": "Last col of the scored crop of the target scene, exclusive"
+      }
+    },
     "inference/general::InferenceConfig": {
       "summary": "Drives a full backbone cube inference run: loading, prediction, physics evaluation, plotting, and reporting",
       "fields": {
@@ -1787,7 +1800,8 @@
         "compute_flip_consistency": "Also run the model on row- and column-flipped inputs, unflip the predictions, and stitch the per-pixel curve disagreement into a flip-equivariance map: a label-free confidence signal saved as a cube, figure, and flip_* metrics (roughly triples the forward-pass cost)",
         "compute_stratified": "Also stratify the per-pixel curve MSE by scene covariates (GT active count, primary amplitude, aux gradient, label fit R²): binned median curves with IQR bands as figures plus strat_* rank-correlation metrics",
         "extract_curve_params": "For runs that predict z profiles instead of Gaussian parameters (JEPA with a coupled profile autoencoder), refit K Gaussians to each predicted curve so the whole parameter-space analysis (slot occupancy, matched Gaussian errors, failure modes, presence calibration, parameter figures) becomes available; the same extractor is also run on the GT curves and scored against the exact GT parameters, giving the extract_floor_* measurement floor that any extracted error must be read against. Inert for runs whose model already outputs parameters",
-        "extract_prominence_frac": "Peak-detection prominence threshold of the curve extractor, as a fraction of each profile's maximum; lower values accept fainter peaks as separate Gaussians"
+        "extract_prominence_frac": "Peak-detection prominence threshold of the curve extractor, as a fraction of each profile's maximum; lower values accept fainter peaks as separate Gaussians",
+        "target": "Foreign dataset the run is scored on instead of its own split (off by default); the stamps land under <run>/cross_dataset/<dataset name>/, apart from the run's own inference"
       }
     },
     "inference/image_autoencoder::ImageAeInferencePaths": {

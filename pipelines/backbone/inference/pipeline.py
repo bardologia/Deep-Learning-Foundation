@@ -4,7 +4,9 @@ Loads the run, stitches predictions into cubes, then layers on the optional eval
 (curve-parameter extraction, embeddings, label quality, the SSIM sweep against the raw
 cube, flip consistency, stratified errors, failure modes, presence calibration and the
 normalization audit), rewriting metrics.json after each so a crashed run keeps whatever
-finished. Figures, animations and the markdown report close the pass.
+finished. Figures, animations and the markdown report close the pass. A pass whose
+configuration enables a target dataset scores the run on that foreign scene instead of
+its own split and stamps under the run's cross-dataset tree.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from pipelines.backbone.inference.failure_modes        import FailureModes
 from pipelines.backbone.inference.presence_calibration import PresenceCalibration
 from pipelines.backbone.inference.report               import Report, ReportPayloadBuilder
 from pipelines.backbone.inference.stratified           import StratifiedErrors
-from pipelines.shared.inference.metadata               import CompletedInference, RegionPass
+from pipelines.shared.inference.metadata               import CompletedInference, RegionPass, TargetDataset
 from tools.data.regions                                import CropRegion
 from tools.monitoring.logger                           import Logger
 from tools.reporting.plotting                          import PlotBase
@@ -62,20 +64,26 @@ class InferencePipeline:
         config      : Inference configuration selecting the run, split, device and every optional evaluation.
         components  : Loader, predictor and evaluator classes specialising the pipeline.
         region_pass : Position of this pass inside a split stored as several regions, recorded in the completion marker and metrics.json, or None for a single-pass split.
+        target      : Foreign dataset the run is scored on, recorded in the completion marker and metrics.json, or None when the run is scored on its own split.
     """
 
     def __init__(self, config: InferenceConfig, components: InferenceComponents | None = None, region_pass: RegionPass | None = None) -> None:
-        """Stores the configuration, the component set (defaulting to the backbone components) and the region pass.
+        """Stores the configuration, the component set (defaulting to the backbone components), the region pass and the checked target dataset.
 
         Args:
             config      : Inference configuration.
             components  : Component overrides, or None for the plain backbone set.
             region_pass : Region pass of a split scored region by region, or None when the split is scored in one pass.
+
+        Raises:
+            ValueError        : If an enabled target conflicts with the split or a region override, or names an invalid crop.
+            FileNotFoundError : If an enabled target's dataset or label cube is missing.
         """
 
         self.config      = config
         self.components  = components if components is not None else InferenceComponents()
         self.region_pass = region_pass
+        self.target      = TargetDataset.of(config)
 
     def _setup(self, cfg: InferenceConfig) -> tuple[InferenceMetadata, Logger, Plotter]:
         """Creates the output directories, records the resolved configuration, seeds NumPy and builds the logger and plotters.
@@ -91,7 +99,7 @@ class InferencePipeline:
             Tuple of run metadata, logger and plotter bundle.
         """
 
-        meta = InferenceMetadata(cfg)
+        meta = InferenceMetadata(cfg, self.target)
         meta.create_dirs()
         ConfigCli.save_resolved(cfg, meta.config_path)
         np.random.seed(cfg.seed)
@@ -131,6 +139,7 @@ class InferencePipeline:
             "Split"               : cfg.split,
             "Region override"     : cfg.region_override if cfg.region_override else "none (stored split region)",
             "Region pass"         : f"region {self.region_pass.index} of {self.region_pass.count} (group {self.region_pass.group})" if self.region_pass is not None else "single pass",
+            "Target dataset"      : self.target.describe() if self.target is not None else "none (scored on its own split)",
             "Device"              : cfg.device,
             "Checkpoint"          : cfg.checkpoint_name,
             "Render amp floor"    : cfg.render_amp_floor,
@@ -161,6 +170,7 @@ class InferencePipeline:
             device          = cfg.device,
             checkpoint_name = cfg.checkpoint_name,
             region_override = CropRegion(*cfg.region_override) if cfg.region_override else None,
+            target          = self.target,
         )
 
     def _build_embedding_evaluator(self, cfg: InferenceConfig, run, logger: Logger):
@@ -332,9 +342,10 @@ class InferencePipeline:
         """Computes the core metric dictionary, annotates it with run provenance and writes metrics.json.
 
         The provenance names the split and its region, the checkpoint file and the
-        one-based epoch it holds, and the code commit the metrics were computed with.
-        Pixels with an empty GT profile are warned about, since they bias the headline
-        cosine and peak statistics.
+        one-based epoch it holds, the code commit the metrics were computed with and,
+        for a pass scored on a foreign dataset, that target and the dataset the run was
+        trained on. Pixels with an empty GT profile are warned about, since they bias
+        the headline cosine and peak statistics.
 
         Args:
             cfg       : Inference configuration supplying the worker count and the checkpoint name.
@@ -383,6 +394,10 @@ class InferencePipeline:
 
         if self.region_pass is not None:
             global_metrics[RegionPass.KEY] = self.region_pass.payload()
+
+        if self.target is not None:
+            global_metrics[TargetDataset.KEY]  = self.target.payload()
+            global_metrics["training_dataset"] = str(run.training_dataset)
 
         if run.core_region is not None:
             global_metrics["core_region"] = list(run.core_region.as_tuple())
@@ -834,6 +849,9 @@ class InferencePipeline:
 
             if self.region_pass is not None:
                 marker[RegionPass.KEY] = self.region_pass.payload()
+
+            if self.target is not None:
+                marker[TargetDataset.KEY] = self.target.payload()
 
             CompletionMarker.stamp(meta.output_dir, marker)
 

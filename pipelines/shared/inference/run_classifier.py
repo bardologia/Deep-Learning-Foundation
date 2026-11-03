@@ -31,12 +31,14 @@ class InferenceLayout:
     """Where each run family writes its inference stamps inside a run directory.
 
     Attributes:
-        DIRNAME : Directory inside a run holding its inference outputs.
-        SUBDIRS : Family sub-directory under it, for the families that nest their stamps.
+        DIRNAME        : Directory inside a run holding its inference outputs.
+        TARGET_DIRNAME : Directory inside a run holding the stamps scored on a foreign dataset, one subdirectory per target dataset.
+        SUBDIRS        : Family sub-directory under it, for the families that nest their stamps.
     """
 
-    DIRNAME = "inference"
-    SUBDIRS = {
+    DIRNAME        = "inference"
+    TARGET_DIRNAME = "cross_dataset"
+    SUBDIRS        = {
         RunType.PROFILE_AE : RunType.PROFILE_AE,
         RunType.IMAGE_AE   : RunType.IMAGE_AE,
     }
@@ -50,6 +52,23 @@ class InferenceLayout:
             run_type      : Run family, one of the RunType names.
         """
         base = Path(run_directory) / cls.DIRNAME
+
+        return base / cls.SUBDIRS[run_type] if run_type in cls.SUBDIRS else base
+
+    @classmethod
+    def target_base(cls, run_directory: Path, run_type: str, dataset_name: str) -> Path:
+        """Returns the directory a family's stamps scored on a foreign dataset are written under.
+
+        These stamps sit outside the run's inference directory, so the leaderboards,
+        cube views, comparisons, report collectors and resume checks that read a run's
+        own inference never mix in a score measured on another scene.
+
+        Args:
+            run_directory : Training run directory.
+            run_type      : Run family, one of the RunType names.
+            dataset_name  : Directory name of the target dataset.
+        """
+        base = Path(run_directory) / cls.TARGET_DIRNAME / dataset_name
 
         return base / cls.SUBDIRS[run_type] if run_type in cls.SUBDIRS else base
 

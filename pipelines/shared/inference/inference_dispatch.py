@@ -4,8 +4,11 @@ Each runner takes the entry-point configuration, repoints its inference block at
 a given run directory, and drives the matching pipeline. A spatial run that is a
 cross-validation fold unit is scored over the row block its manifest records,
 so a fold can be re-scored by the generic entry, and a spatial run whose split
-is stored as several disjoint regions is scored once per region. Pipeline
-imports are deferred so that selecting a family does not pull in the others.
+is stored as several disjoint regions is scored once per region. A backbone or
+dual run scored on a foreign target dataset skips both, since the fold block and
+the stored regions describe the scene it was trained on, and is scored in one
+pass over the target crop. Pipeline imports are deferred so that selecting a
+family does not pull in the others.
 """
 
 from __future__ import annotations
@@ -106,6 +109,29 @@ class SplitRegionLoop:
             self.pipeline_cls(config, components=self.components, region_pass=region_pass).run()
 
 
+class SpatialScoring:
+    """Scores one backbone or dual run either on its own split or on the target dataset its configuration enables."""
+
+    @staticmethod
+    def run(inference_config, run_directory: Path, pipeline_cls, components) -> None:
+        """Runs the spatial pipeline over one run.
+
+        Args:
+            inference_config : Inference block of the entry configuration.
+            run_directory    : Training run to score.
+            pipeline_cls     : Spatial inference pipeline class.
+            components       : Inference component set handed to the pipeline.
+        """
+        if inference_config.target.enabled:
+            config = replace(inference_config, run_directory=Path(run_directory), output_subdir=None)
+            pipeline_cls(config, components=components).run()
+            return
+
+        config = SpatialRunConfig.build(inference_config, run_directory)
+
+        SplitRegionLoop(config, pipeline_cls, components).run()
+
+
 class BackboneInferenceRunner:
     """Runs spatial backbone inference, resolving the component set per run.
 
@@ -118,18 +144,17 @@ class BackboneInferenceRunner:
         self.entry = entry_config
 
     def run(self, run_directory: Path) -> None:
-        """Scores one backbone, dual or JEPA run with its resolved components, one pass per stored region of the split.
+        """Scores one backbone, dual or JEPA run with its resolved components, one pass per stored region of the split or one pass over an enabled target dataset.
 
         Args:
-            run_directory : Training run to score; the output stamp is created under its inference/ tree.
+            run_directory : Training run to score; the output stamp is created under its inference/ tree, or its cross-dataset tree when a target dataset is enabled.
         """
         from pipelines.backbone.inference.pipeline import InferencePipeline
         from pipelines.shared.inference.inference_components import InferenceComponentsResolver
 
-        config     = SpatialRunConfig.build(self.entry.inference, run_directory)
         components = InferenceComponentsResolver.for_run(Path(run_directory))
 
-        SplitRegionLoop(config, InferencePipeline, components).run()
+        SpatialScoring.run(self.entry.inference, run_directory, InferencePipeline, components)
 
 
 class ProfileAeInferenceRunner:
@@ -192,7 +217,7 @@ class DualInferenceRunner:
         self.entry = entry_config
 
     def run(self, run_directory: Path) -> None:
-        """Scores one dual-trunk run, one pass per stored region of the split.
+        """Scores one dual-trunk run, one pass per stored region of the split or one pass over an enabled target dataset.
 
         Args:
             run_directory : Training run to score.
@@ -200,6 +225,4 @@ class DualInferenceRunner:
         from pipelines.backbone.inference.pipeline import InferencePipeline
         from pipelines.dual.inference.pipeline     import DUAL_INFERENCE_COMPONENTS
 
-        config = SpatialRunConfig.build(self.entry.inference, run_directory)
-
-        SplitRegionLoop(config, InferencePipeline, DUAL_INFERENCE_COMPONENTS).run()
+        SpatialScoring.run(self.entry.inference, run_directory, InferencePipeline, DUAL_INFERENCE_COMPONENTS)

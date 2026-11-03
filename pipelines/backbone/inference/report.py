@@ -47,6 +47,7 @@ class ReportPayloadBuilder:
             "patch_size"        : str(run.grid.patch_size),
             "patch_stride"      : run.grid.stride,
             "preprocessing_dir" : str(run.dataset_config.preprocessing_run_directory),
+            "training_dataset"  : str(run.training_dataset),
             "input_config"      : run.dataset_config.input_config.as_dict(),
             "secondary_labels"  : ", ".join(run.secondary_labels) if run.secondary_labels else "all channels",
         }
@@ -64,6 +65,7 @@ class ReportPayloadBuilder:
         """
         return {
             "checkpoint_name"         : cfg.checkpoint_name,
+            "target_dataset"          : run.target.describe() if run.target is not None else "none (scored on its own split)",
             "region_override"         : cfg.region_override,
             "render_amp_floor"        : cfg.render_amp_floor,
             "extract_curve_params"    : cfg.extract_curve_params,
@@ -236,6 +238,7 @@ class Report:
             ("patch_size",        rs["patch_size"]),
             ("patch_stride",      rs["patch_stride"]),
             ("preprocessing_dir", rs["preprocessing_dir"]),
+            ("training_dataset",  rs["training_dataset"]),
             ("x_axis_length",     rs["x_axis_length"]),
             ("x_axis_min",        rs["x_axis_min"]),
             ("x_axis_max",        rs["x_axis_max"]),
@@ -259,6 +262,7 @@ class Report:
         out.append("\n### 1.5 Inference configuration\n")
         out.append(self._kv_table([
             ("checkpoint_name",         cfg["checkpoint_name"]),
+            ("target_dataset",          cfg["target_dataset"]),
             ("code_commit",             cfg["code_commit"]),
             ("region_override",         cfg["region_override"]),
             ("render_amp_floor",        cfg["render_amp_floor"]),
@@ -701,7 +705,7 @@ class Report:
 
         return out
 
-    _METRIC_SKIP_KEYS = ("split", "split_region", "checkpoint_name", "checkpoint_epoch", "code_commit", "region_pass")
+    _METRIC_SKIP_KEYS = ("split", "split_region", "checkpoint_name", "checkpoint_epoch", "code_commit", "region_pass", "target_dataset", "training_dataset")
 
     _SLOT_ORGANIZATION_KEYS = frozenset({"slot_usage_entropy", "slot_mu_rank_diag", "slot_gt_alignment"})
 

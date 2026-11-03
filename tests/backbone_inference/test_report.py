@@ -90,7 +90,7 @@ def _global_metrics():
 
 
 def _run_stub():
-    """Returns a run stub carrying backbone name, channel counts, split region, grid and dataset config."""
+    """Returns a run stub carrying backbone name, channel counts, split region, grid, dataset config and no target dataset."""
     region = CropRegion(row_start=0, row_end=H, col_start=0, col_end=W)
     grid   = types.SimpleNamespace(number_of_patches=4, patch_size=(6, 6), stride=(6, 6))
     ds_cfg = types.SimpleNamespace(
@@ -109,6 +109,8 @@ def _run_stub():
         global_crop      = region,
         grid             = grid,
         dataset_config   = ds_cfg,
+        training_dataset = "/pp/run",
+        target           = None,
         secondary_labels = ("CH01", "CH02"),
     )
 
@@ -154,6 +156,7 @@ def test_report_payload_inference_config_records_the_scoring_settings_and_commit
     payload = ReportPayloadBuilder.inference_config(_cfg_stub(), _run_stub())
 
     assert payload["checkpoint_name"]  == "last_model.pt"
+    assert payload["target_dataset"]   == "none (scored on its own split)"
     assert payload["render_amp_floor"] == 0.02
     assert payload["region_override"] is None
     assert payload["code_commit"]      == GitState.commit()
@@ -286,6 +289,13 @@ def test_report_routes_cube_ssim_keys_to_their_own_section():
 
     groups = dict(Report.group_metric_keys(["ssim_cube_z_mean", "ssim_cube_z_0", "ssim_cube_norm_z_1"]))
     assert groups == {"3.4c SSIM summaries (prediction vs raw cube)": ["ssim_cube_z_mean"]}
+
+
+def test_report_metric_tables_leave_out_the_target_and_training_dataset_provenance():
+    """The target and training dataset are shown in the configuration sections, so the metric tables do not repeat them."""
+    groups = dict(Report.group_metric_keys(["curve_mse_gt", "target_dataset", "training_dataset"]))
+
+    assert groups == {"3.2 Curve-level (GT)": ["curve_mse_gt"]}
 
 
 def _metric_group(key: str) -> str:
