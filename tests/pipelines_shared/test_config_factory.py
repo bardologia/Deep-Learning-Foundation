@@ -6,10 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from configuration.benchmark.general        import BenchmarkConfig
-from configuration.dataset                  import Representation
-from pipelines.shared.config.config_factory import ConfigFactory
-from tools.data.regions                     import CropRegion
+from configuration.benchmark.general          import BenchmarkConfig
+from configuration.dataset                    import Representation
+from pipelines.backbone.dataset.spatial       import Cropper
+from pipelines.shared.config.config_factory   import ConfigFactory
+from pipelines.shared.dataset.dataset_spatial import Layout
+from tools.data.regions                       import CropRegion, SplitRegions
+from tools.monitoring.logger                  import Logger
 
 
 def _factory(test_data_dir, params_dir, **overrides) -> ConfigFactory:
@@ -66,6 +69,22 @@ def test_empty_secondary_labels_become_none(test_data_dir, params_dir):
     factory.config.paths.secondary_labels = ()
 
     assert factory._secondary_labels() is None
+
+
+@pytest.mark.dataset
+def test_an_empty_secondary_selection_feeds_every_secondary_channel(test_data_dir, params_dir, channel_labels, tmp_path):
+    """Verifies an empty selection reaches the cropper as None, which stacks every secondary channel after the reference."""
+    factory = _factory(test_data_dir, params_dir)
+    factory.config.paths.secondary_labels = ()
+
+    splits  = SplitRegions(train=CropRegion(1000, 1100, 500, 600), val=CropRegion(1100, 1150, 500, 600), test=CropRegion(1150, 1200, 500, 600))
+    logger  = Logger(log_dir=str(tmp_path / "logs"), name="full_stack", level="ERROR")
+    layout  = Layout(test_data_dir, logger=logger, parameters_path=params_dir / "parameters.npy")
+    cropper = Cropper(layout, splits, logger=logger, secondary_labels=factory._secondary_labels(), input_config=factory.benchmark_input_config())
+    arrays  = cropper.load_split(splits.test)
+
+    assert cropper.secondary_labels is None
+    assert arrays["n_secondaries"] == len(channel_labels) - 1
 
 
 @pytest.mark.dataset
