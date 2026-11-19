@@ -1,13 +1,3 @@
-"""Guided per-machine setup: the questions ``install.sh`` cannot answer by itself.
-
-Probes the host, asks for the few locations and settings that differ between
-installations, writes the machine profile and its shell twin, verifies the
-environment through the recorded interpreter, and reports how to start the
-console. Every question carries a detected or previously saved answer as its
-default, so pressing Enter through the wizard is a valid setup, and ``--yes`` does
-exactly that without a terminal. Preset answers can be supplied as JSON with
-``--answers`` for unattended installs.
-"""
 
 from __future__ import annotations
 
@@ -32,45 +22,13 @@ from tools.runtime.machine_profile  import MachineProfile
 
 
 class Prompter:
-    """Asks questions on the terminal with defaults, validation and an unattended mode.
-
-    Attributes:
-        answers : Preset answers keyed by question key, consulted before the terminal.
-        assume  : Whether every unanswered question takes its default without asking.
-        logger  : Logger the help lines and rejections are written through.
-    """
 
     def __init__(self, answers: dict, assume: bool, logger: Logger) -> None:
-        """Stores the preset answers, the unattended flag and the logger.
-
-        Args:
-            answers : Mapping of question key to preset answer.
-            assume  : Whether to take defaults without asking.
-            logger  : Logger for help text and validation messages.
-        """
         self.answers = dict(answers)
         self.assume  = assume
         self.logger  = logger
 
     def ask(self, key: str, question: str, default: str = "", help: str = "", validate=None) -> str:
-        """Returns the answer to one free-text question.
-
-        A preset answer wins, then the default in unattended mode, then the terminal.
-        A validator returning an error message rejects the input and asks again.
-
-        Args:
-            key      : Question key used for preset answers.
-            question : Text shown to the user.
-            default  : Value taken when the user presses Enter.
-            help     : One-line explanation shown above the question.
-            validate : Callable returning an error string for a bad value or None.
-
-        Returns:
-            The accepted answer as text.
-
-        Raises:
-            ValueError : If a preset or unattended default fails validation.
-        """
         if key in self.answers:
             value = str(self.answers[key])
             error = validate(value) if validate else None
@@ -98,17 +56,6 @@ class Prompter:
             self.logger.warning(error)
 
     def confirm(self, key: str, question: str, default: bool, help: str = "") -> bool:
-        """Returns the answer to a yes/no question.
-
-        Args:
-            key      : Question key used for preset answers.
-            question : Text shown to the user.
-            default  : Value taken when the user presses Enter.
-            help     : One-line explanation shown above the question.
-
-        Returns:
-            True for yes.
-        """
         shown  = "Y/n" if default else "y/N"
         answer = self.ask(key, f"{question} ({shown})", "yes" if default else "no", help, self._yes_no)
 
@@ -116,31 +63,17 @@ class Prompter:
 
     @staticmethod
     def _yes_no(value: str) -> str | None:
-        """Accepts the usual yes and no spellings."""
         if value.strip().lower() in ("y", "yes", "true", "1", "on", "n", "no", "false", "0", "off"):
             return None
 
         return f"please answer yes or no, not {value!r}"
 
     def choose(self, key: str, question: str, options: list[str], default: str, help: str = "") -> str:
-        """Returns one of the options, chosen by number or by typing it.
-
-        Args:
-            key      : Question key used for preset answers.
-            question : Text shown to the user.
-            options  : Values offered, numbered from 1 in the terminal.
-            default  : Value taken when the user presses Enter.
-            help     : One-line explanation shown above the question.
-
-        Returns:
-            The chosen option.
-        """
         if key not in self.answers and not self.assume:
             for number, option in enumerate(options, start=1):
                 self.logger.render(Text(f"    {number}. {option}", style="dim"))
 
         def validate(value: str) -> str | None:
-            """Accepts an option number, an option text, or any value when no options were detected."""
             if value in options or not options:
                 return None
             if value.isdigit() and 1 <= int(value) <= len(options):
@@ -156,7 +89,6 @@ class Prompter:
 
 
 class Validators:
-    """Validation rules shared by the wizard's questions; each returns an error string or None."""
 
     EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     HOST  = re.compile(r"^[A-Za-z0-9.\-]+$")
@@ -164,17 +96,14 @@ class Validators:
 
     @staticmethod
     def existing_dir(value: str) -> str | None:
-        """Requires an existing directory."""
         return None if value and Path(value).expanduser().is_dir() else f"{value!r} is not an existing directory"
 
     @staticmethod
     def existing_file(value: str) -> str | None:
-        """Requires an existing file."""
         return None if value and Path(value).expanduser().is_file() else f"{value!r} is not an existing file"
 
     @staticmethod
     def creatable_dir(value: str) -> str | None:
-        """Requires an absolute path whose nearest existing ancestor is a directory."""
         if not value:
             return "a path is required"
 
@@ -191,44 +120,35 @@ class Validators:
 
     @staticmethod
     def optional_dir(value: str) -> str | None:
-        """Accepts an empty value or an existing directory."""
         return None if not value else Validators.existing_dir(value)
 
     @staticmethod
     def optional_file(value: str) -> str | None:
-        """Accepts an empty value or an existing file."""
         return None if not value else Validators.existing_file(value)
 
     @staticmethod
     def port(value: str) -> str | None:
-        """Requires a TCP port between 1024 and 65535."""
         return None if value.isdigit() and 1024 <= int(value) <= 65535 else f"{value!r} is not a port between 1024 and 65535"
 
     @staticmethod
     def host(value: str) -> str | None:
-        """Requires a host name or address."""
         return None if Validators.HOST.match(value or "") else f"{value!r} is not a host name or address"
 
     @staticmethod
     def email(value: str) -> str | None:
-        """Requires an email address."""
         return None if Validators.EMAIL.match(value or "") else f"{value!r} is not an email address"
 
     @staticmethod
     def optional_email(value: str) -> str | None:
-        """Accepts an empty value or an email address."""
         return None if not value else Validators.email(value)
 
     @staticmethod
     def topic(value: str) -> str | None:
-        """Requires an ntfy topic name."""
         return None if Validators.TOPIC.match(value or "") else f"{value!r} may only hold letters, digits, '-' and '_' (max 64 chars)"
 
     @staticmethod
     def gpu_list(indices: list):
-        """Returns a validator accepting a comma-separated subset of the detected GPU indices."""
         def validate(value: str) -> str | None:
-            """Rejects an empty list or an index that was not detected."""
             tokens = [token.strip() for token in value.split(",") if token.strip()]
             if not tokens:
                 return "name at least one GPU index"
@@ -238,12 +158,10 @@ class Validators:
 
     @staticmethod
     def positive_int(value: str) -> str | None:
-        """Requires a positive integer."""
         return None if value.isdigit() and int(value) > 0 else f"{value!r} is not a positive integer"
 
     @staticmethod
     def positive_float(value: str) -> str | None:
-        """Requires a positive number."""
         try:
             return None if float(value) > 0 else f"{value!r} must be positive"
         except ValueError:
@@ -251,36 +169,11 @@ class Validators:
 
 
 class MachineSetup:
-    """Walks a new user through the machine-dependent settings and writes the profile.
-
-    Attributes:
-        repo_root   : Checkout the profile describes.
-        prompter    : Question helper honouring presets and the unattended mode.
-        probe       : Host fact detector.
-        profile     : Profile being filled; starts from the saved one on a rerun.
-        logger      : Logger for progress and the final report.
-        env_name    : Conda environment name handed over by the installer.
-        interpreter : Interpreter handed over by the installer, or None to detect it.
-        facts       : Host facts detected by ``probe_host``.
-    """
 
     DESKTOP_NAME = "ml-template-console.desktop"
     STEPS        = 8
 
     def __init__(self, repo_root: Path, prompter: Prompter, probe: MachineProbe, profile: MachineProfile, logger: Logger, env_name: str | None, interpreter: Path | None, verify: bool, desktop: bool) -> None:
-        """Stores the collaborators and the installer's hand-over values.
-
-        Args:
-            repo_root   : Repository checkout being set up.
-            prompter    : Question helper.
-            probe       : Host fact detector.
-            profile     : Profile object bound to the location the answers are saved to.
-            logger      : Logger for progress and the report.
-            env_name    : Environment name chosen by the installer, or None to ask.
-            interpreter : Interpreter chosen by the installer, or None to detect.
-            verify      : Whether to run the environment verification step.
-            desktop     : Whether to offer the desktop launcher.
-        """
         self.repo_root   = repo_root
         self.prompter    = prompter
         self.probe       = probe
@@ -294,19 +187,15 @@ class MachineSetup:
 
     @property
     def saved(self) -> dict:
-        """The sections of the previously saved profile, empty on a first run."""
         return self.profile.data
 
     def _previous(self, section: str, key: str, fallback):
-        """Returns a value from the saved profile section, or the fallback when absent."""
         return self.saved.get(section, {}).get(key, fallback)
 
     def _step(self, number: int, title: str) -> None:
-        """Opens one numbered wizard section."""
         self.logger.section(f"Step {number} of {self.STEPS}: {title}")
 
     def probe_host(self) -> None:
-        """Detects the host facts and shows them."""
         self._step(1, "this machine")
 
         self.facts = self.probe.facts()
@@ -332,7 +221,6 @@ class MachineSetup:
             self.logger.warning("no GPU detected: the console and the tests work, training and inference need an NVIDIA GPU")
 
     def choose_environment(self) -> None:
-        """Records the environment name and the interpreter."""
         self._step(2, "Python environment")
 
         conda_root = self.facts["conda_root"] or self._previous("machine", "conda_root", "")
@@ -360,7 +248,6 @@ class MachineSetup:
         }
 
     def choose_console(self) -> None:
-        """Records the console bind address and port."""
         self._step(3, "web console")
 
         host = self.prompter.ask("console_host", "Address the console listens on", self._previous("console", "host", ReferenceLayout.CONSOLE_HOST), "127.0.0.1 keeps it private to this machine; 0.0.0.0 exposes it on the network.", Validators.host)
@@ -369,7 +256,6 @@ class MachineSetup:
         self.profile.data["console"] = {"host": host, "port": int(port)}
 
     def choose_data(self) -> None:
-        """Records the dataset root, the default dataset and its parameter file."""
         self._step(4, "data")
 
         data_root = self.prompter.ask("data_root", "Directory holding the datasets", self._previous("roots", "data", str(self.repo_root / ReferenceLayout.DATA_ROOT)), "One subdirectory per dataset; it is created if missing.", Validators.creatable_dir)
@@ -386,7 +272,6 @@ class MachineSetup:
 
     @staticmethod
     def _datasets_under(root: Path) -> list[str]:
-        """Returns the dataset directories directly below a data root."""
         found = []
 
         for child in sorted(root.iterdir()) if root.is_dir() else []:
@@ -397,11 +282,9 @@ class MachineSetup:
 
     @staticmethod
     def _parameter_files(dataset: Path) -> list[str]:
-        """Returns the parameter arrays of every extraction run inside a dataset."""
         return sorted(str(path) for path in dataset.glob("params/*/parameters.npy"))
 
     def choose_runs(self) -> None:
-        """Records the run and results roots and creates them."""
         self._step(5, "outputs")
 
         runs    = self.prompter.ask("runs_root", "Directory training and inference runs are written to", self._previous("roots", "runs", str(self.repo_root / ReferenceLayout.RUNS_ROOT)), "Runs can be large; a scratch disk is a good choice.", Validators.creatable_dir)
@@ -414,7 +297,6 @@ class MachineSetup:
         roots.update({"repo": str(self.repo_root), "runs": str(Path(runs).expanduser()), "results": str(Path(results).expanduser())})
 
     def choose_hardware(self) -> None:
-        """Records the GPU pool, the VRAM budget and the worker counts."""
         self._step(6, "hardware limits")
 
         gpus     = self.facts["gpus"]
@@ -437,7 +319,6 @@ class MachineSetup:
         self.profile.data["hardware"] = {"gpu_pool": pool, "vram_budget_gb": float(budget), "cpu_workers": int(cpu_workers), "gif_workers": int(gif_workers), "max_workers": int(max_workers)}
 
     def choose_notifications(self) -> None:
-        """Records the optional ntfy topic and report-mail identity."""
         self._step(7, "notifications (optional)")
 
         ntfy_prev = self.saved.get("ntfy", {})
@@ -462,7 +343,6 @@ class MachineSetup:
             self.profile.data["mail"] = {"sender": "", "recipient": "", "smtp_host": mail_prev.get("smtp_host", "smtp.gmail.com"), "smtp_port": mail_prev.get("smtp_port", 465)}
 
     def write_profile(self) -> None:
-        """Saves the profile and its shell twin."""
         self._step(8, "writing the profile")
 
         path = self.profile.save()
@@ -471,7 +351,6 @@ class MachineSetup:
         self.logger.info(f"shell twin written to {self.profile.env_path}")
 
     def write_desktop_entry(self) -> None:
-        """Writes an application launcher that starts the console and opens the browser."""
         if not self.desktop or not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
             return
 
@@ -493,7 +372,6 @@ class MachineSetup:
         self.logger.ok(f"application launcher written to {target}")
 
     def verify(self) -> None:
-        """Checks torch and CUDA under the recorded interpreter and that the profile reaches an entry point."""
         if not self.verify_env:
             return
 
@@ -525,7 +403,6 @@ class MachineSetup:
         self.logger.ok(f"train_backbone.py sees the profile: {rewritten} default(s) rewritten for this machine")
 
     def report(self) -> None:
-        """Prints what was configured and how to start working."""
         console = self.profile.console
         url     = f"http://{console['host'] if console['host'] != '0.0.0.0' else '127.0.0.1'}:{console['port']}"
         summary = {
@@ -545,7 +422,6 @@ class MachineSetup:
         self.logger.info("Change any answer later by running ./install.sh again; every question defaults to the current value.")
 
     def run(self) -> None:
-        """Runs the wizard steps in order."""
         self.probe_host()
         self.choose_environment()
         self.choose_console()
@@ -560,7 +436,6 @@ class MachineSetup:
 
 
 def main() -> None:
-    """Parses the installer hand-over flags and runs the wizard."""
     parser = argparse.ArgumentParser(description="Guided per-machine setup of ML-Template. Detects the host, asks for the locations and settings that differ between installations, writes ~/.config/ml-template/machine.json (or the file MLTEMPLATE_MACHINE_PROFILE names) and verifies the environment. Normally started by ./install.sh.")
     parser.add_argument("--yes",         action="store_true", help="Take the default answer to every question (unattended).")
     parser.add_argument("--answers",     type=str, default=None, help="JSON file of preset answers keyed by question (see the Prompter keys in this script).")
