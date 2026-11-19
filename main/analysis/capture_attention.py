@@ -1,4 +1,3 @@
-"""Entry point capturing attention maps and statistics from attention-based backbone runs."""
 
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the CLI overrides and runs the attention capture batch over the given runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                               import AttentionCaptureConfig

@@ -1,8 +1,3 @@
-"""Entry point stressing trained backbone runs with controlled input degradation.
-
-Sweeps additive noise, gain error, secondary-channel dropout and row shifts, reporting
-curve-MSE against severity plus the noise sigma at which the loss doubles.
-"""
 
 from __future__ import annotations
 
@@ -13,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the robustness config and runs the degradation sweeps over the selected runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                        import RobustnessConfig

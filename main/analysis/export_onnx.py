@@ -1,10 +1,3 @@
-"""Entry point exporting trained backbone checkpoints as ONNX graphs.
-
-Thin CLI wrapper: parses an ``OnnxExportEntryConfig`` and hands it to
-``OnnxRunExporter``, which rebuilds each run's model from its persisted
-configuration, loads the best checkpoint and writes model.onnx plus a
-manifest under the run's export directory.
-"""
 
 from __future__ import annotations
 
@@ -15,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the export config and writes one ONNX graph per selected run."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                  import OnnxExportEntryConfig

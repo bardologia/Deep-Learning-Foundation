@@ -1,11 +1,3 @@
-"""Entry point mailing gathered results to the configured recipient.
-
-Thin CLI wrapper: parses a ``ReportMailEntryConfig`` and hands it to
-``ReportMailBatch``, which picks the configured target, scans its root
-directory, and sends one message per selected experiment, training run,
-dataset or parameter-extraction run with that source's files attached,
-writing an experiment's missing seed aggregates and comparisons first.
-"""
 
 from __future__ import annotations
 
@@ -16,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the report-mailing config and runs the mailing batch."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics     import ReportMailEntryConfig

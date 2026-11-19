@@ -1,8 +1,3 @@
-"""Entry point comparing internal representations of trained backbone runs with linear CKA.
-
-Thin CLI wrapper around ``CkaComparison``, which samples identical pixels across the
-selected runs and writes cross-layer heatmaps plus a run-by-run alignment matrix.
-"""
 
 from __future__ import annotations
 
@@ -13,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the CKA config and runs the cross-run representation comparison."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                                import CkaConfig

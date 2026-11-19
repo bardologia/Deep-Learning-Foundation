@@ -1,8 +1,3 @@
-"""Entry point comparing the inference results of several training trials side by side.
-
-Collects each trial's metrics with ``TrialCollector`` and renders the tables, image and
-GIF comparisons through ``TrialComparisonReport`` into a timestamped output directory.
-"""
 
 from __future__ import annotations
 
@@ -17,7 +12,6 @@ from tools.runtime.run_tag import RunTag
 
 
 def main() -> None:
-    """Collects the selected trials and writes the trial-comparison reports."""
     EnvironmentPinner.threads()
 
     from configuration.comparison            import TrialComparisonConfig

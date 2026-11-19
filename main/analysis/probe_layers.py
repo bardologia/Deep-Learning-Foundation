@@ -1,8 +1,3 @@
-"""Entry point fitting linear layer probes on the features of trained backbone runs.
-
-Ridge readouts on sampled real pixels predict the ground-truth active Gaussian count and
-the dominant component z, giving held-out R-squared as a function of depth.
-"""
 
 from __future__ import annotations
 
@@ -13,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the layer-probe config and runs the probes over the selected runs."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                          import LayerProbeConfig

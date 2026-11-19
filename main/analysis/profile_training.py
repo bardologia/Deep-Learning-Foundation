@@ -1,10 +1,3 @@
-"""Entry point profiling full training steps of one model family with torch.profiler.
-
-Thin CLI wrapper: parses a ``TrainingProfileEntryConfig`` and hands it to
-``TrainingProfilePipeline``, which builds the family's feed target and records
-forward, backward and optimizer steps into a chrome trace, an operator table
-and a summary.
-"""
 
 from __future__ import annotations
 
@@ -17,7 +10,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Pins the requested GPU, parses the profiling config and records the trace."""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--gpu", type=int, default=0)
     args, _ = parser.parse_known_args()

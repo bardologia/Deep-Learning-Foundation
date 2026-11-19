@@ -1,9 +1,3 @@
-"""Entry point exporting scalar run metrics as CSV, LaTeX and markdown tables.
-
-Thin CLI wrapper: parses a ``ResultTableEntryConfig`` and hands it to
-``ResultTableExporter``, which does the run discovery, metric loading and
-table rendering.
-"""
 
 from __future__ import annotations
 
@@ -14,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the table-export config and writes the result tables."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics          import ResultTableEntryConfig

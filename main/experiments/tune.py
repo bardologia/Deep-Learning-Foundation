@@ -1,8 +1,3 @@
-"""Entry point for Optuna hyperparameter tuning, in both scheduler and worker roles.
-
-Without ``--worker`` the process creates or resumes the studies and fans workers out; with
-it, the same script attaches to one study through its storage URL and runs trials on a GPU.
-"""
 
 from __future__ import annotations
 
@@ -18,21 +13,6 @@ from tools.runtime.run_tag import RunTag
 
 
 def main() -> None:
-    """Runs one tuning worker against an existing study, or schedules the studies.
-
-    In worker mode the worker flags are checked before the GPU is pinned, then the
-    resolved config is read from the given run directory and trials are run on the
-    pinned GPU. In scheduler mode the config comes from the CLI, is optionally reloaded
-    from the run's resolved config when resuming, and curriculum inheritance is applied
-    before scheduling.
-
-    A ``resume_from`` path continues the tuning run holding it with the
-    configuration that run recorded, the command-line overrides applied on
-    top; ``--resume`` with a run tag does the same for a run named by its tag.
-
-    Raises:
-        SystemExit : If worker mode lacks ``--model``, ``--study-name``, ``--storage-url``, ``--n-trials``, ``--worker-index``, ``--run-tag`` or ``--run-dir``, or if ``--resume`` is given without a run tag or with no resolved config at the expected path.
-    """
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--worker",       action="store_true")
     parser.add_argument("--resume",       action="store_true")

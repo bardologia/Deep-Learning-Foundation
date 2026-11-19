@@ -1,4 +1,3 @@
-"""Entry point animating how a backbone run's predictions converged across epoch snapshots."""
 
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the CLI overrides and renders the training-evolution GIFs and report."""
     EnvironmentPinner.threads()
 
     from configuration.diagnostics                                import TrainingEvolutionConfig

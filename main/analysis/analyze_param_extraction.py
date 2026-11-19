@@ -1,4 +1,3 @@
-"""Entry point recomputing metrics, summaries and plots for parameter-extraction trials."""
 
 from __future__ import annotations
 
@@ -9,7 +8,6 @@ from _bootstrap import EnvironmentPinner
 
 
 def main() -> None:
-    """Parses the CLI overrides, logs the queue and runs parameter-extraction inference, closing the log with the abort if a trial raises."""
     EnvironmentPinner.threads()
 
     from configuration.param_extraction                         import ParamExtractionInferenceConfig
