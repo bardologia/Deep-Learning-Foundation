@@ -40,12 +40,6 @@ class ChannelStrategy:
         if self.norm_method is NormMethod.FIXED_ANGLE_01:
             return -float(np.pi), 2.0 * float(np.pi)
 
-        if self.norm_method is NormMethod.FIXED_BOUNDS:
-            raise ValueError("fixed_bounds is resolved per output channel by the stats computer; it cannot be fitted from data and is not valid for input channels.")
-
-        if flat.size == 0:
-            raise ValueError(f"Cannot fit {self.norm_method.value} normalization on an empty sample pool; the collection mask left no pixels for this channel group.")
-
         data = (
             np.log1p(np.maximum(flat.astype(np.float64), 0.0))
             if self.apply_log1p
@@ -67,7 +61,6 @@ class ChannelStrategy:
             s = float(data.std())
             return m, max(s, 1e-8)
 
-        raise ValueError(f"Unknown norm method: {self.norm_method}")
 
     def as_dict(self) -> dict:
         bounds = [list(side) for side in self.bounds] if self.bounds is not None else None
@@ -122,9 +115,6 @@ class Presets:
         }
 
         key = name.strip().lower()
-        if key not in table:
-            raise ValueError(f"Unknown normalization preset '{name}'; valid presets are {cls.names()} or 'per_slot'")
-
         return table[key]
 
 
@@ -241,9 +231,6 @@ class ChannelStats:
         return len(self.loc)
 
     def as_dict(self) -> dict:
-        if self.clampable is None:
-            raise ValueError("ChannelStats is missing per-channel clampable flags; cannot serialize.")
-
         entries = []
         for i, (m, s) in enumerate(zip(self.loc, self.scale)):
             entry: dict = {"name": self.names[i], "loc": m, "scale": s, "clampable": bool(self.clampable[i])}
@@ -258,10 +245,6 @@ class ChannelStats:
     def from_dict(cls, payload: dict) -> "ChannelStats":
         entries    = payload["channels"]
         strategies = [ChannelStrategy.from_dict(e) for e in entries]
-
-        for e in entries:
-            if not np.isfinite(e["scale"]) or e["scale"] <= 0:
-                raise ValueError(f"Corrupt channel normalization stats for '{e['name']}': scale={e['scale']} must be finite with scale > 0.")
 
         return cls(
             loc        = [e["loc"]   for e in entries],
