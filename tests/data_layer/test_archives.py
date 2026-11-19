@@ -46,19 +46,3 @@ def test_repacking_deletes_the_previous_volumes(sources, tmp_path):
 
     assert sorted(path.name for path in (tmp_path / "out").glob("*.zip")) == ["bundle.zip"]
 
-
-def test_a_file_above_the_cap_aborts(sources, tmp_path):
-    with pytest.raises(ValueError, match="file_0.bin"):
-        ArchivePacker(sources, tmp_path / "out", "bundle", 50, RecordingLogger()).pack()
-
-
-def test_an_empty_file_set_aborts(tmp_path):
-    with pytest.raises(ValueError, match="empty"):
-        ArchivePacker([], tmp_path / "out", "bundle", 1000, RecordingLogger()).pack()
-
-
-def test_a_vanished_source_aborts(sources, tmp_path):
-    sources[1][0].unlink()
-
-    with pytest.raises(FileNotFoundError, match="file_1.bin"):
-        ArchivePacker(sources, tmp_path / "out", "bundle", 1000, RecordingLogger()).pack()

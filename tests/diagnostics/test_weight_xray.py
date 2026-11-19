@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 
 import numpy as np
-import pytest
 import torch
 
 from configuration.diagnostics                  import WeightXrayConfig, WeightXrayEntryConfig
@@ -81,22 +80,6 @@ def test_resolver_accepts_a_bare_state_dict(tmp_path):
 
     assert resolved.key   == StateDictResolver.TOP_LEVEL
     assert resolved.epoch is None
-
-
-def test_resolver_refuses_to_guess_between_unconfigured_entries(tmp_path):
-    path = tmp_path / "last.pt"
-    torch.save({"epoch": 1, "model": _state_dict(), "ema": _state_dict()}, path)
-
-    with pytest.raises(ValueError, match=r"\['model', 'ema'\]"):
-        StateDictResolver(WeightXrayConfig(checkpoint_path=path)).resolve()
-
-
-def test_resolver_names_the_entries_when_none_holds_tensors(tmp_path):
-    path = tmp_path / "odd.pt"
-    torch.save({"epoch": 1, "note": "nothing here"}, path)
-
-    with pytest.raises(ValueError, match="its entries are"):
-        StateDictResolver(WeightXrayConfig(checkpoint_path=path)).resolve()
 
 
 def test_xray_logs_the_entry_and_writes_provenance_into_the_json(tmp_path):

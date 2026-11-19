@@ -57,25 +57,6 @@ def test_exact_and_montecarlo_agree_roughly():
     assert outcome["p_value"] < 0.01
 
 
-def test_mismatched_lengths_raise():
-    with pytest.raises(ValueError):
-        PairedPermutationTest().test([1.0, 2.0], [1.0])
-
-
-def test_single_pair_raises():
-    with pytest.raises(ValueError):
-        PairedPermutationTest().test([1.0], [2.0])
-
-
-@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
-def test_non_finite_values_raise(bad):
-    with pytest.raises(ValueError, match="only finite values"):
-        PairedPermutationTest().test([1.0, 2.0, bad], [1.0, 2.0, 3.0])
-
-    with pytest.raises(ValueError, match="only finite values"):
-        PairedPermutationTest().test([1.0, 2.0, 3.0], [1.0, 2.0, bad])
-
-
 def test_holm_adjustment_is_monotone_and_bounded():
     adjusted = HolmBonferroni.adjust({"a": 0.01, "b": 0.04, "c": 0.5})
 

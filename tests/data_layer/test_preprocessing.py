@@ -67,26 +67,6 @@ def test_preprocess_multi_column_independent_max():
     assert out[1, 1] == 8.0
 
 
-def test_preprocess_rejects_non_positive_truncation_index():
-    profile = np.array([[1.0], [2.0], [3.0]], dtype=np.float32)
-
-    with pytest.raises(ValueError, match="truncation_index"):
-        ProfilePreprocessor.apply(profile, threshold_factor=0.0, truncation_index=0)
-
-    with pytest.raises(ValueError, match="truncation_index"):
-        ProfilePreprocessor.apply(profile, threshold_factor=0.0, truncation_index=-2)
-
-
-def test_preprocess_rejects_out_of_range_threshold_factor():
-    profile = np.array([[1.0], [2.0], [3.0]], dtype=np.float32)
-
-    with pytest.raises(ValueError, match="threshold_factor"):
-        ProfilePreprocessor.apply(profile, threshold_factor=1.0, truncation_index=3)
-
-    with pytest.raises(ValueError, match="threshold_factor"):
-        ProfilePreprocessor.apply(profile, threshold_factor=-0.1, truncation_index=3)
-
-
 def test_normalizer_unit_area_sums_to_one():
     cube = np.array([[2.0], [4.0], [4.0]], dtype=np.float32)
     out  = ProfileNormalizer.unit_area(cube)

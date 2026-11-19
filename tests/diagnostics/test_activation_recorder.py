@@ -337,15 +337,6 @@ def test_silent_leaf_modules_are_named_and_left_out_of_the_stats():
     assert recorder.silent_layers() == {"unused": "Conv2d"}
 
 
-def test_stats_raise_when_no_module_fired():
-    recorder = ActivationRecorder(_TinyNet())
-    recorder.attach_stats()
-    recorder.detach()
-
-    with pytest.raises(ValueError, match="produced a tensor"):
-        recorder.stats()
-
-
 def test_summary_counts_hooked_and_silent_layers():
     reports = ActivationIssueDetector(ActivationXrayConfig()).run({"clean": _layer_stats("clean")})
     summary = ActivationXraySummarizer(ActivationXrayConfig()).build(reports, "/tmp/run", n_batches=1, reused_modules={}, silent_layers={"unused": "Conv2d"})

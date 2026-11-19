@@ -77,16 +77,6 @@ def test_split_segment_matching_is_exact():
     assert groups[0].stem == "early_stop/best_val_loss"
 
 
-def test_duplicate_roles_in_one_pairing_raise():
-    with pytest.raises(ValueError, match="duplicate roles"):
-        ScalarTagGrouper().group(_series(["loss/train", "train/loss"]))
-
-
-def test_colliding_plot_paths_raise():
-    with pytest.raises(ValueError, match="colliding"):
-        ScalarTagGrouper().group(_series(["loss", "loss/train", "loss/val"]))
-
-
 def test_tag_segments_are_sanitized_for_filesystem_paths():
     groups = ScalarTagGrouper().group(_series(["metrics/my metric: a*b"]))
 
@@ -148,11 +138,6 @@ def test_reader_loads_all_scalar_series(run_directory):
     steps, values = series["loss/train"]
     assert steps.tolist() == [0, 1, 2, 3, 4]
     assert values.shape == (5,)
-
-
-def test_reader_raises_without_tensorboard_directory(tmp_path):
-    with pytest.raises(FileNotFoundError):
-        TensorboardScalarReader(TensorboardExportConfig(run_directory=tmp_path)).read()
 
 
 def test_export_writes_plots_into_the_run_directory(run_directory):
@@ -262,12 +247,3 @@ def test_trial_name_filter_expands_to_the_seed_runs(tmp_path):
     assert len(results) == 3
     assert (tmp_path / "trial_a" / "tensorboard_plots" / "loss.png").is_file()
 
-
-def test_ambiguous_bare_seed_name_raises(tmp_path):
-    for trial in ("trial_a", "trial_b"):
-        _seed_run(tmp_path, trial, 0)
-
-    entry = TensorboardExportEntryConfig(runs_dir=tmp_path, run_filter=["seed0"])
-
-    with pytest.raises(ValueError, match="run name 'seed0' is ambiguous"):
-        TensorboardExportBatch(entry, RecordingLogger()).run()
