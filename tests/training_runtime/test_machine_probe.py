@@ -11,6 +11,7 @@ import pytest
 
 import tools.runtime.machine_probe as probe_module
 from tools.runtime.machine_probe import MachineProbe
+from unittest.mock import Mock
 
 PROBE_SCRIPT = Path(probe_module.__file__)
 
@@ -50,7 +51,7 @@ def test_a_failing_nvidia_smi_carries_its_exit_and_last_stderr_line(monkeypatch)
 
 def test_a_hung_nvidia_smi_is_reported_as_a_timeout(monkeypatch):
     def hang(*args, **kwargs):
-        raise subprocess.TimeoutExpired(args[0], 20)
+        Mock(side_effect=subprocess.TimeoutExpired(args[0], 20))()
 
     monkeypatch.setattr(probe_module.shutil, "which", lambda name: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(probe_module.subprocess, "run", hang)

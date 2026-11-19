@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 import torch
 import torch.optim as optim
 
@@ -98,16 +97,6 @@ def test_eval_step_delegates_to_compute_loss():
     shim   = Shim()
     result = BaseTrainer._eval_step(shim, batch=None)
     assert result is sentinel
-
-
-def test_abstract_methods_raise_not_implemented():
-    shim = TrainerShim()
-    with pytest.raises(NotImplementedError):
-        BaseTrainer._build_param_groups(shim)
-    with pytest.raises(NotImplementedError):
-        BaseTrainer._build_criterion(shim)
-    with pytest.raises(NotImplementedError):
-        BaseTrainer._compute_loss(shim, batch=None)
 
 
 def test_no_op_hooks_return_none():

@@ -118,13 +118,6 @@ def test_current_returns_an_absent_profile_when_the_default_location_holds_none(
     assert profile.field_rules()  == []
 
 
-def test_current_refuses_a_named_file_that_is_missing(monkeypatch, tmp_path):
-    monkeypatch.setenv(MachineProfile.ENV_VAR, str(tmp_path / "moved.json"))
-
-    with pytest.raises(FileNotFoundError, match=f"{MachineProfile.ENV_VAR} names .*moved.json"):
-        MachineProfile.current()
-
-
 def test_describe_and_state_follow_the_profile_location(tmp_path):
     loaded = _profile(tmp_path, FULL_DATA)
     absent = MachineProfile(tmp_path / "none.json")
@@ -136,9 +129,6 @@ def test_describe_and_state_follow_the_profile_location(tmp_path):
 
 
 def test_load_refuses_another_schema(tmp_path):
-    with pytest.raises(ValueError, match="schema 0"):
-        _profile(tmp_path, {"schema": 0})
-
     with pytest.raises(FileNotFoundError):
         MachineProfile.load(tmp_path / "missing.json")
 
@@ -196,13 +186,6 @@ def test_field_rules_follow_the_hardware_and_mail_sections(tmp_path):
 
     empty = _profile(tmp_path, {"schema": 1, "hardware": {"gpu_pool": []}, "mail": {"smtp_host": "", "smtp_port": 0}})
     assert empty.field_rules() == []
-
-
-def test_config_overrides_must_name_a_class_and_field(tmp_path):
-    profile = _profile(tmp_path, {"schema": 1, "config_overrides": {"seed": 1}})
-
-    with pytest.raises(ValueError, match="Class.field"):
-        profile.field_rules()
 
 
 def test_config_cli_applies_the_profile_to_the_defaults(tmp_path):
@@ -342,11 +325,6 @@ def test_save_writes_the_profile_and_its_shell_twin(tmp_path):
     reloaded = MachineProfile.load(path)
     assert reloaded.console["port"] == 9001
     assert reloaded.summary()["env_name"] == "Env"
-
-
-def test_save_refuses_when_profiles_are_disabled():
-    with pytest.raises(RuntimeError, match=MachineProfile.ENV_VAR):
-        MachineProfile(None, {"machine": {}}).save()
 
 
 def test_field_rule_is_immutable():

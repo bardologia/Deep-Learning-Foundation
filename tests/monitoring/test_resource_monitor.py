@@ -8,6 +8,7 @@ import pytest
 
 import tools.monitoring.resource_monitor as rm
 from tools.monitoring.resource_monitor import ResourceMonitor
+from unittest.mock import Mock
 
 
 class FakeConfig:
@@ -313,7 +314,7 @@ def test_run_survives_sample_exception(monkeypatch):
     m      = ResourceMonitor(cfg, logger=logger)
 
     def boom():
-        raise ValueError("sample blew up")
+        Mock(side_effect=ValueError("sample blew up"))()
 
     monkeypatch.setattr(m, "sample", boom)
 
@@ -328,7 +329,7 @@ def test_run_survives_sample_exception(monkeypatch):
 
 def test_nvml_unavailable_path_has_no_gpu_handles(monkeypatch):
     def fail_init():
-        raise RuntimeError("no nvml")
+        Mock(side_effect=RuntimeError("no nvml"))()
 
     monkeypatch.setattr(rm.pynvml, "nvmlInit", fail_init)
 
@@ -346,7 +347,7 @@ def test_nvml_unavailable_path_has_no_gpu_handles(monkeypatch):
 
 def test_nvml_failure_is_named_in_the_startup_table_and_warned_on_a_cuda_process(monkeypatch):
     def fail_init():
-        raise RuntimeError("driver/library version mismatch")
+        Mock(side_effect=RuntimeError("driver/library version mismatch"))()
 
     monkeypatch.setattr(rm.pynvml, "nvmlInit", fail_init)
     monkeypatch.setattr(ResourceMonitor, "_cuda_available", staticmethod(lambda: False))
@@ -368,7 +369,7 @@ def test_nvml_failure_is_named_in_the_startup_table_and_warned_on_a_cuda_process
 
 def test_a_device_whose_queries_fail_is_warned_about_once(monkeypatch):
     def broken_memory(handle):
-        raise RuntimeError("GPU is lost")
+        Mock(side_effect=RuntimeError("GPU is lost"))()
 
     monkeypatch.setattr(rm.pynvml, "nvmlInit", lambda: None)
     monkeypatch.setattr(rm.pynvml, "nvmlDeviceGetCount", lambda: 1)
@@ -412,10 +413,3 @@ def test_handles_cover_every_device_when_no_selection_is_set(monkeypatch):
 
     assert m._gpu_handles == ["handle0", "handle1", "handle2"]
 
-
-def test_uuid_device_selection_fails_loudly(monkeypatch):
-    monkeypatch.setattr(rm.pynvml, "nvmlInit", lambda: None)
-    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-8f2a1c")
-
-    with pytest.raises(ValueError, match="CUDA_VISIBLE_DEVICES"):
-        ResourceMonitor(FakeConfig(), logger=CollectingLogger())

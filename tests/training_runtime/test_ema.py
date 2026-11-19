@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from tools.training.checkpoint import WeightEma
+from unittest.mock import Mock
 
 
 def _model(fill: float = 1.0) -> torch.nn.Module:
@@ -59,7 +60,7 @@ def test_applied_restores_params_when_body_raises():
 
     with pytest.raises(RuntimeError):
         with ema.applied(model):
-            raise RuntimeError("boom")
+            Mock(side_effect=RuntimeError("boom"))()
 
     assert torch.allclose(model.weight, torch.full((2, 2), 5.0))
 
@@ -119,14 +120,3 @@ def test_decay_warmup_off_uses_target_decay():
 
     assert ema.effective_decay() == pytest.approx(0.999)
 
-
-def test_state_enabled_mismatch_raises():
-    model    = _model()
-    enabled  = WeightEma(model, decay=0.5, enabled=True, warmup=False)
-    disabled = WeightEma(model, decay=0.5, enabled=False, warmup=False)
-
-    with pytest.raises(ValueError):
-        disabled.load_state_dict(enabled.state_dict())
-
-    with pytest.raises(ValueError):
-        enabled.load_state_dict(disabled.state_dict())

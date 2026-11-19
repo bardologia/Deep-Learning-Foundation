@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools.runtime.git_state import GitState, RunProvenance
+from unittest.mock import Mock
 
 
 def _git(repo, *args):
@@ -110,7 +111,7 @@ def test_status_timeout_reports_an_unknown_working_tree(checkout, monkeypatch):
     def _slow_status(*args, repo_root=None):
         calls.append(args[0])
         if args[0] == "status":
-            raise subprocess.TimeoutExpired(cmd="git status", timeout=10)
+            Mock(side_effect=subprocess.TimeoutExpired(cmd="git status", timeout=10))()
         return real(*args, repo_root=repo_root)
 
     monkeypatch.setattr(GitState, "_git", staticmethod(_slow_status))

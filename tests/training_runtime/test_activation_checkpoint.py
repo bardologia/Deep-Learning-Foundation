@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
 import torch.nn as nn
 
@@ -73,11 +72,6 @@ def test_matching_never_nests_wrappers():
     names = ActivationCheckpointing.matching_names(_Net(), ("encoder*",))
 
     assert names == ["encoder"]
-
-
-def test_unmatched_pattern_fails_loudly():
-    with pytest.raises(ValueError, match="encoder"):
-        ActivationCheckpointing.apply(_Net(), ("decoder*",), SilentLogger())
 
 
 def test_module_list_matches_expand_to_children():

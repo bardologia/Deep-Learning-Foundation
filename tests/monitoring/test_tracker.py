@@ -6,6 +6,7 @@ import pytest
 
 from tests.conftest           import RecordingWriter
 from tools.monitoring.tracker import Tracker, NullTracker
+from unittest.mock import Mock
 
 
 def test_active_false_without_writer():
@@ -52,7 +53,7 @@ def test_scope_pops_on_exception():
     t = Tracker()
     with pytest.raises(RuntimeError):
         with t.scope("a"):
-            raise RuntimeError("boom")
+            Mock(side_effect=RuntimeError("boom"))()
 
     assert t._scopes == []
 

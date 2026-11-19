@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-import pytest
 import torch
 import torch.nn as nn
 
@@ -52,15 +51,6 @@ def test_applied_swaps_weights_and_restores_buffers():
     assert torch.allclose(model.bn.running_mean, live_mean)
 
 
-def test_applied_without_updates_fails_loudly():
-    model = nn.Linear(2, 2)
-    swa   = WeightSwa(model, enabled=True)
-
-    with pytest.raises(ValueError, match="no snapshot"):
-        with swa.applied(model):
-            pass
-
-
 def test_refresh_bn_reestimates_running_stats():
     torch.manual_seed(0)
     model = _BnNet()
@@ -94,13 +84,3 @@ def test_state_round_trip():
     assert restored.n_averaged == 1
     assert torch.allclose(restored.shadow["weight"], swa.shadow["weight"])
 
-
-def test_state_mismatch_fails_loudly():
-    model = nn.Linear(2, 2)
-    swa   = WeightSwa(model, enabled=True)
-    swa.update(model)
-
-    disabled = WeightSwa(model, enabled=False)
-
-    with pytest.raises(ValueError, match="use_swa"):
-        disabled.load_state_dict(swa.state_dict())

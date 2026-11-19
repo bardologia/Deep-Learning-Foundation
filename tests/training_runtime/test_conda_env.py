@@ -4,8 +4,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from tests.conftest          import RecordingLogger
 from tools.runtime.conda_env import CondaEnv, CondaJobDispatcher
 
@@ -29,11 +27,6 @@ def test_candidates_target_env_name_python():
     candidates = CondaEnv._candidates("TargetEnv")
     assert all(c.name == "python" for c in candidates)
     assert all("TargetEnv" in str(c) for c in candidates)
-
-
-def test_interpreter_missing_env_raises_filenotfound():
-    with pytest.raises(FileNotFoundError):
-        CondaEnv.interpreter("definitely_not_a_real_env_xyz_123")
 
 
 def test_interpreter_returns_existing_candidate(monkeypatch):

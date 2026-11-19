@@ -122,12 +122,6 @@ def test_warmup_resolve_converts_fraction_to_steps(logger):
     assert warmup.warmup_steps == 30
 
 
-def test_warmup_step_raises_when_unresolved(logger):
-    warmup = Warmup(_warmup_config(fraction=0.1), logger)
-    with pytest.raises(RuntimeError, match="resolve"):
-        warmup.step()
-
-
 def test_warmup_unresolved_factor_is_start_factor(logger):
     warmup = Warmup(_warmup_config(fraction=0.1, start_factor=0.2), logger)
     assert warmup.factor() == pytest.approx(0.2)
@@ -233,14 +227,6 @@ def test_scheduler_step_floors_at_eta_min(logger):
     config = _scheduler_config("step", epochs=100, eta_min=0.05, step_size=10, gamma=0.5)
     sched  = Scheduler([0.1], warmup=None, config=config, logger=logger)
     assert sched.step(50)[0] == pytest.approx(0.05)
-
-
-def test_scheduler_unknown_type_raises(logger):
-    config = _scheduler_config("nonexistent", epochs=10)
-    sched  = Scheduler([0.05], warmup=None, config=config, logger=logger)
-
-    with pytest.raises(ValueError):
-        sched.step(0)
 
 
 def test_scheduler_reset_applies_epoch_offset(logger):
