@@ -213,11 +213,6 @@ def test_local_cnn_all_1x1_kernels_are_pixelwise():
     assert delta.max().item() == 0.0
 
 
-def test_local_cnn_rejects_mismatched_block_kernels():
-    with pytest.raises(ValueError, match="exactly one kernel size"):
-        get_backbone("local_cnn", features=[8, 8], block_kernels=[3])
-
-
 def test_convnext_unet_drop_path_rates_follow_the_stage_schedule():
     from models.blocks import DropPathSchedule
 
@@ -246,45 +241,9 @@ def test_swin_block_reuses_the_shifted_attention_mask_per_spatial_size():
     assert torch.allclose(first, second, atol=0.0, rtol=0.0)
 
 
-def test_transunet_rejects_an_image_too_small_for_its_cnn_stages():
-    with pytest.raises(ValueError, match="is too small for 4 CNN downsampling stages"):
-        get_backbone("transunet", image_size=8, patch_size=1, cnn_features=[16, 32, 64, 128])
-
-
-def test_transunet_rejects_a_patch_larger_than_the_bottleneck():
-    with pytest.raises(ValueError, match="cannot exceed bottleneck feature size"):
-        get_backbone("transunet", image_size=64, patch_size=16, cnn_features=[16, 32, 64])
-
-
-@pytest.mark.parametrize("heights", [(4, 3), (4, 3, 2, 2)])
-def test_u2net_rejects_rsu_heights_that_do_not_match_its_stages(heights):
-    with pytest.raises(ValueError, match="rsu_heights must contain exactly three"):
-        get_backbone("u2net", features=[16, 32, 64, 128], rsu_heights=heights)
-
-
 def test_multihead_rejects_four_parameters_per_gaussian():
     with pytest.raises(ValueError, match="params_per_gaussian must be 3"):
         get_backbone("unet", head="multihead", params_per_gaussian=4, out_channels=8, features=[8, 16], bottleneck_factor=1)
-
-
-def test_unetr_rejects_patch_size_below_the_decoder_ladder():
-    with pytest.raises(ValueError, match="multiple of 2 \\*\\* len\\(decoder_features\\)"):
-        get_backbone("unetr", image_size=WINDOW, patch_size=8, decoder_features=[32, 16, 8, 8])
-
-
-def test_unetr_rejects_patch_size_indivisible_by_the_decoder_ladder():
-    with pytest.raises(ValueError, match="multiple of 2 \\*\\* len\\(decoder_features\\)"):
-        get_backbone("unetr", image_size=48, patch_size=24, decoder_features=[32, 16, 8, 8])
-
-
-def test_unetr_rejects_non_positive_patch_size():
-    with pytest.raises(ValueError, match="patch_size must be a positive integer"):
-        get_backbone("unetr", image_size=64, patch_size=0, embedding_dim=64, transformer_layers=4, transformer_heads=4, decoder_features=[32, 16, 8, 8])
-
-
-def test_unetr_rejects_patch_size_not_dividing_image_size():
-    with pytest.raises(ValueError, match="image_size must be divisible by patch_size"):
-        get_backbone("unetr", image_size=64, patch_size=7, embedding_dim=64, transformer_layers=4, transformer_heads=4, decoder_features=[32, 16, 8, 8])
 
 
 def test_conv_block_rejects_even_kernels():

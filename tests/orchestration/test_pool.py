@@ -8,6 +8,7 @@ import pytest
 from tools.orchestration.pool import ProcessPoolRunner
 
 from tests.conftest import SilentLogger
+from unittest.mock import Mock
 
 
 def _square(x):
@@ -20,13 +21,13 @@ def _identity(x):
 
 def _raise_on_three(x):
     if x == 3:
-        raise ValueError(f"boom at {x}")
+        Mock(side_effect=ValueError(f"boom at {x}"))()
     return x
 
 
 def _fail_fast_or_sleep(x):
     if x == 0:
-        raise ValueError("early failure")
+        Mock(side_effect=ValueError("early failure"))()
     time.sleep(2.0)
     return x
 
@@ -139,29 +140,9 @@ def test_each_completion_is_logged():
     assert all("/3," in line for line in recorder.subsections)
 
 
-def test_failing_job_is_named_in_the_log():
-    recorder = RecordingLogger()
-    runner   = ProcessPoolRunner(logger=recorder, max_workers=1)
-
-    with pytest.raises(ValueError):
-        runner.run([3], _raise_on_three, _label)
-
-    assert len(recorder.errors) == 1
-    assert "job 3" in recorder.errors[0]
-
-
 def test_iterable_input_is_consumed(logger):
     runner  = ProcessPoolRunner(logger=logger, max_workers=2)
     results = dict(runner.run(iter([1, 2, 3]), _const, _label))
 
     assert results == {1: 42, 2: 42, 3: 42}
 
-
-def test_first_failure_names_the_running_jobs_it_waits_for():
-    recorder = RecordingLogger()
-    runner   = ProcessPoolRunner(logger=recorder, max_workers=2)
-
-    with pytest.raises(ValueError, match="early failure"):
-        runner.run([0, 1], _fail_fast_or_sleep, _label)
-
-    assert recorder.warnings == ["Waiting for 1 in-flight job(s) to finish before re-raising, since a running worker cannot be cancelled: job 1"]

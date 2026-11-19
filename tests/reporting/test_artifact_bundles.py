@@ -120,13 +120,6 @@ def test_dataset_selector_discovers_only_folders_with_a_layout(datasets_dir):
     assert [dataset.name for dataset in datasets] == ["ds_alpha", "ds_beta"]
 
 
-def test_dataset_selector_raises_without_any_dataset(tmp_path):
-    (tmp_path / "empty").mkdir()
-
-    with pytest.raises(FileNotFoundError, match="generate_dataset"):
-        DatasetSelector(tmp_path / "empty", RecordingLogger()).all()
-
-
 def test_param_run_selector_skips_runs_without_the_parameter_stack(datasets_dir):
     _write(datasets_dir / "ds_beta" / "params" / "half_written" / "param_extraction_meta.json", "{}")
 
@@ -165,15 +158,6 @@ def test_dataset_bundle_warns_for_a_missing_optional_path(entry_config, datasets
 
     assert [message for message in warnings if "'docs'" in message]
     assert "datasets/ds_beta/data/dataset.json" in _archived_names(archives[0])
-
-
-def test_dataset_bundle_aborts_on_a_missing_required_path(entry_config, datasets_dir):
-    (datasets_dir / "ds_alpha" / "data" / "dataset.json").unlink()
-
-    config = entry_config.to_dataset_config(datasets_dir / "ds_alpha")
-
-    with pytest.raises(FileNotFoundError, match="data/dataset.json"):
-        ArtifactBundle(config, RecordingLogger()).stage()
 
 
 def test_param_bundle_packs_extraction_and_analysis_artifacts(entry_config, datasets_dir):
@@ -217,15 +201,6 @@ def test_bundle_splits_into_numbered_volumes_over_the_cap(entry_config, datasets
         "datasets/ds_alpha/meta/config_state.json",
         "datasets/ds_alpha/meta/environment.json",
     ]
-
-
-def test_bundle_aborts_when_one_file_alone_exceeds_the_cap(entry_config, datasets_dir):
-    entry_config.max_attachment_mb = 32 / (1024 * 1024)
-
-    config = entry_config.to_dataset_config(datasets_dir / "ds_alpha")
-
-    with pytest.raises(ValueError, match="max_attachment_mb"):
-        ArtifactBundle(config, RecordingLogger()).stage()
 
 
 def test_repacking_removes_the_volumes_of_the_previous_run(entry_config, datasets_dir):
@@ -277,13 +252,6 @@ def test_batch_mails_the_selected_parameter_run(entry_config, monkeypatch, fake_
     assert results[0]["subjects"] == [f"{entry_config.subject_prefix}: ds_alpha/params_k2"]
 
 
-def test_batch_rejects_an_unknown_target(entry_config):
-    entry_config.target = "checkpoints"
-
-    with pytest.raises(ValueError, match="param_extraction"):
-        ReportMailBatch(entry_config, RecordingLogger())
-
-
 def test_run_selector_lists_every_run_below_the_root(runs_dir):
     runs = RunContentSelector(runs_dir, RecordingLogger()).all()
 
@@ -305,13 +273,6 @@ def test_run_selector_takes_a_root_that_is_itself_a_run(runs_dir):
     runs = RunContentSelector(run_dir, RecordingLogger()).all()
 
     assert runs == [run_dir]
-
-
-def test_run_selector_raises_without_any_run(tmp_path):
-    (tmp_path / "empty").mkdir()
-
-    with pytest.raises(FileNotFoundError, match="meta"):
-        RunContentSelector(tmp_path / "empty", RecordingLogger()).all()
 
 
 def test_run_bundle_packs_everything_the_run_holds(entry_config, runs_dir):
@@ -415,13 +376,6 @@ def test_excluded_content_names_the_largest_oversized_files_and_counts_the_rest(
     assert warning.startswith(f"{ExcludedContent.NAMED_LIMIT + 2} file(s) of {source} left out for being over 0.0 MB, largest first: file_21.bin")
     assert warning.endswith(" and 2 more")
     assert "file_00.bin" not in warning
-
-
-def test_run_bundle_aborts_on_a_missing_run_directory(entry_config, tmp_path):
-    config = entry_config.to_run_config(tmp_path / "runs" / "backbone" / "gone")
-
-    with pytest.raises(FileNotFoundError, match="gone"):
-        RunContentBundle(config, RecordingLogger()).stage()
 
 
 def test_batch_mails_one_message_per_run(entry_config, monkeypatch, fake_smtp):

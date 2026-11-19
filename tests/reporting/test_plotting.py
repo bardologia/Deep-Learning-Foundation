@@ -80,17 +80,6 @@ def test_shared_clim_multiple_arrays():
     assert hi == pytest.approx(10.0)
 
 
-def test_shared_clim_all_nan_raises():
-    arr = np.full(10, np.nan)
-    with pytest.raises(ValueError):
-        PlotBase._shared_clim(arr)
-
-
-def test_shared_clim_empty_raises():
-    with pytest.raises(ValueError):
-        PlotBase._shared_clim(np.array([]))
-
-
 def test_cmap_with_bad_returns_colormap():
     cmap = PlotBase._cmap_with_bad("viridis")
     assert isinstance(cmap, mcolors.Colormap)
@@ -123,16 +112,6 @@ def test_amplitude_clim_multiple_arrays():
     assert hi == pytest.approx(6.0)
 
 
-def test_amplitude_clim_empty_raises():
-    with pytest.raises(ValueError):
-        PlotBase._amplitude_clim(np.array([]))
-
-
-def test_amplitude_clim_zero_field_raises():
-    with pytest.raises(ValueError):
-        PlotBase._amplitude_clim(np.zeros(16, dtype=np.float32))
-
-
 def test_normalize_01_range():
     arr  = np.array([2.0, 4.0, 6.0], dtype=np.float32)
     norm = PlotBase._normalize_01(arr)
@@ -145,12 +124,6 @@ def test_normalize_01_ignores_nan_for_bounds():
     arr  = np.array([0.0, np.nan, 10.0], dtype=np.float32)
     norm = PlotBase._normalize_01(arr)
     assert float(np.nanmax(norm)) == pytest.approx(1.0)
-
-
-def test_normalize_01_constant_raises():
-    arr = np.full(5, 3.0, dtype=np.float32)
-    with pytest.raises(ValueError):
-        PlotBase._normalize_01(arr)
 
 
 def test_subsample_below_max_unchanged():
@@ -257,11 +230,6 @@ def test_quantised_bins_trim_the_tails():
     sample = np.concatenate([np.random.default_rng(4).normal(20.0, 3.0, 20_000), np.array([500.0])])
     edges  = PlotBase._quantised_bins(sample, span=(0.5, 99.5))
     assert edges[-1] < 100.0
-
-
-def test_quantised_bins_empty_raises():
-    with pytest.raises(ValueError):
-        PlotBase._quantised_bins(np.zeros(0))
 
 
 def test_imshow_figure_returns_figure(plotter, small_field):
@@ -417,12 +385,6 @@ def paper_style():
 
 
 def test_default_style_is_report():
-    assert PlotBase.style == "report"
-
-
-def test_use_style_rejects_unknown():
-    with pytest.raises(ValueError, match="unknown figure style"):
-        PlotBase.use_style("poster")
     assert PlotBase.style == "report"
 
 

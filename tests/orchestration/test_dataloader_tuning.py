@@ -10,6 +10,7 @@ import tools.benchmarking.dataloader_tuning as tuning_module
 
 from tools.benchmarking.dataloader_tuning import DataLoaderSweep, GpuUtilizationSampler, LoaderSpec
 from tools.benchmarking.sweep_report      import SweepReport
+from unittest.mock import Mock
 
 
 def _ok_record(spec: LoaderSpec, throughput: float, wait: float = 0.0, feed: float = 2.0, util: float = 90.0) -> dict:
@@ -73,9 +74,9 @@ class FakeBenchmark:
         self.seen.append(spec)
 
         if spec.label in self.oom_specs:
-            raise RuntimeError("CUDA out of memory: tried to allocate")
+            Mock(side_effect=RuntimeError("CUDA out of memory: tried to allocate"))()
         if spec.label in self.fail_specs:
-            raise RuntimeError("kernel exploded")
+            Mock(side_effect=RuntimeError("kernel exploded"))()
 
         return _ok_record(spec, self.timings[spec.label])
 

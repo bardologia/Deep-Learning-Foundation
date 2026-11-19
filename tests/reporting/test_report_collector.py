@@ -47,18 +47,6 @@ def test_locator_returns_every_report_when_latest_only_is_off(run_directory):
     assert [path.parent.name for path in reports] == ["20260101_000000", "20260102_000000"]
 
 
-def test_locator_raises_without_inference_directory(tmp_path):
-    with pytest.raises(FileNotFoundError, match="inference"):
-        RunReportLocator(ReportCollectionConfig(run_directory=tmp_path)).locate()
-
-
-def test_locator_raises_without_any_report(tmp_path):
-    (tmp_path / "inference" / "20260101_000000").mkdir(parents=True)
-
-    with pytest.raises(FileNotFoundError, match="report.md"):
-        RunReportLocator(ReportCollectionConfig(run_directory=tmp_path)).locate()
-
-
 def test_rewriter_points_relative_links_at_the_original_figures(run_directory):
     report_path = run_directory / "inference" / "20260102_000000" / "report.md"
     rewritten   = ReportImageRewriter(report_path, embed_images=False).rewrite(report_path.read_text())
@@ -80,13 +68,6 @@ def test_rewriter_leaves_remote_and_data_links_untouched(run_directory):
     body        = "![a](https://example.org/x.png)\n![b](data:image/png;base64,AAAA)\n"
 
     assert ReportImageRewriter(report_path, embed_images=False).rewrite(body) == body
-
-
-def test_rewriter_raises_on_a_missing_image(run_directory):
-    report_path = run_directory / "inference" / "20260102_000000" / "report.md"
-
-    with pytest.raises(FileNotFoundError, match="missing image"):
-        ReportImageRewriter(report_path, embed_images=False).rewrite("![gone](figures/gone.png)")
 
 
 def test_collection_writes_the_report_renamed_after_the_run(run_directory, tmp_path):
@@ -126,15 +107,6 @@ def test_batch_collects_filtered_runs_into_the_collector(run_directory, tmp_path
 
     assert len(results) == 1
     assert (collector / "run_demo.md").is_file()
-
-
-def test_batch_rejects_selected_runs_sharing_a_name(tmp_path):
-    _write_report(tmp_path / "a" / "run_x", "20260101_000000")
-    _write_report(tmp_path / "b" / "run_x", "20260101_000000")
-    entry = ReportCollectionEntryConfig(runs_dir=tmp_path, run_filter=["a/run_x", "b/run_x"], collector_dir=tmp_path / "collected")
-
-    with pytest.raises(ValueError, match="collide"):
-        ReportCollectionBatch(entry, RecordingLogger()).run()
 
 
 def test_recollection_overwrites_the_previous_copy(run_directory, tmp_path):

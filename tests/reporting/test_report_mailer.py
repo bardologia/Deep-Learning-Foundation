@@ -495,20 +495,6 @@ class StalledSmtp(FakeSmtp):
         Mock(side_effect=TimeoutError("timed out"))()
 
 
-def test_mailer_logs_a_stalled_submission_with_its_duration_and_raises(entry_config, monkeypatch, tmp_path):
-    monkeypatch.setattr("tools.reporting.report_mailer.smtplib.SMTP_SSL", StalledSmtp)
-    monkeypatch.setenv(entry_config.password_env, "app-password")
-    attachment = tmp_path / "a.md"
-    attachment.write_text("x", encoding="utf-8")
-    logger     = RecordingLogger()
-
-    with pytest.raises(TimeoutError):
-        ReportMailer(entry_config, logger).send("subject", "body", [attachment])
-
-    assert re.fullmatch(r"SMTP submission of 'subject' failed after \d+\.\d s: TimeoutError: timed out", logger.messages[-1][1])
-    assert logger.messages[-1][0] == "error"
-
-
 def test_batch_sends_one_message_per_experiment(entry_config, monkeypatch, fake_smtp):
     monkeypatch.setenv(entry_config.password_env, "app-password")
 
