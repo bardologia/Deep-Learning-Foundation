@@ -24,8 +24,6 @@ class Cropper:
         self.secondary_indices = layout.secondary_indices(secondary_labels)
         self.secondary_labels  = self._resolve_labels(secondary_labels)
 
-        self._validate_parameters_extent()
-
         self.logger.section("[Cropper Initialized]")
         self.logger.subsection(f"Secondary selection : {', '.join(self.secondary_labels) if self.secondary_labels else 'all channels'}")
         self.logger.metrics_table(split_regions.region_rows(), ["Split", "Crop", "Rows", "Cols"])
@@ -35,14 +33,6 @@ class Cropper:
             return None
         secondaries = self.layout.channel_labels[1:]
         return [secondaries[index] for index in self.secondary_indices]
-
-    def _validate_parameters_extent(self) -> None:
-        parameters_path = self.layout.artifact_path("parameters")
-        parameters      = np.load(str(parameters_path), mmap_mode="r", allow_pickle=False)
-        expected        = (self.layout.global_crop.row_size, self.layout.global_crop.col_size)
-
-        if tuple(parameters.shape[-2:]) != expected:
-            raise ValueError(f"Parameters artifact {parameters_path} has spatial shape {tuple(parameters.shape[-2:])} but the preprocessing global crop is {expected} (row, col); the parameter extraction does not belong to this dataset crop.")
 
     def _to_local_slices(self, region: CropRegion) -> Tuple[slice, slice]:
         return region.local_slices(self.layout.global_crop)

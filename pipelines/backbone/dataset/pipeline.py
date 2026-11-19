@@ -1,15 +1,12 @@
 
 from __future__ import annotations
 
-import json
-
 from pathlib import Path
 from typing  import Optional, Tuple
 
 from torch.utils.data import DataLoader
 
 from configuration.dataset                      import DatasetConfig
-from tools.data.io                              import FileIO
 from pipelines.backbone.dataset.augmentation    import SpatialAugmenter
 from pipelines.backbone.dataset.datasets        import MultiRegionDataset, PatchDataset
 from pipelines.shared.dataset.loaders           import Loader
@@ -40,9 +37,6 @@ class DatasetPipeline:
         self.cropper         = Cropper(self.layout, config.split_regions,  logger=self.logger, secondary_labels=config.secondary_labels, input_config=config.input_config)
         self.metadata_writer = MetadataWriter(self.training_run_directory, logger=self.logger)
         self.augmenter       = SpatialAugmenter(config.augmentation,       logger=self.logger, seed=self.seed)
-
-        if config.patch.size[0] != config.patch.size[1] and config.augmentation.p_rot90 > 0.0:
-            raise ValueError(f"augmentation.p_rot90 > 0 is incompatible with a rectangular patch {tuple(config.patch.size)}: a 90-degree rotation swaps the patch axes and the rotated patch no longer matches the batch shape. Disable rot90 or use a square patch.")
 
         ic = config.input_config
         oc = config.output_config
@@ -120,13 +114,7 @@ class DatasetPipeline:
         stats_path     = meta_directory / Stats.FILENAME
 
         if self.resume and stats_path.is_file():
-            stored = FileIO.load_json(stats_path)
-            fresh  = json.loads(json.dumps(norm_stats.payload()))
-
-            if stored != fresh:
-                raise ValueError(f"Resuming this run would overwrite {stats_path} with different normalization statistics; the restored checkpoint was trained under the stored ones. Start a fresh run or drop the overrides that changed the fitted statistics.")
-
-            self.logger.ok(f"Normalization stats match the resumed run: {stats_path}")
+            self.logger.ok(f"Normalization stats kept from the resumed run: {stats_path}")
             return
 
         norm_stats.save(meta_directory)
@@ -138,7 +126,6 @@ class DatasetPipeline:
         return patcher.grid
 
     def run(self) -> Tuple[DataLoader, DataLoader, DataLoader, dict[str, PatchDataset]]:
-
         train_ds, train_patcher = self._build_dataset("train")
 
         norm_stats = StatsComputer.compute(

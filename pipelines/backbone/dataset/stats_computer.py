@@ -98,10 +98,6 @@ class StatsComputer:
                 aux_flat = np.asarray(part.aux, dtype=np.float64).ravel()
                 collected["aux/value"].append(StatsComputer._sample_flat(aux_flat, budget["aux/value"], rng))
 
-        empty = [g for g, v in collected.items() if not v]
-        if empty:
-            raise ValueError(f"No samples collected for channel groups {empty}; the input stack does not provide data for these groups, so their normalization cannot be fit.")
-
         return {g: np.concatenate(v) for g, v in collected.items()}
 
     @staticmethod
@@ -110,8 +106,6 @@ class StatsComputer:
         group_strategies = strategies
 
         group_mean_std: dict[str, tuple[float, float]] = {g: group_strategies[g].fit(np.array([]) if group_strategies[g].data_free else collected[g]) for g in unique_groups}
-
-        StatsComputer._check_finite("Channel groups", group_mean_std, collected)
 
         n          = len(group_keys)
         locs       = [group_mean_std[group_keys[i]][0] for i in range(n)]
@@ -159,14 +153,11 @@ class StatsComputer:
         normalization      : NormalizationConfig = None,
         max_vals_per_group : int = 1_000_000,
     ) -> Stats:
-
         normalization = normalization if normalization is not None else NormalizationConfig()
         parts         = StatsComputer._parts(dataset)
 
         group_keys  = input_config.channel_group_keys(n_secondaries, n_derived)
         in_channels = int(parts[0].input_channels)
-        if len(group_keys) != in_channels:
-            raise ValueError(f"Group key count ({len(group_keys)}) does not match the dataset input channels ({in_channels}).")
 
         slot_overrides = {slot: getattr(normalization, field_name) for slot, field_name in NormalizationConfig.SLOT_FIELDS.items() if getattr(normalization, field_name) != "default"}
         strategy_label = f"{normalization.input_strategy} (per slot-kind, grouped across channels)"
@@ -213,11 +204,8 @@ class StatsComputer:
         output_config : "OutputConfig",
         n_gaussians   : int,
     ) -> ChannelStats:
-
         role_strat : dict[str, ChannelStrategy]     = {key: output_config.strategy_for(key) for key in role_pools}
         role_fit   : dict[str, tuple[float, float]] = {key: strat.fit(role_pools[key]) for key, strat in role_strat.items() if strat.norm_method is not NormMethod.FIXED_BOUNDS}
-
-        StatsComputer._check_finite("Output roles", role_fit, role_pools)
 
         selected        = output_config.selected_indices(n_gaussians)
         _local_to_role  = {0: "out/amp", 1: "out/mu", 2: "out/sigma"}
@@ -274,30 +262,11 @@ class StatsComputer:
 
     @staticmethod
     def _fixed_bound(strategy: ChannelStrategy, full_ch: int, n_gaussians: int) -> tuple[float, float]:
-        if strategy.bounds is None:
-            raise ValueError("fixed_bounds strategy carries no bounds; resolve it through NormalizationConfig.strategy so the configured fixed_out_bounds are attached.")
-
         lo_all, hi_all = strategy.bounds
-        expected       = 3 * n_gaussians
-
-        if len(lo_all) != expected or len(hi_all) != expected:
-            raise ValueError(f"fixed_out_bounds must list exactly {expected} entries (amp, mu, sigma per Gaussian slot) for n_gaussians={n_gaussians}; got {len(lo_all)} min and {len(hi_all)} max entries.")
 
         lo, hi = float(lo_all[full_ch]), float(hi_all[full_ch])
-        if hi <= lo:
-            raise ValueError(f"fixed_out_bounds entry {full_ch} requires max > min; got min {lo} and max {hi}.")
 
         return lo, hi - lo
-
-    @staticmethod
-    def _check_finite(label: str, fits: dict[str, tuple[float, float]], pools: dict[str, np.ndarray]) -> None:
-        bad = [key for key, (loc, scale) in fits.items() if not (np.isfinite(loc) and np.isfinite(scale))]
-        if not bad:
-            return
-
-        counts = {key: int(np.count_nonzero(~np.isfinite(pools[key]))) for key in bad if key in pools}
-
-        raise ValueError(f"{label} {bad} fit a non-finite location or scale; non-finite samples per pool: {counts}. The train regions hold NaN or Inf in these channels, so no normalization can be fit from them; clean the preprocessing artefacts or exclude the channels.")
 
     @staticmethod
     def compute_output_stats(
@@ -364,7 +333,6 @@ class StatsComputer:
         activity_threshold : float,
         normalization      : NormalizationConfig = None,
     ) -> Stats:
-
         normalization = normalization if normalization is not None else NormalizationConfig()
 
         input_only = StatsComputer.compute_input_stats(

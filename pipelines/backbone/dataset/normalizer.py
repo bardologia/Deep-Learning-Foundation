@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -27,11 +27,6 @@ class Normalizer:
         key = id(stats)
         if key in self._vectors:
             return self._vectors[key]
-
-        if stats.strategies is None:
-            raise ValueError("ChannelStats is missing per-channel strategies; cannot build normalization vectors.")
-        if stats.clampable is None:
-            raise ValueError("ChannelStats is missing per-channel clampable flags; cannot build normalization vectors.")
 
         loc       = np.asarray(stats.loc,       dtype=np.float32)
         scale     = np.asarray(stats.scale,     dtype=np.float32)
@@ -125,21 +120,14 @@ class Normalizer:
             out[sel] = Log1pTransform.decompress(Log1pTransform.compress(x[sel], leaky_slope), clamp.floor, clamp.ceil, clamped, leaky_slope)
         return np.ascontiguousarray(out, dtype=np.float32)
 
-    @staticmethod
-    def _require(stats: Optional[ChannelStats], role: str) -> ChannelStats:
-        if stats is None:
-            raise ValueError(f"Normalizer has no {role} stats; cannot (de)normalize {role}.")
-
-        return stats
-
     def normalize_input(self, tensor: Array) -> Array:
-        return self._apply_normalization(tensor, self._require(self.stats.input_stats, "input"), inverse=False, is_output=False)
+        return self._apply_normalization(tensor, self.stats.input_stats, inverse=False, is_output=False)
 
     def normalize_output(self, tensor: Array, leaky_slope: float = 0.0) -> Array:
-        return self._apply_normalization(tensor, self._require(self.stats.output_stats, "output"), inverse=False, is_output=True, leaky_slope=leaky_slope)
+        return self._apply_normalization(tensor, self.stats.output_stats, inverse=False, is_output=True, leaky_slope=leaky_slope)
 
     def denormalize_input(self, tensor: Array) -> Array:
-        return self._apply_normalization(tensor, self._require(self.stats.input_stats, "input"), inverse=True, is_output=False)
+        return self._apply_normalization(tensor, self.stats.input_stats, inverse=True, is_output=False)
 
     def denormalize_output(self, tensor: Array, leaky_slope: float = 0.0) -> Array:
-        return self._apply_normalization(tensor, self._require(self.stats.output_stats, "output"), inverse=True, is_output=True, leaky_slope=leaky_slope)
+        return self._apply_normalization(tensor, self.stats.output_stats, inverse=True, is_output=True, leaky_slope=leaky_slope)

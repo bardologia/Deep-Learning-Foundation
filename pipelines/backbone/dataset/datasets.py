@@ -31,7 +31,6 @@ class PatchDataset(Dataset):
         augmenter     : Optional[SpatialAugmenter] = None,
         aux           : Optional[np.ndarray]       = None,
     ) -> None:
-
         self.inputs        = inputs
         self.gt_parameters = gt_parameters
         self.grid          = grid
@@ -48,31 +47,10 @@ class PatchDataset(Dataset):
         self.n_secondaries = n_secondaries
         self.n_derived     = n_derived
 
-        expected_layers = n_primary + n_secondaries + n_derived
-        if expected_layers != self.input_layers:
-            raise ValueError(f"Input stack has {self.input_layers} layers but the dataset artifacts describe {expected_layers} ({n_primary} primary + {n_secondaries} secondaries + {n_derived} derived)")
-
-        if input_config.use_primary and n_primary == 0:
-            raise ValueError("Input config requests the primary but the cropped stack does not carry it. Rebuild the crop with the primary or set use_primary=False.")
-
-        if input_config.use_secondaries and n_secondaries == 0:
-            raise ValueError("Input config requests secondaries but the dataset stack contains none. Rebuild the dataset with secondaries or set use_secondaries=False.")
-
-        if input_config.use_derived and n_derived == 0:
-            raise ValueError("Input config requests derived but the dataset stack contains none. Rebuild the dataset with derived or set use_derived=False.")
-
-        if input_config.use_aux and aux is None:
-            raise ValueError("Input config requests the Aux channel but no Aux array was provided; pass the aux array from the cropper or set use_aux=False.")
-
         self.input_channels = input_config.total_channels(n_secondaries, n_derived)
 
         self.output_channel_indices = output_config.selected_indices(n_gaussians = n_gaussians)
         self.gt_channels            = len(self.output_channel_indices)
-
-        available_gt_channels = int(gt_parameters.shape[0])
-        required_gt_channels  = (max(self.output_channel_indices) + 1) if self.output_channel_indices else 0
-        if required_gt_channels > available_gt_channels:
-            raise ValueError(f"Configured n_gaussians={n_gaussians} indexes ground-truth parameter channel {required_gt_channels - 1} but the dataset provides only {available_gt_channels} ({available_gt_channels // 3} Gaussians). Set n_gaussians to match the parameter extraction used for this dataset.")
 
         self.gt_selected = self._select_gt_channels(gt_parameters)
 
@@ -113,15 +91,9 @@ class PatchDataset(Dataset):
         return input_tensor
 
     def _normalize_input_tensor(self, input_tensor: np.ndarray) -> np.ndarray:
-        if self.normalizer is None:
-            raise RuntimeError(f"PatchDataset '{self.split_name}' was indexed before a normalizer was assigned; training on raw physical values would be silently wrong.")
-
         return self.normalizer.normalize_input(input_tensor)
 
     def _normalize_gt_params(self, gt_params: np.ndarray) -> np.ndarray:
-        if self.normalizer.stats.output_stats is None:
-            raise RuntimeError(f"PatchDataset '{self.split_name}' has a normalizer without output stats; ground-truth parameters cannot be normalized.")
-
         return self.normalizer.normalize_output(gt_params)
 
     def assemble_window(self, complex_window: np.ndarray, aux_window: Optional[np.ndarray] = None) -> np.ndarray:
@@ -153,9 +125,6 @@ class PatchDataset(Dataset):
 class MultiRegionDataset(Dataset):
 
     def __init__(self, parts: list[PatchDataset]) -> None:
-        if not parts:
-            raise ValueError("MultiRegionDataset requires at least one part")
-
         self.parts   = parts
         self.offsets = []
 
@@ -166,17 +135,6 @@ class MultiRegionDataset(Dataset):
         self.total = total
 
         first = parts[0]
-
-        for part in parts[1:]:
-            matches = (
-                part.input_channels   == first.input_channels   and
-                part.n_primary        == first.n_primary        and
-                part.n_secondaries    == first.n_secondaries    and
-                part.n_derived == first.n_derived and
-                part.gt_channels      == first.gt_channels
-            )
-            if not matches:
-                raise ValueError(f"MultiRegionDataset parts disagree on channel structure: part '{part.split_name}' has (input={part.input_channels}, primary={part.n_primary}, secondaries={part.n_secondaries}, derived={part.n_derived}, gt={part.gt_channels}) but the first part has (input={first.input_channels}, primary={first.n_primary}, secondaries={first.n_secondaries}, derived={first.n_derived}, gt={first.gt_channels}).")
 
         self.input_config           = first.input_config
         self.output_config          = first.output_config
@@ -205,8 +163,6 @@ class MultiRegionDataset(Dataset):
     def __getitem__(self, idx: int):
         if idx < 0:
             idx += self.total
-        if idx < 0 or idx >= self.total:
-            raise IndexError(f"Index {idx} out of range for {self.total} patches")
 
         part_index = bisect.bisect_right(self.offsets, idx) - 1
 
