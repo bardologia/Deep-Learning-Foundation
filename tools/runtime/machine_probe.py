@@ -142,7 +142,7 @@ def main() -> None:
 
         if nvidia["driver_error"]:
             print(f"{nvidia['driver_error']}; fix the driver and rerun, or pass --torch-index cu130, cu128 or cpu to install.sh to choose the wheel yourself", file=sys.stderr)
-            raise SystemExit(2)
+            sys.exit(2)
         if note:
             print(f"CPU wheel: {note}", file=sys.stderr)
 

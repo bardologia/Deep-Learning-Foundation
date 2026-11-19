@@ -66,4 +66,4 @@ class Detacher:
         print(f"output: {log_path}")
         print(f"follow: tail -f {log_path}")
 
-        raise SystemExit(0)
+        sys.exit(0)

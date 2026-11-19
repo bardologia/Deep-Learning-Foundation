@@ -30,18 +30,6 @@ class ConfigCli:
 
     parsed : "ConfigCli | None" = None
 
-    BOOTSTRAP_FLAGS = (
-        "--help-config",
-        "--detach", "--nohup",
-        "--gpu",
-        "--trial", "--worker", "--resume",
-        "--model",
-        "--n-trials", "--study-name", "--storage-url",
-        "--run-tag", "--run-dir", "--run-name",
-        "--fold", "--split",
-    )
-    BOOTSTRAP_SWITCHES = ("--help-config", "--detach", "--nohup", "--trial")
-
     def __init__(self, config, description: str | None = None, profile: MachineProfile | None = None) -> None:
         self.config              = config
         self.overrides : dict    = {}
@@ -69,11 +57,9 @@ class ConfigCli:
     def apply(self, argv: list[str] | None = None):
         args, leftover = self.parser.parse_known_args(argv)
 
-        self._reject_unknown_options(leftover, sys.argv[1:] if argv is None else list(argv))
-
         if getattr(args, "_help", False) or getattr(args, "_help_config", False):
             self._print_config_help()
-            raise SystemExit(0)
+            sys.exit(0)
 
         if getattr(args, "_detach", False):
             Detacher().ensure()
@@ -92,49 +78,6 @@ class ConfigCli:
             ConfigCli.parsed = self
 
         return self.config
-
-    def _reject_unknown_options(self, leftover: list[str], argv: list[str]) -> None:
-        offenders = []
-        stray     = []
-        pending   = list(leftover)
-        previous  = None
-
-        for token in argv:
-            if pending and token == pending[0]:
-                pending.pop(0)
-
-                if token.startswith("-"):
-                    name = token.split("=", 1)[0]
-                    if name not in self.BOOTSTRAP_FLAGS:
-                        offenders.append(name)
-                elif not self._takes_value(previous):
-                    stray.append(token)
-
-            previous = token
-
-        if offenders:
-            keys = ", ".join(sorted(set(offenders)))
-            raise ValueError(f"Unrecognized override option(s): {keys}. Known overrides: --<path> from {type(self.config).__name__}; bootstrap flags: {', '.join(self.BOOTSTRAP_FLAGS)}")
-
-        if stray:
-            option = self._option_before(stray[0], argv)
-            raise ValueError(f"Stray value(s) {stray} after {option}: every override takes exactly one value, so a list is written as {option} a,b,c or {option} [a,b,c]")
-
-    def _takes_value(self, token: str | None) -> bool:
-        if token is None or not token.startswith("-") or "=" in token:
-            return False
-
-        return token in self.BOOTSTRAP_FLAGS and token not in self.BOOTSTRAP_SWITCHES
-
-    @staticmethod
-    def _option_before(token: str, argv: list[str]) -> str:
-        index = argv.index(token) if token in argv else 0
-
-        for previous in reversed(argv[:index]):
-            if previous.startswith("-"):
-                return previous.split("=", 1)[0]
-
-        return "the command"
 
     @classmethod
     def apply_profile(cls, config, profile: MachineProfile) -> list[ConfigSource]:
@@ -212,9 +155,6 @@ class ConfigCli:
         if rule.kind == "cap":
             return min(current, int(rule.value))
 
-        if rule.kind != "set":
-            raise ValueError(f"unknown machine profile rule kind {rule.kind!r} for field {rule.field!r}")
-
         if isinstance(current, Path):
             return Path(rule.value)
         if isinstance(current, Enum):
@@ -285,11 +225,7 @@ class ConfigCli:
     @staticmethod
     def _parse_bool(raw: str) -> bool:
         lowered = raw.strip().lower()
-        if lowered in ("true", "1", "yes", "on"):
-            return True
-        if lowered in ("false", "0", "no", "off"):
-            return False
-        raise ValueError(f"Cannot parse boolean from '{raw}'")
+        return {"true": True, "1": True, "yes": True, "on": True, "false": False, "0": False, "no": False, "off": False}[lowered]
 
     @classmethod
     def _coerce_by_annotation(cls, raw: str, annotation):
@@ -422,20 +358,8 @@ class ConfigCli:
 
     @classmethod
     def load_resolved(cls, config, path: Path):
-        if not Path(path).exists():
-            raise FileNotFoundError(f"Resolved config not found at {path} for {type(config).__name__}")
-
         with open(path, "r", encoding="utf-8") as f:
             mapping = json.load(f)
-
-        known   = set(cls.to_mapping(config))
-        unknown = sorted(key for key in mapping if key not in known)
-        if unknown:
-            raise KeyError(f"Unknown key(s) in resolved config {path}: {', '.join(unknown)}. Known keys belong to {type(config).__name__}")
-
-        missing = sorted(known - set(mapping))
-        if missing:
-            raise KeyError(f"Resolved config {path} is missing key(s): {', '.join(missing)}. It was written by an older {type(config).__name__}; regenerate the run instead of silently resuming it under today's defaults")
 
         for leaf, current in list(cls._leaves(config)):
             if leaf not in mapping:

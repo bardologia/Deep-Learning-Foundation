@@ -68,9 +68,6 @@ class GitState:
 
         diff = cls._git("diff", "HEAD")
 
-        if diff.returncode != 0:
-            raise RuntimeError(f"git diff HEAD failed in {cls.REPO_ROOT}: {diff.stderr.strip()}")
-
         return {"dirty": True, "diff": diff.stdout, "untracked": untracked}
 
 

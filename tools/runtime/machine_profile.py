@@ -66,10 +66,8 @@ class MachineProfile:
         if path is None:
             return cls(path)
 
-        if not path.is_file():
-            if named is None:
-                return cls(path)
-            raise FileNotFoundError(f"{cls.ENV_VAR} names {path} but no file is there; fix the variable, run ./install.sh to write the profile, or set the variable to an empty value to run without one")
+        if named is None and not path.is_file():
+            return cls(path)
 
         return cls.load(path)
 
@@ -77,14 +75,7 @@ class MachineProfile:
     def load(cls, path: Path) -> "MachineProfile":
         path = Path(path)
 
-        if not path.is_file():
-            raise FileNotFoundError(f"machine profile not found at {path}; run ./install.sh from the repository root")
-
-        data   = json.loads(path.read_text(encoding="utf-8"))
-        schema = data.get("schema")
-
-        if schema != cls.SCHEMA:
-            raise ValueError(f"machine profile {path} has schema {schema!r}, this code expects {cls.SCHEMA}; rerun ./install.sh to regenerate it")
+        data = json.loads(path.read_text(encoding="utf-8"))
 
         return cls(path, data)
 
@@ -215,8 +206,6 @@ class MachineProfile:
 
         for key, value in self.config_overrides.items():
             owner, _, field = key.rpartition(".")
-            if not owner or not field:
-                raise ValueError(f"config_overrides key {key!r} in {self.path} must be written as Class.field")
             rules.append(FieldRule(field, "set", value, owner=owner))
 
         return rules
@@ -249,9 +238,6 @@ class MachineProfile:
         return [f"export {key}={shlex.quote(str(value))}" for key, value in values.items()]
 
     def save(self) -> Path:
-        if self.path is None:
-            raise RuntimeError(f"cannot save a machine profile while {self.ENV_VAR} is set to an empty value")
-
         self.data.setdefault("machine", {}).setdefault("hostname", socket.gethostname())
         payload = {"schema": self.SCHEMA, "written_at": datetime.now().isoformat(timespec="seconds"), **{key: value for key, value in self.data.items() if key not in ("schema", "written_at")}}
 
