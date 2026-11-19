@@ -350,10 +350,7 @@ units are reused, unfinished ones continue from their trainer state when they ha
 and restart otherwise, missing ones are created. Units of the staged experiments are
 matched to their directories through the manifest each worker writes first
 (`meta/unit.json`), so a fold or seed found under any directory name keeps that
-directory. A run that trained before manifests existed carries none, and is adopted by
-`scripts/backfill_unit_manifests.py <run>`, which writes each unit's manifest from the
-run's own recording and matches units to directories by the name that recording composes.
-A directory no planned unit accounts for is reported and left alone. `--stage prepare` on
+directory. A directory no planned unit accounts for is reported and left alone. `--stage prepare` on
 the staged experiments prints the plan and the status of every unit without launching
 any, which is how a resume is checked before it burns GPU hours; the console offers the
 same choice beside `resume_from` on the benchmark, cross-validation and tuning forms, and
@@ -639,8 +636,7 @@ regenerated, not converted. These changes, made in October 2026, affect existing
   `activity_threshold` cannot be loaded. Retrain them.
 - Inference stamps scored before `metrics.json` recorded the activity threshold are
   refused by the seed comparison and by the cube explorer's parameter overlays, and
-  stamps without a completion marker are ignored by the split-aware readers
-  (`scripts/backfill_completion_markers.py` writes markers for older stamps). Metric
+  stamps without a completion marker are ignored by the split-aware readers. Metric
   values moved too: slot activity is strict, scoring uses the label run's threshold
   where it used a fixed 1e-4, and pixel R² is NaN at constant references. Run inference
   again before comparing old and new runs. Attention backbones now run on the fused
@@ -664,8 +660,3 @@ ignored. Keep large run outputs outside the repository.
 `scripts/generate_state_dict_baseline.py` regenerates `tests/state_dict_baseline.json`,
 the file that guarantees old checkpoints still load. Run it only for an intentional
 architecture change, and commit it on its own.
-
-`scripts/rename_runs.py <roots>` plans the move of run directories from older naming
-generations to the current run tag scheme, and performs it with `--apply`. It ends each
-root and the whole run with an outcome totals table, and an abort logs how many groups
-were already applied.

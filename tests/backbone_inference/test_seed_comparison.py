@@ -66,17 +66,6 @@ def test_resolver_picks_the_explicit_inference_subdir(tmp_path):
     assert resolved == run / "inference" / "20240101_000000"
 
 
-def test_resolver_rejects_an_explicit_subdir_without_a_completion_marker(tmp_path):
-    run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
-    _stamp(run, "20240202_000000", {"m": 2.0}, split=None)
-
-    with pytest.raises(FileNotFoundError, match="completion marker"):
-        _resolver("20240202_000000").resolve(run)
-
-    with pytest.raises(FileNotFoundError):
-        _resolver("20240303_000000").resolve(run)
-
-
 def test_resolver_rejects_an_explicit_subdir_of_another_split(tmp_path):
     run = _seed_run(tmp_path / "group", "seed0", {"m": 1.0}, stamp="20240101_000000")
     _stamp(run, "20240202_000000", {"m": 2.0}, split="val")

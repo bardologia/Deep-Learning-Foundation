@@ -97,7 +97,6 @@ def test_unidentified_report_says_what_the_stage_does_with_each_directory(tmp_pa
 
     assert warnings[0].startswith("FoldTrainingStage: 3 run directory(ies) under")
     assert "no cross_validation manifest" in warnings[0]
-    assert "scripts/backfill_unit_manifests.py" in warnings[0]
     assert warnings[1] == "unit_a: sits at planned unit 'unit_a's own path and holds a completion marker, so the stage uses it as that unit's completed run"
     assert warnings[2] == "unit_b: sits at planned unit 'unit_b's own path without a completion marker, so the stage treats it as that unit's unfinished run"
     assert warnings[3] == "stray_run: claimed by no planned unit, ignored by the stage; the comparison still collects it beside the planned units"

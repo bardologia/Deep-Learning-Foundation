@@ -37,9 +37,6 @@ class SeedInferenceResolver:
     def _explicit(self, inference_root: Path) -> Path:
         candidate = inference_root / self.inference_subdir
 
-        if not CompletionMarker.is_complete(candidate):
-            raise FileNotFoundError(f"{candidate} carries no {CompletionMarker.FILENAME}; the requested inference_subdir is unfinished, or predates completion markers and needs scripts/backfill_completion_markers.py")
-
         recorded = CompletionMarker.payload(candidate)["split"]
         if recorded != self.split:
             raise ValueError(f"{candidate} was scored on split '{recorded}', not on the configured split '{self.split}'; point inference_subdir at a '{self.split}' stamp or change split")

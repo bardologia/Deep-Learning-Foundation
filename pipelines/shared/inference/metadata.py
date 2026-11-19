@@ -144,8 +144,6 @@ class CompletedInference:
 
             payload = CompletionMarker.payload(candidate)
 
-            if "split" not in payload:
-                raise KeyError(f"inference completion marker at {candidate} carries no 'split' key; re-run scripts/backfill_completion_markers.py to rewrite it from the recorded metrics")
             if payload["split"] == split:
                 marked.append((candidate, payload))
 

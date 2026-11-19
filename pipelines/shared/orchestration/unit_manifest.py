@@ -75,8 +75,6 @@ class UnitLedger:
 
 class UnidentifiedRuns:
 
-    BACKFILL_HINT = "run scripts/backfill_unit_manifests.py to write their manifests"
-
     def __init__(self, stage_dir: Path, directories: list[Path], kind: str, planned: dict[str, Path]) -> None:
         self.stage_dir   = Path(stage_dir)
         self.directories = list(directories)
@@ -97,7 +95,7 @@ class UnidentifiedRuns:
         if not self.directories:
             return
 
-        logger.warning(f"{stage_label}: {len(self.directories)} run directory(ies) under {self.stage_dir} carry no {self.kind} manifest; {self.BACKFILL_HINT}")
+        logger.warning(f"{stage_label}: {len(self.directories)} run directory(ies) under {self.stage_dir} carry no {self.kind} manifest")
 
         for directory in self.directories:
             logger.warning(f"{directory.relative_to(self.stage_dir).as_posix()}: {self._case(directory)}")

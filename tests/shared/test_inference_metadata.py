@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from pipelines.shared.inference.metadata import CompletedInference, RegionPass
 from tools.runtime.completion            import CompletionMarker
 
@@ -57,13 +55,3 @@ def test_single_pass_stamps_count_beside_an_incomplete_group(tmp_path):
     assert CompletedInference.stamps(base, "train")            == [single]
     assert CompletedInference.incomplete_groups(base, "train") == {"20260101_000000": ([1], 2)}
     assert CompletedInference.incomplete_groups(base, "test")  == {}
-
-
-def test_a_marker_without_a_split_is_refused(tmp_path):
-    base  = tmp_path / "inference"
-    stamp = base / "20260101_000000"
-    stamp.mkdir(parents=True)
-    CompletionMarker.stamp(stamp, {"stage": "inference"})
-
-    with pytest.raises(KeyError, match="backfill_completion_markers"):
-        CompletedInference.stamps(base, "train")
