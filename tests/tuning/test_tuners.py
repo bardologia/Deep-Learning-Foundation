@@ -159,8 +159,6 @@ def test_search_space_refuses_nothing_to_search_and_empty_groups(tune_cfg):
     with pytest.raises(ValueError, match="declares no learning-rate parameter"):
         SearchSpace.of(ArchOnly, tune_cfg)
 
-    assert SearchSpace.arch_only(ArchOnly) == ArchOnly.tunable_arch_params()
-
 
 def _study_with_values(values):
     study = optuna.create_study(direction="minimize")

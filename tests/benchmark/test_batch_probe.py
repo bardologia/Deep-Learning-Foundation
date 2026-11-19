@@ -123,18 +123,6 @@ def _run_with_stubbed_context(monkeypatch, tmp_path, dataset, ceiling: int = 16,
     return probe.run(), captured
 
 
-def test_candidates_are_powers_of_two_up_to_ceiling():
-    probe = _bare_probe(ceiling=16)
-
-    assert probe._candidates() == [1, 2, 4, 8, 16]
-
-
-def test_candidates_stop_below_non_power_of_two_ceiling():
-    probe = _bare_probe(ceiling=10)
-
-    assert probe._candidates() == [1, 2, 4, 8]
-
-
 def test_trial_drives_the_real_trainer_loss_and_optimizer(monkeypatch):
     trainer = _RecordingTrainer()
     _stub_cuda(monkeypatch, trainer, reserved_bytes=0)

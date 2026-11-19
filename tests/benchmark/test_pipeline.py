@@ -391,7 +391,7 @@ def test_every_launch_appends_its_provenance_to_the_launch_record(tmp_path, monk
 def test_a_skip_entry_matching_no_model_is_refused(tmp_path):
     config = _config(tmp_path, skip_models=["unet", "resnut"])
 
-    with pytest.raises(SystemExit, match=r"skip_models lists \['resnut'\], which match no backbone model key"):
+    with pytest.raises(SystemExit, match=r"skip_models lists \['resnut'\], which match no model key and no backbone name"):
         BenchmarkPipeline.validate_sweep(config)
 
 

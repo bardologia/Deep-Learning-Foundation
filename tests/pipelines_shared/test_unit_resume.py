@@ -39,6 +39,7 @@ class _EntryStub:
     logdir       : Path          = Path("")
     infer_after  : bool          = False
     infer_at_end : bool          = False
+    probe        : None          = None
     training     : _TrainingStub = field(default_factory=_TrainingStub)
     pretrain     : _PretrainStub = field(default_factory=_PretrainStub)
 

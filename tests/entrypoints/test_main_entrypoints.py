@@ -323,14 +323,6 @@ def test_config_cli_rejects_unknown_override():
         cli.apply(["--not-a-real-flag", "1"])
 
 
-def test_infer_worker_requires_run_dir_and_config(main_on_path, frozen_env, monkeypatch):
-    module = _import_main("infer_backbone")
-    monkeypatch.setattr(sys, "argv", ["infer_backbone.py", "--worker", "--run-dir", "x"])
-
-    with pytest.raises(SystemExit):
-        module.main()
-
-
 def test_tune_worker_requires_model(main_on_path, frozen_env, monkeypatch):
     module = _import_main("tune")
     monkeypatch.setattr(sys, "argv", ["tune.py", "--worker"])

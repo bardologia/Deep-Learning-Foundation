@@ -162,7 +162,7 @@ def test_cross_validation_worker_fold_name(test_data_dir):
 
 @pytest.mark.dataset
 def test_training_worker_dispatches_to_backbone(test_data_dir, tmp_path, monkeypatch):
-    config                    = worker_config(test_data_dir, "backbone")
+    config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
 
@@ -189,7 +189,7 @@ def test_training_worker_writes_the_unit_manifest_before_training(test_data_dir,
     from pipelines.cross_validation.folds             import FoldUnitManifest
     from pipelines.shared.orchestration.unit_manifest import UnitManifest
 
-    config                    = worker_config(test_data_dir, "backbone")
+    config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
 
@@ -229,7 +229,7 @@ def test_training_worker_leaves_a_finished_unit_alone(test_data_dir, tmp_path, m
 
 @pytest.mark.dataset
 def test_training_worker_trains_into_the_directory_the_scheduler_hands_over(test_data_dir, tmp_path, monkeypatch):
-    config                    = worker_config(test_data_dir, "backbone")
+    config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
 
@@ -244,7 +244,7 @@ def test_training_worker_trains_into_the_directory_the_scheduler_hands_over(test
 
 @pytest.mark.dataset
 def test_training_worker_passes_planned_split_regions(test_data_dir, tmp_path, monkeypatch):
-    config                    = worker_config(test_data_dir, "backbone")
+    config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     worker                    = FoldTrainingWorker(config, run_tag="rt")
 
@@ -341,7 +341,7 @@ def test_inference_worker_skips_completed_split_on_resume(test_data_dir, tmp_pat
 
 @pytest.mark.dataset
 def test_backbone_fold_trainer_uses_the_entry_curriculum(test_data_dir, tmp_path, monkeypatch):
-    config                    = worker_config(test_data_dir, "backbone")
+    config                    = worker_config(test_data_dir)
     config.paths.log_base_dir = tmp_path
     config.prior_bias_init    = True
     worker                    = FoldTrainingWorker(config, run_tag="rt")

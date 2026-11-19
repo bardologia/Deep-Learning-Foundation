@@ -125,7 +125,7 @@ def test_the_run_table_names_every_matched_run_with_its_action(tmp_path):
     logger = RecordingLogger()
     _scheduler(runs, [])._run_dirs(logger)
 
-    assert ("metrics_table", f"1 backbone run(s) under {runs}") in logger.messages
+    assert ("metrics_table", f"1 run(s) under {runs}") in logger.messages
 
 
 def test_job_names_and_logs_stay_unique_for_equally_named_leaves(tmp_path):
